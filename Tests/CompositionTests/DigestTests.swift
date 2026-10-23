@@ -121,41 +121,55 @@ private func scratchFolder(_ name: String) throws -> URL {
 }
 
 /// Every shape, pill and arrow of the file as the tool's `verify` reads them, one JSON object a line:
-/// `{board, title, kind, x, y, w, h, in, for, from, to}`. A board is `root` (the digest's own: the
-/// file's root, or the board of the subboard called `digestRoot`) or the title of the subboard that
-/// holds it; an arrow's `to` is `pill:<label>` for a reference, and its `is` the titles of the relationship types it is of (when it is of any).
-@MainActor private func landedRows(in editor: CanvasEditor, digestRoot: String?) throws -> String {
+/// `{board, in, title, kind, x, y, w, h, for, from, to, is}`. A shape says where it is as a query's row does: `board` is the
+/// containers of the board it is on (the subboards, as titles, outermost first, so beginning with the subboard the digest was drawn
+/// into, when there is one) and `in` the frames it is in on that board, so two shapes of one title are told apart by their places. An arrow's
+/// `from` and `to` are the places of its ends (each an array: the containers, then the title), and `pill` is true when its end is a
+/// reference, whose `to` is then its label; its `is` the titles of the relationship types it is of (when it is of any).
+@MainActor private func landedRows(in editor: CanvasEditor) throws -> String {
     let containing = editor.registry.containingKinds
+    func title(of record: AnyShapeRecord) -> String { editor.registry.title(of: record) ?? record.kind.rawValue }
     func titled(_ id: ShapeID?) -> String {
         guard let record = id.flatMap({ editor.file.record($0) }) else { return "?" }
-        return editor.registry.title(of: record) ?? record.kind.rawValue
+        return title(of: record)
     }
-    var rows: [[String: Any]] = []
-    var queue: [(name: String, board: BoardID)] = [(digestRoot == nil ? "root" : "file", .root)]
+    // every board, outermost first, with the containers of its board; and where each shape is
+    var queue: [(chain: [String], board: BoardID)] = [([], .root)]
+    var places: [ShapeID: [String]] = [:], frames: [ShapeID: [String]] = [:]
     var next = 0
     while next < queue.count {
-        let (name, board) = queue[next]
+        let (chain, board) = queue[next]
         next += 1
         let document = editor.contents(of: board)
         for record in document.shapes {
-            let title = editor.registry.title(of: record)
-            if record.kind == Subboard.kind {
-                let child = name == "file" && title == digestRoot ? "root" : (title ?? "?")
-                queue.append((child, BoardID(owner: record.id)))
+            var above: [String] = []
+            var current = record
+            while let holder = document.container(of: current, containingKinds: containing), let held = editor.file.record(holder) {
+                above.insert(title(of: held), at: 0)
+                current = held
             }
-            var row: [String: Any] = ["board": name, "kind": record.kind.rawValue]
-            if let title { row["title"] = title }
+            frames[record.id] = above
+            places[record.id] = chain + above + [title(of: record)]
+            if record.kind == Subboard.kind { queue.append((chain + above + [title(of: record)], BoardID(owner: record.id))) }
+        }
+    }
+    var rows: [[String: Any]] = []
+    for (chain, board) in queue {
+        for record in editor.contents(of: board).shapes {
+            let name = editor.registry.title(of: record)
+            var row: [String: Any] = ["board": chain, "kind": record.kind.rawValue, "in": frames[record.id] ?? []]
+            if let name { row["title"] = name }
             if let box = record.box { row["x"] = box.minX; row["y"] = box.minY; row["w"] = box.width; row["h"] = box.height }
-            if let holder = document.container(of: record, containingKinds: containing) { row["in"] = titled(holder) }
             if let reference = record.typed(as: Reference.self) {
                 row["for"] = reference.props.target?.label ?? "?"
             } else if let arrow = record.typed(as: Arrow.self)?.props {
                 row["kind"] = "arrow"
-                row["from"] = titled(arrow.start.binding?.shapeID)
+                row["from"] = arrow.start.binding.flatMap { places[$0.shapeID] } ?? ["?"]
                 if let end = arrow.end.binding?.shapeID, let target = editor.file.record(end)?.typed(as: Reference.self) {
-                    row["to"] = "pill:" + (target.props.target?.label ?? "?")
+                    row["to"] = [target.props.target?.label ?? "?"]
+                    row["pill"] = true
                 } else {
-                    row["to"] = titled(arrow.end.binding?.shapeID)
+                    row["to"] = arrow.end.binding.flatMap { places[$0.shapeID] } ?? ["?"]
                 }
                 if let types = record[IsAProperty.self]?.map(\.shape), !types.isEmpty { row["is"] = types.map(titled) }
             }
@@ -167,9 +181,9 @@ private func scratchFolder(_ name: String) throws -> URL {
 
 /// What the file holds, held to the plan by the tool's `verify`: every shape and pill within a unit
 /// of its place and its width, in its frame, every arrow drawn, and nothing more.
-@MainActor private func expectOnPlan(_ run: DigestRun, board: BoardDocument, digestRoot: String?, _ label: String) throws {
+@MainActor private func expectOnPlan(_ run: DigestRun, board: BoardDocument, _ label: String) throws {
     let rows = run.out.appendingPathComponent("rows.jsonl")
-    try landedRows(in: board.editor, digestRoot: digestRoot).write(to: rows, atomically: true, encoding: .utf8)
+    try landedRows(in: board.editor).write(to: rows, atomically: true, encoding: .utf8)
     let verified = try tool(["verify", run.out.appendingPathComponent("plan.json").path, rows.path, "--json"])
     expectEqual(verified.status, 0, "\(label): \(verified.output) \(verified.error)")
     let summary = try require(JSON(text: verified.output)["summary"])
@@ -184,11 +198,12 @@ private func scratchFolder(_ name: String) throws -> URL {
     expectEqual(summary["extraPills"], 0, "\(label): no pill the plan didn't make")
 }
 
-/// No run warned but to say a big drawing is bigger than the window (the camera is the user's), and none pushed a shape past another.
-@MainActor private func expectNoWarnings(_ run: DigestRun, _ label: String) throws {
+/// No run warned but to say a big drawing is bigger than the window (the camera is the user's), and none pushed a shape past another. A digest whose
+/// titles repeat (or repeat the file's) is also told that a title is another shape's too, which is the data (`titlesRepeat`).
+@MainActor private func expectNoWarnings(_ run: DigestRun, _ label: String, titlesRepeat: Bool = false) throws {
     for (name, result) in try run.results() {
         let warnings = result["warnings"]?.arrayValue ?? []
-        let said = warnings.compactMap { $0["message"]?.stringValue }.filter { !$0.contains("landed outside the view") }
+        let said = warnings.compactMap { $0["message"]?.stringValue }.filter { !$0.contains("landed outside the view") && !(titlesRepeat && $0.contains("is another shape’s title too")) }
         expectEqual(said, [], "\(label): \(name) warned")
         expect(!(result["changes"]?.arrayValue ?? []).contains { $0["pushedPast"] != nil }, "\(label): \(name) pushed a shape past another")
     }
@@ -298,7 +313,7 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(report["view"], ["w": .number(room[0]), "h": .number(room[1]), "from": "given"], "the plan is for the board's window")
         expect(run.process.output.contains("laid out for a view of \(Int(room[0])) x \(Int(room[1]))\n"), run.process.output)
         expectEqual(plan["runs"]?.arrayValue?.first, "00-into.draw")
-        try expectOnPlan(run, board: promoted, digestRoot: "Acme map", "Acme")
+        try expectOnPlan(run, board: promoted, "Acme")
         try expectNoWarnings(run, "Acme")
         expect((report["promotions"]?.arrayValue?.count ?? 0) > 0, "Acme has hubs worth a pill")
 
@@ -352,7 +367,7 @@ private func isByDesign(_ message: String) -> Bool {
         expect(run.process.output.contains("verify ok"), run.process.output)
         let plan = try run.plan, report = try run.report
         expect((plan["boards"]?.arrayValue?.count ?? 0) >= 2, "the subboard has a board of its own")
-        try expectOnPlan(run, board: board, digestRoot: "Tree map", "tree")
+        try expectOnPlan(run, board: board, "tree")
         try expectNoWarnings(run, "tree")
         expectEqual(publicTitles(in: board.editor, digestRoot: "Tree map"), Set(report["public"]?.arrayValue?.compactMap(\.stringValue) ?? []))
         // an edge across boards is read as it was written
@@ -390,7 +405,7 @@ private func isByDesign(_ message: String) -> Bool {
         let run = try runDigest("all", "spine", server: server, target: ["--board", "\(board.number)", "--into", "Spine map"], out: folder)
         expectEqual(run.process.status, 0, run.process.output + run.process.error)
         expect(run.process.output.contains("verify ok"), run.process.output)
-        try expectOnPlan(run, board: board, digestRoot: "Spine map", "spine")
+        try expectOnPlan(run, board: board, "spine")
         try expectNoWarnings(run, "spine")
         let plan = try run.plan, report = try run.report
         let algorithms = report["boards"]?["root"]?["algorithms"]?.arrayValue ?? []
@@ -404,10 +419,10 @@ private func isByDesign(_ message: String) -> Bool {
             expect(script.contains(line), "\(line) in \(script)")
         }
         // one pill for X, in the band, read as each card's arrow into X
-        let rows = try landedRows(in: board.editor, digestRoot: "Spine map").split(separator: "\n").map { try JSON(text: String($0)) }
+        let rows = try landedRows(in: board.editor).split(separator: "\n").map { try JSON(text: String($0)) }
         let forX = rows.filter { $0["kind"] == "reference" && $0["for"] == "X" }
         expectEqual(forX.count, 1, "one pill for X")
-        expectEqual(forX.first?["in"], "Band", "in the band")
+        expectEqual(forX.first?["in"], ["Band"], "in the band")
         expectEqual(try queried(server, board, #":edge-to("X")"#).sorted(), ["A", "B", "C", "D"])
         expectEqual(publicTitles(in: board.editor, digestRoot: "Spine map"), Set(report["public"]?.arrayValue?.compactMap(\.stringValue) ?? []))
     },
@@ -440,7 +455,7 @@ private func isByDesign(_ message: String) -> Bool {
         // the window in front has no size here (and the new file's isn't open as the plan is made): a view is assumed, and said
         expectEqual(report["view"]?["from"], "assumed")
         expect(run.process.output.contains("(assumed: no view was given)"), run.process.output)
-        try expectOnPlan(run, board: board, digestRoot: nil, "flat60")
+        try expectOnPlan(run, board: board, "flat60")
         try expectNoWarnings(run, "flat60")
         expect((report["promotions"]?.arrayValue?.count ?? 0) > 0, "hubs promoted")
         expectEqual(publicTitles(in: board.editor, digestRoot: nil), Set(report["public"]?.arrayValue?.compactMap(\.stringValue) ?? []))
@@ -468,7 +483,7 @@ private func isByDesign(_ message: String) -> Bool {
         expect(run.process.output.contains("types: 2 type(s), 2 relationship type(s), 7 note(s) of a type, 8 arrow(s) of a relationship type"), run.process.output)
         expect(run.process.output.contains("by design"), "the warnings of a typed drawing are said, as expected: \(run.process.output)")
         let plan = try run.plan
-        try expectOnPlan(run, board: board, digestRoot: "Platform", "typed")
+        try expectOnPlan(run, board: board, "typed")
 
         // The order of the runs: the types, the relationship types and their ends in one script of the board that holds them (here the run of the
         // frame "Model", the deepest of them), every note of a type after every such script, the arrows of the relationships last.
@@ -526,7 +541,7 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(again.process.status, 0, again.process.output + again.process.error)
         expect(again.process.output.contains("replace: took back"), again.process.output)
         expect(again.process.output.contains("verify ok"), again.process.output)
-        try expectOnPlan(again, board: board, digestRoot: "Platform", "typed again")
+        try expectOnPlan(again, board: board, "typed again")
         expectEqual(try queriedCount(server, board, #"arrow:is-a("writes")"#), 5)
     },
 
@@ -549,7 +564,7 @@ private func isByDesign(_ message: String) -> Bool {
         let run = try runDigest("all", file: file, server: server, target: ["--board", "\(board.number)", "--into", "Platform"], out: folder.appendingPathComponent("out"))
         expectEqual(run.process.status, 0, run.process.output + run.process.error)
         expect(run.process.output.contains("verify ok"), run.process.output)
-        try expectOnPlan(run, board: board, digestRoot: "Platform", "typed on a board")
+        try expectOnPlan(run, board: board, "typed on a board")
         _ = try expectOnlyTypedWarnings(run, "typed on a board")
         let runs = try require(run.plan["runs"]?.arrayValue?.compactMap(\.stringValue))
         let index = { (part: String) -> Int in runs.firstIndex { $0.contains(part) } ?? -1 }
@@ -577,7 +592,7 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(run.process.status, 0, run.process.output + run.process.error)
         expect(run.process.output.contains("verify ok"), run.process.output)
         expect(run.process.output.contains("types: 7 type(s), 4 relationship type(s) (5 built on others), 6 note(s) of a type, 4 arrow(s) of a relationship type"), run.process.output)
-        try expectOnPlan(run, board: board, digestRoot: "Garage", "inherit")
+        try expectOnPlan(run, board: board, "inherit")
 
         // The runs: the first board's types of the first round in its frame's script, as ever, and the later rounds after every board's shapes,
         // a script a board a round. Truck (Fleet) waits for Vehicle (the first board), tows (Fleet) and powers (Parts) for uses (the first
@@ -771,7 +786,7 @@ private func isByDesign(_ message: String) -> Bool {
         expect(!drawn.process.error.contains("subboard"), "no subboard to delete: \(drawn.process.error)")
     },
 
-    test("a draw of a plan whose titles the file has stops before anything is drawn; a plan drawn once is not drawn again; plan checks the file's titles too") {
+    test("a draw of a plan whose scripts rely on a title the file now has stops before anything is drawn, and a plan made beside that title names its shape by a path; a plan drawn once is not drawn again; plan checks the --into title too") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -787,19 +802,21 @@ private func isByDesign(_ message: String) -> Bool {
             return board.editor.document.shapes.count
         }()
 
-        // the plan was made before the title came to the file: draw checks them again, as check does
+        // the plan was made before the title came to the file, and its scripts name CTO bare: draw looks at the file's titles again
         let out = folder.appendingPathComponent("acme")
         let planned = try runDigest("plan", "acme", server: server, target: ["--into", "Acme map"], out: out)
         expectEqual(planned.process.status, 0, planned.process.output + planned.process.error)
         let clash = try runDigest("draw", "acme", server: server, target: ["--board", "\(board.number)"], out: out)
         expectEqual(clash.process.status, 1, clash.process.output + clash.process.error)
-        expect(clash.process.error.contains(#"error: "CTO" is already on a board in the file"#), clash.process.error)
+        expect(clash.process.error.contains(#"error: "CTO" is on a board in the file now, and the scripts name shapes on the understanding that it is not"#), clash.process.error)
         expect(clash.process.error.contains("nothing was drawn"), clash.process.error)
         expectEqual(board.editor.document.shapes.count, before, "nothing drawn")
-        // and plan, given the board, refuses at once
-        let replanned = try runDigest("plan", "acme", server: server, target: ["--board", "\(board.number)", "--into", "Acme map"], out: folder.appendingPathComponent("replanned"))
-        expectEqual(replanned.process.status, 1, replanned.process.output + replanned.process.error)
-        expect(replanned.process.output.contains(#"error: "CTO" is already on a board in the file"#), replanned.process.output)
+        // a plan made given the board knows the title, and names that shape by a path: the file's CTO is never the one meant, and the digest is drawn beside it
+        let replanned = try runDigest("all", "acme", server: server, target: ["--board", "\(board.number)", "--into", "Acme map"], out: folder.appendingPathComponent("replanned"))
+        expectEqual(replanned.process.status, 0, replanned.process.output + replanned.process.error)
+        expect(replanned.process.output.contains("verify ok"), replanned.process.output)
+        expectEqual(try queried(server, board, #"[title="CTO"]"#).count, 2, "the board's CTO, and the digest's")
+        expectEqual(try queriedCount(server, board, #"sticky-note[text="Already here"]"#), 1, "the board's own is as it was")
 
         // a plan is drawn once
         let tiny = try digestFile("tiny", #"{"title": "Tiny", "nodes": [{"title": "Tiny A", "text": "a"}, {"title": "Tiny B", "text": "b"}], "edges": [{"from": "Tiny A", "to": "Tiny B"}]}"#, in: folder)
@@ -865,7 +882,7 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(fine.process.status, 0, fine.process.output + fine.process.error)
     },
 
-    test("digest refuses what it should before drawing: a title the file has, a kind the app lacks, a plan made for another target, a missing --into") {
+    test("digest refuses what it should before drawing: the --into title the file has, a kind the app lacks, a plan made for another target, a missing --into") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -875,11 +892,11 @@ private func isByDesign(_ message: String) -> Bool {
         defer { server.stop() }
         let folder = try scratchFolder("refuse")
         defer { try? FileManager.default.removeItem(at: folder) }
-        let drawn = try canvas(server, ["draw", #"sticky-note "CTO" text: "Already here""#, "--board", "\(board.number)"])
+        let drawn = try canvas(server, ["draw", #"sticky-note "Acme map" text: "Already here""#, "--board", "\(board.number)"])
         expectEqual(drawn.status, 0, drawn.error)
         let before = board.editor.document.shapes.count
 
-        // Acme has a CTO: the file's title is refused, and nothing is drawn
+        // the subboard's title is the file's alone (draw finds it anywhere): refused, and nothing is drawn. The nodes' titles may be the file's: they are named so that nothing in the file can be meant
         let clash = try runDigest("all", "acme", server: server, target: ["--board", "\(board.number)", "--into", "Acme map"], out: folder.appendingPathComponent("clash"))
         expectEqual(clash.process.status, 1, clash.process.output)
         expect(clash.process.output.contains("error:") && clash.process.output.contains("already on a board in the file"), clash.process.output)
@@ -922,7 +939,7 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(first.process.status, 0, first.process.output + first.process.error)
         expect(first.process.output.contains("verify ok"), first.process.output)
         expectEqual(try first.plan["into"], .null, "the digest is the board's own")
-        try expectOnPlan(first, board: board, digestRoot: nil, "tree, first")
+        try expectOnPlan(first, board: board, "tree, first")
         let drawn = board.editor.file.shapeCount
         expect(drawn > 0, "drawn")
 
@@ -932,7 +949,7 @@ private func isByDesign(_ message: String) -> Bool {
         expect(second.process.output.contains("replace: took back the last drawing"), second.process.output)
         expect(second.process.output.contains("verify ok"), second.process.output)
         expectEqual(board.editor.file.shapeCount, drawn, "the same drawing, once")
-        try expectOnPlan(second, board: board, digestRoot: nil, "tree, second")
+        try expectOnPlan(second, board: board, "tree, second")
         try expectNoWarnings(second, "tree, second")
 
         // a drawing in place of the last one that stops part way: until it is whole its record is of both drawings, so the next run
@@ -1150,5 +1167,166 @@ private func isByDesign(_ message: String) -> Bool {
             expectEqual(titles.filter { $0 == "Alpha A" }.count, 1, "Alpha's drawing is as it was")
             expectEqual(titles.filter { $0 == "Beta A" }.count, 1, "and Beta's is there once")
         }
+    },
+
+    test("a digest whose titles repeat, drawn into a subboard of a board that already holds shapes with those titles: every shape and pill on its plan, the board's own shapes untouched, each shape found by its path; drawn again in its place") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("repeats")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        // the board's own shapes: a frame called components with an index.ts in it, a frame called Billing with a Checkout in it, a loose Config and app
+        for script in [
+            """
+            frame "components" right of origin (gap: 0) below origin (gap: 0) size: 700x400
+            frame "Billing" right of origin (gap: 800) below origin (gap: 0) size: 700x400
+            sticky-note "Config" text: "The user's own config." right of origin (gap: 0) below origin (gap: 600) size: 300x200
+            sticky-note "app" text: "The user's own app note." right of origin (gap: 400) below origin (gap: 600) size: 300x200
+            """,
+            """
+            sticky-note "index.ts" in "components" text: "The user's own index." right of "components" left (gap: 40) below "components" top (gap: 40) size: 300x200
+            sticky-note "Checkout" in "Billing" text: "The user's own checkout." right of "Billing" left (gap: 40) below "Billing" top (gap: 40) size: 300x200
+            """,
+        ] {
+            let own = try canvas(server, ["draw", script])
+            expectEqual(own.status, 0, own.output + own.error)
+        }
+        let ownRows = try landedRows(in: board.editor).split(separator: "\n").map(String.init)
+        let ownCount = board.editor.file.shapeCount
+        expectEqual(ownCount, 6, "the board's own shapes")
+
+        let run = try runDigest("all", "repeats", server: server, target: ["--board", "\(board.number)", "--into", "Repeats map"], out: folder.appendingPathComponent("out"))
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        let plan = try run.plan, report = try run.report
+        let shapes = (plan["boards"]?.arrayValue ?? []).flatMap { $0["shapes"]?.arrayValue ?? [] }
+        expectEqual(shapes.count, 15, "every node is a shape")
+        expectEqual(shapes.filter { $0["title"] == "index.ts" }.count, 5, "five shapes called index.ts, each its own: \(shapes.map { $0["title"] ?? .null })")
+        try expectOnPlan(run, board: board, "repeats")
+        try expectNoWarnings(run, "repeats", titlesRepeat: true)
+        expect((plan["boards"]?.arrayValue ?? []).flatMap { $0["pills"]?.arrayValue ?? [] }.count > 0, "an edge to a note of the same title on another board is a pill")
+
+        // measured on the board that holds the titles, as on none: the same sizes, each row read by its line (two statements of a title are two shapes)
+        let spare = windowedBoard(), other = windowedBoard()
+        defer { spare.close(); other.close() }
+        let alone = try startCommandServer(boards: [spare, other], frontmost: nil)
+        defer { alone.stop() }
+        let bare = try runDigest("measure", "repeats", server: alone, target: [], out: folder.appendingPathComponent("measure-none"))
+        expectEqual(bare.process.status, 0, bare.process.output + bare.process.error)
+        let withTitles = try json(run.out.appendingPathComponent("measure.json")), without = try json(bare.out.appendingPathComponent("measure.json"))
+        expect(withTitles["board"] != nil && without["board"] == nil, "the first was measured on the board that holds the titles, the second on none")
+        for key in ["shapes", "references", "constants"] { expectEqual(withTitles[key], without[key], "\(key) measured the same") }
+        expectEqual(withTitles["warnings"], nil, "and said nothing of the board's titles")
+
+        // the scripts name a shape by a path wherever its title is the file's or repeats, and bare only where nothing else can be meant
+        let runs = try require(plan["runs"]?.arrayValue?.compactMap(\.stringValue))
+        var scripts = ""
+        for name in runs { scripts += try String(contentsOf: run.out.appendingPathComponent("runs/\(name)"), encoding: .utf8) }
+        expect(scripts.contains(#"sticky-note "Repeats map" > "app" > "index.ts""#) || scripts.contains(#"sticky-note "lib" > "index.ts""#), "a path names a note whose title repeats: \(scripts)")
+        expect(scripts.contains(#"edge "Invoice" -> "Billing" > "Checkout""#) || scripts.contains(#"edge "Invoice" -> "Repeats map" > "Billing" > "Checkout""#), "and an edge's end: \(scripts)")
+        // ... and never a title the board has where draw would take it for the board's: as an edge's end, or the container a shape is `in`
+        for title in ["components", "Billing", "Config", "app", "Checkout", "index.ts"] {
+            expect(!scripts.contains(#"in "\#(title)""#) && !scripts.contains(#"edge "\#(title)""#) && !scripts.contains(#"-> "\#(title)""#) && !scripts.contains(#"of "\#(title)""#),
+                   "\(title) is the board's: it is named by a path where a script means the digest's: \(scripts)")
+        }
+
+        // the board's own shapes are as they were, and the digest's are all in the subboard it was drawn into
+        let rows = try landedRows(in: board.editor).split(separator: "\n").map(String.init)
+        for row in ownRows { expect(rows.contains(row), "the board's own shape is as it was: \(row)") }
+        expectEqual(try queriedCount(server, board, #"sticky-note[text*="The user's own"]"#), 4, "the board's own notes, and none of the digest's")
+        expectEqual(try queried(server, board, #"sticky-note:top-level"#).sorted(), ["Config", "app"], "on the board itself: its own two")
+
+        // each shape is found by its path
+        @MainActor func found(_ query: String) throws -> [String] {
+            let answer = try canvas(server, ["query", "--board", "\(board.number)", "--fields", "text", "--limit", "10000", query])
+            expectEqual(answer.status, 0, answer.error)
+            return try require(JSON(text: answer.output)["rows"]?.arrayValue).compactMap { $0["properties"]?["text"]?.stringValue }
+        }
+        expectEqual(try found(#""Repeats map" > "app" > "index.ts""#), ["The app's entry point."])
+        expectEqual(try found(#""Repeats map" > "components" > "index.ts""#), ["The shared components."])
+        expectEqual(try found(#""Repeats map" > "admin" > "components" > "index.ts""#), ["The admin's components."])
+        expectEqual(try found(#""Repeats map" > "Billing" > "index.ts""#), ["Billing's entry point."])
+        expectEqual(try found(#""Repeats map" > "Billing" > "Checkout""#), ["Takes payment for an order."])
+        expectEqual(try found(#""Repeats map" > "Checkout""#), ["The storefront's checkout."])
+        expectEqual(try queriedCount(server, board, #"[title="index.ts"]"#), 6, "six shapes called index.ts in the file, five of them the digest's")
+        // what points at the Checkout on the subboard's board: its note, through the pill, and the others on that board
+        expectEqual(try queried(server, board, #":edge-to("Repeats map" > "Billing" > "Checkout")"#).sorted(), ["Checkout", "Invoice", "index.ts", "index.ts"], "who points at the Checkout the subboard holds: the first board's, through the pill, and the notes on its own board")
+
+        // drawn again in its place: the subboard goes, and what the board had stays
+        let again = try runDigest("all", "repeats", server: server, target: ["--board", "\(board.number)", "--into", "Repeats map"], extra: ["--replace"], out: folder.appendingPathComponent("out"))
+        expectEqual(again.process.status, 0, again.process.output + again.process.error)
+        expect(again.process.output.contains("replace: took back") && again.process.output.contains("verify ok"), again.process.output)
+        try expectOnPlan(again, board: board, "repeats again")
+        let after = try landedRows(in: board.editor).split(separator: "\n").map(String.init)
+        for row in ownRows { expect(after.contains(row), "the board's own shape is as it was: \(row)") }
+        expectEqual(try queriedCount(server, board, #"[title="index.ts"]"#), 6, "and the digest is there once")
+    },
+
+    test("a digest whose titles repeat, drawn into a new file: told apart by paths from the top of the first board, every shape and pill on its plan") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let first = newBoard()
+        defer { first.close() }
+        let opened = Opened()
+        defer { for board in opened.boards { board.close() } }
+        let commands = try require(BoardDocument.configuration).registry.hostCommands
+        let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
+                                   boards: { [first] + opened.boards }, frontmost: { opened.boards.last ?? first }, show: { opened.boards.append($0) })
+        try server.start()
+        defer { server.stop() }
+        let folder = try scratchFolder("repeats-file")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let file = folder.appendingPathComponent("Repeats")
+        let run = try runDigest("all", "repeats", server: server, target: ["--new-file", file.path], out: folder.appendingPathComponent("out"))
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        let board = try require(opened.boards.first)
+        try expectOnPlan(run, board: board, "repeats in a new file")
+        try expectNoWarnings(run, "repeats in a new file", titlesRepeat: true)
+        expectEqual(try queriedCount(server, board, #"[title="index.ts"]"#), 5)
+        expectEqual(try queriedCount(server, board, #""admin" > "components" > "index.ts""#), 1)
+    },
+
+    test("a digest whose titles repeat, drawn as the board itself (and again in its place), is told apart by paths from the top of the first board") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("repeats-board")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let out = folder.appendingPathComponent("out")
+        let run = try runDigest("all", "repeats", server: server, target: ["--board", "front"], out: out)
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        try expectOnPlan(run, board: board, "repeats as the board")
+        try expectNoWarnings(run, "repeats as the board", titlesRepeat: true)
+        let drawn = board.editor.file.shapeCount
+        expect(drawn > 15, "the shapes and their arrows: \(drawn)")
+        expectEqual(try queried(server, board, #"sticky-note:top-level"#).sorted(), ["Checkout"], "the Checkout on the first board is the only note in no container")
+        for _ in 0..<2 {
+            let again = try runDigest("all", "repeats", server: server, target: ["--board", "front", "--replace"], out: out)
+            expectEqual(again.process.status, 0, again.process.output + again.process.error)
+            expect(again.process.output.contains("replace: took back") && again.process.output.contains("verify ok"), again.process.output)
+            try expectOnPlan(again, board: board, "repeats as the board, again")
+            expectEqual(board.editor.file.shapeCount, drawn, "the same drawing, once")
+        }
+        // a shape the drawing didn't make, with a title the drawing has, is not taken for the drawing's: the take-back refuses it
+        let added = try canvas(server, ["draw", #"sticky-note board > "index.ts" text: "Added by hand" right of board"#, "--board", "\(board.number)"])
+        expectEqual(added.status, 0, added.output + added.error)
+        let refused = try runDigest("all", "repeats", server: server, target: ["--board", "front", "--replace"], out: out)
+        expectEqual(refused.process.status, 1, refused.process.output + refused.process.error)
+        expect(refused.process.error.contains("holds shapes this digest's last drawing didn't make (index.ts)"), refused.process.error)
+        expectEqual(board.editor.file.shapeCount, drawn + 1, "nothing was taken back")
     },
 ])

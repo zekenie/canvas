@@ -195,6 +195,47 @@ extension RelationScene {
         let id = try require(picker.pickNote(row: try require(picker.list.highlighted)))
         expectEqual(s.editor.document[id].flatMap { $0.typed(as: RowSlip.self)?.props.text.stored }, "Layer 295")
     },
+    test("a longer query narrows the last one's matches only with as many words: `annex` matches no Layer note and `annex d` the ones on the Annex pocket's board") {
+        let s = try RelationScene.drawn(more: [Contributor(id: "pocket-titles") { $0.title(Pocket.self, contents: false) }])
+        s.editor.transact { $0.update(s.pocket) { $0[TitleProperty.self] = "Annex" } }
+        // Twelve more on the pocket's board, so more than eight match and the list narrows what the last query matched.
+        s.editor.transact(on: BoardID(owner: s.pocket)) { t in
+            for number in 0..<12 { t.insert(slipRecord("Dock \(number)", of: [s.layer], at: CGPoint(x: 40 + Double(number) * 30, y: 600))) }
+        }
+        let picker = RelationPicker(editor: s.editor, owner: s.note, row: try s.featureRow())
+        let all = picker.held ?? 0
+        expect(all >= 14, "the set is held: \(all)")
+        @MainActor func fresh(_ text: String) throws -> RelationPicker {
+            let made = RelationPicker(editor: s.editor, owner: s.note, row: try s.featureRow())
+            made.setQuery(text)
+            return made
+        }
+        picker.setQuery("annex")
+        expectEqual(picker.choices.map(\.candidate.id), [], "a pocket's name is no match for the notes on its board, by one word")
+        // One word more: the notes on its board are found by its name, which the last query's matches (none) could not hold.
+        picker.setQuery("annex d")
+        expectEqual(picker.choices.count, 13, "Down and the twelve docks, ranked over the set, not among what `annex` matched")
+        expect(picker.lastRanked >= all, "the whole set: \(picker.lastRanked)")
+        expectEqual(picker.choices.map(\.candidate.id), try fresh("annex d").choices.map(\.candidate.id))
+        let line = try require(picker.list.rows.compactMap(\.item).first { $0.title == "Down" })
+        expect(line.detail?.hasPrefix("Annex") == true, "on another board, in a pocket: its path (\(line.detail ?? "none"))")
+        expect(line.spoken.contains(", in Annex"), line.spoken)
+        // As many words: the list is the one a fresh picker gives. The matcher's typo pass runs for a query of words, whose
+        // names (the whole query in a name) are few, so it forgave and the set is ranked again, as for any query it forgave.
+        picker.setQuery("annex do")
+        expectEqual(picker.choices.map(\.candidate.id), try fresh("annex do").choices.map(\.candidate.id))
+        expect(picker.lastRanked >= all, "forgiven: the set")
+        picker.setQuery("annex doc")
+        expectEqual(picker.choices.map(\.candidate.id), try fresh("annex doc").choices.map(\.candidate.id))
+        expectEqual(picker.choices.count, 12)
+        // Fewer words, or a word more or fewer, is another query: the set.
+        picker.setQuery("annex ")
+        expectEqual(picker.choices.map(\.candidate.id), try fresh("annex ").choices.map(\.candidate.id), "a space is no word")
+        picker.setQuery("annex d")
+        picker.setQuery("annex d x")
+        expect(picker.lastRanked >= all, "a word more: the set, not the thirteen `annex d` matched")
+        expectEqual(picker.choices.map(\.candidate.id), try fresh("annex d x").choices.map(\.candidate.id))
+    },
     test("a note the row shows as a dashed pill is not offered again by the row's list") {
         let s = try RelationScene.drawn()
         expect(s.editor.relate(s.note, to: s.awayLayer, in: try s.featureRow()) != nil)

@@ -6,8 +6,8 @@ import TestKit
 import TextEditing
 import Titles
 
-// A candidate and where it is (`MentionChoice`): the name of the board a shape is on, nil on the board
-// shown, and the lines a list shows for choices, headless.
+// A candidate and where it is (`MentionChoice`): the containers it is inside, else the name of the board a
+// shape is on, nil on the board shown, and the lines a list shows for choices, headless.
 
 /// A file of three boards: the root, board A (a pocket called "Clients", where the text is) and board B
 /// (a pocket nothing calls anything).
@@ -56,16 +56,17 @@ import Titles
         expectEqual(r.state.boardName(ofShape: r.onA), "Clients")
     },
 
-    test("choices carry each candidate's board, in order") {
+    test("choices carry each candidate's place, in order") {
         let r = try Boards()
         let found = r.state.candidates(matching: "ann", in: AnyMentionable.self, for: r.owner).matches
         let choices = r.state.choices(found)
         expectEqual(choices.map(\.candidate), found)
-        expectEqual(choices.map(\.board), found.map { r.state.boardName(ofShape: $0.id) })
-        expectEqual(Set(choices.compactMap(\.board)), ["Board", r.h.editor.registry.label(of: Pocket.kind).name])
+        expectEqual(choices.map { $0.place?.text }, found.map { r.state.place(ofShape: $0.id)?.text })
+        expectEqual(choices.map { $0.place?.text }, found.map { r.state.boardName(ofShape: $0.id) }, "a shape in no frame says its board")
+        expectEqual(Set(choices.compactMap { $0.place?.text }), ["Board", r.h.editor.registry.label(of: Pocket.kind).name])
     },
 
-    test("a line is the name, the matched letters, the kind's symbol and tint, and the board's name; two alike read Kind · Board; spoken with a position") {
+    test("a line is the name, the matched letters, the kind's symbol and tint, and the place; two alike read Kind · Place; spoken with its place and position") {
         let r = try Boards()
         let found = r.state.candidates(matching: "an", in: AnyMentionable.self, for: r.owner).matches
         let choices = r.state.choices(found)
@@ -76,19 +77,20 @@ import Titles
         expectEqual(items.map(\.symbol), choices.map(\.candidate.appearance.systemImage))
         for (n, item) in items.enumerated() {
             let appearance = choices[n].candidate.appearance
-            expectEqual(item.spoken, "\(appearance.label), \(appearance.kindName), \(n + 1) of \(items.count)")
+            let place = choices[n].place?.text
+            expectEqual(item.spoken, "\(appearance.label), \(appearance.kindName)\(place.map { ", in " + $0 } ?? ""), \(n + 1) of \(items.count)")
+            expectEqual(item.detailTruncatesHead, place != nil, "a place too long for its room is cut at its start, alike or not: the container a shape is in is last")
             if appearance.label == "Ann Lee" {
-                let board = choices[n].board
-                expectEqual(item.detail, (["Plate"] + (board.map { [$0] } ?? [])).joined(separator: " · "), "three called alike: the kind, then the board when it isn't the one shown")
+                expectEqual(item.detail, (["Plate"] + (place.map { [$0] } ?? [])).joined(separator: " · "), "three called alike: the kind, then the place when it isn't the board shown")
             } else {
-                expectEqual(item.detail, choices[n].board, "alone: the board, nil on the one shown")
+                expectEqual(item.detail, place, "alone: the place, nil on the one shown")
             }
         }
         expectEqual(items.filter { $0.title == "Ann Lee" }.count, 3)
         expectEqual(items.first { $0.title == "Anders" }?.detail, nil)
 
-        let alone = MentionChoice.items(choices.filter { $0.candidate.appearance.label == "Ann Lee" && $0.board == "Board" })
-        expectEqual(alone.map(\.detail), ["Board"], "one alone is its board's name")
-        expectEqual(alone.map(\.spoken), ["Ann Lee, Plate, 1 of 1"])
+        let alone = MentionChoice.items(choices.filter { $0.candidate.appearance.label == "Ann Lee" && $0.place?.text == "Board" })
+        expectEqual(alone.map(\.detail), ["Board"], "one alone is its place: the board's name")
+        expectEqual(alone.map(\.spoken), ["Ann Lee, Plate, in Board, 1 of 1"])
     },
 ])

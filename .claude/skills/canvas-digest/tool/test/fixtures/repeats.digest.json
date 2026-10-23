@@ -1,0 +1,31 @@
+{
+  "title": "Repeats",
+  "nodes": [
+    {"title": "app", "kind": "frame"},
+    {"title": "lib", "kind": "frame"},
+    {"id": "components", "title": "components", "kind": "frame"},
+    {"title": "admin", "kind": "frame"},
+    {"id": "admin/components", "title": "components", "kind": "frame", "in": "admin"},
+    {"id": "app/index.ts", "title": "index.ts", "in": "app", "text": "The app's entry point."},
+    {"id": "lib/index.ts", "title": "index.ts", "in": "lib", "text": "What the library exports."},
+    {"id": "components/index.ts", "title": "index.ts", "in": "components", "text": "The shared components."},
+    {"id": "admin/components/index.ts", "title": "index.ts", "in": "admin/components", "text": "The admin's components."},
+    {"title": "Config", "in": "lib", "text": "Settings read at start."},
+    {"id": "checkout", "title": "Checkout", "text": "The storefront's checkout."},
+    {"title": "Billing", "kind": "subboard", "text": "What bills an order: @[Invoice]."},
+    {"id": "billing/checkout", "title": "Checkout", "in": "Billing", "text": "Takes payment for an order."},
+    {"id": "billing/index.ts", "title": "index.ts", "in": "Billing", "text": "Billing's entry point."},
+    {"title": "Invoice", "in": "Billing", "text": "An order's bill."}
+  ],
+  "edges": [
+    {"from": "app/index.ts", "to": "lib/index.ts", "text": "imports"},
+    {"from": "app/index.ts", "to": "components/index.ts", "text": "imports"},
+    {"from": "app/index.ts", "to": "Config"},
+    {"from": "components/index.ts", "to": "admin/components/index.ts"},
+    {"from": "lib/index.ts", "to": "checkout"},
+    {"from": "checkout", "to": "billing/checkout", "text": "calls"},
+    {"from": "admin/components/index.ts", "to": "billing/checkout"},
+    {"from": "billing/index.ts", "to": "billing/checkout"},
+    {"from": "Invoice", "to": "billing/checkout"}
+  ]
+}

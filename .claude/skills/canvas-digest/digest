@@ -193,21 +193,26 @@ target_id() {
 }
 
 # The titles the file holds (every board's), as a JSON array in $OUT/titles.all.json; $OUT/titles.json is what a drawing has to keep
-# clear of: all of them, less the last drawing's when it is replaced. A file with more titles than one query lists is refused.
+# clear of: all of them, less the last drawing's when it is replaced (no name a script writes is able to mean a shape outside the drawing,
+# by those titles). A file with more titles than one query lists is refused.
 file_titles() {
   all_titles "$1"
-  if replacing "$1"; then tool_to "$OUT/titles.json" minus "$OUT/titles.all.json" "$OUT/drawn.json"
+  if replacing "$1"; then tool_to "$OUT/titles.json" minus "$OUT/places.all.json" "$OUT/drawn.json"
   else cp "$OUT/titles.all.json" "$OUT/titles.json"
   fi
 }
 
-# Every title the file of board $1 holds, as a JSON array in $OUT/titles.all.json; those on its root board, in $OUT/titles.root.json.
+# Every title the file of board $1 holds, as a JSON array in $OUT/titles.all.json; those on its root board, in $OUT/titles.root.json; and
+# where each shape is (its title, the containers it is in, its board), in $OUT/places.all.json, those on the root board in
+# $OUT/places.root.json: a title may be a shape's among several, a place is its own.
 all_titles() {
   canvas_to "$OUT/titles.raw.json" query --board "$1" --brief --limit 10000 - <<'EOF'
 [title]
 EOF
   tool_to "$OUT/titles.all.json" extract titles "$OUT/titles.raw.json"
   tool_to "$OUT/titles.root.json" extract root-titles "$OUT/titles.raw.json"
+  tool_to "$OUT/places.all.json" extract places "$OUT/titles.raw.json"
+  tool_to "$OUT/places.root.json" extract root-places "$OUT/titles.raw.json"
 }
 
 # One field (id, path, fileShapes or shows) of an open board, from `canvas boards`.
@@ -218,11 +223,11 @@ board_field() {
 
 # Whether this run replaces the last drawing: --replace, and drawn.json says it is in the file of board $1 (by its path; one drawn on
 # a board with no file yet by the board's id and the drawing's shapes, which needs the file's titles). Leaves the file's titles in
-# $OUT/titles.all.json.
+# $OUT/titles.all.json (and the places, $OUT/places.all.json).
 replacing() {
   [ "$REPLACE" = 1 ] && [ -s "$OUT/drawn.json" ] || return 1
   all_titles "$1"
-  [ "$(tool same-file "$OUT/drawn.json" "$(board_field "$1" path)" "$1" "$OUT/titles.all.json")" = yes ]
+  [ "$(tool same-file "$OUT/drawn.json" "$(board_field "$1" path)" "$1" "$OUT/places.all.json")" = yes ]
 }
 
 # What this drawing makes, kept in drawn.json for a later --replace; with $1, how many shapes the file holds (once it is drawn, or as
@@ -275,7 +280,7 @@ select_record() {
     _need=$(tool record-needs-titles "$_bpath" "$BOARD" "$@" --quiet true) || exit 1
     if [ -n "$_need" ]; then
       all_titles "$BOARD"
-      _pick=$(tool record-pick "$_bpath" "$BOARD" "$OUT/titles.all.json" --name "$_name" --quiet true "$@") || exit 1
+      _pick=$(tool record-pick "$_bpath" "$BOARD" "$OUT/places.all.json" --name "$_name" --quiet true "$@") || exit 1
     fi
   fi
   if [ -z "$_pick" ]; then return 0; fi
@@ -288,7 +293,7 @@ select_record() {
 # that deletes a subboard on a board inside the file is left to the app, which says to show a board above it.
 from_root() {
   [ -s "$OUT/replace.draw" ] && [ "$(board_field "$BOARD" shows)" != root ] || return 0
-  tool_to "$OUT/replace.root.draw" replace-script "$OUT/drawn.json" "$OUT/titles.root.json" "$OUT/titles.root.json"
+  tool_to "$OUT/replace.root.draw" replace-script "$OUT/drawn.json" "$OUT/places.root.json" "$OUT/places.root.json"
   if cmp -s "$OUT/replace.draw" "$OUT/replace.root.draw"; then
     canvas_to "$OUT/show.json" show --board "$BOARD" --root
     echo "$1: the window shows the board's root now (it showed a board of the drawing that is to be replaced)"
@@ -300,7 +305,7 @@ from_root() {
 root_ok() {
   if replacing "$1"; then
     all_titles "$1"
-    _foreign=$(tool foreign "$OUT/titles.all.json" "$OUT/drawn.json") || exit 1
+    _foreign=$(tool foreign "$OUT/places.all.json" "$OUT/drawn.json") || exit 1
     [ -z "$_foreign" ] || die "board $1 holds shapes this digest's last drawing didn't make ($(echo "$_foreign" | head -5 | tr '\n' ',' | sed 's/,$//')), and a digest drawn as the board goes only on an empty one. Draw into a subboard (--into TITLE) or a new file (--new-file PATH)"
     _beyond=$(tool beyond "$OUT/drawn.json" "$(board_field "$1" fileShapes)") || exit 1
     [ "$_beyond" = 0 ] || die "board $1 holds $_beyond shape(s) more than this digest's last drawing made (an arrow or a note added since, say), and a digest drawn as the board goes only on an empty one. Take them off, or draw into a subboard (--into TITLE) or a new file (--new-file PATH)"
@@ -367,6 +372,8 @@ step_plan() {
   if [ -n "$MARGIN" ]; then set -- "$@" --margin "$MARGIN"; fi
   if [ -n "$POPULAR" ]; then set -- "$@" --popular "$POPULAR"; fi
   if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
+  # the file's titles (do_check has just read them): no name a script writes may be able to mean a shape of the file beside the drawing
+  if [ -n "$BOARD" ] && [ -s "$OUT/titles.json" ]; then set -- "$@" --existing "$OUT/titles.json"; fi
   if [ -n "$RANKS" ]; then set -- "$@" --ranks "$RANKS"; fi
   _view=$(view_for) || exit 1
   if [ -n "$_view" ]; then set -- "$@" --view "$_view"; fi
@@ -427,13 +434,14 @@ step_draw() {
   if [ -n "$NEWFILE" ]; then
     [ ! -s "$OUT/target.id" ] || die "$OUT/target.id says this plan was drawn already; plan again for a new file"
   fi
-  # the titles of the file are file-wide: one the plan draws that is on a board already would make its arrows ambiguous
+  # the scripts name shapes so that nothing outside the drawing can be meant, on the file's titles as the plan was made: the subboard's title,
+  # and those a name relies on the file not having, are still not in the file (a title of a node otherwise may be)
   if [ -n "$BOARD" ]; then
     file_titles "$BOARD"
-    _clash=$(tool clashes "$OUT/plan.json" "$OUT/titles.json") || exit 1
+    _clash=$(tool clashes "$OUT/plan.json" "$OUT/titles.json" "$OUT/statements.json") || exit 1
     if [ -n "$_clash" ]; then
       echo "$_clash" >&2
-      die "nothing was drawn: the file has titles this plan draws. Plan again from a digest checked against the file (digest check GRAPH --board ID --into TITLE)"
+      die "nothing was drawn: the file has titles this plan cannot be drawn beside. Plan again from a digest checked against the file (digest check GRAPH --board ID --into TITLE)"
     fi
   fi
   _n=0; _drawn=; _replaced=0; _over=0
@@ -451,7 +459,7 @@ step_draw() {
   fi
   # --replace: the last drawing goes first, in one script (one undo step), dry-run first
   if [ -n "$BOARD" ] && replacing "$BOARD"; then
-    tool_to "$OUT/replace.draw" replace-script "$OUT/drawn.json" "$OUT/titles.all.json" "$OUT/titles.root.json"
+    tool_to "$OUT/replace.draw" replace-script "$OUT/drawn.json" "$OUT/places.all.json" "$OUT/places.root.json"
     from_root replace
     _was=$(board_field "$BOARD" fileShapes)   # what an undo of the take-back brings the file back to
     if [ -s "$OUT/replace.draw" ]; then
@@ -485,7 +493,7 @@ step_draw() {
       cat "$OUT/results/$_base.dry.json.err" >&2
       leave_note; exit 1
     fi
-    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.dry.json" --name "$_base (dry run)" --text true) || { leave_note; exit 1; }
+    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.dry.json" --name "$_base (dry run)" --text true --statements "$OUT/statements.json") || { leave_note; exit 1; }
     case $_res in
       ok*) ;;
       *) echo "$_res" >&2
@@ -502,7 +510,7 @@ step_draw() {
       leave_note; exit 1
     fi
     _n=$((_n + 1)); _drawn="$_drawn $_name"
-    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.json" --name "$_base" --text true) || { leave_note; exit 1; }
+    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.json" --name "$_base" --text true --statements "$OUT/statements.json") || { leave_note; exit 1; }
     case $_res in
       ok*) echo "[$_n/$_total] $_res" ;;
       *) echo "$_res" >&2
@@ -519,10 +527,10 @@ step_draw() {
 
 step_verify() {
   [ -s "$OUT/plan.json" ] || die "no plan at $OUT/plan.json: run plan first"
-  set -- replay "$OUT/plan.json" "$OUT/results"
+  set -- replay "$OUT/plan.json" "$OUT/results" --statements "$OUT/statements.json"
   if id=$(target_id); then
     all_titles "$id"
-    set -- "$@" --titles "$OUT/titles.all.json"
+    set -- "$@" --places "$OUT/places.all.json"
   fi
   _res=$(tool "$@") || exit 1
   echo "$_res"
@@ -549,7 +557,7 @@ step_ready() {
     if replacing "$BOARD"; then
       # the take-back as a dry run: a shape of the last drawing the app won't delete (a locked one, a title two shapes have) is said now,
       # from the root when the window shows a board of the drawing, as the draw will
-      tool_to "$OUT/replace.draw" replace-script "$OUT/drawn.json" "$OUT/titles.all.json" "$OUT/titles.root.json"
+      tool_to "$OUT/replace.draw" replace-script "$OUT/drawn.json" "$OUT/places.all.json" "$OUT/places.root.json"
       from_root ready
       if [ -s "$OUT/replace.draw" ] && ! canvas_try "$OUT/results/replace.ready.json" draw --board "$BOARD" --dry-run - < "$OUT/replace.draw"; then
         echo "digest: canvas would refuse to take back the last drawing, so nothing could be drawn in its place:" >&2

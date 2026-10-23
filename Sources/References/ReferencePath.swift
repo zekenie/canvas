@@ -1,9 +1,8 @@
 import Boards
 import Canvas
-import Topology
 
 // Where a reference's original is, as its row in the table of contents says it before its name:
-// "Alpha › Beta › Checkout".
+// "Alpha › Beta › Checkout", through Boards' `ShapePaths`.
 
 extension ReferenceState {
     /// The path a direct reference's row shows before the name of the shape it stands for: the shapes
@@ -20,23 +19,22 @@ extension ReferenceState {
         #if DEBUG
         pathsRead += 1
         #endif
-        guard let topology = editor.topology else { return [] }
-        // Each nearest first, so what they share is at their ends.
-        let above = topology.ancestors(of: target)
+        let above = paths.containers(of: target)
         // Inside nothing, it has no path until it's put somewhere, which changes it: a change the
         // row hears of already, as one to the shape it names.
         guard !above.isEmpty else {
             forgetPath(of: reference)
             return []
         }
-        let own = topology.ancestors(of: reference)
+        let own = paths.containers(of: reference)
         notePath(of: reference, readFrom: Set(above).union(own))
-        var shared = 0
-        while shared < above.count, shared < own.count, above[above.count - 1 - shared] == own[own.count - 1 - shared] { shared += 1 }
-        let registry = editor.registry
-        return above.dropLast(shared).reversed().compactMap { id in
-            editor.shape(inFile: id).map { registry.containerName(of: $0) }
-        }
+        return Self.pathBeyond(own, above).map { paths.node($0).name }
+    }
+
+    /// The containers of a shape (`above`, outermost first) that a viewer inside `own` is not inside too: what
+    /// they share from the root down is left out.
+    static func pathBeyond(_ own: [ShapeID], _ above: [ShapeID]) -> ArraySlice<ShapeID> {
+        above.dropFirst(zip(above, own).prefix { $0 == $1 }.count)
     }
 
     /// Keeps which shapes the row of `reference` read its path from, in place of those it read before.

@@ -106,7 +106,7 @@ public struct ValidationContext {
     }
 
     /// A service of the editor whose shapes are checked: for a rule over what a plugin keeps across
-    /// the file (`TitleValidationPlugin`'s titles), whose `affected` names the shapes each commit
+    /// the file (`PathValidationPlugin`'s paths), whose `affected` names the shapes each commit
     /// changes that for. Nil where shapes are checked without an editor (`validationIssues(of:in:)`
     /// given none: what `canvas draw` checks before it commits).
     public func service<S: EditorService>(_ type: S.Type) -> S? { editor?.service(type) }

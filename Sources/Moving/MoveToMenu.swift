@@ -1,3 +1,4 @@
+import Boards
 import Canvas
 import ContextMenus
 import CoreGraphics
@@ -14,7 +15,10 @@ extension MoveToMenuGroup: MenuGroup {
 /// menu): the places the selection can go, as the table of contents' drop would take it (`Drop`, so the
 /// same refusals and the same landing, in one step, Move). A plain `NSMenu`, which the keys already
 /// walk and type to select in. The frames and subboards of the board shown, nearest the selection first,
-/// then the boards that enclose it, innermost first; at most `MovingStyle.menuLimit`.
+/// then the boards that enclose it, innermost first; at most `MovingStyle.menuLimit`. A place is called
+/// as its row in the table of contents is, and by its path ("Alpha › Checkout": the containers it is
+/// inside, outermost first, as every path names them, Boards' `ShapePaths`) where another place in the
+/// menu is called alike.
 @MainActor
 func registerMoveToMenu(into scope: inout ScopedRegistrar) {
     scope.contextMenuForCanvas {
@@ -63,17 +67,32 @@ func movePlaces(for shapes: [ShapeID], in editor: CanvasEditor) -> [MovePlace] {
     }
     near.sort { $0.distance < $1.distance }
     var found: [MovePlace] = []
-    let title = { (record: AnyShapeRecord) in editor.tableOfContents?.name(of: record) ?? registry.label(of: record.kind).name }
+    var owners: [ShapeID?] = []
+    // A place with no title is called what a path calls it ("Untitled Subboard", "Frame"), as its row shows it.
+    let title = { (record: AnyShapeRecord) in editor.tableOfContents?.name(of: record) ?? registry.containerName(of: record).text }
     for candidate in near {
-        guard found.count < MovingStyle.menuLimit else { return found }
-        if Drop(shapes, to: candidate.place, in: editor) != nil { found.append(MovePlace(title: editor.document[candidate.id].map(title) ?? "", place: candidate.place)) }
-    }
-    for board in editor.boardPath.dropLast().reversed() {
         guard found.count < MovingStyle.menuLimit else { break }
+        if Drop(shapes, to: candidate.place, in: editor) != nil {
+            found.append(MovePlace(title: editor.document[candidate.id].map(title) ?? "", place: candidate.place))
+            owners.append(candidate.id)
+        }
+    }
+    for board in editor.boardPath.dropLast().reversed() where found.count < MovingStyle.menuLimit {
         let place = ContentsPlace(board: board, container: nil, position: .front)
         guard Drop(shapes, to: place, in: editor) != nil else { continue }
         let title = editor.owner(of: board).map(title) ?? (editor.rootName.isEmpty ? MovingStyle.rootBoard : editor.rootName)
         found.append(MovePlace(title: title, place: place))
+        owners.append(board.owner)
+    }
+    // Two places called alike are told apart by where they are: the containers each is inside, from the root, never
+    // trimmed to the board shown (a frame in a subboard and the board above it would be alike again).
+    var counts: [String: Int] = [:]
+    for place in found { counts[place.title.lowercased(), default: 0] += 1 }
+    var paths = ShapePaths(editor: editor)
+    for index in found.indices where counts[found[index].title.lowercased(), default: 0] > 1 {
+        guard let owner = owners[index] else { continue }
+        let names = paths.containers(of: owner).map { paths.node($0).name.text } + [found[index].title]
+        found[index] = MovePlace(title: names.joined(separator: ShapePath.separator), place: found[index].place)
     }
     return found
 }

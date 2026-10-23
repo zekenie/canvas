@@ -280,6 +280,7 @@ public final class CanvasEditor {
     @ObservationIgnored lazy var layoutSource = LayoutSource(
         inputs: layoutInputs, sizes: laidOutSizes, lend: { [unowned self] in resolveService($0) },
         shape: { [unowned self] in storedDocument[$0] ?? Self.shape($0, inFile: storedFile, registry: registry) },
+        board: { [unowned self] in storedFile.board(containing: $0) },
         fileValues: { [unowned self] in storedFile.fileValues })
     /// Moves whenever shapes were laid out again without a commit (`shapesDidChangeLayout`). What
     /// keeps something worked out from geometry keys it by this beside `revision`.

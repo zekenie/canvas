@@ -60,7 +60,8 @@ public struct DetailShapeRow: View {
                     Text(name).font(DetailStyle.body).lineLimit(1)
                     if let detail {
                         Spacer(minLength: 0)
-                        Text(detail).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1)
+                        // A path is told by the container its shape is in, which is last: cut at the start.
+                        Text(detail).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
                     }
                 }
                 ForEach(lines.indices, id: \.self) { i in

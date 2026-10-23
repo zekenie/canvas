@@ -5,6 +5,7 @@ import CanvasUI
 import Connections
 import CoreGraphics
 import Foundation
+import Frames
 import Mentions
 import StickyNotes
 import TestKit
@@ -144,16 +145,22 @@ edge "Ann" -> "Acme" is: "Employment"
     test("the count after twenty says a command that lists the shapes it counted, a warning among them") {
         let w = try World()
         defer { w.stop() }
-        _ = try w.run([#"subboard "Area""#])
+        // Two subboards, whose notes take one another's paths once the second is called Area too: B01 to B22 on Area's
+        // board, C01 to C22 on the other's. `canvas draw` can't put shapes in a subboard whose title another has, so the
+        // second is renamed Area through the editor once its notes are drawn.
+        _ = try w.run([#"subboard "Area"\#nsubboard "Zone" right of "Area""#])
         var far: [String] = [], near: [String] = [], renames: [String] = []
         for index in 1...22 {
             let n = String(format: "%02d", index)
             far.append(#"sticky-note "B\#(n)" in "Area" \#(index == 1 ? "" : "below \"B\(String(format: "%02d", index - 1))\"") text: "b""#)
-            near.append(#"sticky-note "C\#(n)" \#(index == 1 ? "below \"Area\"" : "below \"C\(String(format: "%02d", index - 1))\"") text: "c""#)
+            near.append(#"sticky-note "C\#(n)" in "Zone" \#(index == 1 ? "" : "below \"C\(String(format: "%02d", index - 1))\"") text: "c""#)
             renames.append(#"sticky-note "C\#(n)" title: "B\#(n)""#)
         }
         _ = try w.run([far.joined(separator: "\n")])
         _ = try w.run([near.joined(separator: "\n")])
+        let editor = w.board.editor
+        let zone = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Zone" }).id
+        editor.transact("Rename") { $0.update(zone) { $0[TitleProperty.self] = "Area" } }
         let result = try w.run([renames.joined(separator: "\n")])
         let warnings = result["warnings"]?.arrayValue ?? []
         let brought = warnings.filter { $0["message"]?.stringValue?.hasPrefix("\"B") == true }
@@ -188,14 +195,23 @@ edge "Ann" -> "Acme" is: "Employment"
         let listed = Set((asked["rows"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue })
         expect(listed.contains("P21") && listed.contains("P22") && listed.count == 22, "`canvas query \"\(command)\"` lists \(listed.count) shapes: \(listed.sorted())")
     },
-    test("a far note renamed to a near note's title warns of both") {
+    test("a far note renamed to a near note's path warns of both") {
         let w = try World()
         defer { w.stop() }
-        _ = try w.run([#"""
-        sticky-note "Cart" text: "The cart"
-        subboard "Area" right of "Cart"
-        """#])
+        _ = try w.run([#"subboard "Area""#])
         _ = try w.run([#"sticky-note "Billing" in "Area" text: "The bills""#])
+        // Near: Cart in a frame called Area on the board shown, Area › Cart, put there through the editor (`canvas draw`
+        // refuses a title two shapes have, the subboard's and the frame's).
+        let editor = w.board.editor
+        var frame = ShapeRecord(Frame(frame: CGRect(x: 600, y: 0, width: 400, height: 400)))
+        frame[TitleProperty.self] = "Area"
+        var cart = ShapeRecord(StickyNote(frame: CGRect(x: 640, y: 40, width: 200, height: 200), text: "The cart"))
+        cart[TitleProperty.self] = "Cart"
+        let held = AnyShapeRecord(cart).copy(as: cart.id, container: frame.id)
+        editor.transact("Add") { transaction in
+            transaction.insert(frame)
+            transaction.insert(held)
+        }
         let said = try w.ran(#"sticky-note "Billing" title: "Cart""#)
         expectEqual(said.filter { $0["attribute"] == "title" }.count, 2)
     },
@@ -216,6 +232,20 @@ edge "Ann" -> "Acme" is: "Employment"
         _ = try w.run([#"sticky-note "Bea" in "Area" is: "Person" fieldValues: {"level": "senior"}"#])
         let said = try w.ran(#"sticky-note "Person" schema: "{\"type\": \"object\", \"properties\": {\"level\": {\"type\": \"string\", \"enum\": [\"junior\", \"staff\"]}}}" text: "A person: their level, junior or staff""#)
         expectEqual(said.filter { $0["message"]?.stringValue?.hasPrefix("\"Bea\"") == true }.count, 1, "Bea is on Area's board, and the run did not write her")
+    },
+    test("a type restated breaks two instances of one title on two boards: each is named by its path") {
+        let w = try World()
+        defer { w.stop() }
+        _ = try w.run([model])
+        _ = try w.run([#"subboard "Area" right of "Company""#])
+        _ = try w.run([#"subboard "Annex" below "Area""#])
+        _ = try w.run([#"sticky-note "Area" > "Bea" is: "Person" fieldValues: {"level": "senior"}"#])
+        _ = try w.run([#"sticky-note "Annex" > "Bea" is: "Person" fieldValues: {"level": "senior"}"#])
+        let said = try w.ran(#"sticky-note "Person" schema: "{\"type\": \"object\", \"properties\": {\"level\": {\"type\": \"string\", \"enum\": [\"junior\", \"staff\"]}}}" text: "A person: their level, junior or staff""#)
+        let named = said.compactMap { $0["message"]?.stringValue }.filter { $0.contains("Bea") }
+        expectEqual(named.count, 2, "\(named)")
+        expect(named.contains { $0.hasPrefix(#""Annex" > "Bea": "#) } && named.contains { $0.hasPrefix(#""Area" > "Bea": "#) },
+               "neither board is the run's and the file has two Beas: each is said by the path a later script names it by: \(named)")
     },
     test("a dry run that would break a shape leaves the board, the issues it keeps and the next real run as they were") {
         let w = try World()

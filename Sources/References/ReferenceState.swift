@@ -34,10 +34,12 @@ public final class ReferenceState {
     /// out for (`drawnCondition(of:target:_:)`): a frame of a thousand pills looks up none of their
     /// shapes again. A commit lets go of those it changed and those that name a shape it changed
     /// (Topology's `standIns(naming:)`, as the rows' `affected`), a file put in place of all.
-    /// With the name of the board its shape is on when that isn't the pill's board (`drawnBoard(of:)`),
-    /// and the owners of the boards named (a change to one lets go of the names kept).
-    private var drawnConditions: [ShapeID: (target: ReferenceTarget, condition: ReferenceCondition, board: String?)] = [:]
-    private var drawnBoardOwners: Set<ShapeID> = []
+    /// With where its shape is when that isn't where the pill is (`drawnPlace(of:)`), and the shapes that was read
+    /// from (the containers the shape is inside: a change to one lets go of the places kept).
+    private var drawnConditions: [ShapeID: (target: ReferenceTarget, condition: ReferenceCondition, place: String?)] = [:]
+    private var drawnPlaceSources: Set<ShapeID> = []
+    /// The containment tree's names, for the places and the rows' paths (Boards' `ShapePaths`).
+    var paths: ShapePaths
     /// What each pill drawn shows of a channel mismatch (`drawnMismatch(of:)`), kept until a change to
     /// the edges touches its reference: what bumps the revision `mismatches` is kept by, heard
     /// without reading one (each read makes an observation's key path, a cost a frame of a thousand
@@ -106,6 +108,7 @@ public final class ReferenceState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        paths = ShapePaths(editor: editor)
         settling = editor.topology?.keepsSettling { [weak self] in self?.isFinding ?? false }
         following = editor.topology?.follow { [weak self] change in self?.edgesChanged(change) }
         rebuildDynamic()
@@ -158,19 +161,33 @@ public final class ReferenceState {
     func drawnCondition(of id: ShapeID, target: ReferenceTarget, _ compute: () -> ReferenceCondition) -> ReferenceCondition {
         if let kept = drawnConditions[id], kept.target == target { return kept.condition }
         let condition = compute()
-        var board: String?
-        if condition.appearance != nil, let there = editor.file.board(containing: target.id), there != editor.file.board(containing: id) {
-            board = editor.name(of: there, root: ReferenceStyle.rootBoardName)
-            if let owner = there.owner { drawnBoardOwners.insert(owner) }
-        }
-        drawnConditions[id] = (target, condition, board)
+        var place: String?
+        if condition.appearance != nil { place = placeOfTarget(from: id, target.id) }
+        drawnConditions[id] = (target, condition, place)
         return condition
     }
 
-    /// The name of the board the shape a direct pill stands for is on, when it isn't the pill's board
-    /// (the pill says it, after the shape's name); nil for a pill on the same board as its shape, or one
-    /// whose shape isn't there. As `drawnCondition` kept it: a board's rename lets go of it.
-    public func drawnBoard(of id: ShapeID) -> String? { drawnConditions[id]?.board }
+    /// Where the shape a pill stands for is, from where the pill is: the containers it is inside less those the
+    /// pill is inside too (`rowPath`'s), joined as a path says them; for a shape in none, on another board, that board's
+    /// name; nil for a shape in the pill's own place. Notes the shapes it was read from (`drawnPlaceSources`).
+    private func placeOfTarget(from pill: ShapeID, _ target: ShapeID) -> String? {
+        let above = paths.containers(of: target), own = paths.containers(of: pill)
+        let names = Self.pathBeyond(own, above).map { paths.node($0).name.text }
+        if !names.isEmpty {
+            drawnPlaceSources.formUnion(above)
+            drawnPlaceSources.formUnion(own)
+            return names.joined(separator: ShapePath.separator)
+        }
+        guard let there = editor.file.board(containing: target), there != editor.file.board(containing: pill) else { return nil }
+        if let owner = there.owner { drawnPlaceSources.insert(owner) }
+        return editor.name(of: there, root: ReferenceStyle.rootBoardName)
+    }
+
+    /// Where the shape a direct pill stands for is, when it isn't where the pill is (the pill says it, after the
+    /// shape's name, "Alpha › Beta"; the name of its board for a shape in no container); nil for a pill in the same
+    /// place as its shape, or one whose shape isn't there. As `drawnCondition` kept it: a rename of a container, or
+    /// of the board, lets go of it.
+    public func drawnPlace(of id: ShapeID) -> String? { drawnConditions[id]?.place }
 
     /// `mismatchedChannel(of:)`, for a render: kept until a change to the edges touches the reference.
     func drawnMismatch(of id: ShapeID) -> ChannelID? {
@@ -196,12 +213,13 @@ public final class ReferenceState {
         if !drawnConditions.isEmpty {
             for id in touched.keys { drawnConditions.removeValue(forKey: id) }
             for id in references(namingWhatChanged: changes) { drawnConditions.removeValue(forKey: id) }
-            // A board's name changes with its owner: the names kept are worked out again.
-            if !drawnBoardOwners.isEmpty, changes.changed.contains(where: { drawnBoardOwners.contains($0) })
-                || changes.removed.contains(where: { drawnBoardOwners.contains($0) })
-                || changes.elsewhere.contains(where: { drawnBoardOwners.contains($0) }) {
-                for (id, kept) in drawnConditions where kept.board != nil { drawnConditions.removeValue(forKey: id) }
-                drawnBoardOwners = []
+            // A place changes with the containers it was read from (renamed, put elsewhere, deleted, a board's
+            // owner): the places kept are worked out again.
+            if !drawnPlaceSources.isEmpty, changes.changed.contains(where: { drawnPlaceSources.contains($0) })
+                || changes.removed.contains(where: { drawnPlaceSources.contains($0) })
+                || changes.elsewhere.contains(where: { drawnPlaceSources.contains($0) }) {
+                for (id, kept) in drawnConditions where kept.place != nil { drawnConditions.removeValue(forKey: id) }
+                drawnPlaceSources = []
             }
         }
         if !drawnMismatches.isEmpty {
@@ -268,7 +286,8 @@ public final class ReferenceState {
     /// rows the list kept, but for the references that went.
     private func filePutInPlace() {
         drawnConditions = [:]
-        drawnBoardOwners = []
+        drawnPlaceSources = []
+        paths.forgetAll()
         drawnMismatches = [:]
         let topology = editor.topology
         for id in Array(pathSources.of.keys) where !(topology.map { Self.isReference(id, in: $0) } ?? false) { forgetPath(of: id) }
@@ -463,7 +482,7 @@ public final class ReferenceState {
         case .empty:
             return ReferenceHeaderContent(symbol: ReferenceStyle.systemImage, title: ReferenceStyle.placeholder, subtitle: nil)
         case .live(let appearance):
-            return ReferenceHeaderContent(symbol: appearance.systemImage, title: appearance.label, subtitle: kindAndBoard(appearance, of: props.target))
+            return ReferenceHeaderContent(symbol: appearance.systemImage, title: appearance.label, subtitle: kindAndPlace(appearance, of: props.target))
         case .missing(let label):
             return ReferenceHeaderContent(symbol: ReferenceStyle.missingSymbol, title: label, subtitle: ReferenceStyle.deletedHelp)
         case .unavailable(let label):
@@ -481,10 +500,18 @@ public final class ReferenceState {
         }
     }
 
-    /// "Note · Payments": the kind, then the board's name when the shape isn't on the board shown.
-    private func kindAndBoard(_ appearance: MentionAppearance, of target: ReferenceTarget?) -> String {
-        guard let target, let board = editor.file.board(containing: target.id), board != editor.board else { return appearance.kindName }
-        return appearance.kindName + " · " + editor.name(of: board, root: ReferenceStyle.rootBoardName)
+    /// "Note · Payments › Invoices": the kind, then where the shape is when that isn't the board shown, directly:
+    /// the containers it is inside (`MentionState.place(ofShape:)`), else its board's name.
+    private func kindAndPlace(_ appearance: MentionAppearance, of target: ReferenceTarget?) -> String {
+        guard let target, let place = place(ofShape: target.id) else { return appearance.kindName }
+        return appearance.kindName + " · " + place
+    }
+
+    /// Where a shape is from the board shown, as lists of shapes say it (nil: directly on the board shown).
+    func place(ofShape id: ShapeID) -> String? {
+        if let place = editor.mentions?.place(ofShape: id) { return place.text }
+        guard let board = editor.file.board(containing: id), board != editor.board else { return nil }
+        return editor.name(of: board, root: ReferenceStyle.rootBoardName)
     }
 }
 
@@ -532,6 +559,7 @@ extension ReferenceState: EditorService {
         // A drag's every event: one test.
         if changes.changed.count == changes.moved.count, changes.added.isEmpty, changes.removed.isEmpty, changes.elsewhere.isEmpty,
            !changes.reordered, changes.boardsAdded.isEmpty, changes.boardsRemoved.isEmpty, !changes.replacedDocument { return }
+        paths.forget(changes)
         hearInterpretations(changes)
         if !mismatches.isEmpty {
             for id in changes.removed { mismatches[id] = nil }

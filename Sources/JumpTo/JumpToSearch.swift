@@ -123,57 +123,21 @@ extension JumpToState {
     }
 
     /// The row after the chain from the root to `container` (nil: the root), each container's made
-    /// from its parent's through its own name, and kept for the query.
+    /// from its parent's through its own name, and kept for the query (Boards' `ShapePaths`).
     private func row(after container: ShapeID?, _ matcher: PathMatcher, root: PathMatcher.Row,
                      memo: inout [ShapeID: PathMatcher.Row]) -> PathMatcher.Row {
-        guard let container else { return root }
-        if let known = memo[container] { return known }
-        // Up to a container whose row is known, or the root; a loop of containers (a file nothing
-        // in the app makes) ends the walk too.
-        var chain: [ShapeID] = [], current: ShapeID? = container, row = root
-        while let id = current, chain.count < JumpToStyle.deepest {
-            if let known = memo[id] {
-                row = known
-                break
-            }
-            chain.append(id)
-            current = node(id).parent
-        }
-        for id in chain.reversed() {
-            row = matcher.advance(row, through: node(id).label)
-            memo[id] = row
-        }
-        return row
+        paths.row(after: container, matcher, root: root, memo: &memo)
     }
 
     // MARK: Containers
 
-    /// A container's name and place, read once and kept until a commit changes it.
-    func node(_ id: ShapeID) -> Node {
-        if let known = nodes[id] { return known }
-        var node = Node(parent: nil, title: nil, label: nil, placeholder: "")
-        if let record = editor.shape(inFile: id) {
-            node.parent = editor.topology?.parent(of: id)
-            // Called as every path calls a container (Boards' rule).
-            let name = registry.containerName(of: record)
-            if let title = name.title {
-                node.title = title
-                node.label = FuzzyMatcher.Label(title)
-            }
-            node.placeholder = name.placeholder
-        }
-        nodes[id] = node
-        return node
-    }
-
     /// The containers a shape is inside, outermost first, as the table of contents' outline and the
-    /// path over the canvas have them (Topology's ancestors, the root never one); none for a shape
-    /// on the root, in no container.
+    /// path over the canvas have them (Topology's ancestors, the root never one), each by its node
+    /// (`ShapePaths`); none for a shape on the root, in no container.
     private func path(of id: ShapeID) -> [Segment] {
-        guard let topology = editor.topology else { return [] }
-        return topology.ancestors(of: id).reversed().map { ancestor in
-            let node = node(ancestor)
-            return Segment(id: ancestor, title: node.title, placeholder: node.placeholder)
+        paths.containers(of: id).map { ancestor in
+            let name = paths.node(ancestor).name
+            return Segment(id: ancestor, title: name.title, placeholder: name.placeholder)
         }
     }
 

@@ -53,8 +53,8 @@ public final class JumpToState {
     @ObservationIgnored var phase = Phase.unbuilt
     @ObservationIgnored private var buildTask: ScheduledTask?
     /// What each container on a path is called and directly in, found once and kept until a commit
-    /// changes that shape.
-    @ObservationIgnored var nodes: [ShapeID: Node] = [:]
+    /// changes that shape (Boards' `ShapePaths`, the one rule every path is made by).
+    @ObservationIgnored var paths: ShapePaths
     /// Called as the palette closes, so its window goes at once, not when its view does.
     @ObservationIgnored var onClose: (@MainActor () -> Void)?
 
@@ -89,17 +89,9 @@ public final class JumpToState {
         var touched: Set<ShapeID> = []
     }
 
-    /// A container's name and place, as paths and ranking need them.
-    struct Node {
-        var parent: ShapeID?
-        var title: String?
-        var label: FuzzyMatcher.Label?
-        /// What its kind is called, for a container with no title.
-        var placeholder: String
-    }
-
     init(editor: CanvasEditor) {
         self.editor = editor
+        paths = ShapePaths(editor: editor)
     }
 
     /// Whether the catalog is read: before, a query lists what's been read so far.
@@ -185,7 +177,7 @@ public final class JumpToState {
         buildTask?.cancel()
         buildTask = nil
         catalog = JumpToCatalog()
-        nodes = [:]
+        paths.forgetAll()
         phase = .building(Build(boards: editor.withoutObservingDocument { editor.showableBoards }))
         buildSlices = 0
         longestBuildSlice = .zero
@@ -260,12 +252,11 @@ public final class JumpToState {
 
     // MARK: Following the file
 
-    /// Reads again the shapes a commit changed, wherever they are, and takes those it removed out.
+    /// Reads again the shapes a commit changed, wherever they are, and takes those it removed out; the
+    /// containers it changed are read again when a path next goes through them.
     private func apply(_ changes: ChangeSet) {
-        for id in changes.removed {
-            catalog.remove(id)
-            nodes[id] = nil
-        }
+        paths.forget(changes)
+        for id in changes.removed { catalog.remove(id) }
         for id in changes.added where !changes.moved.contains(id) { refresh(id) }
         for id in changes.changed where !changes.moved.contains(id) { refresh(id) }
         guard !changes.elsewhere.isEmpty else { return }
@@ -280,17 +271,11 @@ public final class JumpToState {
         } else {
             for id in changes.elsewhere { refresh(id) }
         }
-        if nodes.count < changes.elsewhere.count {
-            nodes = nodes.filter { !changes.elsewhere.contains($0.key) }
-        } else {
-            for id in changes.elsewhere { nodes[id] = nil }
-        }
     }
 
     /// A shape read again, from wherever it is in the file; gone from the catalog if it's gone from
     /// the file, kept aside or untitled.
     private func refresh(_ id: ShapeID) {
-        nodes[id] = nil
         #if DEBUG
         entriesRead += 1
         #endif
@@ -320,7 +305,7 @@ public final class JumpToState {
         buildTask?.cancel()
         buildTask = nil
         catalog = JumpToCatalog()
-        nodes = [:]
+        paths.forgetAll()
         phase = .unbuilt
         if isOpen {
             startBuild()

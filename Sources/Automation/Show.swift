@@ -10,7 +10,7 @@ import DrawScript
 struct ShowParams: SchemaDefined {
     static let properties = Properties<ShowParams>(title: "show") {
         Property("shape", \.shape).keywords(["x-value-name": "name"])
-            .description("The shape whose board to show (a subboard), by its title.")
+            .description("The shape whose board to show (a subboard): its title, or a name as a script writes it: a path, \"Plans\" > \"Sprint\", or an id, #<id>.")
         Property("root", \.root).description("Show the board at the top of the file.")
     }
     var shape: String?
@@ -43,22 +43,41 @@ func show(_ params: ShowParams, in context: AutomationContext) throws(Automation
             throw AutomationError("nothing here gives shapes names, so none can be found by its title", reason: ScriptError.Reason.noNames.rawValue,
                                   hint: "\(canvas) show --root shows the top board")
         }
-        guard let title = naming.fold(written) else {
-            throw AutomationError("a title can't be blank", reason: "invalid_params", invalidParams: true)
+        // A name as a script writes it (a quoted title, an id, a path), else a bare title.
+        let names = FileNames(editor, naming: naming)
+        var name = ShapeName.title(written), said = ""
+        if ShapeName.isScriptSpelling(written) {
+            do throws(ScriptError) {
+                name = try ShapeName(parsing: written)
+            } catch {
+                throw AutomationError(error.message, reason: error.reason == .syntax ? "invalid_params" : error.reason.rawValue, hint: error.hint,
+                                      invalidParams: error.reason == .syntax)
+            }
+        }
+        switch name {
+        case .title(let text):
+            guard let title = naming.fold(text) else {
+                throw AutomationError("a title can't be blank", reason: "invalid_params", invalidParams: true)
+            }
+            said = quoted(title)
+        case .id:
+            said = name.written
+        case .path(let path):
+            said = names.folded(path)?.written ?? path.written
         }
         // Only what holds a board: a frame holds what's in it on the board it's on, so it holds none.
-        switch FileNames(editor, naming: naming).container(called: title, boards: true) {
-        case .board(let board), .shape(_, on: let board):          // (never a frame, with boards alone)
+        switch names.container(named: name, boards: true, board: editor.board) {
+        case .board(let board)?, .shape(_, on: let board)?:          // (never a frame, with boards alone)
             target = board
-        case .none:
-            throw AutomationError("there's no shape called \(quoted(title))", reason: ScriptError.Reason.unknownTitle.rawValue,
+        case nil, .none?:
+            throw AutomationError("there's no shape \(name.id == nil ? "called" : "with the id") \(name.id == nil ? said : name.written)", reason: name.id == nil ? ScriptError.Reason.unknownTitle.rawValue : ScriptError.Reason.unknownID.rawValue,
                                   hint: "\(canvas) query 'subboard' lists the subboards, every board's")
-        case .holdsNone(let record):
-            throw AutomationError("\(quoted(title)) is \(indefinite(record.kind)), which holds no board", reason: ScriptError.Reason.cannotContain.rawValue,
+        case .holdsNone(let record)?:
+            throw AutomationError("\(said) is \(indefinite(record.kind)), which holds no board", reason: ScriptError.Reason.cannotContain.rawValue,
                                   hint: "name a subboard; \(canvas) query 'subboard' lists them")
-        case .ambiguous(let boards):
-            throw AutomationError("\(boards.count) shapes that hold boards are called \(quoted(title))", reason: ScriptError.Reason.ambiguousTitle.rawValue,
-                                  hint: "titles name shapes, so each needs its own: ask the user to rename one")
+        case .ambiguous(let boards, let listing, let hint)?:
+            throw AutomationError("\(boards.count) shapes that hold boards are called \(said): \(listing)", reason: ScriptError.Reason.ambiguousTitle.rawValue,
+                                  hint: hint)
         }
     default:
         throw AutomationError("\(canvas) show takes a title, or --root", reason: "invalid_params",

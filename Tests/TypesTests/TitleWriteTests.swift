@@ -7,10 +7,9 @@ import Mentions
 import TestKit
 import Titles
 import Types
-import Validation
 
 // A note's title written from the field that titles it: by the writer (a row, the card, the panel), once by
-// `/is-a`, never by anything else; and what the titles' own rules say of a copy.
+// `/is-a`, never by anything else.
 
 private let person = FieldFixtures.namedPersonID, employee = FieldFixtures.namedEmployeeID
 private let name = FieldPath(field: "name"), email = FieldPath(field: "email")
@@ -252,28 +251,5 @@ private struct BarePlugin: CanvasPlugin {
         editor.transact { $0.update(other) { $0[TitleProperty.self] = nil } }
         editor.addTypeLink(person, to: other)
         expectEqual(editor.title(other), nil, "a type's own note")
-    },
-])
-
-@MainActor let titleDuplicateTests = Suite("A title copied from a field is a title", [
-    test("two Persons given one name both warn, a duplicate does, and renaming one clears both") {
-        let editor = try namedEditor(more: [TitleValidationPlugin()])
-        let ann = editor.addNote(of: [person]), other = editor.addNote(of: [person])
-        try type("Ann Lee", into: ann, of: editor)
-        expectEqual(editor.issues(ann), [])
-        try type("Ann Lee", into: other, of: editor)
-        let words = "“Ann Lee” is another shape’s title too."
-        expectEqual(editor.issues(ann).map(\.message), [words])
-        expectEqual(editor.issues(other).map(\.message), [words])
-        expectEqual(editor.issues(ann).map(\.field), ["title"])
-        // A copy carries its title and its value (what a paste or a duplicate makes), and warns as any title does.
-        let copy = editor.addInstance("", of: [person], title: "Ann Lee", at: CGPoint(x: 800, y: 400))
-        editor.setFieldValues(["name": "Ann Lee"], of: copy)
-        expectEqual(editor.issues(copy).map(\.message), [words])
-        try type("Ann Lees", into: other, of: editor)
-        expectEqual(editor.issues(other), [])
-        expectEqual(editor.issues(ann).map(\.message), [words], "the copy still shares it")
-        editor.transact { $0.delete([copy]) }
-        expectEqual(editor.issues(ann), [])
     },
 ])

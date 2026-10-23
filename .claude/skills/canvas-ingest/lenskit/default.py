@@ -23,7 +23,13 @@ The overrides are the arguments, each the value a repository's spec.py once gave
     layer_names      how a layer tag reads                                      {tag: name}
 
 Whatever they leave out, or name that the code lacks, is worked out (derive.py) and said in the digest's `warnings`; none stops
-the run. A board of over NOTES_MOST file notes draws a folder's files as one note, the deepest folders first (see `collapse`)."""
+the run. A board of over NOTES_MOST file notes draws a folder's files as one note, the deepest folders first (see `collapse`).
+
+A title is given out once in the container that holds the shape, as a folder's files are told apart by the folder they are in: a
+file's note is its file name, and so is another's in another frame or on another board, which the digest tells apart by an `id` it
+gives each (the title, then the containers: `index.ts  in Web layer > web > src`; lenskit.builder's `finish`). A module's card and a
+folder's keep their names, the digest's alone, since a card's description mentions cards (`@[Title]` names a shape by its title
+alone); a band, a frame, a file's note give way to them."""
 import collections, os
 
 from . import derive
@@ -40,6 +46,13 @@ LISTED_MOST = 300       # files a collapsed folder's note lists
 def digest(scan, repo=None, **overrides):
     """The digest of the scan (a lenskit Scan). `repo` (a Repo, or a folder's path) is only where the title comes from when
     the scan has no name for the code."""
+    return build(scan, repo, **overrides).finish()
+
+
+def build(scan, repo=None, **overrides):
+    """The same digest before it is finished: the `lenskit.Digest` that `digest` calls `finish()` on. A lens that changes the
+    digest (moves a card into a frame of its own) does it here, on the nodes (which name each other by node until `finish()`), and
+    finishes it itself, so the `id` that `finish()` gives a node whose title another has says where the node ended up."""
     unknown = sorted(set(overrides) - set(ARGUMENTS))
     if unknown:
         raise TypeError(f"default.digest() has no argument {', '.join(unknown)}: its arguments are {', '.join(ARGUMENTS)}")
@@ -48,9 +61,10 @@ def digest(scan, repo=None, **overrides):
 
 
 def file_titles(files):
-    """Each file's title: its name, else its module's and its name, else the shortest end of its path (from its
-    module's name) that's its own: the first of these no other file could take. A file's whole path is its own,
-    so it's never another's."""
+    """Each file's title among `files`, the files one container (a frame, or a board's card) holds: its name, else its
+    module's and its name, else the shortest end of its path (from its module's name) that's its own there: the first of
+    these no other of the files could take. A file's whole path is its own, so it's never another's. A file in another
+    container may have the same name; the digest tells them apart by their containers."""
     full = {k: f"{k[0]}/{k[1]}" for k in files}
     taken = set(full.values())
     def candidates(k):
@@ -92,7 +106,6 @@ class _Build:
         self.d = Digest('')
         self.spec = derive.complete(overrides, scan, repo_name, self.d.warn)
         self.FILES, self.MODS, self.PROD, self.USES = scan.files, scan.modules, scan.production, scan.uses
-        self.ftitles = file_titles(self.FILES)
         # A module's board holds its files, or, for a module in FOLDER_BOARDS, a card for each of those folders (each
         # a board of its own, titled "<module>/<folder>") and the files outside them.
         self.BOARDS = {}             # a board's title: (its module, its folder or None)
@@ -204,54 +217,50 @@ class _Build:
             if notes > NOTES_MOST:
                 d.warn(f"{notes:,} file notes are left, since no folder with two files is left to collapse")
 
-        # the titles, the ones that matter most first: a module's card keeps its name, then a folder's card, a band, a file
-        # (file_titles: its name, else as much of its path as tells it apart; a collapsed folder's note is titled for the
-        # folder), and last a frame, which takes its board's name after it when another shape has its own
-        card = {m: d.claim(f"the module {m}", m) for m in PROD}
+        # the titles that are the digest's alone, since a card's description mentions cards and `@[Title]` names a shape by its title
+        # alone: a module's card keeps its name, then a folder's card, and a band gives way to either (a frame or a file, below, to
+        # any card)
+        card_title = {m: d.claim(f"the module {m}", m, alone=True) for m in PROD}
         for board, (m, folder) in BOARDS.items():
             if folder:
-                card[board] = d.claim(f"the folder {board}", board)
+                card_title[board] = d.claim(f"the folder {board}", board, alone=True)
         bands = [(d.claim(f"the band {band}", band, f"{band} (layer)"), mods) for band, mods in spec.BANDS]
-        file_title = {}
-        for k in sorted(FILES):
-            if k in rep and rep[k] != k:
-                continue
-            if k in rep:
-                m, folder = k[0], k[1].rpartition('/')[0]
-                wanted = f"{m}/{folder}/" if folder else f"{m}/"
-                file_title[k] = d.claim(f"the folder {wanted}", wanted, f"{wanted} (files)")
-            else:
-                file_title[k] = d.claim(f"{k[0]}/{k[1]}", self.ftitles[k], f"{k[0]}/{k[1]}")
 
         def source(path):
             return {'source': whole(path)} if path else {}     # as a title is: half a character in a path reads as U+FFFD
 
-        # the root: the bands, a module's card in its band, and each card's description, which says what the module is
+        # the nodes, in the order the digest lists them: the root's bands, each with the cards of its modules (a card's description
+        # says what the module is), the folders' cards, then the frames and the notes, which take their titles below
+        card = {}
         for rank, (band, mods) in enumerate(bands):
-            d.frame(band, rank=rank)
+            frame = d.frame(band, rank=rank)
             for m in mods:
-                d.subboard(card[m], band, self.about_text(m, card.get), **source(MODS[m].get('path')))
+                card[m] = d.subboard(card_title[m], frame, self.about_text(m, card_title.get), **source(MODS[m].get('path')))
         for board, (m, folder) in BOARDS.items():
             if folder:
                 where = MODS[m].get('path')
-                d.subboard(card[board], card[m], self.about_text(board, card.get), **source(f"{where}/{folder}" if where else None))
+                card[board] = d.subboard(card_title[board], card[m], self.about_text(board, card_title.get),
+                                         **source(f"{where}/{folder}" if where else None))
 
-        frame_of = {}
+        frame_of = {}                                          # a file's frame
+        frames_in = collections.defaultdict(list)              # a container's frames, in order: (the frame, what it is, its title, then its other)
+        said = []                                              # what is said of a frame once it has its title
 
         def add_group(group, board, parent):
             title, names, subs = group
-            t = d.claim(f"the frame {title} on {board}", title, f"{title} ({card[board]})")
-            d.frame(t, parent)
+            frame = d.frame(title, parent)
+            frames_in[id(parent)].append((frame, f"the frame {title} on {board}", title, f"{title} ({card_title[board]})"))
             for name in names:
                 k = self.key_in(board, name)
                 if k is None:
                     continue
                 if k in frame_of:
-                    d.warn(f"groups put {name} on {board} in two frames: it stays in \"{frame_of[k]}\"")
+                    said.append(lambda name=name, board=board, first=frame_of[k]:
+                                d.warn(f"groups put {name} on {board} in two frames: it stays in \"{first['title']}\""))
                     continue
-                frame_of[k] = t
+                frame_of[k] = frame
             for sub in subs:
-                add_group(sub, board, t)
+                add_group(sub, board, frame)
 
         for board in BOARDS:
             for group in GROUPS.get(board, []):
@@ -261,23 +270,47 @@ class _Build:
                 loose = [k for k in files if k not in frame_of]
                 if loose:
                     # the files the groups don't name: in a frame of their own, never dropped
-                    t = d.claim(f"the frame of {board}'s own files", f"{board}/", f"{board}/ ({card[board]})")
-                    d.frame(t, card[board])
+                    frame = d.frame(f"{board}/", card[board])
+                    frames_in[id(card[board])].append((frame, f"the frame of {board}'s own files", f"{board}/", f"{board}/ ({card_title[board]})"))
                     for k in loose:
-                        frame_of[k] = t
-                    d.warn(f"groups for {board} leave out {', '.join(k[1] for k in loose)}: they go in the frame \"{t}\"")
+                        frame_of[k] = frame
+                    said.append(lambda board=board, loose=loose, frame=frame:
+                                d.warn(f"groups for {board} leave out {', '.join(k[1] for k in loose)}: they go in the frame \"{frame['title']}\""))
 
         members = {ks[0]: ks for ks in folders.values()}
+        notes_in = collections.defaultdict(list)               # a container's notes, in the scan's order: (the file, its note, whether it stands for a folder)
+        note_of = {}
         for k in sorted(FILES):
             if k in rep and rep[k] != k:
                 continue
             if k in members:
                 frame = next((frame_of[j] for j in members[k] if j in frame_of), None)
                 where = os.path.dirname(FILES[k].get('path') or '')
-                d.note(file_title[k], frame or card[board_of(k)], as_text(self.folder_text(members[k])), **source(where))
+                parent = frame or card[board_of(k)]
+                note = d.note(k[1], parent, as_text(self.folder_text(members[k])), **source(where))
             else:
-                d.note(file_title[k], frame_of.get(k, card[board_of(k)]), as_text(file_text(FILES[k], self.scan.language)),
-                       **source(FILES[k].get('path')))
+                parent = frame_of.get(k, card[board_of(k)])
+                note = d.note(k[1], parent, as_text(file_text(FILES[k], self.scan.language)), **source(FILES[k].get('path')))
+            note_of[k] = note
+            notes_in[id(parent)].append((k, note, k in members))
+
+        # the titles of what each card and frame holds, a container at a time: a title is given out once in its container, the notes
+        # first (file_titles: a file's name, else as much of its path as tells it apart there; a collapsed folder's note is titled for
+        # the folder), then the frames, which take their board's name after theirs when a note has their own
+        for container in [n for n in d.nodes if n['kind'] != 'sticky-note']:
+            entries = notes_in.get(id(container), [])
+            names = file_titles([k for k, _, folder in entries if not folder])
+            for k, note, folder in entries:
+                if folder:
+                    m, path = k[0], k[1].rpartition('/')[0]
+                    wanted = f"{m}/{path}/" if path else f"{m}/"
+                    note['title'] = d.claim(f"the folder {wanted}", wanted, f"{wanted} (files)", within=container)
+                else:
+                    note['title'] = d.claim(f"{k[0]}/{k[1]}", names[k], f"{k[0]}/{k[1]}", within=container)
+            for frame, what, wanted, other in frames_in.get(id(container), []):
+                frame['title'] = d.claim(what, wanted, other, within=container)
+        for say in said:
+            say()
 
         # the edges: a module's imports on the root, and which file uses which (a BY_MODULE file's, the modules it uses); the
         # edges of the files of a collapsed folder are the folder note's, their weights added up
@@ -298,8 +331,8 @@ class _Build:
                 continue
             weights[pair] = min(MAX_WEIGHT, weights.get(pair, 0) + min(MAX_WEIGHT, max(1, len(names))))
         for (a, b), weight in weights.items():
-            d.edge(file_title[a], file_title[b], weight)
+            d.edge(note_of[a], note_of[b], weight)
         for a in sorted(by_module):
             for m in sorted(by_module[a]):
-                d.edge(file_title[a], card[m])
-        return d.finish()
+                d.edge(note_of[a], card[m])
+        return d

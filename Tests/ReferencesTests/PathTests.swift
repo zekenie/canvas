@@ -1,10 +1,12 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Mentions
 import Publishing
 import References
 import TableOfContents
 import TestKit
+import TextEditing
 import Titles
 
 // The path a reference's row says before the name of what it stands for: the frames and boards that
@@ -190,5 +192,99 @@ extension EditorHarness {
         expectEqual(try require(contents.outline(of: BoardID(owner: sub)).first { $0.id == reference }?.label).path.map(\.text), ["feed"], "under its subboard's row")
         expect(h.enter(sub))
         expectEqual(try path(h, reference), ["feed"])
+    },
+
+    // MARK: Where a shape is, in the pill, the header, the list and the matches
+
+    test("a pill says where its shape is by its path from where the pill is: the frames they don't share; the board's name for a shape in none") {
+        let h = try pathHarness()
+        let cart = h.addCorral("Cart"), items = h.addCorral("Items", at: CGPoint(x: 20, y: 20))
+        h.editor.put([items], in: cart)
+        let note = h.addBox("Checkout", at: CGRect(x: 40, y: 40, width: 50, height: 50))
+        h.editor.put([note], in: items)
+        let outside = h.addReference(to: note, label: "Checkout", at: CGPoint(x: 800, y: 400))
+        let inCart = h.addReference(to: note, label: "Checkout", at: CGPoint(x: 100, y: 200))
+        h.editor.put([inCart], in: cart)
+        let inItems = h.addReference(to: note, label: "Checkout", at: CGPoint(x: 100, y: 250))
+        h.editor.put([inItems], in: items)
+        _ = render(h.editor)
+        let state = try require(h.editor.references)
+        expectEqual(state.drawnPlace(of: outside), "Cart › Items")
+        expectEqual(state.drawnPlace(of: inCart), "Items", "the frame it is in is left out")
+        expectEqual(state.drawnPlace(of: inItems), nil, "in the same frame: as it always looked")
+        // A rename of a frame its path was read from is said at the next draw, in the pills that read it.
+        h.editor.transact { $0.update(cart) { $0[TitleProperty.self] = "Basket" } }
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: outside), "Basket › Items")
+        expectEqual(state.drawnPlace(of: inCart), "Items")
+        // The pill's own frame put in the frame its shape is in changes what it shares.
+        h.editor.put([cart], in: nil)
+        h.editor.put([items], in: nil)
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: outside), "Items", "the frame taken out of Basket")
+        expectEqual(state.drawnPlace(of: inCart), "Items")
+        expectEqual(state.drawnPlace(of: inItems), nil)
+        h.editor.put([note], in: nil)
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: outside), nil, "on the board directly, as the pill is")
+        // A shape in no frame on another board says that board's name.
+        let pocket = h.addPocket("Clients")
+        expect(h.enter(pocket))
+        let far = h.addBox("Acme")
+        expect(h.editor.showBoard(.root))
+        let farPill = h.addReference(to: far, label: "Acme", at: CGPoint(x: 800, y: 500))
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: farPill), "Clients")
+        // And a frame on that board adds to it, as a path does.
+        expect(h.enter(pocket))
+        let drawer = h.addCorral("Drawer", at: CGPoint(x: 300, y: 300))
+        h.editor.put([far], in: drawer)
+        expect(h.editor.showBoard(.root))
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: farPill), "Clients › Drawer")
+    },
+
+    test("the list over a pill's field says a shape's path: \"Kind · path\" for two called alike, the path for one alone") {
+        let h = try pathHarness()
+        let alpha = h.addCorral("Alpha"), beta = h.addCorral("Beta", at: CGPoint(x: 400, y: 0))
+        let a = h.addBox("Plan", at: CGRect(x: 20, y: 20, width: 50, height: 50)), b = h.addBox("Plan", at: CGRect(x: 420, y: 20, width: 50, height: 50))
+        let solo = h.addBox("Budget", at: CGRect(x: 40, y: 100, width: 50, height: 50))
+        h.editor.put([a, solo], in: alpha)
+        h.editor.put([b], in: beta)
+        let picker = ReferencePicker(state: try require(h.editor.references), owner: nil, text: "")
+        let kind = h.editor.registry.label(of: Box.kind).name
+        @MainActor func lines(_ text: String) -> [(title: String, detail: String?, spoken: String)] {
+            picker.setText(text)
+            return picker.list.rows.compactMap(\.item).filter { $0.symbol != "magnifyingglass" }.map { ($0.title, $0.detail, $0.spoken) }
+        }
+        let plans = lines("plan")
+        expectEqual(Set(plans.compactMap(\.detail)), ["\(kind) · Alpha", "\(kind) · Beta"])
+        expectEqual(Set(plans.map(\.spoken)).count, 2, "told apart to a screen reader too")
+        expect(plans.allSatisfy { $0.spoken.contains(", in ") }, "\(plans.map(\.spoken))")
+        let one = lines("budget")
+        expectEqual(one.map(\.detail), ["Alpha"], "one alone: its path")
+        expectEqual(one.map(\.spoken), ["Budget, \(kind), in Alpha, 1 of 1"])
+        // The words of a path find it: \"beta plan\" is the Plan in Beta.
+        let byPath = lines("beta plan")
+        expectEqual(byPath.map(\.detail), ["Beta"], "the shapes found by their path, alone in their name now")
+    },
+
+    test("the panel's header says \"Kind · path\", and the Matches rows the path, from the board shown") {
+        let h = try pathHarness()
+        let cart = h.addCorral("Cart"), items = h.addCorral("Items", at: CGPoint(x: 20, y: 20))
+        h.editor.put([items], in: cart)
+        let note = h.addBox("Checkout", at: CGRect(x: 40, y: 40, width: 50, height: 50))
+        h.editor.put([note], in: items)
+        let pill = h.addReference(to: note, label: "Checkout", at: CGPoint(x: 800, y: 400))
+        let query = h.addReference(query: "box[title=\"Checkout\"]", at: CGPoint(x: 800, y: 500))
+        h.answer()
+        let state = try require(h.editor.references)
+        let kind = try require(h.state(of: pill)?.appearance).kindName
+        expectEqual(state.header(of: try require(h.reference(pill)), id: pill).subtitle, kind + " · Cart › Items")
+        expectEqual(state.matchRows(of: query).rows.map(\.place), ["Cart › Items"])
+        // From inside the frame the shape is in, the frames the board shown is in are its own: left out.
+        let loose = h.addBox("Loose", at: CGRect(x: 600, y: 600, width: 50, height: 50))
+        let far = h.addReference(to: loose, label: "Loose", at: CGPoint(x: 800, y: 300))
+        expectEqual(state.header(of: try require(h.reference(far)), id: far).subtitle, try require(h.state(of: far)?.appearance).kindName, "directly on the board shown: its kind alone")
     },
 ])

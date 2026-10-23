@@ -143,8 +143,9 @@ extension EditorHarness {
         expectEqual(h.line(town.x, in: Lists.wiredTo)?.detail, "Park", "on the pocket's board")
         expectEqual(bank?.spoken, "Bank", "a row reads its name, then its board and its caption when it has them")
         expectEqual(h.line(town.x, in: Lists.wiredTo)?.spoken.hasSuffix(", Park"), true)
+        expectEqual(h.line(town.y, in: Lists.wiredTo)?.spoken, "Yard, Park › Ring")
         expectEqual(h.line(town.m, in: Lists.quotedBy)?.spoken.hasPrefix("Mill, "), true)
-        expectEqual(h.line(town.y, in: Lists.wiredTo)?.detail, "Park", "in a corral on the pocket's board: the board's name, not the corral's")
+        expectEqual(h.line(town.y, in: Lists.wiredTo)?.detail, "Park › Ring", "in a corral on the pocket's board: its path, the pocket's name and the corral's")
         expectEqual(h.line(town.m, in: Lists.quotedBy)?.caption, "Mill quotes \(town.s.description.prefix(4))", "what its light says of the two shapes")
         // From the pocket's board, a shape on the root is on the board the file names.
         expect(h.enter(town.p))
@@ -218,6 +219,45 @@ extension EditorHarness {
         h.list.setSearch("ba")
         h.watch(town.b)
         expectEqual(h.list.search, "", "another shape's lists aren't searched for what was typed for the last")
+    },
+    test("a row says where it is by its path, so shapes called alike are told apart; what the board shown is inside, and the subject, is left out") {
+        let town = Town()
+        let yard = ShapeID(), kennelled = ShapeID()
+        let h = try listHarness(town.file(adding: [held(called("Yard", box(yard)), in: town.k), link(ShapeID(), town.s, yard),
+                                                   held(called("Kennel Gate", box(kennelled)), in: town.k), link(ShapeID(), town.s, kennelled)]))
+        h.watch(town.s)
+        expectEqual(h.line(town.b, in: Lists.wiredTo)?.detail, nil, "directly on the board shown")
+        expectEqual(h.line(yard, in: Lists.wiredTo)?.detail, "Kennel", "in a corral on the board shown: the corral")
+        expectEqual(h.line(town.y, in: Lists.wiredTo)?.name, "Yard")
+        expectEqual(h.line(town.y, in: Lists.wiredTo)?.detail, "Park › Ring", "another Yard, on the pocket's board")
+        // From inside the pocket, its own name and its owner's containers are left out; the corral on its board is not.
+        expect(h.enter(town.p))
+        h.watch(town.p)
+        expectEqual(h.line(town.x, in: Lists.contains)?.detail, nil, "what the subject holds needs no saying")
+        expectEqual(h.line(town.r, in: Lists.contains)?.detail, nil)
+        h.watch(town.r)
+        expectEqual(h.line(town.y, in: Lists.contains)?.detail, nil, "inside the subject, which is a corral on the board shown")
+        h.watch(town.y)
+        expectEqual(h.line(town.r, in: Lists.inside)?.detail, nil, "the corral it is in, on the board shown")
+        expectEqual(h.line(town.p, in: Lists.inside)?.detail, "Board", "the pocket's card is on the root, in no container")
+    },
+    test("typed text of several words also keeps the rows whose containers the earlier words name: the name's strong matches, then paths, then the loose name") {
+        let town = Town()
+        let yard = ShapeID(), parkYard = ShapeID(), loose = ShapeID()
+        let h = try listHarness(town.file(adding: [held(called("Yard", box(yard)), in: town.k), link(ShapeID(), town.s, yard),
+                                                   called("Park Yard", box(parkYard)), link(ShapeID(), town.s, parkYard),
+                                                   called("Pa rk y a r d", box(loose)), link(ShapeID(), town.s, loose)]))
+        h.watch(town.s)
+        h.list.setSearch("yard")
+        expectEqual(h.rows(Lists.wiredTo), [town.y, yard, parkYard, loose], "one word is the name's alone, as ever: Yard twice, a word of Park Yard, the subsequence")
+        h.list.setSearch("park yard")
+        expectEqual(h.rows(Lists.wiredTo), [parkYard, town.y, loose], "its own name has both; the Yard in Park; then the name as a subsequence")
+        h.list.setSearch("ring yard")
+        expectEqual(h.rows(Lists.wiredTo), [town.y], "any container on the path, not only the nearest or the first")
+        h.list.setSearch("kennel yard")
+        expectEqual(h.rows(Lists.wiredTo), [yard], "the other Yard")
+        h.list.setSearch("yard kennel")
+        expectEqual(h.rows(Lists.wiredTo), [], "in order: the container comes first")
     },
     test("the lists follow the file: asked again once commits have stopped for a moment, never for moves, and an answer that reads the same shows nothing") {
         let town = Town()

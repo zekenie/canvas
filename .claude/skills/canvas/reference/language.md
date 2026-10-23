@@ -97,7 +97,7 @@ ungroup <a> { and <b> }                          take those shapes out of every 
 style <name> attribute { attribute }             a named set of attributes, for this script
 ```
 
-The first word decides the statement. `edge`, `delete`, `group`, `ungroup` and `style` are the language's own words. Any other first word is a kind. After a shape's kind and title, attributes and placements come in any order: `sticky-note "A" text: "Hi" below "B"` and `sticky-note "A" below "B" text: "Hi"` are the same statement.
+A shape the file has is named by its title, by an id (`#7C1E…`) when it has none, or by a path (`"Cart" > "Checkout"`) when its title is not its alone: [Titles are the names](#titles-are-the-names). The first word decides the statement. `edge`, `delete`, `group`, `ungroup` and `style` are the language's own words. Any other first word is a kind. After a shape's kind and title, attributes and placements come in any order: `sticky-note "A" text: "Hi" below "B"` and `sticky-note "A" below "B" text: "Hi"` are the same statement.
 
 ## Shapes and titles
 
@@ -116,7 +116,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 
 ### Titles are the names
 
-A shape is referred to by its title. An id is for a shape that has none. Everywhere a statement names a shape the file already has, a quoted title may be written as an id instead, in the spelling a query uses: `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`, a `#` and 36 characters, no quotes. The places are an edge's ends, `delete` and `delete edge`, a placement's target (`right of #…`), `in #…`, a shape statement's own name (`sticky-note #… text: "…"`, which restates that shape), the shapes a `group` or `ungroup` names and `share:`'s host. A query's rows give the ids (`id`), and so do a run's, for every shape the file has. Write one only for a shape with no title; where it has a title, use it. A shape named by its id and by its title in one script is one shape (two statements about it are `duplicate`).
+A shape is referred to by its title. An id is for a shape that has none. Everywhere a statement names a shape the file already has, a quoted title may be written as an id instead, in the spelling a query uses: `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`, a `#` and 36 characters, no quotes. The places are an edge's ends, `delete` and `delete edge`, a placement's target (`right of #…`), `in #…`, a shape statement's own name (`sticky-note #… text: "…"`, which restates that shape), the shapes a `group` or `ungroup` names and `share:`'s host; a path takes the same places. A query's rows give the ids (`id`), and so do a run's, for every shape the file has. Write one only for a shape with no title; where it has a title, use it. A shape named by its id and by its title in one script is one shape (two statements about it are `duplicate`).
 
 - **An id names a shape the file already has, never makes one.** One no shape has is `unknown_id` (it may have been deleted: run the query again), a malformed one `not_an_id`; a shape on a board the app can't show, or kept aside, is `unknown_id` too. The statement is refused at its line and nothing is drawn.
 - **An id names only a shape a title could name, or a reference drawn by its query**: an arrow's, a reference's that stands for one shape (an edge's, or one the user picked), and any other kind's that has no title are `invalid_value`. Name an arrow by its two ends, and such a reference by the shape it stands for. A reference drawn by its query stands for whatever the query finds, so its id is the only name it has ([References](#references)).
@@ -135,19 +135,69 @@ A shape is referred to by its title. An id is for a shape that has none. Everywh
 reference "Saved" query: "sticky-note"
 ```
 
+#### Paths
+
+A title names a shape while it is the only one called that where it is looked for. Two shapes may share a title when they are in different containers (two notes called "Checkout", one in the frame "Cart" and one in the frame "Storefront"), and a lone `"Checkout"` is then `ambiguous_title`. A shape is named by its **path** instead: the containers it is in, outermost first, then its title, joined by `>`:
+
+```text
+"Cart" > "Checkout"                    the Checkout directly in a frame or subboard called Cart
+"Plans" > "Sprint" > "Checkout"        the Checkout in the Sprint that is in Plans
+#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11 > "Checkout"   the Checkout in a container with no title, which has that id
+board > "Checkout"                     the Checkout in no container, on the board the run draws on
+```
+
+Each part is the shape the next is directly inside: a frame's shapes, or a subboard's board's shapes that are in no frame, as `canvas query` writes a child. Spaces around `>` are optional.
+
+- **The first part** is the title of a frame or a subboard, or `#<id>` for a container that has no title, or the word `board`, the top of the board the run draws on. Every part after it is a title. `board` and `origin` are still the targets they are where no `>` follows.
+- **A path matches every shape whose containers end with its parts**, in order, each directly inside the one before, so the first part need not be the outermost container: `"Cart" > "Checkout"` is every Checkout directly in a container called Cart, on any board, and a longer path narrows it. Exactly one match is the shape. Several are `ambiguous_title`, each listed with its kind and its path; none is `unknown_title`. As for a title, a match on the board the run draws on is the one, and a match elsewhere in the file is on another board.
+- **Every place a statement names a shape the file has takes a path**: a shape statement's own name, an edge's ends, `delete`, `delete edge`, a placement's target (`right of "Cart" > "Checkout"`), `in`, `group`, `ungroup` and `share:`'s host.
+- **A shape statement named by a path restates the shape there, or makes it directly in that container**, as `in` would put it. The container must be on the board already; one this script draws is `unsupported`. A path says where the shape is, so `in` beside it is a `syntax` error.
+- **Two statements are one shape only when they name the same shape or the same new path.** Two new shapes of one title in different containers are two shapes, not `duplicate`. A lone title that two of the script's own shapes have is ambiguous to the other statements: write the path.
+- **A path that can't be read is `syntax`**: a `>` at either end, `board` or an id after the first part, a path as a `title:` value (`title:` takes one title).
+- **A message names a shape by its path** wherever its title isn't its alone, and a container with no title by its `#id`. A row is as it was: `title` is the shape's own, and `id` says which.
+- A mention in a text names a shape by its title alone ([A text that mentions shapes](#a-text-that-mentions-shapes)).
+
+Two frames, then a note called Checkout in each and an edge between them, named by path:
+
+```draw
+// Far from the rest of the board, at an exact offset from its origin.
+frame "Cart" right of origin (gap: 2400) below origin (gap: 2400) size: 700x400
+frame "Storefront" right of "Cart" size: 700x400
+```
+
+```draw
+sticky-note "Cart" > "Checkout" text: "Takes the order"
+sticky-note "Storefront" > "Checkout" text: "Shows the receipt"
+edge "Cart" > "Checkout" -> "Storefront" > "Checkout"
+```
+
+A run again is three `unchanged` rows. The lone title names neither, and the result says which are meant:
+
+```draw-error
+// reason: ambiguous_title
+sticky-note "Checkout" text: "Which one?"
+```
+
+```json
+{"error": {"reason": "ambiguous_title",
+           "message": "the board has 2 shapes called \"Checkout\": a sticky-note \"Cart\" > \"Checkout\" and a sticky-note \"Storefront\" > \"Checkout\"",
+           "hint": "write the path of the one you mean, as \"Cart\" > \"Checkout\", or its #id, which a query's row gives", "status": 1, "line": 1}}
+```
+
 ### Make or update
 
 A shape statement **with a title**:
 
 - If exactly one shape on the board has that title, the statement **restates** that shape and updates it. The kind must match, or it's `wrong_kind`; to change a shape's kind, delete it and draw it again in the same script.
-- If two or more shapes have that title, it's `ambiguous_title`. Titles only work as names while each is used once, so ask the user to rename one.
+- If two or more shapes on the board have that title (in different frames, say), it's `ambiguous_title`, each listed with its kind and its path. Write the path of the one you mean (`"Cart" > "Checkout"`), or its id: [Paths](#paths).
+- With `in "X"`, the title is looked for inside X first, and a shape may be made there beside one of the same title elsewhere: [in](#in).
 - If no shape has it, the statement **creates** a shape with that title. If a title on the board is the same but for case, or nearly the same, the shape is still created, with a warning such as `created "deploy"; the board has "Deploy" — to change that one, write its title exactly`.
 
 A shape statement **without a title** always creates a new, untitled shape. Only its id can refer to it afterwards (its row says it), so title anything you may touch again. A shape statement that names an **id** restates that shape, if the file has one: the kind must match (`wrong_kind`), and `title: "New"` gives an untitled shape a title.
 
 A new shape starts as what its kind's tool places. Then comes its title, then its attributes, then its size, then its position. A restated shape keeps everything the statement doesn't say, including its size and its position on any axis no placement speaks for.
 
-Two statements about one title in one script (two shape statements, or one and a rename to that title) is `duplicate`. A statement placed against its own title is `circular`. The exception is `delete "X"` followed by a shape statement for "X": deletes happen first, so that pair redraws a shape.
+Two statements about one shape in one script (two shape statements about the same shape or the same new path, or one and a rename to that title beside it) is `duplicate`; two new shapes of one title in different containers are two shapes. A statement placed against its own title is `circular`. The exception is `delete "X"` followed by a shape statement for "X": deletes happen first, so that pair redraws a shape.
 
 A type is a note drawn with a `schema:`, what it holds in words in its `text:` and as JSON in its schema, a quoted string, so each quote is escaped:
 
@@ -215,7 +265,7 @@ sticky-note "Vendor contacts" left of "Row" size: 360x text: "Files: data-ops at
 
 A note's `text`, an arrow's `text` (an edge's) and a subboard's `description` are mention text, and `canvas kinds` says so after their type (`text (@[Title] mentions)`). In one, `@[Title]` mentions the shape called Title: the app shows a pill with that shape's name, live (renamed, it follows), and keeps the shape's id, which a script never writes or sees. Nightly schedule's text above mentions Load, which an earlier script drew. A mention is found by its title, exactly as every title in a script is (folded; case matters), with these rules:
 
-- **Which shape.** Among the shapes the text may mention (below), the first of these that has one called that decides: a shape the script itself draws or restates with that title, or renames to it with `title:` (one drawn further down the script counts, so two notes can mention each other); the board the script draws on ([Which board](#which-board)); the board the window shows; any other board of the file the app can show. Two or more in that place are `ambiguous_title`, each listed with its kind and where it is (or, on several boards, the boards); none anywhere is `unknown_title`, with the titles it's like. A shape the script deletes, or the board it takes, counts for nothing: a title only such a shape has is `unknown_title` too (`names "Old", which this script deletes`).
+- **Which shape.** Among the shapes the text may mention (below), the first of these that has one called that decides: a shape the script itself draws or restates with that title, or renames to it with `title:` (one drawn further down the script counts, so two notes can mention each other); the board the script draws on ([Which board](#which-board)); the board the window shows; any other board of the file the app can show. Two or more in that place are `ambiguous_title`, each listed with its kind and its path (or, on several boards, the boards); a text names a shape by its title alone, so it mentions one whose title is its own there; none anywhere is `unknown_title`, with the titles it's like. A shape the script deletes, or the board it takes, counts for nothing: a title only such a shape has is `unknown_title` too (`names "Old", which this script deletes`).
 - **Which shapes a text may mention.** A note's text, an arrow's, or a subboard's description, any shape that can be mentioned: notes (types among them), subboards and frames (not an arrow, nor a reference). A text that mentions only some kinds passes over shapes of the others, as if they weren't called that: if they're all that is, the text is refused (`invalid_value`) saying what the shape is and why.
 - **No placement, no board.** A title in a text doesn't say where a shape goes or which board the script draws on, and a mention of a shape on another board, however deep, is no reason for `several_boards`: the pill finds the shape wherever it is. Only a statement's own titles and `in` put the run on a board.
 - **Written as the title it is.** The pill holds the shape's title as it is now (or will be, for a shape the script renames), whatever way the script wrote it (`@[  Load ]`). A title with a `]` or a backslash in it is written with a backslash before each, which a script's string spells twice: `@[a\\]b]` for a title `a]b`. `@[]`, with no title in it, is refused (`invalid_value`).
@@ -288,17 +338,24 @@ Deleting a subboard deletes what's on its board with it, and the result warns ho
 delete "Backend"
 ```
 
+A shape statement with `in "X"` finds its own title **inside X first**, then restates that shape: anywhere on X's board for a subboard, anywhere within X, at any depth, for a frame. Failing that, a shape of that title lying on X's board in no container is restated and moved into X. Failing that, a new one is made in X. So `sticky-note "Router" in "Cart"` makes a second Router when the first is inside another frame, where it would once have moved the first out of that frame. Its other titles, the targets of its placements, are found inside X first too, then as anywhere else, so `right of "Checkout"` is Cart's Checkout while the board has several. X may itself be a path (`in "Plans" > "Sprint"`). To move a shape from one frame into another, name it by its `#id` (a query's row gives it) with `in`: `sticky-note #7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11 in "Storefront"` restates that shape and moves it in, where a lone title would make a new one and a path beside `in` is a `syntax` error.
+
+```draw
+sticky-note "Router" in "Cart" right of "Checkout" text: "Sends the order on"
+sticky-note "Router" in "Storefront" right of "Checkout" text: "Routes the page"
+```
+
 `in` says what holds a shape, not where it sits: `sticky-note "Cache" in "Backend"` draws Cache on the board of the subboard called Backend, the window staying where it is. Write placements beside it as ever; they place the shape on that board, against shapes there (`in "Backend" below "API"`), `board` (that board's shapes) or `view` (the part of it the window shows when it's opened). With none, it's [a drawing with nothing to hang on](#a-drawing-with-nothing-to-hang-on) there. It names one shape that holds others, a subboard or a frame ([Frames](#frames)), with no part: `in "Notes"` on a note is `cannot_contain`. That shape must be on the board already: one this script draws is `unsupported`, so draw it, then what goes in it in a run of its own. A locked subboard takes nothing, nor does one on a locked subboard's board: its board is read-only, and `in` it is `read_only`, as `in` a locked frame is. `inside` is another thing: `inside "Backend" top-left` puts a shape over its card, on the board the card is on.
 
 ### Targets
 
-A target is a quoted title or an id (`#7C1E…`), optionally followed by a part, or one of three unquoted words:
+A target is a quoted title, an id (`#7C1E…`) or a path (`"Cart" > "Checkout"`), optionally followed by a part, or one of three unquoted words:
 
 - **`board`** is the box around every [obstacle](#keeping-clear): the shapes on the board that this script doesn't move, nor a frame it moves takes along (the board the window shows, not the boards inside its subboards). `right of board` is a new column past everything, `below board` is the space under everything. On an empty board it's `unknown_title`, because there's nothing to be right of. Leave one shape unplaced instead, and the drawing goes in the window.
 - **`view`** is the part of the board in the window (below the path's pill over a subboard, which covers the window's top there). `inside view top-right` puts a legend in a corner. `view` needs the board's window to have a size, or it's `no_view`.
 - **`origin`** is the board's point (0, 0), a box with no size, wherever the board's shapes and the window are. It's what [an exact offset](#an-exact-offset) of a layout worked out elsewhere is measured from, with no shape on the board to measure from. What's drawn from it isn't moved into the window: `--reveal` brings it into view.
 
-All three are fixed boxes, measured once when the script runs.
+All three are fixed boxes, measured once when the script runs. (`board > "X"` is a path, the shape X in no container on the board, and `board` alone is the box above.)
 
 ### Several targets
 
@@ -357,7 +414,7 @@ A file can hold boards inside shapes, and a script draws on one of them, worked 
 
 - A title names a shape on any board of the file: the one the window shows first, and else wherever it is. `sticky-note "Auth" text: "Done"` changes Auth on whatever board it's on.
 - A new shape goes on the board of the shapes it's placed against, or the board `in` names (a frame's is the board the frame is on). With neither (unplaced, or against `board`, `view` or `origin`), it goes on the board the rest of the script draws on, else the one the window shows.
-- A statement with `in "X"` reads its titles on X's board alone: that's how to name a shape whose title is on two boards.
+- A statement with `in "X"` draws on X's board (a frame's is the board it is on) and reads its titles there, inside X first: that's how to name a shape whose title is on two boards. A path names the board of the shape it leads to, or of the container a new shape would go in (`"Plans" > "Sprint" > "Task"` is on Plans' board), and `board` is the board the run draws on.
 - An edge between shapes on two boards doesn't pick the board by itself when one of its ends can be stood for by a reference (a public shape can: [Through a reference](#through-a-reference)). An arrow can't leave its board, so the end that can be stood for is reached through a reference put beside the other end, which is on the board the run draws on. The run draws on the first board something else says (a title, an `in`, an end that can't be stood for, the start of an edge with `via:`); with nothing else, on the board of the first such edge's start. Each such edge then needs one end on that board. `delete edge` reads its ends the same way.
 - A shape the script draws counts as on the board the run draws on, whichever that is, and says nothing of the board itself. An edge from it to a shape on another board goes into a reference beside it, if that shape can be stood for; with nothing else to decide, the run draws on that shape's board, and the edge is straight there.
 - An edge that's drawn through a reference already is on the board the reference is on: a run again, and `delete edge`, go there whichever board the edge would pick otherwise, since a reference made on the other board would draw it twice.
@@ -800,7 +857,7 @@ The first statement clears Backfill's text, without moving it. The second moves 
 
 ### Renaming
 
-`title: "New"` on a restated shape renames it (`did: "renamed"`, with `was: "Old"`). The shape can move or change in the same statement. The new title must fold to something, and no other shape on the board or statement in the script may have it (`duplicate`). The kind must be nameable. Other lines in the same script still call the shape by its old title; the new title applies from the next run (but a mention in a text finds it by either, and holds the new one). `title:` on a new shape is refused: a new shape's title goes after its kind. `title: null` is refused too (`unsupported`), and so are `title: none` and `title: nil`: a script renames a shape, but can't take its title away. A title that really is "none" is quoted.
+`title: "New"` on a restated shape renames it (`did: "renamed"`, with `was: "Old"`). The shape can move or change in the same statement. The new title must fold to something, and no shape directly beside it may have it already (in the same frame, or on the board in no frame), nor may another statement give a shape there that title (`duplicate`); a shape in another frame, or on another board, may have it, and a path names each. The kind must be nameable. Other lines in the same script still call the shape by its old title; the new title applies from the next run (but a mention in a text finds it by either, and holds the new one). `title:` on a new shape is refused: a new shape's title goes after its kind. `title: null` is refused too (`unsupported`), and so are `title: none` and `title: nil`: a script renames a shape, but can't take its title away. A title that really is "none" is quoted.
 
 ```draw
 sticky-note "Nightly schedule" title: "Nightly run"
@@ -1042,7 +1099,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 
 | reason | what it means, with an example message | the fix |
 |---|---|---|
-| `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `edge "A" -> "B": "calls" is a title where none goes` (an edge's text is `text: "calls"`) · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` · `group "A": a group is two shapes or more, and this names one` · `group "A": "B" is a title where none goes` (shapes are joined by `and`) | Follow the hint, which names what to write. |
+| `syntax` | The line can't be read. `sticky-note: Web isn't quoted, and titles are in double quotes` · `edge: --> isn't an arrow` · `--> joins shapes only in an edge statement` · `edge "A" -> "B": "calls" is a title where none goes` (an edge's text is `text: "calls"`) · `titles and text are in straight double quotes: "Web"` · `sticky-note "A": rigth isn't a placement` · `# doesn't start a comment here` · `attributes are written key: value, without braces` · `an attribute is written key: value, not key = value` · `group "A": a group is two shapes or more, and this names one` · `group "A": "B" is a title where none goes` (shapes are joined by `and`) · a path that ends in `>`, or has `board` or an id after its first part, or is a `title:` value, or comes with `in` (`card: > ends the path, and no title follows it`) | Follow the hint, which names what to write. |
 | `unknown_kind` | The first word isn't a kind the app has. `node "Web"`, with the drawable kinds listed, and the one like it named (`note`: `did you mean sticky-note?`) | Use a kind from `canvas kinds`. |
 | `not_placeable` | The kind exists but no tool places it, like an arrow. | Draw an arrow as `edge "A" -> "B"`. |
 | `unknown_attribute` | The key isn't one the kind takes. `"Backfill" is a sticky-note and has owner:, which isn't one of a sticky-note's attributes`, with the hint `a sticky-note takes size:, gap:, overlap:, style:, title:, locked:, public:, text:` · a style that gives a shape nothing, or has a key nothing takes | Use one it takes (Did you mean), or drop it. |
@@ -1050,8 +1107,8 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `duplicate` | Something is written twice. `"locked" is written twice (true, false)` · a title stated on two lines (`written twice, here and on line 4`) · a rename to a title another shape has · two edges for one pair · a style defined twice · a shape named twice by `group` and `ungroup` (`"Billing" is named twice, here and on line 1`) | Keep one. |
 | `not_an_id` | A word after `#` where a statement names a shape isn't an id. `# takes a shape's id, and #Services isn't one` · an id of the wrong length or with a character that isn't a hex digit | An id is what a query's row gives: 36 characters, hex digits in groups of 8, 4, 4, 4 and 12. A title is in double quotes. |
 | `unknown_id` | No shape the app can show has that id. `there's no shape with the id #7C1E…` · one on a board the app can't show · one kept aside · one the script deletes, `an edge is drawn to #7C1E…, which this script deletes` | Run the query that gave the id again: the shape may have been deleted. An id never makes a shape; to make one, write its kind and a title. |
-| `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board · a mention in a text, `"Plan": text: there's no shape called "Lod"` · a title only a shape the script deletes has, `"Plan": text: names "Old", which this script deletes` | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. If a text meant the characters `@[`, write `\\@[`. |
-| `ambiguous_title` | Two or more shapes have the title, each listed with its kind and where it is · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` · a mention in a text of a title two shapes have where it's first found (`the board has 2 shapes called "Address": …`) | Ask the user to rename one. Titles only work as names while each is used once. For two boards, say which with `in "Payments"`. |
+| `unknown_title` | No shape has that title. `right of "Injest"`, with up to 3 near titles · `board` on an empty board · a mention in a text, `"Plan": text: there's no shape called "Lod"` · a title only a shape the script deletes has, `"Plan": text: names "Old", which this script deletes` · a path through nothing, `there's no shape called "Cart" > "Chekout"`, with the titles in the container like it, or the part that nothing is called | Write the title exactly (`did you mean "Ingest"?`). On an empty board, leave one shape unplaced instead. If a text meant the characters `@[`, write `\\@[`. |
+| `ambiguous_title` | Two or more shapes have the title or the path, each listed with its kind and its path (a shape in no container by where it is, and two with the same path by where each is too): `the board has 2 shapes called "Checkout": a sticky-note "Cart" > "Checkout" and a sticky-note "Storefront" > "Checkout"` · the title is on two boards, neither the one the window shows: `"Retry" is on 2 boards: "Payments"'s board and "Billing"'s board` · a mention in a text of a title two shapes have where it's first found (`the board has 2 shapes called "Address": …`) | Write the path of the one you mean (`"Cart" > "Checkout"`), or its `#id`, which a query's row gives ([Paths](#paths)). For two boards, say which with `in "Payments"`. A mention in a text names a shape by its title alone, so mention one whose title is its own there. |
 | `several_boards` | The script lands on two boards, and a run draws on one. `this script draws on "Payments"'s board ("Retry", line 1) and on the root board ("Ingest")` · a placement between shapes on two boards · an edge between shapes on two boards that a reference can't join, because neither end is public (`this script draws on the root board ("Load", line 2) and on "Monday"'s board ("Scratch")`, whose hint says only a public shape can be reached and to ask the user to make one public) · `via:` with a start on a board the run doesn't draw on · a `group` of shapes on two boards | Split it into a run for each board. An edge joins shapes on one board, or goes into a reference for a public shape on another: if the user wants the edge, ask them to make that shape public. |
 | `cannot_contain` | `in` names a shape that holds no shapes: no subboard, and no frame. `"Notes" is a sticky-note, which holds no shapes` | Name a subboard or a frame. To put a shape over another, use `inside` or `on`. |
 | `board_shown` | A delete would take the board the window shows, or one above it: `"Payments" holds the board the window shows, so it can't be deleted` | `canvas show --root` (or a board above it) first, if the user wants it gone. |

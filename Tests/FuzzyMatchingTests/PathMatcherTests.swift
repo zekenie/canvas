@@ -158,6 +158,20 @@ private let skip = PathRanking.skipPenalty, leafWeight = PathRanking.leafWeight
         expectEqual(first.best[1], PathMatcher.Row.unreachable, "alpha, the first piece, isn't gamma")
     },
 
+    test("placingAtLeast keeps only the placements that put pieces in the containers: a shape found by its path, not its title alone") {
+        let query = PathMatcher("alpha checkout")
+        let alpha = query.advance(query.rootRow, through: FuzzyMatcher.Label("Alpha"))
+        let checkout = FuzzyMatcher.Label("Checkout"), both = FuzzyMatcher.Label("Alpha Checkout")
+        expectEqual(query.leafScore(after: alpha, label: checkout, placingAtLeast: 1), leafWeight * FuzzyRanking.exact + FuzzyRanking.exact)
+        expectEqual(query.leafScore(after: query.rootRow, label: both), leafWeight * FuzzyRanking.exact, "a title that holds every piece, on the root")
+        expectEqual(query.leafScore(after: query.rootRow, label: both, placingAtLeast: 1), nil, "has no container to put one in")
+        expectEqual(query.leafScore(after: alpha, label: both, placingAtLeast: 1) != nil, true, "the last piece alone, found in a longer title")
+        expectEqual(query.leafScore(after: alpha, label: checkout, placingAtLeast: 2), nil, "the leaf always takes the last piece")
+        expectEqual(query.match(path: ["Alpha", "Checkout"], placingAtLeast: 1)?.matched, [[0..<5], [0..<8]])
+        expectEqual(query.match(path: ["Beta", "Alpha Checkout"], placingAtLeast: 1), nil)
+        expectEqual(query.match(path: ["Beta", "Alpha Checkout"])?.matched.last, [0..<14])
+    },
+
     test("rows and match(path:) over seeded random trees agree with a brute force over every placement") {
         var random = SplitMix(seed: 20_261_006)
         let vocabulary = ["Alpha", "Beta", "Gamma", "Checkout", "Delta Flow", "Orders", "Alpha Gamma", "Check Out Flow", "Gamma Ray", "Zeta"]

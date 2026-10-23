@@ -21,15 +21,18 @@ struct EndName {
     var id: ShapeID?
     /// That id as written (`#7C1E…`), for a message about a shape with no title.
     var idWritten: String?
+    /// The path the statement named the end by (`"Payments" > "Checkout"`), folded; `title` is then its last part.
+    var path: String?
 
-    init(title: String?, id: ShapeID? = nil, idWritten: String? = nil) {
+    init(title: String?, id: ShapeID? = nil, idWritten: String? = nil, path: String? = nil) {
         self.title = title
         self.id = id
         self.idWritten = idWritten
+        self.path = path
     }
 
-    /// For a message: the title in quotes, else the id as written.
-    var said: String { title.map(quoted) ?? idWritten ?? "" }
+    /// For a message: the path when the statement wrote one, else the title in quotes, else the id as written.
+    var said: String { path ?? title.map(quoted) ?? idWritten ?? "" }
     /// For a row: the title, else the id as written.
     var plain: String { title ?? idWritten ?? "" }
 }
@@ -108,7 +111,7 @@ extension Drawing {
 
     /// What a shape is called where a message names it: its title in quotes, else the id as written.
     func said(_ record: AnyShapeRecord, written: String) -> String {
-        Drawing.title(of: record, names: names, naming: naming, registry: registry).map(quoted) ?? written
+        said(titleOf: record) ?? written
     }
 
     /// The shape a placement target, `in` or `share:` names by id: one the script restates (its item), else one on the board the run
@@ -182,11 +185,11 @@ extension FileNames {
     }
 
     /// What an id names as a shape that holds others, as `container(called:)` says it of a title.
-    public func container(withID id: ShapeID) -> Container {
+    public func container(withID id: ShapeID, boards: Bool = false) -> Container {
         guard let place = place(ofID: id), let record = editor.file.record(id) else { return .none }
         let registry = editor.registry
         if registry.boardOwningKinds.contains(record.kind) { return .board(BoardID(owner: id)) }
-        if registry.isContainer(record) { return .shape(id, on: place.board) }
+        if !boards, registry.isContainer(record) { return .shape(id, on: place.board) }
         return .holdsNone(record)
     }
 }

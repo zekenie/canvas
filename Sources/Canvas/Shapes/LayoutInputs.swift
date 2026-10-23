@@ -44,6 +44,8 @@ final class LayoutSource {
     let lend: @MainActor (ObjectIdentifier) -> (any EditorService)?
     /// A shape on any board of the file, as this source's reader sees the file.
     let shape: @MainActor (ShapeID) -> AnyShapeRecord?
+    /// The board a shape is on, as this source's reader sees the file.
+    let board: @MainActor (ShapeID) -> BoardID?
     /// The file's own values (`FileProperty`), as this source's reader sees the file.
     let fileValues: @MainActor () -> FileValues
     /// Whether a shape isn't as the editor keeps it; nil for the editor's own committed reading.
@@ -67,12 +69,14 @@ final class LayoutSource {
     }
 
     init(inputs: LayoutInputs, sizes: LaidOutSizes, lend: @escaping @MainActor (ObjectIdentifier) -> (any EditorService)?,
-         shape: @escaping @MainActor (ShapeID) -> AnyShapeRecord?, fileValues: @escaping @MainActor () -> FileValues, isChanged: (@MainActor (ShapeID) -> Bool)? = nil,
+         shape: @escaping @MainActor (ShapeID) -> AnyShapeRecord?, board: @escaping @MainActor (ShapeID) -> BoardID?,
+         fileValues: @escaping @MainActor () -> FileValues, isChanged: (@MainActor (ShapeID) -> Bool)? = nil,
          writes: [ShapeID] = [], run: Int = 0) {
         self.inputs = inputs
         self.sizes = sizes
         self.lend = lend
         self.shape = shape
+        self.board = board
         self.fileValues = fileValues
         self.isChanged = isChanged
         fresh = isChanged == nil ? nil : LaidOutSizes()
@@ -156,6 +160,15 @@ public struct LayoutReading {
     /// editor's, or mid-transaction as the transaction leaves it (what it inserted, changed and
     /// moved; nil for what it deleted).
     public func shape(inFile id: ShapeID) -> AnyShapeRecord? { source.shape(id) }
+
+    /// The board a shape is on, as whoever is laying the shape out sees the file: the editor's
+    /// (`file.board(containing:)`), mid-transaction as the transaction leaves it
+    /// (`Transaction.board(containing:)`: the board it moved the shape onto, or brought it in on), or,
+    /// with records laid in (`layingOut(with:)`), the reading it lays over's; nil for a shape on no
+    /// board of the file (deleted, `removing`, or a laid-in record the file hasn't). What a plugin
+    /// that works out where a shape is from the reading's records alone (a path, through each
+    /// record's container and each board's owner) reads beside them.
+    public func board(containing id: ShapeID) -> BoardID? { source.board(id) }
 
     /// One of the file's own values (`FileProperty`), as whoever is laying the shape out sees the
     /// file: the editor's, or mid-transaction as the transaction leaves it; the property's default
@@ -302,6 +315,7 @@ extension ShapeContext {
         // What it lays in and removes are writes of its own, after those of the reader it lays over.
         let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend,
                                   shape: { byID[$0] ?? (removed.contains($0) ? nil : layout.shape($0)) },
+                                  board: { removed.contains($0) ? nil : layout.board($0) },
                                   fileValues: layout.fileValues, isChanged: { id in byID[id] != nil || layout.isChanged?(id) == true },
                                   writes: layout.writes + records.map(\.id) + Array(removed),
                                   run: LayoutSource.nextRun())

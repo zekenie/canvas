@@ -11,6 +11,9 @@ enum NeighborStyle {
     nonisolated static let contains = "Contains"
     /// What the root board is called while the file has no name.
     nonisolated static let rootName = "Board"
+    /// What a path puts between the names of the containers a shape is inside (Boards' `ShapePath.separator`, which this
+    /// module doesn't import).
+    nonisolated static let pathSeparator = " › "
     /// A row's symbol, for a kind with none.
     nonisolated static let fallbackSymbol = "square.dashed"
 

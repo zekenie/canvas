@@ -158,7 +158,8 @@ Sources/
   Mentions/             a horizontal: text that mentions shapes, each mention a live pill, with the @ picker and
                         a Mentioned In tab, and queries' :mentions and :mentioned-by
   Boards/               a horizontal: getting around a file's boards (opening one, ⌘↑, the path over the canvas),
-                        and queries' boards' names
+                        queries' boards' names, and a shape's path (its containers, then its title), with a
+                        warning on a path two shapes share
   Topology/             a horizontal: what connects and contains what across the file (arrows, mentions, frames
                         and boards), read from the shapes that carry it
   Draw/                 a horizontal: the engine of canvas draw (and measure, kinds), which any plugin may run

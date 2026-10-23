@@ -9,8 +9,9 @@
                      than BIG files gives one to each of its top folders, when it has two or more.
     folder_purposes  a folder board's purpose: what the reader found for the folder.
     groups           {board: [(title, [file], [subgroup])]}, frames: a board's files by their folders, two deep,
-                     each titled by the shortest end of its folder's path that no other frame, module or board takes
-                     (the board's own files in one titled "<board>/").
+                     each titled by the shortest end of its folder's path that no other frame of its container,
+                     module or board takes (the board's own files in one titled "<board>/"): a frame's title need only
+                     be its container's alone, so two boards may each have a `utils`.
     by_module        files whose pills stand for modules, not files: none.
     title            what the whole is called: the name its reader found (the package's own, a
                      repository's folder), else the repository folder's name.
@@ -170,21 +171,30 @@ def bands(prod, mods, names):
 
 
 def groups(prod, files, folder_boards):
-    """Frames from folders, for every board with files in folders below it, each titled by the shortest end of
-    its folder's path that no other frame, module or board could take."""
+    """Frames from folders, for every board with files in folders below it, each titled by the shortest end of its
+    folder's path that no other frame of its container, and no module or board, could take. A title is unique only in its
+    container (a board's, or a frame's), so two boards may each have a frame `utils`."""
     out = full_groups(prod, files, folder_boards)
     reserved = set(prod) | {f"{m}/{f}" for m, fs in folder_boards.items() for f in fs}
-    paths = [g[0] for gs in out.values() for top in gs for g in [top] + top[2]]
     def candidates(path):
         parts = path.rstrip('/').split('/')
         if path.endswith('/'):
             return [path]       # a board's own files: "<board>/"
         return ['/'.join(parts[-i:]) for i in range(1, len(parts))] + [path]
-    taken = set(paths) | reserved
-    cands = {p: [c for c in candidates(p)[:-1] if c not in taken] + [p] for p in paths}
-    claimed = collections.Counter(c for p in paths for c in set(cands[p]))
-    title = {p: next(c for c in cands[p] if claimed[c] == 1) for p in paths}
-    return {b: [(title[t], fs, [(title[s], sfs, ss) for s, sfs, ss in subs]) for t, fs, subs in gs] for b, gs in out.items()}
+    def titled(paths):
+        """The title of each of these frames' paths, all in one container."""
+        taken = set(paths) | reserved
+        cands = {p: [c for c in candidates(p)[:-1] if c not in taken] + [p] for p in paths}
+        claimed = collections.Counter(c for p in paths for c in set(cands[p]))
+        return {p: next(c for c in cands[p] if claimed[c] == 1) for p in paths}
+    result = {}
+    for board, gs in out.items():
+        top = titled([g[0] for g in gs])
+        result[board] = []
+        for t, fs, subs in gs:
+            inner = titled([s for s, _, _ in subs])
+            result[board].append((top[t], fs, [(inner[s], sfs, ss) for s, sfs, ss in subs]))
+    return result
 
 
 def full_groups(prod, files, folder_boards):

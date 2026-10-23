@@ -53,6 +53,10 @@ extension Drawing {
             let title = try folded(text, statement)
             guard let found = try find(title, statement, for: what), let record = record(of: found) else { return nil }
             return (record.id, EndName(title: title))
+        case .path(let text):
+            guard let found = try find(path: text, statement, for: what), let record = record(of: found) else { return nil }
+            let path = try folded(text, statement)
+            return (record.id, EndName(title: path.last, path: path.written))
         case .id(let text):
             let id = try shapeID(text, statement), mark = name.written
             guard let found = try find(id: id, written: mark, statement, for: what), let record = record(of: found) else { return nil }

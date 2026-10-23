@@ -9,7 +9,7 @@ import { replay, extract } from './replay.mjs';
 import { boardField, boardView, drawnRecord, sameFile, pickRecord, needsTitles, readRecords, recordName, beyond, minus, foreign, replaceScript, hasTitle } from './redraw.mjs';
 import { checkDigest } from './check.mjs';
 import { typeProblems, isType, isInstance } from './types.mjs';
-import { TOOL_DIR, fold } from './util.mjs';
+import { TOOL_DIR, fold, label } from './util.mjs';
 
 export const USAGE = `digest tool (the driver, ./digest, runs these; the tool never runs canvas)
   check <digest.json> [--existing titles.json] [--kinds kinds.json] [--into "Title"]
@@ -17,32 +17,42 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
   check-text <check.json>                                              what check found, as "error: ..." and "warning: ..." lines ("ok" for none)
   measure-script <digest.json>                                         the draw script for \`canvas measure -\`
   plan <digest.json> <measure.json> <outdir> [--mess 0..1] [--promote off] [--prefer N] [--cap 0..1] [--margin PILLS] [--popular ARROWS] [--into "Title"]
-                                             [--view WxH] [--ranks rows|columns|auto]
-                                                                       writes <outdir>/plan.json, report.json and runs/NN-<board>-<step>.draw; --into puts the
-                                                                       whole digest in a new subboard of that title (runs/00-into.draw makes it)
-  compare <plan.json> <result.json> [--name run] [--text true]       one run's result (dry or real) against the plan: every shape's box and every pill's spot
-                                                                       from its board's origin, and that every shape is created; --text prints "ok ..." or "MISMATCH ..."
-  clashes <plan.json> <titles.json>                                    the plan's titles that the file already holds, as "error: ..." lines (none: nothing printed)
+                                             [--view WxH] [--ranks rows|columns|auto] [--existing titles.json]
+                                                                       writes <outdir>/plan.json, report.json, statements.json (what each line of each run says,
+                                                                       and the titles the scripts rely on the file not having) and runs/NN-<board>-<step>.draw;
+                                                                       --into puts the whole digest in a new subboard of that title (runs/00-into.draw makes it);
+                                                                       --existing: the titles the file holds beside the drawing (an array of strings), which no name
+                                                                       in a script may be able to mean (a name is a path where its title is in the file or repeats)
+  compare <plan.json> <result.json> [--name run] [--text true] [--statements statements.json]
+                                                                       one run's result (dry or real) against the plan: its rows matched to the run's statements
+                                                                       by line, every shape's box and every pill's spot from its board's origin, and that every shape
+                                                                       is created; --text prints "ok ..." or "MISMATCH ..."
+  clashes <plan.json> <titles.json> [statements.json]                  the titles the file holds that the plan can't be drawn beside (the --into title; those the
+                                                                       scripts rely on it not having), as "error: ..." lines (none: nothing printed)
   runs <plan.json>                                                     the run files in the order they are drawn, one a line
   into <plan.json>                                                     the title of the subboard the plan draws into (nothing for a new file)
-  replay <plan.json> <resultsdir> [--titles titles.json]               the real runs' saved results (<resultsdir>/<run>.json), all of them, against the plan
-  extract titles|root-titles|kinds|id|count|errors <answer.json>       what the driver reads out of canvas's JSON (or check's), printed as JSON
+  replay <plan.json> <resultsdir> [--places places.json] [--statements statements.json]
+                                                                       the real runs' saved results (<resultsdir>/<run>.json), all of them, against the plan; the
+                                                                       places are what the file holds after them (extract places)
+  extract titles|root-titles|places|root-places|kinds|id|count|errors <answer.json>
+                                                                       what the driver reads out of canvas's JSON (or check's), printed as JSON; places are
+                                                                       {title, inside, board} (where each titled shape is: the containers it is in)
   board <boards.json> <front|id|file|name> id|path|fileShapes|shows [path]   one open board's field, from \`canvas boards\` ([path]: the file named, its links resolved)
   view <boards.json> <front|id>                                        the room that board's window has for a board fit to it, as --view takes it (1312x772); nothing
                                                                        when no such board is open or its window has no size
-  drawn <plan.json> <path> <id> [shapes] [--over drawn.json --was N]   what drawing the plan makes, to keep as drawn.json (the board's file and id, the subboard, the titles,
+  drawn <plan.json> <path> <id> [shapes] [--over drawn.json --was N]   what drawing the plan makes, to keep as drawn.json (the board's file and id, the subboard, the places,
                                                                        how many shapes the file held once drawn); --over: with the drawing it replaces, while it is drawn,
                                                                        and --was, how many shapes the file held before that one was taken back
-  same-file <drawn.json> <path> <id> [titles.json]                     "yes" when the last drawing is in that board's file (by its path, else by its id and its shapes), else "no"
-  record-pick <path> <id> <titles.json> [record.json ...]              which record of a folder of them (--records) is the last drawing in that board's file (as same-file tells);
+  same-file <drawn.json> <path> <id> [places.json]                     "yes" when the last drawing is in that board's file (by its path, else by its id and its shapes), else "no"
+  record-pick <path> <id> <places.json> [record.json ...]              which record of a folder of them (--records) is the last drawing in that board's file (as same-file tells);
                                                                        prints the record's argument as given, nothing when none is
   record-name <path> <id> <plan.json>                                  the file name for a new record: from the path, else from the id and the drawing's name
   name <plan.json|digest.json> [--into "Title"]                        what a drawing is told by in a board with no file: the subboard it goes into, else the digest's title
   has-title <titles.json> <title>                                      "yes" when the file holds that title, else "no"
   beyond <drawn.json> <fileShapes>                                     how many shapes the file holds beyond the last drawing (drawn as the board)
-  minus <titles.json> <drawn.json>                                     the file's titles less the last drawing's, as JSON
-  foreign <titles.json> <drawn.json>                                   the file's titles the last drawing didn't make, one a line
-  replace-script <drawn.json> <titles.json> [root-titles.json]         the draw script that takes the last drawing back (nothing when it is gone); with the titles
+  minus <places.json> <drawn.json>                                     the titles of the file's shapes less the last drawing's own (by place), as JSON
+  foreign <places.json> <drawn.json>                                   the file's shapes the last drawing didn't make, by place, one a line
+  replace-script <drawn.json> <places.json> [root-places.json]         the draw script that takes the last drawing back (nothing when it is gone); with the places
                                                                        on the file's root board, a shape drawn on the root is deleted only where it is on it
 (under jsc, make <outdir>/runs first: jsc cannot make a folder)
 
@@ -112,16 +122,17 @@ export async function run(args, io) {
     return;
   }
   if (cmd === 'check-text') { io.print(checkText(json(pos[1]))); return; }
-  if (cmd === 'clashes') { const lines = clashes(json(pos[1]), json(pos[2])); if (lines.length) io.print(lines.join('\n')); return; }
+  if (cmd === 'clashes') { const lines = clashes(json(pos[1]), json(pos[2]), pos[3] ? json(pos[3]) : null); if (lines.length) io.print(lines.join('\n')); return; }
   if (cmd === 'into') { const p = json(pos[1]); if (p.into) io.print(p.into); return; }
   if (cmd === 'runs') { io.print(json(pos[1]).runs.join('\n')); return; }
   if (cmd === 'measure-script') { io.print(measureScript(typedModel(json(pos[1]))).replace(/\n$/, '')); return; }
   if (cmd === 'plan') {
     const [, digestPath, measurePath, outdir] = pos;
     if (!outdir) throw new Error(USAGE);
-    for (const k of Object.keys(flags)) if (!['mess', 'promote', 'prefer', 'cap', 'margin', 'popular', 'into', 'view', 'ranks'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
+    for (const k of Object.keys(flags)) if (!['mess', 'promote', 'prefer', 'cap', 'margin', 'popular', 'into', 'view', 'ranks', 'existing'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
     const digest = json(digestPath);
     const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), popular: num(flags.popular), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null, view: viewOf(flags.view), ranks: ranksOf(flags.ranks), progress: io.warn };
+    if (flags.existing) opts.existing = json(flags.existing);
     const model = typedModel(digest);
     const sizes = sizesFrom(model, json(measurePath));
     const elk = await loadElk(io, TOOL_DIR);
@@ -131,13 +142,14 @@ export async function run(args, io) {
     io.mkdirp(outdir + '/runs');
     for (const run of r.runs) io.writeText(`${outdir}/runs/${run.name}`, run.text);
     io.writeText(outdir + '/plan.json', JSON.stringify(r.plan, null, 1));
+    io.writeText(outdir + '/statements.json', JSON.stringify(r.statements, null, 1));
     r.report.timings.totalMs = totalMs; r.report.timings.engine = io.engine;
     io.writeText(outdir + '/report.json', JSON.stringify(r.report, null, 1));
     io.print(summarize(r));
     return;
   }
   if (cmd === 'compare') {
-    const res = compareRun(json(pos[1]), json(pos[2]), flags.name || pos[2]);
+    const res = compareRun(json(pos[1]), json(pos[2]), flags.name || pos[2], flags.statements ? json(flags.statements) : null);
     if (flags.text === 'true') io.print(compareText(res)); else io.print(JSON.stringify(res));
     return;
   }
@@ -145,7 +157,7 @@ export async function run(args, io) {
     const plan = json(pos[1]);
     const results = {};
     for (const name of plan.runs) { try { results[name] = json(`${pos[2]}/${name.replace(/\.draw$/, '')}.json`); } catch (e) { /* a run that did not happen has no result */ } }
-    const res = replay(plan, results, flags.titles ? json(flags.titles) : null);
+    const res = replay(plan, results, flags.places ? json(flags.places) : null, flags.statements ? json(flags.statements) : null);
     io.print(res.lines.join('\n'));
     return;
   }
@@ -154,7 +166,7 @@ export async function run(args, io) {
   if (cmd === 'view') { const v = boardView(json(pos[1]), pos[2]); if (v) io.print(v); return; }
   if (cmd === 'drawn') { io.print(JSON.stringify(drawnRecord(json(pos[1]), pos[2] || null, pos[3], pos[4], flags.over ? json(flags.over) : null, flags.was, io.now()), null, 1)); return; }
   if (cmd === 'record-pick' || cmd === 'record-needs-titles') {
-    // record-pick PATH ID TITLES|'' FILES... [--name NAME] [--quiet true];  record-needs-titles PATH ID FILES... [--quiet true]
+    // record-pick PATH ID PLACES|'' FILES... [--name NAME] [--quiet true];  record-needs-titles PATH ID FILES... [--quiet true]
     const picking = cmd === 'record-pick', files = pos.slice(picking ? 4 : 3);
     const { records, skipped } = readRecords(files, json);
     if (skipped.length && flags.quiet !== 'true') (io.warn || (() => {}))(`digest: ignored ${skipped.length} file(s) in the records folder that aren't drawing records: ${skipped.map((s) => `${s.name.split('/').pop()} (${s.why})`).join(', ')}`);
@@ -195,13 +207,18 @@ export function checkText(res) {
   return (lines.length ? lines : ['ok']).join('\n');
 }
 
-/** The titles the plan draws (every shape on every board, and the subboard it goes into) that the file's titles already hold, as `error: ` lines. */
-export function clashes(plan, titles) {
-  const have = new Set(titles.map((t) => fold(t).toLowerCase()));
-  const planned = [];
-  if (plan.into) planned.push(plan.into);
-  for (const b of plan.boards) for (const s of b.shapes) planned.push(s.title);
-  return planned.filter((t) => have.has(fold(t).toLowerCase())).map((t) => `error: "${t}" is already on a board in the file; titles are file-wide`);
+/**
+ * The titles the file holds that the plan can't be drawn beside, as `error: ` lines: the subboard it goes into, and the titles its scripts name bare or
+ * through a part of a path on the file having nothing called that (`statements.absent`: with the file as it was when the plan was made, they can't mean
+ * a shape outside the drawing; a shape of that title in the file now could). Any other title a node has may be in the file: the scripts never name a
+ * shape so that it could be found outside the drawing.
+ */
+export function clashes(plan, titles, statements) {
+  const out = [];
+  if (plan.into && titles.some((t) => fold(t).toLowerCase() === fold(plan.into).toLowerCase())) out.push(`error: "${plan.into}" is already on a board in the file; titles are file-wide`);
+  const have = new Set(titles.map(fold));
+  for (const t of (statements && statements.absent) || []) if (have.has(t)) out.push(`error: "${t}" is on a board in the file now, and the scripts name shapes on the understanding that it is not (plan again, which reads the file's titles afresh)`);
+  return out;
 }
 
 /** compare's answer in words: `ok ...`, or `MISMATCH ...` and what is off, for the driver to print when it stops. */
@@ -224,12 +241,12 @@ export function summarize(r) {
   const v = rep.view;
   const lines = [`plan: ${r.plan.boards.length} board(s), ${shapes} shapes, ${t.pills} pills (${t.sharedArrows} arrows into shared ones), ${t.arrows} plain arrows; ${r.runs.length} runs; mess ${r.model.dial.mess}`
     + (v ? `; laid out for a view of ${Math.round(v.w)} x ${Math.round(v.h)}` + (v.from === 'assumed' ? ' (assumed: no view was given)' : '') : '')];
-  lines.push(`public (${rep.public.length}), all made by this run: ` + (rep.public.length ? rep.public.map((p) => `${p} (${rep.publicWhy[p]})`).join('; ') : 'none'));
+  lines.push(`public (${rep.public.length}), all made by this run: ` + (rep.public.length ? rep.public.map((p) => `${label(p)} (${rep.publicWhy[p]})`).join('; ') : 'none'));
   // the moves the plan keeps: one the loop took back again is in its board's demotions
   const back = new Set(Object.values(rep.boards).flatMap((x) => (x.demotions || []).map((d) => [d.board, d.mode, d.node].join('\u0000'))));
   const kept = rep.promotions.filter((p) => !back.has([p.board, p.mode || 'in', p.node].join('\u0000')));
   const ins = kept.filter((p) => p.mode !== 'out'), outs = kept.filter((p) => p.mode === 'out');
-  lines.push('stop: ' + Object.entries(rep.boards).map(([b, x]) => `${b === 'root' ? 'root' : b} ${x.stop}`).join(', ') + (ins.length ? `; promoted ${ins.length}: ${ins.map((p) => p.node).join(', ')}` : '') + (outs.length ? `; fanned out ${outs.length}: ${outs.map((p) => p.node).join(', ')}` : ''));
+  lines.push('stop: ' + Object.entries(rep.boards).map(([b, x]) => `${b === 'root' ? 'root' : label(b)} ${x.stop}`).join(', ') + (ins.length ? `; promoted ${ins.length}: ${ins.map((p) => label(p.node)).join(', ')}` : '') + (outs.length ? `; fanned out ${outs.length}: ${outs.map((p) => label(p.node)).join(', ')}` : ''));
   const long = Object.values(rep.boards).reduce((s, x) => s + (x.long || []).length, 0), left = Object.values(rep.boards).reduce((s, x) => s + (x.longLeft || 0), 0);
   if (long || left) lines.push(`long arrows: ${long} made pills of their own (over ${r.model.dial.longest} units, as the view sees them)` + (left ? `; ${left} still longer after the last pass` : ''));
   const all = r.model.nodes ? [...r.model.nodes.values()] : [];

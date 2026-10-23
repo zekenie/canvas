@@ -1,5 +1,6 @@
 // What the tool needs measured: the draw script `canvas measure` reads, and the sizes read back from its JSON.
-import { q, lit, byTitle } from './util.mjs';
+import { q, lit, byTitle, label } from './util.mjs';
+import { written, BOARD } from './names.mjs';
 import { LEAF_KINDS } from './model.mjs';
 import { noteTyping, arrowTyping } from './types.mjs';
 
@@ -15,58 +16,71 @@ export function noteWidth(title) {
   return Math.max(NOTE_W, Math.ceil(need / 20) * 20);
 }
 
-/** The shapes to measure: [{title, kind, w, text}] in a fixed order; a note that is a type or is one also says what it is (`typing`, as draw is told it). */
+/** The shapes to measure: [{key, title, kind, w, text}] in a fixed order (by key); a note that is a type or is one also says what it is (`typing`, as draw is told it). */
 export function toMeasure(model) {
   const items = [];
   for (const n of model.nodes.values()) {
     if (!LEAF_KINDS.has(n.kind)) continue;
-    items.push(n.kind === 'subboard' ? { title: n.title, kind: 'subboard' } : { title: n.title, kind: 'sticky-note', w: noteWidth(n.title), text: n.text, typing: noteTyping(n), node: n });
+    items.push(n.kind === 'subboard' ? { key: n.key, title: n.title, kind: 'subboard' } : { key: n.key, title: n.title, kind: 'sticky-note', w: noteWidth(n.title), text: n.text, typing: noteTyping(n), node: n });
   }
-  return items.sort((a, b) => byTitle(a.title, b.title));
+  return items.sort((a, b) => byTitle(a.key, b.key));
 }
 
 /** The ends a pill may be drawn for: every shape something points at (an end of a relationship type is never a pill: it is drawn between its two types). */
 export function pillTargets(model) {
-  return [...model.nodes.values()].filter((n) => LEAF_KINDS.has(n.kind) && !n.never && (model.inn.get(n.title) || []).some((e) => !e.end)).map((n) => n.title).sort(byTitle);
+  return [...model.nodes.values()].filter((n) => LEAF_KINDS.has(n.kind) && !n.never && (model.inn.get(n.key) || []).some((e) => !e.end)).map((n) => n.key).sort(byTitle);
 }
 
 /**
- * A draw script for `canvas measure -`: every note and card (a type with its schema and the types it builds on, a note with the types it is and
- * its values), then the ends of the relationship types and every typed arrow between notes (a type's note grows a row for each end it has and
- * those of what it builds on, and so does a note of it, and `measure` lays the script's notes out against the script's own types and ends,
- * whatever board each is on), then one edge through a reference to each end a pill may be drawn for. Placements are ignored by measure.
+ * A draw script for `canvas measure -`, and where each thing in it is: {text, shapeAt, pillAt} (the line of each shape's statement, by key, and the
+ * key each edge through a reference is for, by line). It has every note and card (a type with its schema and the types it builds on, a note with
+ * the types it is and its values), then the ends of the relationship types and every typed arrow between notes (a type's note grows a row for each
+ * end it has and those of what it builds on, and so does a note of it, and `measure` lays the script's notes out against the script's own types and
+ * ends, whatever board each is on), then one edge through a reference to each end a pill may be drawn for. Placements are ignored by measure, and so
+ * is the container a path leads through; a title that more than one node has is written as the path of the node, which measure keeps as a shape of
+ * its own (two statements of one title with different paths are two shapes).
  */
-export function measureScript(model) {
+export function measurePlan(model) {
   const items = toMeasure(model);
-  const lines = [];
+  const lines = [], shapeAt = new Map(), pillAt = new Map();
+  const count = new Map();
+  for (const n of model.nodes.values()) count.set(n.title, (count.get(n.title) || 0) + 1);
+  const name = (key) => {
+    const n = model.node(key);
+    return count.get(n.title) === 1 ? q(n.title) : written((n.chain.length ? [] : [BOARD]).concat(n.chain.map((c) => model.node(c).title), [n.title]));
+  };
   const stmt = (it, place) => it.kind === 'subboard'
-    ? `subboard ${q(it.title)}${place}`
-    : `sticky-note ${q(it.title)}${place} size: ${it.w}x` + (it.text ? ` text: ${lit(it.text)}` : '') + (it.typing || '');
-  items.forEach((it, i) => lines.push(stmt(it, i ? ` below ${q(items[0].title)}` : '')));
-  const leaves = items.map((it) => it.title);
+    ? `subboard ${name(it.key)}${place}`
+    : `sticky-note ${name(it.key)}${place} size: ${it.w}x` + (it.text ? ` text: ${lit(it.text)}` : '') + (it.typing || '');
+  items.forEach((it, i) => { lines.push(stmt(it, i ? ` below ${name(items[0].key)}` : '')); shapeAt.set(it.key, lines.length); });
+  const leaves = items.map((it) => it.key);
   const note = (t) => { const n = model.node(t); return n && n.kind === 'sticky-note'; };
   for (const e of model.edges) {
     if (!note(e.from) || !note(e.to)) continue;
-    for (const a of e.arrows) if (e.end || a.is.length) lines.push(`edge ${q(e.from)} -> ${q(e.to)}` + (a.text ? ` text: ${lit(a.text)}` : '') + arrowTyping(a));
+    for (const a of e.arrows) if (e.end || a.is.length) lines.push(`edge ${name(e.from)} -> ${name(e.to)}` + (a.text ? ` text: ${lit(a.text)}` : '') + arrowTyping(a));
   }
   for (const t of pillTargets(model)) {
     const from = leaves.find((x) => x !== t);
-    if (from) lines.push(`edge ${q(from)} -> ${q(t)} via: reference`);
+    if (from) { lines.push(`edge ${name(from)} -> ${name(t)} via: reference`); pillAt.set(lines.length, t); }
   }
-  return lines.join('\n') + '\n';
+  return { text: lines.join('\n') + '\n', shapeAt, pillAt };
 }
 
-/** The sizes the layout uses, from `canvas measure`'s JSON: {shapes: {title: {w, h, above}}, pillWidth: {title}, constants}. */
+export const measureScript = (model) => measurePlan(model).text;
+
+/** The sizes the layout uses, from `canvas measure`'s JSON: {shapes: {key: {w, h, above}}, pillWidth: {key}, constants}. Its rows are read by their line (see measurePlan). */
 export function sizesFrom(model, measure) {
+  const at = measurePlan(model);
+  const keyOfLine = new Map([...at.shapeAt].map(([key, line]) => [line, key]));
   const shapes = {};
-  for (const r of measure.shapes || []) shapes[r.title] = { w: r.size[0], h: r.size[1], above: r.above || 0 };
-  const missing = toMeasure(model).filter((it) => !shapes[it.title]).map((it) => it.title);
+  for (const r of measure.shapes || []) { const key = keyOfLine.get(r.line); if (key != null) shapes[key] = { w: r.size[0], h: r.size[1], above: r.above || 0 }; }
+  const missing = toMeasure(model).filter((it) => !shapes[it.key]).map((it) => label(it.key));
   if (missing.length) throw new Error('the measurement has no size for: ' + missing.slice(0, 10).join(', '));
   const pillWidth = {};
   let pillHeight = null;
-  for (const r of measure.references || []) { pillWidth[r.for] = r.size[0]; if (pillHeight == null) pillHeight = r.size[1]; }
+  for (const r of measure.references || []) { const key = at.pillAt.get(r.line); if (key == null) continue; pillWidth[key] = r.size[0]; if (pillHeight == null) pillHeight = r.size[1]; }
   const lacking = pillTargets(model).filter((t) => pillWidth[t] == null);
-  if (lacking.length && (measure.references || []).length) throw new Error('the measurement has no pill for: ' + lacking.slice(0, 10).join(', '));
+  if (lacking.length && (measure.references || []).length) throw new Error('the measurement has no pill for: ' + lacking.slice(0, 10).map(label).join(', '));
   const c = measure.constants || {};
   const gaps = c.gaps || {};
   const constants = {

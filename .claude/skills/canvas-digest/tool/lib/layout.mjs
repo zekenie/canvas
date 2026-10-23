@@ -72,7 +72,7 @@ export class Layouter {
     this.out = model.edges.filter((e) => model.node(e.from).board === board);
     this.sameBoard = this.out.filter((e) => !e.cross);
     this.leaves = [...model.nodes.values()].filter((n) => n.board === board && n.kind !== 'frame');
-    this.frameTitles = [...model.nodes.values()].filter((n) => n.board === board && n.kind === 'frame').map((n) => n.title);
+    this.frameTitles = [...model.nodes.values()].filter((n) => n.board === board && n.kind === 'frame').map((n) => n.key);   // keys (a title, unless more than one node has it)
     this.findSpines(this.opts.spines !== false);
   }
 
@@ -290,7 +290,7 @@ export class Layouter {
     }
     for (const l of this.freeIn.values()) l.sort();
     const units = new Map();
-    for (const n of this.leaves) units.set(n.title, this.unit(n.title, plan.byStart.get(n.title)));
+    for (const n of this.leaves) units.set(n.key, this.unit(n.key, plan.byStart.get(n.key)));
     const lifted = this.lift(plan.layoutEdges);
     const algos = new Map(), info = new Map();
     for (const cid of [this.rootCid].concat(this.frameTitles.map((f) => 'f:' + f))) algos.set(cid, chooseAlgorithm(this.kidsOf(cid), lifted.get(cid) || []));
@@ -508,7 +508,7 @@ export class Layouter {
     const how = r.ranked ? r.ranked.orient : r.dir === 'RIGHT' ? 'across' : r.algo === 'stress' && r.k && r.k !== 1 ? 'stretched' : null;   // what the report says of it, beside its algorithm
     info.set(cid, { algorithm: r.algo, how, warm: !!r.warm, children: items.length, arrows: edges.reduce((s, e) => s + e.n, 0), costs: r.costs || null });
     const pad = isFrame ? this.k.frameInset : 0;
-    const title = isFrame ? cid.slice(2) : '';
+    const title = isFrame ? this.m.node(cid.slice(2)).title : '';   // the pill above a frame says its title, not its key
     const w = isFrame ? Math.max(r.w + 2 * pad, this.k.frameMin.w, Math.ceil(TITLE_PILL(title))) : r.w;
     const h = isFrame ? Math.max(r.h + 2 * pad, this.k.frameMin.h) : r.h;
     const pos = new Map(items.map((it, i) => [it.id, { x: r.pos[i].x + pad, y: r.pos[i].y + pad }]));

@@ -122,14 +122,23 @@ enum Budget {
     static let enterCold = 250.0
     /// Deleting a shape whose boards hold 10,000 shapes: the commit, and every board under it taken
     /// with it. A frame and 2 ms: the generated file's two nested boards number their notes alike,
-    /// so 2,608 titles are each held twice, and `TitleValidationPlugin`'s index takes every one out
+    /// so 2,608 titles were each held twice, and the title index (Titles', then) took every one out
     /// (some 1.7 ms; main was at 15.2 of a frame's 16 before it). The owner chose raising it over
-    /// keeping the index's titles per board and numbering the generated titles across the file.
+    /// keeping the index's titles per board and numbering the generated titles across the file. The
+    /// index is Boards' `PathIndex` now (`PathValidationPlugin`'s service), which takes out every path
+    /// those boards held, and every container's place, the same way.
     /// Then a frame and 6: relationships brought two more services that hear the shapes of the boards a
     /// deletion takes (the relationship index and the check of a note's rows, a lookup or two a shape), and
     /// it measures 19.1 ms where main measured 16.3 (19.6 and 19.1 in two quiet runs). The owner, told of
     /// it: a slowdown of that size does not matter. Not made faster.
     static let subboardDeletion = frame + 6
+    /// Renaming a subboard whose board holds 10,000 shapes, over renaming one whose board holds none: the
+    /// commit, all of it the path index's upkeep (`PathIndex`: the 5,217 titled shapes inside filed under
+    /// their new paths, each found through Topology's `descendants(of:)` and named by the title its kept
+    /// path ends in, since the commit changed none of them). Some 4.8 to 6.5 ms in release, 2026-10-22, at a
+    /// load of 4 to 7 (14 to 17 while every shape's title was read again: half a microsecond each); the
+    /// list without the index renames it in 0.02. A proposal of half a frame.
+    static let containerRename = 8.0
     /// A drag event's input (its commit, without the frame) on a board beside or inside a subboard,
     /// on 10,000 shapes: some 0.25 ms, so a commit's upkeep of the whole file shows.
     static let dragInput = 1.0
@@ -1674,6 +1683,32 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 expect(delete < Budget.subboardDeletion, "deleting a subboard holding \(under) shapes took \(delete) ms")
                 expect(times.undo < Budget.undoEveryShape && times.redo < Budget.undoEveryShape,
                        "undoing and redoing the deletion of a subboard holding \(under) shapes took \(times) ms")
+            }
+        }
+    },
+    test("renaming a subboard whose board holds the board's worth of shapes files every path inside it again, within its budget over renaming an empty one") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        for size in sizes {
+            // A subboard on the root, among a few shapes, its board holding the generated board, and an empty one beside it.
+            var file = generatedFile(root: 20, children: [size])
+            let owner = try require(owners(in: file).first)
+            let empty = AnyShapeRecord(ShapeRecord(Subboard(frame: CGRect(x: -600, y: -400, width: 240, height: 160))))
+            file = CanvasFile(root: CanvasDocument(shapes: file.root.shapes + [empty]), children: file.children)
+            let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+            let index = try require(h.editor.pathIndex)
+            let inside = file[BoardID(owner: owner)].shapes.filter { registry.title(of: $0) != nil }
+            var turn = 0
+            @MainActor func rename(_ id: ShapeID) {
+                turn += 1
+                h.editor.transact("Rename") { $0.update(id) { $0[TitleProperty.self] = "Area \(turn)" } }
+            }
+            let full = median(runs: 11, onThread: true) { rename(owner) }
+            let bare = median(runs: 11, onThread: true) { rename(empty.id) }
+            expectEqual(index.keys[try require(inside.first).id]?.segments.first, "Area \(turn - 11)", "what's inside it is under its name")
+            report(String(format: "%6d shapes on a subboard's board (%d titled): renaming it %5.2f ms, an empty one %5.2f, over it %5.2f (budget %.0f)",
+                          size, inside.count, full, bare, full - bare, Budget.containerRename))
+            if holdsToBudgets {
+                expect(full - bare < Budget.containerRename, "renaming a subboard holding \(size) shapes took \(full) ms, \(bare) for an empty one")
             }
         }
     },

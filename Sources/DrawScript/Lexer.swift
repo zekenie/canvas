@@ -13,6 +13,8 @@ struct Token: Equatable {
         /// After a key, `[…]` or `{…}` to the matching bracket: its text as written.
         case json
         case open, close, comma
+        /// `>`, which joins the parts of a path.
+        case chevron
     }
 
     var kind: Kind
@@ -31,7 +33,8 @@ struct LexedLine {
 
 /// Cuts a line into tokens. Spaces and tabs separate them; `//` outside a quoted string or a JSON
 /// value starts a comment; `#` is an ordinary character. A trailing comma on a word is a separator
-/// of its own (`"A", "B"`, `urgent, quiet`), as `and` is.
+/// of its own (`"A", "B"`, `urgent, quiet`), as `and` is, and so is a `>` that joins a path's parts, with or without spaces
+/// around it (`"A">"B"`, `board> "B"`, `#7C1E…>"B"`).
 enum Lexer {
     /// What starts a comment.
     static let comment = "//"
@@ -146,6 +149,14 @@ enum Lexer {
                 }
                 if word == "," {
                     tokens.append(Token(kind: .comma, text: ",", raw: ","))
+                } else if word == ShapePath.joiner {
+                    tokens.append(Token(kind: .chevron, text: word, raw: word))
+                } else if let (before, after) = joined(word) {
+                    // A path's `>` written against the part before or after it (`board>`, `#7C1E…>`, `>board`): not an
+                    // arrow (`->`, `<->`), nor a word that only ends in one.
+                    if !before.isEmpty { tokens.append(Token(kind: .word, text: before, raw: before)) }
+                    tokens.append(Token(kind: .chevron, text: ShapePath.joiner, raw: ShapePath.joiner))
+                    if !after.isEmpty { tokens.append(Token(kind: .word, text: after, raw: after)) }
                 } else if word.count > 1, word.hasSuffix(":") {
                     tokens.append(Token(kind: .key, text: String(word.dropLast()), raw: word))
                 } else {
@@ -155,6 +166,20 @@ enum Lexer {
             }
         }
         return LexedLine(tokens: tokens, text: String(characters[0..<end]).trimmingSpaces)
+    }
+}
+
+extension Lexer {
+    /// A word with a path's `>` against it: the part before the `>` and the part after, one of them empty. Only a word that
+    /// starts with `>`, or ends in one after `board` or an id (the parts of a path that are bare words), is read so; `->`, `=>`
+    /// and the like are arrows, and anything else with a `>` in it is the word it is.
+    static func joined(_ word: String) -> (before: String, after: String)? {
+        let chevron = ShapePath.joiner
+        guard word.count > 1, !looksLikeArrow(word) else { return nil }
+        if word.hasPrefix(chevron) { return ("", String(word.dropFirst())) }
+        guard word.hasSuffix(chevron) else { return nil }
+        let before = String(word.dropLast())
+        return before == PlaceWord.board.rawValue || before.hasPrefix(String(ShapeName.idMark)) ? (before, "") : nil
     }
 }
 

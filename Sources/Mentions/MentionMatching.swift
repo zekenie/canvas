@@ -58,6 +58,11 @@ public enum MentionRanking {
 /// (`FuzzyMatcher`, DetailPanel's), which the catalog's two passes over its folded labels use
 /// too (`MentionState.candidates`).
 public enum MentionMatcher {
+    /// How many words `query` has, as the picker splits them (`PathMatcher`: on whitespace, the words past the
+    /// eighth one): the words before the last may name a shape's containers, so a longer query narrows what a
+    /// shorter one found only among queries of as many words (`MentionCandidates.words`).
+    public static func words(in query: String) -> Int { PathMatcher(query).pieceCount }
+
     /// How `query` matches `label`; nil for not at all.
     public static func match(_ query: String, in label: String) -> MentionMatch? {
         FuzzyMatcher.match(query, in: label).map { MentionMatch(score: $0.score, matched: $0.matched) }

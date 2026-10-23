@@ -212,7 +212,7 @@ private func frame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 120, he
                     "\"t\" is in every label: the tokens only")
         expectEqual(r.candidates("plate", kinds: [Token.kind], admitting: anything).matches, [], "what matches but isn't of the kinds is no match")
         expectEqual(r.candidates(kinds: []), MentionCandidates(), "no kinds, nothing")
-        expectEqual(r.candidates("t", kinds: []), MentionCandidates())
+        expectEqual(r.candidates("t", kinds: []), MentionCandidates(words: 1))
 
         let both = r.candidates(kinds: [Plate.kind, Token.kind])
         let alternating = (0..<5).flatMap { [r.plates[$0], r.tokens[$0]] }
@@ -399,7 +399,7 @@ private func frame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 120, he
         expectEqual(found, plain.filter { given.contains($0) }, "ranked as without it, less the rest")
         expectEqual(r.state.candidates(matching: "endpoint", in: AnyMentionable.self, for: r.owner, among: given).matches, [], "what matches but isn't given is no match")
         expectEqual(r.state.candidates(matching: "token 0", in: AnyMentionable.self, for: r.owner, among: [r.plates[0]]).matches, [], "the token itself, not given")
-        expectEqual(r.state.candidates(matching: "t", in: AnyMentionable.self, for: r.owner, among: []), MentionCandidates(), "none given, none listed")
+        expectEqual(r.state.candidates(matching: "t", in: AnyMentionable.self, for: r.owner, among: []), MentionCandidates(words: 1), "none given, none listed")
         expectEqual(r.state.candidates(matching: "", in: AnyMentionable.self, for: r.owner, among: []), MentionCandidates())
     },
 

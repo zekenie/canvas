@@ -1,6 +1,7 @@
 // Drawing a digest again in its place: what a drawing made (drawn.json), the script that takes it back, and which board is the target.
 // Pure: the driver hands in canvas's answers and the plan.
 import { q, fold } from './util.mjs';
+import { placesOf, placeKey, deleteNames, shapeKey as shapeKeyOf } from './places.mjs';
 
 // Titles as the app tells them apart: spaces folded, case kept ("canvas" beside "Canvas" is another shape).
 const key = (t) => fold(t);
@@ -40,10 +41,12 @@ export function boardView(boards, which) {
   return Array.isArray(v) && v[0] > 0 && v[1] > 0 ? `${Math.round(v[0])}x${Math.round(v[1])}` : '';
 }
 
-/** What is deleted to take a drawing back: its subboard, or each shape it put on the file's root. */
-const takes = (drawn) => drawn.takes || (drawn.into ? [drawn.into] : drawn.root || []);
-/** The subboards among them that a drawing went into (`--into`): the rest are shapes of the file's root board. */
-const intos = (drawn) => drawn.intos || (drawn.into ? [drawn.into] : []);
+/**
+ * What is deleted to take a drawing back: its subboard, or each shape it put on the file's root, each `{place, name}`: the place it is at in the file
+ * (the containers it is in, outermost first, then its title: what a query says of a shape) and the name `delete` is given, which means that shape alone.
+ */
+const takes = (drawn) => drawn.takes || (drawn.into ? [{ place: [drawn.into], name: q(drawn.into), into: true }] : drawn.root || []);
+const takeKey = (t) => placeKey(t.place.slice(0, -1), t.place[t.place.length - 1]);
 /**
  * The names a record's drawings are told by in a board with no file (two while a drawing made in place of another is not yet whole): the
  * subboard each went into, else its digest's title. Only one digest is the board itself, and a subboard's title is the file's alone.
@@ -54,9 +57,11 @@ const count = (v) => (v == null || v === '' || isNaN(+v) ? null : +v);
 /**
  * What a drawing of the plan makes, kept as drawn.json so a later run can take it back: the board's file (and its id, which is what tells
  * a board with no file yet), the subboard it went into (or null: the file's root), its name (that subboard, else the digest's title),
- * the titles on its first board, what is deleted to take it back (`takes`: the subboard, or the root's shapes; `intos`: the subboards among them), every title,
- * and how many shapes the file held once it was drawn, or when it stopped (`shapes`: null while it is being drawn). `at` is when it was
- * written (the clock's milliseconds, handed in), which is how the newest of two records of one board is told without looking at file times.
+ * the shapes on its first board (`root`, each with its place and the name `delete` takes it by), what is deleted to take it back (`takes`: the
+ * subboard, or the root's shapes), every title (`titles`) and the place of every shape (`places`: the containers
+ * it is in, then its title, as a query's row says it), and how many shapes the file held once it was drawn, or when it stopped (`shapes`: null while it is
+ * being drawn). `at` is when it was written (the clock's milliseconds, handed in), which is how the newest of two records of one board is told without
+ * looking at file times.
  *
  * `over` is the record of the drawing this one replaces, while this one is being drawn: until it is whole, an undo or two in the app
  * may bring that one back, so the record holds both drawings' titles, names and what takes either back, and `was`, how many shapes
@@ -64,15 +69,20 @@ const count = (v) => (v == null || v === '' || isNaN(+v) ? null : +v);
  * which is drawn only once the take-back has left the file empty, so the count is exactly the last drawing's, whichever way it was drawn).
  */
 export function drawnRecord(plan, path, id, shapes, over, was, at) {
-  const root = plan.boards.find((b) => b.board === 'root');
-  const titles = [];
-  if (plan.into) titles.push(plan.into);
-  for (const b of plan.boards) for (const s of b.shapes) titles.push(s.title);
-  const rec = { path: path || null, board: id == null || id === '' ? null : String(id), into: plan.into || null, name: plan.into || plan.title || null, root: root ? root.shapes.map((s) => s.title) : [], titles, shapes: count(shapes), at: count(at) };
-  rec.takes = takes(rec); rec.intos = intos(rec);
+  const where = placesOf(plan);
+  const titles = [], places = [];
+  if (plan.into) { titles.push(plan.into); places.push([plan.into]); }
+  for (const b of plan.boards) for (const s of b.shapes) { titles.push(s.title); places.push(where.containers(shapeKeyOf(s)).concat([s.title])); }
+  const root = deleteNames(plan);
+  const rec = { path: path || null, board: id == null || id === '' ? null : String(id), into: plan.into || null, name: plan.into || plan.title || null, root, titles, places, shapes: count(shapes), at: count(at) };
+  rec.takes = takes(rec);
   if (!over) return rec;
+  const merged = new Map();
+  for (const t of takes(rec).concat(takes(over))) if (!merged.has(takeKey(t))) merged.set(takeKey(t), t);
+  const seen = new Set(), both = [];
+  for (const p of (rec.places || []).concat(over.places || [])) { const k = p.join('\u0000'); if (!seen.has(k)) { seen.add(k); both.push(p); } }
   return Object.assign(rec, {
-    takes: union(rec.takes, takes(over)), intos: union(rec.intos, intos(over)), titles: union(rec.titles, over.titles), names: union(names(rec), names(over)),
+    takes: [...merged.values()], titles: union(rec.titles, over.titles), places: both, names: union(names(rec), names(over)),
     was: rec.into ? null : count(was),
   });
 }
@@ -82,13 +92,13 @@ export function drawnRecord(plan, path, id, shapes, over, was, at) {
  * with no file yet (which may have one since), the same board id and a shape of the drawing still in the file (`titles`: an id is the
  * app's for as long as it runs, and a later board may get it).
  */
-export function sameFile(drawn, path, id, titles) {
+export function sameFile(drawn, path, id, places) {
   if (!drawn) return false;
   if (drawn.path) return !!path && real(drawn.path) === real(path);
   if (drawn.board == null || id == null || id === '' || drawn.board !== String(id)) return false;
-  // what takes it back: the shapes it put on the file's root, or the subboard it went into (titles are file-wide, so no other drawing has one)
-  const mine = new Set(takes(drawn).map(key));
-  return Array.isArray(titles) && titles.some((t) => mine.has(key(t)));
+  // what takes it back: the shapes it put on the file's root, or the subboard it went into (a place in the file is its own, whatever title another shape has)
+  const mine = new Set(takes(drawn).map(takeKey));
+  return Array.isArray(places) && places.some((p) => mine.has(placeKey(p.inside, p.title)));
 }
 
 /**
@@ -105,30 +115,34 @@ export function beyond(drawn, fileShapes) {
   return n - (was != null && was < n ? Math.max(now, was) : now);
 }
 
-/** The file's titles less the ones the last drawing made: what a new drawing in its place has to keep clear of. */
-export function minus(titles, drawn) {
-  const ours = new Set((drawn.titles || []).map(key));
-  return titles.filter((t) => !ours.has(key(t)));
+/**
+ * The titles of the file's shapes less those of the last drawing's own, by place (`places`: what the file holds, as `canvas query` says it): what a new
+ * drawing in its place has to keep clear of. A shape of the file that has a title the drawing has too, somewhere else, is not the drawing's.
+ */
+export function minus(places, drawn) {
+  const ours = new Set((drawn.places || []).map((p) => placeKey(p.slice(0, -1), p[p.length - 1])));
+  return places.filter((p) => !ours.has(placeKey(p.inside, p.title))).map((p) => p.title);
 }
 
-/** The titles in the file that the last drawing didn't make: shapes a drawing on the file's root would be drawn among. */
-export function foreign(titles, drawn) {
-  return minus(titles, drawn);
+/** The shapes in the file that the last drawing didn't make, by place: shapes a drawing on the file's root would be drawn among. As their places read, `a > b > title`. */
+export function foreign(places, drawn) {
+  const ours = new Set((drawn.places || []).map((p) => placeKey(p.slice(0, -1), p[p.length - 1])));
+  return places.filter((p) => !ours.has(placeKey(p.inside, p.title))).map((p) => (p.inside || []).concat([p.title]).join(' > '));
 }
 
 /**
  * The script that takes the last drawing back: its subboard, which takes its board with it, or each shape it put on the file's root (the
- * subboards among them take their boards, a shape's arrows and pills go with it). Only titles the file still holds: a drawing that stopped
- * part way is taken back as far as it got. Empty when there is nothing to take back.
+ * subboards among them take their boards, a shape's arrows and pills go with it), each by the name that means that shape alone. Only shapes the file
+ * still holds, by place: a drawing that stopped part way is taken back as far as it got. Empty when there is nothing to take back.
  *
- * `rootTitles` are the titles on the file's root board. A shape a drawing put on the root is taken back only where it is on the root:
+ * `rootPlaces` are the places of the shapes on the file's root board. A shape a drawing put on the root is taken back only where it is on the root:
  * the record of two drawings (drawnRecord's `over`) names the takes of both, and a title that one has on the root the other may hold
  * inside a subboard, where its subboard takes it (and where a `delete` of it would put the script on two boards, which draw refuses).
  */
-export function replaceScript(drawn, titles, rootTitles) {
-  const have = new Set(titles.map(key)), onRoot = rootTitles ? new Set(rootTitles.map(key)) : have;
-  const into = new Set(intos(drawn).map(key));
-  return takes(drawn).filter((t) => (into.has(key(t)) ? have : onRoot).has(key(t))).map((t) => `delete ${q(t)}`).join('\n');
+export function replaceScript(drawn, places, rootPlaces) {
+  const at = (list) => new Set(list.map((p) => placeKey(p.inside, p.title)));
+  const have = at(places), onRoot = rootPlaces ? at(rootPlaces) : have;
+  return takes(drawn).filter((t) => (t.into ? have : onRoot).has(takeKey(t))).map((t) => `delete ${t.name}`).join('\n');
 }
 
 /** Whether the file holds a title, as a new shape's title is checked against it: spaces folded, case apart or not. */
@@ -144,11 +158,11 @@ export function hasTitle(titles, title) {
  * `name`, this run's own (`names`), then the newest by the `at` written in it, then by file name: never the file times, so the pick is the
  * same for the same folder. The name of the record's file, or '' when no record is of this file.
  */
-export function pickRecord(records, path, id, titles, name) {
+export function pickRecord(records, path, id, places, name) {
   const mine = name ? key(name) : null;
   const rank = (r) => (mine && names(r.record).some((h) => key(h) === mine) ? 0 : 1);
   const list = (records || []).slice().sort((a, b) => rank(a) - rank(b) || (count(b.record.at) || 0) - (count(a.record.at) || 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const hit = (withPath) => list.find((r) => !!r.record.path === withPath && sameFile(r.record, path, id, titles));
+  const hit = (withPath) => list.find((r) => !!r.record.path === withPath && sameFile(r.record, path, id, places));
   const found = hit(true) || hit(false);
   return found ? found.name : '';
 }

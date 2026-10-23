@@ -186,6 +186,107 @@ private struct ReadmeQuery {
             if let count = question.count { expectEqual(answer.count, count, question.query) }
         }
     },
+    test("the orders lens gives each thing the name its container knows it by: two services with a workflow and an activity of one name are drawn, told apart by id, and asked for by where they are") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("IngestExampleTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // orders and billing each run a syncWorkflow, which runs a notify, which writes the outbox table
+        let repo = folder.appendingPathComponent("shop")
+        func put(_ text: String, _ path: String) throws {
+            let url = repo.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        try put("CREATE TABLE outbox (id text PRIMARY KEY);\n", "db/migrations/001_outbox.sql")
+        for service in ["orders", "billing"] {
+            try put("""
+                import { proxyActivities } from "@temporalio/workflow";
+                const { notify } = proxyActivities<any>({ startToCloseTimeout: "1 minute" });
+
+                /** Sends what is waiting. */
+                export async function syncWorkflow(): Promise<void> {
+                  await notify();
+                }
+
+                """, "services/\(service)/src/workflows/sync.ts")
+            try put("""
+                /** Tells the customer. */
+                export async function notify(): Promise<void> {
+                  await query(`INSERT INTO outbox (id) VALUES ($1)`);
+                }
+
+                """, "services/\(service)/src/activities/notify.ts")
+        }
+        try put(try String(contentsOf: example(".canvas/lens.py"), encoding: .utf8), ".canvas/lens.py")
+        try git(repo, ["init", "-q"])
+        try git(repo, ["add", "-A"])
+        try git(repo, ["commit", "-q", "-m", "two services that repeat a name"])
+        func module(_ service: String) -> String {
+            #"{"name": "@shop/\#(service)", "path": "services/\#(service)/src", "deps": [], "test": false, "layer": null, "lines": 12, "doc": null, "folders": {}, "files": ["workflows/sync.ts", "activities/notify.ts"]}"#
+        }
+        func file(_ service: String, _ rel: String, name: String, line: Int) -> String {
+            #"{"module": "@shop/\#(service)", "rel": "\#(rel)", "path": "services/\#(service)/src/\#(rel)", "lines": 6, "doc": null, "api": true, "decls": [{"name": "\#(name)", "kind": "function", "visibility": "public", "line": \#(line)}]}"#
+        }
+        let scan = """
+            {"language": "typescript", "name": "shop", "modules": [\(module("orders")), \(module("billing"))],
+             "files": [\(file("orders", "workflows/sync.ts", name: "syncWorkflow", line: 5)), \(file("orders", "activities/notify.ts", name: "notify", line: 2)),
+                       \(file("billing", "workflows/sync.ts", name: "syncWorkflow", line: 5)), \(file("billing", "activities/notify.ts", name: "notify", line: 2))],
+             "uses": []}
+            """
+        let scanFile = folder.appendingPathComponent("scan.json")
+        try scan.write(to: scanFile, atomically: true, encoding: .utf8)
+        let environment = ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path,
+                           "CANVAS_INGEST_CACHE": folder.appendingPathComponent("cache").path,
+                           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
+        let ingest = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-ingest/ingest")
+        let drawn = try run(ingest, [repo.path, "--scan", scanFile.path], environment: environment, timeout: 280)
+        expectEqual(drawn.status, 0, drawn.output + drawn.error)
+        expect(drawn.output.contains("verify ok"), drawn.output)
+        expect(!drawn.error.contains("lens: "), "no name is reworded for another service's: \(drawn.error)")
+        let where_ = try run(ingest, [repo.path, "--where"], environment: environment)
+        let kept = URL(fileURLWithPath: where_.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        let runFolder = kept.appendingPathComponent("runs/\(try require(try FileManager.default.contentsOfDirectory(atPath: kept.appendingPathComponent("runs").path).sorted().last))")
+        let digest = try json(runFolder.appendingPathComponent("digest.json"))
+        let nodes = digest["nodes"]?.arrayValue ?? [], edges = digest["edges"]?.arrayValue ?? []
+        // each service's board has the frames and notes every service's has, under the same names; each gets an id, where its title repeats
+        func ids(_ title: String) -> [String] { nodes.filter { $0["title"] == .string(title) }.compactMap { $0["id"]?.stringValue }.sorted() }
+        expectEqual(ids("syncWorkflow"), ["syncWorkflow  in Services > @shop/billing > Workflows", "syncWorkflow  in Services > @shop/orders > Workflows"])
+        expectEqual(ids("notify"), ["notify  in Services > @shop/billing > Activities", "notify  in Services > @shop/orders > Activities"])
+        expectEqual(ids("Workflows"), ["Workflows  in Services > @shop/billing", "Workflows  in Services > @shop/orders"])
+        expectEqual(ids("Activities"), ["Activities  in Services > @shop/billing", "Activities  in Services > @shop/orders"])
+        expect(nodes.filter { $0["id"] != nil }.count == 8 && ids("outbox").isEmpty && ids("Types").isEmpty, "an id where a title repeats, and nowhere else: two workflows, two activities, and the two frames of each")
+        // a typed arrow runs between the notes it names by id
+        let runs = edges.filter { $0["is"] == "runs" }
+        expectEqual(runs.compactMap { "\($0["from"]?.stringValue ?? "?") > \($0["to"]?.stringValue ?? "?")" }.sorted(),
+                    ["syncWorkflow  in Services > @shop/billing > Workflows > notify  in Services > @shop/billing > Activities",
+                     "syncWorkflow  in Services > @shop/orders > Workflows > notify  in Services > @shop/orders > Activities"])
+        let checked = try run(URL(fileURLWithPath: jsc), [URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest/tool/main.js").path, "--", "check", runFolder.appendingPathComponent("digest.json").path], timeout: 120)
+        expectEqual(checked.status, 0, checked.output + checked.error)
+        expectEqual(try JSON(text: checked.output), ["errors": [], "warnings": []])
+        // and the app answers for each by where it is
+        @MainActor func ask(_ query: String) throws -> [(title: String, inside: String)] {
+            let answer = try canvas(server, ["query", "--board", "\(board.number)", "--limit", "100", query])
+            expectEqual(answer.status, 0, "\(query): \(answer.error)")
+            return try (JSON(text: answer.output)["rows"]?.arrayValue ?? []).map {
+                ($0["title"]?.stringValue ?? "?", ($0["inside"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " > "))
+            }.sorted { $0.inside < $1.inside }
+        }
+        func said(_ rows: [(title: String, inside: String)]) -> [String] { rows.map { "\($0.title) in \($0.inside)" } }
+        expectEqual(said(try ask(#":is-a("Workflow")"#)), ["syncWorkflow in Services > @shop/billing > Workflows", "syncWorkflow in Services > @shop/orders > Workflows"])
+        expectEqual(try ask(#"arrow:is-a("runs")"#).count, 2)
+        expectEqual(said(try ask(#":start-of(arrow:is-a("writes"):ends-at("outbox"))"#)), ["notify in Services > @shop/billing > Activities", "notify in Services > @shop/orders > Activities"],
+                    "who writes the outbox: both services' notify")
+        expectEqual(said(try ask(#":end-of(arrow:is-a("runs"):starts-at("@shop/orders" > "Workflows" > "syncWorkflow"))"#)), ["notify in Services > @shop/orders > Activities"],
+                    "what orders' workflow runs, asked for by its path")
+        expectEqual(said(try ask(":incomplete")), [], "every notify is run by a workflow")
+    },
     test("the orders lens passes over what its conventions don't read and says so where it can: a serverless.yml that is no mapping, SQL words that are no tables, a proxy made in a helper, a multi-line JSDoc, a service outside services/") {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("IngestExampleTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

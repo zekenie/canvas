@@ -67,7 +67,7 @@ export async function runBoard(model, layouter, opts) {
   const report = { board, dial: model.dial, overrides: { cap: opts.cap == null ? null : opts.cap, margin: opts.margin == null ? null : opts.margin, popular: opts.popular == null ? null : opts.popular }, mu: muD, searchMu: mu, margin, k: K, promotions: [], demotions: [], splits: [], hostChanges: 0, stop: null, safetyCap: null };
   let state = { promoted: new Set(), order: [], fanned: new Set(), fans: [], apart: new Set(), hosts: new Map(), splits: new Map() };
   const leaves = layouter.leaves;
-  if (opts.promote) for (const n of leaves) if (n.pin) { state.promoted.add(n.title); state.order.push(n.title); }
+  if (opts.promote) for (const n of leaves) if (n.pin) { state.promoted.add(n.key); state.order.push(n.key); }
   const lap = (name) => { report.laps = report.laps || {}; const t = now(); report.laps[name] = (report.laps[name] || 0) + (t - lapT); lapT = t; };
   let lapT = now();
 
@@ -420,8 +420,8 @@ export function arrowsAt(model, layouter, state, v) {
 export function mostPopular(model, layouter, state) {
   let best = null;
   for (const n of layouter.leaves) {
-    const a = arrowsAt(model, layouter, state, n.title);
-    for (const c of [{ node: n.title, mode: 'in', arrows: a.into }, { node: n.title, mode: 'out', arrows: a.out }]) {
+    const a = arrowsAt(model, layouter, state, n.key);
+    for (const c of [{ node: n.key, mode: 'in', arrows: a.into }, { node: n.key, mode: 'out', arrows: a.out }]) {
       if (c.arrows > 0 && (!best || c.arrows > best.arrows)) best = c;
     }
   }
@@ -439,7 +439,7 @@ export function candidates(model, layouter, layout, ev, state) {
   const badOf = (edges) => { let bad = 0; for (const e of edges) { const i = edgeIndex.get(e.from + SEP + e.to); if (i != null && ev.per[i]) bad += ev.per[i].x + ev.per[i].ne + ev.per[i].fx; } return bad; };
   const fanned = state.fanned || new Set();
   for (const n of layouter.leaves) {
-    const v = n.title;
+    const v = n.key;
     if (fanned.has(v)) continue;
     // its uses that are still arrows, each to become a pill beside it
     const outgoing = (model.out.get(v) || []).filter((e) => !e.cross && model.node(e.to).board === layouter.board);
@@ -453,7 +453,7 @@ export function candidates(model, layouter, layout, ev, state) {
     }
   }
   for (const n of layouter.leaves) {
-    const v = n.title;
+    const v = n.key;
     if (state.promoted.has(v) || n.never) continue;
     const incoming = (model.inn.get(v) || []).filter((e) => !e.cross && model.node(e.from).board === layouter.board);
     const users = usersOf(model, layouter, v);

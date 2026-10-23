@@ -39,14 +39,14 @@ struct ReferenceLook {
     /// found none, in the room a dynamic pill reserves.
     var badge: String?
     var dashed: Bool
-    /// The name of the board its note is on, when that isn't the pill's board.
-    var board: String?
+    /// Where its note is, when that isn't where the pill is: the containers it is inside, else the name of its board.
+    var place: String?
     /// Whether the pill reserves room for what a dynamic one shows at its trailing end.
     var reservesBadge: Bool
 
     /// `mismatch`: the pill stands for shapes that don't take the channel of an arrow attached to it
     /// (`ReferenceState.channelMismatch(of:)`), shown as a warning where a dynamic pill's count is.
-    init(_ condition: ReferenceCondition, mismatch: Bool = false, board: String? = nil) {
+    init(_ condition: ReferenceCondition, mismatch: Bool = false, place: String? = nil) {
         let missing = ReferenceStyle.missingStrength, finding = ReferenceStyle.findingStrength
         isPlaceholder = false
         trailing = nil
@@ -65,7 +65,7 @@ struct ReferenceLook {
             italic = false
             strength = 1
             dashed = false
-            self.board = board
+            self.place = place
         case .missing(let stored), .unavailable(let stored):
             leading = Symbol(name: ReferenceStyle.missingSymbol, tint: nil, strength: missing, size: ReferenceStyle.symbolSize)
             label = stored
@@ -79,7 +79,7 @@ struct ReferenceLook {
             strength = missing
             dashed = true
             trailing = Self.eye
-            self.board = board
+            self.place = place
         case .notInterpreted(let text), .cannotFind(let text):
             leading = Symbol.dynamic
             label = text
@@ -414,11 +414,11 @@ extension ReferenceDefinition {
         guard !editing, !look.label.isEmpty else { return }
         let label = memo.label(look.label, italic: look.italic, strength: look.strength, placeholder: look.isPlaceholder)
         label.string.draw(with: layout.label, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
-        if let board = look.board {
+        if let place = look.place {
             let x = layout.label.minX + label.width + ReferenceStyle.boardGap
             let room = layout.label.maxX - x
             if room >= ReferenceStyle.boardRoomLeast {
-                let name = memo.board(board, strength: look.strength)
+                let name = memo.board(place, strength: look.strength)
                 name.string.draw(with: CGRect(x: x, y: layout.label.minY, width: room, height: layout.label.height),
                                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
             }

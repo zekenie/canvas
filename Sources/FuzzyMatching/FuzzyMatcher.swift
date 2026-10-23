@@ -154,12 +154,15 @@ public enum FuzzyMatcher {
     /// The score `match(_:in:allowSubsequence:)` gives, without the matched ranges: nothing allocated
     /// but what the matcher itself needs.
     static func score(_ query: Query, in label: Label, allowSubsequence: Bool) -> Int? {
+        label.keys.withUnsafeBufferPointer { score(query, keys: $0, allowSubsequence: allowSubsequence) }
+    }
+
+    /// The same over a label's keys as `appendKeys` wrote them (a list's buffer, rebased to start at 0): no `Label` made.
+    static func score(_ query: Query, keys: UnsafeBufferPointer<UInt32>, allowSubsequence: Bool) -> Int? {
         query.withView { q in
-            label.keys.withUnsafeBufferPointer { keys in
-                var spans: [Range<Int>] = []
-                return tier(q, keys, &spans, wantSpans: false, allowSubsequence: allowSubsequence)
-                    ?? typo(q, keys, &spans, wantSpans: false)
-            }
+            var spans: [Range<Int>] = []
+            return tier(q, keys, &spans, wantSpans: false, allowSubsequence: allowSubsequence)
+                ?? typo(q, keys, &spans, wantSpans: false)
         }
     }
 

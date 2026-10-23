@@ -263,7 +263,7 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
     /// What a row of the list does: a shape's names it, and the words row's commits the words.
     private func pick(_ row: ReferencePickerRow) {
         switch row {
-        case .shape(let choice): pickTarget(choice.candidate, board: choice.board)
+        case .shape(let choice): pickTarget(choice.candidate, place: choice.place?.text)
         case .words: commitWords()
         case .empty: break
         }
@@ -271,8 +271,8 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
 
     /// The pill stands for the shape, named as a mention of it shows it: one write, the words and query
     /// let go of, the width refit to its name; and editing ends.
-    private func pickTarget(_ candidate: MentionCandidate, board: String?) {
-        context.update { ReferenceEdits.pick(&$0, ReferenceTarget(id: candidate.id, label: candidate.appearance.label), board: board) }
+    private func pickTarget(_ candidate: MentionCandidate, place: String?) {
+        context.update { ReferenceEdits.pick(&$0, ReferenceTarget(id: candidate.id, label: candidate.appearance.label), place: place) }
         context.service(MentionState.self)?.didPick(candidate.id)
         context.end()
     }

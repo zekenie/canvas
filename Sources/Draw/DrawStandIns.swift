@@ -210,8 +210,8 @@ extension Drawing {
         switch fileNames.beyond(title, among: places.filter { $0.board != target.board && !taken.contains($0.board) }) {
         case .none:
             return nil
-        case .ambiguous(let message):
-            throw DrawError(statement, .ambiguousTitle, message, hint: FileNames.oneEach)
+        case .ambiguous(let message, let places):
+            throw DrawError(statement, .ambiguousTitle, message, hint: fileNames.pathHint(for: places))
         case .shape(let place):
             return editor.file.record(place.id).map { FarShape(record: $0, board: place.board) }
         }
@@ -508,10 +508,26 @@ extension Drawing {
             // The host as a message calls it, and as the row (`sharedWith`) does.
             var hostSaid = "", hostPlain = ""
             switch host {
+            case .path(let text):
+                let path = try folded(text, statement)
+                (hostSaid, hostPlain) = (path.written, path.last)
+                switch try find(path: text, statement, for: "\(written): \(key): names") {
+                case .item(let index)?:
+                    hostID = items[index].record.id
+                    hostItem = index
+                case .shape(let record)?:
+                    hostID = record.id
+                case .board?, .view?, .origin?:
+                    break
+                case nil:
+                    throw skip()
+                }
             case .title(let text):
                 let title = try folded(text, statement)
                 (hostSaid, hostPlain) = (quoted(title), title)
-                if let index = itemByTitle[title] {
+                let drawn = itemsByTitle[title] ?? []
+                if drawn.count > 1 { throw ambiguous(quoted(title), drawn.map(ShapeItem.Found.item), statement) }
+                if let index = drawn.first {
                     hostID = items[index].record.id
                     hostItem = index
                 } else if unresolved.contains(title) {

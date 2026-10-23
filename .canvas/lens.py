@@ -13,7 +13,6 @@ What its conventions don't read:
 import re
 
 from lenskit import default
-from lenskit.builder import Titles, fold
 
 # Rule "rungs-stacked-in-order": the root's bands are the module graph's rungs, top to bottom app, product, platform,
 # core: a rung imports only from those below it. Why: "the layers should be stacked atop each other in order" (the owner,
@@ -73,8 +72,8 @@ def digest(scan, repo):
     layer = {m: scan.modules[m].get('layer') for m in scan.production}
     bands = [(band_title(rung), [m for m in scan.production if layer[m] == rung]) for rung in RUNGS]
     bands = [band for band in bands if band[1]]
-    out = default.digest(scan, repo, bands=bands)
-    nodes, warnings = out['nodes'], out['warnings']
+    d = default.build(scan, repo, bands=bands)       # unfinished: the ids finish() gives, below, say where the cards ended up
+    nodes = d.nodes
 
     # each rung's band: the frame on the root whose rank is the band's place among them (the default lens's), and the
     # module cards in it, by module (a card's source is its module's folder)
@@ -84,13 +83,11 @@ def digest(scan, repo):
         band[rung] = next((n for n in nodes if n.get('kind') == 'frame' and 'in' not in n and n.get('rank') == rank), None)
     module_at = {scan.modules[m].get('path'): m for m in scan.production}
     card = {module_at[n['source']]: n for n in nodes if n.get('kind') == 'subboard' and n.get('source') in module_at}
-    titles = Titles(warnings.append)                  # a frame's title, claimed after every title the default lens gave out
-    titles.taken.update(fold(n['title']) for n in nodes)
 
     def frames(into, wanted):
         """New frames in the frame `into`, [(what, title)] in order, placed after it in the node list."""
-        made = [{'title': title, 'kind': 'frame', 'in': into['title']} for _, title in wanted]
-        at = nodes.index(into) + 1
+        made = [{'title': title, 'kind': 'frame', 'in': into} for _, title in wanted]
+        at = next(i for i, n in enumerate(nodes) if n is into) + 1
         nodes[at:at] = made
         return made
 
@@ -99,19 +96,19 @@ def digest(scan, repo):
         into = band[PLATFORM]
         platform = [m for m in scan.production if layer[m] == PLATFORM and m in card]
         group_of = headings(repo.read(PACKAGE))
-        wanted = [(h, titles.claim(f"the group {h}", t, f"{t} ({into['title']})"))
+        wanted = [(h, d.claim(f"the group {h}", t, f"{t} ({into['title']})", within=into))
                   for h, t in PLATFORM_GROUPS if any(group_of.get(m) == h for m in platform)]
         frame = dict(zip([h for h, _ in wanted], frames(into, wanted)))
         for m in platform:
             if m in group_of:
-                card[m]['in'] = frame[group_of[m]]['title']
+                card[m]['in'] = frame[group_of[m]]
             else:
-                warnings.append(f"{m} is under no heading of {PACKAGE} that names a group: it stays loose in {into['title']}")
+                d.warn(f"{m} is under no heading of {PACKAGE} that names a group: it stays loose in {into['title']}")
 
     # core-in-a-row
     for rung in IN_A_ROW:
         if band.get(rung):
             for node in nodes:
-                if node.get('in') == band[rung]['title']:
+                if node.get('in') is band[rung]:
                     node['rank'] = 0
-    return out
+    return d.finish()

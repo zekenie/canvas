@@ -7,6 +7,9 @@ export function fold(s) {
   return String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
 }
 
+/** A node's key as a message says it: a title that more than one node has is `title  in container > container` (two spaces), said with one. */
+export const label = (key) => String(key).replace('  in ', ' in ');
+
 export function median(xs) {
   if (!xs.length) return 0;
   const a = xs.slice().sort((p, q) => p - q);

@@ -116,13 +116,20 @@ extension Drawing {
         return warnings
     }
 
-    /// A shape the run broke, named for a message: by its title; with none, by its id as a script writes it, which a later
-    /// script can name it by (an arrow and a pill for a shape it names, that a script cannot name, by their kind and where they
-    /// are on their own board); and, when that is not the run's board, which board.
+    /// A shape the run broke, named for a message: by its title, or by its path where the title is not its alone; with none,
+    /// by its id as a script writes it, which a later script can name it by (an arrow and a pill for a shape it names, that a
+    /// script cannot name, by their kind and where they are on their own board); and, when that is not the run's board, which board.
     private func brokenName(_ record: AnyShapeRecord, on board: BoardID, shapes: ShapeContext) -> String {
         guard let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) else {
             let place = registry.drawCanName(record) ? ShapeName.id(record.id.description).written : Drawing.location(of: record, in: shapes)
             return board == target.board ? place : "\(place) on \(FileNames.named(board, in: editor, naming: naming))"
+        }
+        // A title the board has on more than one shape is named by the path (or the id, for a shape in no container).
+        if board == target.board { return sharedName(of: record) ?? quoted(title) }
+        // On another board, by the path from the root wherever the file has the title on another shape too: the shape it names
+        // there, and what a later script names it by.
+        if (fileNames?.places[title]?.count ?? 0) > 1, let naming, let path = Self.path(of: record.id, in: editor, naming: naming) {
+            return path.written
         }
         return quoted(title)
     }

@@ -68,34 +68,42 @@ A submodule is no file: its folder is empty. Never `open()` a file of the reposi
 
 ## The digest builder
 
-`lenskit.Digest` builds the digest by title and gives every title out once.
+`lenskit.Digest` builds the digest from nodes, and gives every title out once in the container that holds the shape.
 
 ```python
 from lenskit import Digest
 
 d = Digest("shop")
-d.frame("Services", rank=0)
-d.subboard("@shop/orders", "Services", "What the service runs.", source="services/orders/src")
-d.note("orders", "Database", "The orders table.", source="db/migrations/002_orders.sql")
-d.edge("createOrder", "orders", weight=2)
+services = d.frame("Services", rank=0)
+database = d.frame("Database", rank=1)
+orders = d.subboard("@shop/orders", services, "What the service runs.", source="services/orders/src")
+table = d.note(d.claim("the orders table", "orders", within=database), database, "The orders table.", source="db/migrations/002_orders.sql")
+create = d.note(d.claim("createOrder", "createOrder", within=orders), orders, "Makes an order.", source="services/orders/src/create.ts")
+d.edge(create, table, weight=2)
 return d.finish()
 ```
+
+A shape is named by the node `add`, `frame`, `subboard` or `note` returned for it: `parent` and an edge's ends take a node (or a title, where one node has it). Titles are unique **in a container** (the nodes with the same `in`; the top of the first board is one), not in the whole digest: a folder's `index.ts` and another's are two notes of one name, as the app tells shapes apart by their containers.
 
 | member | what it does |
 |---|---|
 | `Digest(title)` | the digest's title, what the whole is called; it can be set later: `d.title`. No board has a note of what it is: a subboard's `text` is its card's description |
-| `d.claim(what, wanted, *others, most=80)` | a title no other shape has: `wanted`, else each of `others`, else the last with a number after it, cut to `most` characters (keeping its end behind an ellipsis). Two titles that differ only in case or spaces are one title. A title that gives way is said as a warning naming `what`. Claim the titles queries name first (tables, types), then the rest. A name many places share (an `example` workflow in every sample) goes bare to whichever claims it first: claim such names qualified from the start (`f"{name} ({sample})"`), so no one of them is the bare name by the order of a loop |
-| `d.add(title, kind, parent=None, text=None, **extra)` | a node: `kind` `sticky-note`, `frame`, `subboard` or `auto`; `parent` the frame or subboard it is in; `extra` goes into the node as it is. Returns the node (a dict you may still change) |
+| `d.claim(what, wanted, *others, within=None, most=80, alone=False, type=False)` | a title no other shape in the container has: `wanted`, else each of `others`, else the last with a number after it, cut to `most` characters (keeping its end behind an ellipsis). Two titles that differ only in case or spaces are one title. A title that gives way is said as a warning naming `what`. Claim the shapes that matter most first (the titles queries name: tables, types), then the rest, container by container. A name many shapes of one container share (an `example` workflow in every sample, all in one frame) goes bare to whichever claims it first: claim such names qualified from the start (`f"{name} ({sample})"`), so none of them is the bare name by the order of a loop; names in different containers need no qualifying. `within` is the node that will hold the shape (what `add` returned; or its title, where one node has it, else a `ValueError`) and `None` the top of the first board: a lens that passes none claims everything in one scope, so every title in it is given out once in the whole digest. `alone=True` makes the title the digest's alone, whichever container a shape is in, for a shape a text mentions (`@[Title]` names a shape by its title alone). `type=True` makes it unique among the types (notes with a `schema`) of the digest: `is` names a type by its title |
+| `d.add(title, kind, parent=None, text=None, **extra)` | a node: `kind` `sticky-note`, `frame`, `subboard` or `auto`; `parent` the frame or subboard it is in, as the node `add` returned for it, or its title; `extra` goes into the node as it is. Returns the node (a dict you may still change: its title, its `in`) |
 | `d.frame(title, parent=None, **extra)`, `d.subboard(...)`, `d.note(...)` | `add` for each kind; `subboard` and `note` take `text` third (a note's words; a subboard's is its description, which may mention shapes as `@[Title]` and is shown in the card's panel, never on the canvas) |
-| `d.edge(source, target, weight=None, **extra)` | an edge between two titles (notes or subboards, never frames) |
+| `d.edge(source, target, weight=None, **extra)` | an edge between two nodes (notes or subboards, never frames), each a node or a title |
 | `d.warn(message)` | a warning, said by `ingest` as `lens: <message>`; never stops the run |
-| `d.finish()` | the digest: `{title, nodes, edges, warnings}` |
+| `d.finish()` | the digest: `{title, nodes, edges, warnings}`, with the ids and references below settled |
+
+**A string names a node by its title, or by an id** the lens gave: `d.edge("createOrder", "orders")`. A title that several nodes have names none of them (`check` would refuse it), so `finish()` raises a `ValueError` for it, naming the edge or node: pass the node itself.
+
+**Ids.** `finish()` gives every node whose title another node has (spaces folded, case kept, as the digest matches a title; or whose title is another node's `id`, which a string names first) an `id`, unless the lens gave it one, and writes every `in`, `from` and `to` that names such a node as its id. Every other reference stays the title, so a digest whose titles are all unique comes out as it was written, with no ids. An id is the title, two spaces, `in`, then the titles of the containers the node is in, outermost first, joined by ` > `: `index.ts  in Web layer > web > src`, or `index.ts  in the first board` for a node at the top. That is the digest's own way of telling such nodes apart (the key it makes of a node that has no id), so ids sort as titles do and a row the digest orders by key stays in title order; it is the same at every run, whatever the hash seed, since it is made of titles alone. A number follows an id that another has already (two nodes of one title in one container, which `check` refuses). An id says where the node was when `finish()` ran: a lens that moves nodes should change them, then call `finish()` (below, `default.build`). Two types of one title are refused by `finish()` too: claim a type's title with `type=True`.
 
 The fields a node or an edge can carry are in [graph.md](../../canvas-digest/reference/graph.md): on a node `rank` (rows or columns in its container), `public`, `source`, `schema`, `relationship`, `is`, `fieldValues`; on an edge `text`, `weight`, `direct` (never a pill), `via: "reference"` (always a pill), `is`, `fieldValues`, `endRule`. `is` is a word Python keeps, so pass it in a dict: `d.note("orders", "Database", **{"is": "Table"})`.
 
-Give every node a `source`: the path it was made from, or `{"path": ..., "line": ...}`. The drawing ignores it, and it is how a shape the user points at is mapped back to the code.
+Give every node a `source`: the path it was made from, or `{"path": ..., "line": ...}`. The drawing ignores it, and it is how a shape the user points at is mapped back to the code: where several nodes have the title the user's selection names, the row's `inside` (the shape's containers) and the node's `id` tell them apart.
 
-A digest's limits are canvas-digest's: titles at most 80 characters and unique in the file, about 15 shapes a frame, about 150 a board. `ingest` runs `digest check`, which warns past them. One `canvas query` lists at most 10,000 titles, so keep a digest well under that.
+A digest's limits are canvas-digest's: titles at most 80 characters and unique in their container (a type's in the whole digest), about 15 shapes a frame, about 150 a board. `ingest` runs `digest check`, which warns past them. One `canvas query` lists at most 10,000 titles, so keep a digest well under that.
 
 ## The texts
 
@@ -120,7 +128,16 @@ A digest's limits are canvas-digest's: titles at most 80 characters and unique i
 | `by_module` | `[(module, file)]`: files whose arrows point at modules, not files | none |
 | `layer_names` | `{tag: name}` | the tags as written |
 
-Any other keyword is a `TypeError` listing these. Past 4,000 file notes it draws a folder's files as one note, the deepest folders first, and warns how many. The default lens's digest is a dict like any other: a lens can call it and change the result, but a title it adds must be one the digest doesn't have (`digest check` refuses a duplicate).
+Any other keyword is a `TypeError` listing these. Past 4,000 file notes it draws a folder's files as one note, the deepest folders first, and warns how many.
+
+**What it titles things.** A title is given out once in the container that holds the shape ([the digest builder](#the-digest-builder)), so the boards of a codebase repeat names the way its folders do:
+
+- A file's note is titled by its file name. Where another note of the same frame (or of the board's card) has that name, it takes the shortest end of its path that tells it apart there (`Select/index.ts`), then its module's name and its own (`web/index.ts`), then its whole path. A name two frames or boards share is the bare name in each, and the digest tells the notes apart by their ids.
+- A frame is titled by its folder's name (the board's own files, in `<board>/`); a frame whose name a note of its container has is `src (Core)`, after its board.
+- A band is titled as it is given; a module's card is titled by its module's name, and a folder's card `<module>/<folder>`. A card's title is **the digest's alone**: its neighbours' descriptions mention it as `@[Title]`, which names a shape by its title alone, so nothing else is titled so (a band called what a module is gives way, `Level 1 (layer)`, and so does a frame or a note).
+- A collapsed folder's note is titled for the folder, `Module/folder/`.
+
+The default lens's digest is a dict like any other, but its references are names already, and an id says where a node was when the digest was finished. To change the digest (move a card into a frame of the lens's own, say) use `lenskit.default.build(scan, repo, **arguments)`, which returns the `Digest` before `finish()`: its nodes name each other by node, so a lens sets `card['in'] = frame`, adds the frame to `d.nodes`, and calls `d.finish()` itself.
 
 ## Reading YAML
 
@@ -196,7 +213,7 @@ d.edge("createOrder", "orders", **{"is": "writes", "fieldValues": {"via": ["inse
 - A relationship type and the types at its ends are on one board (a frame on the root is the usual place). Notes of a type can be on any board; a relationship to a note on another board is drawn into a pill, and the note is made public.
 - Values are held to the schema's `type`, `properties`, `required`, `enum` and `items`. Leave an empty value out (None counts as none). Lists of strings read well in a note's row.
 - `endRule` `{"needed": true}` makes every note at that end need such a relationship, and one without is `:incomplete`, said by the drawing as a warning by design. Use it for what the team wants found (an activity no workflow runs).
-- Title the types as people say them, and keep the titles of the things queries name (tables, workflows) as the code says them: claim those first.
+- Title the types as people say them, and keep the titles of the things queries name (tables, workflows) as the code says them: claim those first. Claim a type's title with `type=True`: it is given out once among the digest's types, in whichever frame each is, and a note that is no type may have it too (a table called `Table`). `finish()` refuses two types of one title, since `is` names a type by its title.
 
 Then: `canvas query ':is-a("Table")'` lists the tables, `arrow:is-a("writes")` the writes, `:start-of(arrow:is-a("writes"):ends-at("orders"))` who writes orders, and `:start-of(arrow:is-a("runs"):ends-at(:start-of(arrow:is-a("writes"):ends-at("orders"))))` the workflows that run them ([the canvas skill's query reference](../../canvas/reference/query.md)).
 
@@ -270,20 +287,20 @@ NEEDS = {"type": "object", "properties": {}}
 def digest(scan, repo):
     d = Digest(scan.name or "Services")
     services = (yaml.load(repo.read(COMPOSE)) or {}).get("services") or {}
-    title = {name: d.claim(f"the service {name}", name, f"{name} (service)") for name in sorted(services)}
-    d.frame("Types", rank=1)
-    d.note("Service", "Types", "A service compose runs: its name and image.", schema=SERVICE)
-    d.note("needs", "Types", "A service needs another to start.", schema=NEEDS, relationship=True)
+    types = d.frame("Types", rank=1)
+    d.note("Service", types, "A service compose runs: its name and image.", schema=SERVICE)
+    d.note("needs", types, "A service needs another to start.", schema=NEEDS, relationship=True)
     d.edge("Service", "needs", text="needs")
     d.edge("needs", "Service", text="needed by")
-    d.frame("Running", rank=0)
+    running = d.frame("Running", rank=0)
+    note = {}
     for name in sorted(services):
         values = {"name": name, "image": (services[name] or {}).get("image")}
-        d.note(title[name], "Running", as_text(f"{name}"), source=COMPOSE,
-               **{"is": "Service", "fieldValues": {k: v for k, v in values.items() if v}})
+        note[name] = d.note(d.claim(f"the service {name}", name, within=running), running, as_text(f"{name}"), source=COMPOSE,
+                            **{"is": "Service", "fieldValues": {k: v for k, v in values.items() if v}})
     for name in sorted(services):
         for other in sorted((services[name] or {}).get("depends_on") or []):
-            if other in title:
-                d.edge(title[name], title[other], **{"is": "needs"})
+            if other in note:
+                d.edge(note[name], note[other], **{"is": "needs"})
     return d.finish()
 ```

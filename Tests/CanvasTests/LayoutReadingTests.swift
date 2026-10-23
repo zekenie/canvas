@@ -177,6 +177,32 @@ import TestKit
         expectEqual(reading.shape(inFile: onBoard)?.box?.width, 30, "the record laid in, not the file's")
         expect(reading.shape(inFile: gone) == nil, "removed is not there")
     },
+    test("a reading says the board a shape is on as its reader has the file: the editor's, a transaction's (a shape moved onto another board, one deleted), and one laying records in, nil for a record the file hasn't") {
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 300, width: 200, height: 100)))
+        let far = ShapeRecord(Box(CGRect(x: 0, y: 0, width: 10, height: 10)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]), children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(far)])])
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin()], file: file)
+        let near = h.add(Box(CGRect(x: 0, y: 50, width: 10, height: 10)))
+        let gone = h.add(Box(CGRect(x: 0, y: 100, width: 10, height: 10)))
+        let board = BoardID(owner: pocket.id)
+        let committed = try require(h.editor.shapeContext.reading)
+        expectEqual([near, far.id, pocket.id, ShapeID()].map(committed.board(containing:)), [.root, board, .root, nil], "the file's")
+        var seen: [BoardID?] = []
+        var laid: [BoardID?] = []
+        h.editor.transact { transaction in
+            _ = transaction.move([near], toBoardOwnedBy: pocket.id)
+            transaction.delete([gone])
+            guard let reading = transaction.shapes.reading else { return }
+            seen = [near, gone, far.id].map(reading.board(containing:))
+            let fresh = AnyShapeRecord(ShapeRecord(id: ShapeID(), Box(CGRect(x: 0, y: 300, width: 10, height: 10))))
+            let restated = AnyShapeRecord(ShapeRecord(id: far.id, Box(CGRect(x: 0, y: 0, width: 30, height: 10))))
+            if let over = transaction.shapes.layingOut(with: [fresh, restated], removing: [pocket.id]).reading {
+                laid = [near, far.id, fresh.id, pocket.id].map(over.board(containing:))
+            }
+        }
+        expectEqual(seen, [board, nil, board], "moved onto the pocket's board, deleted, where it was")
+        expectEqual(laid, [board, board, nil, nil], "the reading it lays over's: a restated record where the file has it, none for one laid in that the file hasn't, nor for one removed")
+    },
     test("a shape changed on another board, and one deleted there, are in the log and changed in the reading of the transaction that did it") {
         let p = ShapeID(), far = ShapeID(), gone = ShapeID(), here = ShapeID()
         func box(_ id: ShapeID, x: CGFloat = 0) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, Box(CGRect(x: x, y: 0, width: 40, height: 30)))) }

@@ -15,7 +15,7 @@ extension ReferenceDefinition: ShapeDefinition {
         let standing = condition(of: shape, state: state, in: context)
         let handsOff = context.isEditing && state?.isHandingOff(shape.id) == true
         let look = context.isEditing ? ReferenceLook(editing: standing, handsOff: handsOff)
-            : ReferenceLook(standing, mismatch: state?.drawnMismatch(of: shape.id) != nil, board: state?.drawnBoard(of: shape.id))
+            : ReferenceLook(standing, mismatch: state?.drawnMismatch(of: shape.id) != nil, place: state?.drawnPlace(of: shape.id))
         draw(look, in: shape.frame, editing: context.isEditing, context)
     }
 

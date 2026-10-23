@@ -241,7 +241,7 @@ func refFormat(mediaType: String = refsMediaType, id: PluginID = "refs") -> Cont
         let twice = try refused(#"tile "Plan" remark: "<Twin>""#, on: editor)
         expectEqual(twice.reason, "ambiguous_title")
         expectEqual(twice.message, #""Plan": remark: "Twin" is on 2 boards: "P"'s board and "Q"'s board"#)
-        expectEqual(twice.hint, "titles name shapes here, so each needs its own: ask the user to rename one")
+        expectEqual(twice.hint, "a text names a shape by its title alone, so mention one whose title is its own here")
         expectEqual(twice.data?["line"], 1)
         expectEqual(twice.data?["statement"], #"tile "Plan" remark: "<Twin>""#)
         // Two on one other board.
@@ -249,7 +249,7 @@ func refFormat(mediaType: String = refsMediaType, id: PluginID = "refs") -> Cont
             $0.insert(AnyShapeRecord(ShapeRecord(Tile(CGRect(x: 900, y: 0, width: 100, height: 60), label: "Deep"))))
         }
         let inOne = try refused(#"tile "Plan" remark: "<Deep>""#, on: editor)
-        expectEqual(inOne.message, #""Plan": remark: "P"'s board has 2 shapes called "Deep": a tile at 50,30 and a tile at 950,30"#)
+        expectEqual(inOne.message, #""Plan": remark: "P"'s board has 2 shapes called "Deep": a tile "P" > "Deep" at 50,30 and a tile "P" > "Deep" at 950,30"#)
         // Two on the board the run draws on, and on the board the window shows.
         editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(Tile(CGRect(x: 300, y: 300, width: 100, height: 60), label: "Hub")))) }
         let here = try refused(#"tile "Plan" remark: "<Hub>""#, on: editor)

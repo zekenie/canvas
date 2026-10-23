@@ -1,12 +1,12 @@
 // A stand-in for `canvas measure`, for tests that run without the app: the JSON it would give, with sizes estimated.
-import { toMeasure, pillTargets, DEFAULT_CONSTANTS } from '../lib/sizes.mjs';
+import { toMeasure, pillTargets, measurePlan, DEFAULT_CONSTANTS } from '../lib/sizes.mjs';
 
 /** A note is as tall as its text needs, at least 200 (the app measures the real height); a pill's width is its label's, 64..280. */
 export function estimateMeasure(model) {
   const shapes = [], references = [];
-  let line = 0;
+  const at = measurePlan(model);   // the line of each statement in the script `canvas measure` is given: its rows are read by line
   for (const it of toMeasure(model)) {
-    line++;
+    const line = at.shapeAt.get(it.key);
     if (it.kind === 'subboard') { shapes.push({ line, title: it.title, kind: 'subboard', size: [240, 160], above: 30 }); continue; }
     const perLine = Math.max(10, Math.floor((it.w - 40) / 7.4));
     const lines = (it.text || '').split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(l.length / perLine)), 0);
@@ -15,17 +15,18 @@ export function estimateMeasure(model) {
     if (n && (n.schema || n.is.length)) {
       // a type, or a note of one: as wide as it is drawn (rows never widen a note), a row for each field, and one for each end
       // its types have (the app's rows, roughly)
-      const types = n.schema ? (n.relationship ? [] : [n]) : n.is.map((t) => model.node(t)).filter(Boolean);
+      const types = n.schema ? (n.relationship ? [] : [n]) : n.is.map((t) => model.types.get(t)).filter(Boolean);
       const fields = new Set(), ends = new Set();
       for (const t of types) {
         Object.keys((t.schema && t.schema.properties) || {}).forEach((k) => fields.add(k));
-        model.edges.forEach((e) => { if (e.end && (e.from === t.title || e.to === t.title)) ends.add(e.from + '>' + e.to); });
+        model.edges.forEach((e) => { if (e.end && (e.from === t.key || e.to === t.key)) ends.add(e.from + '>' + e.to); });
       }
       h = Math.max(h, 56 + 22 * (fields.size + ends.size) + (ends.size ? 8 : 0));
     }
     shapes.push({ line, title: it.title, kind: 'sticky-note', size: [w, h], above: 30 });
   }
-  for (const t of pillTargets(model)) { line++; references.push({ line, for: t, size: [Math.min(280, Math.max(64, Math.ceil(10 + 16 + 6 + 7.3 * t.length + 17 + 14))), DEFAULT_CONSTANTS.pillHeight] }); }
+  const lineOfPill = new Map([...at.pillAt].map(([line, key]) => [key, line]));
+  for (const t of pillTargets(model)) { const title = model.node(t).title; references.push({ line: lineOfPill.get(t), for: title, size: [Math.min(280, Math.max(64, Math.ceil(10 + 16 + 6 + 7.3 * title.length + 17 + 14))), DEFAULT_CONSTANTS.pillHeight] }); }
   return {
     shapes, references,
     constants: { gaps: { none: 0, tight: 40, normal: 80, wide: 160 }, defaultGap: 80, listStep: 16, referenceStep: DEFAULT_CONSTANTS.pillStep, frameInset: DEFAULT_CONSTANTS.frameInset, smallest: { frame: [96, 64] } },

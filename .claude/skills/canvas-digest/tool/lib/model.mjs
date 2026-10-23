@@ -1,5 +1,7 @@
 // The digest, read into a model: nodes, the board and frames each is on, edges, boards.
-import { byTitle, fold } from './util.mjs';
+import { byTitle, fold, label } from './util.mjs';
+
+export const MAX_TITLE = 80;
 import { dial } from './dial.mjs';
 import { isEndOf, isKey, canon } from './types.mjs';
 
@@ -14,22 +16,143 @@ function isList(v) {
   return { list: [...new Set(raw.map(fold))], bad: false };
 }
 
+/**
+ * The digest's nodes read: who has which id and title, what each is in, and every refusal found in that, all of them (`errors`). A node's title is
+ * unique among the nodes in one container (the first board's top level is one; compared as folded text, case aside), so two nodes in different
+ * containers may share one; a node may also carry an `id`, unique in the digest. `in`, `from` and `to` name a node by its id, or by its title when
+ * exactly one node has that title (an id wins where a string is both some node's id and another's title). A type's title (a node with a `schema`)
+ * is unique across the whole digest, since `is` names a type by its title.
+ *
+ * Each node gets a `key`, which is how the rest of the tool tells nodes apart: its id when it has one, else its title, as long as nothing else
+ * has that string; a title that two nodes have is qualified by the containers the node is in (`title  in a > b`, two spaces, which a folded title
+ * never has: keys sort as the titles do, so a row of shapes keeps its title order). With titles all unique and no ids, a key is the title.
+ */
+export function readNodes(digest) {
+  const errors = [];
+  const raw = Array.isArray(digest.nodes) ? digest.nodes : [];
+  const items = raw.map((n, index) => ({ index, raw: n, title: fold(n && n.title), id: null, parent: -1, kind: (n && n.kind) || 'sticky-note' }));
+  const at = (it) => `nodes[${it.index}] "${it.title}"`;
+  for (const it of items) {
+    const n = it.raw;
+    if (!it.title) { errors.push(`a node has no title (nodes[${it.index}])`); continue; }
+    if (it.title.length > MAX_TITLE) errors.push(`"${it.title}" is over ${MAX_TITLE} characters`);
+    if (n.id != null) {
+      if (typeof n.id !== 'string' || !n.id.trim()) errors.push(`${at(it)}: id is a non-empty string, not ${JSON.stringify(n.id)}`);
+      else it.id = n.id;
+    }
+  }
+  const titled = items.filter((it) => it.title);
+  const ids = new Map();
+  for (const it of titled) if (it.id != null) { if (!ids.has(it.id)) ids.set(it.id, []); ids.get(it.id).push(it); }
+  for (const [id, list] of ids) if (list.length > 1) errors.push(`two nodes have the id "${id}" (${list.map((it) => `nodes[${it.index}] "${it.title}"`).join(' and ')}): an id is unique in the digest`);
+  const titles = new Map();
+  for (const it of titled) { if (!titles.has(it.title)) titles.set(it.title, []); titles.get(it.title).push(it); }
+
+  /** What a reference (`in`, `from`, `to`) names: {item}, or {unknown}, or {several: [items]} for a title that more than one node has. */
+  const resolve = (ref) => {
+    const s = typeof ref === 'string' ? ref : String(ref);
+    if (ids.has(s)) return ids.get(s).length === 1 ? { item: ids.get(s)[0] } : { several: ids.get(s) };
+    const list = titles.get(fold(s)) || [];
+    return list.length === 1 ? { item: list[0] } : list.length ? { several: list } : { unknown: true };
+  };
+  const severalSaid = (ref, list) => `a title ${list.length} nodes have (${list.map((it) => `nodes[${it.index}]`).join(', ')}): give the nodes ids and name one by its id`;
+  // what holds each node
+  for (const it of titled) {
+    const ref = it.raw.in;
+    if (!ref) continue;
+    const r = resolve(ref);
+    if (r.item) it.parent = r.item.index;
+    else if (r.several) errors.push(`${at(it)} is in "${fold(ref)}", ${severalSaid(ref, r.several)}`);
+    else errors.push(`"${it.title}" is in "${fold(ref)}", which is not a node`);
+  }
+  // `in` must lead to the top: a shape inside itself, or two inside each other, has no board to be on
+  const byIndex = (i) => items[i];
+  const ringed = new Set();
+  for (const it of titled) {
+    if (it.parent < 0 || ringed.has(it.index)) continue;
+    const chain = [it];
+    for (let p = it.parent; p >= 0; p = byIndex(p).parent) {
+      const seen = chain.findIndex((c) => c.index === p);
+      if (seen >= 0) {
+        const ring = chain.slice(seen).concat([byIndex(p)]);
+        for (const r of ring) ringed.add(r.index);
+        errors.push(ring.length === 2 ? `"${byIndex(p).title}" is in itself` : `"in" runs in a circle: ${ring.map((r) => `"${r.title}"`).join(' is in ')}; a shape cannot be inside itself`);
+        break;
+      }
+      if (ringed.has(p)) break;
+      chain.push(byIndex(p));
+    }
+  }
+  const cyclic = ringed.size > 0;
+  // a title is unique among the nodes in one container (case aside)
+  const where = new Map();
+  for (const it of titled) {
+    const k = it.parent + '\u0000' + it.title.toLowerCase();
+    if (!where.has(k)) where.set(k, []);
+    where.get(k).push(it);
+  }
+  const containerSaid = (it) => {
+    if (it.parent < 0) return "the first board's top level";
+    return `"${byIndex(it.parent).title}"` + (titles.get(byIndex(it.parent).title).length > 1 ? ` (nodes[${it.parent}])` : '');
+  };
+  for (const list of where.values()) {
+    if (list.length < 2) continue;
+    const a = list[0], b = list[1];
+    errors.push(`duplicate title "${b.title}"` + (a.title === b.title ? '' : ` (also "${a.title}")`) + `: nodes[${a.index}] and nodes[${b.index}] are both in ${containerSaid(a)}; a title is unique among the nodes in one container (give one another title, or put one elsewhere)`);
+  }
+  // a type's title is unique across the digest: `is` names a type by its title, and draw finds a type anywhere in the file
+  const types = new Map();
+  for (const it of titled) {
+    if (it.raw.schema == null) continue;
+    if (!types.has(it.title)) types.set(it.title, []);
+    types.get(it.title).push(it);
+  }
+  for (const [t, list] of types) if (list.length > 1) errors.push(`two types are called "${t}" (${list.map((it) => `nodes[${it.index}]`).join(' and ')}): a type's title is unique in the whole digest, since is names a type by its title`);
+  // edges: both ends name a node
+  (Array.isArray(digest.edges) ? digest.edges : []).forEach((e, index) => {
+    for (const end of ['from', 'to']) {
+      const ref = e && e[end];
+      if (typeof ref !== 'string' || !fold(ref)) { errors.push(`edges[${index}]: ${end} is the id or title of a node, not ${JSON.stringify(ref)}`); continue; }
+      const r = resolve(ref);
+      if (r.unknown) errors.push(`edge ${fold(e.from)} -> ${fold(e.to)}: unknown title "${fold(ref)}" in edges[${index}] (no node has that id or title)`);
+      else if (r.several) errors.push(`edges[${index}] ${end} "${fold(ref)}" is ${severalSaid(ref, r.several)}`);
+    }
+  });
+  // the key of each node
+  const ancestors = (it) => { const out = []; for (let p = it.parent; p >= 0 && out.length <= items.length; p = byIndex(p).parent) out.unshift(byIndex(p)); return out; };
+  if (!cyclic) {
+    const qualified = (it, json) => {
+      const chain = ancestors(it).map((a) => a.title);
+      return `${it.title}  in ${json ? JSON.stringify(chain) : chain.join(' > ') || 'the first board'}`;
+    };
+    for (const it of titled) {
+      const shared = titles.get(it.title).length > 1 || (it.id == null && ids.has(it.title));
+      it.key = it.id != null ? it.id : shared ? qualified(it) : it.title;
+    }
+    const held = new Map();
+    for (const it of titled) { if (!held.has(it.key)) held.set(it.key, []); held.get(it.key).push(it); }
+    for (const list of held.values()) if (list.length > 1) for (const it of list) if (it.id == null) it.key = qualified(it, true);
+  }
+  return { errors, items: titled, all: items, titles, ids, types, resolve, ancestors, severalSaid };
+}
+
 export function buildModel(digest, mess) {
   const warnings = [];
   const title = fold(digest.title || 'Digest');
   const policy = digest.policy || {};
   if (policy.ranks != null && !['rows', 'columns'].includes(policy.ranks)) throw new Error(`policy.ranks is "rows" or "columns" (left out: whichever the view shows larger), not ${JSON.stringify(policy.ranks)}`);
+  const read = readNodes(digest);
+  if (read.errors.length) throw new Error(read.errors[0]);
   const nodes = new Map();
-  const sorted = (digest.nodes || []).slice().sort((a, b) => byTitle(fold(a.title), fold(b.title)));
-  for (const n of sorted) {
-    const t = fold(n.title);
-    if (!t) throw new Error('a node has no title');
-    if (nodes.has(t)) throw new Error(`duplicate title "${t}"`);
-    if (t.length > 80) throw new Error(`"${t}" is over 80 characters`);
+  const sorted = read.items.slice().sort((x, y) => byTitle(x.key, y.key));
+  const keyOf = new Map(read.items.map((it) => [it.index, it.key]));
+  for (const it of sorted) {
+    const n = it.raw;
     const is = isList(n.is);
-    nodes.set(t, {
-      title: t, kind: n.kind || 'sticky-note', parent: n.in ? fold(n.in) : null, text: n.text || '',
+    nodes.set(it.key, {
+      key: it.key, title: it.title, id: it.id, index: it.index, kind: n.kind || 'sticky-note', parent: it.parent >= 0 ? keyOf.get(it.parent) : null, text: n.text || '',
       pin: n.public === true, never: n.public === false, children: [],
+      chain: read.ancestors(it).map((a) => keyOf.get(a.index)),   // the containers it is in, outermost first (frames and subboards alike)
       rank: typeof n.rank === 'number' && isFinite(n.rank) ? n.rank : null,
       // what a note is: a type (it holds a schema), a relationship type, an instance (`is` the types, `fieldValues` its values); check says what is wrong with them
       schemaGiven: n.schema != null, schema: n.schema != null ? n.schema : null,
@@ -37,34 +160,17 @@ export function buildModel(digest, mess) {
       is: is.list, isBad: is.bad, fieldValuesGiven: n.fieldValues != null, fieldValues: n.fieldValues != null ? n.fieldValues : null,
     });
   }
-  for (const n of nodes.values()) {
-    if (!n.parent) continue;
-    const p = nodes.get(n.parent);
-    if (!p) throw new Error(`"${n.title}" is in "${n.parent}", which is not a node`);
-    p.children.push(n.title);
-  }
-  // `in` must lead to the top: a shape inside itself, or two inside each other, has no board to be on
-  for (const n of nodes.values()) {
-    const chain = [n.title];
-    for (let p = n.parent; p; p = nodes.get(p).parent) {
-      const at = chain.indexOf(p);
-      if (at >= 0) {
-        const ring = chain.slice(at).concat([p]);
-        throw new Error(ring.length === 2 ? `"${p}" is in itself` : `"in" runs in a circle: ${ring.map((t) => `"${t}"`).join(' is in ')}; a shape cannot be inside itself`);
-      }
-      chain.push(p);
-    }
-  }
+  for (const n of nodes.values()) if (n.parent) nodes.get(n.parent).children.push(n.key);
   // kind: auto is a subboard when its subtree has over 40 leaves or is over two frames deep, else a frame
   const leavesUnder = (n) => (n.children.length ? n.children.reduce((s, c) => s + leavesUnder(nodes.get(c)), 0) : 1);
   const depthUnder = (n) => 1 + Math.max(0, ...n.children.map((c) => depthUnder(nodes.get(c))));
   for (const n of nodes.values()) if (n.kind === 'auto') n.kind = leavesUnder(n) > 40 || depthUnder(n) > 3 ? 'subboard' : 'frame';
   for (const n of nodes.values()) {
     const container = n.kind === 'frame' || n.kind === 'subboard';
-    if (!container && n.kind !== 'sticky-note') throw new Error(`"${n.title}": kind ${n.kind} is not supported`);
-    if (n.pin && container && n.kind === 'frame') throw new Error(`"${n.title}" is a frame, and a frame is never public`);
-    if (n.children.length && !container) throw new Error(`"${n.title}" holds shapes but is a ${n.kind}`);
-    if (n.parent && !['frame', 'subboard'].includes(nodes.get(n.parent).kind)) throw new Error(`"${n.title}" is in "${n.parent}", which holds no shapes`);
+    if (!container && n.kind !== 'sticky-note') throw new Error(`"${label(n.key)}": kind ${n.kind} is not supported`);
+    if (n.pin && container && n.kind === 'frame') throw new Error(`"${label(n.key)}" is a frame, and a frame is never public`);
+    if (n.children.length && !container) throw new Error(`"${label(n.key)}" holds shapes but is a ${n.kind}`);
+    if (n.parent && !['frame', 'subboard'].includes(nodes.get(n.parent).kind)) throw new Error(`"${label(n.key)}" is in "${label(n.parent)}", which holds no shapes`);
   }
   // which board, which frames, which container
   const place = (n) => {
@@ -72,29 +178,28 @@ export function buildModel(digest, mess) {
     if (!n.parent) { n.board = 'root'; n.frames = []; n.container = 'b:root'; return; }
     const p = nodes.get(n.parent);
     place(p);
-    if (p.kind === 'subboard') { n.board = p.title; n.frames = []; n.container = 'b:' + p.title; }
-    else { n.board = p.board; n.frames = p.frames.concat([p.title]); n.container = 'f:' + p.title; }
+    if (p.kind === 'subboard') { n.board = p.key; n.frames = []; n.container = 'b:' + p.key; }
+    else { n.board = p.board; n.frames = p.frames.concat([p.key]); n.container = 'f:' + p.key; }
   };
   for (const n of nodes.values()) place(n);
   // boards: root first, then subboards by depth, then title
   const boardDepth = new Map([['root', 0]]);
   const subs = [...nodes.values()].filter((n) => n.kind === 'subboard');
   const depth = (s) => (s.board === 'root' ? 1 : 1 + depth(nodes.get(s.board)));
-  for (const s of subs) boardDepth.set(s.title, depth(s));
-  const boards = ['root'].concat(subs.map((s) => s.title).sort((a, b) => boardDepth.get(a) - boardDepth.get(b) || byTitle(a, b)));
+  for (const s of subs) boardDepth.set(s.key, depth(s));
+  const boards = ['root'].concat(subs.map((s) => s.key).sort((a, b) => boardDepth.get(a) - boardDepth.get(b) || byTitle(a, b)));
   const kids = new Map();
   for (const b of boards) kids.set('b:' + b, []);
-  for (const n of nodes.values()) if (n.kind === 'frame') kids.set('f:' + n.title, []);
-  for (const n of nodes.values()) kids.get(n.container).push(n.title);
+  for (const n of nodes.values()) if (n.kind === 'frame') kids.set('f:' + n.key, []);
+  for (const n of nodes.values()) kids.get(n.container).push(n.key);
   for (const v of kids.values()) v.sort(byTitle);
   // edges: the ones between a pair are one edge to the layout (their weights added), and each typed one is an arrow of its own when it is drawn
   const pairs = new Map();
   (digest.edges || []).forEach((e, index) => {
-    const from = fold(e.from), to = fold(e.to);
-    const a = nodes.get(from), b = nodes.get(to);
-    if (!a || !b) throw new Error(`edge ${from} -> ${to}: unknown title`);
+    const a = nodes.get(read.resolve(e.from).item.key), b = nodes.get(read.resolve(e.to).item.key);
+    const from = a.key, to = b.key;
     if (from === to) return;
-    if (a.kind === 'frame' || b.kind === 'frame') { warnings.push(`edge "${from}" -> "${to}" dropped: a frame has no ports`); return; }
+    if (a.kind === 'frame' || b.kind === 'frame') { warnings.push(`edge "${label(from)}" -> "${label(to)}" dropped: a frame has no ports`); return; }
     const key = from + '\u0000' + to;
     let g = pairs.get(key);
     if (!g) pairs.set(key, g = { from, to, a, b, items: [] });
@@ -106,7 +211,7 @@ export function buildModel(digest, mess) {
     // two arrows between one pair with no `is` to tell them apart are one, and draw answers `ambiguous_edge` for an arrow written without one beside typed ones
     const typed = g.items.some((i) => i.is.length || i.isBad);
     const items = typed ? g.items.filter((i) => i.is.length || i.isBad) : g.items;
-    if (typed) for (const i of g.items) if (!i.is.length && !i.isBad) warnings.push(`edge "${g.from}" -> "${g.to}" without is dropped: the pair has typed arrows, and draw answers ambiguous_edge for an edge written without one`);
+    if (typed) for (const i of g.items) if (!i.is.length && !i.isBad) warnings.push(`edge "${label(g.from)}" -> "${label(g.to)}" without is dropped: the pair has typed arrows, and draw answers ambiguous_edge for an edge written without one`);
     // arrows of a pair that say what they hold are merged in a canonical order (by what they say), never the order the digest lists them in
     if (typed || items.some((i) => i.e.fieldValues != null || i.e.endRule != null)) {
       const said = (i) => canon({ d: !!i.e.direct, er: i.e.endRule == null ? null : i.e.endRule, fv: i.e.fieldValues == null ? null : i.e.fieldValues, text: i.e.text || '', via: i.e.via || null, w: i.w });
@@ -161,14 +266,15 @@ export function buildModel(digest, mess) {
     mu, dial: dl, promote: policy.promote !== false, ranks: policy.ranks || null,
     hasEdge: (a, b) => has.has(a + '\u0000' + b),
     node: (t) => nodes.get(t),
+    types: new Map([...nodes.values()].filter((n) => n.schemaGiven).map((n) => [n.title, n])),   // a type by its title (unique across the digest)
     boardIndex: new Map(boards.map((b, i) => [b, i])),
   };
   // what is public no matter the loop: pinned, or the end of an edge that crosses boards or asks via
   model.forcedPublic = new Set();
-  model.publicWhy = new Map();   // title -> why it is public, for the report
+  model.publicWhy = new Map();   // key -> why it is public, for the report
   for (const e of edges) if (e.cross || e.via) { model.forcedPublic.add(e.to); if (!model.publicWhy.has(e.to)) model.publicWhy.set(e.to, e.cross ? 'an edge from another board points at it' : 'an edge asks for a reference to it'); }
-  for (const n of nodes.values()) if (n.pin) { model.forcedPublic.add(n.title); model.publicWhy.set(n.title, 'public: true in the digest'); }
-  for (const t of model.forcedPublic) if (nodes.get(t).never) throw new Error(`"${t}" is public: false, but an edge reaches it through a pill`);
+  for (const n of nodes.values()) if (n.pin) { model.forcedPublic.add(n.key); model.publicWhy.set(n.key, 'public: true in the digest'); }
+  for (const t of model.forcedPublic) if (nodes.get(t).never) throw new Error(`"${label(t)}" is public: false, but an edge reaches it through a pill`);
   return model;
 }
 

@@ -5,7 +5,7 @@ parts, none with state of its own:
 
     lenskit.Scan          the scan, with the lookups a lens makes (scan.py)
     lenskit.Repo          the code at one commit, read through git, never the working tree (repo.py)
-    lenskit.Digest        a digest builder: frames, subboards, notes, edges, titles given out once, warnings (builder.py)
+    lenskit.Digest        a digest builder: frames, subboards, notes, edges, titles given out once in a container, ids, warnings (builder.py)
     lenskit.text          what a note says: as_text, mention, file_text, words (text.py)
     lenskit.default       the default lens, with overrides: default.digest(scan, repo, bands=[...]) (default.py)
     lenskit.yaml          a small YAML reader for config files (yaml.py)

@@ -47,7 +47,7 @@ extension Budget {
 /// A file as nested as a project: 10 subboards "Alpha n", each holding 10 "Beta n", each holding 10
 /// "Gamma n", each holding notes called "Checkout n", `size` of them in all, none of the shapes alone
 /// much to find: every title is a name, and every note has three named containers.
-@MainActor private func titledTree(notes size: Int) -> CanvasFile {
+@MainActor func titledTree(notes size: Int) -> CanvasFile {
     var children: [ShapeID: CanvasDocument] = [:]
     func card(_ title: String, _ i: Int) -> AnyShapeRecord {
         var record = AnyShapeRecord(ShapeRecord(Subboard(frame: CGRect(x: CGFloat(i) * 300, y: 0, width: 240, height: 160))))

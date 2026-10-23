@@ -59,6 +59,4 @@ enum JumpToStyle {
     /// every `clockStride` shapes.
     static let buildSlice: Duration = .milliseconds(2)
     static let clockStride = 16
-    /// The deepest a path is followed: a file whose boards hold each other's has no end.
-    static let deepest = 64
 }

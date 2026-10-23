@@ -1,4 +1,5 @@
 import AppKit
+import Boards
 import Canvas
 import FuzzyMatching
 import Observation
@@ -51,6 +52,10 @@ public final class MentionState {
     /// match; the shapes it gives no name (the "Untitled …" placeholder) are in the catalog's side
     /// table, read only by `candidates(…listingUnnamed: true)`.
     @ObservationIgnored private var catalog = MentionCatalog()
+    /// The containment tree's names, for the path a query of several words is matched along and the place a
+    /// list says for a shape (Boards' `ShapePaths`): read as a query or a list goes through a container,
+    /// let go of by the commit that changes it.
+    @ObservationIgnored var paths: ShapePaths
     /// The catalog's shapes each scope but `AnyMentionable` admits, and those of each set of kinds a
     /// text's command takes (`candidates(…kinds:)`), made when first asked about and kept up to date
     /// by every entry read after, so a scope or a command that admits few ranks its few.
@@ -81,6 +86,7 @@ public final class MentionState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        paths = ShapePaths(editor: editor)
         topology = editor.topology
         trackMentioned()
         readCatalog()
@@ -390,6 +396,13 @@ public final class MentionState {
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
     /// the shorter label, then the front-most shape, the board shown's before any other's).
     ///
+    /// A query of several words (`MentionMatcher.words(in:)`, `MentionCandidates.words`) also finds a shape by its
+    /// path, as Jump To ranks one: the words before the last in the containers it is inside, in order, any skipped,
+    /// the last in its name (`ShapePaths`, `PathMatcher`). The matches are in three bands: the shapes whose own name
+    /// has the whole query from a substring up, then those found by their path, then the loose matches of the name
+    /// (a subsequence, a typo); the recent pick and nearness adjust within a band. Every filter below holds for a
+    /// path match; the unnamed are matched by their placeholder alone. `forgave` is true if either pass ran its typo's tier.
+    ///
     /// `kinds` and `admitting`, if given, are what a shape must satisfy too (a slash command's, for
     /// the one shape it takes: `SlashCommandTyping.admittedShapes(at:)`), wherever a shape would be
     /// listed (a recent pick, a nearby shape, a board the text is inside, a match), besides the
@@ -512,38 +525,95 @@ public final class MentionState {
         var forgave = false
         /// How many the other tiers than the typo's found.
         var tierFound = 0
+        // Words before the last may name the containers a shape is inside (`byPath`); a query of one word
+        // is its name's alone, as ever.
+        let matcher = PathMatcher(query)
+        let byPath = matcher.pieceCount > 1
         /// A member's slot in the catalog, member for member (its entry may have gone since: nil).
         let memberSlots = members?.map { catalog.slot(of: $0) }
-        q.withView { view in
-            catalog.keys.withUnsafeBufferPointer { keys in
-                catalog.entries.withUnsafeBufferPointer { entries in
-                    /// A place in the ranking's order: a catalog slot, or a member's, which has a slot of its own.
-                    func slot(_ index: Int) -> Int? { memberSlots.map { $0[index] } ?? index }
-                    forgave = FuzzyMatcher.ranking(view, count: members?.count ?? entries.count, wantSpans: false, label: { index in
-                        guard let slot = slot(index) else { return nil }
-                        let entry = entries[slot]
-                        guard !(leavesOutOwner && entry.id == owner), scopeAdmitted || admits(entry.id) else { return nil }
-                        // The rule is every shape's to pass.
-                        if let rule, !rule(entry.id) { return nil }
-                        return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
-                    }) { index, score, _ in
-                        if let slot = slot(index) {
-                            found.append(Found(slot: slot, score: score))
-                            if score != FuzzyRanking.typo { tierFound += 1 }
+        /// A pass of `query` over the shapes that can be listed, but those `skipped` (by slot): `hear`
+        /// hears each shape matched, its slot and the tier's score. Whether the typo pass ran.
+        func pass(of query: FuzzyMatcher.Query, skipping skipped: ((Int) -> Bool)? = nil, hearing hear: (_ slot: Int, _ score: Int) -> Void) -> Bool {
+            query.withView { view in
+                catalog.keys.withUnsafeBufferPointer { keys in
+                    catalog.entries.withUnsafeBufferPointer { entries in
+                        /// A place in the ranking's order: a catalog slot, or a member's, which has a slot of its own.
+                        func slot(_ index: Int) -> Int? { memberSlots.map { $0[index] } ?? index }
+                        return FuzzyMatcher.ranking(view, count: members?.count ?? entries.count, wantSpans: false, label: { index in
+                            guard let slot = slot(index), !(skipped?(slot) ?? false) else { return nil }
+                            let entry = entries[slot]
+                            guard !(leavesOutOwner && entry.id == owner), scopeAdmitted || admits(entry.id) else { return nil }
+                            // The rule is every shape's to pass.
+                            if let rule, !rule(entry.id) { return nil }
+                            return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
+                        }) { index, score, _ in
+                            if let slot = slot(index) { hear(slot, score) }
                         }
                     }
                 }
             }
         }
+        forgave = pass(of: q, hearing: { slot, score in
+            // Of several words, a name that holds them loosely (a subsequence, a typo) comes after the shapes found by their paths.
+            found.append(Found(slot: slot, score: score, band: byPath && score < FuzzyRanking.substring ? .loose : .name))
+            if score != FuzzyRanking.typo { tierFound += 1 }
+        })
         let entries = catalog.entries
+        if byPath {
+            // The shapes the last word names, which a container's name or a skip of it may place the rest of the
+            // words before, scored along their paths (Jump To's ranking), but those whose own names have the whole
+            // query strongly: they are listed first already.
+            var isStrong = [Bool](repeating: false, count: entries.count)
+            for scored in found where scored.band == .name { isStrong[scored.slot] = true }
+            var named: [Int] = []
+            let ranTypo = pass(of: FuzzyMatcher.Query(matcher.pieces[matcher.pieceCount - 1]), skipping: { isStrong[$0] }, hearing: { slot, _ in
+                named.append(slot)
+            })
+            forgave = forgave || ranTypo
+            // Each by its path, through the row of its container (made once for all it holds: shapes of one container
+            // are mostly together, so the last is remembered before the memo is asked).
+            var chains: [ShapeID: PathMatcher.Row] = [:]
+            let root = matcher.rootRow
+            var pathScores = [Int](repeating: Int.min, count: entries.count)
+            var scored = false
+            var last: (container: ShapeID, row: PathMatcher.Row, isUsable: Bool)?
+            for slot in named {
+                // A shape in no container has no word to place but its own name's.
+                guard let container = catalog.parent(at: slot, using: { [topology] in topology?.parent(of: $0) }) else { continue }
+                if last?.container != container {
+                    let row = paths.row(after: container, matcher, root: root, memo: &chains)
+                    last = (container, row, row.best.dropFirst().contains { $0 != PathMatcher.Row.unreachable })
+                }
+                guard let known = last, known.isUsable else { continue }
+                let entry = entries[slot]
+                let score = catalog.keys.withUnsafeBufferPointer { keys in
+                    matcher.leafScore(after: known.row, keys: UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count]), placingAtLeast: 1)
+                }
+                if let score {
+                    pathScores[slot] = score
+                    scored = true
+                }
+            }
+            if scored {
+                // A loose match of the name that is found by its path is in the path's band, by the path's score.
+                for i in found.indices where found[i].band == .loose && pathScores[found[i].slot] != Int.min {
+                    found[i].score = pathScores[found[i].slot]
+                    found[i].band = .path
+                    pathScores[found[i].slot] = Int.min
+                }
+                for slot in named where pathScores[slot] != Int.min { found.append(Found(slot: slot, score: pathScores[slot], band: .path)) }
+            }
+        }
         for i in found.indices {
             let entry = entries[found[i].slot]
             if entry.recentRank >= 0 {
                 found[i].score += MentionRanking.recentBonus * (MentionRanking.recentKept - entry.recentRank) / MentionRanking.recentKept
             }
         }
-        /// Lower score, then longer label, then further back, then later in the catalog.
+        /// The shapes whose names have the query, then those found by their paths, then the loose matches of the name; within
+        /// a band: lower score, then longer label, then further back, then later in the catalog.
         func isWorse(_ a: Found, _ b: Found) -> Bool {
+            if a.band != b.band { return a.band > b.band }
             if a.score != b.score { return a.score < b.score }
             let al = entries[a.slot].labelLength, bl = entries[b.slot].labelLength
             if al != bl { return al > bl }
@@ -565,6 +635,12 @@ public final class MentionState {
         var matches = ranked.prefix(MentionRanking.maxMatches).map { found in
             let id = entries[found.slot].id
             let label = catalog.appearances[found.slot].label
+            if found.band == .path {
+                // The words along the shape's whole path: which characters of its name and of its containers' they took.
+                let names = paths.containers(of: id).map { paths.node($0).name.title ?? "" } + [label]
+                let match = matcher.match(path: names, placingAtLeast: 1)
+                return candidate(id, matched: match?.matched.last ?? [], containersMatched: match.map { Array($0.matched.dropLast()) } ?? [])
+            }
             return candidate(id, matched: FuzzyMatcher.match(q, in: FuzzyMatcher.Label(label))?.matched ?? [])
         }
         // The unnamed, by their placeholder label alone (one match a label), after the named. The typo's tier is
@@ -586,7 +662,7 @@ public final class MentionState {
                 matches.append(candidate(id, matched: spans[catalog.unnamed[id]!.appearance.label]!!.matched))
             }
         }
-        return MentionCandidates(recent: [], nearby: [], matches: matches, forgave: forgave)
+        return MentionCandidates(recent: [], nearby: [], matches: matches, forgave: forgave, words: matcher.pieceCount)
     }
 
     /// The shapes in the catalog on the board shown nearest `origin` that can be listed, up to
@@ -692,8 +768,11 @@ public final class MentionState {
         return best.sorted().map(\.id)
     }
 
-    private func candidate(_ id: ShapeID, matched: [Range<Int>]) -> MentionCandidate {
-        MentionCandidate(id: id, appearance: catalog.anyAppearance(of: id)!, isReadOnly: isReadOnly(id), matched: matched)
+    /// A shape as the picker lists it: how it shows, where it is (`place(ofShape:)`), and the characters of its name and of
+    /// its containers' the query matched.
+    private func candidate(_ id: ShapeID, matched: [Range<Int>], containersMatched: [[Range<Int>]] = []) -> MentionCandidate {
+        MentionCandidate(id: id, appearance: catalog.anyAppearance(of: id)!, isReadOnly: isReadOnly(id), matched: matched,
+                         place: place(ofShape: id, matched: containersMatched))
     }
 
     /// Whether a shape, on whichever board of the file it's on, can't change: locked, in a locked
@@ -708,6 +787,7 @@ public final class MentionState {
     /// resolutions, the catalog; then the observers of the targets whose resolution changed (once this service
     /// has the commit), and the rows it affects.
     private func hear(_ changes: ChangeSet) {
+        paths.forget(changes)
         for id in changes.removed {
             removeEntry(id)
             stale.remove(id)
@@ -794,6 +874,7 @@ public final class MentionState {
     /// (`editor.showableBoards`).
     private func readCatalog() {
         catalog = MentionCatalog()
+        paths.forgetAll()
         memberSets = [:]
         stale = []
         for board in editor.showableBoards {
@@ -969,12 +1050,15 @@ public struct MentionCandidate: Hashable, Sendable {
     public let appearance: MentionAppearance
     public let isReadOnly: Bool
     public let matched: [Range<Int>]
+    /// Where the shape is, from the board shown (`MentionState.place(ofShape:)`): nil on the board shown, in no container.
+    public let place: MentionPlace?
 
-    public init(id: ShapeID, appearance: MentionAppearance, isReadOnly: Bool, matched: [Range<Int>]) {
+    public init(id: ShapeID, appearance: MentionAppearance, isReadOnly: Bool, matched: [Range<Int>], place: MentionPlace? = nil) {
         self.id = id
         self.appearance = appearance
         self.isReadOnly = isReadOnly
         self.matched = matched
+        self.place = place
     }
 }
 
@@ -987,12 +1071,17 @@ public struct MentionCandidates: Hashable, Sendable {
     /// Whether the matcher's typo pass ran for the query: it reads every label, so a list that ranked a narrowed set
     /// (`among:`) and not the whole one would have missed a typo of the query among the rest.
     public var forgave: Bool
+    /// How many words the query had (`MentionMatcher.words(in:)`): 0 for an empty one. A query of more than one word also finds the
+    /// shapes whose containers' names it has, so a longer query matches fewer shapes only among queries of as many words.
+    public var words: Int
 
-    public init(recent: [MentionCandidate] = [], nearby: [MentionCandidate] = [], matches: [MentionCandidate] = [], forgave: Bool = false) {
+    public init(recent: [MentionCandidate] = [], nearby: [MentionCandidate] = [], matches: [MentionCandidate] = [], forgave: Bool = false,
+                words: Int = 0) {
         self.recent = recent
         self.nearby = nearby
         self.matches = matches
         self.forgave = forgave
+        self.words = words
     }
 
     /// Every row, in order.
@@ -1039,10 +1128,17 @@ private final class ScopeMembers {
     }
 }
 
+/// Where a query of several words ranks a match: by its name (a tier from a substring up), by its path (a word or more in the
+/// containers the shape is inside), or by its name loosely (a subsequence, a typo). A query of one word has the first alone.
+private enum MatchBand: Comparable {
+    case name, path, loose
+}
+
 /// A catalog entry a query matched, by its slot, and its score.
 private struct Found {
     let slot: Int
     var score: Int
+    var band: MatchBand = .name
 }
 
 /// A mention text view the pill commands act on (`MentionState.enter`).

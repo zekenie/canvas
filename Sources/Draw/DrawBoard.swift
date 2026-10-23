@@ -42,7 +42,7 @@ public struct FileNames {
     /// Each board's named shapes, in document order: what `BoardNames` is made from.
     private var byBoard: [BoardID: [(name: String, id: ShapeID)]] = [:]
     let editor: CanvasEditor
-    private let naming: DrawNaming
+    let naming: DrawNaming
 
     public init(_ editor: CanvasEditor, naming: DrawNaming) {
         #if DEBUG
@@ -94,13 +94,23 @@ public struct FileNames {
         case none
         /// The shape that is.
         case shape(Place)
-        /// Shapes called alike are where it looks, so it names none of them: the message, whose hint
-        /// is `oneEach`.
-        case ambiguous(String)
+        /// Shapes called alike are where it looks, so it names none of them: the message, and the shapes
+        /// it lists (the hint is `pathHint(for:)`).
+        case ambiguous(String, [Place])
     }
 
-    /// What to say to a person whose titles two shapes share.
-    static let oneEach = "titles name shapes here, so each needs its own: ask the user to rename one"
+    /// What to say to a person whose title two shapes share: a title names a shape alone only while it is
+    /// the one called that where it is looked for, and the others are named by their paths (the containers
+    /// they are in, then their titles), or by an id.
+    func pathHint(for places: [Place]) -> String {
+        guard let path = places.lazy.compactMap({ self.path(of: $0.id) }).first else {
+            return "write the #id of the one you mean, which a query's row gives"
+        }
+        return "write the path of the one you mean, as \(path.written), or its #id, which a query's row gives"
+    }
+
+    /// What to say of a title a text names: a text names a shape by its title alone.
+    static let textHint = "a text names a shape by its title alone, so mention one whose title is its own here"
 
     /// What a title names beyond the board a run draws on: one of `places`, which are the title's on
     /// the boards its caller doesn't leave out. The shape on the board the window shows, if that has
@@ -112,30 +122,49 @@ public struct FileNames {
     /// refuses, it learns in that order. `shown` is what a message calls the window's board where
     /// that isn't how it names the others.
     func beyond(_ title: String, among places: [Place], admitting admitted: ([Place]) -> [Place] = { $0 },
-                shownAs shown: String? = nil) -> Beyond {
+                shownAs shown: String? = nil, named said: String? = nil) -> Beyond {
+        let said = said ?? quoted(title)
         let window = editor.board
         let onWindow = admitted(places.filter { $0.board == window })
-        if onWindow.count > 1 { return .ambiguous(several(onWindow, title, on: shown ?? called(window))) }
+        if onWindow.count > 1 { return .ambiguous(several(onWindow, said, on: shown ?? called(window)), onWindow) }
         if let found = onWindow.first { return .shape(found) }
         let rest = admitted(places.filter { $0.board != window })
         var boards: [BoardID] = []
         for place in rest where !boards.contains(place.board) { boards.append(place.board) }
         guard let board = boards.first else { return .none }
-        guard boards.count == 1 else { return .ambiguous("\(quoted(title)) is on \(boards.count) boards: \(listed(boards.map(called)))") }
-        return rest.count == 1 ? .shape(rest[0]) : .ambiguous(several(rest, title, on: called(board)))
+        guard boards.count == 1 else { return .ambiguous("\(said) is on \(boards.count) boards: \(listed(boards.map(called)))", rest) }
+        return rest.count == 1 ? .shape(rest[0]) : .ambiguous(several(rest, said, on: called(board)), rest)
     }
 
-    /// Several shapes on one board are called one title: each with its kind and where it is.
-    private func several(_ places: [Place], _ title: String, on board: String) -> String {
-        let each = places.compactMap { place in
-            editor.file.record(place.id).map { record in
-                "\(indefinite(record.kind)) at \(point((editor.frame(inFile: place.id) ?? record.box).map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero))"
-            }
+    /// Several shapes on one board are called one title: each with its kind and its path, or, in no container, where it is.
+    func several(_ places: [Place], _ said: String, on board: String) -> String {
+        "\(board) has \(places.count) shapes called \(said): \(listing(places))"
+    }
+
+    /// A shape as a list of candidates names it: its kind and its path (the containers it is in, then its title), or, in no
+    /// container, where it is (`at 400,300`, kept apart: a list says it of the shapes whose paths read alike).
+    func candidate(_ place: Place) -> (said: String, at: String?)? {
+        editor.file.record(place.id).map { record in
+            let at = "at \(point((editor.frame(inFile: place.id) ?? record.box).map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero))"
+            guard let path = path(of: place.id) else { return ("\(indefinite(record.kind)) \(at)", nil) }
+            return ("\(indefinite(record.kind)) \(path.written)", at)
         }
-        return "\(board) has \(places.count) shapes called \(quoted(title)): \(listed(each))"
     }
 
-    private func called(_ board: BoardID) -> String { Self.named(board, in: editor, naming: naming) }
+    /// The candidates a name could mean, as a message lists them. Two that read alike (the same path: a shape twice in one place)
+    /// say where each is too.
+    func listing(_ places: [Place]) -> String {
+        Self.listing(places.compactMap(candidate))
+    }
+
+    static func listing(_ entries: [(said: String, at: String?)]) -> String {
+        let counts = Dictionary(grouping: entries, by: \.said).mapValues(\.count)
+        return listed(entries.map { entry in
+            counts[entry.said, default: 0] > 1 ? [entry.said, entry.at].compactMap { $0 }.joined(separator: " ") : entry.said
+        })
+    }
+
+    func called(_ board: BoardID) -> String { Self.named(board, in: editor, naming: naming) }
 
     /// What a title names as a shape that holds others (`in "X"`, `canvas show "X"`).
     public enum Container {
@@ -148,8 +177,9 @@ public struct FileNames {
         case none
         /// Shapes are called that, and none holds others: the first.
         case holdsNone(AnyShapeRecord)
-        /// Several that hold others are called that, none or several on the board shown.
-        case ambiguous([BoardID])
+        /// Several that hold others are called that, none or several on the board shown: their boards, and the list a
+        /// message gives of them (each with its kind and its path), and what to say to do about it.
+        case ambiguous([BoardID], listing: String, hint: String)
 
         /// The board what's in it is on.
         var board: BoardID? {
@@ -164,7 +194,12 @@ public struct FileNames {
     /// passed over): one that holds a board, or, unless `boards` alone, a container on its board;
     /// of several, the one on the board shown.
     public func container(called title: String, boards: Bool = false) -> Container {
-        let all = places[title] ?? [], registry = editor.registry
+        container(among: places[title] ?? [], boards: boards)
+    }
+
+    /// The same among the shapes a title or a path names (`all`).
+    func container(among all: [Place], boards: Bool = false) -> Container {
+        let registry = editor.registry
         let holders = all.filter { place in
             editor.file.record(place.id).map { registry.boardOwningKinds.contains($0.kind) || !boards && registry.isContainer($0) } ?? false
         }
@@ -172,7 +207,9 @@ public struct FileNames {
             return all.first.flatMap { editor.file.record($0.id) }.map(Container.holdsNone) ?? .none
         }
         let here = holders.filter { $0.board == editor.board }
-        guard let holder = holders.count == 1 ? holders[0] : here.count == 1 ? here[0] : nil else { return .ambiguous(holders.map(\.board)) }
+        guard let holder = holders.count == 1 ? holders[0] : here.count == 1 ? here[0] : nil else {
+            return .ambiguous(holders.map(\.board), listing: listing(holders), hint: pathHint(for: holders))
+        }
         if let record = editor.file.record(holder.id), registry.boardOwningKinds.contains(record.kind) { return .board(BoardID(owner: holder.id)) }
         return .shape(holder.id, on: holder.board)
     }
@@ -199,11 +236,11 @@ public struct FileNames {
             switch beyond(title, among: all) {
             case .shape(let place): return .shape(place.id, on: place.board)
             case .none: return .none(like: Suggestions.closest(to: title, among: titles))
-            case .ambiguous(let message): return .ambiguous(message: message, hint: Self.oneEach)
+            case .ambiguous(let message, let places): return .ambiguous(message: message, hint: pathHint(for: places))
             }
         }
         let here = all.filter { $0.board == board }
-        if here.count > 1 { return .ambiguous(message: several(here, title, on: called(board)), hint: Self.oneEach) }
+        if here.count > 1 { return .ambiguous(message: several(here, quoted(title), on: called(board)), hint: pathHint(for: here)) }
         if let found = here.first { return .shape(found.id, on: board) }
         if let other = all.first { return .elsewhere(other.board) }
         return .none(like: Suggestions.closest(to: title, among: entries(on: board).map(\.name)))
@@ -225,13 +262,16 @@ private struct BoardClaims {
     private enum EndKey {
         case title(String)
         case id(ShapeID, written: String)
+        /// A path, folded, whose first part is not `board` (that is the board the run draws on, whichever it is).
+        case path(ShapePath)
     }
 
     private let editor: CanvasEditor
     private let names: FileNames
     private let naming: DrawNaming
-    /// The titles, folded, of the shapes the script draws or restates.
+    /// The titles, folded, of the shapes the script draws or restates, and the paths, folded, of those it names by one.
     private let drawn: Set<String>
+    private let drawnPaths: Set<ShapePath>
     /// What stands in for what: only a script that joins shapes asks.
     let standIns: StandIns?
     /// The kinds a stand-in can be made as, in plugin order.
@@ -241,8 +281,8 @@ private struct BoardClaims {
 
     /// Each board a statement puts the run on, in statement order: the first decides.
     private(set) var claims: [Claim] = []
-    /// The titles on several boards, none of them the board shown, which the rest may settle.
-    private(set) var unsettled: [(title: String, boards: [BoardID], statement: Statement)] = []
+    /// The titles and paths (as a message names them) on several boards, none of them the board shown, which the rest may settle.
+    private(set) var unsettled: [(said: String, boards: [BoardID], statement: Statement)] = []
     /// The edges between boards, each of which needs one end on the board the run draws on.
     private(set) var crossings: [(statement: Statement, from: (said: String, board: BoardID), to: (said: String, board: BoardID))] = []
     /// The boards the run may draw on that nothing claims hard, in statement order: for an edge
@@ -252,12 +292,13 @@ private struct BoardClaims {
     /// A board's arrows, read the first time an edge between boards looks for itself on it.
     private var connectionsByBoard: [BoardID: [BoardConnection]] = [:]
 
-    init(editor: CanvasEditor, names: FileNames, naming: DrawNaming, drawn: Set<String>, joinsShapes: Bool) {
+    init(editor: CanvasEditor, names: FileNames, naming: DrawNaming, drawn: Set<String>, drawnPaths: Set<ShapePath>, joinsShapes: Bool) {
         let registry = editor.registry
         self.editor = editor
         self.names = names
         self.naming = naming
         self.drawn = drawn
+        self.drawnPaths = drawnPaths
         standIns = joinsShapes ? registry.standIns : nil
         makers = standIns?.makers ?? []
         edges = joinsShapes ? registry.drawEdging.flatMap { edging in edging.kind(registry).map { (edging, $0) } } : nil
@@ -271,13 +312,28 @@ private struct BoardClaims {
     /// The run is on the board the shape a title names is on, if a board has one.
     mutating func claim(_ written: String, _ statement: Statement) {
         guard let title = naming.fold(written) else { return }
-        let boards = names.boards(of: title)
+        claim(names.boards(of: title), said: quoted(title), statement)
+    }
+
+    /// The run is on the one board its shapes are on; on several, the title or path they share is one the rest of the script may settle.
+    private mutating func claim(_ boards: [BoardID], said: String, _ statement: Statement) {
         guard let first = boards.first else { return }
         if first == editor.board || boards.count == 1 {
-            claims.append((first, statement, quoted(title), nil))
+            claims.append((first, statement, said, nil))
         } else {
-            unsettled.append((title, boards, statement))
+            unsettled.append((said, boards, statement))
         }
+    }
+
+    /// The boards a path leads to, the board shown's first: where the shapes it names are, else, for a path that leads to a container
+    /// and no further, where that container holds shapes (a new shape goes there).
+    private func boards(of path: ShapePath) -> [BoardID] {
+        let match = names.match(path, board: editor.board)
+        var boards = match.shapes.map(\.board)
+        if boards.isEmpty { boards = match.holders.compactMap(\.board) }
+        var seen: [BoardID] = []
+        for board in boards where !seen.contains(board) { seen.append(board) }
+        return seen.contains(editor.board) ? [editor.board] + seen.filter { $0 != editor.board } : seen
     }
 
     /// The run is on the board the shape a name names is on: a title's, if a board has one, or an id's, if the app can show it.
@@ -288,6 +344,10 @@ private struct BoardClaims {
         case .id(let text):
             guard let uuid = UUID(uuidString: text), let place = names.place(ofID: ShapeID(uuid)) else { return }
             claims.append((place.board, statement, said(.id(ShapeID(uuid), written: name.written)), nil))
+        case .path(let written):
+            // `board` is the board the run draws on, whichever it is: it claims none.
+            guard let path = Drawing.folded(written, naming: naming), path.head != .board else { return }
+            claim(boards(of: path), said: path.written, statement)
         }
     }
 
@@ -318,6 +378,8 @@ private struct BoardClaims {
         switch name {
         case .title(let written): naming.fold(written).map(EndKey.title)
         case .id(let text): UUID(uuidString: text).map { EndKey.id(ShapeID($0), written: name.written) }
+        case .path(let path):
+            Drawing.folded(path, naming: naming).flatMap { $0.head == .board ? nil : EndKey.path($0) }
         }
     }
 
@@ -329,6 +391,7 @@ private struct BoardClaims {
             guard let record = names.place(ofID: id).flatMap({ editor.file.record($0.id) }),
                   let title = naming.name(record, editor.registry) else { return written }
             return quoted(title)
+        case .path(let path): return path.written
         }
     }
 
@@ -344,14 +407,22 @@ private struct BoardClaims {
         case .id(let id, _):
             guard let place = names.place(ofID: id) else { return nil }
             return (place.board, editor.file.record(id))
+        case .path(let path):
+            let boards = boards(of: path)
+            guard let first = boards.first, first == editor.board || boards.count == 1 else { return nil }
+            let there = names.match(path, board: editor.board).shapes.filter { $0.board == first }
+            return (first, there.count == 1 ? editor.file.record(there[0].id) : nil)
         }
     }
 
     /// Whether the script draws a shape with this title and no board has one: it goes on the board
     /// the run draws on, whichever that is. An id names a shape the file has.
     private func isDrawnOnly(_ key: EndKey) -> Bool {
-        guard case .title(let title) = key else { return false }
-        return drawn.contains(title) && names.boards(of: title).isEmpty
+        switch key {
+        case .title(let title): return drawn.contains(title) && names.boards(of: title).isEmpty
+        case .path(let path): return drawnPaths.contains(path) && names.match(path, board: editor.board).shapes.isEmpty
+        case .id: return false
+        }
     }
 
     /// Whether some kind can be made to stand for the shape.
@@ -446,15 +517,20 @@ extension Drawing {
             guard case .shape(let shape) = statement.body else { return nil }
             return shape.title.flatMap(naming.fold)
         })
+        let drawnPaths = Set(script.statements.compactMap { statement -> ShapePath? in
+            guard case .shape(let shape) = statement.body, let path = shape.name?.path else { return nil }
+            return folded(path, naming: naming)
+        })
 
-        var book = BoardClaims(editor: editor, names: names, naming: naming, drawn: drawn, joinsShapes: script.statements.contains(where: \.joinsShapes))
+        var book = BoardClaims(editor: editor, names: names, naming: naming, drawn: drawn, drawnPaths: drawnPaths,
+                               joinsShapes: script.statements.contains(where: \.joinsShapes))
         var errors: [DrawError] = []
         /// Where a shape goes, or the reference an edge goes through, claims the board it's on: `in`'s, else that of each
         /// shape its placements name (whose titles are then the board `in` names).
         func claimPlace(_ container: ShapeName?, _ clauses: [Clause], _ statement: Statement) {
             if let name = container {
                 do throws(DrawError) {
-                    let board = try self.container(name, statement, names: names, drawn: drawn, naming: naming, editor: editor)
+                    let board = try self.container(name, statement, names: names, drawn: drawn, drawnPaths: drawnPaths, naming: naming, editor: editor)
                     book.claim(board, statement, why: "in \(name.title.map { quoted(naming.fold($0) ?? $0) } ?? name.written)")
                 } catch {
                     errors.append(error)
@@ -466,6 +542,7 @@ extension Drawing {
                     switch target.box {
                     case .title(let title): book.claim(title, statement)
                     case .id(let text): book.claim(ShapeName.id(text), statement)
+                    case .path(let path): book.claim(ShapeName.path(path), statement)
                     case .board, .view, .origin: break
                     }
                 }
@@ -493,7 +570,7 @@ extension Drawing {
         // A title on several boards is the one on the board the rest of the script draws on.
         for title in book.unsettled where anchor.map({ !title.boards.contains($0.board) }) ?? true {
             errors.append(DrawError(title.statement, .ambiguousTitle,
-                                    "\(quoted(title.title)) is on \(title.boards.count) boards: \(listed(title.boards.map(named)))",
+                                    "\(title.said) is on \(title.boards.count) boards: \(listed(title.boards.map(named)))",
                                     hint: "say which with in \"…\", naming the shape that holds the board it's on"))
         }
         guard errors.isEmpty else { throw collected(errors) }
@@ -516,8 +593,8 @@ extension Drawing {
 
     /// The board `in "X"` puts a shape on: the one X holds (a subboard's), or the one X is on, for
     /// a container there (a frame), which the shape goes in.
-    private static func container(_ name: ShapeName, _ statement: Statement, names: FileNames, drawn: Set<String>, naming: DrawNaming,
-                                  editor: CanvasEditor) throws(DrawError) -> BoardID {
+    private static func container(_ name: ShapeName, _ statement: Statement, names: FileNames, drawn: Set<String>, drawnPaths: Set<ShapePath>,
+                                  naming: DrawNaming, editor: CanvasEditor) throws(DrawError) -> BoardID {
         if case .id(let text) = name {
             guard let uuid = UUID(uuidString: text) else {
                 throw DrawError(statement, .notAnID, "\(ShapeName.idMark) takes a shape's id, and \(name.written) isn't one",
@@ -536,27 +613,39 @@ extension Drawing {
                                 hint: "in names a shape that holds others (a subboard, or a frame)")
             }
         }
-        guard case .title(let written) = name, let title = naming.fold(written) else {
-            throw DrawError(statement, .syntax, "a title can't be blank", hint: "in names the shape that holds it")
+        let said: String, found: FileNames.Container, wasDrawn: Bool
+        switch name {
+        case .title(let written):
+            guard let title = naming.fold(written) else {
+                throw DrawError(statement, .syntax, "a title can't be blank", hint: "in names the shape that holds it")
+            }
+            (said, found, wasDrawn) = (quoted(title), names.container(called: title), drawn.contains(title))
+        case .path(let written):
+            guard let path = folded(written, naming: naming) else {
+                throw DrawError(statement, .syntax, "a title can't be blank", hint: "in names the shape that holds it")
+            }
+            // A container this script draws holds nothing yet: a path through one is no path.
+            var head = false
+            if case .title(let title) = path.head { head = drawn.contains(title) && names.match(path, board: editor.board).shapes.isEmpty }
+            (said, found, wasDrawn) = (path.written, names.container(path: path, board: editor.board), head || drawnPaths.contains(path))
+        case .id:
+            throw DrawError(statement, .internal, "an id was read as a title")
         }
-        let found = names.container(called: title)
         switch found {
         case .board, .shape:
             return found.board!
         case .none:
-            if drawn.contains(title) {
-                throw DrawError(statement, .unsupported, "\(quoted(title)) is drawn by this script, and a shape goes in one already on the board",
-                                hint: "draw \(quoted(title)) first, then run the shapes in it as a script of their own")
+            if wasDrawn {
+                throw DrawError(statement, .unsupported, "\(said) is drawn by this script, and a shape goes in one already on the board",
+                                hint: "draw \(said) first, then run the shapes in it as a script of their own")
             }
-            throw DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to be in",
-                            hint: "in names a shape that holds others (a subboard, or a frame), by its title")
+            throw DrawError(statement, .unknownTitle, "there's no shape called \(said) to be in",
+                            hint: "in names a shape that holds others (a subboard, or a frame), by its title or its path")
         case .holdsNone(let record):
-            throw DrawError(statement, .cannotContain, "\(quoted(title)) is \(indefinite(record.kind)), which holds no shapes",
-                            hint: "in names a shape that holds others (a subboard, or a frame); to put it over \(quoted(title)), write inside \(quoted(title)) top-left, or on \(quoted(title))")
-        case .ambiguous(let boards):
-            throw DrawError(statement, .ambiguousTitle,
-                            "\(boards.count) shapes that hold others are called \(quoted(title)), on \(listed(boards.reduce(into: [BoardID]()) { if !$0.contains($1) { $0.append($1) } }.map { FileNames.named($0, in: editor, naming: naming) }))",
-                            hint: "titles name shapes, so the one it's in needs its own: ask the user to rename one")
+            throw DrawError(statement, .cannotContain, "\(said) is \(indefinite(record.kind)), which holds no shapes",
+                            hint: "in names a shape that holds others (a subboard, or a frame); to put it over \(said), write inside \(said) top-left, or on \(said)")
+        case .ambiguous(let boards, let listing, let hint):
+            throw DrawError(statement, .ambiguousTitle, "\(boards.count) shapes that hold others are called \(said): \(listing)", hint: hint)
         }
     }
 }

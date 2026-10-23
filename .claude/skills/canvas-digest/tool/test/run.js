@@ -6,8 +6,8 @@ var io = {
   readText: function (p) { return isNode ? fsr.readFileSync(p, 'utf8') : readFile(p); },
   print: function (s) { isNode ? console.log(s) : print(s); },
 };
-Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../lib/sizes.mjs'), import('../lib/elk.mjs'), import('../lib/plan.mjs'), import('../lib/cli.mjs'), import('../lib/util.mjs'), import('../lib/layout.mjs'), import('../lib/promote.mjs'), import('../lib/cost.mjs'), import('../lib/noise.mjs'), import('../lib/check.mjs'), import('./helpers.mjs'), import('../lib/compare.mjs'), import('../lib/types.mjs'), import('../lib/verify.mjs')]).then(async function (mods) {
-  var dialm = mods[0], model = mods[1], sizes = mods[2], elkm = mods[3], planm = mods[4], clim = mods[5], util = mods[6], layoutm = mods[7], promm = mods[8], costm = mods[9], noisem = mods[10], checkm = mods[11], helpers = mods[12], compareRun0 = mods[13].compareRun, typesm = mods[14], verifym = mods[15];
+Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../lib/sizes.mjs'), import('../lib/elk.mjs'), import('../lib/plan.mjs'), import('../lib/cli.mjs'), import('../lib/util.mjs'), import('../lib/layout.mjs'), import('../lib/promote.mjs'), import('../lib/cost.mjs'), import('../lib/noise.mjs'), import('../lib/check.mjs'), import('./helpers.mjs'), import('../lib/compare.mjs'), import('../lib/types.mjs'), import('../lib/verify.mjs'), import('../lib/places.mjs'), import('../lib/names.mjs'), import('../lib/replay.mjs'), import('../lib/redraw.mjs'), import('../lib/emit.mjs')]).then(async function (mods) {
+  var dialm = mods[0], model = mods[1], sizes = mods[2], elkm = mods[3], planm = mods[4], clim = mods[5], util = mods[6], layoutm = mods[7], promm = mods[8], costm = mods[9], noisem = mods[10], checkm = mods[11], helpers = mods[12], compareRun0 = mods[13].compareRun, typesm = mods[14], verifym = mods[15], placesm = mods[16], namesm = mods[17], replaym = mods[18], redrawm = mods[19], emitm0 = mods[20];
   var base = util.TOOL_DIR;
   var elk = await elkm.loadElk(io, base);
   var results = [], failed = 0;
@@ -21,6 +21,38 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   function note(t, f, text) { var n = { title: t, kind: 'sticky-note', text: text || '' }; if (f) n.in = f; return n; }
   function digest(nodes, edges, extra) { return Object.assign({ title: 'T', nodes: nodes, edges: edges }, extra || {}); }
   var fixture = function (name) { return JSON.parse(io.readText(base + '/test/fixtures/' + name + '.digest.json')); };
+  // a hand-made result's rows get the line of the statement that draws their shape (run `runIndex` of the plan), as the app's rows say it, and are compared to the plan
+  var lineRows = function (r, name, changes) {
+    var run = r.statements.runs[name];
+    changes.forEach(function (c) { if (c.line == null && c.title != null) { var i = run.lines.findIndex(function (l) { return l.shape === c.title || l.describe === c.title; }); if (i >= 0) c.line = i + 1; } });
+    return changes;
+  };
+  // results for every run of a plan: each shape's row in the run that draws it (with the line of its statement), the rows of `first` (pills, say) in the first run, those of `last` in the last
+  var distribute = function (r, shapeRows, first, last) {
+    var res = {};
+    r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
+    shapeRows.forEach(function (c) {
+      for (var n in res) { var i = r.statements.runs[n].lines.findIndex(function (l) { return l.shape === c.title; }); if (i >= 0) { c.line = i + 1; res[n].changes.push(c); return; } }
+    });
+    (first || []).forEach(function (c) { res[r.plan.runs[0]].changes.push(c); });
+    (last || []).forEach(function (c) { res[r.plan.runs[r.plan.runs.length - 1]].changes.push(c); });
+    return res;
+  };
+  // an arrow's row in the run whose statement draws it (the edge's ends, and its types), with that statement's line
+  var arrowRow = function (r, res, e, is) {
+    for (var n in res) {
+      var i = r.statements.runs[n].lines.findIndex(function (l) { return l.edge && l.edge.from === e.from && l.edge.to === e.to && (l.edge.is || []).join() === (e.is || []).join(); });
+      if (i >= 0) { res[n].changes.push(Object.assign({ line: i + 1, did: 'connected', kind: 'arrow', from: e.from, to: e.to }, is && is.length ? { is: is } : {})); return; }
+    }
+    throw new Error('no statement draws ' + JSON.stringify(e));
+  };
+  var cmpRows = function (r, result, runIndex) {
+    var name = r.plan.runs[runIndex || 0];
+    lineRows(r, name, result.changes);
+    return compareRun0(r.plan, result, name, r.statements);
+  };
+  // what the file holds once a plan is drawn, as a query says it (a title and the containers it is in), and the plan's results with their rows' lines
+  var inFile = function (plan) { var w = placesm.placesOf(plan); return [...w.byKey.keys()].map(function (k) { return { title: w.byKey.get(k).title, inside: w.containers(k) }; }); };
   var sizesOf = function (d) { var m = model.buildModel(d); return sizes.sizesFrom(m, helpers.estimateMeasure(m)); };
   var planOf = async function (d, opts) { return planm.planDigest(d, sizesOf(d), opts || {}, elk); };
   // a plan must be self-consistent: nothing overlaps, shapes inside their frames 40 clear, pills inside their start's frame
@@ -682,8 +714,11 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(dup.errors.length === 1 && /duplicate title "auth service"/.test(dup.errors[0]), JSON.stringify(dup));
     var long = checkm.checkDigest(digest([note(new Array(82).join('x'))], []));
     assert(/over 80 characters/.test(long.errors[0]), JSON.stringify(long));
+    // a title in the file is no error for a node: the scripts name every shape so that nothing outside the drawing can be meant. The --into title and a type's are the file's alone
     var inFile = checkm.checkDigest(digest([note('A'), note('B')], []), { existing: ['b', 'Other'] });
-    assert(inFile.errors.length === 1 && /"B" is already on a board/.test(inFile.errors[0]), JSON.stringify(inFile));
+    eq(inFile.errors, [], 'a node may have a title that the file has: ' + JSON.stringify(inFile));
+    var typeInFile = checkm.checkDigest(digest([{ title: 'Kind', kind: 'sticky-note', schema: { type: 'object' }, text: 'x' }, note('B')], []), { existing: ['kind'] });
+    assert(typeInFile.errors.length === 1 && /"Kind" is a type, and the file already has a shape of that title/.test(typeInFile.errors[0]), JSON.stringify(typeInFile));
     var kinds = checkm.checkDigest(digest([{ title: 'A', kind: 'schema-card' }, { title: 'B', kind: 'sticky-note' }, { title: 'C', kind: 'frame' }], []), { kinds: ['sticky-note', 'frame', 'subboard'] });
     assert(kinds.errors.length === 1 && /"A"/.test(kinds.errors[0]), 'a kind the tool does not lay out: ' + JSON.stringify(kinds));
     var gone = checkm.checkDigest(digest([note('A'), { title: 'B', kind: 'subboard' }], []), { kinds: ['sticky-note', 'frame'] });
@@ -821,15 +856,15 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   await test('compare: a dry run\'s rows against the plan; an off box is a mismatch, a push or an order warning fails', async function () {
     var r = await planOf(digest([note('A'), note('B')], [{ from: 'A', to: 'B' }])), b = r.plan.boards[0];
     var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; });
-    var good = compareRun0(r.plan, { changes: rows, on: null, warnings: [] });
+    var good = cmpRows(r, { changes: rows, on: null, warnings: [] });
     eq(good.ok, true, JSON.stringify(good)); eq(good.shapesWithin1, b.shapes.length, 'all within 1');
     rows[1].at[0][0] += 5;
-    var bad = compareRun0(r.plan, { changes: rows, warnings: [] });
+    var bad = cmpRows(r, { changes: rows, warnings: [] });
     eq(bad.ok, false, 'a box 5 off'); assert(bad.mismatches.length === 1, JSON.stringify(bad.mismatches));
     rows[1].at[0][0] -= 5;
-    var pushed = compareRun0(r.plan, { changes: rows, warnings: [{ line: 3, message: 'B was pushed 40 right' }] });
+    var pushed = cmpRows(r, { changes: rows, warnings: [{ line: 3, message: 'B was pushed 40 right' }] });
     eq(pushed.ok, false, 'a push fails'); eq(pushed.warnings.push, 1, 'and is counted');
-    var view = compareRun0(r.plan, { changes: rows, warnings: [{ line: 1, message: '2 shapes landed outside the view — --reveal brings them into view' }] });
+    var view = cmpRows(r, { changes: rows, warnings: [{ line: 1, message: '2 shapes landed outside the view — --reveal brings them into view' }] });
     eq(view.ok, true, 'a shape outside the window is not the plan\'s business'); eq(view.warnings.view, 1, 'and is counted apart');
   });
 
@@ -846,7 +881,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var b = r.plan.boards[0];
     var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; });
     b.pills.forEach(function (p) { rows.push({ kind: 'reference', at: [[p.x, p.y], [p.w, p.h]] }); });
-    var res = compareRun0(r.plan, { changes: rows, on: { board: 'x', title: 'Acme map' }, warnings: [] });
+    var res = cmpRows(r, { changes: rows, on: { board: 'x', title: 'Acme map' }, warnings: [] });
     eq(res.ok, true, JSON.stringify(res));
     eq(res.pillRows, b.pills.length, 'pills counted'); eq(res.pillsWithin1, b.pills.length, 'and found against the root board: ' + JSON.stringify(res.pillDeltas.slice(0, 2)));
   });
@@ -860,32 +895,28 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
   await test('replay: the real runs\' results against the plan, every shape, pill and arrow; a missing run, a box off, a restated shape, a missing title fail', async function () {
-    var replayRun = (await import('../lib/replay.mjs')).replay;
+    var replayRun = replaym.replay;
     var d = fixture('acme'), r = await planOf(d, {}), b = r.plan.boards[0];
     var names = r.plan.runs.map(function (n) { return n.replace(/\.draw$/, ''); });
     var mk = function () {
-      var res = {};
-      r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
-      var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]];
-      b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }); });
-      b.pills.forEach(function (p) { first.changes.push({ did: 'created', kind: 'reference', at: [[p.x, p.y], [p.w, p.h]] }); });
-      b.edges.forEach(function (e) { last.changes.push({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }); });
-      return res;
+      return distribute(r, b.shapes.map(function (s) { return { did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; }),
+        b.pills.map(function (p) { return { did: 'created', kind: 'reference', at: [[p.x, p.y], [p.w, p.h]] }; }),
+        b.edges.map(function (e) { return { did: 'connected', kind: 'arrow', from: e.from, to: e.to }; }));
     };
-    var titles = b.shapes.map(function (s) { return s.title; });
-    var ok = replayRun(r.plan, mk(), titles);
+    var titles = inFile(r.plan);
+    var ok = replayRun(r.plan, mk(), titles, r.statements);
     eq(ok.ok, true, ok.lines.join('\n')); eq(ok.lines[0], 'verify ok');
     eq([ok.shapesWithin1, ok.shapes, ok.pillsWithin1, ok.pills, ok.arrows, ok.arrowsPlanned], [b.shapes.length, b.shapes.length, b.pills.length, b.pills.length, b.edges.length, b.edges.length]);
     var gone = mk(); delete gone[r.plan.runs[r.plan.runs.length - 1]];
-    assert(!replayRun(r.plan, gone, titles).ok, 'a run that did not happen');
-    var off = mk(); off[r.plan.runs[0]].changes[1].at[0][0] += 7;
-    assert(/delta/.test(replayRun(r.plan, off, titles).lines.join('\n')), 'a box 7 off names the shape');
-    var restated = mk(); restated[r.plan.runs[0]].changes[2].did = 'updated';
-    assert(/not created/.test(replayRun(r.plan, restated, titles).lines.join('\n')), 'a restated shape');
-    var lacking = replayRun(r.plan, mk(), titles.slice(1));
+    assert(!replayRun(r.plan, gone, titles, r.statements).ok, 'a run that did not happen');
+    var off = mk(); off[r.plan.runs[0]].changes[0].at[0][0] += 7;
+    assert(/delta/.test(replayRun(r.plan, off, titles, r.statements).lines.join('\n')), 'a box 7 off names the shape');
+    var restated = mk(); restated[r.plan.runs[0]].changes[0].did = 'updated';
+    assert(/not created/.test(replayRun(r.plan, restated, titles, r.statements).lines.join('\n')), 'a restated shape');
+    var lacking = replayRun(r.plan, mk(), titles.slice(1), r.statements);
     assert(!lacking.ok && /not in the file/.test(lacking.lines.join('\n')), 'a title the file lacks');
     var fewer = mk(); fewer[r.plan.runs[r.plan.runs.length - 1]].changes.pop();
-    assert(/arrows landed/.test(replayRun(r.plan, fewer, titles).lines.join('\n')), 'an arrow that did not land');
+    assert(/arrows landed/.test(replayRun(r.plan, fewer, titles, r.statements).lines.join('\n')), 'an arrow that did not land');
     eq(names.length, r.plan.runs.length);
   });
 
@@ -896,13 +927,13 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(ex('id', { id: 4, name: 'Plans' }), 4);
     eq(ex('count', { count: 7, rows: [] }), 7);
     var threw = ''; try { ex('nope', {}); } catch (e) { threw = e.message; }
-    assert(/not titles, root-titles, kinds, id, count or errors/.test(threw), threw);
+    assert(/not titles, root-titles, places, root-places, kinds, id, count or errors/.test(threw), threw);
   });
 
   // ---- what reviewing 9716c09f and 4840572f found ----------------------------------------------------------------
 
   await test('a pill 400 units off the plan fails compare and replay, as a shape does; a pill on the plan passes', async function () {
-    var replayRun = (await import('../lib/replay.mjs')).replay;
+    var replayRun = replaym.replay;
     var r = await planOf(fixture('acme'), {}), b = r.plan.boards[0];
     assert(b.pills.length >= 2, 'the plan has pills: ' + b.pills.length);
     var mk = function (shift) {
@@ -911,20 +942,21 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
       b.pills.forEach(function (p, i) { changes.push({ did: 'created', kind: 'reference', at: [[p.x + (i === 0 ? shift : 0), p.y], [p.w, p.h]] }); });
       return changes;
     };
-    var good = compareRun0(r.plan, { changes: mk(0), on: null, warnings: [] });
+    var good = cmpRows(r, { changes: mk(0), on: null, warnings: [] });
     eq(good.ok, true, JSON.stringify(good.mismatches)); eq(good.pillsWithin1, b.pills.length, 'every pill within 1');
-    var bad = compareRun0(r.plan, { changes: mk(400), on: null, warnings: [] });
+    var bad = cmpRows(r, { changes: mk(400), on: null, warnings: [] });
     eq(bad.ok, false, 'a pill 400 off fails compare'); assert(bad.worstPill > 1 && bad.pillsWithin1 < b.pills.length, 'and is counted: ' + bad.worstPill);
     assert(bad.mismatches.some(function (m) { return /^pill of .* for .*: delta -?\d+,-?\d+$/.test(m); }), 'and names the pill: ' + JSON.stringify(bad.mismatches));
     assert(/MISMATCH[\s\S]*pill of/.test(clim.compareText(bad)), 'the text says so');
-    var results = {}; r.plan.runs.forEach(function (n) { results[n] = { changes: [], warnings: [], on: null }; });
-    var last = r.plan.runs[r.plan.runs.length - 1];
-    b.edges.forEach(function (e) { results[last].changes.push({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }); });
-    var titles = b.shapes.map(function (s) { return s.title; });
-    results[r.plan.runs[0]].changes = mk(0);
-    eq(replayRun(r.plan, results, titles).ok, true, 'on the plan: verify ok');
-    results[r.plan.runs[0]].changes = mk(400);
-    var failed = replayRun(r.plan, results, titles);
+    var titles = inFile(r.plan);
+    var drawn = function (shift) {
+      var all = mk(shift), results = distribute(r, all.filter(function (c) { return c.kind !== 'reference'; }), all.filter(function (c) { return c.kind === 'reference'; }), b.edges.map(function (e) { return { did: 'connected', kind: 'arrow', from: e.from, to: e.to }; }));
+      return results;
+    };
+    var results = drawn(0);
+    eq(replayRun(r.plan, results, titles, r.statements).ok, true, 'on the plan: verify ok');
+    results = drawn(400);
+    var failed = replayRun(r.plan, results, titles, r.statements);
     eq(failed.ok, false, 'replay fails'); eq(failed.lines[0], 'verify FAILED');
     assert(/pill of .* delta /.test(failed.lines.join('\n')), failed.lines.join('\n'));
   });
@@ -932,14 +964,14 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   await test('a shape the plan creates must be created: found unchanged (or updated) on the board fails compare and replay, naming it', async function () {
     var r = await planOf(digest([note('A'), note('B')], [{ from: 'A', to: 'B' }])), b = r.plan.boards[0];
     var rows = b.shapes.map(function (s) { return { did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; });
-    eq(compareRun0(r.plan, { changes: rows, warnings: [] }).ok, true, 'created passes');
+    eq(cmpRows(r, { changes: rows, warnings: [] }).ok, true, 'created passes');
     rows[1].did = 'unchanged';
-    var res = compareRun0(r.plan, { changes: rows, warnings: [] });
+    var res = cmpRows(r, { changes: rows, warnings: [] });
     eq(res.ok, false, 'unchanged fails'); assert(res.mismatches.join().indexOf('"' + rows[1].title + '" was unchanged, not created') >= 0, JSON.stringify(res.mismatches));
     assert(/drawn before/.test(res.mismatches.join()), 'and says the plan was drawn before');
     // an arrow row, or a reference row, with a did of its own is not a shape
     rows[1].did = 'created'; rows.push({ did: 'unchanged', kind: 'arrow', title: 'A', from: 'A', to: 'B' });
-    eq(compareRun0(r.plan, { changes: rows, warnings: [] }).ok, true, 'an arrow that was already there is not a shape');
+    eq(cmpRows(r, { changes: rows, warnings: [] }).ok, true, 'an arrow that was already there is not a shape');
   });
 
   await test('a cycle in `in` (A in B and B in A, A in A, or a tail leading into one) is refused by check and by the model, naming the titles, never a stack overflow', async function () {
@@ -977,15 +1009,19 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var threw = ''; try { ex('titles', { count: 10001, rows: new Array(10000).fill({ title: 'x' }) }); } catch (e) { threw = e.message; }
     assert(/10001 titled shapes and one query lists only 10000/.test(threw), 'refused, said: ' + threw);
     eq(ex('titles', { count: 2, rows: [{ title: 'A' }, { title: 'B' }] }), ['A', 'B'], 'all listed is fine');
-    // the plan's titles the file holds
+    // the titles the file holds that the plan can't be drawn beside: the subboard's, and each a script names bare (the file didn't have it when the plan was made)
     var r = await planOf(fixture('acme'), { into: 'Acme map' });
-    files['/plan.json'] = JSON.stringify(r.plan); files['/t.json'] = JSON.stringify(['cto', 'Unrelated']);
-    await clim.run(['clashes', '/plan.json', '/t.json'], mio);
-    eq(out, ['error: "CTO" is already on a board in the file; titles are file-wide'], 'a clash, folded for case'); out.length = 0;
+    files['/plan.json'] = JSON.stringify(r.plan); files['/st.json'] = JSON.stringify(r.statements); files['/t.json'] = JSON.stringify(['CTO', 'Unrelated']);
+    assert(r.statements.absent.indexOf('CTO') >= 0, 'a bare title is one the plan relies on the file not having');
+    await clim.run(['clashes', '/plan.json', '/t.json', '/st.json'], mio);
+    eq(out, ['error: "CTO" is on a board in the file now, and the scripts name shapes on the understanding that it is not (plan again, which reads the file\'s titles afresh)'], 'a clash'); out.length = 0;
+    await clim.run(['clashes', '/plan.json', '/t.json'], mio); eq(out, [], 'with no statements, only the subboard it goes into is looked for: the file may have any other title'); out.length = 0;
+    files['/t.json'] = JSON.stringify(['cto']);
+    await clim.run(['clashes', '/plan.json', '/t.json', '/st.json'], mio); eq(out, [], 'draw tells "cto" from "CTO"'); out.length = 0;
     files['/t.json'] = JSON.stringify(['acme map']);
-    await clim.run(['clashes', '/plan.json', '/t.json'], mio); assert(/"Acme map" is already/.test(out[0]), 'the subboard it goes into is a title too'); out.length = 0;
+    await clim.run(['clashes', '/plan.json', '/t.json', '/st.json'], mio); assert(/"Acme map" is already/.test(out[0]), 'the subboard it goes into is a title too, folded for case as check does'); out.length = 0;
     files['/t.json'] = JSON.stringify(['Unrelated']);
-    await clim.run(['clashes', '/plan.json', '/t.json'], mio); eq(out, [], 'none: nothing printed');
+    await clim.run(['clashes', '/plan.json', '/t.json', '/st.json'], mio); eq(out, [], 'none: nothing printed');
     await clim.run(['into', '/plan.json'], mio); eq(out, ['Acme map']); out.length = 0;
     files['/plan2.json'] = JSON.stringify((await planOf(fixture('acme'), {})).plan);
     await clim.run(['into', '/plan2.json'], mio); eq(out, [], 'a new file has none');
@@ -1175,6 +1211,17 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(none.plan.described, undefined, 'a digest with no description has none in its plan');
   });
 
+  await test('two cards of one title in two frames, each with a description: each is described by the name that means it, and the plan names each by its key', async function () {
+    var d = digest([{ title: 'A', kind: 'frame' }, { title: 'B', kind: 'frame' }, { title: 'Docs', kind: 'subboard', in: 'A', text: 'What A keeps.' },
+      { title: 'Docs', kind: 'subboard', in: 'B', text: 'What B keeps.' }], []);
+    var r = await planOf(d, { promote: false });
+    var describe = r.runs.filter(function (x) { return /-describe\.draw$/.test(x.name); });
+    eq(describe.length, 1, 'one run describes the first board\'s cards');
+    eq(describe[0].text, 'subboard "A" > "Docs" description: "What A keeps."\nsubboard "B" > "Docs" description: "What B keeps."\n', 'each card by its path, with its own words');
+    eq(r.plan.described[describe[0].name], ['Docs  in A', 'Docs  in B'], 'the plan names the cards it describes by their keys');
+    eq(r.statements.runs[describe[0].name].lines.filter(function (l) { return l && l.describe != null; }).map(function (l) { return l.describe; }), ['Docs  in A', 'Docs  in B'], 'and so do the statements the results are matched to');
+  });
+
   await test('a shape on the board itself is placed at its offset from the board\'s origin; a layout that reaches left of it or above it is moved right and down', async function () {
     var emitm = await import('../lib/emit.mjs');
     eq(emitm.fromOrigin({ x: 120, y: 0, w: 300, h: 200 }), 'right of origin (gap: 120) below origin (gap: 0)');
@@ -1235,9 +1282,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var d = digest([{ title: 'Part', kind: 'subboard', text: 'The part, with @[Loose].' }, note('One', 'Part', 'x'), note('A longer second note', 'Part', 'y'), note('Third', 'Part', 'z'), note('Loose', null, 'w')], []);
     var r = await planOf(d, { promote: false });
     var boxesOf = {};
-    var results = {}, line = 0;
+    var results = {};
     r.runs.forEach(function (run) {
-      var changes = [];
+      var changes = [], line = 0;
       run.text.split('\n').filter(Boolean).forEach(function (l) {
         var m = /^(sticky-note|frame|subboard) "([^"]+)"/.exec(l), sz = /size: (\d+)x(\d+)/.exec(l);
         line++;
@@ -1248,89 +1295,94 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
       });
       results[run.name] = { changes: changes, warnings: [] };
     });
-    var ok = rpl.replay(r.plan, results, Object.keys(boxesOf));
+    var plm = await import('../lib/places.mjs');
+    var inFile = function (plan) { var w = plm.placesOf(plan); return [...w.byKey.keys()].map(function (k) { return { title: w.byKey.get(k).title, inside: w.containers(k) }; }); };
+    var ok = rpl.replay(r.plan, results, inFile(r.plan), r.statements);
     eq([ok.described, ok.describedPlanned, ok.restated], [1, 1, 0], 'one description, written once, and no shape restated: ' + ok.lines.join(' | '));
     assert(/descriptions 1\/1/.test(ok.lines[1]), 'the summary says it: ' + ok.lines[1]);
     // a description that changed nothing was not written
     var bad = JSON.parse(JSON.stringify(results)), name = r.runs.find(function (x) { return /-describe\.draw$/.test(x.name); }).name;
     bad[name].changes[0].did = 'unchanged';
-    var fail = rpl.replay(r.plan, bad, null);
+    var fail = rpl.replay(r.plan, bad, null, r.statements);
     assert(!fail.ok && /was unchanged: its description was not written/.test(fail.problems.join()), 'said: ' + fail.problems.join(' | '));
     // the driver names a run as the plan does less `.draw`, and a dry run too: the same run, the same description
     var cmpm = await import('../lib/compare.mjs');
-    eq([cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, '') + ' (dry run)').described, cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, '')).described], [1, 1], 'a description is a description under either name');
+    eq([cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, '') + ' (dry run)', r.statements).described, cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, ''), r.statements).described], [1, 1], 'a description is a description under either name');
     // and a run that never happened is said
     var gone = JSON.parse(JSON.stringify(results)); delete gone[name];
-    assert(/was planned/.test(rpl.replay(r.plan, gone, null).problems.join()) || /no result was saved/.test(rpl.replay(r.plan, gone, null).problems.join()), 'a description run that did not happen is said');
+    assert(/was planned/.test(rpl.replay(r.plan, gone, null, r.statements).problems.join()) || /no result was saved/.test(rpl.replay(r.plan, gone, null, r.statements).problems.join()), 'a description run that did not happen is said');
   });
 
   await test('drawing again in place: what a drawing makes, whether it is in a board\'s file, what is clear of it, and the script that takes it back', async function () {
     var rd = await import('../lib/redraw.mjs');
+    var P = function (list) { return list.map(function (x) { return typeof x === 'string' ? { title: x, inside: [] } : x; }); };   // what the file holds, as a query says it: a title and the containers it is in
+    var names = function (list) { return list.map(function (t) { return t.name; }).sort(); };
     var r = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('In part', 'Part', 'x'), note('Root note', null, 'y')], []), { promote: false });
     var d = rd.drawnRecord(r.plan, '/f.canvasboard', 7, 12);
     eq(d.into, null); eq(d.path, '/f.canvasboard'); eq(d.board, '7'); eq(d.name, 'T'); eq(d.shapes, 12);
     eq(rd.drawnRecord(r.plan, '/f.canvasboard', 7).shapes, null, 'while it is drawn, the count is not known');
-    eq(d.root.slice().sort(), ['Part', 'Root note'], 'the root board\'s shapes');
+    eq(names(d.root), ['"Part"', '"Root note"'], 'the root board\'s shapes, and the names a take-back gives them: bare, since their titles are their alone');
+    eq(d.places.map(function (p) { return p.join(' > '); }).sort(), ['In part', 'Part', 'Part > In part', 'Root note'].filter(function (x) { return x !== 'In part'; }), 'and where every shape is');
     eq(d.titles.slice().sort(), ['In part', 'Part', 'Root note'], 'every title');
     assert(rd.sameFile(d, '/f.canvasboard', 9) && !rd.sameFile(d, '/g.canvasboard', 7) && !rd.sameFile(d, '', 7), 'by path, when there is one');
     var unsaved = rd.drawnRecord(r.plan, '', 4);
-    assert(rd.sameFile(unsaved, '', 4, ['Part', 'Mine']) && !rd.sameFile(unsaved, '', 5, ['Part']), 'by id, for a board with no file');
-    assert(!rd.sameFile(unsaved, '', 4, ['In part', 'Mine']) && !rd.sameFile(unsaved, '', 4), 'and only while a shape it put on the root is in it: a later board may get the id');
-    assert(rd.sameFile(unsaved, '/f.canvasboard', 4, ['Root note']) && !rd.sameFile(unsaved, '/f.canvasboard', 4, ['Mine']) && !rd.sameFile(unsaved, '/f.canvasboard', 5, ['Root note']), 'a board saved since it was drawn on is still told by its id and the drawing\'s shapes');
-    assert(rd.sameFile(rd.drawnRecord(r.plan, '/private/tmp/f.canvasboard', 7), '/tmp/f.canvasboard', 7) && !rd.sameFile(d, '/g.canvasboard', 7, ['Part']), 'a path is the file\'s own (/tmp is /private/tmp); two paths that differ are two files, whatever the id');
-    eq(rd.minus(['Root  note', 'Mine', 'root note'], d), ['Mine', 'root note'], 'the file less the drawing (spaces folded, case kept: "root note" is another shape)');
+    assert(rd.sameFile(unsaved, '', 4, P(['Part', 'Mine'])) && !rd.sameFile(unsaved, '', 5, P(['Part'])), 'by id, for a board with no file');
+    assert(!rd.sameFile(unsaved, '', 4, P(['In part', 'Mine'])) && !rd.sameFile(unsaved, '', 4), 'and only while a shape it put on the root is in it: a later board may get the id');
+    assert(rd.sameFile(unsaved, '/f.canvasboard', 4, P(['Root note'])) && !rd.sameFile(unsaved, '/f.canvasboard', 4, P(['Mine'])) && !rd.sameFile(unsaved, '/f.canvasboard', 5, P(['Root note'])), 'a board saved since it was drawn on is still told by its id and the drawing\'s shapes');
+    assert(rd.sameFile(rd.drawnRecord(r.plan, '/private/tmp/f.canvasboard', 7), '/tmp/f.canvasboard', 7) && !rd.sameFile(d, '/g.canvasboard', 7, P(['Part'])), 'a path is the file\'s own (/tmp is /private/tmp); two paths that differ are two files, whatever the id');
+    eq(rd.minus(P(['Root note', 'Mine', 'root note', { title: 'Part', inside: ['Elsewhere'] }]), d), ['Mine', 'root note', 'Part'], 'the file less the drawing, by place: "root note" is another shape, and so is a Part somewhere else');
     eq([rd.beyond(d, 12), rd.beyond(d, 13), rd.beyond(d, 9), rd.beyond(rd.drawnRecord(r.plan, '/f', 7), 40)], [0, 1, 0, 0], 'shapes beyond the drawing: one added; fewer is fine; unknown counts none');
-    eq(rd.foreign(['Part', 'Root note'], d), [], 'nothing foreign');
+    eq(rd.foreign(P(['Part', 'Root note']), d), [], 'nothing foreign');
     // a folder of records, one a target file: the one told by the file's path, else by the board's id and the drawing's shapes; never another's
     var recs = [{ name: 'b.json', record: unsaved }, { name: 'a.json', record: d }];
-    eq([rd.pickRecord(recs, '/f.canvasboard', 7, ['Part']), rd.pickRecord(recs, '/g.canvasboard', 7, ['Part']), rd.pickRecord(recs, '', 4, ['Part']), rd.pickRecord(recs, '', 4, ['Mine']), rd.pickRecord([], '/f.canvasboard', 7, [])], ['a.json', '', 'b.json', '', ''], 'the record of a file');
+    eq([rd.pickRecord(recs, '/f.canvasboard', 7, P(['Part'])), rd.pickRecord(recs, '/g.canvasboard', 7, P(['Part'])), rd.pickRecord(recs, '', 4, P(['Part'])), rd.pickRecord(recs, '', 4, P(['Mine'])), rd.pickRecord([], '/f.canvasboard', 7, [])], ['a.json', '', 'b.json', '', ''], 'the record of a file');
     var pn = rd.recordName('/tmp/f.canvasboard', 7, 'T');
     assert(pn === rd.recordName('/private/tmp/f.canvasboard', 9, 'x') && pn !== rd.recordName('/tmp/g.canvasboard', 7, 'T') && /^file-[0-9a-f]{16}\.json$/.test(pn), 'a file has one record name; two files two');
     assert(rd.recordName('', 4, 'T') !== rd.recordName('', 4, 'U') && /^board-4-[0-9a-f]{16}\.json$/.test(rd.recordName('', 4, 'T')), 'a board with no file: its id and the digest\'s title');
-    eq(rd.replaceScript(d, ['Part', 'In part']), 'delete "Part"', 'the root\'s shapes the file still holds; a subboard takes what is on its board');
-    eq(rd.replaceScript(d, []), '', 'nothing left to take back');
+    eq(rd.replaceScript(d, P(['Part', 'In part'])), 'delete "Part"', 'the root\'s shapes the file still holds; a subboard takes what is on its board');
+    eq(rd.replaceScript(d, P([])), '', 'nothing left to take back');
     var into = await planOf(digest([note('A', null, 'x')], []), { promote: false, into: 'Map' });
     var di = rd.drawnRecord(into.plan, '/f.canvasboard', 7);
-    eq(rd.replaceScript(di, ['Map', 'A', 'Part']), 'delete "Map"', 'into a subboard: the subboard alone');
+    eq(rd.replaceScript(di, P(['Map', 'A', 'Part'])), 'delete "Map"', 'into a subboard: the subboard alone');
     eq(di.name, 'Map', 'and named by it, not by the digest\'s title: a subboard\'s title is the file\'s alone');
     // a drawing made in place of the last one, until it is whole: the record is of both, since an undo or two may bring the last one back
     var next = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('New note', null, 'z')], []), { promote: false });
     var both = rd.drawnRecord(next.plan, '/f.canvasboard', 7, 3, d, 12);   // it stopped with 3 shapes in the file, which held 12 before the take-back
     eq([both.shapes, both.was], [3, 12], 'how many shapes the file holds as it stopped, and held before the last drawing was taken back');
-    eq(both.takes.slice().sort(), ['New note', 'Part', 'Root note'], 'what takes either back');
+    eq(names(both.takes), ['"New note"', '"Part"', '"Root note"'], 'what takes either back');
     eq(both.names, ['T'], 'the name both are told by');
     assert(both.titles.indexOf('In part') >= 0 && both.titles.indexOf('New note') >= 0, 'the titles of both');
-    eq(rd.foreign(['Part', 'In part', 'Root note'], both), [], 'the last drawing, undone back, is not foreign');
+    eq(rd.foreign(P(['Part', { title: 'In part', inside: ['Part'] }, 'Root note']), both), [], 'the last drawing, undone back, is not foreign');
     eq([rd.beyond(both, 3), rd.beyond(both, 0), rd.beyond(both, 12)], [0, 0, 0], 'part of the new drawing, none of it, or the last one whole: nothing added');
     eq([rd.beyond(both, 14), rd.beyond(both, 5), rd.beyond(both, 11)], [2, 2, 8], 'an arrow and a note added to either are counted, so the take-back is refused; a count that is neither drawing\'s is too');
     var early = rd.drawnRecord(next.plan, '/f.canvasboard', 7, null, d, 12);   // stopped before a count was taken
     eq([early.shapes, rd.beyond(early, 9), rd.beyond(early, 12), rd.beyond(early, 13)], [null, 0, 0, 1], 'with no count of its own, up to the last drawing\'s may be part of this one');
-    eq(rd.replaceScript(both, ['Part', 'Root note', 'In part'], ['Part', 'Root note']), 'delete "Part"\ndelete "Root note"', 'the last drawing is taken back by its own shapes');
-    eq(rd.replaceScript(both, ['New note'], ['New note']), 'delete "New note"', 'and as much of the new one as was drawn by its');
-    eq(rd.replaceScript({ into: null, root: ['A', 'B'] }, ['B']), 'delete "B"', 'a record made before `takes` reads the same');
+    eq(rd.replaceScript(both, P(['Part', 'Root note', 'In part']), P(['Part', 'Root note'])), 'delete "Part"\ndelete "Root note"', 'the last drawing is taken back by its own shapes');
+    eq(rd.replaceScript(both, P(['New note']), P(['New note'])), 'delete "New note"', 'and as much of the new one as was drawn by its');
+    eq(rd.replaceScript({ into: null, root: [{ place: ['A'], name: '"A"' }, { place: ['B'], name: '"B"' }] }, P(['B'])), 'delete "B"', 'a record made before `takes` reads the same');
     // a shape the last drawing had on the root that this one holds inside a subboard goes with its subboard: one `delete` of it there
     // would put the script on two boards, which draw refuses
     var movedIn = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('Root note', 'Part', 'y')], []), { promote: false });
     var mv = rd.drawnRecord(movedIn.plan, '/f.canvasboard', 7, 2, d, 12);
-    eq(rd.replaceScript(mv, ['Part', 'Root note', 'In part'], ['Part']), 'delete "Part"', 'only what is on the root board');
-    eq(rd.replaceScript(mv, ['Part', 'Root note', 'In part'], ['Part', 'Root note']), 'delete "Part"\ndelete "Root note"', 'and the last drawing, undone back, by both');
+    eq(rd.replaceScript(mv, P(['Part', 'Root note', 'In part']), P(['Part'])), 'delete "Part"', 'only what is on the root board');
+    eq(rd.replaceScript(mv, P(['Part', 'Root note', 'In part']), P(['Part', 'Root note'])), 'delete "Part"\ndelete "Root note"', 'and the last drawing, undone back, by both');
     // the last one drawn as the board, this one into a subboard of it (or the other way round): the subboard where the file holds it, the root's shapes where they are on the root
     var intoB = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('In part', 'Part', 'x'), note('Root note', null, 'y')], []), { promote: false, into: 'B' });
     var mixed = rd.drawnRecord(intoB.plan, '/f.canvasboard', 7, 5, d, 12);
-    eq([mixed.was, mixed.intos, rd.beyond(mixed, 99)], [null, ['B'], 0], 'a drawing into a subboard counts nothing of the file');
-    eq(rd.replaceScript(mixed, ['B', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'the new subboard, with the same titles inside it');
-    eq(rd.replaceScript(mixed, ['Part', 'Root note', 'In part'], ['Part', 'Root note']), 'delete "Part"\ndelete "Root note"', 'the last drawing, back on the root');
+    eq([mixed.was, rd.beyond(mixed, 99)], [null, 0], 'a drawing into a subboard counts nothing of the file');
+    eq(rd.replaceScript(mixed, P(['B', 'Part', 'Root note', 'In part']), P(['B'])), 'delete "B"', 'the new subboard, with the same titles inside it');
+    eq(rd.replaceScript(mixed, P(['Part', 'Root note', 'In part']), P(['Part', 'Root note'])), 'delete "Part"\ndelete "Root note"', 'the last drawing, back on the root');
     // the other way round: the last one into a subboard, this one as the board, which is drawn only on a file the take-back left empty,
     // so the count before it is the last drawing's own
     var back = rd.drawnRecord(next.plan, '/f.canvasboard', 7, 2, rd.drawnRecord(intoB.plan, '/f.canvasboard', 7, 9), 9);
     eq([back.was, rd.beyond(back, 9), rd.beyond(back, 10), rd.beyond(back, 2)], [9, 0, 1, 0], 'the subboard\'s drawing, undone back, is not counted as shapes added');
-    eq(rd.replaceScript(back, ['B', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'and is taken back by its subboard');
+    eq(rd.replaceScript(back, P(['B', 'Part', 'Root note', 'In part']), P(['B'])), 'delete "B"', 'and is taken back by its subboard');
     var intoUnsaved = rd.drawnRecord(intoB.plan, '', 4);
-    assert(rd.sameFile(intoUnsaved, '', 4, ['B', 'Mine']) && !rd.sameFile(intoUnsaved, '', 4, ['Mine']), 'a drawing into a subboard that stopped after its first script is told by the subboard: nothing else is drawn yet');
+    assert(rd.sameFile(intoUnsaved, '', 4, P(['B', 'Mine'])) && !rd.sameFile(intoUnsaved, '', 4, P(['Mine'])), 'a drawing into a subboard that stopped after its first script is told by the subboard: nothing else is drawn yet');
     var rp = await import('../lib/replay.mjs');
     eq(rp.extract('root-titles', { rows: [{ board: 'root', title: 'A' }, { board: 'X', title: 'B' }, { board: 'root' }] }), ['A'], 'the titles on the root board');
     var renamed = rd.drawnRecord((await planOf(Object.assign(digest([note('A', null, 'x')], []), { title: 'U' }), { promote: false })).plan, '', 4, null, unsaved);
-    assert(rd.sameFile(renamed, '', 4, ['Part']) && rd.sameFile(renamed, '', 4, ['A']), 'either drawing\'s shapes tell the board');
+    assert(rd.sameFile(renamed, '', 4, P(['Part'])) && rd.sameFile(renamed, '', 4, P(['A'])), 'either drawing\'s shapes tell the board');
     eq(renamed.names, ['U', 'T'], 'and the record has both drawings\' names');
     eq([rd.hasTitle(['Root  note'], 'root note'), rd.hasTitle(['Root note'], 'Root')], [true, false], 'a title the file holds, spaces folded and case aside');
     var boards = [{ id: 2, path: '/a', fileShapes: 5, frontmost: false }, { id: 3, path: null, fileShapes: 0, frontmost: true }];
@@ -1764,27 +1816,26 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var rows = function (mutate) {
       var out = [];
       var origin = { x: 500, y: 600 };
-      b.shapes.forEach(function (s) { out.push({ board: 'root', title: s.title, kind: s.kind, x: origin.x + s.x, y: origin.y + s.y, w: s.w, h: s.h }); });
-      b.edges.forEach(function (e) { out.push({ board: 'root', kind: 'arrow', from: e.from, to: e.to, is: e.is }); });
+      b.shapes.forEach(function (s) { out.push({ board: [], in: [], title: s.title, kind: s.kind, x: origin.x + s.x, y: origin.y + s.y, w: s.w, h: s.h }); });
+      b.edges.forEach(function (e) { out.push({ board: [], kind: 'arrow', from: [e.from], to: [e.to], is: e.is }); });
       if (mutate) mutate(out);
       return out;
     };
     var ok = verifym.verify(r.plan, rows());
     eq(ok.summary.edgesMissing, [], 'every arrow found: ' + JSON.stringify(ok.summary.edgesMissing));
-    var swapped = verifym.verify(r.plan, rows(function (out) { out.forEach(function (x) { if (x.kind === 'arrow' && x.from === 'w1') x.is = ['writes']; }); }));
+    var swapped = verifym.verify(r.plan, rows(function (out) { out.forEach(function (x) { if (x.kind === 'arrow' && x.from[0] === 'w1') x.is = ['writes']; }); }));
     eq(swapped.summary.edgesMissing, ['root: w1 -> t1 is reads'], 'two arrows of one type are not one of each');
-    var plainArrow = verifym.verify(r.plan, rows(function (out) { out.forEach(function (x) { if (x.kind === 'arrow' && x.from === 'w1' && x.is[0] === 'reads') delete x.is; }); }));
+    var plainArrow = verifym.verify(r.plan, rows(function (out) { out.forEach(function (x) { if (x.kind === 'arrow' && x.from[0] === 'w1' && x.is[0] === 'reads') delete x.is; }); }));
     eq(plainArrow.summary.edgesMissing, ['root: w1 -> t1 is reads'], 'a plain arrow is not a relationship');
-    var replayRun = (await import('../lib/replay.mjs')).replay;
-    var res = {}; r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
-    var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]];
-    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }); });
-    b.edges.forEach(function (e) { last.changes.push(Object.assign({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }, e.is ? { is: e.is } : {})); });
-    var titles = b.shapes.map(function (s) { return s.title; });
-    var good = replayRun(r.plan, res, titles);
+    var replayRun = replaym.replay;
+    var res = distribute(r, b.shapes.map(function (s) { return { did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; }));
+    b.edges.forEach(function (e) { arrowRow(r, res, e, e.is); });
+    var last = res[r.plan.runs[r.plan.runs.length - 1]];
+    var titles = inFile(r.plan);
+    var good = replayRun(r.plan, res, titles, r.statements);
     eq(good.ok, true, good.lines.join('\n'));
     last.changes.forEach(function (c) { if (c.from === 'w1' && c.is && c.is[0] === 'reads') c.is = ['writes']; });
-    var bad = replayRun(r.plan, res, titles);
+    var bad = replayRun(r.plan, res, titles, r.statements);
     assert(!bad.ok && /not drawn as the relationship the plan says: w1 -> t1 is reads/.test(bad.lines.join('\n')), 'two arrows of the same type, the second type missing: ' + bad.lines.join('\n'));
   });
 
@@ -1798,23 +1849,23 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
       { line: 7, severity: 'error', attribute: 'to', message: 'edge "w1" -> "t1": reads runs to a Table. “w1” is a Workflow.' },
       { line: 8, severity: 'error', attribute: 'jobs', message: '"Ann": jobs has 2 notes, and should have at most 1' },
       { line: 9, message: '2 shapes landed outside the view' }];
-    var res = compareRun0(r.plan, { changes: rows, warnings: warnings });
+    var res = cmpRows(r, { changes: rows, warnings: warnings });
     eq(res.ok, true, JSON.stringify(res)); eq(res.warnings.typed, 3, 'the three typed ones are counted'); eq(res.warnings.view, 1);
     eq(res.warningMessages, [], 'and are no failure to name'); assert(res.typedMessages.length === 3 && /tables is needed/.test(res.typedMessages[0]), res.typedMessages.join());
     var withProblems = rows.map(function (x, i) { return i === 2 ? Object.assign({ problems: [{ field: 'tables', class: 'needed', message: 'tables is needed' }] }, x) : x; });
-    var viaRows = compareRun0(r.plan, { changes: withProblems, warnings: [] });
+    var viaRows = cmpRows(r, { changes: withProblems, warnings: [] });
     eq(viaRows.ok, true); eq(viaRows.warnings.typed, 1, 'a row\'s problems are counted too'); assert(/^[^:]+: tables is needed$/.test(viaRows.typedMessages[0]), viaRows.typedMessages[0]);
-    var pushed = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, message: 'B was pushed 40 right' }]) });
+    var pushed = cmpRows(r, { changes: rows, warnings: warnings.concat([{ line: 3, message: 'B was pushed 40 right' }]) });
     eq(pushed.ok, false, 'a push still fails'); eq(pushed.warnings.push, 1);
-    var ordered = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, code: 'unordered', message: 'these two cannot be ordered' }]) });
+    var ordered = cmpRows(r, { changes: rows, warnings: warnings.concat([{ line: 3, code: 'unordered', message: 'these two cannot be ordered' }]) });
     eq(ordered.ok, false, 'an order warning still fails');
     var off = rows.map(function (x, i) { return i === 1 ? Object.assign({}, x, { at: [[x.at[0][0] + 9, x.at[0][1]], x.at[1]] }) : x; });
-    eq(compareRun0(r.plan, { changes: off, warnings: warnings }).ok, false, 'a shape off its box still fails');
+    eq(cmpRows(r, { changes: off, warnings: warnings }).ok, false, 'a shape off its box still fails');
     var text = clim.compareText(res);
     assert(/^ok .*; 3 warning\(s\) a typed drawing gives by design: /.test(text), text);
     // any other warning fails nothing and is said, never only counted: a title near one the board has, in the run's line and in verify's
     var near = { line: 4, code: 'near_title', message: 'created "worker (x)"; the board has "Workers (x)": to change that one, write its title exactly' };
-    var withNear = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([near]) });
+    var withNear = cmpRows(r, { changes: rows, warnings: warnings.concat([near]) });
     eq(withNear.ok, true, 'another warning fails nothing'); eq(withNear.warnings.other, 1); eq(withNear.warningMessages, [], 'and is no failure to name');
     assert(/; 1 other warning\(s\): line 4: created "worker \(x\)"; the board has "Workers \(x\)"/.test(clim.compareText(withNear)), clim.compareText(withNear));
     var said = (await import('../lib/replay.mjs')).replay(r.plan, { [r.plan.runs[0]]: { changes: rows, warnings: [near] } }, null);
@@ -1851,7 +1902,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var two = await planOf(digest([note('B1')], [], { title: 'Beta' }), { promote: false });
     var older = rd.drawnRecord(one.plan, '', 4, 3, null, null, 1000), newer = rd.drawnRecord(two.plan, '', 4, 6, null, null, 2000);
     eq([older.at, newer.at, rd.drawnRecord(one.plan, '', 4, 3).at], [1000, 2000, null], 'a record says when it was written');
-    var titles = ['A1', 'B1'];
+    var titles = [{ title: 'A1', inside: [] }, { title: 'B1', inside: [] }];   // what the file holds, as a query says it
     var recs = [{ name: 'board-4-0001.json', record: older }, { name: 'board-4-0002.json', record: newer }];
     eq(rd.pickRecord(recs, '', 4, titles, 'Beta'), 'board-4-0002.json', 'this run draws Beta: its record, though Alpha\'s is first by name');
     eq(rd.pickRecord(recs, '', 4, titles, 'Alpha'), 'board-4-0001.json', 'this run draws Alpha: its own');
@@ -1863,7 +1914,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var ra = rd.drawnRecord(mapA, '', 4, 2, null, null, 1000), rb = rd.drawnRecord(mapB, '', 4, 2, null, null, 2000);
     assert(rd.recordName('', 4, ra.name) !== rd.recordName('', 4, rb.name), 'two record files: ' + ra.name + ' ' + rb.name);
     var two = [{ name: 'board-4-a.json', record: ra }, { name: 'board-4-b.json', record: rb }];
-    eq([rd.pickRecord(two, '', 4, ['Map A', 'Map B'], 'Map A'), rd.pickRecord(two, '', 4, ['Map A', 'Map B'], 'Map B')], ['board-4-a.json', 'board-4-b.json'], 'each its own, though both are titled T');
+    eq([rd.pickRecord(two, '', 4, [{ title: 'Map A', inside: [] }, { title: 'Map B', inside: [] }], 'Map A'), rd.pickRecord(two, '', 4, [{ title: 'Map A', inside: [] }, { title: 'Map B', inside: [] }], 'Map B')], ['board-4-a.json', 'board-4-b.json'], 'each its own, though both are titled T');
     var tie = [{ name: 'b.json', record: Object.assign({}, newer, { at: 5 }) }, { name: 'a.json', record: Object.assign({}, older, { at: 5 }) }];
     eq(rd.pickRecord(tie, '', 4, titles), 'a.json', 'the same time: by name, so the pick is the same every time');
     eq(rd.pickRecord([{ name: 'x.json', record: older }, { name: 'p.json', record: rd.drawnRecord(one.plan, '/f.canvasboard', 4, 3, null, null, 1) }], '/f.canvasboard', 4, titles), 'p.json', 'a record with a path still comes before one told by the id');
@@ -1919,11 +1970,11 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var r = await planOf(d), b = r.plan.boards[0];
     var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, did: 'created', at: [[s.x, s.y], [s.w, s.h]] }; });
     var withProblem = function (p) { return rows.map(function (x, i) { return i === 2 ? Object.assign({ problems: [p] }, x) : x; }); };
-    var bad = compareRun0(r.plan, { changes: withProblem({ field: 'retries', path: '/retries', class: 'wrong', message: 'retries is "abc", and should be an integer' }), warnings: [] });
+    var bad = cmpRows(r, { changes: withProblem({ field: 'retries', path: '/retries', class: 'wrong', message: 'retries is "abc", and should be an integer' }), warnings: [] });
     eq(bad.ok, false, 'a value that breaks its schema fails the run'); assert(/retries is "abc"/.test(bad.mismatches.join('\n')), 'and says which: ' + JSON.stringify(bad.mismatches));
     assert(/retries is "abc"/.test(clim.compareText(bad)), clim.compareText(bad));
     [{ field: 'tables', class: 'needed', message: 'tables is needed' }, { field: 'to', class: 'wrong', message: 'writes runs to a Table. "w1" is a Workflow.' }, { field: 'jobs', class: 'wrong', message: 'jobs has 2 notes, and should have at most 1' }, { field: 'to', class: 'warning', message: 'an end that cannot be read' }].forEach(function (p) {
-      var ok = compareRun0(r.plan, { changes: withProblem(p), warnings: [] });
+      var ok = cmpRows(r, { changes: withProblem(p), warnings: [] });
       eq(ok.ok, true, p.message + ' is by design'); eq(ok.warnings.typed, 1);
     });
   });
@@ -1971,15 +2022,13 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     // the same arrow, listed in another order of types by the app
     var r = await planOf(d), b = r.plan.boards[0];
     var rows = [];
-    b.shapes.forEach(function (s) { rows.push({ board: 'root', title: s.title, kind: s.kind, x: 500 + s.x, y: 600 + s.y, w: s.w, h: s.h }); });
-    b.edges.forEach(function (e) { rows.push({ board: 'root', kind: 'arrow', from: e.from, to: e.to, is: (e.is || []).slice().reverse() }); });
+    b.shapes.forEach(function (s) { rows.push({ board: [], in: [], title: s.title, kind: s.kind, x: 500 + s.x, y: 600 + s.y, w: s.w, h: s.h }); });
+    b.edges.forEach(function (e) { rows.push({ board: [], kind: 'arrow', from: [e.from], to: [e.to], is: (e.is || []).slice().reverse() }); });
     eq(verifym.verify(r.plan, rows).summary.edgesMissing, [], 'verify: the same set is the same arrow');
-    var replayRun = (await import('../lib/replay.mjs')).replay;
-    var res = {}; r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
-    var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]];
-    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }); });
-    b.edges.forEach(function (e) { last.changes.push(Object.assign({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }, e.is ? { is: e.is.slice().reverse() } : {})); });
-    var good = replayRun(r.plan, res, b.shapes.map(function (s) { return s.title; }));
+    var replayRun = replaym.replay;
+    var res = distribute(r, b.shapes.map(function (s) { return { did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; }));
+    b.edges.forEach(function (e) { arrowRow(r, res, e, e.is ? e.is.slice().reverse() : null); });
+    var good = replayRun(r.plan, res, inFile(r.plan), r.statements);
     eq(good.ok, true, 'replay: ' + good.lines.join('\n'));
   });
 
@@ -2048,6 +2097,388 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var searched = await planOf(digest(nodes, edges));
     assert(searched.report.boards.root.stop !== 'crowded' && !searched.report.warnings.length, searched.report.boards.root.stop);
     assert(searched.report.promotions.some(function (p) { return p.node === 'Index'; }), 'the index is moved: ' + JSON.stringify(searched.report.promotions.map(function (p) { return p.node; })));
+  });
+
+  // ---- titles that repeat, and ids ----
+
+  // A digest whose titles are all unique and that has no ids is planned as it always was: these are hashes of the plan (plan.json as the command writes it) and every run script, and of
+  // the measure script, made by the tool before titles could repeat. A change that moves one of them changes what every such digest draws.
+  var BEFORE = {
+    acme: { measure: 'e4361993fab53091', plain: '4818114a0562a6a0', into: 'eec1be7dd1b726af', off: 'ff326373166a5edd' },
+    tree: { measure: '40ed6d82fa465b48', plain: '4e4f9318e37ad87a', into: '8088356cf5f24bfa', off: '59e3b4b617ea5b24' },
+    flat60: { measure: '7c4dee7ad79e5484', plain: '3270065918184a6b', into: 'ac1d551cbed31902', off: '9ba4c3a2529d9ed8' },
+    spine: { measure: 'd234c5cd4b697c43', plain: '316c603b4d4da869', into: 'e6b19ae418e25626', off: '3a33b1ecac22cf9a' },
+    typed: { measure: '4e994c90b737431e', plain: '8b97482abccc8f10', into: 'b95032b6abf4e3d8', off: 'a40d90f5d7df3e9b' },
+  };
+  var hashOf = function (text) {
+    var a = 0x811c9dc5, b = 0x01000193;
+    for (var i = 0; i < text.length; i++) { var c = text.charCodeAt(i); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = Math.imul(b ^ c, 0x85ebca6b) >>> 0; }
+    return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0');
+  };
+  await test('a digest whose titles are all unique and that has no ids is planned as it was: the same plan and the same scripts, byte for byte, on every fixture', async function () {
+    var names = Object.keys(BEFORE);
+    for (var i = 0; i < names.length; i++) {
+      var d = fixture(names[i]);
+      eq(hashOf(sizes.measureScript(model.buildModel(d))), BEFORE[names[i]].measure, names[i] + ': the measure script');
+      var sets = { plain: {}, into: { into: 'Map' }, off: { promote: false } };
+      for (var set in sets) {
+        var r = await planOf(d, sets[set]), text = JSON.stringify(r.plan, null, 1);
+        r.runs.slice().sort(function (x, y) { return x.name < y.name ? -1 : 1; }).forEach(function (run) { text += '\u0000' + run.name + '\u0000' + run.text; });
+        eq(hashOf(text), BEFORE[names[i]][set], names[i] + ' (' + set + '): plan.json and the scripts');
+      }
+    }
+  });
+
+  await test('check: a title is unique among the nodes in one container, and may repeat in two; an id is unique; a reference names one node by its id, or by its title when only one has it', async function () {
+    var node = function (title, extra) { return Object.assign({ title: title }, extra || {}); };
+    var frames = [node('a', { kind: 'frame' }), node('b', { kind: 'frame' })];
+    // the same title in two containers is fine, and so is one in a container and one on the first board
+    eq(errorsOf(digest(frames.concat([node('index.ts', { in: 'a' }), node('index.ts', { in: 'b' }), node('index.ts')]), [])), [], 'three index.ts, in three places');
+    // two in one container: both named, with the container
+    var top = errorsOf(digest([node('Note'), node('note')], []));
+    eq(top.length, 1, JSON.stringify(top));
+    assert(/^duplicate title "note" \(also "Note"\): nodes\[0\] and nodes\[1\] are both in the first board's top level; a title is unique among the nodes in one container/.test(top[0]), top[0]);
+    var inFrame = errorsOf(digest(frames.concat([node('index.ts', { in: 'a' }), node('index.ts', { in: 'a' })]), []));
+    assert(inFrame.length === 1 && /duplicate title "index\.ts": nodes\[2\] and nodes\[3\] are both in "a"/.test(inFrame[0]), JSON.stringify(inFrame));
+    // an id: unique, a non-empty string
+    said(errorsOf(digest([node('A', { id: 'x' }), node('B', { id: 'x' })], [])), /^two nodes have the id "x" \(nodes\[0\] "A" and nodes\[1\] "B"\): an id is unique in the digest/, 'two of one id');
+    said(errorsOf(digest([node('A', { id: '' })], [])), /nodes\[0\] "A": id is a non-empty string, not ""/, 'a blank id');
+    said(errorsOf(digest([node('A', { id: '  ' })], [])), /id is a non-empty string/, 'a blank id of spaces');
+    said(errorsOf(digest([node('A', { id: 7 })], [])), /nodes\[0\] "A": id is a non-empty string, not 7/, 'an id that is no string');
+    eq(errorsOf(digest([node('A', { id: 'a' }), node('A', { id: 'b', in: 'a' , kind: 'frame' })], [])).length, 1, 'a frame in a note: that is another refusal (below), not the ids');
+    // a reference that names no node
+    said(errorsOf(digest([node('A', { in: 'Nowhere' })], [])), /^"A" is in "Nowhere", which is not a node/, 'an unknown in');
+    said(errorsOf(digest([node('A')], [{ from: 'A', to: 'Nowhere' }])), /^edge A -> Nowhere: unknown title "Nowhere" in edges\[0\] \(no node has that id or title\)/, 'an unknown to');
+    said(errorsOf(digest([node('A')], [{ from: 'Nowhere', to: 'A' }])), /unknown title "Nowhere" in edges\[0\]/, 'an unknown from');
+    said(errorsOf(digest([node('A')], [{ from: 'A', to: 7 }])), /^edges\[0\]: to is the id or title of a node, not 7/, 'a reference that is no string');
+    // a title several nodes have where a reference uses it: say to give the nodes ids
+    var rep = frames.concat([node('index.ts', { in: 'a' }), node('index.ts', { in: 'b' }), node('Other')]);
+    said(errorsOf(digest(rep, [{ from: 'Other', to: 'index.ts' }])), /^edges\[0\] to "index\.ts" is a title 2 nodes have \(nodes\[2\], nodes\[3\]\): give the nodes ids and name one by its id/, 'an edge to a title two have');
+    said(errorsOf(digest(rep.concat([node('Held', { in: 'index.ts', kind: 'frame' })]), [])), /^nodes\[5\] "Held" is in "index\.ts", a title 2 nodes have \(nodes\[2\], nodes\[3\]\): give the nodes ids and name one by its id/, 'an in to a title two have');
+    // ... which an id answers, and an id wins where a string is both some node's id and another's title
+    var ided = frames.concat([node('index.ts', { in: 'a', id: 'a/index.ts' }), node('index.ts', { in: 'b', id: 'b/index.ts' }), node('Other')]);
+    eq(errorsOf(digest(ided, [{ from: 'Other', to: 'a/index.ts' }, { from: 'b/index.ts', to: 'Other' }])), [], 'named by id');
+    var both = [node('A', { id: 'B' }), node('B', { id: 'x' })];
+    eq(model.buildModel(digest(both, [{ from: 'A', to: 'B' }])).edges.length, 0, 'B is the id of A, so an edge from A to B is from A to A, which is ignored');
+    var taken = model.buildModel(digest([node('A', { id: 'T' }), node('T')], []));
+    eq([...taken.nodes.keys()].sort(), ['T', 'T  in the first board'], 'a node with no id takes no key that is another\'s id');
+    // a type's title is unique across the whole digest
+    var type = function (t, extra) { return node(t, Object.assign({ schema: { type: 'object' }, text: 'a type' }, extra || {})); };
+    said(errorsOf(digest(frames.concat([type('Table', { in: 'a' }), type('Table', { in: 'b' })]), [])), /^two types are called "Table" \(nodes\[2\] and nodes\[3\]\): a type's title is unique in the whole digest, since is names a type by its title/, 'two types of one title');
+    eq(errorsOf(digest(frames.concat([type('Table', { in: 'a' }), node('Table', { in: 'b' })]), [])), [], 'a type and a note may share a title');
+    // titles over 80 characters and the other refusals are as they were
+    said(errorsOf(digest([node(new Array(82).join('x'))], [])), /over 80 characters/, 'a title over 80');
+    // the titles already in the file are refused only where draw could still find a shape outside the drawing by its title: the --into title and a type's
+    eq(checkm.checkDigest(digest(rep, []), { existing: ['index.ts', 'Other', 'a'] }).errors, [], 'a node may have a title the file has');
+    said(checkm.checkDigest(digest([type('Table')], []), { existing: ['table'] }).errors, /^"Table" is a type, and the file already has a shape of that title/, 'but not a type');
+    said(checkm.checkDigest(digest([node('A')], []), { existing: ['map'], into: 'Map' }).errors, /^--into "Map" is already on a board in the file/, 'nor the subboard it goes into');
+  });
+
+  await test('a node\'s key is its id, else its title, and a title more than one node has is qualified by the containers (two spaces keep titles in their order); the plan names nodes by it', async function () {
+    var d = fixture('repeats'), m = model.buildModel(d);
+    var keys = [...m.nodes.keys()];
+    eq(keys.length, 15, 'every node'); eq(new Set(keys).size, 15, 'each its own key');
+    eq(m.node('Config').title, 'Config'); eq(m.node('Invoice').id, null, 'a node with no id, and a title that is its alone, is its title');
+    eq(m.node('admin/components/index.ts').title, 'index.ts', 'a node with an id is its id');
+    eq(m.node('admin/components/index.ts').chain, ['admin', 'admin/components'], 'and says the containers it is in, by key');
+    // no id, and a title two nodes have: qualified by the containers
+    var q2 = model.buildModel(digest([{ title: 'F', kind: 'frame' }, { title: 'G', kind: 'frame', in: 'F' }, { title: 'n', in: 'F' }, { title: 'n', in: 'G' }, { title: 'n' }], []));
+    eq([...q2.nodes.keys()].sort(), ['F', 'G', 'n  in F', 'n  in F > G', 'n  in the first board']);
+    eq(util.label('n  in F > G'), 'n in F > G', 'said with one space');
+    // keys sort as the titles do: a shared title is not moved past a title it was before
+    eq([...model.buildModel(digest([note('a'), note('a b'), note('a!'), { title: 'F', kind: 'frame' }, note('a', 'F')], [])).nodes.keys()], ['F', 'a  in F', 'a  in the first board', 'a b', 'a!'], 'the model lists them in that order');
+    // the plan: a shape says its title, its id when it has one, and its key when more than one has the title and it has no id
+    var r = await planOf(d, {});
+    var shapes = r.plan.boards.reduce(function (all, b) { return all.concat(b.shapes); }, []);
+    eq(shapes.filter(function (s) { return s.title === 'index.ts'; }).map(function (s) { return s.id; }).sort(), ['admin/components/index.ts', 'app/index.ts', 'billing/index.ts', 'components/index.ts', 'lib/index.ts']);
+    assert(!('id' in shapes.find(function (s) { return s.title === 'Config'; })) && !('key' in shapes.find(function (s) { return s.title === 'Config'; })), 'a node with a unique title and no id says only its title');
+    var plain = await planOf(digest([{ title: 'F', kind: 'frame' }, { title: 'n', in: 'F' }, { title: 'n' }], []), {});
+    eq(plain.plan.boards[0].shapes.map(function (s) { return s.key || s.title; }).sort(), ['F', 'n  in F', 'n  in the first board'], 'a shared title with no id says its key');
+    eq(plain.plan.boards[0].shapes.find(function (s) { return s.key === 'n  in F'; }).in, 'F', 'and a shape is in the key of its frame');
+    // the same input, the same plan, whichever order the nodes and the edges are listed in
+    var rev = Object.assign({}, d, { nodes: d.nodes.slice().reverse(), edges: d.edges.slice().reverse() });
+    var r2 = await planOf(rev, {});
+    eq(JSON.stringify(r2.plan.boards), JSON.stringify(r.plan.boards), 'the plan');
+    eq(r2.runs.map(function (x) { return x.text; }).join('\n'), r.runs.map(function (x) { return x.text; }).join('\n'), 'and the scripts');
+  });
+
+  // Each name a script writes means the shape intended and no other: read back from the scripts, as draw reads a name (names.mjs says what it takes a name to mean).
+  // A line's names are the quoted titles (and the word `board`) joined by `>` before any attribute with a value of its own; a name that follows the word `in` is a container.
+  var namesOf = function (line) {
+    var cut = line.search(/ (text|description|schema|is|fieldValues|endRule|public): /), s = cut < 0 ? line : line.slice(0, cut);
+    var tokens = [], i = 0;
+    while (i < s.length) {
+      if (s[i] === ' ') { i++; continue; }
+      if (s[i] === '"') { var t = ''; i++; while (s[i] !== '"') { if (s[i] === '\\') { i++; t += s[i] === 'n' ? '\n' : s[i]; } else t += s[i]; i++; } i++; tokens.push({ title: t }); continue; }
+      var w = ''; while (i < s.length && s[i] !== ' ') w += s[i++];
+      tokens.push({ word: w });
+    }
+    var groups = [];
+    for (var k = 0; k < tokens.length; k++) {
+      var g = null, first = k;
+      if (tokens[k].title != null) g = { head: null, parts: [tokens[k].title] };
+      else if (tokens[k].word === 'board' && tokens[k + 1] && tokens[k + 1].word === '>' && tokens[k + 2] && tokens[k + 2].title != null) { g = { head: 'board', parts: [tokens[k + 2].title] }; k += 2; }
+      if (!g) continue;
+      while (tokens[k + 1] && tokens[k + 1].word === '>' && tokens[k + 2] && tokens[k + 2].title != null) { g.parts.push(tokens[k + 2].title); k += 2; }
+      g.inClause = first > 0 && tokens[first - 1].word === 'in';
+      groups.push(g);
+    }
+    return groups;
+  };
+  // the nodes a name means to draw in a run on `board`: those of the path (a tail of the containers a node is in, or all of them from the --into card or the top of the board), the board's own first
+  var meaningsOf = function (m, g, into, board) {
+    var last = g.parts[g.parts.length - 1], containers = g.parts.slice(0, -1);
+    var chain = function (n) { return n.chain.map(function (k) { return m.node(k).title; }); };
+    var found = [...m.nodes.values()].filter(function (n) {
+      if (n.title !== last) return false;
+      var c = chain(n);
+      if (g.head === 'board') return n.board === 'root' && c.length === containers.length && containers.every(function (p, i) { return c[i] === p; });
+      if (into && g.parts.length > 1 && g.parts[0] === into) { var rest = g.parts.slice(1, -1); return c.length === rest.length && rest.every(function (p, i) { return c[i] === p; }); }
+      return containers.length <= c.length && containers.every(function (p, i) { return c[c.length - containers.length + i] === p; });
+    });
+    var here = found.filter(function (n) { return n.board === board; });
+    return here.length ? here : found;
+  };
+  // every script of a plan: each shape's own name, and each edge's ends, mean the node the statement says; the container a shape is `in` and the places it goes against
+  // mean the node that holds it (the --into card, which is no node, when none does); a bare title is its node's alone, but for what draw takes from the board of the run
+  var namesMean = function (r, d, into, existing) {
+    var m = model.buildModel(d), have = new Set(existing || []), seen = { bare: 0, paths: 0 };
+    var held = function (title) { return [...m.nodes.values()].filter(function (n) { return n.title === title; }); };
+    r.plan.runs.forEach(function (name) {
+      var run = r.statements.runs[name], text = r.runs.find(function (x) { return x.name === name; }).text.split('\n').filter(Boolean);
+      text.forEach(function (line, i) {
+        var says = run.lines[i];
+        if (says.into) return;
+        var groups = namesOf(line), board = run.board;
+        var node = says.shape != null ? m.node(says.shape) : null;
+        groups.forEach(function (g, k) {
+          var bare = g.parts.length === 1 && !g.head, means = meaningsOf(m, g, into, board);
+          seen[bare ? 'bare' : 'paths']++;
+          var at = line + ' | name ' + (k + 1);
+          var ownWithIn = bare && node && k === 0 && groups.some(function (x) { return x.inClause; });
+          // what it means
+          if (node && k === 0) eq(means.map(function (n) { return n.key; }), [node.key], at + ' is the shape');
+          else if (node && node.parent) eq(means.map(function (n) { return n.key; }), [node.parent], at + ' is the container');
+          else if (node && !node.parent && into) assert(g.parts.length === 1 && g.parts[0] === into, at + ' is the --into card');
+          else if (says.edge && k < 2) eq(means.map(function (n) { return n.key; }), [k ? says.edge.to : says.edge.from], at + ' is an end');
+          else if (says.describe != null) eq(means.map(function (n) { return n.key; }), [says.describe], at + ' is the card');
+          else if (!(node && !node.parent && !into)) assert(means.length === 1, at + ' means one node');
+          if (!bare) {
+            // a path, in a subboard's file, has a part the file has nothing called, or starts at the --into card
+            if (into && g.head == null && g.parts[0] !== into) assert(g.parts.slice(0, -1).some(function (p) { return !have.has(p); }), at + ' is a path of titles the file has');
+            return;
+          }
+          if (g.parts[0] === into) return;
+          // a bare title: its board's alone (its own name in a statement that says `in`); else no other node's, but the first board's, when it is the board itself
+          var title = g.parts[0], same = held(title).filter(function (n) { return n.board === board; });
+          if (ownWithIn) { eq(same.length, 1, at + ' is its board\'s alone'); return; }
+          assert(held(title).length === 1 || (!into && board === 'root' && same.length === 1), at + ' is no other node\'s: ' + held(title).length);
+          if (into) assert(!have.has(title), at + ' is a title the file has');
+        });
+      });
+    });
+    return seen;
+  };
+
+  await test('every name a script writes means the node intended and no other: bare where its title is its alone (and the file has none), else a path, on the fixtures, with the file holding the same titles, drawn into a subboard and as the board', async function () {
+    var d = fixture('repeats'), titles = d.nodes.map(function (n) { return n.title; });
+    var nothing = await planOf(d, {}), c1 = namesMean(nothing, d, null, []);
+    assert(c1.bare > 0 && c1.paths > 0, 'both forms: ' + JSON.stringify(c1));
+    var into = await planOf(d, { into: 'Map' }), c2 = namesMean(into, d, 'Map', []);
+    assert(c2.paths > 0, JSON.stringify(c2));
+    var held = await planOf(d, { into: 'Map', existing: ['Config', 'index.ts', 'components', 'app', 'Checkout', 'lib'] });
+    namesMean(held, d, 'Map', ['Config', 'index.ts', 'components', 'app', 'Checkout', 'lib']);
+    var all = await planOf(d, { into: 'Map', existing: titles });
+    namesMean(all, d, 'Map', titles);
+    // none of the titles bare in an end or a container when the file has them
+    var scripts = all.runs.map(function (x) { return x.text; }).join('');
+    assert(!/ in "(Config|app|lib|admin|Billing|components)"/.test(scripts) && !/edge "(Config|app|lib|admin|Billing|Invoice|Checkout|components)" /.test(scripts) && !/-> "(Config|Invoice|Checkout)"/.test(scripts), 'the file\'s titles are named by paths: ' + scripts);
+    // the fixtures with unique titles: all bare, as they were
+    var names = Object.keys(BEFORE);
+    for (var i = 0; i < names.length; i++) {
+      var fx = fixture(names[i]), r = await planOf(fx, { into: 'Map' }), c = namesMean(r, fx, 'Map', []);
+      eq(c.paths, 0, names[i] + ': no path where every title is its own');
+    }
+  });
+
+  await test('digests that repeat titles at random (frames and subboards of the same names in each other, notes of one title in most of them, ids to tell them apart): every name means its node, or the plan says no name tells it from another', async function () {
+    var rand = util.rng(7), pick = function (list) { return list[Math.floor(rand() * list.length)]; };
+    var pool = ['a', 'b', 'c', 'd'], planned = 0, refused = 0;
+    for (var seed = 0; seed < 14; seed++) {
+      var nodes = [], held = { top: new Set() }, count = 0;
+      var make = function (container, depth, boardDepth) {
+        var key = container == null ? 'top' : container.id, used = held[key] || (held[key] = new Set());
+        var n = 2 + Math.floor(rand() * 4);
+        for (var i = 0; i < n; i++) {
+          var title = pick(pool);
+          if (used.has(title)) continue;
+          used.add(title);
+          var kind = depth < 3 && rand() < 0.35 ? (rand() < 0.4 ? 'subboard' : 'frame') : 'sticky-note';
+          var node = { id: 'n' + (++count), title: title, kind: kind };
+          if (container) node.in = container.id;
+          nodes.push(node);
+          if (kind !== 'sticky-note') make(node, depth + 1);
+        }
+      };
+      make(null, 0);
+      var leaves = nodes.filter(function (n) { return n.kind === 'sticky-note'; }), edges = [];
+      for (var e = 0; e < leaves.length; e++) { var a = pick(leaves), b = pick(leaves); if (a !== b) edges.push({ from: a.id, to: b.id }); }
+      // some nodes carry no id, as long as nothing refers to them and their title is not shared
+      var shared = {}; nodes.forEach(function (n) { shared[n.title] = (shared[n.title] || 0) + 1; });
+      var d = digest(nodes.map(function (n) { var c = Object.assign({}, n); if (shared[n.title] === 1 && !edges.some(function (x) { return x.from === n.id || x.to === n.id; }) && !nodes.some(function (x) { return x.in === n.id; })) delete c.id; return c; }), edges);
+      assert(checkm.checkDigest(d).errors.length === 0, 'a digest: ' + JSON.stringify(checkm.checkDigest(d).errors) + ' ' + JSON.stringify(d));
+      var modes = [[null, []], ['Map', []], ['Map', pool.slice(0, 2)], ['Map', pool]];
+      for (var j = 0; j < modes.length; j++) {
+        var r;
+        try { r = await planOf(d, { promote: false, into: modes[j][0], existing: modes[j][1] }); } catch (err) {
+          assert(/^cannot name "/.test(err.message), 'only a name that cannot be written is refused: ' + err.message);
+          assert(modes[j][0] == null, 'drawn into a subboard, every node can be named (the --into card starts a path): ' + err.message);
+          refused++; continue;
+        }
+        namesMean(r, d, modes[j][0], modes[j][1]);
+        planned++;
+      }
+    }
+    assert(planned > 30, 'plans made: ' + planned + ', refused: ' + refused);
+  });
+
+  await test('the measure script writes two nodes of one title as two statements (paths, as measure takes them), and its rows are read by line: swapped, they are swapped sizes', async function () {
+    var d = fixture('repeats'), m = model.buildModel(d), at = sizes.measurePlan(m);
+    var lines = at.text.split('\n').filter(Boolean);
+    var indexes = lines.filter(function (l) { return /"index\.ts"/.test(l) && /^sticky-note/.test(l); });
+    eq(indexes.length, 5, 'five statements for the five index.ts');
+    eq(new Set(indexes.map(function (l) { return l.split(' below ')[0]; })).size, 5, 'each its own path: ' + indexes.map(function (l) { return l.split(' size:')[0]; }).join(' | '));
+    assert(indexes.some(function (l) { return /^sticky-note "admin" > "components" > "index\.ts" /.test(l); }) && indexes.some(function (l) { return /^sticky-note "Billing" > "index\.ts" /.test(l); }), 'by the containers, outermost first');
+    assert(lines.some(function (l) { return /^sticky-note board > "Checkout" /.test(l); }) && lines.some(function (l) { return /^sticky-note "Billing" > "Checkout" /.test(l); }), 'the one in no container is board > "Checkout", the other is in Billing');
+    assert(lines.some(function (l) { return /^sticky-note "Config" /.test(l); }) && lines.some(function (l) { return /^subboard "Billing"/.test(l); }), 'a title that is its own is bare');
+    assert(lines.filter(function (l) { return /^edge /.test(l); }).every(function (l) { return / via: reference$/.test(l); }), 'the edges are the pills');
+    // every statement has a line, and every edge through a reference is for a node
+    eq(at.shapeAt.size, 10, 'a line for each note and card'); eq(at.pillAt.size, sizes.pillTargets(m).length, 'and for each pill');
+    at.shapeAt.forEach(function (line, key) { assert(lines[line - 1] && lines[line - 1].indexOf(m.node(key).title) > 0, key + ' is on line ' + line); });
+    // the sizes come back by line: a measure that answers with rows in any order, titles the same, gives each node its own
+    var me = helpers.estimateMeasure(m);
+    var big = me.shapes.find(function (s) { return s.line === at.shapeAt.get('app/index.ts'); }), small = me.shapes.find(function (s) { return s.line === at.shapeAt.get('lib/index.ts'); });
+    big.size = [300, 555]; small.size = [300, 222];
+    var sz = sizes.sizesFrom(m, me), rev = sizes.sizesFrom(m, Object.assign({}, me, { shapes: me.shapes.slice().reverse() }));
+    eq([sz.shapes['app/index.ts'].h, sz.shapes['lib/index.ts'].h], [555, 222], 'each its own');
+    Object.keys(sz.shapes).forEach(function (k) { eq(rev.shapes[k], sz.shapes[k], 'whatever order the rows come in: ' + k); });
+    var lost = JSON.parse(JSON.stringify(me)); lost.shapes = lost.shapes.filter(function (s) { return s.line !== at.shapeAt.get('lib/index.ts'); });
+    var threw = ''; try { sizes.sizesFrom(m, lost); } catch (e) { threw = e.message; }
+    assert(/no size for: lib\/index\.ts/.test(threw), 'a missing row is said by the node: ' + threw);
+    // a pill is for the node its line says
+    eq(Object.keys(sz.pillWidth).sort(), sizes.pillTargets(m).sort(), 'a pill width for each end');
+  });
+
+  // what the app would answer for every run of a plan, the rows told by the statements of the run (their lines) and by nothing else: a result's `title` is a shape's own
+  var drawnAs = function (r) {
+    var where = placesm.placesOf(r.plan), boxes = {}, pills = {};
+    r.plan.boards.forEach(function (b) { b.shapes.forEach(function (s) { boxes[placesm.shapeKey(s)] = s; }); pills[b.board] = b.pills.slice(); });
+    var res = {};
+    r.plan.runs.forEach(function (name) {
+      var run = r.statements.runs[name], changes = [];
+      run.lines.forEach(function (says, i) {
+        var line = i + 1;
+        if (says.into) changes.push({ line: line, did: 'created', kind: 'subboard', title: r.plan.into, at: [[0, 0], [10, 10]] });
+        else if (says.shape != null) { var s = boxes[says.shape]; changes.push({ line: line, did: 'created', kind: s.kind, title: s.title, at: [[s.x, s.y], [s.w, s.h]] }); }
+        else if (says.describe != null) changes.push({ line: line, did: 'updated', kind: 'subboard', title: boxes[says.describe].title });
+        else if (says.edge) {
+          var e = says.edge;
+          if (e.via) {
+            var list = pills[run.board], at = list.findIndex(function (p) { return p.start === e.from && p.for === e.to; });
+            if (at >= 0) { var p = list.splice(at, 1)[0]; changes.push({ line: line, did: 'created', kind: 'reference', at: [[p.x, p.y], [p.w, p.h]] }); }
+          }
+          changes.push(Object.assign({ line: line, did: 'connected', kind: 'arrow', from: boxes[e.from].title, to: boxes[e.to].title }, e.is ? { is: e.is } : {}));
+        }
+      });
+      res[name] = { changes: changes, warnings: [] };
+    });
+    return res;
+  };
+
+  await test('a result is matched to the plan by the line of each statement: two shapes of one title are told apart, in compare, in replay and in verify', async function () {
+    var cmpm = await import('../lib/compare.mjs'), d = fixture('repeats');
+    for (var into of [null, 'Map']) {
+      var r = await planOf(d, { into: into });
+      var results = drawnAs(r), where = placesm.placesOf(r.plan);
+      r.plan.runs.forEach(function (name) { var c = cmpm.compareRun(r.plan, results[name], name, r.statements); assert(c.ok, name + ': ' + JSON.stringify(c.mismatches)); });
+      var ok = replaym.replay(r.plan, results, inFile(r.plan), r.statements);
+      eq(ok.ok, true, (into || 'the board') + ': ' + ok.lines.join('\n'));
+      eq([ok.shapesWithin1, ok.shapes, ok.arrows, ok.arrowsPlanned, ok.pillsWithin1, ok.pills, ok.described, ok.restated], [ok.shapes, 15, 9, 9, 2, 2, 1, 0]);
+      // two shapes of one title with their boxes swapped are off the plan, and the one named is the one by its key
+      var swapped = JSON.parse(JSON.stringify(results)), run = r.plan.runs.find(function (n) { return /-in-1\.draw$/.test(n); });
+      var rows = swapped[run].changes.filter(function (c) { return c.title === 'index.ts'; });
+      assert(rows.length >= 2, 'two index.ts in one run: ' + rows.length);
+      var tmp = rows[0].at; rows[0].at = rows[1].at; rows[1].at = tmp;
+      var bad = cmpm.compareRun(r.plan, swapped[run], run, r.statements);
+      assert(!bad.ok && bad.mismatches.length === 2 && bad.mismatches.every(function (m) { return /^[a-z/.]*index\.ts: delta/.test(m); }), 'both are named by their keys: ' + JSON.stringify(bad.mismatches));
+      // ... and the file lacking one of them (another, by its title, is there) fails: its place is its own
+      var wrong = inFile(r.plan).map(function (p) { return p.title === 'index.ts' && p.inside.join() === (into ? 'Map,lib' : 'lib') ? { title: 'index.ts', inside: p.inside.concat(['elsewhere']) } : p; });
+      var lacking = replaym.replay(r.plan, results, wrong, r.statements);
+      assert(!lacking.ok && /not in the file: lib\/index\.ts/.test(lacking.lines.join('\n')), (into || 'the board') + ': ' + lacking.lines.join('\n'));
+      // a shape the plan creates that was found unchanged: named by its key
+      var again = JSON.parse(JSON.stringify(results)); again[run].changes.filter(function (c) { return c.title === 'index.ts'; })[1].did = 'unchanged';
+      var restated = cmpm.compareRun(r.plan, again[run], run, r.statements);
+      assert(!restated.ok && /^"[a-z/.]*index\.ts" was unchanged, not created/.test(restated.mismatches[0]), JSON.stringify(restated.mismatches));
+      // verify reads the file back by place: the board and frames of each shape
+      var boxOf = {}; r.plan.boards.forEach(function (b) { b.shapes.forEach(function (s) { boxOf[placesm.shapeKey(s)] = s; }); });
+      var rowsOf = function () {
+        var out = [];
+        r.plan.boards.forEach(function (b) {
+          var chain = where.boardChain(b.board);
+          b.shapes.forEach(function (s) { out.push({ board: chain, in: where.byKey.get(placesm.shapeKey(s)).frames, title: s.title, kind: s.kind, x: s.x, y: s.y, w: s.w, h: s.h }); });
+          b.pills.forEach(function (p) { out.push({ board: chain, in: [], kind: 'reference', for: boxOf[p.for].title, x: p.x, y: p.y, w: p.w, h: p.h }); });
+          b.edges.forEach(function (e) { out.push({ board: chain, kind: 'arrow', from: where.containers(e.from).concat([boxOf[e.from].title]), to: e.via ? [boxOf[e.to].title] : where.containers(e.to).concat([boxOf[e.to].title]), pill: !!e.via }); });
+        });
+        return out;
+      };
+      var v = verifym.verify(r.plan, rowsOf());
+      eq([v.summary.missing, v.summary.wrongFrame, v.summary.edgesMissing, v.summary.shapesWithin1, v.summary.pillsWithin1, v.summary.extraPills], [[], [], [], 15, 2, 0], (into || 'the board') + ': verify');
+      // the notes called index.ts in the wrong frames: the one in lib, the one in app, swapped
+      var mixed = rowsOf().map(function (x) { return x.title === 'index.ts' && x.in.join() === 'lib' ? Object.assign({}, x, { in: ['app'] }) : x.title === 'index.ts' && x.in.join() === 'app' ? Object.assign({}, x, { in: ['lib'] }) : x; });
+      var vm = verifym.verify(r.plan, mixed);
+      eq([vm.summary.shapesWithin1, vm.summary.missing], [13, []], 'app and lib swap their frames: each is found in its own, at the other\'s box, so those two are off the plan');
+      var gone = rowsOf().filter(function (x) { return !(x.title === 'index.ts' && x.in.join() === 'lib'); });
+      var vg = verifym.verify(r.plan, gone);
+      assert(vg.summary.missing.length >= 1 && /lib\/index\.ts/.test(vg.summary.missing.join()), 'a shape not found is named by its key: ' + JSON.stringify(vg.summary.missing));
+      var elsewhere = rowsOf().map(function (x) { return x.title === 'index.ts' && x.in.join() === 'lib' ? Object.assign({}, x, { in: ['components'] }) : x; });
+      var ve = verifym.verify(r.plan, elsewhere);
+      assert(ve.summary.wrongFrame.length === 1 && /^root: lib\/index\.ts planned in lib, landed in components$/.test(ve.summary.wrongFrame[0]), 'one that landed in another frame is said by its key and the frames: ' + JSON.stringify(ve.summary));
+    }
+  });
+
+  await test('drawing records go by place: a drawing of repeated titles is taken back by names that mean its own shapes, and is not taken for the file\'s shapes of those titles', async function () {
+    var rd = redrawm, d = fixture('repeats');
+    var asBoard = await planOf(d, {}), rec = rd.drawnRecord(asBoard.plan, '/f.canvasboard', 7, 12);
+    eq(rec.takes.map(function (t) { return t.name; }).sort(), [
+      '"Billing"', '"Checkout"', '"Config"', '"admin" > "components"', '"admin" > "components" > "index.ts"', '"admin"', '"app" > "index.ts"', '"app"', '"lib" > "index.ts"', '"lib"',
+      'board > "components"', 'board > "components" > "index.ts"'].sort(), 'each shape of the first board by a name that means it alone');
+    eq(rec.takes.length, 12, 'every shape of the first board, in a frame or not');
+    eq(rec.places.length, 15, 'the place of every shape'); assert(rec.places.some(function (p) { return p.join('>') === 'Billing>Checkout'; }) && rec.places.some(function (p) { return p.join('>') === 'admin>components>index.ts'; }), 'by the containers, then the title');
+    // the file as the drawing left it: the take-back deletes each of them, once
+    var place = function (p) { return { title: p[p.length - 1], inside: p.slice(0, -1) }; };
+    var file = rec.places.map(place), onRoot = file.filter(function (p) { return p.inside[0] !== 'Billing'; });
+    var script = rd.replaceScript(rec, file, onRoot).split('\n');
+    eq(script.length, 12, script.join(' | ')); assert(script.indexOf('delete board > "components" > "index.ts"') >= 0 && script.indexOf('delete "Billing"') >= 0, script.join(' | '));
+    // what a hand added with a title the drawing has is not the drawing's, and is not taken back
+    var added = file.concat([{ title: 'index.ts', inside: [] }, { title: 'Checkout', inside: ['Billing', 'Extra'] }]);
+    eq(rd.foreign(added, rec), ['index.ts', 'Billing > Extra > Checkout'], 'foreign, by place');
+    eq(rd.foreign(file, rec), [], 'and nothing of its own is');
+    assert(rd.replaceScript(rec, added, added.filter(function (p) { return p.inside[0] !== 'Billing'; })).split('\n').indexOf('delete "index.ts"') < 0, 'a loose index.ts is not deleted');
+    // a drawing that stopped part way is taken back as far as it got
+    var part = file.filter(function (p) { return p.inside[0] !== 'admin' && p.title !== 'admin' && p.title !== 'Config'; });
+    var partScript = rd.replaceScript(rec, part, part.filter(function (p) { return p.inside[0] !== 'Billing'; })).split('\n');
+    eq(partScript.length, 8, 'only what is there: ' + partScript.join(' | ')); assert(!partScript.some(function (l) { return /admin|Config/.test(l); }), 'not what was never drawn');
+    // the file's titles for the next plan: less the drawing's own shapes, by place (a shape of the file with a title the drawing has stays)
+    eq(rd.minus(file.concat([{ title: 'app', inside: ['Mine'] }, { title: 'index.ts', inside: ['Mine'] }]), rec).sort(), ['app', 'index.ts'], 'the titles the file keeps');
+    // into a subboard: one name, the subboard
+    var into = await planOf(d, { into: 'Repeats map' }), recInto = rd.drawnRecord(into.plan, '/f.canvasboard', 7, 3);
+    eq(recInto.takes, [{ place: ['Repeats map'], name: '"Repeats map"', into: true }]);
+    eq(rd.replaceScript(recInto, [{ title: 'Repeats map', inside: [] }, { title: 'Checkout', inside: ['Repeats map'] }], []), 'delete "Repeats map"');
+    assert(rd.sameFile(rd.drawnRecord(into.plan, '', 4), '', 4, [{ title: 'Repeats map', inside: [] }]) && !rd.sameFile(rd.drawnRecord(into.plan, '', 4), '', 4, [{ title: 'Checkout', inside: [] }]), 'an unsaved board is told by its subboard, not by a title a shape of its own has');
+    assert(rd.sameFile(rd.drawnRecord(asBoard.plan, '', 4), '', 4, [{ title: 'app', inside: [] }]) && !rd.sameFile(rd.drawnRecord(asBoard.plan, '', 4), '', 4, [{ title: 'index.ts', inside: [] }]), 'as the board itself, by the place of a shape it put on the first board');
+    // the record of both drawings while one is drawn over the other keeps both ways of taking back
+    var both = rd.drawnRecord(into.plan, '/f.canvasboard', 7, 2, rec, 12);
+    eq(both.takes.length, 13, 'the subboard, and the shapes of the last');
   });
 
   io.print(results.length + ' passed, ' + failed + ' failed');

@@ -198,7 +198,7 @@ public struct Transaction {
         // Only what it reads of the file's values, not another copy of the transaction.
         let staged = stagedFileValues, held = file.values
         let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend, shape: { here.record(inFile: $0) },
-                                  fileValues: { staged ?? held() }, isChanged: { id in
+                                  board: { here.board(containing: $0) }, fileValues: { staged ?? held() }, isChanged: { id in
             here.changes.added.contains(id) || (here.changes.changed.contains(id) && !here.changes.moved.contains(id))
                 || here.stagedIDs[id] != nil || here.writtenElsewhere.contains(id)
         }, writes: writes, run: run)

@@ -147,7 +147,13 @@ extension Drawing {
 
         // Solve.
         let freeNames = free.map(\.name), names = fixedNames
-        let naming = self.naming, boardNames = self.names
+        let naming = self.naming, boardNames = self.names, editor = self.editor
+        // A board shape as a message names it: its title in quotes, or its path when the title is not its alone.
+        let shapeName: (AnyShapeRecord) -> String? = { record in
+            guard let title = Drawing.title(of: record, names: boardNames, naming: naming, registry: registry) else { return nil }
+            guard (boardNames.ids[title]?.count ?? 0) > 1, let naming else { return quoted(title) }
+            return (Drawing.path(of: record.id, in: editor, naming: naming) ?? ShapePath(head: .board, rest: [title])).written
+        }
         let problem = LayoutProblem(
             free: free, fixed: fixed, obstacles: obstacles, boardBounds: boardBounds,
             viewMiddle: view.map { CGPoint(x: $0.midX, y: $0.midY) } ?? target.shapes.camera.toWorld(CGPoint.zero), view: view,
@@ -158,8 +164,7 @@ extension Drawing {
                 case .obstacle(let id):
                     guard document.shapes.indices.contains(id) else { return "a shape" }
                     let record = document.shapes[id]
-                    return Drawing.title(of: record, names: boardNames, naming: naming, registry: registry).map(quoted)
-                        ?? Drawing.location(of: record, in: context)
+                    return shapeName(record) ?? Drawing.location(of: record, in: context)
                 }
             })
         let solution: LayoutSolution
@@ -189,7 +194,7 @@ extension Drawing {
             case .obstacle(let id):
                 let record = document.shapes[id], title = Drawing.title(of: record, names: boardNames, naming: naming, registry: registry)
                 let location = Drawing.location(of: record, in: context)
-                return (title ?? location, title.map(quoted) ?? location)
+                return (title ?? location, shapeName(record) ?? location)
             case .fixed(let box):
                 return (names[box], names[box])
             }

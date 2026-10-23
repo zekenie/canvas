@@ -52,7 +52,7 @@ extension Drawing {
                     let what = delete.boardShapes == 1 ? "the shape on it is"
                         : "the \(delete.boardShapes) shapes on \(delete.boards > 1 ? "them" : "it") are"
                     warnings.append(DrawWarning(line: delete.statement.line,
-                                                "\(title.map(quoted) ?? named(shape)) held a board\(more): \(what) deleted with it"))
+                                                "\(named(shape)) held a board\(more): \(what) deleted with it"))
                 }
             }
             // The ends a `delete edge` wrote as ids, as written: a row calls such an end so, and says which shape it was.
@@ -179,7 +179,7 @@ extension Drawing {
                 }
             } else if let nearMiss = item.nearMiss, let title = item.title {
                 warnings.append(DrawWarning(line: item.statement.line,
-                                            "created \(quoted(title)); the board has \(quoted(nearMiss)) — to change that one, write its title exactly"))
+                                            "created \(said(item) ?? quoted(title)); the board has \(quoted(nearMiss)) — to change that one, write its title exactly"))
             }
             if let view, let at {
                 row.inView = view.intersects(at)
@@ -505,6 +505,10 @@ extension Drawing {
         case .beside(.title(let written)):
             guard let title = fold(written), boardShapes(called: title).contains(where: users.contains) else { return (false, nil) }
             return (true, title)
+        case .beside(.path(let written)):
+            guard let naming, let folded = Self.folded(written, naming: naming), let resolution = try? resolve(folded, edge.statement),
+                  resolution.here.contains(where: { users.contains($0.id) }) else { return (false, nil) }
+            return (true, folded.last)
         case .beside(.id(let text)):
             guard let uuid = UUID(uuidString: text), users.contains(ShapeID(uuid)) else { return (false, nil) }
             let host = target.document[ShapeID(uuid)].flatMap { Drawing.title(of: $0, names: names, naming: naming, registry: registry) }
@@ -621,7 +625,7 @@ extension Drawing {
         if standIn(at: id, in: shapes.document) != nil, let stoodFor = standsForShape(id, in: shapes.document) { record = stoodFor }
         let mark = written[record.id]
         if let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) {
-            return (title, quoted(title), mark == nil ? nil : record.id)
+            return (title, sharedName(of: record) ?? quoted(title), mark == nil ? nil : record.id)
         }
         if let mark { return (mark, mark, record.id) }
         let place = Drawing.location(of: record, in: shapes)

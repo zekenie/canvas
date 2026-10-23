@@ -30,9 +30,9 @@ import Titles
         let missing = h.addReference(to: ShapeID(), label: "Gone", at: CGPoint(x: 400, y: 500))
         _ = render(h.editor)
         let state = try require(h.editor.references)
-        expectEqual(state.drawnBoard(of: farPill), "Clients")
-        expectEqual(state.drawnBoard(of: nearPill), nil, "the same board: as it always looked")
-        expectEqual(state.drawnBoard(of: missing), nil, "a note that isn't there has no board")
+        expectEqual(state.drawnPlace(of: farPill), "Clients")
+        expectEqual(state.drawnPlace(of: nearPill), nil, "the same board: as it always looked")
+        expectEqual(state.drawnPlace(of: missing), nil, "a note that isn't there has no board")
     },
     test("a board's rename is said at the next draw; a note made private still says its board") {
         let h = try referenceHarness([PocketsPlugin(), pocketTitles])
@@ -42,10 +42,10 @@ import Titles
         let state = try require(h.editor.references)
         h.editor.transact { $0.update(pocket) { $0[TitleProperty.self] = "Accounts" } }
         _ = render(h.editor)
-        expectEqual(state.drawnBoard(of: pill), "Accounts")
+        expectEqual(state.drawnPlace(of: pill), "Accounts")
         h.editor.transact(on: BoardID(owner: pocket)) { $0.update(far) { $0[PublicProperty.self] = nil } }
         _ = render(h.editor)
-        expectEqual(state.drawnBoard(of: pill), "Accounts", "dashed, and still says where")
+        expectEqual(state.drawnPlace(of: pill), "Accounts", "dashed, and still says where")
     },
     test("it is drawn in the room after the name: ink there for a note elsewhere, none for a note on the pill's board") {
         let h = try referenceHarness([PocketsPlugin(), pocketTitles])
@@ -54,7 +54,7 @@ import Titles
         // Both as a pick from the list of another board would have left them: as wide as the name and the board.
         @MainActor func pill(_ target: ShapeID, at origin: CGPoint) -> ShapeID {
             var props = Reference(frame: CGRect(origin: origin, size: Reference.defaultSize))
-            ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: "Acme"), board: "Clients")
+            ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: "Acme"), place: "Clients")
             return h.add(props)
         }
         let farPill = pill(far, at: CGPoint(x: 100, y: 300))
@@ -81,7 +81,7 @@ import Titles
         let note = h.addBox("Acme")
         expect(h.editor.showBoard(.root))
         var props = Reference(frame: CGRect(origin: CGPoint(x: 100, y: 300), size: Reference.defaultSize))
-        ReferenceEdits.pick(&props, ReferenceTarget(id: note, label: "Acme"), board: "Clients")
+        ReferenceEdits.pick(&props, ReferenceTarget(id: note, label: "Acme"), place: "Clients")
         let id = h.add(props)
         let width = try require(h.editor.document[id]?.box).width
         expect(width > ReferenceEdits.width(of: props), "room for the board after the name")
@@ -98,12 +98,12 @@ import Titles
         var alone = Reference(frame: CGRect(origin: .zero, size: Reference.defaultSize))
         ReferenceEdits.pick(&alone, ReferenceTarget(id: ShapeID(), label: "Acme"))
         var far = alone
-        ReferenceEdits.pick(&far, ReferenceTarget(id: ShapeID(), label: "Acme"), board: "Clients")
+        ReferenceEdits.pick(&far, ReferenceTarget(id: ShapeID(), label: "Acme"), place: "Clients")
         expect(far.frame.width > alone.frame.width, "\(far.frame.width) over \(alone.frame.width)")
         expect(far.frame.width <= 280, "never over the most")
         var capped = alone
-        ReferenceEdits.pick(&capped, ReferenceTarget(id: ShapeID(), label: String(repeating: "w", count: 60)), board: String(repeating: "b", count: 40))
+        ReferenceEdits.pick(&capped, ReferenceTarget(id: ShapeID(), label: String(repeating: "w", count: 60)), place: String(repeating: "b", count: 40))
         expectEqual(capped.frame.width, 280)
-        expectEqual(ReferenceEdits.width(of: alone, board: nil), alone.frame.width)
+        expectEqual(ReferenceEdits.width(of: alone, place: nil), alone.frame.width)
     },
 ])

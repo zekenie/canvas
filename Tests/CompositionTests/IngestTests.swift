@@ -142,22 +142,24 @@ private func driverCalls(_ log: URL) -> [String] {
 /// What the default lens makes of a scan: the digest it writes, and what it says on standard error (its `lens:` lines).
 /// `ingest-lens/<name>.digest.json` and `.said`, first the old `to_digest.py`'s, recorded when lenskit replaced it, and recorded again
 /// from the default lens when the first board's About note went (its summary of the whole, and the 74 characters a card's title kept
-/// for `About <card>`). Never edited by hand.
+/// for `About <card>`). Never edited by hand: the lens has since given titles out per container, and the test below holds the digest to
+/// differing from them only by that.
 private func lensFixture(_ name: String, _ kind: String) -> URL {
     URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/CompositionTests/Fixtures/ingest-lens/\(name).\(kind)")
 }
 
-/// Whether `new` is `old` byte for byte once the `source` of each node (which the old lens did not write) is taken off and the
-/// rest written as the old lens wrote it.
-@MainActor private func sameButForSource(old: URL, new: URL) throws -> Bool {
-    let compared = try run(URL(fileURLWithPath: python), ["-c", """
-        import json, sys
-        d = json.load(open(sys.argv[2]))
-        for n in d['nodes']: n.pop('source', None)
-        print('same' if json.dumps(d, indent=1) + '\\n' == open(sys.argv[1]).read() else 'different')
-        """, old.path, new.path])
-    expectEqual(compared.status, 0, compared.error)
-    return compared.output.trimmingCharacters(in: .whitespacesAndNewlines) == "same"
+/// How the digest at `digest` names its nodes, read as canvas-digest reads them (`namingScript`): the problems it finds, none when every
+/// title is unique in its container (spaces folded, case aside), a node has an `id` exactly where another node has its title, ids are
+/// unique, and each `in`, `from` and `to` names its node by its id where it has one, else by its title. Given `old`, a digest from
+/// when titles were given out once in the whole digest, also the ways it differs from that one which the rules of titles don't
+/// explain (the same nodes in the same order, every field but the title, the id and the container the same, the same edges in the
+/// same order, each reference naming the node it named), and how often each rule changed a title: "a file's name in place of a longer
+/// end of its path", "a (…) fallback gone", "a number gone"; any other change of a title is a problem.
+@MainActor private func namingReport(_ digest: URL, against old: URL? = nil) throws -> (problems: [String], rules: [String: Int]) {
+    let done = try run(URL(fileURLWithPath: python), ["-c", namingScript, digest.path] + (old.map { [$0.path] } ?? []), timeout: 120)
+    expectEqual(done.status, 0, done.error)
+    let report = try JSON(text: done.output)
+    return ((report["problems"]?.arrayValue ?? []).compactMap(\.stringValue), (report["rules"]?.objectValue ?? [:]).compactMapValues(\.intValue))
 }
 
 @MainActor let ingestTests = Suite("canvas-ingest: a repository drawn as boards by `ingest`", [
@@ -243,7 +245,7 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expect(down.error.contains("isn't running"), "an app that isn't running is said, with how to start it: \(down.error)")
     },
 
-    test("ingest draws a codebase whose names clash, run long or hold brackets: each title is given out once, said, and nothing stops the run") {
+    test("ingest draws a codebase whose names clash, run long or hold brackets: each title is given out once in its container, said, and nothing stops the run") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -263,19 +265,42 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expect(drawn.output.contains("verify ok"), drawn.output)
         let editor = board.editor
         let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        // a module called what a band is keeps its name and the band gives way; a name over a title's longest keeps its end
+        // a module called what a band is keeps its name and the band gives way (a card's title is the digest's alone: the descriptions of the
+        // cards beside it mention it by that title, which would name a band called so as well); a name over a title's longest keeps its end
         expect(titles.isSuperset(of: ["[locale]", "Level 1", "Level 1 (layer)", #"back\slash"#]), "\(titles.sorted())")
         expect(titles.contains { $0.hasPrefix("…") && $0.hasSuffix("very-long-package-name-x") && $0.utf16.count == 80 }, "a card's title is as long as any: \(titles.sorted())")
         expect(!titles.contains(long), "the long name itself is nobody's title")
-        for said in ["the band Level 1 is titled \"Level 1 (layer)\"", "the module \(long) is titled \"…", "is over 80 characters", "C/main.swift is titled \"C/main.swift (2)\""] {
+        for said in ["the band Level 1 is titled \"Level 1 (layer)\"", "the module \(long) is titled \"…", "is over 80 characters", "the frame c on C is titled \"c (C)\""] {
             expect(drawn.error.contains(said), "said: \(said) in \(drawn.error)")
         }
+        // a file is titled by its name, wherever it is: three files called main.swift (in C's own frame, in a frame of a frame, in another)
+        // and two called index.ts (in two modules) are five notes of two titles, each with an id that says where it is, which names it
+        // in the arrows and the frames that hold it
+        let awkwardDigest = try lastRun(in: kept).appendingPathComponent("digest.json")
+        let digest = try json(awkwardDigest)
+        let nodes = digest["nodes"]?.arrayValue ?? []
+        func ids(_ title: String) -> [String] { nodes.filter { $0["title"] == .string(title) }.compactMap { $0["id"]?.stringValue }.sorted() }
+        expectEqual(ids("main.swift"), ["main.swift  in Level 1 (layer) > C > C/", "main.swift  in Level 1 (layer) > C > a > c (C)", "main.swift  in Level 1 (layer) > C > b"],
+                    "three files of one name: \(nodes.compactMap { $0["title"]?.stringValue })")
+        expectEqual(ids("index.ts").map { String($0.prefix(35)) }, ["index.ts  in Level 1 (layer) > …age", "index.ts  in Level 2 > app"], "two, in two modules")
+        expectEqual(nodes.filter { $0["in"] == "C/" }.compactMap { $0["title"]?.stringValue }.sorted(), ["half\u{FFFD}.swift", "main.swift"],
+                    "a name that isn't whole text is drawn with U+FFFD where it breaks, and the one note of a title has no id")
+        expect(nodes.first { $0["title"] == "half\u{FFFD}.swift" }?["id"] == nil, "a title only one note has is its name")
+        expect(nodes.contains { $0["title"] == "main.swift" && $0["in"] == "c (C)" } && nodes.contains { $0["title"] == "main.swift" && $0["in"] == "b" },
+               "the frames that hold them are named by title, which no other node has")
+        let edges = digest["edges"]?.arrayValue ?? []
+        expect(edges.contains { $0["from"] == "index.ts  in Level 2 > app" && $0["to"] == "main.swift  in Level 1 (layer) > C > a > c (C)" },
+               "app's index.ts uses the main.swift two frames down in C, an arrow named by ids: \(edges)")
+        let naming = try namingReport(awkwardDigest)
+        expectEqual(naming.problems, [], "every title is its container's alone, and an id is where a title repeats")
+        // the app has them as the digest says: the notes called main.swift are three, each inside the frames it is in, as a query says it
+        let found = try canvas(server, ["query", "--board", "\(board.number)", "--limit", "100", #"sticky-note"main.swift""#])
+        expectEqual(found.status, 0, found.error)
+        let rows = try JSON(text: found.output)["rows"]?.arrayValue ?? []
+        expectEqual(rows.map { ($0["inside"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " > ") }.sorted(),
+                    ["Level 1 (layer) > C > C/", "Level 1 (layer) > C > a > c (C)", "Level 1 (layer) > C > b"], "main.swift, three times, by where each is: \(found.output)")
         // app's description mentions what it imports, each by its card's title: a ] and a \\ in one are written so the mention names its shape
-        let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
-        let mains = (digest["nodes"]?.arrayValue ?? []).filter { $0["in"] == "C" || $0["in"] == "a" || $0["in"] == "b" || $0["in"] == "c (C)" || $0["in"] == "C/" }.compactMap { $0["title"]?.stringValue }
-        expect(Set(mains).isSuperset(of: ["c/main.swift", "b/main.swift", "C/main.swift (2)"]), "paths that differ only by case are two titles: \(mains)")
-        expect(mains.contains("half\u{FFFD}.swift"), "a name that isn't whole text is drawn with U+FFFD where it breaks: \(mains)")
-        let app = digest["nodes"]?.arrayValue?.first { $0["title"] == "app" }?["text"]?.stringValue ?? ""
+        let app = nodes.first { $0["title"] == "app" }?["text"]?.stringValue ?? ""
         expect(app.contains(#"@[[locale\]]"#) && app.contains(#"@[back\\slash]"#), app)
         expect(digest["text"] == nil, "and the digest has no text of its own: no board has a note of what it is")
 
@@ -291,12 +316,162 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         let bigNodes = try json(big.appendingPathComponent("digest.json"))["nodes"]?.arrayValue ?? []
         expectEqual(bigNodes.filter { $0["title"] == "Big/x" }.count, 1, "the module Big/x is one card, and Big's folder x is not another")
         expectEqual(bigNodes.first { $0["title"] == "its.ts" }?["in"], "Big/x", "the module's file is on its board")
-        expect(bigNodes.first { $0["title"] == "one.ts" }?["in"] != "Big/x", "and the folder's files stay on Big's: \(String(describing: bigNodes.first { $0["title"] == "one.ts" }?["in"]))")
-        let checked = try run(URL(fileURLWithPath: "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"),
-                              [URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest/tool/main.js").path, "--", "check", big.appendingPathComponent("digest.json").path],
-                              timeout: 120)
-        expectEqual(checked.status, 0, checked.output + checked.error)
-        expectEqual(try JSON(text: checked.output)["errors"], .array([]), "check finds nothing wrong: \(checked.output)")
+        expectEqual(bigNodes.filter { $0["title"] == "one.ts" }.compactMap { $0["in"]?.stringValue }.sorted(), ["Level 1", "x"],
+                    "the folder's files stay on Big's, in its frame x, and the module Level 1 has a one.ts of its own")
+        // paths that differ only by case are one container's clash: two files, and two folders, that a case-insensitive title can't tell apart
+        let cases = folder.appendingPathComponent("cases")
+        try FileManager.default.createDirectory(at: cases, withIntermediateDirectories: true)
+        try caseModel.write(to: cases.appendingPathComponent("scan.json"), atomically: true, encoding: .utf8)
+        let caseMade = try lensRunner(bigRepo, scan: cases.appendingPathComponent("scan.json"), digest: cases.appendingPathComponent("digest.json"))
+        expectEqual(caseMade.status, 0, caseMade.output + caseMade.error)
+        expect(caseMade.error.contains("Cases/readme.md is titled \"Cases/readme.md\": \"readme.md\" is another shape's title in \"Cases/\" too"), caseMade.error)
+        expect(caseMade.error.contains("the frame util on Cases is titled \"util (Cases)\": \"util\" is another shape's title in \"Cases\" too"), caseMade.error)
+        let caseNodes = try json(cases.appendingPathComponent("digest.json"))["nodes"]?.arrayValue ?? []
+        expectEqual(caseNodes.compactMap { $0["title"]?.stringValue }.filter { $0.lowercased().contains("readme") || $0.lowercased().hasPrefix("util") }.sorted(),
+                    ["Cases/readme.md", "README.md", "Util", "util (Cases)"], "each pair of names is told apart in its container")
+        expectEqual(caseNodes.compactMap { $0["title"]?.stringValue }.filter { $0 == "a.ts" || $0 == "b.ts" }.sorted(), ["a.ts", "b.ts"], "and the files in the folders keep their names")
+        for (digestFile, label) in [(big.appendingPathComponent("digest.json"), "big"), (cases.appendingPathComponent("digest.json"), "cases"), (awkwardDigest, "awkward")] {
+            let checked = try run(URL(fileURLWithPath: "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"),
+                                  [URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest/tool/main.js").path, "--", "check", digestFile.path],
+                                  timeout: 120)
+            expectEqual(checked.status, 0, checked.output + checked.error)
+            expectEqual(try JSON(text: checked.output)["errors"], .array([]), "\(label): check finds nothing wrong: \(checked.output)")
+        }
+    },
+
+    test("the default lens draws a codebase whose folders repeat names: each board keeps the names of its folders and files, the digest tells them apart by id, and the app has each by where it is") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("repeats")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let repo = try makeRepository("project", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache)
+        try putScan(repeatsModel, in: kept)
+        let env = environment(cache: cache, server: server)
+        let drawn = try ingest([repo.path, "--scan", handScan(kept)], environment: env)
+        expectEqual(drawn.status, 0, drawn.output + drawn.error)
+        expect(drawn.output.contains("verify ok"), drawn.output)
+        expect(!drawn.error.contains(" is titled "), "no title is reworded for a name another board has: \(drawn.error)")
+        // web, api and core each have a folder src, and every one of them a file index.ts and a util.ts (web has a second util.ts, in test)
+        let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
+        let nodes = digest["nodes"]?.arrayValue ?? []
+        func titled(_ title: String) -> [JSON] { nodes.filter { $0["title"] == .string(title) } }
+        expectEqual([titled("src").count, titled("index.ts").count, titled("util.ts").count, titled("Page.ts").count, titled("test").count], [3, 3, 4, 2, 1])
+        expect(titled("src").allSatisfy { $0["id"] != nil } && titled("util.ts").allSatisfy { $0["id"] != nil } && titled("test").allSatisfy { $0["id"] == nil },
+               "an id wherever a title repeats, and nowhere else")
+        expect(nodes.filter { $0["id"] != nil }.count == 12 && titled("web").first?["id"] == nil, "twelve ids: three folders, three index.ts, four util.ts, two Page.ts")
+        let naming = try namingReport(lastRun(in: kept).appendingPathComponent("digest.json"))
+        expectEqual(naming.problems, [])
+        // in the app, a title names every shape that has it, each inside the boards and frames it is in
+        @MainActor func inside(_ query: String) throws -> [String] {
+            let found = try canvas(server, ["query", "--board", "\(board.number)", "--limit", "100", query])
+            expectEqual(found.status, 0, "\(query): \(found.error)")
+            return try (JSON(text: found.output)["rows"]?.arrayValue ?? []).map { ($0["inside"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " > ") }.sorted()
+        }
+        expectEqual(try inside(#"sticky-note"util.ts""#), ["Level 1 > core > src", "Level 2 > api > src", "Level 2 > web > src", "Level 2 > web > test"])
+        expectEqual(try inside(#"frame"src""#), ["Level 1 > core", "Level 2 > api", "Level 2 > web"])
+        // and a path asks for one of them: the util.ts in web's src, which three arrows end at (from web's index.ts, its Page.ts and its test's util.ts)
+        let users = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "100", #":start-of(arrow:ends-at("web" > "src" > "util.ts"))"#])
+        expectEqual(users.status, 0, users.error)
+        expectEqual(try (JSON(text: users.output)["rows"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }.sorted(), ["Page.ts", "index.ts", "util.ts"], users.output)
+        // drawn again, it takes its own drawing back and draws it in the same place
+        let shapes = board.editor.file.shapeCount
+        let again = try ingest([repo.path, "--scan", handScan(kept)], environment: env)
+        expectEqual(again.status, 0, again.output + again.error)
+        expect(again.output.contains("replace: took back the last drawing") && again.output.contains("verify ok"), again.output)
+        expectEqual(board.editor.file.shapeCount, shapes, "drawn again in its place, once")
+    },
+
+    test("lenskit's Digest gives a title out once in its container, lets a name repeat in another, and names nodes by an id where a title repeats; the same under another hash seed") {
+        let folder = try scratchFolder("builder")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let script = folder.appendingPathComponent("builder.py")
+        try write(builderScript(skill: ingestSkill().path), to: script)
+        let seeds = try ["1", "2"].map { try run(URL(fileURLWithPath: python), ["-s", "-B", script.path], environment: ["PYTHONHASHSEED": $0], timeout: 60) }
+        for seed in seeds { expectEqual(seed.status, 0, seed.output + seed.error) }
+        expectEqual(seeds[0].output, seeds[1].output, "the same digest and words under another hash seed")
+        let out = try JSON(text: seeds[0].output)
+        func strings(_ key: String) -> [String] { (out[key]?.arrayValue ?? []).compactMap(\.stringValue) }
+        // a title is given out once in its container (spaces folded, case aside), and may repeat in another
+        expectEqual(strings("container"), ["index.ts", "index.ts", "Index.ts (2)", "other.ts"])
+        expectEqual(strings("container_said"), ["z is titled \"Index.ts (2)\": \"Index.ts\" is another shape's title in \"A\" too",
+                                                "w is titled \"other.ts\": \"  index.ts \" is another shape's title in \"A\" too"])
+        // with no container there is one scope for the whole digest, as there always was
+        expectEqual(strings("whole"), ["Core", "core (layer)", "CORE (2)", "Core (3)"])
+        expectEqual(strings("whole_taken"), ["core", "core (2)", "core (3)", "core (layer)"])
+        expectEqual(strings("whole_said").first, "y is titled \"core (layer)\": \"core\" is another shape's title too")
+        // alone: no other shape has the title, in any container, whichever came first
+        expectEqual(strings("alone"), ["Core", "core (layer)", "x", "Core (2)"])
+        expectEqual(strings("alone_said").first, "band is titled \"core (layer)\": \"core\" is the card Core's title, which no other shape may have")
+        expectEqual(strings("alone_after"), ["Shared", "shared (card)"])
+        // type: unique among types in any container, shared with a note that is no type
+        expectEqual(strings("types"), ["Table", "Table", "TABLE (type)"])
+        expectEqual(strings("types_said"), ["t2 is titled \"TABLE (type)\": \"TABLE\" is another type's title too"])
+        // within a title names the one node that has it
+        expectEqual(strings("by_title"), ["x", "x", "x (2)"])
+        expect(out["unknown"]?.stringValue?.contains("no node has that title") == true, "\(out["unknown"] ?? .null)")
+        expect(out["ambiguous"]?.stringValue?.contains("2 nodes have that title") == true, "\(out["ambiguous"] ?? .null)")
+        // a digest of titles that are all unique comes out as it was written, strings and nodes alike, with no id
+        expectEqual(out["plain"], ["title": "plain", "nodes": [["title": "F", "kind": "frame", "rank": 0], ["title": "N", "kind": "sticky-note", "in": "F", "text": "words", "source": "n.py"],
+                                                              ["title": "M", "kind": "sticky-note", "in": "F"]],
+                                   "edges": [["from": "N", "to": "F"], ["from": "M", "to": "N", "weight": 2]], "warnings": []])
+        // a title two nodes have: an id for each, the title then the containers (the digest's own way to tell them apart), and every
+        // reference to either is its id; a node whose title is unique is still named by it, as a string or as a node
+        let shop = try require(out["digest"])
+        let ids = (shop["nodes"]?.arrayValue ?? []).map { $0["id"]?.stringValue ?? "-" }
+        expectEqual(ids, ["-", "-", "-", "index.ts  in Top > app", "index.ts  in Top > lib", "-"])
+        expectEqual((shop["edges"]?.arrayValue ?? []).map { "\($0["from"]?.stringValue ?? "?") > \($0["to"]?.stringValue ?? "?")" },
+                    ["index.ts  in Top > app > index.ts  in Top > lib", "index.ts  in Top > lib > Only", "Only > index.ts  in Top > app", "Only > lib"])
+        expectEqual((shop["nodes"]?.arrayValue ?? []).first { $0["id"] == "index.ts  in Top > app" }?.objectValue?.keys.sorted(), ["id", "in", "kind", "source", "text", "title"])
+        expectEqual((shop["nodes"]?.arrayValue ?? []).compactMap { $0["in"]?.stringValue }, ["Top", "Top", "app", "lib", "lib"], "a container is named by its title where that is its own")
+        expectEqual(out["again"], true, "and finishing again changes nothing")
+        // what is refused: a string that names several nodes, a node of another digest, and two types of one title
+        expect(out["ambiguous_ref"]?.stringValue?.contains("\"Same\" is the title of 2 nodes") == true && out["ambiguous_ref"]?.stringValue?.contains("give the nodes ids") == true, "\(out["ambiguous_ref"] ?? .null)")
+        expect(out["foreign"]?.stringValue?.contains("a node this digest doesn't have") == true, "\(out["foreign"] ?? .null)")
+        expect(out["two_types"]?.stringValue?.contains("2 types are called \"Table\"") == true && out["two_types"]?.stringValue?.contains("type=True") == true, "\(out["two_types"] ?? .null)")
+        // an id the lens gave stays; a title that is another node's id gets an id, so it is named by it; two ids that would be one get a number
+        expectEqual((out["ids"]?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " | ") },
+                    ["P", "Q", "X | mine | P", "X | X  in Q | Q", "mine | mine  in Q | Q", "Y | Y  in P | Q", "Y | Y  in P (2) | P"])
+        expectEqual((out["id_edges"]?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " > ") },
+                    ["mine > X  in Q", "mine  in Q > Y  in P", "X  in Q > Y  in P (2)"])
+        expectEqual(out["order_broken"], 0, "ids sort as titles do: no two titles, over 2,400 random ones, come out of order by key")
+    },
+
+    test("a module called what its band is, with folder boards that mention it, is drawn: the band gives way to the card, whose title a mention names alone") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("same-name")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let repo = try makeRepository("project", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache)
+        // Top imports Level 1, so Level 1 is the band of the modules that import none; it has 60 files in two folders, so each folder has a
+        // board whose card's description mentions its module (`@[Level 1]`), from the module's board
+        func q(_ s: String) -> String { "\"" + s + "\"" }
+        let rels = (0..<30).map { "a/f\($0).ts" } + (0..<30).map { "b/g\($0).ts" }
+        let files = rels.map { #"{"module": "Level 1", "rel": \#(q($0)), "path": \#(q("src/L1/" + $0)), "lines": 10, "doc": "", "api": false, "decls": []}"# }
+        try putScan(#"{"language": "typescript", "name": "Same", "modules": [{"name": "Top", "path": "src/Top", "deps": ["Level 1"], "test": false, "layer": null, "files": ["main.ts"], "lines": 10, "doc": "", "folders": {}}, {"name": "Level 1", "path": "src/L1", "deps": [], "test": false, "layer": null, "files": [\#(rels.map(q).joined(separator: ", "))], "lines": 600, "doc": "", "folders": {}}], "files": [{"module": "Top", "rel": "main.ts", "path": "src/Top/main.ts", "lines": 10, "doc": "", "api": false, "decls": []}, \#(files.joined(separator: ", "))], "uses": []}"#, in: kept)
+        let drawn = try ingest([repo.path, "--scan", handScan(kept)], environment: environment(cache: cache, server: server))
+        expectEqual(drawn.status, 0, drawn.output + drawn.error)
+        expect(drawn.output.contains("verify ok") && drawn.output.contains("descriptions 4/4"), drawn.output)
+        expect(drawn.error.contains("the band Level 1 is titled \"Level 1 (layer)\": \"Level 1\" is the module Level 1's title, which no other shape may have"), drawn.error)
+        // had the band kept the name, draw would refuse the folders' descriptions: the root would have two shapes called Level 1, a frame
+        // and a subboard, and "a text names a shape by its title alone"
+        let mentioners = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "100", #"subboard:mentions(subboard"Level 1")"#])
+        expectEqual(mentioners.status, 0, mentioners.error)
+        expectEqual(try (JSON(text: mentioners.output)["rows"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }.sorted(), ["Level 1/a", "Level 1/b", "Top"],
+                    "the card is what the two folders and Top mention: \(mentioners.output)")
     },
 
     test("Swift's index is kept from run to run: a module is type-checked again only when its sources or the interfaces it reads changed, and its uses are read from a store a module") {
@@ -1310,21 +1485,32 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         }
     },
 
-    test("the default lens makes the digest its fixtures hold, byte for byte but for each node's source: every fixture scan, and the overrides a spec.py gave") {
-        // the digests and words are checked in (Fixtures/ingest-lens), first the old lens's, then the default lens's once the About note went
+    test("the default lens makes the digest its fixtures hold but for how it names nodes: every fixture scan, and the overrides a spec.py gave") {
+        // the digests and words are checked in (Fixtures/ingest-lens), first the old lens's, then the default lens's once the About note went,
+        // when it gave every title out once in the whole digest. It gives each out once in its container now, so a file is titled by its
+        // name, however many others have it. The new digest is the fixture's: the same nodes in the same order with every field the same but
+        // the title, the id (a node whose title another has gets one) and the container, as the same node; the same edges, naming the
+        // same nodes; and a title changed only by one of three rules (namingReport), each said where it was used
         let folder = try scratchFolder("parity")
         defer { try? FileManager.default.removeItem(at: folder) }
         let repo = try makeRepository("project", in: folder)
         let long = "@my-company/" + String(repeating: "very-long-package-name-", count: 4) + "x"
         let scans = ["tiny": tinyModel, "awkward": awkwardModel(long: long, big: false), "awkward-big": awkwardModel(long: long, big: true)]
+        // the rules a title may change by are three (namingReport); the fixtures use two: a band that a module has the name of, and a frame that
+        // a module's card has the name of, still give way to the card, whose title is the digest's alone (the third rule, "a (…) fallback
+        // gone", would be one of them taking its own name)
+        let byName = "a file's name in place of a longer end of its path", byNumber = "a number gone"
+        let changed: [String: [String: Int]] = ["tiny": [:], "awkward": [byName: 5, byNumber: 1], "awkward-big": [byName: 7, byNumber: 1]]
         for (name, scan) in scans.sorted(by: { $0.key < $1.key }) {
             let scanFile = folder.appendingPathComponent("\(name).scan.json")
             try write(scan, to: scanFile)
             let after = try lensRunner(repo, scan: scanFile, digest: folder.appendingPathComponent("\(name).new.json"))
             expectEqual(after.status, 0, after.output + after.error)
-            expect(try sameButForSource(old: lensFixture(name, "digest.json"), new: folder.appendingPathComponent("\(name).new.json")), "\(name): the digests differ")
-            // what it said of the code on standard error, it says still
-            for line in try String(contentsOf: lensFixture(name, "said"), encoding: .utf8).split(separator: "\n") where line.hasPrefix("lens: ") {
+            let report = try namingReport(folder.appendingPathComponent("\(name).new.json"), against: lensFixture(name, "digest.json"))
+            expectEqual(report.problems, [], "\(name): the digest differs from its fixture's but by titles, ids and the references that name them")
+            expectEqual(report.rules, changed[name], "\(name): the titles that changed, by the rule that explains each")
+            // what it said of the code on standard error, it says still, but for the titles it reworded
+            for line in try String(contentsOf: lensFixture(name, "said"), encoding: .utf8).split(separator: "\n") where line.hasPrefix("lens: ") && !line.contains(" is titled \"") {
                 expect(after.error.contains(line), "\(name): \(line) is said by the lens: \(after.error)")
             }
         }
@@ -1345,7 +1531,9 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         let lensed = try lensRunner(specRepo, scan: scanFile, digest: folder.appendingPathComponent("spec.new.json"),
                                     lens: specRepo.appendingPathComponent(".canvas/lens.py"))
         expectEqual(lensed.status, 0, lensed.output + lensed.error)
-        expect(try sameButForSource(old: lensFixture("spec", "digest.json"), new: folder.appendingPathComponent("spec.new.json")), "the overrides make the same digest")
+        let specReport = try namingReport(folder.appendingPathComponent("spec.new.json"), against: lensFixture("spec", "digest.json"))
+        expectEqual(specReport.problems, [], "the overrides make the same digest")
+        expectEqual(specReport.rules, [:], "and name every node as it was named")
         let specified = try String(contentsOf: lensFixture("spec", "said"), encoding: .utf8)
         for said in ["Ghost", "Nowhere", "Hidden", "leave out Main.swift"] {
             expect(lensed.error.contains(said) && specified.contains(said), "said by both: \(said)\n\(specified)\n\(lensed.error)")
@@ -1654,9 +1842,11 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(collapsed["source"], "src/Mod00/d0/s0", "and says what it was made from")
         expect(edges.allSatisfy { ($0["weight"]?.intValue ?? 1) >= 1 && ($0["weight"]?.intValue ?? 1) <= 4 }, "merged weights stop at 4")
         expect(edges.contains { $0["weight"]?.intValue == 4 }, "and reach it")
-        let nodeTitles = Set(nodes.compactMap { $0["title"]?.stringValue.map { $0.lowercased() } })
-        expectEqual(nodeTitles.count, nodes.count, "every title is given out once")
-        expect(edges.allSatisfy { nodeTitles.contains(($0["from"]?.stringValue ?? "").lowercased()) && nodeTitles.contains(($0["to"]?.stringValue ?? "").lowercased()) }, "every edge has its ends")
+        // a title is given out once in its container: File0.ts is in every folder, and its note is told apart by an id, which names it in an edge
+        let naming = try namingReport(digest)
+        expectEqual(naming.problems, [], "every title is its container's alone, an id is where a title repeats, and every edge has its ends")
+        expect(notes.filter { $0["id"] != nil }.count > 3000, "the files of one name in many folders have ids: \(notes.filter { $0["id"] != nil }.count)")
+        expect(notes.filter { $0["title"] == "File0.ts" }.count > 500, "and keep the name they have in their folder")
         let pairs = edges.map { "\($0["from"]?.stringValue ?? "") > \($0["to"]?.stringValue ?? "")" }
         expectEqual(Set(pairs).count, pairs.count, "and one edge to a pair of ends")
         // canvas-digest's own check finds nothing wrong
@@ -1900,6 +2090,40 @@ private func awkwardModel(long: String, big: Bool) -> String {
         .replacingOccurrences(of: "SURROGATE", with: #"\udcff"#)
 }
 
+/// One module whose names differ only by case, in one container: two files, README.md and readme.md, and two folders, Util and util
+/// (the folders hold a.ts and b.ts).
+private let caseModel = #"""
+{"language": "typescript", "name": "Cases",
+ "modules": [
+  {"name": "Cases", "path": "src/Cases", "deps": [], "test": false, "layer": null, "files": ["README.md", "readme.md", "Util/a.ts", "util/b.ts"], "lines": 40, "doc": "", "folders": {}}],
+ "files": [
+  {"module": "Cases", "rel": "README.md", "path": "src/Cases/README.md", "lines": 10, "doc": "", "api": false, "decls": []},
+  {"module": "Cases", "rel": "readme.md", "path": "src/Cases/readme.md", "lines": 10, "doc": "", "api": false, "decls": []},
+  {"module": "Cases", "rel": "Util/a.ts", "path": "src/Cases/Util/a.ts", "lines": 10, "doc": "", "api": false, "decls": []},
+  {"module": "Cases", "rel": "util/b.ts", "path": "src/Cases/util/b.ts", "lines": 10, "doc": "", "api": false, "decls": []}],
+ "uses": []}
+"""#
+
+/// Three packages whose folders repeat names, as a monorepo's do: each has a src with an index.ts and a util.ts, web and api a folder of
+/// pages (views, routes) holding a Page.ts, and web a test folder with a util.ts of its own. Files use each other across them.
+private let repeatsModel: String = {
+    let layout = [("web", ["src/index.ts", "src/util.ts", "src/views/Page.ts", "test/util.ts"], ["core"]),
+                  ("api", ["src/index.ts", "src/util.ts", "src/routes/Page.ts"], ["core"]), ("core", ["src/index.ts", "src/util.ts"], [])]
+    func q(_ s: String) -> String { "\"" + s + "\"" }
+    let modules = layout.map { name, rels, deps in
+        #"{"name": \#(q(name)), "path": \#(q("packages/" + name)), "deps": [\#(deps.map(q).joined(separator: ", "))], "test": false, "layer": null, "files": [\#(rels.map(q).joined(separator: ", "))], "lines": \#(10 * rels.count), "doc": "", "folders": {}}"#
+    }
+    let files = layout.flatMap { name, rels, _ in
+        rels.map { #"{"module": \#(q(name)), "rel": \#(q($0)), "path": \#(q("packages/\(name)/\($0)")), "lines": 10, "doc": "", "api": true, "decls": [{"name": "Thing", "kind": "type", "visibility": "public", "line": 1}]}"# }
+    }
+    let uses = [("web", "src/index.ts", "core", "src/index.ts"), ("api", "src/index.ts", "core", "src/index.ts"), ("web", "src/index.ts", "web", "src/util.ts"),
+                ("web", "src/views/Page.ts", "web", "src/util.ts"), ("api", "src/util.ts", "core", "src/util.ts"), ("web", "test/util.ts", "web", "src/util.ts"),
+                ("api", "src/routes/Page.ts", "api", "src/util.ts")].map {
+        #"{"from": [\#(q($0.0)), \#(q($0.1))], "to": [\#(q($0.2)), \#(q($0.3))], "names": ["Thing"]}"#
+    }
+    return #"{"language": "typescript", "name": "Repeats", "modules": [\#(modules.joined(separator: ",\n"))], "files": [\#(files.joined(separator: ",\n"))], "uses": [\#(uses.joined(separator: ",\n"))]}"#
+}()
+
 /// Two modules, App over Core, as a scanner writes the scan: App's Main.swift and Screen.swift use Core's Store.swift.
 private let tinyModel = #"""
 {"language": "swift", "name": "TinyPackage",
@@ -2096,5 +2320,252 @@ private func readersScript(skill: String) -> String {
         "tables": {k: {"columns": [{"name": c.name, "type": c.type, "nullable": c.nullable, "primary_key": c.primary_key} for c in t.columns]} for k, t in found.items()},
         "table_names": list(found),
     }))
+    """#
+}
+
+/// A Python script that reads a digest as canvas-digest does, and prints, as JSON, the problems with how it names its nodes (see
+/// `namingReport`) and, given the digest an older default lens made too, how it differs from that one by the rules of titles.
+private let namingScript = #"""
+import json, re, sys
+
+RULES = ("a file's name in place of a longer end of its path", "a (…) fallback gone", "a number gone")
+
+
+def spaced(title):
+    return ' '.join(title.split())
+
+
+problems, used = [], {}
+new = json.load(open(sys.argv[1], encoding='utf-8'))
+nodes, edges = new['nodes'], new['edges']
+
+# what a reference names: a node's id, else the one node that has that title (None: no node, or several)
+ids, titles = {}, {}
+for position, node in enumerate(nodes):
+    if 'id' in node:
+        ids.setdefault(node['id'], []).append(position)
+    titles.setdefault(spaced(node['title']), []).append(position)
+
+
+def at(reference, by_id=ids, by_title=titles):
+    if len(by_id.get(reference, [])) == 1:
+        return by_id[reference][0]
+    return by_title[spaced(reference)][0] if len(by_title.get(spaced(reference), [])) == 1 else None
+
+
+# a title is unique in its container (spaces folded, case aside); a node has an id exactly when another node has its title, ids are
+# unique, and a reference names a node by its id where it has one, else by its title
+held = {}
+for position, node in enumerate(nodes):
+    container = at(node['in']) if 'in' in node else -1
+    if 'in' in node and container is None:
+        problems.append(f"node {position} ({node['title']!r}) is in {node['in']!r}, which names no one node")
+    key = (container, spaced(node['title']).lower())
+    if key in held:
+        problems.append(f"nodes {held[key]} and {position} are both called {node['title']!r} in one container")
+    held[key] = position
+    if ('id' in node) != (len(titles[spaced(node['title'])]) > 1):
+        problems.append(f"node {position} ({node['title']!r}) " + ("has an id, though no other node has its title" if 'id' in node else "lacks an id, though another node has its title"))
+if any(len(positions) > 1 for positions in ids.values()):
+    problems.append("two nodes have one id")
+
+
+def named(position):
+    return nodes[position].get('id', nodes[position]['title'])
+
+
+for position, node in enumerate(nodes):
+    if 'in' in node and at(node['in']) is not None and node['in'] != named(at(node['in'])):
+        problems.append(f"node {position}: its in is {node['in']!r}, which is not how its container is named ({named(at(node['in']))!r})")
+for position, edge in enumerate(edges):
+    for end in ('from', 'to'):
+        target = at(edge[end])
+        if target is None:
+            problems.append(f"edge {position}: its {end} {edge[end]!r} names no one node")
+        elif edge[end] != named(target):
+            problems.append(f"edge {position}: its {end} is {edge[end]!r}, which is not how its node is named ({named(target)!r})")
+
+if len(sys.argv) > 2:
+    old = json.load(open(sys.argv[2], encoding='utf-8'))
+    old_nodes, old_edges = old['nodes'], old['edges']
+    for key in sorted(set(old) | set(new)):
+        if key not in ('nodes', 'edges') and old.get(key) != new.get(key):
+            problems.append(f"the digest's {key} differs")
+    if (len(old_nodes), len(old_edges)) != (len(nodes), len(edges)):
+        problems.append(f"{len(old_nodes)} nodes and {len(old_edges)} edges became {len(nodes)} and {len(edges)}")
+        print(json.dumps({'problems': problems, 'rules': used}))
+        sys.exit(0)
+    old_titles = {}
+    for position, node in enumerate(old_nodes):
+        old_titles.setdefault(spaced(node['title']), []).append(position)
+    old_at = lambda reference: at(reference, {}, old_titles)
+
+    # the rules by which the title `was` may have become `now`, each at most once, in this order; None if no rules do
+    def rules(was, now, source):
+        steps = [(was, [])]
+        number = re.fullmatch(r'(.*) \(\d+\)', was)
+        if number:
+            steps.append((number.group(1), [RULES[2]]))
+        for title, by in list(steps):
+            fallback = re.fullmatch(r'(.*?) \([^()]*\)', title)
+            if fallback and not re.fullmatch(r'.* \(\d+\)', title):
+                steps.append((fallback.group(1), by + [RULES[1]]))
+        name = source.rsplit('/', 1)[-1] if source else None
+        for title, by in list(steps):
+            if name and (title == name or title.endswith('/' + name)):
+                steps.append((name, by + [RULES[0]]))
+        return next((by for title, by in steps if title == now), None)
+
+    for position, (was, now) in enumerate(zip(old_nodes, nodes)):
+        rest_was = {k: v for k, v in was.items() if k not in ('title', 'in', 'source')}
+        rest_now = {k: v for k, v in now.items() if k not in ('title', 'in', 'id', 'source')}
+        if json.dumps(rest_was) != json.dumps(rest_now):
+            problems.append(f"node {position} ({was['title']!r}): a field but its title, id and container differs: {json.dumps(rest_was)[:160]} became {json.dumps(rest_now)[:160]}")
+        if ('in' in was) != ('in' in now) or ('in' in was and old_at(was['in']) != at(now['in'])):
+            problems.append(f"node {position} ({was['title']!r}) is in another node than before")
+        if was['title'] != now['title']:
+            by = rules(was['title'], now['title'], now.get('source'))
+            if by is None:
+                problems.append(f"node {position}: the title {was['title']!r} became {now['title']!r}, which no rule explains")
+            for rule in by or []:
+                used[rule] = used.get(rule, 0) + 1
+    for position, (was, now) in enumerate(zip(old_edges, edges)):
+        if json.dumps({k: v for k, v in was.items() if k not in ('from', 'to')}) != json.dumps({k: v for k, v in now.items() if k not in ('from', 'to')}):
+            problems.append(f"edge {position}: a field but its ends differs")
+        for end in ('from', 'to'):
+            if old_at(was[end]) != at(now[end]):
+                problems.append(f"edge {position} ({was['from']!r} to {was['to']!r}): its {end} names another node than before")
+print(json.dumps({'problems': problems, 'rules': used}))
+"""#
+
+/// A Python script that builds small digests with lenskit's `Digest` and prints what they are and what was refused, as JSON.
+private func builderScript(skill: String) -> String {
+    #"""
+    import json, sys
+    sys.path.insert(0, \#(pythonString(skill)))
+    from lenskit import Digest, Titles
+
+    def refused(call):
+        try:
+            call()
+            return "NOT REFUSED"
+        except ValueError as e:
+            return str(e)
+
+    out = {}
+    a, b, c = {"title": "A"}, {"title": "B"}, {"title": "C"}
+
+    # a title is given out once in its container, case aside and spaces folded, and may repeat in another
+    said = []
+    titles = Titles(said.append)
+    out["container"] = [titles.claim("x", "index.ts", within=a), titles.claim("y", "index.ts", within=b), titles.claim("z", "Index.ts", within=a),
+                        titles.claim("w", "  index.ts ", "other.ts", within=a)]
+    out["container_said"] = said
+
+    # with no container, one scope for all: the digest's titles each given out once, as before
+    said = []
+    titles = Titles(said.append)
+    out["whole"] = [titles.claim("x", "Core"), titles.claim("y", "core", "core (layer)"), titles.claim("z", "CORE"), titles.claim("w", "Core")]
+    out["whole_said"] = said
+    out["whole_taken"] = sorted(titles.taken)
+
+    # alone: the title is the digest's, in every container, whichever claim comes first
+    said = []
+    titles = Titles(said.append)
+    out["alone"] = [titles.claim("the card Core", "Core", alone=True), titles.claim("band", "core", "core (layer)", within=a), titles.claim("frame", "CORE", "x", within=b),
+                    titles.claim("card2", "Core", "Core (2)", alone=True)]
+    out["alone_said"] = said
+    out["alone_after"] = [titles.claim("note", "Shared", within=a), titles.claim("card", "shared", "shared (card)", alone=True)]
+
+    # type: unique among types in any container, and no matter to a shape that is no type
+    said = []
+    titles = Titles(said.append)
+    out["types"] = [titles.claim("t1", "Table", within=a, type=True), titles.claim("n", "Table", within=b), titles.claim("t2", "TABLE", "TABLE (type)", within=c, type=True)]
+    out["types_said"] = said
+
+    # within is a node, or the title of the one node that has it
+    d = Digest("by title")
+    band = d.frame("Band")
+    one, two = d.frame("One", band), d.frame("Two", band)
+    d.frame("Dup", one)
+    d.frame("Dup", two)
+    out["by_title"] = [d.claim("c", "x", within="One"), d.claim("c", "x", within="Two"), d.claim("c", "x", within="One")]
+    out["unknown"] = refused(lambda: d.claim("c", "x", within="Nowhere"))
+    out["ambiguous"] = refused(lambda: d.claim("c", "x", within="Dup"))
+
+    # titles that are all unique: the digest is as it was written, whether a lens named a node by its title or passed the node
+    d = Digest("plain")
+    frame = d.frame("F", rank=0)
+    n = d.note("N", "F", "words", source="n.py")
+    m = d.note("M", frame)
+    d.edge("N", frame)
+    d.edge(m, n, 2)
+    out["plain"] = d.finish()
+
+    # a title two nodes have: an id for each, and every reference to either is its id
+    d = Digest("shop")
+    top = d.frame("Top", rank=0)
+    app = d.subboard("app", top, "App")
+    lib = d.subboard("lib", top, "Lib")
+    f1 = d.note(d.claim("f", "index.ts", within=app), app, "one", source="app/index.ts")
+    f2 = d.note(d.claim("f", "index.ts", within=lib), lib, "two", source="lib/index.ts")
+    only = d.note("Only", lib, "three")
+    d.edge(f1, f2, 2)
+    d.edge(f2, "Only")
+    d.edge("Only", f1, text="back")
+    d.edge(only, lib)
+    done = d.finish()
+    out["digest"] = done
+    out["again"] = d.finish() == done
+
+    # refused: a title several nodes have, named by that string; a node of another digest; two types of one title
+    d = Digest("bad")
+    p, q = d.frame("P"), d.frame("Q")
+    d.note("Same", p)
+    d.note("Same", q)
+    d.edge("Same", "P")
+    out["ambiguous_ref"] = refused(d.finish)
+    d = Digest("foreign")
+    d.note("Here")
+    d.edge(Digest("other").note("Elsewhere"), "Here")
+    out["foreign"] = refused(d.finish)
+    d = Digest("types")
+    p, q = d.frame("P"), d.frame("Q")
+    d.note("Table", p, schema={"type": "object"})
+    d.note("Table", q, schema={"type": "object"})
+    out["two_types"] = refused(d.finish)
+
+    # an id a lens gave stays; a title that is another node's id needs one; ids that would be one get a number
+    d = Digest("ids")
+    p, q = d.frame("P"), d.frame("Q")
+    a1 = d.note("X", p, id="mine")
+    a2 = d.note("X", q)
+    a3 = d.note("mine", q)
+    a4 = d.note("Y", q, id="Y  in P")
+    a5 = d.note("Y", p)
+    d.edge(a1, a2)
+    d.edge(a3, a4)
+    d.edge(a2, a5)
+    out["ids"] = [[node["title"], node.get("id", "-"), node.get("in", "-")] if "in" in node else [node["title"]] for node in d.finish()["nodes"]]
+    out["id_edges"] = [[e["from"], e["to"]] for e in d.edges]
+
+    # ids sort as titles do: of two nodes whose titles differ, the smaller title has the smaller key (its id, else its title), so a
+    # row the digest orders by key stays in title order (printable titles, which have spaces folded, as the digest's own are)
+    import random
+    rng = random.Random(7)
+    alphabet = [chr(code) for code in range(0x20, 0x7f)] + list("éüß…λ中")
+    def made():
+        return " ".join("".join(rng.choice(alphabet) for _ in range(rng.randint(1, 5))).split()) or "x"
+    broken = 0
+    for _ in range(60):
+        d = Digest("order")
+        frames = [d.frame(made()) for _ in range(3)]
+        for _ in range(40):
+            d.note(made(), rng.choice(frames))
+        d.finish()
+        keys = [(node["title"], node.get("id", node["title"])) for node in d.nodes if node["kind"] == "sticky-note"]
+        broken += sum(1 for a in keys for b in keys if a[0] < b[0] and not a[1] < b[1])
+    out["order_broken"] = broken
+    print(json.dumps(out, indent=1))
     """#
 }

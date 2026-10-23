@@ -111,12 +111,23 @@ public struct PathMatcher: Sendable {
 
     /// The score of a shape whose own title is `label` (the leaf), under a container whose row
     /// is `row`: the leaf's group is the last piece and, as the parent's row allows, those before
-    /// it. Nil if no way of placing the pieces works.
-    public func leafScore(after row: Row, label: FuzzyMatcher.Label) -> Int? {
-        guard !pieces.isEmpty else { return nil }
+    /// it. Nil if no way of placing the pieces works. With `placingAtLeast`, only the ways that put that
+    /// many pieces in the containers before it (1: the shape is found by its path, not by its title alone).
+    public func leafScore(after row: Row, label: FuzzyMatcher.Label, placingAtLeast minimum: Int = 0) -> Int? {
+        leafScore(after: row, placingAtLeast: minimum) { FuzzyMatcher.score($0, in: label, allowSubsequence: true) }
+    }
+
+    /// The same for a title kept as keys in a list's buffer (`FuzzyMatcher.appendKeys`, rebased to start at 0: what
+    /// `UnsafeBufferPointer(rebasing:)` makes), so a list that keeps its titles so makes no `Label` for each shape it scores.
+    public func leafScore(after row: Row, keys: UnsafeBufferPointer<UInt32>, placingAtLeast minimum: Int = 0) -> Int? {
+        leafScore(after: row, placingAtLeast: minimum) { FuzzyMatcher.score($0, keys: keys, allowSubsequence: true) }
+    }
+
+    private func leafScore(after row: Row, placingAtLeast minimum: Int, _ score: (FuzzyMatcher.Query) -> Int?) -> Int? {
+        guard minimum < pieces.count else { return nil }
         var best: Int?
-        for a in 0..<pieces.count where row.best[a] != Row.unreachable {
-            guard let score = FuzzyMatcher.score(group(a, pieces.count), in: label, allowSubsequence: true) else { continue }
+        for a in minimum..<pieces.count where row.best[a] != Row.unreachable {
+            guard let score = score(group(a, pieces.count)) else { continue }
             let candidate = row.best[a] + PathRanking.leafWeight * score
             if best == nil || candidate > best! { best = candidate }
         }
@@ -141,9 +152,9 @@ public struct PathMatcher: Sendable {
     }
 
     /// How `path` (the containers, the outermost first, then the shape's own title last) matches;
-    /// nil if it doesn't. The same score the rows give.
-    public func match(path: [String]) -> Match? {
-        guard !pieces.isEmpty, let leaf = path.last else { return nil }
+    /// nil if it doesn't. The same score the rows give, and the same `placingAtLeast`.
+    public func match(path: [String], placingAtLeast minimum: Int = 0) -> Match? {
+        guard minimum < pieces.count, let leaf = path.last else { return nil }
         let ancestors = path.dropLast().map(FuzzyMatcher.Label.init)
         var rows = [rootRow]
         for label in ancestors { rows.append(advance(rows[rows.count - 1], through: label)) }
@@ -151,7 +162,7 @@ public struct PathMatcher: Sendable {
         // The leaf's group, the best by the leaf's rule.
         var best: (score: Int, a: Int)?
         let parent = rows[rows.count - 1]
-        for a in 0..<pieces.count where parent.best[a] != Row.unreachable {
+        for a in minimum..<pieces.count where parent.best[a] != Row.unreachable {
             guard let score = FuzzyMatcher.score(group(a, pieces.count), in: leafLabel, allowSubsequence: true) else { continue }
             let candidate = parent.best[a] + PathRanking.leafWeight * score
             if best == nil || candidate > best!.score { best = (candidate, a) }

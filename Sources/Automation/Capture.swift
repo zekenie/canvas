@@ -203,8 +203,16 @@ private final class CaptureLookup {
             if let board, on != board { throw elsewhere(written, on: on, board: board) }
             return (id, on)
         }
-        let (title, names) = try fold(written)
-        switch names.shape(called: title, on: board) {
+        let name = try Self.name(written)
+        let (said, found): (String, FileNames.Found)
+        if case .path(let path)? = name {
+            let (names, folded) = try fold(path)
+            (said, found) = (folded.written, names.shape(path: folded, on: board))
+        } else {
+            let (title, names) = try fold(name?.title ?? written)
+            (said, found) = (quoted(title), names.shape(called: title, on: board))
+        }
+        switch found {
         case .shape(let id, on: let on):
             return (id, on)
         case .none(let like):
@@ -212,13 +220,37 @@ private final class CaptureLookup {
             let guess: String? = like.isEmpty ? nil : "did you mean \(oneOf(like.prefix(3).map(quoted)))?"
             let idHint: String? = written.first == ShapeName.idMark
                 ? "an id is 32 hex digits in groups of 8, 4, 4, 4 and 12 after the #, as a query's row gives it" : nil
-            throw AutomationError("there's no shape called \(quoted(title))\(here)", reason: ScriptError.Reason.unknownTitle.rawValue,
+            throw AutomationError("there's no shape called \(said)\(here)", reason: ScriptError.Reason.unknownTitle.rawValue,
                                   hint: idHint ?? guess ?? "\(RPC.commandName) query '[title]' lists the file's titles")
         case .elsewhere(let other):
-            throw elsewhere(quoted(title), on: other, board: board ?? other)
+            throw elsewhere(said, on: other, board: board ?? other)
         case .ambiguous(let message, let hint):
-            throw AutomationError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: "\(hint), or name the shape by its #id")
+            throw AutomationError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: hint)
         }
+    }
+
+    /// The name `written` is when it is spelled as a script spells one (a quoted title, `#<id> > …`, a path); nil for a bare title.
+    /// A name that isn't one is refused with the parser's words.
+    private static func name(_ written: String) throws(AutomationError) -> ShapeName? {
+        guard ShapeName.isScriptSpelling(written) else { return nil }
+        do throws(ScriptError) {
+            return try ShapeName(parsing: written)
+        } catch {
+            throw AutomationError(error.message, reason: error.reason == .syntax ? "invalid_params" : error.reason.rawValue, hint: error.hint,
+                                  invalidParams: error.reason == .syntax)
+        }
+    }
+
+    /// A path folded as the plugin that names shapes folds one, and the file's names to look it up in.
+    private func fold(_ path: ShapePath) throws(AutomationError) -> (FileNames, ShapePath) {
+        guard let naming = editor.registry.drawNaming else {
+            throw AutomationError("nothing here gives shapes names, so none can be found by its path", reason: ScriptError.Reason.noNames.rawValue,
+                                  hint: "name shapes by their #id, which a query's row gives")
+        }
+        let read = names ?? FileNames(editor, naming: naming)
+        names = read
+        guard let folded = read.folded(path) else { throw invalidParams("a title can't be blank") }
+        return (read, folded)
     }
 
     /// The board the shape `written` names holds (a subboard's).
@@ -234,18 +266,26 @@ private final class CaptureLookup {
             }
             return BoardID(owner: id)
         }
-        let (title, names) = try fold(written)
-        switch names.container(called: title, boards: true) {
+        let name = try Self.name(written)
+        let said: String, container: FileNames.Container
+        if case .path(let path)? = name {
+            let (names, folded) = try fold(path)
+            (said, container) = (folded.written, names.container(path: folded, boards: true, board: editor.board))
+        } else {
+            let (title, names) = try fold(name?.title ?? written)
+            (said, container) = (quoted(title), names.container(called: title, boards: true))
+        }
+        switch container {
         case .board(let board), .shape(_, on: let board):       // (never a frame, with boards alone)
             return board
         case .none:
-            throw AutomationError("there's no shape called \(quoted(title))", reason: ScriptError.Reason.unknownTitle.rawValue,
+            throw AutomationError("there's no shape called \(said)", reason: ScriptError.Reason.unknownTitle.rawValue,
                                   hint: "\(canvas) query 'subboard' lists the subboards, every board's")
         case .holdsNone(let record):
-            throw holdsNoBoard(quoted(title), record)
-        case .ambiguous(let boards):
-            throw AutomationError("\(boards.count) shapes that hold boards are called \(quoted(title))", reason: ScriptError.Reason.ambiguousTitle.rawValue,
-                                  hint: "name the subboard by its #id, or ask the user to rename one")
+            throw holdsNoBoard(said, record)
+        case .ambiguous(let boards, let listing, let hint):
+            throw AutomationError("\(boards.count) shapes that hold boards are called \(said): \(listing)", reason: ScriptError.Reason.ambiguousTitle.rawValue,
+                                  hint: hint)
         }
     }
 

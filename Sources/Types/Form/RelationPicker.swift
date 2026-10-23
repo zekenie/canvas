@@ -44,8 +44,9 @@ public final class RelationPicker: NotePicking {
     /// An open side's, made for the commit: the notes the row names already, the verdicts on a pick, and what each note
     /// asked about was answered (can it be picked, and is it no type).
     private var open: (shown: Set<ShapeID>, verdicts: FarVerdicts, admitted: [ShapeID: Bool])?
-    /// The last typed query and the notes it matched, while that was every one it matched (fewer than a list holds).
-    private var narrowed: (query: String, ids: [ShapeID])?
+    /// The last typed query and the notes it matched, while that was every one it matched (fewer than a list holds), and how
+    /// many words it had.
+    private var narrowed: (query: String, ids: [ShapeID], words: Int)?
     /// How many notes the last ranking read: what narrowing saves, for the tests and the benchmark.
     public private(set) var lastRanked = 0
 
@@ -72,10 +73,11 @@ public final class RelationPicker: NotePicking {
         }
         let candidates: MentionCandidates
         if let instances {
-            // A longer query matches among what the shorter one did, when that was all of it.
+            // A longer query matches among what the shorter one did, when that was all of it and the two have as many
+            // words: a word more also names a container (`alpha` matches no Checkout, `alpha c` the one in Alpha).
             var among = instances
             var ranked: MentionCandidates?
-            if Self.ranks(text), let previous, text.hasPrefix(previous.query) {
+            if Self.ranks(text), let previous, text.hasPrefix(previous.query), MentionMatcher.words(in: text) == previous.words {
                 among = previous.ids
                 let found = mentions.candidates(matching: text, in: AnyMentionable.self, for: owner, among: among, listingUnnamed: true)
                 // A query the matcher forgave a typo in (its second pass, which reads every label) is ranked again over the whole
@@ -93,7 +95,9 @@ public final class RelationPicker: NotePicking {
             lastRanked = kinds.count
         }
         narrowed = nil
-        if Self.ranks(text), candidates.matches.count < MentionRanking.maxMatches { narrowed = (text, candidates.matches.map(\.id)) }
+        if Self.ranks(text), candidates.matches.count < MentionRanking.maxMatches {
+            narrowed = (text, candidates.matches.map(\.id), candidates.words)
+        }
         choices = mentions.choices(candidates.all)
         if choices.isEmpty {
             list.setRows([.empty(emptyWords(for: text))])

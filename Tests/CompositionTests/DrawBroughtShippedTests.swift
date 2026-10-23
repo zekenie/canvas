@@ -7,6 +7,7 @@ import CoreGraphics
 import Foundation
 import Mentions
 import StickyNotes
+import Subboards
 import TestKit
 import Titles
 import Types
@@ -105,7 +106,7 @@ edge "Ann" -> "Acme" is: "Employment"
         expectEqual(shownOfAnn.count, 1)
         expectEqual(said.first?["message"]?.stringValue, shownOfAnn.first.map { "\"Ann\": " + $0.dropFirst("error level: ".count) }, "the run's words are the board's")
     },
-    test("a note renamed to the title of a note on another board: both share it now, and the run warns of the one it did not write too") {
+    test("a note renamed to the title of a note on the board of another subboard of its subboard's title: both share a path now, and the run warns of the one it did not write too") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -118,20 +119,31 @@ edge "Ann" -> "Acme" is: "Employment"
             expectEqual(result.status, 0, result.error)
             return try JSON(text: result.output)
         }
-        _ = try run(#"""
-        sticky-note "Cart" text: "The cart"
-        subboard "Area" right of "Cart"
-        """#)
-        _ = try run(#"sticky-note "Billing" in "Area" text: "The bills""#)
+        // Two subboards called Area, which `canvas draw` can't tell apart (it refuses a title two shapes have), so put
+        // there through the editor: Cart on the first's board, Billing on the second's. Area › Cart and Area › Billing.
+        let editor = board.editor
+        var first = ShapeRecord(Subboard(frame: CGRect(x: 0, y: 0, width: 240, height: 160))), second = ShapeRecord(Subboard(frame: CGRect(x: 400, y: 0, width: 240, height: 160)))
+        first[TitleProperty.self] = "Area"
+        second[TitleProperty.self] = "Area"
+        editor.transact("Add") { transaction in
+            transaction.insert(first)
+            transaction.insert(second)
+        }
+        for (owner, title) in [(first.id, "Cart"), (second.id, "Billing")] {
+            var note = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: MentionText(plain: "The \(title.lowercased())")))
+            note[TitleProperty.self] = title
+            editor.transact(on: BoardID(owner: owner), "Add") { $0.insert(note) }
+        }
         let renamed = try run(#"sticky-note "Cart" title: "Billing""#)
         expectEqual((renamed["changes"]?.arrayValue ?? []).map { $0["did"] }, ["renamed"])
         let said = renamed["warnings"]?.arrayValue ?? []
-        expectEqual(said.map { $0["message"] }, [#""Cart": “Billing” is another shape’s title too."#, #""Billing": “Billing” is another shape’s title too."#],
-                    "the note the run renamed, by its statement, and the note on Area's board, which it did not write")
+        expectEqual(said.map { $0["message"] }, [#""Cart": “Area › Billing” is another shape’s path too."#, #""Billing": “Area › Billing” is another shape’s path too."#],
+                    "the note the run renamed, by its statement, and the note on the other Area's board, which it did not write")
         expectEqual(said.map { $0["line"] }, [1, 1])
         expectEqual(said.map { $0["severity"] }, ["warning", "warning"])
         expectEqual(said.map { $0["attribute"] }, ["title", "title"])
-        expectEqual(try shown(board, "Billing"), ["warning title: “Billing” is another shape’s title too."], "the board says it of the one it shows")
+        expect(editor.showBoard(BoardID(owner: first.id)))
+        expectEqual(try shown(board, "Billing"), ["warning title: “Area › Billing” is another shape’s path too."], "the board says it of the one it shows")
     },
     test("a note deleted that another note mentions: the mention shows as missing and is no issue, so the run says nothing of the note that mentions it") {
         let pasteboard = NSPasteboard.withUniqueName()

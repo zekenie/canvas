@@ -481,6 +481,11 @@ public final class TopologyIndex {
     /// can't show.
     public func ancestors(of id: ShapeID) -> [ShapeID] { containment().ancestors(of: id) }
 
+    /// Every shape inside `id`, at any depth, in file order: what it holds and its board's shapes,
+    /// each followed at once by what's inside it. None for a shape that holds nothing and owns no
+    /// board the editor can show. O(what's inside it).
+    public func descendants(of id: ShapeID) -> [ShapeID] { containment().descendants(of: id) }
+
     /// Whether `a` is inside `b`, at any depth (in it, on its board, or below either); never inside
     /// itself. O(`a`'s depth).
     public func isInside(_ a: ShapeID, _ b: ShapeID) -> Bool { containment().isInside(a, b) }

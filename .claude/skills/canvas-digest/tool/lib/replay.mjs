@@ -1,30 +1,35 @@
 // What the real runs did against the plan, read from their saved results (the driver's `verify`): every run replayed through `compare`
 // in order, every planned shape and pill counted, every planned arrow found, and the titles the file now holds checked when it is told them.
-import { compareRun } from './compare.mjs';
+import { compareRun, runStatements } from './compare.mjs';
+import { placesOf, placeKey, shapeKey } from './places.mjs';
+import { label } from './util.mjs';
 
 const ARROW_DID = new Set(['connected', 'reconnected', 'unchanged']);
 const arrowKey = (from, to, is) => [from, to, [...(is || [])].sort().join('\u0001')].join('\u0000');   // a list of types is a set
 
-/** results: {runName: the real run's JSON}. titles: the file's titles after the runs (an array), or null. Returns {ok, lines, ...counts}. */
-export function replay(plan, results, titles) {
+/**
+ * results: {runName: the real run's JSON}. places: what the file holds after the runs, as `canvas query` says it (an array of {title, inside}: the containers
+ * a shape is in, outermost first), or null. statements: the plan's beside file, which says what each line of each run is. Returns {ok, lines, ...counts}.
+ */
+export function replay(plan, results, places, statements) {
   const problems = [], others = [];
   const out = { runs: 0, shapes: 0, shapesWithin1: 0, pills: 0, pillsWithin1: 0, worstShape: 0, worstPill: 0, arrows: 0, arrowsPlanned: 0, described: 0, warnings: 0, outOfView: 0, restated: 0, typed: 0 };
   const planned = new Set();
   const typedPlanned = new Map();   // the arrows of a relationship type the plan draws (an arrow of a pair is told from the others by its `is`)
   const typedLanded = new Set();
-  const described = plan.described || {};   // run -> the subboards it writes a description of
   out.describedPlanned = 0;
-  for (const names of Object.values(described)) out.describedPlanned += names.length;
+  for (const names of Object.values(plan.described || {})) out.describedPlanned += names.length;   // run -> the subboards it writes a description of
   for (const b of plan.boards) {
     out.shapes += b.shapes.length; out.pills += b.pills.length; out.arrowsPlanned += b.edges.length;
-    for (const s of b.shapes) planned.add(s.title);
-    for (const e of b.edges) if (e.is && e.is.length) typedPlanned.set(arrowKey(e.from, e.to, e.is), `${e.from} -> ${e.to} is ${e.is.join(', ')}`);
+    for (const s of b.shapes) planned.add(shapeKey(s));
+    for (const e of b.edges) if (e.is && e.is.length) typedPlanned.set(arrowKey(e.from, e.to, e.is), `${label(e.from)} -> ${label(e.to)} is ${e.is.join(', ')}`);
   }
   for (const name of plan.runs) {
     const result = results[name];
     if (!result) { problems.push(`${name}: no result was saved (the run did not happen)`); continue; }
     out.runs++;
-    const cmp = compareRun(plan, result, name);
+    const cmp = compareRun(plan, result, name, statements);
+    const run = runStatements(statements, name);
     out.shapesWithin1 += cmp.shapesWithin1; out.pillsWithin1 += cmp.pillsWithin1; out.described += cmp.described;
     out.worstShape = Math.max(out.worstShape, cmp.worstShape); out.worstPill = Math.max(out.worstPill, cmp.worstPill);
     out.warnings += cmp.warnings.push + cmp.warnings.order + cmp.warnings.other; out.outOfView += cmp.warnings.view; out.typed += cmp.warnings.typed;
@@ -32,8 +37,15 @@ export function replay(plan, results, titles) {
     for (const m of cmp.warningMessages) problems.push(`${name}: ${m}`);
     for (const m of cmp.otherMessages) others.push(`${name}: ${m}`);
     for (const c of result.changes || []) {
-      if (c.kind === 'arrow' && ARROW_DID.has(c.did)) { out.arrows++; if (c.is && c.is.length) typedLanded.add(arrowKey(c.from, c.to, c.is)); }
-      if (planned.has(c.title) && c.did !== 'created' && !(described[name] || []).includes(c.title)) out.restated++;   // compare names each one (a digest never restates a shape, but to describe a subboard)
+      const st = (c.line != null && run.lines[c.line - 1]) || {};
+      if (c.kind === 'arrow' && ARROW_DID.has(c.did)) {
+        out.arrows++;
+        // the arrow is told by the statement that drew it: a result's `from` and `to` are titles, which more than one shape may have
+        // (its types are as the app says them: a row of an arrow of a relationship type says `is`)
+        const e = st.edge || { from: c.from, to: c.to };
+        if (c.is && c.is.length) typedLanded.add(arrowKey(e.from, e.to, c.is));
+      }
+      if (st.shape != null && planned.has(st.shape) && c.did !== 'created') out.restated++;   // compare names each one (a digest never restates a shape, but to describe a subboard: that line says describe)
     }
   }
   if (out.shapesWithin1 !== out.shapes && !problems.length) problems.push(`${out.shapes - out.shapesWithin1} of ${out.shapes} shapes are not within 1 unit of the plan`);
@@ -41,10 +53,11 @@ export function replay(plan, results, titles) {
   if (out.described !== out.describedPlanned) problems.push(`${out.described} descriptions landed, ${out.describedPlanned} were planned`);
   const typedMissing = [...typedPlanned].filter(([k]) => !typedLanded.has(k)).map(([, name]) => name);
   if (typedMissing.length) problems.push(`not drawn as the relationship the plan says: ${typedMissing.slice(0, 10).join('; ')}${typedMissing.length > 10 ? ` and ${typedMissing.length - 10} more` : ''}`);
-  if (titles) {
-    const have = new Set(titles);
-    const missing = [...planned].filter((t) => !have.has(t));
-    if (missing.length) problems.push(`not in the file: ${missing.slice(0, 10).join(', ')}${missing.length > 10 ? ` and ${missing.length - 10} more` : ''}`);
+  if (places) {
+    const have = new Set(places.map((p) => placeKey(p.inside || [], p.title)));
+    const where = placesOf(plan);
+    const missing = [...planned].filter((k) => !have.has(where.place(k)));
+    if (missing.length) problems.push(`not in the file: ${missing.slice(0, 10).map(label).join(', ')}${missing.length > 10 ? ` and ${missing.length - 10} more` : ''}`);
   }
   const ok = problems.length === 0;
   const lines = [ok ? 'verify ok' : 'verify FAILED'];
@@ -67,11 +80,17 @@ export function extract(what, json) {
     if (json.count != null && json.count > rows.length) throw new Error(`the file holds ${json.count} titled shapes and one query lists only ${rows.length}, so a title the digest shares with one of them could be missed: use a smaller file, or a new file (--new-file)`);
     return rows.map((r) => r.title).filter((t) => typeof t === 'string');
   }
+  // where each shape is: its title and the containers it is in, outermost first (a row of a query says it as `inside`), and the board it is on
+  if (what === 'places' || what === 'root-places') {
+    const rows = json.rows || [];
+    if (json.count != null && json.count > rows.length) throw new Error(`the file holds ${json.count} titled shapes and one query lists only ${rows.length}, so a shape of the drawing could be missed: use a smaller file, or a new file (--new-file)`);
+    return rows.filter((r) => typeof r.title === 'string' && (what === 'places' || r.board === 'root')).map((r) => ({ title: r.title, inside: Array.isArray(r.inside) ? r.inside : [], board: r.board }));
+  }
   // the titles on the file's root board (each row of a query says its board)
   if (what === 'root-titles') return (json.rows || []).filter((r) => r.board === 'root').map((r) => r.title).filter((t) => typeof t === 'string');
   if (what === 'errors') return (json.errors || []).length;
   if (what === 'kinds') return (Array.isArray(json) ? json : []).map((k) => k.kind).filter((k) => typeof k === 'string');
   if (what === 'id') { if (json.id == null) throw new Error('no id in the answer'); return json.id; }
   if (what === 'count') return json.count == null ? (json.rows || []).length : json.count;
-  throw new Error(`extract: ${what} is not titles, root-titles, kinds, id, count or errors`);
+  throw new Error(`extract: ${what} is not titles, root-titles, places, root-places, kinds, id, count or errors`);
 }

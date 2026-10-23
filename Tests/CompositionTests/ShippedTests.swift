@@ -143,7 +143,7 @@ import Validation
         validation-details   DetailStatuses in Issues after Style → every shape
         validation-contents  ContentsMarks → every shape
         mention-validation   ValidationRules → every shape naming shapes
-        title-validation     service TitleIndex · ValidationRules → every shape with a title
+        path-validation      service PathIndex · ValidationRules → every shape with a title
         grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
         clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
         locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock → every shape holding locked
@@ -255,7 +255,7 @@ import Validation
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let long = String(repeating: "Groceries ", count: 9)       // 90 characters
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: long)
-        // Another title: two shapes of one title are warned about that too (TitleValidationPlugin).
+        // Another title: two shapes of one path are warned about that too (PathValidationPlugin).
         let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: String(repeating: "Errands!! ", count: 9))
         let warning = ValidationIssue.warning("Title is 90 characters long, and should be at most 80.", field: "title")
         expectEqual(editor.validation?.result(for: note)?.issues, [warning])
@@ -276,7 +276,7 @@ import Validation
         editor.transact { $0.update(note) { $0[TitleProperty.self] = "Groceries" } }
         expectEqual(editor.validation?.result(for: note), nil)
     },
-    test("a note and a subboard of one title each warn (TitleValidationPlugin): a line in Issues, an orange dot; renamed apart, neither") {
+    test("a note and a subboard of one title, in no container, each warn (PathValidationPlugin): a line in Issues, an orange dot; renamed apart, neither") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let note = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Milk"), title: "Kitchen")
         let subboard = editor.add(Subboard(frame: CGRect(x: 400, y: 100, width: 240, height: 160)), title: "Kitchen")

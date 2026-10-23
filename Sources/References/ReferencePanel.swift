@@ -181,17 +181,17 @@ public struct ReferenceMatchRow: Equatable, Identifiable {
     public var symbol: String
     public var tint: NSColor?
     public var name: String
-    /// Its board's name, when that isn't the board shown.
-    public var board: String?
+    /// Where it is, when that isn't the board shown: the containers it is inside, else its board's name.
+    public var place: String?
     /// A first-match reference's rows after the first: what All would add.
     public var dimmed: Bool
 
-    public init(id: ShapeID, symbol: String, tint: NSColor?, name: String, board: String?, dimmed: Bool) {
+    public init(id: ShapeID, symbol: String, tint: NSColor?, name: String, place: String?, dimmed: Bool) {
         self.id = id
         self.symbol = symbol
         self.tint = tint
         self.name = name
-        self.board = board
+        self.place = place
         self.dimmed = dimmed
     }
 }
@@ -203,8 +203,7 @@ extension ReferenceState {
         var rows: [ReferenceMatchRow] = []
         for (index, match) in found.ids.prefix(ReferenceStyle.matchRows).enumerated() {
             guard let record = editor.shape(inFile: match), let appearance = editor.mentionAppearance(of: record) else { continue }
-            let board = editor.file.board(containing: match).flatMap { $0 == editor.board ? nil : editor.name(of: $0, root: ReferenceStyle.rootBoardName) }
-            rows.append(ReferenceMatchRow(id: match, symbol: appearance.systemImage, tint: appearance.tint, name: appearance.label, board: board,
+            rows.append(ReferenceMatchRow(id: match, symbol: appearance.systemImage, tint: appearance.tint, name: appearance.label, place: place(ofShape: match),
                                           dimmed: !found.all && index > 0))
         }
         return (rows, found.count - rows.count)
@@ -237,7 +236,7 @@ struct ReferenceMatchesView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(rows) { row in
                     Button { state.follow(match: row.id) } label: {
-                        DetailShapeRow(symbol: row.symbol, tint: row.tint, name: row.name, detail: row.board, dimmed: row.dimmed)
+                        DetailShapeRow(symbol: row.symbol, tint: row.tint, name: row.name, detail: row.place, dimmed: row.dimmed)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.primary)

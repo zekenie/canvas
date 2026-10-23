@@ -72,6 +72,15 @@ SERVICES_FRAME, TABLES_FRAME, TYPES_FRAME = ROOT_FRAMES
 # Why: a service is read from what starts work down to what does it (round 1).
 SERVICE_FRAMES = ("Workflows", "Activities", "Lambdas")
 
+# Rule "names-per-container": a title is given out once in the container that holds the shape, so two services may each have a
+# workflow called `syncWorkflow`, and every service's board a frame `Workflows`. The digest tells such nodes apart by an id that
+# `Digest.finish` gives (the title, then the containers it is in) and writes wherever one is named, so the lens names a node by
+# the node `add` returned and never by a title it shares. Only the types' titles are unique across the digest, among the types,
+# since `is` names a type by its title. Why: services repeat names as folders do, and a name reworded to be unique in the whole
+# file (`syncWorkflow (billing)`) is one nobody wrote (round 3: "I need multiple nodes to have the same name without a validation
+# error. Of course, they will be nested in frames that are unique, so their global path will be unique."). The code: the `within`
+# of each claim in `digest`, and `type=True` on the types'.
+
 # Rule "runs-are-arrows": a workflow's arrows to the activities it runs are drawn as arrows, never as pills beside it. Why:
 # a workflow's steps read as a flow only when the lines are there (round 2: the first drawing showed checkout's three steps
 # as pills).
@@ -297,62 +306,55 @@ def digest(scan, repo):
             line = next(l for n, l in code.functions(path) if n == export)
             found[module]["lambdas"].append((path, export, line, name, handler, events(functions[name])))
 
-    # the titles, the ones queries name first: tables, then the types, then what is in the services, then the boards
-    table_title = {t: d.claim(f"the table {t}", t, f"{t} (table)") for t in tables}
-    type_title = {t: d.claim(f"the type {t}", t, f"{t} (type)") for t in list(TYPES) + list(RELATIONSHIPS)}
-    titles = {}
-    for m in services:
-        short = m.rpartition("/")[2]
-        for kind in ("workflows", "activities"):
-            for p, n, _ in found[m][kind]:
-                titles[(m, kind, n)] = d.claim(f"the {kind[:-1]} {n} of {m}", n, f"{n} ({short})")
-        for p, export, _, name, _, _ in found[m]["lambdas"]:
-            titles[(m, "lambdas", name)] = d.claim(f"the Lambda {name} of {m}", name, f"{name} ({short})")
-    card = {m: d.claim(f"the service {m}", m, most=74) for m in services}
-    frames = {f: d.claim(f"the frame {f}", f, f"{f} (root)") for f in ROOT_FRAMES}
-
     # the root: the services, the tables and the types, as rows in that order
-    for rank, f in enumerate(ROOT_FRAMES):
-        d.frame(frames[f], rank=rank)
+    root = {f: d.frame(d.claim(f"the frame {f}", f), rank=rank) for rank, f in enumerate(ROOT_FRAMES)}
+    # the types' titles first: `is` names a type by its title, so each is unique among the types (and only there)
+    type_title = {t: d.claim(f"the type {t}", t, within=root[TYPES_FRAME], type=True) for t in list(TYPES) + list(RELATIONSHIPS)}
+    card = {}
     for m in services:
         f = found[m]
         said = [f"{len(f[k])} {k if k != 'lambdas' else 'Lambdas'}" for k in ("workflows", "activities", "lambdas") if f[k]]
         text = as_text(f"{m}: " + (", ".join(said) or "nothing found") + (f".\nIts worker runs on the task queue {f['queue']}." if f["queue"] else "."))
-        d.subboard(card[m], frames[SERVICES_FRAME], text, source=scan.modules[m]["path"])
+        card[m] = d.subboard(d.claim(f"the service {m}", m, most=74, within=root[SERVICES_FRAME]), root[SERVICES_FRAME], text, source=scan.modules[m]["path"])
+    table_note = {}
     for t, table in tables.items():
-        d.note(table_title[t], frames[TABLES_FRAME], as_text(f"The {t} table, as the migrations leave it."),
-               **({"source": made_by[t][0]} if made_by[t] else {}),
-               **typed("Table", type_title, {"name": t, "columns": [column_text(c) for c in table.columns], "migrations": made_by[t]}))
+        table_note[t] = d.note(d.claim(f"the table {t}", t, within=root[TABLES_FRAME]), root[TABLES_FRAME], as_text(f"The {t} table, as the migrations leave it."),
+                               **({"source": made_by[t][0]} if made_by[t] else {}),
+                               **typed("Table", type_title, {"name": t, "columns": [column_text(c) for c in table.columns], "migrations": made_by[t]}))
+    type_note = {}
     for t, (words, properties) in TYPES.items():
-        d.note(type_title[t], frames[TYPES_FRAME], words, schema=schema(properties))
+        type_note[t] = d.note(type_title[t], root[TYPES_FRAME], words, schema=schema(properties))
     for t, (words, properties) in RELATIONSHIPS.items():
-        d.note(type_title[t], frames[TYPES_FRAME], words, schema=schema(properties), relationship=True)
+        type_note[t] = d.note(type_title[t], root[TYPES_FRAME], words, schema=schema(properties), relationship=True)
     for a, b, row, rule in ENDS:
-        d.edge(type_title[a], type_title[b], text=row, **({"endRule": rule} if rule else {}))
+        d.edge(type_note[a], type_note[b], text=row, **({"endRule": rule} if rule else {}))
 
     # a service's board: its workflows, activities and Lambdas, each a note of its type in a frame of its own
+    note_of = {}                                # (service, "workflows" | "activities" | "lambdas", name): its note
     for m in services:
-        f, short = found[m], m.rpartition("/")[2]
+        f = found[m]
         held = {"Workflows": f["workflows"], "Activities": f["activities"], "Lambdas": f["lambdas"]}
         frame = {}
         for rank, name in enumerate(n for n in SERVICE_FRAMES if held[n]):
-            frame[name] = d.claim(f"the frame {name} of {m}", name, f"{name} ({short})")
-            d.frame(frame[name], card[m], rank=rank)
+            frame[name] = d.frame(d.claim(f"the frame {name} of {m}", name, within=card[m]), card[m], rank=rank)
         for p, n, line in f["workflows"]:
-            d.note(titles[(m, "workflows", n)], frame["Workflows"], as_text(code.doc(p, line)), source={"path": p, "line": line},
-                   **typed("Workflow", type_title, {"name": n, "file": p, "taskQueue": f["queue"]}))
+            note_of[(m, "workflows", n)] = d.note(d.claim(f"the workflow {n} of {m}", n, within=frame["Workflows"]), frame["Workflows"],
+                                                  as_text(code.doc(p, line)), source={"path": p, "line": line},
+                                                  **typed("Workflow", type_title, {"name": n, "file": p, "taskQueue": f["queue"]}))
         for p, n, line in f["activities"]:
-            d.note(titles[(m, "activities", n)], frame["Activities"], as_text(code.doc(p, line)), source={"path": p, "line": line},
-                   **typed("Activity", type_title, {"name": n, "file": p}))
+            note_of[(m, "activities", n)] = d.note(d.claim(f"the activity {n} of {m}", n, within=frame["Activities"]), frame["Activities"],
+                                                   as_text(code.doc(p, line)), source={"path": p, "line": line},
+                                                   **typed("Activity", type_title, {"name": n, "file": p}))
         for p, export, line, name, handler, said in f["lambdas"]:
-            d.note(titles[(m, "lambdas", name)], frame["Lambdas"], as_text(code.doc(p, line)), source={"path": p, "line": line},
-                   **typed("Lambda", type_title, {"name": name, "handler": handler, "events": said}))
+            note_of[(m, "lambdas", name)] = d.note(d.claim(f"the Lambda {name} of {m}", name, within=frame["Lambdas"]), frame["Lambdas"],
+                                                   as_text(code.doc(p, line)), source={"path": p, "line": line},
+                                                   **typed("Lambda", type_title, {"name": name, "handler": handler, "events": said}))
 
     # the relationships: a workflow runs the activities it calls, in the order it first calls them; an activity or a Lambda
     # reads and writes the tables its SQL, and its callees', touch
     for m in services:
         f = found[m]
-        activity = {n: titles[(m, "activities", n)] for _, n, _ in f["activities"]}
+        activity = {n: note_of[(m, "activities", n)] for _, n, _ in f["activities"]}
         ran = {}                                # a workflow file's path: how many activities its workflows run
         for p, n, _ in f["workflows"]:
             text = code.text(p)
@@ -377,18 +379,18 @@ def digest(scan, repo):
                     d.warn(f"{n} ({p}) runs {name}, which is no activity of {m}: passed over")
                     continue
                 step += 1
-                d.edge(titles[(m, "workflows", n)], activity[name], direct=RUNS_DIRECT, **{"is": type_title["runs"], "fieldValues": {"step": step}})
+                d.edge(note_of[(m, "workflows", n)], activity[name], direct=RUNS_DIRECT, **{"is": type_title["runs"], "fieldValues": {"step": step}})
             ran[p] = ran.get(p, 0) + step
         for p in sorted(ran):
             if not ran[p] and PROXY_MENTION.search(code.text(p)):
                 d.warn(f"{p} mentions proxyActivities and none of its workflows runs an activity of {m}: a form this lens doesn't read, or no calls")
-        callers = [(titles[(m, "activities", n)], p, n) for p, n, _ in f["activities"]]
-        callers += [(titles[(m, "lambdas", name)], p, export) for p, export, _, name, _, _ in f["lambdas"]]
-        for title, p, n in callers:
+        callers = [(note_of[(m, "activities", n)], p, n) for p, n, _ in f["activities"]]
+        callers += [(note_of[(m, "lambdas", name)], p, export) for p, export, _, name, _, _ in f["lambdas"]]
+        for note, p, n in callers:
             reads, writes = code.touches(p, n, tables, d.warn)
             for how, touched in (("reads", reads), ("writes", writes)):
                 for t, via in touched.items():
-                    d.edge(title, table_title[t], **{"is": type_title[how], "fieldValues": {"via": via}})
+                    d.edge(note, table_note[t], **{"is": type_title[how], "fieldValues": {"via": via}})
     return d.finish()
 
 

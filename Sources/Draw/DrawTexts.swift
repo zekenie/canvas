@@ -36,6 +36,8 @@ final class DrawTextLookup {
     /// By title, folded: each title of a shape statement, and each title a statement renames a
     /// shape to.
     private let own: [String: Own]
+    /// The titles the script gives to more than one shape it draws or restates.
+    private let shared: Set<String>
     /// The titles of `own`, in script order.
     private let ownTitles: [String]
     /// Titles of statements that couldn't be resolved, whose texts say nothing more of them.
@@ -47,7 +49,7 @@ final class DrawTextLookup {
     /// The boards the deletes take, with the boards under them: read once, when a name is on one.
     private var taken: Set<BoardID>?
 
-    init(editor: CanvasEditor, target: BoardReading, naming: DrawNaming?, items: [ShapeItem], itemByTitle: [String: Int],
+    init(editor: CanvasEditor, target: BoardReading, naming: DrawNaming?, items: [ShapeItem], itemsByTitle: [String: [Int]],
          unresolved: Set<String>, deleted: Set<ShapeID>, fileNames: FileNames?) {
         self.editor = editor
         self.target = target
@@ -66,9 +68,14 @@ final class DrawTextLookup {
                 renamed[index] = new
             }
         }
-        var own: [String: Own] = [:], titles: [String] = []
+        var own: [String: Own] = [:], titles: [String] = [], shared: Set<String> = []
         for index in items.indices {
-            guard let title = items[index].title, itemByTitle[title] == index else { continue }
+            guard let title = items[index].title, let named = itemsByTitle[title], named.contains(index) else { continue }
+            // A title the script gives to shapes in more than one container is no title a text can name.
+            guard named.count == 1 else {
+                shared.insert(title)
+                continue
+            }
             own[title] = Own(id: items[index].record.id, record: items[index].record, title: renamed[index] ?? title, writes: Set(items[index].shape.attributes.map(\.key)))
             titles.append(title)
         }
@@ -77,6 +84,7 @@ final class DrawTextLookup {
             titles.append(new)
         }
         self.own = own
+        self.shared = shared
         ownTitles = titles
     }
 
@@ -105,6 +113,10 @@ final class DrawTextLookup {
         }
         // What's called that and isn't admitted: the first of them, by where it is, and why not.
         var refused: (kind: ShapeKind, why: String)?
+        if shared.contains(title) {
+            throw DrawError("\(quoted(title)) is the title of more than one shape this script draws", reason: ScriptError.Reason.ambiguousTitle.rawValue,
+                            hint: FileNames.textHint)
+        }
         if let entry = own[title] {
             guard let why = admits(entry.record, entry.writes) else { return DrawTextShape(id: entry.id, title: entry.title) }
             refused = (entry.record.kind, why)
@@ -134,8 +146,8 @@ final class DrawTextLookup {
             switch names.beyond(title, among: live.filter { $0.board != target.board }, admitting: admitted, shownAs: "the board the window shows") {
             case .shape(let found):
                 return DrawTextShape(id: found.id, title: title)
-            case .ambiguous(let message):
-                throw DrawError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.oneEach)
+            case .ambiguous(let message, _):
+                throw DrawError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.textHint)
             case .none:
                 break
             }
@@ -157,13 +169,15 @@ final class DrawTextLookup {
     /// Several shapes on one board are called one title: each with its kind and where it is.
     private func several(_ places: [Place], _ title: String, on board: String) -> DrawError {
         let each = places.compactMap { place in
-            editor.file.record(place.id).map { record in
+            editor.file.record(place.id).map { record -> String in
                 let bounds = target.shapes.geometry(of: record.id)?.bounds ?? record.box
-                return "\(indefinite(record.kind)) at \(point(bounds.map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero))"
+                let said = Drawing.path(of: record.id, in: editor, naming: naming!)?.written
+                    ?? "at \(point(bounds.map { CGPoint(x: $0.midX, y: $0.midY) } ?? .zero))"
+                return "\(indefinite(record.kind)) \(said)"
             }
         }
         return DrawError("\(board) has \(places.count) shapes called \(quoted(title)): \(listed(each))",
-                         reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.oneEach)
+                         reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.textHint)
     }
 
     // MARK: What it reads

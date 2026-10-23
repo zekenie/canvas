@@ -1,11 +1,16 @@
+import Adornments
 import AppKit
+import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import ContextMenus
 import CoreGraphics
 import Selection
+import SwiftUI
 import TableOfContents
 import TestKit
+import Titles
+import Topology
 
 // Move To ▸ in the selection's menu, read with a secondary click and chosen as a click would: nothing goes on
 // screen. It offers what a row dropped on that frame or subboard would be taken to (`Drop`), and moves there
@@ -19,6 +24,23 @@ import TestKit
     h.editor.selectedShapeIDs = ids ?? [id]
     let frame = h.frame(of: id) ?? .zero
     return try require(h.secondaryClick(at: CGPoint(x: frame.midX, y: frame.midY)))
+}
+
+/// A harness on `file` whose corrals and pockets have titles (which name their rows too), with the containment tree a path
+/// is read from: what tells places called alike apart.
+@MainActor private func titledHarness(_ file: CanvasFile) throws -> EditorHarness {
+    let titles = Contributor(id: "fixture-titles") { registrar in
+        registrar.title(Corral.self)
+        registrar.title(Pocket.self)
+    }
+    return try EditorHarness(plugins: [SelectionPlugin()] + movingPlugins(log: RefusalLog(), [TopologyPlugin(), AdornmentsPlugin(), TitlesPlugin(), titles]), file: file)
+}
+
+/// `record`, called `title`.
+@MainActor private func titled(_ record: AnyShapeRecord, _ title: String) -> AnyShapeRecord {
+    var record = record
+    record[TitleProperty.self] = title
+    return record
 }
 
 /// The lines of the Move To submenu, indented once, or nil if the menu has none.
@@ -105,5 +127,41 @@ import TestKit
         let s = ShapeID()
         let h = try menuHarness(CanvasFile(root: board(box(s, 0, 0))))
         expectEqual(moveItems(try menu(h, on: s)), nil)
+    },
+    test("a place with no title is called what every path calls it, the placeholder its row shows, not its kind's name") {
+        let s = ShapeID(), p = ShapeID()
+        // A row with no text and a placeholder, as a shipped subboard's is, and the board's placeholder, as Boards keeps it.
+        let placeholders = Contributor(id: "pocket-boards") { registrar in
+            registrar.opensBoard(Pocket.self, placeholder: "Untitled Pocket", systemImage: "folder")
+            registrar.contentsRow(Pocket.self) { _ in ContentsLabel("", placeholder: "Untitled Pocket") }
+        }
+        let h = try EditorHarness(plugins: [SelectionPlugin()] + movingPlugins(log: RefusalLog(), [BoardsPlugin(), placeholders]),
+                                  file: CanvasFile(root: board(box(s, 0, 0), pocket(p, 400, 0)), children: [p: board()]))
+        expectEqual(try require(moveItems(try menu(h, on: s))), ["Untitled Pocket"])
+    },
+    test("places called alike say their path, the frames each is inside, outermost first; places called apart keep their names") {
+        // A frame is called "Pen" and its width.
+        let s = ShapeID(), a = ShapeID(), b = ShapeID(), a1 = ShapeID(), b1 = ShapeID(), solo = ShapeID()
+        let file = CanvasFile(root: board(box(s, 0, 0, size: 60), titled(corral(a, at(1000, 0, 800, 800)), "Pen 800"), titled(corral(b, at(2000, 0, 600, 600)), "Pen 600"),
+                                          titled(corral(a1, at(1100, 100, 300, 300), in: a), "Pen 300"), titled(corral(b1, at(2100, 100, 300, 300), in: b), "Pen 300"),
+                                          titled(corral(solo, at(3000, 0, 400, 400)), "Pen 400")))
+        let h = try titledHarness(file)
+        let items = try require(moveItems(try menu(h, on: s)))
+        expectEqual(items, ["Pen 800 › Pen 300", "Pen 800", "Pen 600 › Pen 300", "Pen 600", "Pen 400"], "the two inside frames are alike; the rest are not, and keep their names")
+        try menu(h, on: s).choose("Move To", items[2])
+        expectEqual(h.editor.holder(of: s), b1, "the one under Pen 600")
+    },
+    test("a frame two subboards deep and the board of the first, called alike, are told apart by their paths") {
+        let first = ShapeID(), second = ShapeID(), s = ShapeID(), frame = ShapeID()
+        let file = CanvasFile(root: board(titled(pocket(first, 400, 0), "Pen")),
+                              children: [first: board(titled(pocket(second, 400, 0), "Pen")),
+                                         second: board(box(s, 0, 0, size: 60), titled(corral(frame, at(300, 0, 500, 500)), "Pen"))])
+        let h = try titledHarness(file)
+        expect(h.editor.showBoard(BoardID(owner: second)))
+        let items = try require(moveItems(try menu(h, on: s)))
+        // The frame, the first pocket's board (named by its owner) and the root: the frame and the first board are "Pen".
+        expectEqual(items, ["Pen › Pen › Pen", "Pen", "Board"], "the frame is in the second pocket, which is on the first's board; the first board's owner is on the root")
+        try menu(h, on: s).choose("Move To", items[1])
+        expect(h.file[BoardID(owner: first)][s] != nil, "the board of the first pocket")
     },
 ])

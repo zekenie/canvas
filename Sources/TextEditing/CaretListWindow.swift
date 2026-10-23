@@ -428,7 +428,7 @@ final class CaretListRowsView: NSView {
         let detailX = row.maxX - TextEditingStyle.caretListTextInset - detailWidth
         let detailHeight = detail.size().height
         detail.draw(with: CGRect(x: detailX, y: row.midY - detailHeight / 2, width: detailWidth, height: detailHeight),
-                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+                    options: item.detailTruncatesHead ? [.usesLineFragmentOrigin] : [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
 
         let room = max(0, detailX - TextEditingStyle.caretListGap - x - trailingWidth - chipPadding)
         let labelWidth = min(ceil(label.size().width), room)
@@ -474,8 +474,10 @@ final class CaretListRowsView: NSView {
     /// An item's detail, its matched characters in semibold and its dimmed ones fainter.
     static func detail(_ item: CaretListItem, color: NSColor) -> NSAttributedString {
         let text = item.detail ?? ""
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = item.detailTruncatesHead ? .byTruncatingHead : .byTruncatingTail
         let string = NSMutableAttributedString(string: text, attributes: [
-            .font: NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize), .foregroundColor: color])
+            .font: NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize), .foregroundColor: color, .paragraphStyle: paragraph])
         let bold = NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize, weight: .semibold)
         for range in item.detailMatched {
             guard let r = characterRange(range, in: text) else { continue }

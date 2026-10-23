@@ -19,10 +19,16 @@ struct ShapeItem {
     /// top-left (`Drawing.contain`).
     var shape: ShapeStatement
     let kind: ShapeKind
-    /// Its title, folded; nil for an untitled shape.
+    /// Its title, folded (the last part of a path); nil for an untitled shape.
     let title: String?
     /// The board shape it restates; nil for a new one.
     let existing: AnyShapeRecord?
+    /// For a shape the statement makes: the frame it goes in, when the statement says (a path, or `in "F"`), nil for the top of
+    /// the board. What tells two new shapes of one title apart (`Drawing.find(_:_:)`).
+    var holderID: ShapeID?
+    /// The path the statement names it by, folded, in a measure (which has no board to read a container from): what tells two new
+    /// shapes of one title apart there.
+    var pathKey: ShapePath?
     /// Its new title, folded (`title: "New"`), when it renames the shape.
     var rename: String?
     /// The shape as the statement leaves it, before it's placed: what the kind's tool places, or
@@ -189,8 +195,9 @@ struct Drawing {
     /// Everything the deletes remove.
     private(set) var deleted: Set<ShapeID> = []
     var items: [ShapeItem] = []
-    /// Each shape statement's title, folded, and its item.
-    private(set) var itemByTitle: [String: Int] = [:]
+    /// Each title of a shape statement, folded, and its items: more than one when the script makes or restates shapes of one
+    /// title in different containers, which a lone title then can't name (the path can).
+    private(set) var itemsByTitle: [String: [Int]] = [:]
     /// The item of each board shape a statement restates, by id (named by its title or its id).
     private(set) var itemByID: [ShapeID: Int] = [:]
     private(set) var edges: [EdgeItem] = []
@@ -215,6 +222,8 @@ struct Drawing {
     private(set) var unresolved: Set<String> = []
     /// The same for the ids of shapes whose statements couldn't be resolved.
     private(set) var unresolvedIDs: Set<ShapeID> = []
+    /// The same for the paths, folded.
+    private(set) var unresolvedPaths: Set<ShapePath> = []
     /// What placing found to say: pushes, a shape resized over another.
     var notes: [DrawWarning] = []
     private var errors: [DrawError] = []
@@ -282,12 +291,13 @@ struct Drawing {
                 keep(error)
                 if let title = shape.title { unresolved.insert(fold(title) ?? title) }
                 if let text = shape.name?.id, let uuid = UUID(uuidString: text) { unresolvedIDs.insert(ShapeID(uuid)) }
+                if let path = shape.name?.path, let naming, let folded = Self.folded(path, naming: naming) { unresolvedPaths.insert(folded) }
             }
         }
         // Every title the script draws, restates or renames to is known: a text may name them now.
         let formats = registry.drawTextFormats
         if !formats.isEmpty || !registry.drawValueWriters.isEmpty {
-            let lookup = DrawTextLookup(editor: namesBeyond ?? editor, target: target, naming: naming, items: items, itemByTitle: itemByTitle,
+            let lookup = DrawTextLookup(editor: namesBeyond ?? editor, target: target, naming: naming, items: items, itemsByTitle: itemsByTitle,
                                         unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames)
             textWriter = DrawTextWriter(registry: registry, formats: formats, lookup: lookup)
         }
@@ -474,22 +484,25 @@ struct Drawing {
         names.ids[title]?.contains { !deletedShapes.contains($0) } == true
     }
 
-    /// The board shape called this, if one is, or why not: none, or several.
+    /// The board shape called this, if one is, or why not: none, or several (each listed with its kind and its path).
     func boardShape(called title: String, _ statement: Statement) throws(DrawError) -> AnyShapeRecord? {
         let found = boardShapes(called: title)
         guard found.count < 2 else {
-            let each = found.compactMap { target.document[$0] }.map { "\(indefinite($0.kind)) at \(point(middle(of: $0)))" }
-            throw DrawError(statement, .ambiguousTitle, "the board has \(found.count) shapes called \(quoted(title)): \(listed(each))",
-                            hint: "titles name shapes here, so each needs its own: ask the user to rename one")
+            throw ambiguous(quoted(title), found.compactMap { target.document[$0] }.map(ShapeItem.Found.shape), statement)
         }
         return found.first.flatMap { target.document[$0] }
     }
 
     /// A shape a statement names by title: one the script draws or restates, else one on the
     /// board; nil if it's one a statement that couldn't be resolved draws. `mine` is the title of
-    /// the statement's own shape, never what it meant (placed against itself, it's `circular`).
-    func find(_ title: String, _ statement: Statement, for what: String, mine: String? = nil) throws(DrawError) -> ShapeItem.Found? {
-        if let index = itemByTitle[title] { return .item(index) }
+    /// the statement's own shape, never what it meant (placed against itself, it's `circular`). `inside` is the frame the
+    /// statement puts its shape in (`in "F"`): a title is found inside it first, then as anywhere else. A title that two
+    /// shapes of the script have, or that two of the board have, is `ambiguous_title`: the path names the one.
+    func find(_ title: String, _ statement: Statement, for what: String, mine: String? = nil, inside: ShapeID? = nil) throws(DrawError) -> ShapeItem.Found? {
+        if let inside, let found = try found(title, inside: inside, statement) { return found }
+        let drawn = itemsByTitle[title] ?? []
+        if drawn.count > 1 { throw ambiguous(quoted(title), drawn.map(ShapeItem.Found.item), statement) }
+        if let index = drawn.first { return .item(index) }
         if unresolved.contains(title) { return nil }
         if let record = try boardShape(called: title, statement) { return .shape(record) }
         throw notFound(title, statement, for: what, mine: mine, elsewhere: true)
@@ -546,6 +559,16 @@ struct Drawing {
                                     hint: guesses.isEmpty ? nil : "did you mean \(listed(guesses.map(quoted), or: true))?")
                 }
                 (record, said, deleting) = (found, quoted(title), "\(Keyword.delete.rawValue) \(quoted(title))")
+            case .path(let written):
+                let path = try folded(written, statement)
+                let resolution = try resolve(path, statement)
+                let named = resolution.here.compactMap { target.document[$0.id] }
+                if named.count > 1 { throw ambiguous(path.written, named.map(ShapeItem.Found.shape), statement) }
+                guard let found = named.first else {
+                    if resolution.deleted { throw DrawError(statement, .duplicate, "\(path.written) is deleted twice", hint: "delete it once") }
+                    throw pathNotFound(resolution, statement, for: Keyword.delete.rawValue, elsewhere: false, suffix: " to delete")
+                }
+                (record, said, deleting) = (found, path.written, "\(Keyword.delete.rawValue) \(path.written)")
             case .id(let text):
                 let id = try shapeID(text, statement), mark = name.written
                 let found = try fileShape(withID: id, written: mark, statement)
@@ -619,6 +642,26 @@ struct Drawing {
             }
             func end(_ name: ShapeName) throws(DrawError) -> (found: EdgeEndFound, said: String) {
                 switch name {
+                case .path(let text):
+                    let path = try folded(text, statement)
+                    let resolution = try resolve(path, statement)
+                    let here = resolution.here.compactMap { target.document[$0.id] }
+                    if here.count > 1 { throw ambiguous(path.written, here.map(ShapeItem.Found.shape), statement) }
+                    // An end a `delete` above deletes is still that shape, as a title's is.
+                    let gone = resolution.match.shapes.filter { deletedShapes.contains($0.id) && $0.board == target.board }
+                    if let record = here.first ?? gone.first.flatMap({ editor.file.record($0.id) }) {
+                        return (.here(record.id, item: nil), path.written)
+                    }
+                    if resolution.elsewhere.count > 1 {
+                        let several = resolution.elsewhere
+                        throw DrawError(statement, .ambiguousTitle, "\(path.written) is on \(Set(several.map(\.board)).count) boards: \(fileNames?.listing(several) ?? "")",
+                                        hint: fileNames?.pathHint(for: several) ?? "write the #id of the one you mean, which a query's row gives")
+                    }
+                    if let place = resolution.elsewhere.first, let record = editor.file.record(place.id) {
+                        return (.away(FarShape(record: record, board: place.board)), path.written)
+                    }
+                    if resolution.deleted { throw nothingToDelete(statement, written) }
+                    throw DrawError(statement, .unknownTitle, "there's no shape called \(path.written)", hint: "delete edge takes shapes the file has as the script starts")
                 case .title(let text):
                     let title = try folded(text, statement)
                     if let record = try boardShape(called: title, statement) ?? deletes.lazy.compactMap(\.shape).first(where: { names.name(of: $0) == title }) {
@@ -703,11 +746,27 @@ struct Drawing {
     private mutating func find(_ shape: ShapeStatement, _ statement: Statement) throws(DrawError) {
         let kind = try drawable(shape.word, statement)
         let vocabulary = vocabulary(of: kind)
-        // Its name: a title (the shape the board has with it, or a new one), or an id (the shape the file has, never a new one).
-        var title: String?, idWritten: String?, byID: AnyShapeRecord?
+        var shape = shape
+        // Its name: a title (the shape the board has with it, or a new one), a path (the shape there, or a new one made there), or
+        // an id (the shape the file has, never a new one).
+        var title: String?, idWritten: String?, byID: AnyShapeRecord?, pathKey: ShapePath?, byPath: Placing?, pathSaid: String?
         switch shape.name {
         case .title(let written)?:
             title = try folded(written, statement)
+        case .path(let written)?:
+            let path = try folded(written, statement)
+            title = path.last
+            pathSaid = path.written
+            if measuring {
+                // A measure has no board to read a container from: two paths are two shapes, and one is one.
+                pathKey = path
+            } else {
+                // The container goes where `in` names one, so it is put there as `in` puts a shape.
+                let placing = try place(path: written, word: shape.word, statement)
+                byPath = placing
+                shape.name = .title(path.last)
+                shape.container = path.container
+            }
         case .id(let text)?:
             let id = try shapeID(text, statement), mark = ShapeName.id(text).written
             let found = try fileShape(withID: id, written: mark, statement)
@@ -725,12 +784,9 @@ struct Drawing {
             throw DrawError(statement, .duplicate, "\(said(byID, written: idWritten ?? "")) is written twice, here and on line \(items[earlier].statement.line)",
                             hint: "say everything about one shape in one statement")
         }
-        if byID == nil, let title, let earlier = itemByTitle[title] {
-            throw DrawError(statement, .duplicate, "\(quoted(title)) is written twice, here and on line \(items[earlier].statement.line)",
-                            hint: "say everything about one shape in one statement")
-        }
         var existing: AnyShapeRecord?
         var nearMiss: String?
+        var holderID: ShapeID?
         if let byID {
             existing = byID
             if byID.kind != kind {
@@ -739,13 +795,25 @@ struct Drawing {
                                 hint: "to change its kind, delete it and draw a new one in the same script")
             }
         } else if let title {
-            existing = try boardShape(called: title, statement)
+            if let byPath {
+                (existing, holderID) = (byPath.existing, byPath.holder)
+            } else if pathKey == nil {
+                // `in "X"`: the title is found inside X first, then lying on X's board in no container (restated and moved in), else
+                // the shape is new, in X. A lone title is found as the board has it.
+                let frame = shape.container.flatMap(frame(named:))
+                if let container = shape.container, !measuring {
+                    holderID = frame
+                    existing = try restated(title, in: container, frame: frame, statement)
+                } else {
+                    existing = try boardShape(called: title, statement)
+                }
+            }
             if let existing, let earlier = itemByID[existing.id] {
-                throw DrawError(statement, .duplicate, "\(quoted(title)) is written twice, here and on line \(items[earlier].statement.line)",
+                throw DrawError(statement, .duplicate, "\(said(existing, written: "")) is written twice, here and on line \(items[earlier].statement.line)",
                                 hint: "say everything about one shape in one statement")
             }
             if let existing, existing.kind != kind {
-                throw DrawError(statement, .wrongKind, "\(quoted(title)) is \(indefinite(existing.kind)) on the board, not \(indefinite(kind))",
+                throw DrawError(statement, .wrongKind, "\(pathSaid ?? quoted(title)) is \(indefinite(existing.kind)) on the board, not \(indefinite(kind))",
                                 hint: "to change its kind, delete \(quoted(title)) and draw it again in the same script")
             }
             if existing == nil {
@@ -753,6 +821,11 @@ struct Drawing {
                     let why = naming?.isDerived(kind, registry) == true ? "\(indefinite(kind))'s title is worked out from what it is" : "\(indefinite(kind)) has no title"
                     throw DrawError(statement, .untitlable, "\(why), so it can't be called \(quoted(title))",
                                     hint: "leave the title out: \(shape.word) and where it goes")
+                }
+                // Two statements are one new shape only when they name the same place for it.
+                if let earlier = (itemsByTitle[title] ?? []).first(where: { items[$0].existing == nil && items[$0].holderID == holderID && items[$0].pathKey == pathKey }) {
+                    throw DrawError(statement, .duplicate, "\(quoted(title)) is written twice, here and on line \(items[earlier].statement.line)",
+                                    hint: "say everything about one shape in one statement")
                 }
                 nearMiss = names.nearMiss(of: title) { $0 != title && isOnBoard($0) }
             }
@@ -772,10 +845,26 @@ struct Drawing {
                             hint: "write \(key): \(fitted.written), or bigger")
         }
         // A shape named by its id answers to its title only where that title is its alone: two called the same stay `ambiguous_title`.
-        if let title, byID == nil || boardShapes(called: title).count < 2 { itemByTitle[title] = items.count }
+        if let title, byID == nil || boardShapes(called: title).count < 2 { itemsByTitle[title, default: []].append(items.count) }
         if let existing { itemByID[existing.id] = items.count }
-        items.append(ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
-                               room: size, nearMiss: nearMiss, idWritten: idWritten))
+        var item = ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
+                             room: size, nearMiss: nearMiss, idWritten: idWritten)
+        item.holderID = holderID
+        item.pathKey = pathKey
+        items.append(item)
+    }
+
+    /// The shape `<kind> "T" in "X"` restates: the one called T inside X first (anywhere on X's board for a subboard, anywhere within
+    /// X for a frame), failing that one lying on X's board in no container, which is restated and moved into X; none: the shape is
+    /// new, and made in X. Two or more where it looks are `ambiguous_title`.
+    private func restated(_ title: String, in container: ShapeName, frame: ShapeID?, _ statement: Statement) throws(DrawError) -> AnyShapeRecord? {
+        guard let frame else { return try boardShape(called: title, statement) }
+        for found in [boardShapes(called: title, inside: frame), looseBoardShapes(called: title)] {
+            let records = found.compactMap { target.document[$0] }
+            if records.count > 1 { throw ambiguous(quoted(title), records.map(ShapeItem.Found.shape), statement) }
+            if let record = records.first { return record }
+        }
+        return nil
     }
 
     /// The kind a statement's first word names, if its tool places it: a kind drawn by a gesture
@@ -988,7 +1077,16 @@ struct Drawing {
                         throw DrawError(statement, .circular, "\(subject) is placed against itself (\(clause.written))",
                                         hint: "place it against another shape")
                     }
-                    guard let target = try find(title, statement, for: "\(subject) is placed against", mine: item.title) else { throw skip() }
+                    guard let target = try find(title, statement, for: "\(subject) is placed against", mine: item.title, inside: item.holder?.id) else { throw skip() }
+                    found.append(target)
+                case .path(let written):
+                    guard let target = try find(path: written, statement, for: "\(subject) is placed against") else { throw skip() }
+                    if case .item(let other) = target, other == index {
+                        throw DrawError(statement, .circular, "\(subject) is placed against itself (\(clause.written))", hint: "place it against another shape")
+                    }
+                    if case .shape(let record) = target, record.id == item.existing?.id {
+                        throw DrawError(statement, .circular, "\(subject) is placed against itself (\(clause.written))", hint: "place it against another shape")
+                    }
                     found.append(target)
                 case .id(let text):
                     let id = try shapeID(text, statement), mark = ShapeName.id(text).written
@@ -1034,6 +1132,9 @@ struct Drawing {
         case .id(let text):
             let id = try shapeID(text, item.statement)
             (said, box, found) = (name.written, .id(text), fileNames.container(withID: id))
+        case .path(let written):
+            let path = try folded(written, item.statement)
+            (said, box, found) = (path.written, .path(written), fileNames.container(path: path, board: target.board))
         }
         if case .board = found, target.isBoardReadOnly { throw readOnlyHolder(said, item.statement) }
         guard case .shape(let id, _) = found else { return }
@@ -1178,19 +1279,26 @@ struct Drawing {
                         hint: "a shape can be bound only to shapes on its own board")
     }
 
-    /// Refuses a new title for a restated shape that another shape has, or will have: one the
-    /// script draws, renames to it, or the board has.
-    private func claim(_ new: String, for existing: AnyShapeRecord, _ statement: Statement, subject: String) throws(DrawError) {
-        if let other = itemByTitle[new] {
+    /// Refuses a new title for a restated shape that another shape directly beside it has, or will have: one the script draws,
+    /// renames to it, or the board has, in the same frame, or on the board in no frame. A shape in another frame, or on another
+    /// board, may have the title: a path names each.
+    private func claim(_ new: String, for existing: AnyShapeRecord, _ statement: Statement, subject: String) throws(DrawError) -> Void {
+        let kinds = registry.containingKinds
+        let home = target.document.container(of: existing.id, containingKinds: kinds)
+        // The frame a statement's shape is in, or goes in.
+        func parent(of item: ShapeItem) -> ShapeID? {
+            item.existing.map { target.document.container(of: $0.id, containingKinds: kinds) } ?? item.holderID
+        }
+        if let other = (itemsByTitle[new] ?? []).first(where: { items[$0].existing?.id != existing.id && parent(of: items[$0]) == home }) {
             throw DrawError(statement, .duplicate, "\(quoted(new)) is taken: line \(items[other].statement.line) is about it",
                             hint: "give \(subject) a title of its own")
         }
-        if let other = items.firstIndex(where: { $0.rename == new }) {
+        if let other = items.firstIndex(where: { $0.rename == new && parent(of: $0) == home }) {
             throw DrawError(statement, .duplicate, "\(quoted(new)) is written twice, here and on line \(items[other].statement.line)",
                             hint: "give each shape a title of its own")
         }
-        if boardShapes(called: new).contains(where: { $0 != existing.id }) {
-            throw DrawError(statement, .duplicate, "\(quoted(new)) is taken: the board has a shape called that",
+        if boardShapes(called: new).contains(where: { $0 != existing.id && target.document.container(of: $0, containingKinds: kinds) == home }) {
+            throw DrawError(statement, .duplicate, "\(quoted(new)) is taken: \(home == nil ? "the board" : "the frame") has a shape called that",
                             hint: "give \(subject) a title of its own")
         }
     }
@@ -1244,9 +1352,13 @@ struct Drawing {
             switch name {
             case .id(let text):
                 return try endFound(id: try shapeID(text, statement), written: name.written, statement)
+            case .path(let text):
+                return try endFound(path: text, statement, written: written)
             case .title(let text):
                 let title = try folded(text, statement)
-                if let index = itemByTitle[title] { return (.here(items[index].record.id, item: index), EndName(title: title)) }
+                let drawn = itemsByTitle[title] ?? []
+                if drawn.count > 1 { throw ambiguous(quoted(title), drawn.map(ShapeItem.Found.item), statement) }
+                if let index = drawn.first { return (.here(items[index].record.id, item: index), EndName(title: title)) }
                 if unresolved.contains(title) { throw skip() }
                 // A measure reads the ends the open file has wherever they are, and lays the arrow out straight: it draws no pill.
                 if measuring { return (.here(try measuredEnd(title, statement), item: nil), EndName(title: title)) }
@@ -1362,7 +1474,7 @@ struct Drawing {
 
     /// How a message names a statement's shape: `"API"`, or `the card on line 3`.
     func subject(of item: ShapeItem) -> String {
-        item.title.map(quoted) ?? item.idWritten ?? item.standsFor.map { "the \(item.kind) to \($0)" } ?? "the \(item.kind) on line \(item.statement.line)"
+        said(item) ?? item.idWritten ?? item.standsFor.map { "the \(item.kind) to \($0)" } ?? "the \(item.kind) on line \(item.statement.line)"
     }
 
     /// A board shape's middle.
@@ -1376,7 +1488,7 @@ struct Drawing {
         guard let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) else {
             return Drawing.location(of: record, in: target.shapes)
         }
-        return quote ? quoted(title) : title
+        return quote ? sharedName(of: record) ?? quoted(title) : title
     }
 
     // MARK: The board

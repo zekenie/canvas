@@ -107,13 +107,13 @@ import Titles
         expectEqual(rows.map(\.dimmed), [false] + Array(repeating: true, count: 7), "what All would add, dimmed")
         expectEqual(rows.first?.name, "B0")
         expectEqual(rows.first?.symbol, "shippingbox")
-        expectEqual(rows.first?.board, nil, "on the board shown")
+        expectEqual(rows.first?.place, nil, "on the board shown")
         let (allRows, allMore) = state.matchRows(of: all)
         expect(allRows.allSatisfy { !$0.dimmed }, "every one stood for")
         expectEqual(allMore, 3)
         let everything = h.addReference(query: "box[title^=\"Z\"]", all: true, at: CGPoint(x: 400, y: 500))
         h.answer()
-        expectEqual(state.matchRows(of: everything).rows.map(\.board), ["Drawer"], "another board's name")
+        expectEqual(state.matchRows(of: everything).rows.map(\.place), ["Drawer"], "another board's name")
         expectEqual(state.matchRows(of: everything).rows.map(\.id), [inside])
     },
     test("Match ☐ All in the window: the box in the control column after Match; what it writes is a step of its own; a match followed is gone to") {

@@ -1,8 +1,9 @@
 // Types in a digest: a note that holds a JSON Schema is a type, a note that is one is an instance, an arrow that is one of a relationship type is a
 // relationship, and an arrow between a type and a relationship type is one of its ends. A type may be of types too: it builds on them, and its
 // notes have their fields. This is what the tool says of them: how they are written into a draw script, the order a chain of them is read in, the
-// round each is drawn in, and what check refuses. Pure, and the same under jsc and node.
-import { lit, byTitle } from './util.mjs';
+// round each is drawn in, and what check refuses. A node is the model's by its key; a type is named by its title (`model.types`), wherever an `is`
+// names one. Pure, and the same under jsc and node.
+import { lit, byTitle, label } from './util.mjs';
 
 /** `is:` as draw takes it: a title, or several as JSON. */
 export const isLit = (titles) => (titles.length === 1 ? lit(titles[0]) : JSON.stringify(titles));
@@ -124,9 +125,9 @@ export function linearized(hs, parents, excluding = null) {
   return c3(hs, parents, excluding) || fallback(hs, parents, excluding);
 }
 
-/** The types of the digest a shape's list (`is`) leads to, in the order their fields are read: its own types, later first, and what they build on. */
+/** The types of the digest a shape's list (`is`) leads to, in the order their fields are read: its own types, later first, and what they build on (titles). */
 export function chainOf(model, list) {
-  const type = (t) => { const n = model.nodes.get(t); return n && n.schema ? n : null; };
+  const type = (t) => { const n = model.types.get(t); return n && n.schema ? n : null; };   // `is` names a type by its title
   return linearized(heads(list), (t) => (type(t) ? heads(type(t).is) : [])).filter(type);
 }
 
@@ -135,29 +136,29 @@ export function chainOf(model, list) {
  * than every type it builds on, and a round later than one on another board, since a script draws on one board and `is:` names a type drawn before
  * it or in it; and a type no earlier than a relationship type it is an end of, since the end is drawn with the type (it gives the type a row, and a
  * note is drawn at the size it keeps). So when a type is drawn, everything that sizes it is there or in its script. Check refuses a type that
- * builds on itself; this ends a ring all the same.
+ * builds on itself; this ends a ring all the same. Keyed by each type's key, as the model's nodes are (an `is` names a type by its title).
  */
 export function typeRounds(model) {
   const rounds = new Map(), active = new Set();
-  const ends = new Map();   // type -> the relationship types it is an end of
+  const ends = new Map();   // a type's key -> the keys of the relationship types it is an end of
   for (const e of model.edges) {
     if (!e.end) continue;
     const a = model.nodes.get(e.from), type = a.relationship ? e.to : e.from, rel = a.relationship ? e.from : e.to;
     ends.set(type, (ends.get(type) || []).concat([rel]));
   }
-  const round = (t) => {
-    if (rounds.has(t)) return rounds.get(t);
-    if (active.has(t)) return 0;
-    active.add(t);
-    const n = model.nodes.get(t);
+  const round = (key) => {
+    if (rounds.has(key)) return rounds.get(key);
+    if (active.has(key)) return 0;
+    active.add(key);
+    const n = model.nodes.get(key);
     let r = 0;
-    for (const p of n.is) { const s = model.nodes.get(p); if (s && s.schema) r = Math.max(r, round(p) + (s.board === n.board ? 0 : 1)); }
-    for (const rel of ends.get(t) || []) r = Math.max(r, round(rel));
-    active.delete(t);
-    rounds.set(t, r);
+    for (const p of n.is) { const s = model.types.get(p); if (s && s.schema) r = Math.max(r, round(s.key) + (s.board === n.board ? 0 : 1)); }
+    for (const rel of ends.get(key) || []) r = Math.max(r, round(rel));
+    active.delete(key);
+    rounds.set(key, r);
     return r;
   };
-  for (const n of model.nodes.values()) if (n.schema) round(n.title);
+  for (const n of model.nodes.values()) if (n.schema) round(n.key);
   return rounds;
 }
 
@@ -307,8 +308,8 @@ function ringFrom(start, next) {
  */
 export function typeProblems(model) {
   const errors = [], warnings = [];
-  const nodes = [...model.nodes.values()].sort((a, b) => byTitle(a.title, b.title));
-  const typeNamed = (t) => { const n = model.nodes.get(t); return n && n.schema ? n : null; };
+  const nodes = [...model.nodes.values()].sort((a, b) => byTitle(a.key, b.key));
+  const typeNamed = (t) => { const n = model.types.get(t); return n && n.schema ? n : null; };   // `is` names a type by its title
   const builtOn = (t) => { const n = typeNamed(t); return n ? n.is.filter(typeNamed) : []; };
   const reaches = (t, target) => {
     const seen = new Set([t]), level = [t];
@@ -334,7 +335,7 @@ export function typeProblems(model) {
     return out;
   };
   for (const n of nodes) {
-    const q = `"${n.title}"`;
+    const q = `"${label(n.key)}"`;
     const typing = n.schemaGiven || n.relationshipGiven || n.is.length || n.isBad || n.fieldValuesGiven;
     if (typing && n.kind !== 'sticky-note') {
       const what = n.is.length || n.isBad || n.fieldValuesGiven ? `a ${n.kind} can't be a type's instance (only notes and arrows are)` : `a ${n.kind} can't be a type (a type is a note)`;
@@ -376,14 +377,14 @@ export function typeProblems(model) {
     }
   }
   for (const e of model.edges) {
-    const q = `edge "${e.from}" -> "${e.to}"`;
+    const q = `edge "${label(e.from)}" -> "${label(e.to)}"`;
     const a = model.nodes.get(e.from), b = model.nodes.get(e.to);
     if (e.end) {
       const rel = a.relationship ? a : b, other = rel === a ? b : a;
-      if (a.board !== b.board) errors.push(`${q}: an end of the relationship type "${rel.title}", but "${other.title}" is on ${other.board === 'root' ? 'the first board' : `the board of "${other.board}"`} and "${rel.title}" on ${rel.board === 'root' ? 'the first board' : `the board of "${rel.board}"`}; a relationship type, its ends and the types they join are drawn in one script on one board`);
+      if (a.board !== b.board) errors.push(`${q}: an end of the relationship type "${rel.title}", but "${other.title}" is on ${other.board === 'root' ? 'the first board' : `the board of "${label(other.board)}"`} and "${rel.title}" on ${rel.board === 'root' ? 'the first board' : `the board of "${label(rel.board)}"`}; a relationship type, its ends and the types they join are drawn in one script on one board`);
       if (e.via) errors.push(`${q}: an end of the relationship type "${rel.title}" is a plain arrow, never a reference`);
     } else if (a.kind === 'sticky-note' && b.kind === 'sticky-note' && a.schema && b.schema) {
-      warnings.push(`${q}: both ends are types, so the arrow says nothing; a type that builds on another says is ("is": "${e.to}" on "${e.from}")`);
+      warnings.push(`${q}: both ends are types, so the arrow says nothing; a type that builds on another says is ("is": "${b.title}" on "${label(e.from)}")`);
     }
     for (const arrow of e.arrows) {
       if (arrow.isBad) errors.push(`${q}: is is a relationship type's title, or a list of them`);

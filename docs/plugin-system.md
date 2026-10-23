@@ -459,11 +459,11 @@ Opting in goes in one of four directions:
   StickyNotes does this for Types: `note.canBeType()`.
 - **A horizontal imports the horizontals it shows itself on.** A module that owns a meaning imports the
   module that shows it: Validation imports DetailPanel and TableOfContents, for its Issues
-  tab and its rows' dots, as Titles imports them for its header and its rows' names, and Titles and
-  Mentions import Validation, for the rules they add (warnings about titles two shapes share, and
+  tab and its rows' dots, as Titles imports them for its header and its rows' names, and Boards and
+  Mentions import Validation, for the rules they add (warnings about paths two shapes share, and
   about mentions that can't work). A face a plugin list should be able to leave out is a plugin
   value of its own in the owner's module (`ValidationDetailsPlugin`, `ValidationContentsPlugin`,
-  `MentionValidationPlugin` and `TitleValidationPlugin`): the registry refuses a contribution whose
+  `MentionValidationPlugin` and `PathValidationPlugin`): the registry refuses a contribution whose
   point's owner isn't installed, so a list with Validation and no panel installs `ValidationPlugin()`
   alone. One in the window shows itself on another the same way: the table of contents is the detail
   panel's overview (`ContentsOverviewPlugin`), Find's panel its takeover (`FindPanelPlugin`), and
@@ -526,7 +526,7 @@ Each target is one line, with its layer:
 
 ```swift
 .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
-.target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents", "Validation"]), // layer: platform
+.target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents"]), // layer: platform
 ```
 
 Modules sit on four rungs; each imports only from its own rung or those below it:
@@ -780,7 +780,7 @@ in parts today ([Types](#types-shapes-that-hold-a-schema)).
   (and what looked it up) out again when the value changes. Whoever owns a provided key registers
   `registrar.layoutInput(key) { record, reading in … }`, answered when the core lays a shape out, on
   the editor's file and, mid-transaction, on the file as the transaction leaves it (`reading.shape(inFile:)`,
-  `reading.service(_:)`, `reading.isCommitted`), and says when an answer changes for a reason other
+  `reading.board(containing:)`, `reading.service(_:)`, `reading.isCommitted`), and says when an answer changes for a reason other
   than the shape's own record with `editor.shapesDidChangeLayout(ids)`, naming the shapes the same
   commit added or changed too, since a service that hears the commit first may have asked
   already. `editor.shapesDidChangeLayout(ids)` does the same for a set value's other reasons. It
@@ -1447,12 +1447,12 @@ splits and joins none of them. What a title brings:
   isn't entered, so Return is a new line. It's offered on the kinds that hold `TitleProperty`, so
   on notes, subboards and frames: a type's name is its title too.
 
-So Titles builds on eight horizontals: it imports Adornments, DetailPanel, Draw, Find, Queries,
-SlashCommands, TableOfContents and Validation, and a plugin list with a titled kind needs
+So Titles builds on seven horizontals: it imports Adornments, DetailPanel, Draw, Find, Queries,
+SlashCommands and TableOfContents, and a plugin list with a titled kind needs
 `TitlesPlugin`, `AdornmentsPlugin` (with Keyboard and Selection, which it builds on),
 `SlashCommandsPlugin` (for `/title`) and `TableOfContentsPlugin` (without one, `ownerNotInstalled`
-names it); `ValidationPlugin` is needed only by `TitleValidationPlugin`
-([below](#warnings-titles-two-shapes-share)), the one part of Titles that imports it.
+names it). The warning about two shapes called one thing is no longer Titles': a shape is told
+apart by its path, which is Boards' ([Paths two shapes share](#paths-two-shapes-share)).
 
 The mechanics:
 
@@ -1546,7 +1546,7 @@ contents puts a dot of the same color on the row of each shape with issues, so t
 found at a glance and a click goes to one ([`ValidationContentsPlugin`](#marks-validations-dots)).
 Two more add rules from the modules that own what they check: Mentions'
 [`MentionValidationPlugin`](#warnings-mentions-that-cant-work) warns about mentions that can't
-work, and Titles' [`TitleValidationPlugin`](#warnings-titles-two-shapes-share) about titles two
+work, and Boards' [`PathValidationPlugin`](#paths-two-shapes-share) about paths two
 shapes share. Outside the engine, `registry.validationIssues(of: record, in: shapes)` runs every
 rule for a shape's kind against any `ShapeContext`, a transaction's mid-way included (the rules
 look other shapes up in it): it's how [`canvas draw`](#what-draw-takes-from-other-plugins) warns
@@ -1595,7 +1595,7 @@ the commit may change without changing them or a shape they looked up, on any bo
 ```swift
 registrar.forShapes(adopting: .titled) { titled in
     titled.validate(ignoringMoves: true, affected: { changes, editor in
-        editor.service(TitleIndex.self)?.affected(by: changes) ?? []
+        editor.service(PathIndex.self)?.affected(by: changes) ?? []
     }) { shape, context in ... }
 }
 ```
@@ -1633,39 +1633,6 @@ up when the engine last checked the board shown (`engine.dependents(on:)`), so a
 other shapes through `context.shape(_:)` alone needs no `touches`. A shape on another board is
 checked over its own board's shapes with the same reading: `shapes.over(transaction.contents(of: board))`.
 ValidationTests' `touchesTests` hold it.
-
-### Warnings: titles two shapes share
-
-Nothing refuses two shapes one title: a paste keeps the title of what it copied, and a person
-renames as they like. But titles name shapes (`canvas draw` refuses a title two shapes have, a
-query's `"Title"` finds both), so
-[`TitleValidationPlugin`](../Sources/Titles/TitleValidation.swift), a plugin value of Titles' own
-that imports Validation (a list with Titles and no Validation leaves it out), warns on each shape
-whose title another shape in the file has:
-“Checkout” is another shape’s title too., about `title` where Titles keeps it (no field for a
-derived title). Titles as Titles reads them (`registry.title(of:)`: named or
-derived, folded), compared exactly, whatever the kinds that took a title (the rule is
-`forShapes(adopting: .titled)`); an untitled note's first line is no title.
-On every board the editor can show, but shapes kept aside. A warning: each shape is fine alone.
-
-- **The titles are the file's**, in a service of the plugin's (`TitleIndex`): read whole as the
-  editor opens, as Mentions' catalog is, so no check pays for it (a query's `:invalid` slice), and
-  again for a file put in place; then kept up to date by each commit,
-  for what it changed on any board (`elsewhere` too), never for a move. What a commit deleted is
-  never named, so deleting a subboard of 10,000 names none of them.
-- **The rule reads no other shape.** It asks the index whether another shape has its title, and the
-  index names, through the rule's `affected`, the shapes whose title a commit changed and those it
-  gave a title's first other holder or took its last from: a rename to a title another shape has
-  warns that one too, as it's shown, wherever it is.
-- **Moves check nothing**: the rule ignores them (`TitleValidationPlugin.titlesChecked`, debug
-  builds, counts the shapes it checks, which tests hold a move to).
-- **A run is answered before it commits**: with no editor the rule asks the index through the
-  reading (`isShared(_:by:in:)`: the committed holders the run has not written, and what it wrote),
-  and its `touches` names the other holders of a title the run gives a shape or takes from one, so
-  `canvas draw` warns of a shape on another board whose title a renamed note now shares.
-
-Shipped after `MentionValidationPlugin`, its warnings show as any issue does: an orange outline, a line in
-the Issues tab and a dot on the row.
 
 [Find](#find) searches titles too: `TitleFindPlugin` (a plugin value of Titles' own, after Find and
 Titles) gives each title (`registry.title(of:)`) on the kinds that hold `TitleProperty` or derive
@@ -3367,7 +3334,7 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
   caller's `isWorse` says which), so an insert costs a logarithm of the capacity and `sorted()` gives
   the best first: Mentions' `@` picker and Jump To's list both keep their few rows' worth of matches
   in one, instead of sorting every match.
-- **`PathMatcher`** is Jump To's: a query for a shape by the containers on the way to it, as VS Code's
+- **`PathMatcher`** is Jump To's, the `@` picker's for several words and Neighbors' search's: a query for a shape by the containers on the way to it, as VS Code's
   file switcher takes a path. A path is segments from the outermost container to the shape's own
   title, the leaf. The query splits on whitespace into pieces, which go into the segments in order,
   a group of neighbors to a segment (several pieces in one segment are one `FuzzyMatcher` query of
@@ -3387,8 +3354,10 @@ thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on Test
   (`advance(_:through:)`, nil for an untitled container, a skip; it costs a match of every group of
   the pieces that fit, at most 28 at eight pieces, once per container, not per shape beneath it), and a leaf's score is
   `leafScore(after:label:)` from its parent container's row, which costs one match of each group of
-  its label, a few for a few pieces. A one-piece query has no path in it: that's `FuzzyMatcher` over
-  the leaves.
+  its label, a few for a few pieces. `leafScore` and `match(path:)` take `placingAtLeast:` (default 0): with 1,
+  only the placements that put a piece in a container, so a shape found by its path is told from one whose
+  title has every word (the `@` picker's second band, Neighbors' search). A one-piece query has no path in
+  it: that's `FuzzyMatcher` over the leaves.
 - **`Suggestions`** is the "did you mean" a refusal offers for a word a language doesn't have (a
   title, a kind, an attribute, a word of `canvas draw`'s or `canvas query`'s), DrawScript's, Draw's
   and Queries': `closest(to:among:limit:)` gives the few most like it, best first (the same but for
@@ -6860,7 +6829,8 @@ follows undo and redo, during which nothing may):
   board shown (looked for in squares around it, grown until one holds enough, or holds as many
   shapes as the board has in the catalog, when reading those costs less: a board with few
   mentionable shapes reads them), then, while there's room, the shapes whose boards it's inside,
-  and for any other the best 50 matches. Every list's matcher (`FuzzyMatcher`,
+  and for any other the best 50 matches (of several words, also the shapes found by their path:
+  below). Every list's matcher (`FuzzyMatcher`,
   [FuzzyMatching's](#fuzzymatching)) scores the folded query (case and diacritics ignored) against each name, each
   taking its best tier: exact 1000, a prefix 800, each word a prefix of a word, in order, 600, a
   substring 400, a subsequence (fzf-style: word starts, runs and the first character count, gaps
@@ -6908,11 +6878,27 @@ follows undo and redo, during which nothing may):
   named matches. A row of notes that fit asks, since a note with nothing in it fits and can be picked;
   `@`, `/move-to` and the reference list do not, and cost what they did (the "3 mentionable among
   10,000 empty notes" benchmark does not move). `choices(_:)` gives each
-  candidate with the name of the board it is on when that isn't the board shown (`MentionChoice`,
-  `boardName(ofShape:)`: what Boards calls the board, `editor.name(of:root:)`, so an untitled
-  subboard's is "Untitled Subboard" as on the path; "Board" for the root), and `MentionChoice.items` the caret list's lines for them (the name, the matched
-  letters, the kind's symbol and tint, the board as the detail, "Kind · Board" for two called alike): one
-  line for the `@` picker's neighbours (the Reference picker's, a row's list of notes), written once.
+  candidate with where it is (`MentionChoice`, `MentionState.place(ofShape:)`: the names of the
+  containers it is inside, outermost first, "Alpha › Beta", an untitled one by what its kind is called,
+  less those the board shown is inside when the shape is inside it too; for a shape in none, the name of
+  its board when that isn't the board shown, `boardName(ofShape:)`: what Boards calls the board,
+  `editor.name(of:root:)`, so an untitled subboard's is "Untitled Subboard" as on the path; "Board" for
+  the root), and `MentionChoice.items` the caret list's lines for them (the name, the matched
+  letters, the kind's symbol and tint, the place as the detail, cut at its start when too long, "Kind · place" for two
+  called alike, spoken "Ann Lee, Note, in Alpha › Beta, 1 of 3"): one
+  line for the `@` picker's neighbours (the Reference picker's, a row's list of notes), written once. The
+  picker's own rows say the same place in the kind's place.
+- **A query of several words finds a shape by its path.** Pieces split on whitespace (`PathMatcher`'s),
+  the pieces before the last in the containers a shape is inside, in order, any skipped, the last group in
+  its name, as Jump To ranks one: the last piece against every name in the same two passes, and the shapes it
+  matches scored along their paths through Boards' `ShapePaths` (a row per container, kept for the query).
+  The matches are in three bands: the shapes whose own name has the whole query from a substring up, then the
+  shapes found by their path, then the loose matches of the name (a subsequence, a typo); the recent pick and
+  nearness adjust within a band. One word is one band, ranked as it always was. Every filter (the scope,
+  `kinds`, `among`, `admitting`, the text's own shape) holds for a path match; the unnamed are matched by
+  their placeholder alone. `MentionCandidates.words` says how many words the query had: a second word names a
+  container, so a caller that narrows a longer query among a shorter one's matches (a relation row's list) does so
+  only with as many words.
 - **Going and hovering**: `follow(_:)` goes to a shape on the next turn of the scheduler
   (`editor.goTo`, or `goInto` for a kind followed by opening it: editing ends, the shape is selected and brought into view, and ⌘[ comes back;
   going is no undo step, so Undo after it takes back the edit before it, selecting what was
@@ -8219,6 +8205,9 @@ contains:
 - **`ancestors(of:)`** is what a shape is inside, the nearest first: its containers, its board's
   owner, that one's containers, and so on up; **`isInside(a, b)`** whether `a` is inside `b` at any
   depth (never inside itself; O(`a`'s depth)).
+- **`descendants(of:)`** is every shape inside one, at any depth, in file order (O(what's inside
+  it)): what Boards' path index files again when a container is renamed or put elsewhere
+  ([Paths two shapes share](#paths-two-shapes-share)). The snapshot has it too.
 
 It needs no index of its own: the core knows which board every shape is on, and each board keeps
 who's in which container (`CanvasDocument`'s index of who names whom, nonisolated). Only containers
@@ -9023,8 +9012,9 @@ A file holds a tree of boards: the root, and one for each shape of a kind that o
 ([`Sources/Boards`](../Sources/Boards)) is the horizontal that gets you around them, whatever kind
 owns them. It builds on Selection (opening), ContextMenus (Open),
 Keyboard (⌘↑), Titles (what a board is called), TableOfContents (the rows a crumb's menu lists),
-and Find and Queries (the board names over Find's hits and in a query's rows), and none of them
-learns what a board is.
+Find and Queries (the board names over Find's hits and in a query's rows), and Topology,
+FuzzyMatching and Validation (a shape's path, the names a path is matched by, and the warning of a
+path two shapes share: [below](#paths-two-shapes-share)), and none of them learns what a board is.
 
 A board-owning kind opts in with one line, on its own registrar
 ([OpensBoard.swift](../Sources/Boards/OpensBoard.swift)):
@@ -9097,9 +9087,9 @@ registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle
   `registry.containerName(of: record)` is what a shape that others are inside is called in a path of
   where a shape is, "Alpha › Beta" (a `ContainerName`: its `title`, else its `placeholder`, the
   board placeholder of its kind or, for a kind that opens no board, a frame, its kind's label):
-  whatever writes such a path names each shape this way ([Jump To](#jump-to)'s rows, a
-  [reference](#references)'s row in the table of contents), so they agree with one another and
-  with the path over the canvas.
+  whatever writes such a path names each shape this way (`ShapePath`, [below](#paths-two-shapes-share);
+  [Jump To](#jump-to)'s rows, a [reference](#references)'s row in the table of contents), so they agree
+  with one another and with the path over the canvas.
 - **Over other plugins' lists.** Boards names a board wherever another plugin lists one, each
   from a plugin value of its own (a face), after `BoardsPlugin` and the list's plugin, so a list
   without that plugin leaves it out. `BoardContentsPlugin` (id `board-contents`) heads the table
@@ -9228,6 +9218,99 @@ the board above instead, VS Code's siblings; the owner chose what's in the crumb
 - **The canvas under it.** Where the pill or a menu is over the canvas, the pointer isn't on the
   canvas: `CanvasView` asks the window what's at the pointer, and a view the host put over it has
   it, as the minimap does (the tool hears the pointer leave, so nothing under the path is hovered).
+
+### Paths two shapes share
+
+A shape is told apart from the others by its path, as a file is in its folders: the names of the
+containers it is inside (frames, and the shapes whose boards hold it), outermost first, then its
+own title; the root board is never on it. So two shapes may share a title where their paths differ
+("index.ts" in two folder frames), and a shape on the root in no container has its title for a path.
+Each container is named as every path names one (`registry.containerName(of:)`, above: its title,
+else its placeholder), so an untitled frame is on a path as "Frame".
+
+- **`ShapePath`** ([ShapePaths.swift](../Sources/Boards/ShapePaths.swift)) is the value: its
+  `containers` (`ContainerName`s, outermost first) and its `name`, its `text` ("Alpha › Beta ›
+  Checkout", `ShapePath.separator` between, as Jump To's rows say it) and its `key`
+  (`ShapePath.Key`, the segments' texts, a placeholder like a title, its hash worked out once),
+  which two shapes that share a path have equal.
+- **`ShapePaths`** is the containment tree's names, a value a service embeds (no service of its own,
+  so a list with Jump To and no `BoardsPlugin` keeps it): each container's parent (Topology's
+  `parent(of:)`, through `editor.topology`, which hears a commit before it answers), its
+  `ContainerName` and its folded `FuzzyMatcher.Label` (none untitled), read once and kept until a
+  commit changes that container (`forget(_:)`: what it removed, added or changed other than by
+  moving, and `elsewhere`; `forgetAll()` for a file put in place). `containers(of:)` and
+  `path(of:)` are a shape's (Topology's `ancestors(of:)`, outermost first); `chain(after:root:memo:)`
+  works something out down the chain from the root to a container, once a container and kept in
+  the caller's memo, and is what `row(after:_:root:memo:)` (a `PathMatcher.Row`, Jump To's ranking
+  of several pieces, followed up `ShapePaths.deepest` containers) and `names(through:memo:)` (a
+  path's names, the path index's) are made of. A second caller ranks its own candidates by path
+  through `row(after:)` with a memo of its own a query.
+
+Nothing refuses two shapes one path, but paths name shapes, so
+[`PathValidationPlugin`](../Sources/Boards/PathValidation.swift) (id `path-validation`, a plugin
+value of Boards' own that imports Validation, so a list with Boards and no Validation leaves it out)
+warns on each titled shape whose path another shape in the file has, about `title` where Titles
+keeps it (no field for a derived title):
+
+```swift
+registrar.service { PathIndex(editor: $0) }
+registrar.forShapes(adopting: .titled) { titled in
+    titled.validate(ignoringMoves: true, affected: { changes, editor in
+        editor.pathIndex?.affected(by: changes) ?? []
+    }, touches: { changes, shapes in
+        guard let reading = shapes.reading, let index = reading.service(PathIndex.self) else { return [] }
+        return index.touched(by: changes, reading: reading)
+    }) { shape, context in ... }
+}
+```
+
+In no container the warning says what it said of titles, “Checkout” is another shape’s title too.;
+nested, the path, placeholders and all: “Alpha › Checkout” is another shape’s path too. Titles as
+Titles reads them (`registry.title(of:)`, named or derived, folded), compared exactly, an untitled
+container by its placeholder (two "A"s in two untitled frames share a path); an untitled note's
+first line is no title. On every board the editor can show, but shapes kept aside. A warning: each
+shape is fine alone.
+
+- **The paths are the file's**, in the plugin's service (`PathIndex`, `editor.pathIndex`): every
+  titled shape's key (`keys`), the shapes each names (`holders(of:)`), and every container's parent
+  and name as the last commit left them. Read whole as the editor opens, as Mentions' catalog is,
+  so no check pays for it, and again for a file put in place; then each commit for what it changed
+  on any board, never for a pure move. A container whose name or parent changed (renamed, titled or
+  untitled, put in another container or taken out, moved to another board, turned into another
+  kind, deleted so what it held falls into its own container) files again every titled shape inside
+  it (Topology's `descendants(of:)`), each shape once a commit, by the title its kept path ends in,
+  since the commit didn't change it. A frame dragged with what it holds changes no path (`ChangeSet.moved`);
+  a shape dropped into one is changed (its container), not moved. What a commit deleted is never
+  named, so deleting a subboard of 10,000 names none of them.
+- **The rule reads no other shape.** It asks the index whether another shape has its path
+  (`sharedKey(of:)`), and the index names, through the rule's `affected`, the shapes whose warning
+  a commit may change though it didn't change them: those it filed under another path that shared
+  one before or share one now (a shape alone before and after says nothing either way, so a
+  rename of a frame holding thousands re-checks none of them unless they share a path), and those
+  it gave a path's first other holder or took its last from.
+- **Moves check nothing**: the rule ignores them (`PathValidationPlugin.pathsChecked`, debug
+  builds, counts the shapes it checks, which tests hold a move and a frame's drag to).
+- **A run is answered before it commits**: with no editor the rule asks the index through the
+  reading (`sharedKey(of:in:)`): a written shape's path is worked out from the reading's records
+  (each record's container, then the owner of the board it is on, `reading.board(containing:)`, up
+  to the root), and the shapes the run reached (those it wrote, and what is inside a container it
+  renamed or put elsewhere, as the committed tree has it) are filed by their paths now; the
+  committed holders it hasn't reached count as before. `touches` names the holders of a written
+  shape's old and new paths, and, for a written container whose name or parent changed, the titled
+  shapes inside it and their paths' holders, so `canvas draw` warns of a shape on another board
+  whose path a renamed note now shares. O(what was written and what it reaches).
+
+Shipped after `MentionValidationPlugin`, where Titles' warning of titles two shapes shared was, its
+warnings show as any issue does: an orange outline, a line in the Issues tab and a dot on the row.
+BoardsTests' `PathValidationTests.swift` hold it over fixtures only (cards, pockets, corrals and
+discs titled through Titles' property): every case the titles' warning had, under paths, and
+corrals and pockets of one title and of two, untitled containers, a container renamed joining and
+splitting groups, a shape dropped into a corral and out, a container moved into another, a pocket
+moved, a container deleted, undo and redo of each, a corral's drag checking nothing, a run's
+answers (a rename, a shape put in a corral, one added in one, a container renamed), and seeded
+commits (`pathAgreementTests`) after each of which the index agrees with a fresh read of the file
+and the warnings kept on the board shown with a fresh check. `./build.sh bench` holds a rename of a
+subboard whose board holds 10,000 (`Budget.containerRename`).
 
 ### Subboards
 
@@ -9784,12 +9867,17 @@ untinted.
   subboard's or a paste's, are taken out or read as well), and a file put in place reads it again. A commit while it's being built is applied to what's read so far,
   the shapes on boards not read yet read when their turn comes, so commits that never stop (an
   agent's draw, a sync) can't keep it from finishing. It keeps no path: a container's rename costs nothing in it.
+  What it knows of containers is Boards' `ShapePaths` ([Paths two shapes share](#paths-two-shapes-share)),
+  a value its state embeds: each container's parent, name and folded name, read once and kept until
+  a commit changes that container (`forget(_:)`, told what each commit it applies changed;
+  `forgetAll()` as the catalog is made again).
 - **Ranking.** A word names titles alone, `FuzzyMatcher.rank` over the buffer (the `@` picker's
   workload). Several words are pieces placed in order along a path, a group of neighbors to a
   name, names skipped as they like, the last in the shape's own title (`PathMatcher`): the last
   piece is matched against every title first, and only what it matches is scored by its path, a
   container's row (the best score of placing the first g pieces along the chain to it) made once per
-  query for everything under it, so a shape costs one match for each group the last could be in. A
+  query for everything under it (`ShapePaths.row(after:_:root:memo:)`), so a shape costs one match
+  for each group the last could be in. A
   container's name must be a name, never a scatter of its letters (a bare subsequence matches only
   the shape's own title); an untitled container is on the path by what its kind is called, dimmed,
   and is never matched (Boards' `registry.containerName(of:)`, as every path calls a container). Ties go to the fewer names skipped, the shallower path, a recent pick, and
@@ -9877,7 +9965,8 @@ registrar.forShapes(adopting: .box) { boxes in
   list ends `title, lock, public, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
   Move To" would read badly). It also puts Move To ▸ in the selection's menu (the Shape
   menu's too) on the same kinds: the frames, subboards and enclosing boards the selection can go to as
-  the table of contents' drop would take it, nearest first, at most twenty. A list with it needs
+  the table of contents' drop would take it, nearest first, at most twenty; two places called alike say
+  their path ("Pen 800 › Pen 300"). A list with it needs
   `SlashCommandsPlugin()`, `ContextMenusPlugin()` and `TableOfContentsPlugin()`.
 - **`/move-to` takes a frame or a subboard** (its `kinds`, the kinds that hold shapes or own boards,
   so the picker ranks only those, and only the titled ones, which have names) on any board the app
@@ -10165,7 +10254,9 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   lives, for every shape); a folded list is only counted, and unfolding one whose rows weren't read
   asks. Typed text keeps, in every list, folded or not, the rows whose names match, ranked as every
   list ranks what's typed (FuzzyMatching's `FuzzyMatcher.matches`, the best first, ties in the list's
-  order); another shape clears it.
+  order; of several words, also the rows whose containers the earlier words name, as the `@` picker
+  ranks a path: the whole text in the name strongly, then the path, then the name loosely); another shape
+  clears it.
 - **The tab.** `NeighborDetailsPlugin()` (id `neighbor-details`) is a plugin value of Neighbors' own,
   after Neighbors and the detail panel in the shipped list, so a list without the panel leaves it out
   and keeps the lights, and one with it and no panel is refused (`ownerNotInstalled`); it needs no
@@ -10180,7 +10271,8 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   (`DetailSearchField`), then, in one list, each list that has
   shapes: its head (`DetailGroupHeader`: a disclosure triangle, a dot in the light's color, the title and
   the count), which folds it, and its rows (`DetailShapeRow` in a borderless button, all in one `DetailRowList` that the arrow keys walk: the kind's symbol and
-  tint, its name, the board it's on when that is neither the board shown nor the shape's own, and the
+  tint, its name, where it is (its path, "Alpha › Beta": the containers it is inside less those the board
+  shown and the shape are inside, so two called alike are told apart; else the name of its board), and the
   light's caption under it), made as they scroll into view, so a list of thousands draws the rows
   in view. A search that finds nothing says "No Matches". A click on a row goes to the shape
   (`editor.goTo`, on the scheduler's next turn: its board first, one step back); the pointer on a row
@@ -10336,9 +10428,10 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   the first match's kind symbol in its tint, an All one's count in a capsule ("1.2k" past a thousand, cut down, never rounded up), a "0"
   for none or a refusal, the warning for a failure); filled and bordered, or, when it stands for
   nothing, a dashed border with no fill and the label in italic at two thirds; while it's looked for,
-  solid with its words at half. A pill whose shape is on another board than its own says that board's
-  name after the shape's, gray, in what room the width leaves (`ReferenceEdits.pick(_:_:board:)` fits
-  the width to it for a pick from another board's list; written without, the width is the name's
+  solid with its words at half. A pill whose shape is somewhere other than the pill says where after the
+  shape's name, gray, in what room the width leaves: its path ("Alpha › Beta", the containers the shape is
+  inside and the pill is not), or the name of its board (`ReferenceEdits.pick(_:_:place:)` fits
+  the width to it for a pick from the list; written without, the width is the name's
   alone). Its width keeps room for what may trail it (a dynamic one's count, a
   direct one's eye or warning), so nothing that comes and goes refits it or cuts a short name short.
   Zoomed out it's one square fill. Labels and symbols are memoized, symbols as bitmaps, so a frame of a
@@ -10417,7 +10510,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   with Make Public, which makes every one public, on whichever board, in one step), the Interpret button
   for words nobody has asked about, and `LabeledContent("Match") { DetailCheckbox("All", …) }`, a step of its own. The
   Matches section, while it found shapes (its draft's too, while its words are typed), is a
-  `DetailShapeRow` per match (the board's name where it
+  `DetailShapeRow` per match (where the shape is, its path or its board's name, where it
   isn't the board shown; in first mode the rows after the first dimmed, what All would add) and "and
   42 more" past eight; a click goes to one, the pointer hovers it on the canvas.
 - **Validation**: a query the engine can't read (pasted, or written into a board by hand) is a warning
@@ -10701,8 +10794,18 @@ it says, and it moves only with a placement), and one about a title it doesn't m
 shape that has no title is named by its id, in the query's spelling (`edge "Checkout" ->
 #7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`), wherever a statement names a shape the file already has:
 an id never makes a shape, and a run's rows say the ids of the shapes the file has (`id`, and
-`fromId` and `toId` for an edge's ends named so). A
-gap is a minimum among the shapes the script places; shapes already on the board stay put, and
+`fromId` and `toId` for an edge's ends named so). A title is a name only
+while it is the shape's alone: two shapes may share one in different containers (frames, subboards'
+boards), and a shape is then named by its **path**, the containers it is in, outermost first, then
+its title, joined by `>` (`"Cart" > "Checkout"`, `#7C1E… > "Checkout"` for an untitled container,
+`board > "Checkout"` for the top of the board the run draws on), wherever a statement names a shape
+(`ShapeName.path`, `Target.Box.path`). A path matches every shape whose chain of containers ends
+with its parts, each directly inside the one before; one match is the shape, several are
+`ambiguous_title` (each listed by its path: `FileNames.pathHint`), none `unknown_title`. A shape
+statement named by a path restates the shape there or makes it directly in the path's container, as
+`in` would put it. `in "X"` finds its own title inside X first (anywhere on X's board for a
+subboard, within X for a frame), then a shape lying on X's board in no container (moved in), else
+makes a new one in X; its other titles are found inside X first too. A gap is a minimum among the shapes the script places; shapes already on the board stay put, and
 are kept clear of; and whatever is ambiguous (an axis nothing settles, two shapes with nothing to
 hang on, two that would overlap with nothing saying which side either sits on) is refused rather
 than guessed. A placement is worked out once: the board keeps positions, never `right of "API"`.
@@ -10725,15 +10828,20 @@ against the board as the run starts:
    more: a `GroupStatement` of names joined by `and` or commas), and styles, which it merges into the
    statements that name them. Where a statement
    names a shape the file has (an edge's ends, a delete, a placement's target, `in`, a shape's own
-   name, `share:`'s host) the name is a `ShapeName`: a quoted title, or a word that starts with `#`,
-   an id, kept as text and checked only for its shape (`not_an_id`); what it names is Draw's. An attribute that
+   name, `share:`'s host) the name is a `ShapeName`: a quoted title, a word that starts with `#`,
+   an id, kept as text and checked only for its shape (`not_an_id`), or a `ShapePath`, titles joined
+   by `>` that start with a title, an id or `board` (the lexer cuts the `>` out of a word as
+   `board>` or `#7C1E…>`; a malformed path is `syntax`); what it names is Draw's. An attribute that
    isn't the language's own is a key and a value, left for Draw to check against the kind. The
    language's own words are enums with implicit raw values (`Keyword`, `LanguageKey`, `EdgeKey`,
    `Direction`, …), never string literals, so the id audit never sees another module's id there
    (Connections' `channel`, Titles' `title`). Every line that can't be read is reported, up to 20.
 2. **Resolve** (`Drawing`): each kind word against the registry (a kind is drawable when a tool
    places it, `registry.placement(for:)`); each title, through DrawNames, to the one board shape
-   it names (restated) or to none (made); each id to the shape the file has with it, on any board
+   it names (restated) or to none (made); each path to the shapes whose containers end with it
+   (`DrawPaths.swift`: `FileNames.match`, walking the file's own containers down from the first part,
+   `CanvasDocument.contents(of:containingKinds:)`, a subboard's board's shapes in no frame), exactly
+   one the shape; each id to the shape the file has with it, on any board
    the app can show (`FileNames.place(ofID:)`, the file's own index by id, a lookup and not a pass),
    and to none is `unknown_id`, never a new shape, and one a script can't name (an arrow, a pill
    for a shape its record names: `registry.drawCanName(_:)` of the record, which takes a kind a title
@@ -11279,8 +11387,8 @@ registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[T
   the run draws on; the board the window shows (if another); then every other board of the file
   the app can show (the last two are `FileNames.beyond`, which finds an edge's end on another
   board too: the window's board if it has one, else the one other board that has one). Two or more
-  in one place are `ambiguous_title` (those on the board by their kinds and where they are, as a
-  placement's are; on other boards, by the boards); shapes the script deletes, and those on boards
+  in one place are `ambiguous_title` (those on the board by their kinds and paths, as a
+  placement's are, a text's hint saying it names a shape by its title alone; on other boards, by the boards); shapes the script deletes, and those on boards
   its deletes take, don't count, and a title only they have is `unknown_title` ("names "Old",
   which this script deletes"); a title some shape has and none is taken, `invalid_value`, saying
   what the first is and the format's clause; none at all, `unknown_title` with
@@ -11938,7 +12046,8 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   the pill the arrow ends on, on a type's row to the relationship type.
 - **Setting a relationship from a row.** Typing, Space or a click on the value of a relation row lists the notes that fit
   (`RelationPicker`: the instances of the row's other types on every board, a note with no title or words named by its
-  values, `· will be made public` on a line whose pick does that); Return picks and draws the arrow (`editor.relate`, "Add
+  values, where each is when that isn't the board shown (its path), `· will be made public` on a line whose pick does that;
+  a query of several words also names a note's containers, and narrows the last answer's matches only with as many words); Return picks and draws the arrow (`editor.relate`, "Add
   Relationship": the arrow runs by the row's side, nothing is written to either note); for a note on another board the pick
   puts a pill on the board shown where `canvas draw` puts it and makes the note public in the same step, and one Undo returns
   both boards byte for byte. ← → move a focus between pills, Backspace twice removes a relationship (`editor.unrelate`: the
@@ -13391,7 +13500,7 @@ each of them:
 | [Selection](#selection) | Opening a shape (`ShapeOpening`); Back crosses boards, and showing another board is a step; nothing is selected on arrival; `showBoard(_:selecting:)`; `goTo` goes to a shape on any board. |
 | [Boards](#boards) | Opening a kind's boards, ⌘↑, a board's name and symbol, and the path over the canvas. |
 | [The table of contents](#whats-listed-and-selecting) | Lists the board shown, keeps each board's rows, and takes its header from the plugin that names boards (Boards: the board's crumb). A row may read shapes on other boards ([`elsewhere`](#rows-read-from-more-than-their-shape)). |
-| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (`MentionValidationPlugin`'s targets) find shapes there alone; a rule over a service's state (`TitleValidationPlugin`'s titles, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
+| [Validation](#a-horizontal-plugin) | Checks the board shown, keeping each board's issues; a board never shown isn't checked, and a rule's lookups (`MentionValidationPlugin`'s targets) find shapes there alone; a rule over a service's state (`PathValidationPlugin`'s paths, the file's) names the shapes a commit changes the issues of on any board, checked once their board is shown. |
 | [Locking](#locking) | A shape whose board holds a locked shape isn't deleted; a locked owner is entered as any other. |
 | [Mentions](#mentions-across-boards) | A mention names a shape on any board, live and followed there (`goTo`, or `goInto` for a kind followed by opening it: a subboard); who mentions whom (Topology's), what each mentioned shape shows and the `@` picker's catalog are the file's (the board shown's first on a tie), so showing another board reads no mention text; so are the Connections tab's and Show What Mentions' mentioners (the tab's in the file's order, Show What Mentions' the board shown's first). |
 | [Topology](#topology) | The file's edges, and containment (a shape's parent is its container, else its board's owner), whatever board is shown; showing another board reads nothing. |
@@ -14049,7 +14158,7 @@ transform            service TransformState
 validation-details   DetailStatuses in Issues after Style → every shape
 validation-contents  ContentsMarks → every shape
 mention-validation   ValidationRules → every shape naming shapes
-title-validation     service TitleIndex · ValidationRules → every shape with a title
+path-validation      service PathIndex · ValidationRules → every shape with a title
 grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
 locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock → every shape holding locked
@@ -14132,8 +14241,8 @@ keeps how each mentioned shape shows (`MentionState`), tells the text it keeps d
 (`MentionTextMemo`) where each frame ends (`MentionFrames`, an overlay that draws nothing), makes
 pills answer clicks (`ShapeFaces`), and puts Show What Mentions in the context menu
 (`CanvasContextMenu`); `mention-validation`'s `ValidationRules → every shape naming shapes` is its
-warnings about mentions that can't work, and `title-validation`'s, over the file's titles it keeps
-(`TitleIndex`), its warnings about titles two shapes share (`ValidationRules → every shape with a title`).
+warnings about mentions that can't work, and `path-validation`'s, over the file's paths it keeps
+(`PathIndex`), its warnings about paths two shapes share (`ValidationRules → every shape with a title`).
 Titles places its pill on every shape whose kind's title shows one
 (`adornment TitlePill → every shape with a title pill`), and Locking its lock, on the kinds that can be
 locked (`adornment LockChip → every shape holding locked`, with its mark on the row, `ContentsMarks → every shape holding locked`,
@@ -14762,7 +14871,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   each as on one board, with the drag event's input alone (in 1 ms, and at most 3× what it costs on a file of that
   board alone, since drawing would hide a commit's upkeep of the whole file); the minimap's picture of the board entered, a frame at a time; and deleting
   a subboard whose boards hold 10,000 shapes (the commit and every board under it, in a frame and 2 ms: the
-  generated file holds 2,608 titles twice, which Titles' `TitleIndex` (`TitleValidationPlugin`'s service) takes out), and
+  generated file holds 2,608 titles twice, which the title index took out, as Boards' `PathIndex` (`PathValidationPlugin`'s service) takes out their paths now), and
   undoing and redoing that (with its frame). It only reports the inspector's list replaced on a
   switch between boards of 10,000 (a `List` in an unshown window, against a 50 ms target), and a
   chain of 1,000 boards written, read, walked (`path(to:)`) and shown. `./test.sh` runs it small, in
@@ -14842,15 +14951,17 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   a locked mentioner, the board shown, and moves: a drag of a target or of its mentioner checks
   no text, and a rename of the target checks its mentioner (`MentionValidationPlugin.textsChecked`,
   debug builds, counts the texts the rule checks).
-  TitlesTests' `TitleValidationTests.swift` hold `TitleValidationPlugin`
-  over CanvasTesting's cards and pockets (named) and discs
+  BoardsTests' `PathValidationTests.swift` hold `PathValidationPlugin`
+  over CanvasTesting's cards, pockets and corrals (named) and discs
   (derived): the warning and its field, a rename warning the shape it didn't change, three of a
-  title, folding, a delete, a rename and their undo, a title in a pocket against one on the root, a
-  rename on the root warning a shape on a board kept once it's shown (checking that shape alone,
-  and handed to the table of contents' catch-up, `affected(by:)`), a pocket's deletion, a move
-  checking none (`TitleValidationPlugin.titlesChecked`), a file put in place, a check outside
-  the engine with and without the editor, and writes that have not committed (the rule over a
-  transaction's titles, and which other holders they reach, on another board too).
+  path, folding, a delete, a rename and their undo, a title in a pocket or a corral against one on
+  the root, a rename on one pocket's board warning a shape on another's kept once it's shown
+  (checking that shape alone, and handed to the table of contents' catch-up, `affected(by:)`),
+  containers renamed, moved and deleted, a pocket's deletion, a move and a corral's drag
+  checking none (`PathValidationPlugin.pathsChecked`), a file put in place, a check outside
+  the engine with and without the editor, writes that have not committed (the rule over a
+  transaction's paths, and which other holders they reach, on another board too), and seeded
+  commits held to a fresh read ([Paths two shapes share](#paths-two-shapes-share)).
   CompositionTests' `mentionsShippedTests` hold the shipped pieces together in a `CanvasView`: a
   titled note picked with `@`, renamed (the editor, the row and the canvas), deleted and undone; the
   pill clicked on the canvas and double-clicked in the text; a locked note's pill; copying and

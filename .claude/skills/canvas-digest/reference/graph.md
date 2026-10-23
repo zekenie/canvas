@@ -6,7 +6,7 @@ A digest is one JSON file. It says what the things are, which holds which, and w
 {
   "title": "Name of the whole",
   "policy": {"mess": 0.1, "promote": true, "ranks": "rows"},
-  "nodes": [{"title": "…", "kind": "auto", "in": "…", "text": "…", "public": true, "rank": 0,
+  "nodes": [{"title": "…", "id": "…", "kind": "auto", "in": "…", "text": "…", "public": true, "rank": 0,
              "schema": {}, "relationship": true, "is": "…", "fieldValues": {}}],
   "edges": [{"from": "…", "to": "…", "weight": 1, "text": "…", "via": "reference", "direct": true,
              "is": "…", "fieldValues": {}, "endRule": {"needed": true}}]
@@ -28,9 +28,10 @@ A node is a shape. The list is flat: a node says which node holds it with `in`.
 
 | field | meaning |
 |---|---|
-| `title` | required. Unique across the whole file and the app's file (case aside, spaces folded), at most 80 characters. It is how edges, `in` and later scripts name the shape. |
+| `title` | required, at most 80 characters. Unique among the nodes **in the same container** (the same `in`; the first board's top level is one), case aside and spaces folded; two nodes in different containers may have the same title (two folders that each hold an `index.ts`). A type's title (a node with a `schema`) is unique across the whole digest, since `is` names a type by its title. It is how the scripts name the shape, as a path (the containers it is in, then its title) wherever its title is not its alone. |
+| `id` | optional: a non-empty string, unique in the digest. It names the node in an edge or an `in` when its title repeats. Nothing is drawn from it. |
 | `kind` | `sticky-note` (the default), `frame`, `subboard` or `auto`. |
-| `in` | the title of the frame or subboard that holds it. Left out, it is on the first board. |
+| `in` | the id of the frame or subboard that holds it, or its title when exactly one node has that title. Left out, it is on the first board. |
 | `text` | a note's words. A note is as tall as its text needs. A subboard's is its description, what its board is for: mention text, written once everything it may mention is drawn, and shown in the card's panel, never on the canvas (a subboard with none has none); a frame ignores it. |
 | `public` | `true` pins the node public (it will be a thing others point at through a pill); `false` means never promote it. Left out, the loop decides. |
 | `rank` | a number that puts the node in a row of its container's, or a column, whatever the arrows ask: rows with the lowest rank on top (each row's shapes left to right by title), or columns with the lowest at the left (each column's top to bottom), whichever the view shows larger (`policy.ranks` says which). A frame alone in its row is as wide as the widest row, what it holds centred, and one alone in its column as tall as the tallest, what it holds at its top: layers as bands, phases of a plan. Each band is laid out for its slot, wide and short in a row, narrow and tall in a column. A shape with no rank among ranked ones goes in a row (or a column) after them. |
@@ -42,11 +43,21 @@ A node is a shape. The list is flat: a node says which node holds it with `in`.
 - A **frame** is a group on a board that a reader sees at a glance (a package, a team, a theme). Nest them: a frame can hold frames. Keep each to about 15 shapes.
 - A **subboard** is a card that opens its own board, for a part too big to show inline. Everything in it is laid out on its own board, and an edge from outside it is drawn as a pill.
 - **auto** picks for you: a subboard when it holds over 40 notes or subboards, or when something sits three levels below it (it holds a frame that holds a frame that holds a shape), and a frame otherwise.
-- Only containers can be named by `in`. Every title in `in` must be a node, and `in` can't run in a circle (A in B, B in A, or A in A): `check` and `plan` refuse it, naming the titles.
+- Only containers can be named by `in`. Every `in` must name a node, and `in` can't run in a circle (A in B, B in A, or A in A): `check` and `plan` refuse it, naming the titles.
+
+**Naming a node.** `in`, `from` and `to` name a node by its `id`, or by its title when exactly one node has that title (an `id` wins where a string is both some node's id and another's title). A title that several nodes have names none of them: give those nodes ids, and name them by id. A digest whose titles are all unique and that has no ids is drawn exactly as it always was.
+
+```json
+{"nodes": [{"title": "app", "kind": "frame"}, {"title": "lib", "kind": "frame"},
+           {"id": "app/index.ts", "title": "index.ts", "in": "app"}, {"id": "lib/index.ts", "title": "index.ts", "in": "lib"}],
+ "edges": [{"from": "app/index.ts", "to": "lib/index.ts", "text": "imports"}]}
+```
+
+**What `check` refuses of these**, naming the nodes: two nodes of one title in one container (`duplicate title "index.ts": nodes[2] and nodes[3] are both in "app"`), two nodes of one id, an `id` that is blank or not a string, an `in`, `from` or `to` that names no node, a title several nodes have where one of those uses it (it says to give the nodes ids), two types of one title, and a title over 80 characters. Of the titles already in the file it refuses only the `--into` title and the titles of types (`is:` finds a type anywhere in the file); every other node's title may be the file's, because the scripts name each shape so that nothing else can be meant: by its bare title where nothing else in the digest or the file has it, and otherwise by a path (`"app" > "index.ts"`, or one that starts at the `--into` subboard). A digest drawn as the board itself, or into a new file, has no other shapes to mistake for its own.
 
 | `schema` | a JSON Schema, as a JSON object: the note is a **type** (a note whose fields are the schema's). The tool writes it as `canvas draw`'s quoted string. [Types](#types). |
 | `relationship` | `true` on a type: it is a **relationship type**, which says what an arrow between two notes holds. Needs a `schema`. |
-| `is` | a type's title, or a list of them: the note is one of that type (its panel shows the type's fields). On a type, the types it **builds on**: its notes have their fields too. Notes only. |
+| `is` | a type's title, or a list of them: the note is one of that type (its panel shows the type's fields). On a type, the types it **builds on**: its notes have their fields too. Notes only. (A type is named by its title, never an id.) |
 | `fieldValues` | an object: what the note holds for its types' fields, and those of the types they build on. Held to their schemas. Needs `is`; never on a type. |
 
 A board with more than about 150 shapes is hard to read; make a subboard of a part.
@@ -57,7 +68,7 @@ An edge is "from points at to". Both must be notes or subboards, never frames.
 
 | field | meaning |
 |---|---|
-| `from`, `to` | titles of nodes. An edge to itself is ignored. An edge that names a frame is dropped with a warning. |
+| `from`, `to` | ids or titles of nodes (as `in`). An edge to itself is ignored. An edge that names a frame is dropped with a warning. |
 | `weight` | how strongly the layout keeps the two near. Default 1. Two edges with the same ends are one edge, with their weights added. |
 | `is` | a relationship type's title, or a list: the arrow is a **relationship** of that type. Two edges between one pair with different `is` are two arrows, drawn each with its type, and one edge to the layout. [Types](#types). |
 | `fieldValues` | an object: what the relationship holds for its type's fields. Needs `is`. |
@@ -133,10 +144,10 @@ All files go in the out folder (`--out`, default the digest's name with `.out`).
 
 | command | reads | writes |
 |---|---|---|
-| `check` | the digest, `canvas kinds`, one `canvas query` for the titles in the file (with `--board`) and `canvas boards` (drawn as the board, `--board` without `--into`: whether it is empty) | `kinds.json`, `titles.json`, `titles.all.json` |
+| `check` | the digest, `canvas kinds`, one `canvas query` for the titles in the file and where each shape is (with `--board`) and `canvas boards` (drawn as the board, `--board` without `--into`: whether it is empty) | `kinds.json`, `titles.json`, `titles.all.json`, `places.all.json` |
 | `measure` | the digest, `canvas measure` | `measure.draw` (what was measured), `measure.json` (the answer) |
-| `plan` | the digest, `measure.json`, `canvas boards` (the room the target's window has for a board: the view every board is laid out for, unless `--view` says) | `plan.json`, `report.json`, `runs/NN-<board>-<step>.draw` |
+| `plan` | the digest, `measure.json`, `canvas boards` (the room the target's window has for a board: the view every board is laid out for, unless `--view` says), and, with `--board`, `titles.json` (the file's titles, which a name in a script must not be able to mean) | `plan.json`, `report.json`, `statements.json` (what each line of each script says), `runs/NN-<board>-<step>.draw` |
 | `draw` | the plan and runs; `drawn.json` with `--replace` | the board; `results/NN-<board>-<step>.dry.json` and `.json`, what `canvas draw` said of each run; `target.id` for a new file; `drawn.json`, what this drawing makes (the board's file and id, the subboard, the titles), which a later `--replace` takes back; with `--replace`, `replace.draw` and `results/replace.json` |
-| `verify` | the plan, the saved results, one `canvas query` for the titles in the file | nothing |
+| `verify` | the plan, `statements.json`, the saved results, one `canvas query` for where each shape in the file is | nothing |
 
-`plan.json` has each board's shapes (`x`, `y`, `w`, `h` from the board's origin, its (0, 0), which every shape on the board itself is placed from: `right of origin (gap: x) below origin (gap: y)`), its pills, and its edges in the order they are drawn; for an edge into a shared pill, `share` and `host` name the shape whose pill it reuses (or, for a spine's, the shape whose edge makes it, where the plan has it). It names the subboard the digest goes in (`into`, null for a new file) and the scripts in order (`runs`). `report.json` has the promotions with their costs, where each board's loop stopped and why, the public set with a reason for each, the view the plan is for (`view`: its width and height, and whether it was `given` or `assumed`), and each board's size and how far that is from the view's shape (`end.size`, `end.aspect`: 1 is the view's own shape, or a board the view shows whole). Read the report when the summary isn't what you expected.
+`plan.json` names a node by its `id` when it has one, else by its title, and where more than one node has the title, by that title and the containers the node is in (`index.ts  in app`, a `key`); its shapes say `title`, `id` and `key` as they apply, and `in` the name of the container. It has each board's shapes (`x`, `y`, `w`, `h` from the board's origin, its (0, 0), which every shape on the board itself is placed from: `right of origin (gap: x) below origin (gap: y)`), its pills, and its edges in the order they are drawn; for an edge into a shared pill, `share` and `host` name the shape whose pill it reuses (or, for a spine's, the shape whose edge makes it, where the plan has it). It names the subboard the digest goes in (`into`, null for a new file) and the scripts in order (`runs`). `report.json` has the promotions with their costs, where each board's loop stopped and why, the public set with a reason for each, the view the plan is for (`view`: its width and height, and whether it was `given` or `assumed`), and each board's size and how far that is from the view's shape (`end.size`, `end.aspect`: 1 is the view's own shape, or a board the view shows whole). Read the report when the summary isn't what you expected.

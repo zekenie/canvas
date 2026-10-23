@@ -44,7 +44,8 @@ public struct ShapeStatement: Sendable, Equatable {
     /// The first word: a kind, for the caller to find.
     public var word: String
     /// What it is called as written: a title (escapes undone, never blank), or, for a shape that has none, an id (`#7C1E…`) that
-    /// names a shape the file already has; nil for an untitled shape.
+    /// names a shape the file already has, or a path (`"Payments" > "Checkout"`) that names the shape of that title in that
+    /// container, restating it or making it there; nil for an untitled shape.
     public var name: ShapeName?
     /// `size:`, from the statement or a style: both sides, or a width alone.
     public var size: Size?
@@ -61,8 +62,8 @@ public struct ShapeStatement: Sendable, Equatable {
     public var attributes: [Attribute]
     /// Where it goes, in the order written.
     public var clauses: [Clause]
-    /// `in "X"`: the name of the shape it goes in (a subboard, whose board it's drawn on), as
-    /// written. Not a placement: it says which shape holds it, not where it sits.
+    /// `in "X"`: the name of the shape it goes in (a subboard, whose board it's drawn on, or a frame), as written: a title, an
+    /// id or a path. Not a placement: it says which shape holds it, not where it sits.
     public var container: ShapeName?
 
     public init(word: String, title: String? = nil, name: ShapeName? = nil, size: Size? = nil, gap: Gap? = nil, overlapAllowed: Bool = false,
@@ -79,29 +80,34 @@ public struct ShapeStatement: Sendable, Equatable {
         self.container = container
     }
 
-    /// Its title as written, if it is named by one (nil for an untitled shape, and for one named by its id).
+    /// Its title as written, if it is named by one (nil for an untitled shape, and for one named by its id or a path).
     public var title: String? { name?.title }
 }
 
 /// How a statement names a shape the file has: by its title, in quotes, or, for a shape that has none, by its id, in the
-/// query language's spelling (`#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`). The language keeps an id as text and checks only its
-/// shape (8-4-4-4-12 hex digits); what it names, and whether any shape has it, is for the caller.
+/// query language's spelling (`#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`), or by a path (`"Payments" > "Checkout"`) when its title
+/// is not its alone. The language keeps an id as text and checks only its shape (8-4-4-4-12 hex digits); what it names, and
+/// whether any shape has it, is for the caller.
 public enum ShapeName: Sendable, Hashable, ExpressibleByStringLiteral {
     /// The shape called this, as written (escapes undone).
     case title(String)
     /// The shape with this id, as written after the `#`.
     case id(String)
+    /// The shape a chain of containers leads to: each part is the shape the next is directly inside.
+    case path(ShapePath)
 
     public init(stringLiteral title: String) { self = .title(title) }
 
     public var title: String? { if case .title(let title) = self { title } else { nil } }
     public var id: String? { if case .id(let id) = self { id } else { nil } }
+    public var path: ShapePath? { if case .path(let path) = self { path } else { nil } }
 
-    /// As a script writes it: `"Hub"`, `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`.
+    /// As a script writes it: `"Hub"`, `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`, `"Payments" > "Checkout"`.
     public var written: String {
         switch self {
         case .title(let title): quote(title)
         case .id(let id): "\(Self.idMark)\(id)"
+        case .path(let path): path.written
         }
     }
 
@@ -114,6 +120,63 @@ public enum ShapeName: Sendable, Hashable, ExpressibleByStringLiteral {
         return text.enumerated().allSatisfy { index, character in
             [8, 13, 18, 23].contains(index) ? character == "-" : character.isASCII && character.isHexDigit
         }
+    }
+}
+
+/// A path: titles joined by `>`, each part the shape the next is directly inside (a frame's shapes; a subboard's board's
+/// shapes in no frame), as `canvas query` writes a child. The first part is the title of a container, the id of one (a
+/// container with no title), or the word `board`, the top of the board the run draws on; every part after it is a title, and
+/// there is at least one. It names the shape whose chain of containers ends with its parts in order, as a selector does, so
+/// `"Payments" > "Checkout"` is every Checkout directly in a Payments, wherever that is.
+public struct ShapePath: Sendable, Hashable {
+    /// What the first part is.
+    public enum Head: Sendable, Hashable {
+        /// A container called this (as written).
+        case title(String)
+        /// The container with this id (as written, after the `#`).
+        case id(String)
+        /// `board`: the top of the board the run draws on, the shapes in no container.
+        case board
+
+        /// As a script writes it.
+        public var written: String {
+            switch self {
+            case .title(let title): quote(title)
+            case .id(let id): ShapeName.id(id).written
+            case .board: PlaceWord.board.rawValue
+            }
+        }
+    }
+
+    public var head: Head
+    /// The titles after the first part, outermost first, as written; never empty.
+    public var rest: [String]
+
+    public init(head: Head, rest: [String]) {
+        self.head = head
+        self.rest = rest
+    }
+
+    /// The title of the shape it names: its last part.
+    public var last: String { rest[rest.count - 1] }
+
+    /// The container the shape is directly in, named as a statement names one: the path less its last part. Nil when that is
+    /// `board`, which is no shape, only the top of the board.
+    public var container: ShapeName? {
+        if rest.count > 1 { return .path(ShapePath(head: head, rest: Array(rest.dropLast()))) }
+        switch head {
+        case .title(let title): return .title(title)
+        case .id(let id): return .id(id)
+        case .board: return nil
+        }
+    }
+
+    /// The character that joins its parts.
+    public static let joiner = ">"
+
+    /// As a script writes it: `"Payments" > "Checkout"`, `board > "Checkout"`.
+    public var written: String {
+        ([head.written] + rest.map(quote)).joined(separator: " \(Self.joiner) ")
     }
 }
 
@@ -337,6 +400,8 @@ public struct Target: Sendable, Hashable {
         case title(String)
         /// The shape with this id (as written, after the `#`).
         case id(String)
+        /// The shape a path names (`"Payments" > "Checkout"`).
+        case path(ShapePath)
         /// `board`: the bounds of every shape the script doesn't move.
         case board
         /// `view`: the part of the board in the window.
@@ -362,10 +427,10 @@ public struct Target: Sendable, Hashable {
         self.part = part
     }
 
-    /// Whether it names a shape (by its title or its id) rather than a word of the language.
+    /// Whether it names a shape (by its title, its id or a path) rather than a word of the language.
     public var isName: Bool {
         switch box {
-        case .title, .id: true
+        case .title, .id, .path: true
         case .board, .view, .origin: false
         }
     }
@@ -375,6 +440,7 @@ public struct Target: Sendable, Hashable {
         let named = switch box {
         case .title(let title): quote(title)
         case .id(let id): ShapeName.id(id).written
+        case .path(let path): path.written
         case .board: PlaceWord.board.rawValue
         case .view: PlaceWord.view.rawValue
         case .origin: PlaceWord.origin.rawValue

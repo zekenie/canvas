@@ -37,6 +37,9 @@ public struct CaretListItem: Equatable {
     /// The detail's characters set fainter, as ranges of `Character` offsets in `detail`: a path's
     /// untitled container, shown by its kind's name, never matched.
     public var detailDimmed: [Range<Int>]
+    /// Whether a detail too long for its room is cut at its start, with "…" there, not at its end: a path
+    /// ("Alpha › Beta") is told by the container its shape is in, which is last.
+    public var detailTruncatesHead: Bool
     /// An SF Symbol right after the title, in the detail's color.
     public var trailingSymbol: String?
     /// Whether a line one point thick sets the row off from the one above it (a row of another kind,
@@ -54,7 +57,8 @@ public struct CaretListItem: Equatable {
 
     /// `spoken` nil: the title, then the detail ("type, keyword").
     public init(_ title: String, matched: [Range<Int>] = [], font: NSFont? = nil, symbol: String? = nil, tint: NSColor? = nil,
-                detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], trailingSymbol: String? = nil, separated: Bool = false,
+                detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], detailTruncatesHead: Bool = false,
+                trailingSymbol: String? = nil, separated: Bool = false,
                 chip: NSColor? = nil, chipInk: NSColor? = nil, spoken: String? = nil) {
         self.title = title
         self.matched = matched
@@ -64,6 +68,7 @@ public struct CaretListItem: Equatable {
         self.detail = detail
         self.detailMatched = detailMatched
         self.detailDimmed = detailDimmed
+        self.detailTruncatesHead = detailTruncatesHead
         self.trailingSymbol = trailingSymbol
         self.separated = separated
         self.chip = chip

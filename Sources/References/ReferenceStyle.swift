@@ -99,8 +99,8 @@ enum ReferenceStyle {
     static let warningSymbol = "exclamationmark.triangle.fill"
     static let warningSize: CGFloat = 11
     static let warningTint = NSColor.systemOrange
-    /// The name of the board a pill's note is on, when it isn't the pill's board: gray, after the note's
-    /// name, a gap from it, in what room the pill's width leaves (cut at its end, and left out when
+    /// Where a pill's note is, when that isn't where the pill is (its path, "Alpha › Beta", or the name of its board):
+    /// gray, after the note's name, a gap from it, in what room the pill's width leaves (cut at its end, and left out when
     /// less than `boardRoomLeast` remains). A pick from the list fits the pill's width to it too.
     static let boardFont = NSFont.systemFont(ofSize: 14, weight: .regular)
     static let boardGap: CGFloat = 6

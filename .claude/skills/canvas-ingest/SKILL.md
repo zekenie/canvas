@@ -68,7 +68,7 @@ It needs `canvas`, the canvas skill's command, and the app running. Its Python i
    EOF
    ```
 
-   Each row has the shape's `title`, `kind`, `board` and what it is `inside`. Find the node of that title in the run's `digest.json`: its `source` is the path, and line, it was made from.
+   Each row has the shape's `title`, `kind`, `board` and what it is `inside`. Find the node of that title in the run's `digest.json`: its `source` is the path, and line, it was made from. Several nodes can have one title (an `index.ts` in each of two folders): each has an `id` that says where it is, the title and then the containers (`index.ts  in Web layer > web > src`), which are the row's `inside`.
 3. **Write the request as a named rule in the lens**: a name for what it does, the reason in the user's words, and the round. Read the rules already there first. If the request goes against one, name that rule and its reason, and ask which wins; then change that rule, and never add one that undoes it. Make it general: a user pointing at one shape is showing a case.
 4. **Draw again**: `"$SKILL/ingest"` with the drawn board in front. The lens and the settings are read from the working tree, so a round needs no commit: edit `.canvas/lens.py` and run again. A round runs only the lens and the drawing (every board is laid out and drawn again: a minute or two for 2,000 shapes); the scan is kept for the commit's code, and a commit that changes only `.canvas/` has the same code. If the user wrote on the board (a note, an arrow), it is theirs now and `ingest` refuses it: draw the round into a new file (`--new-file PATH`), or ask them to take their shapes off. Never delete them yourself.
 

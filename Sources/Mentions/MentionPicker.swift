@@ -71,7 +71,7 @@ public final class MentionPicker {
     /// The index in `rows` of the highlighted row, always a shape's; nil when none can be picked.
     public var highlighted: Int? { list.highlighted }
     /// The list the picker shows: its rows as they're drawn and said, and the highlight.
-    let list = CaretList(metrics: MentionStyle.pickerMetrics)
+    public let list = CaretList(metrics: MentionStyle.pickerMetrics)
     /// How far the query reaches (a character index): typing moves it, so the caret can go back
     /// over the query and forward again, but not past it.
     private var queryEnd: Int
@@ -160,8 +160,9 @@ public final class MentionPicker {
     }
 
     /// The rows as the list draws and says them: a shape's symbol in its tint, its label with the
-    /// matched characters, a lock after a read-only shape's, and its detail at the trailing end;
-    /// said as "Groceries, Note, 2 of 7".
+    /// matched characters, a lock after a read-only shape's, and its detail at the trailing end: where
+    /// the shape is, if it is in a container ("Alpha › Beta"), else its kind's; said as
+    /// "Groceries, Note, 2 of 7", or "Checkout, Note, in Alpha › Beta, 2 of 7".
     private static func listRows(_ rows: [MentionPickerRow]) -> [CaretListRow] {
         let shapes = rows.lazy.filter { $0.candidate != nil }.count
         var position = 0
@@ -172,9 +173,12 @@ public final class MentionPicker {
             case .candidate(let candidate):
                 position += 1
                 let appearance = candidate.appearance
+                let place = candidate.place
                 return .item(CaretListItem(appearance.label, matched: candidate.matched, symbol: appearance.systemImage, tint: appearance.tint,
-                                           detail: appearance.detail, trailingSymbol: candidate.isReadOnly ? MentionStyle.readOnlySymbol : nil,
-                                           spoken: "\(appearance.label), \(appearance.kindName), \(position) of \(shapes)"))
+                                           detail: place?.text ?? appearance.detail, detailMatched: place?.matched ?? [], detailDimmed: place?.dimmed ?? [],
+                                           detailTruncatesHead: place != nil,
+                                           trailingSymbol: candidate.isReadOnly ? MentionStyle.readOnlySymbol : nil,
+                                           spoken: "\(appearance.label), \(appearance.kindName)\(place.map { ", " + $0.spoken } ?? ""), \(position) of \(shapes)"))
             }
         }
     }

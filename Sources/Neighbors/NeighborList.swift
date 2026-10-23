@@ -50,11 +50,12 @@ public struct NeighborLine: Equatable {
     public let symbol: String
     public let tint: NSColor?
     public let name: String
-    /// The board it's on, when that isn't the board shown.
+    /// Where it is, when that isn't the board shown or the subject's own: the containers it is inside, outermost first
+    /// ("Alpha › Beta"), else the name of its board.
     public let detail: String?
     public let caption: String?
 
-    /// What assistive apps read of the row: its name, the board it is on, and its caption, as the row
+    /// What assistive apps read of the row: its name, where it is, and its caption, as the row
     /// draws them.
     public var spoken: String { [name, detail, caption].compactMap { $0 }.joined(separator: ", ") }
 }
@@ -84,8 +85,15 @@ public struct NeighborLine: Equatable {
 /// **Names.** A row is called its title, as the engine names it; a shape with none, what the table of
 /// contents calls it (a note with no title, its text), else its kind's name.
 ///
+/// **Where a row is.** The containers it is inside, outermost first, as the query engine names them (`inside`), less
+/// those the board shown is inside and the subject is, when the row is inside them, joined by " › " as a path says
+/// them: a shape's identity is its path, so two called alike are told apart. A shape in no container left but on
+/// another board says that board's name.
+///
 /// **Searching.** Typed text keeps, in every list, folded or not, the rows whose names it matches,
-/// ranked as every list ranks what's typed (`FuzzyMatcher`).
+/// ranked as every list ranks what's typed (`FuzzyMatcher`). Of several words it also keeps the rows whose
+/// containers the words before the last name (a path, as the `@` picker and Jump To match one): the rows whose
+/// names have the whole text first, then those found by their paths, then the loose matches of the name.
 @MainActor
 @Observable
 public final class NeighborList {
@@ -218,9 +226,19 @@ public final class NeighborList {
         guard !search.isEmpty else { return (listed.count, folded.contains(group) ? [] : listed.rows ?? []) }
         // A folded list searched before its rows are read keeps its head until they land.
         guard let rows = listed.rows else { return (listed.count, []) }
-        let matches = FuzzyMatcher.matches(search, in: rows.map(name(of:)))
-        let ranked = rows.indices.compactMap { index in matches[index].map { (index: index, score: $0.score) } }
-            .sorted { ($1.score, $0.index) < ($0.score, $1.index) }
+        let names = rows.map(name(of:))
+        let matches = FuzzyMatcher.matches(search, in: names)
+        let matcher = PathMatcher(search)
+        // Of several words: the whole text in a name strongly, a path the words name, the name loosely.
+        func band(_ index: Int) -> (band: Int, score: Int)? {
+            let named = matches[index]
+            guard matcher.pieceCount > 1 else { return named.map { (0, $0.score) } }
+            if let named, named.score >= FuzzyRanking.substring { return (0, named.score) }
+            if let path = matcher.match(path: rows[index].inside + [names[index]], placingAtLeast: 1) { return (1, path.score) }
+            return named.map { (2, $0.score) }
+        }
+        let ranked = rows.indices.compactMap { index in band(index).map { (index: index, band: $0.band, score: $0.score) } }
+            .sorted { ($0.band, $1.score, $0.index) < ($1.band, $0.score, $1.index) }
             .map { rows[$0.index] }
         return (ranked.count, ranked)
     }
@@ -233,14 +251,14 @@ public final class NeighborList {
         linesDrawn += 1
         #endif
         let label = editor.registry.label(of: row.kind)
-        // The board shown is observed (a row says which board it's on); the file isn't: a row is
-        // drawn again as an answer lands, never on every commit. What's on the subject's own board
-        // (what a subboard holds) needs no saying.
+        // The board shown is observed (a row says where it is); the file isn't: a row is
+        // drawn again as an answer lands, never on every commit. What's inside the subject (what a
+        // subboard holds) needs no saying.
         let isElsewhere = row.board != editor.board && row.board != subject.map { BoardID(owner: $0) }
         return editor.withoutObservingDocument {
             NeighborLine(symbol: label.systemImage ?? NeighborStyle.fallbackSymbol,
                          tint: editor.shape(inFile: row.id).flatMap { editor.tint(of: $0) } ?? label.tint, name: name(of: row),
-                         detail: isElsewhere ? boardName(of: row) : nil,
+                         detail: place(of: row, isElsewhere: isElsewhere),
                          caption: subject.flatMap { groups[group].caption?(editor, $0, row.id) })
         }
     }
@@ -255,6 +273,27 @@ public final class NeighborList {
         } ?? editor.registry.label(of: row.kind).name
         names[row.id] = name
         return name
+    }
+
+    /// Where a row is: the containers it is inside less those the board shown is inside and the subject is, when the row
+    /// is inside them (the rows of a subboard's own list, and the shapes on the board shown, say nothing of what holds
+    /// them all), joined as a path; else, on another board, that board's name; nil if it needs no saying.
+    private func place(of row: NeighborRow, isElsewhere: Bool) -> String? {
+        var names = row.inside[...]
+        if let topology = editor.topology {
+            // The ids of what the row is inside, outermost first, when they are the names `inside` has.
+            let above = Array(topology.ancestors(of: row.id).reversed())
+            if above.count == row.inside.count {
+                var dropped = 0
+                for held in [editor.board.owner, subject].compactMap({ $0 }) {
+                    let chain = Array(topology.ancestors(of: held).reversed()) + [held]
+                    if chain.count > dropped, above.starts(with: chain) { dropped = chain.count }
+                }
+                names = row.inside[dropped...]
+            }
+        }
+        if !names.isEmpty { return names.joined(separator: NeighborStyle.pathSeparator) }
+        return isElsewhere ? boardName(of: row) : nil
     }
 
     /// What the board a row is on is called: its owner's name, as the engine named it among what

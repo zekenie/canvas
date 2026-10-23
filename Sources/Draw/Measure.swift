@@ -95,7 +95,8 @@ public func measure(script text: String, program: String, in registry: Registry,
             shape.clauses = []
             shape.container = nil
             // Every shape is new in a measure, as it is for a title the file has: one that names a shape by its id is measured as
-            // a new shape of its kind with no title.
+            // a new shape of its kind with no title, and one a path names as a new shape titled by its last part (the container the
+            // path leads through is left out as `in` is; two paths are two shapes, whatever their last parts are).
             if shape.name?.id != nil { shape.name = nil }
             statements.append(Statement(line: statement.line, text: statement.text, body: .shape(shape)))
         case .edge(var edge):
@@ -139,6 +140,8 @@ public func measure(script text: String, program: String, in registry: Registry,
         switch edge.to {
         case .title(let written): label = drawing.fold(written) ?? written
         case .id(let text): label = drawing.measuredLabel(ofID: text) ?? edge.to.written
+        // A pill is called what the shape is: the last part of its path.
+        case .path(let path): label = drawing.fold(path.last) ?? path.last
         }
         guard let size = standIns.make(kind, standingFor: ShapeID(), label: label)?.box?.size else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")

@@ -20,6 +20,10 @@ struct MentionCatalog {
         var labelLength: Int
         /// Where it is among the recent picks, the latest 0; -1 if it isn't one.
         var recentRank: Int
+        /// The shape it is directly inside (Topology's `parent(of:)`: its container, else the owner of its board), once a
+        /// query by path asked (`hasParent`); read again with the entry, since a commit that changes it changes the shape.
+        var parent: ShapeID?
+        var hasParent = false
     }
 
     /// A shape its kind gives no name (the "Untitled …" placeholder), kept aside from the entries: no
@@ -48,6 +52,16 @@ struct MentionCatalog {
     func count(on board: BoardID) -> Int { counts[board] ?? 0 }
 
     func slot(of id: ShapeID) -> Int? { slots[id] }
+
+    /// What the entry at `slot` is directly inside, asked of `lookup` the first time and kept after: a query of several words
+    /// reads it for every shape its last word matches, which would cost more than the match.
+    mutating func parent(at slot: Int, using lookup: (ShapeID) -> ShapeID?) -> ShapeID? {
+        if entries[slot].hasParent { return entries[slot].parent }
+        let parent = lookup(entries[slot].id)
+        entries[slot].parent = parent
+        entries[slot].hasParent = true
+        return parent
+    }
 
     func contains(_ id: ShapeID) -> Bool { slots[id] != nil }
 
@@ -81,6 +95,7 @@ struct MentionCatalog {
                 entries[slot].count = keys.count - start
             }
             entries[slot].recentRank = recentRank
+            entries[slot].hasParent = false
             appearances[slot] = appearance
         } else {
             let start = keys.count

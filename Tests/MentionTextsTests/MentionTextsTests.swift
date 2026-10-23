@@ -116,7 +116,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
         // Any shape: both are called Row, so it's ambiguous. Only folders, there's one.
         let ambiguous = try refused(#"dispatch "Plan" body: "@[Row]""#, on: editor)
         expectEqual(ambiguous.reason, "ambiguous_title")
-        expect(ambiguous.hint?.contains("@[") == false, "two shapes have the title: it was meant as a mention, so the hint says to rename one, not how to write the characters")
+        expect(ambiguous.hint?.contains("@[") == false, "two shapes have the title: it was meant as a mention, so the hint says a text names a shape by its title alone, not how to write the characters")
         _ = try drawn(#"dispatch "Plan" to: "@[Row]""#, on: editor)
         expectEqual(editor.dispatch("Plan")?.to.stored, "@[Row](shape:\(folder))")
         // A name only a dispatch has, in text that mentions only folders.
