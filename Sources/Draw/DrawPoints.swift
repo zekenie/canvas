@@ -1,6 +1,7 @@
 import Canvas
 import CanvasRPC
 import Queries
+import Topology
 
 // What `canvas draw` needs from concerns it doesn't own, each an extension point with at most one
 // contribution, from the plugins that own the concerns (AutomationTests bind them to fixtures of
@@ -593,10 +594,22 @@ extension PluginRegistrar {
 
 extension Registry {
     /// Whether a script can name a shape of `kind` at all: it has a property a title is written to,
-    /// or a title worked out from what it is. A kind that can't be named can't be an end of an edge.
+    /// or a title worked out from what it is. A kind that can't be named lists no channels in
+    /// `canvas kinds`, and its shapes are ends of edges only as `drawCanName(_:)` of a record says.
     @MainActor public func drawCanName(_ kind: ShapeKind) -> Bool {
         guard let naming = drawNaming else { return false }
         return naming.namingProperty(kind, self) != nil || naming.isDerived(kind, self)
+    }
+
+    /// Whether a script can name this shape, by its title or, with none, by its id: a shape of a kind
+    /// it can name (`drawCanName(_:)` of the kind), or a stand-in that stands for what's provided for
+    /// what its record asks (a reference drawn by its query), which has no title and names no shape
+    /// it could be named by instead. An arrow is named by its two ends, and a stand-in for the shapes
+    /// its record names by the shape it stands for, so neither is.
+    @MainActor public func drawCanName(_ record: AnyShapeRecord) -> Bool {
+        if drawCanName(record.kind) { return true }
+        guard let forwarding = standIns.forwarding(of: record), case .provided = forwarding else { return false }
+        return true
     }
 
     /// Whether something makes connections for `canvas draw`, and so `drawConnection` can.

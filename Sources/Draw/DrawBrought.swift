@@ -117,11 +117,11 @@ extension Drawing {
     }
 
     /// A shape the run broke, named for a message: by its title; with none, by its id as a script writes it, which a later
-    /// script can name it by (an arrow and a pill, that a script cannot name, by their kind and where they are on their own
-    /// board); and, when that is not the run's board, which board.
+    /// script can name it by (an arrow and a pill for a shape it names, that a script cannot name, by their kind and where they
+    /// are on their own board); and, when that is not the run's board, which board.
     private func brokenName(_ record: AnyShapeRecord, on board: BoardID, shapes: ShapeContext) -> String {
         guard let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) else {
-            let place = registry.drawCanName(record.kind) ? ShapeName.id(record.id.description).written : Drawing.location(of: record, in: shapes)
+            let place = registry.drawCanName(record) ? ShapeName.id(record.id.description).written : Drawing.location(of: record, in: shapes)
             return board == target.board ? place : "\(place) on \(FileNames.named(board, in: editor, naming: naming))"
         }
         return quoted(title)

@@ -349,6 +349,53 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         guard case .found(_, let found)? = h.editor.references?.state(of: pill) else { return expect(false, "found") }
         expectEqual(found.count, 2)
     },
+    test("a script names a reference drawn by its query by the id its row gives: an edge into it, a run again, its query restated, its delete; :edge-from(#id, stands-for) says what it stands for") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        // Real time: the answer comes after the wait for quiet, as in the app.
+        let h = EditorHarness { _ in ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel()) }
+        let auth = note(h, "Auth", at: CGPoint(x: 0, y: 0), isPublic: true)
+        let login = note(h, "Login", at: CGPoint(x: 300, y: 0), isPublic: true)
+        _ = note(h, "Draft", at: CGPoint(x: 600, y: 0))
+        let checkout = note(h, "Checkout", at: CGPoint(x: 0, y: 400))
+        let made = try drawnInProcess(#"reference right of "Checkout" query: "sticky-note[public]" all: true"#, on: h.editor)
+        let pill = try require(h.editor.document.shapes.first { $0.kind == Reference.kind }?.id)
+        expectEqual(made["changes"]?.arrayValue?.first?["id"], .string(pill.description), "its row gives the id a later script names it by")
+        let mark = "#\(pill)"
+        let edge = try drawnInProcess("edge \"Checkout\" -> \(mark)", on: h.editor)
+        let row = try require(edge["changes"]?.arrayValue?.first)
+        expectEqual(row["did"], "connected")
+        expectEqual(row["from"], "Checkout")
+        expectEqual(row["to"], .string(mark), "called by the id as written")
+        expectEqual(row["toId"], .string(pill.description))
+        expectEqual(row["via"], nil, "drawn straight into it: no reference is made for a reference")
+        expectEqual(row["channel"], "note-link", "a pill takes every channel, so the note's own")
+        expectEqual(h.editor.document.shapes.filter { $0.kind == Reference.kind }.count, 1)
+        // What it stands for, and an arrow into it read as into each: both wait for its answer.
+        let queries = try require(h.editor.queries)
+        let stands = try awaitResult { try await queries.run(QueryRequest(":edge-from(\(mark), stands-for)", settle: QueryBudget.settleWait)) }
+        expectEqual(stands.rows.map(\.id), [auth, login], "the public notes, in file order: Draft isn't public")
+        expectEqual(stands.warnings, [], "nothing pending: it waited")
+        let through = try awaitResult { try await queries.run(QueryRequest(#"sticky-note:edge-to("Login")"#, settle: QueryBudget.settleWait)) }
+        expectEqual(through.rows.map(\.id), [checkout], "the arrow into the pill reads as into each note it stands for")
+        // Again, it's the edge.
+        let again = try drawnInProcess("edge \"Checkout\" -> \(mark)", on: h.editor)
+        expectEqual((again["changes"]?.arrayValue ?? []).map { $0["did"] }, ["unchanged"])
+        // Restated by its id: the first match only.
+        let restated = try drawnInProcess("reference \(mark) all: false", on: h.editor)
+        expectEqual(restated["changes"]?.arrayValue?.first?["did"], "updated")
+        expectEqual(h.editor.document[pill]?.typed(as: Reference.self)?.props.all, false)
+        let first = try awaitResult { try await queries.run(QueryRequest(":edge-from(\(mark), stands-for)", settle: QueryBudget.settleWait)) }
+        expectEqual(first.rows.map(\.id), [auth], "the first in file order")
+        // A reference picked for one shape is still named by that shape, not its id.
+        let direct = reference(h, to: auth, label: "Auth", at: CGPoint(x: 0, y: 800))
+        expectEqual(try refusedInProcess("edge \"Checkout\" -> #\(direct)", on: h.editor).reason, "invalid_value")
+        // Its delete takes the arrow into it.
+        _ = try drawnInProcess("delete \(mark)", on: h.editor)
+        expectEqual(h.editor.document[pill], nil)
+        expect(!h.editor.document.shapes.contains { $0.kind == Arrow.kind }, "the arrow into it went with it")
+        expect(h.editor.document[checkout] != nil && h.editor.document[auth] != nil)
+    },
     test("a query whose notes aren't public stands for none and says how many; Make Public in its panel makes them public in one step, and the arrow into it then reaches each") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

@@ -5,7 +5,7 @@ A **reference** is a pill that stands for another shape, anywhere in the file. A
 
 Only a **public** shape can be stood for. `public` is an attribute, `public: true` in a script, that a person sets from a shape's menu or its chip; a shape that isn't public can't be referenced, and a reference of one that stops being public stands for nothing.
 
-A reference is **direct** (the person picked one shape) or **dynamic** (a query finds what it stands for). A script makes a dynamic one with `query:`, and a direct one only as the stand-in of an edge, to a public shape on another board or with `via: reference` ([language.md](language.md#through-a-reference)): what a reference names, and the words typed into it, are otherwise the person's to pick and type. A dynamic one stands for what its query finds among the public shapes, the first in file order or, with `all: true`, every one up to fifty; the app finds it a moment after it's drawn and again as the file changes, and `canvas query` waits for that (up to two seconds, for a query that reads edges) before it answers. Its query reads what's drawn and what direct references stand for, never what another dynamic one found, nor what the person has selected or the board they're on (`:selected`, `:current-board`): a script that writes one is refused, and a pill that holds one (typed by the person) finds nothing, and says why. The examples below are about a direct one, which is what a person makes first, and which reads the same way for you.
+A reference is **direct** (the person picked one shape) or **dynamic** (a query finds what it stands for). A script makes a dynamic one with `query:`, and a direct one only as the stand-in of an edge, to a public shape on another board or with `via: reference` ([language.md](language.md#through-a-reference)): what a reference names, and the words typed into it, are otherwise the person's to pick and type. A dynamic one has no title and stands for no one shape, so a later script names it by its id: an arrow into it, its query changed, its delete ([language.md](language.md#arrows-into-it)). A dynamic one stands for what its query finds among the public shapes, the first in file order or, with `all: true`, every one up to fifty; the app finds it a moment after it's drawn and again as the file changes, and `canvas query` waits for that (up to two seconds, for a query that reads edges) before it answers. Its query reads what's drawn and what direct references stand for, never what another dynamic one found, nor what the person has selected or the board they're on (`:selected`, `:current-board`): a script that writes one is refused, and a pill that holds one (typed by the person) finds nothing, and says why. The examples below are about a direct one, which is what a person makes first, and which reads the same way for you.
 
 The examples on this page are all about one file, the story below. Each block tagged `query` is a query as you'd send it, and its first line, a comment, says what it answers, as in [query.md](query.md). Each block tagged `draw-error` is a script run as a dry run, refused with the reason its first line names, changing nothing. The kinds and words are the ones that shipped when this was written. `canvas kinds` and `canvas query-vocabulary` say what your app has.
 
@@ -81,6 +81,13 @@ reference
 reference:edge-to("Auth", stands-for)
 ```
 
+The other way round, the shapes with a `stands-for` edge from a reference are what it stands for now: how to test one, a dynamic one above all, whose query finds what it stands for. Name it by its row's `id`. For a dynamic one, a query that reads edges waits for the app to find them, as above.
+
+```query
+/* matches: "Auth" */
+:edge-from(#00000000-0000-4000-8000-000000000005, stands-for)
+```
+
 A reference has no title, so a query names it by its kind, or by the `id` of its row (`#00000000-…`), and its row says nothing else of it in `title`. `properties` has what it holds: `target` (the `id` and the `label`, the name it had when it was picked, of the shape it names, for a direct one), `words` (what was typed), `query` (once it has one) and `all` (every match, or the first).
 
 ## Which shapes can be stood for
@@ -103,7 +110,7 @@ A person can't make a shape private while something stands for it (the chip coun
 
 A script draws a direct reference when an edge needs one: an edge between shapes on two boards goes into a reference for the end on the other board, put beside the end on this one, and `via: reference` asks for one on a single board. The reference stands for a public shape, so a shape that isn't public can't be reached, and a script never makes one public to get there (that's the user's call): the edge is refused, and the user is asked. The arrow's row says `via: "reference"`, and the pill has a row of its own. Reading it back is what this page is about. [language.md](language.md#through-a-reference) is how to draw it.
 
-A reference has no title, and a script names a shape by its title (or, for a shape that has none, by its id), so a script can't name one: not as an edge's end, in the script that draws it or in another, and its id is refused too (`invalid_value`): name the shape it stands for. A later run finds the one an edge went through by what it stands for (writing the edge again is `unchanged`), and `delete edge` takes the arrow and the pill, as `delete` of the shape at the arrow's other end does, once no arrow is left on the pill. Nothing else a script writes names a shape for a reference: what it names and the words typed into it are the person's, so a script can't write them:
+A reference has no title, and a script names a shape by its title (or, for a shape that has none, by its id). A direct one is named by the shape it stands for, never by its id: not as an edge's end, in the script that draws it or in another, and its id is refused (`invalid_value`). A dynamic one stands for no one shape, so its id is its name, wherever a statement names a shape ([language.md](language.md#arrows-into-it)). A later run finds the one an edge went through by what it stands for (writing the edge again is `unchanged`), and `delete edge` takes the arrow and the pill, as `delete` of the shape at the arrow's other end does, once no arrow is left on the pill. Nothing else a script writes names a shape for a reference: what it names and the words typed into it are the person's, so a script can't write them:
 
 ```draw-error
 // reason: unknown_attribute
@@ -122,4 +129,4 @@ A shape that isn't public can't be stood for, so `via:` for one is refused:
 edge "Checkout" -> "Drafts" via: reference
 ```
 
-What a script writes on a statement of a reference's own is `query:`, a query in the language of [query.md](query.md), and `all:`, and the app refuses a query it can't read, or one that reads what the person is doing. See [language.md](language.md).
+What a script writes on a statement of a reference's own is `query:`, a query in the language of [query.md](query.md), and `all:`, and the app refuses a query it can't read, or one that reads what the person is doing. Its row gives the new reference's `id`, which a later script draws arrows into, restates and deletes it by. See [language.md](language.md#references).

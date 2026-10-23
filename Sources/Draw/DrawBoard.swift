@@ -327,6 +327,13 @@ private struct BoardClaims {
         return makers.contains { standIns.admits($0, record) }
     }
 
+    /// The name the hint asks the user about, for an end no stand-in can stand for: none for a stand-in itself (a reference
+    /// drawn by its query, named by its id), which nothing stands for whatever the user makes it (one hop).
+    private func askable(_ end: End) -> String? {
+        guard let standIns, let record = end.record, standIns.kinds.contains(record.kind) else { return end.said }
+        return nil
+    }
+
     /// An edge between shapes on two boards. Drawn already through a stand-in (beside one end, for the
     /// other), it's where that is: the run draws there, and the other end claims nothing, since the
     /// edge is found as it's drawn, whether or not the shape stood for can be stood for still. Else
@@ -340,8 +347,8 @@ private struct BoardClaims {
         let softStart = !via && canBeStoodFor(start.record), softEnd = canBeStoodFor(end.record)
         crossings.append((statement, (start.said, start.board), (end.said, end.board)))
         if softStart && softEnd { softStarts.append((start.board, statement, start.said)) }
-        if !softStart { claims.append((start.board, statement, start.said, via ? nil : start.said)) }
-        if !softEnd { claims.append((end.board, statement, end.said, end.said)) }
+        if !softStart { claims.append((start.board, statement, start.said, via ? nil : askable(start))) }
+        if !softEnd { claims.append((end.board, statement, end.said, askable(end))) }
     }
 
     /// An edge between a shape the script draws and one the file has. The script's goes on the board
@@ -355,7 +362,7 @@ private struct BoardClaims {
         if stoodFor && canBeStoodFor(end.record) {
             softStarts.append((end.board, statement, end.said))
         } else {
-            claims.append((end.board, statement, end.said, stoodFor ? end.said : nil))
+            claims.append((end.board, statement, end.said, stoodFor ? askable(end) : nil))
         }
     }
 
@@ -490,8 +497,8 @@ extension Drawing {
                 throw DrawError(statement, .unknownID, "there's no shape with the id \(name.written) to be in",
                                 hint: "in names a shape that holds others (a subboard, or a frame): run the query that gave its id again")
             case .holdsNone(let record):
-                // An arrow or a pill is no shape a script can name at all, as at every site that takes an id.
-                if !editor.registry.drawCanName(record.kind) { throw Drawing.unnameable(name.written, record.kind, statement) }
+                // An arrow, or a pill for a shape it names, is no shape a script can name at all, as at every site that takes an id.
+                if !editor.registry.drawCanName(record) { throw Drawing.unnameable(name.written, record.kind, statement) }
                 throw DrawError(statement, .cannotContain, "\(name.written) is \(indefinite(record.kind)), which holds no shapes",
                                 hint: "in names a shape that holds others (a subboard, or a frame)")
             }

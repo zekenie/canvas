@@ -5,8 +5,10 @@ import Foundation
 // Ids as names. A title is how a script names a shape; a shape with none is named by its id, in the query language's
 // spelling (`#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11`, what a query's row gives), wherever a statement names a shape the file
 // already has: an edge's end, a delete, a placement's target, `in`, a shape statement that restates one, `share:`'s host.
-// An id never makes a shape (one that names none is `unknown_id`), and names only a shape a title could (an arrow's or a
-// reference's is `invalid_value`). It is found wherever the app can show the shape, as a title is: on the board the run
+// An id never makes a shape (one that names none is `unknown_id`), and names only a shape a script can name
+// (`registry.drawCanName(_:)` of its record): one a title could, or a reference drawn by its query, which has no title and
+// stands for no shape it could be named by. An arrow's, or a reference's that stands for a shape it names, is
+// `invalid_value`. It is found wherever the app can show the shape, as a title is: on the board the run
 // draws on, or, for an edge's end, on another, through a stand-in. `FileNames.place(ofID:)` is the index by id, beside the one
 // by title: the file's own, so it costs a lookup, never a pass over the file.
 
@@ -62,8 +64,8 @@ extension Drawing {
     }
 
     /// The shape an id names, among the file's, and the board it is on: the board the run draws on first, else any board the app
-    /// can show. Why it names none: no shape has it, it is on a board the app can't show, it is kept aside, or it is a kind a
-    /// title couldn't name (an arrow, a reference).
+    /// can show. Why it names none: no shape has it, it is on a board the app can't show, it is kept aside, or it is a shape a
+    /// script can't name (an arrow, a reference that stands for a shape it names: `registry.drawCanName(_:)`).
     func fileShape(withID id: ShapeID, written: String, _ statement: Statement) throws(DrawError) -> (record: AnyShapeRecord, board: BoardID) {
         let found: (record: AnyShapeRecord, board: BoardID)
         if let record = target.document[id] {
@@ -81,14 +83,14 @@ extension Drawing {
         guard !found.record.isOpaque else {
             throw DrawError(statement, .unknownID, "\(written) is kept aside: the app can't read it")
         }
-        guard registry.drawCanName(found.record.kind) else { throw Drawing.unnameable(written, found.record.kind, statement) }
+        guard registry.drawCanName(found.record) else { throw Drawing.unnameable(written, found.record.kind, statement) }
         return found
     }
 
-    /// The refusal of an id whose shape is a kind a title couldn't name, the same at every site that takes an id.
+    /// The refusal of an id whose shape a script can't name, the same at every site that takes an id.
     static func unnameable(_ written: String, _ kind: ShapeKind, _ statement: Statement) -> DrawError {
         DrawError(statement, .invalidValue, "\(written) is \(indefinite(kind)), which a script can't name",
-                  hint: "an id names a shape a title could name, a note say: name an arrow by its two ends, and a reference by the shape it stands for")
+                  hint: "an id names a shape a title could name (a note, say) or a reference drawn by its query: name an arrow by its two ends, and a reference that stands for a shape by that shape")
     }
 
     /// Whether this run deletes the shape, or the board it is on.
@@ -148,7 +150,7 @@ extension Drawing {
             missing.fromNameLookup = true
             throw missing
         }
-        guard registry.drawCanName(record.kind) else {
+        guard registry.drawCanName(record) else {
             var refused = DrawError(statement, .invalidValue, "\(written) is \(indefinite(record.kind)), which a script can't name")
             refused.fromNameLookup = true
             throw refused
