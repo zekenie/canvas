@@ -35,7 +35,6 @@
 #
 # The lens is REPO/.canvas/lens.py in the folder you run in (never the commit's): a function digest(scan, repo) that returns the
 # digest as a dict, run twice in isolation (runner/run.py), and refused if the two digests differ. Without one, the default lens.
-# The root board's header ends with one line of what drew it: the commit, the lens, the app's build and macOS (runner/stamp.py).
 #
 # One ingest runs per repository at a time. canvas is found by the driver: $CANVAS_CLI, else the one beside the skills (the app's, or
 # this repository's own build in its checkout), else the PATH.
@@ -405,8 +404,6 @@ fi
 if [ -n "$LENS" ]; then fetch_missing; fi
 step "making the digest"
 run "$PY" "$HERE/runner/run.py" "$REPO" "$SCAN" "$RUN/digest.json" --commit "$SHA" ${LENS:+--lens "$LENS"} || die "no digest was made, so nothing was drawn (the run's folder: $RUN)"
-# what drew it, added after the lens has run: the lens can't leave it out or vary it. The app's build was written by `digest ready`.
-"$PY" "$HERE/runner/stamp.py" "$RUN/digest.json" "$REPO" "$SHA" "${LENS:--}" "$(cat "$RUN/out/app-build" 2>/dev/null || echo unknown)" || die "no digest was made, so nothing was drawn (the run's folder: $RUN)"
 
 step "measuring, laying out and drawing it (canvas-digest)"
 run "$DIGEST" all "$RUN/digest.json" "$@" --out "$RUN/out"

@@ -1,6 +1,5 @@
 {
  "title": "Awkward @[names]",
- "text": "Awkward \\@[names]: 6 modules in 2 layers, 9 files, 90 lines.\nA card is a module: open it for its files. An arrow, or a pill, is an import.",
  "nodes": [
   {
    "title": "Level 2",
@@ -11,7 +10,7 @@
    "title": "app",
    "kind": "subboard",
    "in": "Level 2",
-   "text": "app: level 2\nAbout \\@[nothing] here.\n\nImports @[[locale\\]] @[Level 1] @[\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x] @[C] @[back\\\\slash]\n1 files, 10 lines"
+   "text": "app: level 2\nAbout \\@[nothing] here.\n\nImports @[[locale\\]] @[Level 1] @[\u2026age-name-very-long-package-name-very-long-package-name-very-long-package-name-x] @[C] @[back\\\\slash]\n1 files, 10 lines"
   },
   {
    "title": "Level 1 (layer)",
@@ -31,7 +30,7 @@
    "text": "Level 1: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
   },
   {
-   "title": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x",
+   "title": "\u2026age-name-very-long-package-name-very-long-package-name-very-long-package-name-x",
    "kind": "subboard",
    "in": "Level 1 (layer)",
    "text": "@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
@@ -51,7 +50,7 @@
   {
    "title": "src",
    "kind": "frame",
-   "in": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x"
+   "in": "\u2026age-name-very-long-package-name-very-long-package-name-very-long-package-name-x"
   },
   {
    "title": "components",
@@ -144,7 +143,7 @@
   },
   {
    "from": "app",
-   "to": "\u2026me-very-long-package-name-very-long-package-name-very-long-package-name-x"
+   "to": "\u2026age-name-very-long-package-name-very-long-package-name-very-long-package-name-x"
   },
   {
    "from": "app",

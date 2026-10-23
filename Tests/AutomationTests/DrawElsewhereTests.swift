@@ -68,6 +68,17 @@ let namedPockets = Contributor(id: "named-pockets") { $0.optIn(Pocket.self, to: 
         expectEqual(labels(on: BoardID(owner: n.p), in: editor), ["Deep", "Hub", "Twin", "Below"])
         expectEqual(editor.board, .root)
     },
+    test("origin in \"P\" is P's board's (0, 0), and claims no board: beside a shape placed on P's board, the run is P's") {
+        let n = Nest(), editor = try n.editor()
+        let result = try drawn(#"tile "Cache" in "P" right of origin (gap: 1000) below origin (gap: 500)"#, on: editor)
+        expectEqual(rows(result).first?["at"], [[1000, 500], [120, 80]])
+        expectEqual(result["on"]?["board"], .string(n.p.description))
+        let both = try drawn(#"tile "Far" right of origin (gap: 2000) below origin (gap: 0)"# + "\n" + #"tile "Near" below "Deep""#, on: editor)
+        expectEqual(both["on"]?["board"], .string(n.p.description), "Deep says the board, and origin is that board's")
+        expectEqual(rows(both).first?["at"], [[2000, 0], [120, 80]])
+        expect(labels(on: BoardID(owner: n.p), in: editor).contains("Far") && labels(on: .root, in: editor) == ["Hub"], "on P's board: \(labels(on: BoardID(owner: n.p), in: editor))")
+        expectEqual(editor.board, .root, "the window didn't move")
+    },
     test("a title on the board shown and on another is the board shown's; in \"P\" says the other") {
         let n = Nest(), editor = try n.editor()
         _ = try drawn(#"tile "Hub" finish: glossy"#, on: editor)

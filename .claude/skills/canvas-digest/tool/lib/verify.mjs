@@ -8,17 +8,13 @@ export function verify(plan, rows) {
   let widthSum = 0;
   for (const b of plan.boards) {
     const here = rows.filter((r) => r.board === b.board);
-    if (!b.anchors) continue;   // a board with no shape
-    // the board's origin, where the plan's (0, 0) landed: read off its anchors, one for each axis
-    const ax = here.find((r) => r.title === b.anchors.x), ay = here.find((r) => r.title === b.anchors.y);
-    if (!ax || !ay) { summary.missing.push(`${b.board}: the anchor "${ax ? b.anchors.y : b.anchors.x}"`); continue; }
-    const origin = { x: ax.x - b.shapes.find((s) => s.title === b.anchors.x).x, y: ay.y - b.shapes.find((s) => s.title === b.anchors.y).y };
-    const rel = (r) => ({ x: r.x - origin.x, y: r.y - origin.y, w: r.w, h: r.h });
+    // the plan's (0, 0) is the board's origin, so a row is where it landed as it is
+    const boxOf = (r) => ({ x: r.x, y: r.y, w: r.w, h: r.h });
     for (const s of b.shapes) {
       const r = here.find((x) => x.title === s.title);
       summary.shapes++;
       if (!r) { summary.missing.push(`${b.board}: ${s.title}`); continue; }
-      const l = rel(r);
+      const l = boxOf(r);
       const d = { x: l.x - s.x, y: l.y - s.y, w: l.w - s.w, h: l.h - s.h };
       const worst = Math.max(Math.abs(d.x), Math.abs(d.y), Math.abs(d.w), Math.abs(d.h));
       summary.worstShape = Math.max(summary.worstShape, worst);
@@ -27,7 +23,7 @@ export function verify(plan, rows) {
       out.push({ what: 'shape', board: b.board, title: s.title, planned: pick(s), landed: l, delta: d, worst });
     }
     // pills: matched to the landed references for the same shape by nearest spot
-    const landed = here.filter((r) => r.kind === 'reference').map((r) => Object.assign({ used: false, for: r.for }, rel(r)));
+    const landed = here.filter((r) => r.kind === 'reference').map((r) => Object.assign({ used: false, for: r.for }, boxOf(r)));
     const pairs = [];
     b.pills.forEach((p, i) => landed.forEach((l, j) => { if (l.for === p.for) pairs.push({ i, j, d: Math.abs(l.x - p.x) + Math.abs(l.y - p.y) }); }));
     pairs.sort((a, c) => a.d - c.d || a.i - c.i || a.j - c.j);

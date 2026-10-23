@@ -558,7 +558,7 @@ extension Drawing {
                 switch target {
                 case .item(let other): under.append(items[other].record.id)
                 case .shape(let record): under.append(record.id)
-                case .board, .view: continue
+                case .board, .view, .origin: continue
                 }
             }
         }

@@ -12,7 +12,7 @@
                      each titled by the shortest end of its folder's path that no other frame, module or board takes
                      (the board's own files in one titled "<board>/").
     by_module        files whose pills stand for modules, not files: none.
-    title            what the whole is called, the root's header: the name its reader found (the package's own, a
+    title            what the whole is called: the name its reader found (the package's own, a
                      repository's folder), else the repository folder's name.
 
 These are overrides, never a list the code must match: a module `bands` leaves out goes in the band of its layer

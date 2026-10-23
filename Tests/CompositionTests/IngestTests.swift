@@ -6,7 +6,6 @@ import CanvasUI
 import Foundation
 import Mentions
 import ShippedTesting
-import StickyNotes
 import TestKit
 import Titles
 
@@ -140,9 +139,11 @@ private func driverCalls(_ log: URL) -> [String] {
     try run(URL(fileURLWithPath: python), [ingestSkill("runner/run.py").path, repo.path, scan.path, digest.path] + (lens.map { ["--lens", $0.path] } ?? []), timeout: timeout)
 }
 
-/// What the lens as it was before lenskit (the old `to_digest.py`, with its `spec.py`) made of a scan, recorded when it was replaced:
-/// the digest it wrote, and what it said on standard error. `ingest-lens/<name>.digest.json` and `.said` (never edited).
-private func oldLensFixture(_ name: String, _ kind: String) -> URL {
+/// What the default lens makes of a scan: the digest it writes, and what it says on standard error (its `lens:` lines).
+/// `ingest-lens/<name>.digest.json` and `.said`, first the old `to_digest.py`'s, recorded when lenskit replaced it, and recorded again
+/// from the default lens when the first board's About note went (its summary of the whole, and the 74 characters a card's title kept
+/// for `About <card>`). Never edited by hand.
+private func lensFixture(_ name: String, _ kind: String) -> URL {
     URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/CompositionTests/Fixtures/ingest-lens/\(name).\(kind)")
 }
 
@@ -187,7 +188,8 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expect(first.error.contains("leave out Main.swift") && first.error.contains("Ghost"), "what the lens leaves out or lacks is said: \(first.error)")
         let editor = board.editor
         let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        expect(titles.isSuperset(of: ["About TinyPackage", "Apps", "Foundations", "App", "Core"]), "the root: its header (the name the scanner found), the bands, the modules: \(titles.sorted())")
+        expect(titles.isSuperset(of: ["Apps", "Foundations", "App", "Core"]), "the root: the bands, the modules: \(titles.sorted())")
+        expect(!titles.contains { $0.hasPrefix("About ") }, "and no note of what the whole is: \(titles.sorted())")
         let apps = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
         expectEqual(apps["title"], "TinyPackage")
         let nodes = apps["nodes"]?.arrayValue ?? []
@@ -261,21 +263,21 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expect(drawn.output.contains("verify ok"), drawn.output)
         let editor = board.editor
         let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        // a module called what a band is keeps its name and the band gives way; a name over a card's longest keeps its end
+        // a module called what a band is keeps its name and the band gives way; a name over a title's longest keeps its end
         expect(titles.isSuperset(of: ["[locale]", "Level 1", "Level 1 (layer)", #"back\slash"#]), "\(titles.sorted())")
-        expect(titles.contains { $0.hasPrefix("…") && $0.hasSuffix("very-long-package-name-x") && $0.count <= 74 }, "\(titles.sorted())")
+        expect(titles.contains { $0.hasPrefix("…") && $0.hasSuffix("very-long-package-name-x") && $0.utf16.count == 80 }, "a card's title is as long as any: \(titles.sorted())")
         expect(!titles.contains(long), "the long name itself is nobody's title")
-        for said in ["the band Level 1 is titled \"Level 1 (layer)\"", "is over 74 characters", "C/main.swift is titled \"C/main.swift (2)\""] {
+        for said in ["the band Level 1 is titled \"Level 1 (layer)\"", "the module \(long) is titled \"…", "is over 80 characters", "C/main.swift is titled \"C/main.swift (2)\""] {
             expect(drawn.error.contains(said), "said: \(said) in \(drawn.error)")
         }
-        // app's header mentions what it imports, each by its card's title: a ] and a \\ in one are written so the mention names its shape
+        // app's description mentions what it imports, each by its card's title: a ] and a \\ in one are written so the mention names its shape
         let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
         let mains = (digest["nodes"]?.arrayValue ?? []).filter { $0["in"] == "C" || $0["in"] == "a" || $0["in"] == "b" || $0["in"] == "c (C)" || $0["in"] == "C/" }.compactMap { $0["title"]?.stringValue }
         expect(Set(mains).isSuperset(of: ["c/main.swift", "b/main.swift", "C/main.swift (2)"]), "paths that differ only by case are two titles: \(mains)")
         expect(mains.contains("half\u{FFFD}.swift"), "a name that isn't whole text is drawn with U+FFFD where it breaks: \(mains)")
         let app = digest["nodes"]?.arrayValue?.first { $0["title"] == "app" }?["text"]?.stringValue ?? ""
         expect(app.contains(#"@[[locale\]]"#) && app.contains(#"@[back\\slash]"#), app)
-        expect(digest["text"]?.stringValue?.hasPrefix(#"Awkward \@[names]"#) == true, "the repository's own name is text, never a mention: \(digest["text"] ?? .null)")
+        expect(digest["text"] == nil, "and the digest has no text of its own: no board has a note of what it is")
 
         // a module big enough for its folders to have boards, two of them the same but for their case: the digest passes check
         let big = folder.appendingPathComponent("big")
@@ -400,7 +402,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expect(FileManager.default.fileExists(atPath: kept.appendingPathComponent("checkout/prepared.txt").path), "the prepare command ran at the checkout's root")
         expect(!FileManager.default.fileExists(atPath: repo.appendingPathComponent("prepared.txt").path), "and not in the repository")
         let titles = Set(board.editor.document.shapes.compactMap { board.editor.registry.title(of: $0) })
-        expect(titles.isSuperset(of: ["About Tiny", "Core", "Kit"]), "the package as the board in front: \(titles.sorted())")
+        expect(titles.isSuperset(of: ["Core", "Kit"]), "the package as the board in front: \(titles.sorted())")
         let edges = try json(lastRun(in: kept).appendingPathComponent("digest.json"))["edges"]?.arrayValue ?? []
         expect(edges.contains { $0["from"] == "Kit.swift" && $0["to"] == "Core.swift" }, "Kit.swift's use of Core.swift is an edge of the digest: \(edges)")
         let scans = try FileManager.default.contentsOfDirectory(atPath: kept.appendingPathComponent("scans").path)
@@ -762,7 +764,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         try configureBoards(pasteboard: pasteboard)
         let board = windowedBoard()
         defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board, build: "test-build-7")
+        let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let folder = try scratchFolder("commits")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -787,10 +789,6 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
             expect(done.output.contains("verify ok"), done.output)
             return (done, try lastRun(in: kept))
         }
-        @MainActor func header() -> String {
-            let editor = board.editor
-            return editor.document.shapes.first { editor.registry.title(of: $0) == "About Tiny" }?.typed(as: StickyNote.self)?.props.text.stored ?? ""
-        }
         @MainActor func noteText(_ folder: URL, _ title: String) throws -> String? {
             let digest = try json(folder.appendingPathComponent("digest.json"))
             return (digest["nodes"]?.arrayValue ?? []).first { $0["title"] == .string(title) }?["text"]?.stringValue
@@ -798,7 +796,6 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
 
         let one = try draw(first)
         expect(one.process.output.contains("checking out \(first.prefix(12))") && one.process.output.contains("ingest: type-checked 3 of 3 modules"), "everything, the first time: \(one.process.output)")
-        expect(header().contains("Drawn from commit \(first.prefix(12))"), "the board says which commit it is of: \(header())")
         let oneFiles = try drawing(one.run), oneKit = try noteText(one.run, "Kit.swift")
         let digestOne = try String(contentsOf: one.run.appendingPathComponent("digest.json"), encoding: .utf8)
 
@@ -807,7 +804,6 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         let two = try draw(second)
         expect(two.process.output.contains("ingest: type-checked 1 of 3 modules"), two.process.output)
         expect(try String(contentsOf: two.run.appendingPathComponent("index.log"), encoding: .utf8).contains("indexes: made 1 of 3 (Kit)"), "Kit alone")
-        expect(header().contains("Drawn from commit \(second.prefix(12))") && !header().contains(first.prefix(12)), "and the board is of the second: \(header())")
         let twoKit = try noteText(two.run, "Kit.swift")
         expect(twoKit != oneKit, "Kit.swift is longer in the second commit: \(oneKit ?? "") / \(twoKit ?? "")")
         let twoFiles = try drawing(two.run)
@@ -835,15 +831,15 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expect(try git(repo, ["worktree", "list"]).output.split(separator: "\n").count == 1, "the user's own worktree list is as it was")
     },
 
-    test("a board from a scan given by hand carries the line of what drew it, fixed in form, and the same commit draws the same plan and scripts whether the lens is committed or not, or the working tree has edits") {
+    test("a board from a scan given by hand: the same commit draws the same plan and scripts whether the lens is committed or not, or the working tree has edits") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
         let board = windowedBoard()
         defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board, build: "test-build-7")
+        let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
-        let folder = try scratchFolder("header")
+        let folder = try scratchFolder("hand")
         defer { try? FileManager.default.removeItem(at: folder) }
         let cache = folder.appendingPathComponent("cache")
         let repo = try makeRepository("project", in: folder, files: ["notes.txt": "one\n"])
@@ -856,37 +852,18 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
             expectEqual(done.status, 0, done.output + done.error)
             return (done, try lastRun(in: kept))
         }
-        @MainActor func header() -> String {
-            let editor = board.editor
-            return editor.document.shapes.first { editor.registry.title(of: $0) == "About TinyPackage" }?.typed(as: StickyNote.self)?.props.text.stored ?? ""
-        }
 
-        // the line: the commit and its committer date (UTC), the lens, the app's build (the app says it, through the driver's `ready`) and macOS
         let plain = try draw()
         expect(plain.process.output.contains("drawing from the scan given by hand"), plain.process.output)
         expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("checkout").path), "a scan given by hand scans nothing, so there is no checkout")
-        let committed = TimeInterval(try git(repo, ["show", "-s", "--format=%ct", sha]).output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-        let utc = DateFormatter()
-        utc.dateFormat = "yyyy-MM-dd"
-        utc.timeZone = TimeZone(identifier: "UTC")
-        utc.locale = Locale(identifier: "en_US_POSIX")
-        let macOS = try run(URL(fileURLWithPath: "/usr/bin/sw_vers"), ["-productVersion"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        let defaultLine = "Drawn from commit \(sha.prefix(12)) (\(utc.string(from: Date(timeIntervalSince1970: committed)))) with the default lens "
-        let text = header()
-        let line = try require(text.split(separator: "\n").last.map(String.init), "a header")
-        expect(line.hasPrefix(defaultLine) && line.hasSuffix(", app build test-build-7, macOS \(macOS)."), line)
-        expect(line.dropFirst(defaultLine.count).prefix(12).allSatisfy { $0.isHexDigit }, "the lens is 12 hex digits: \(line)")
-        expect(text.hasSuffix("\n\n\(line)"), "the line ends the header's text, a paragraph of its own: \(text)")
         let plainFiles = try drawing(plain.run)
 
-        // a lens that is not committed: named by its content (`git hash-object`), and the same once committed (the commit drawn is the same)
+        // a lens that is not committed, and the same once committed (the commit drawn is the same), with the working tree edited
         let lens = "from lenskit import default\n\ndef digest(scan, repo):\n    return default.digest(scan, repo)\n"
         try write(lens, to: repo.appendingPathComponent(".canvas/lens.py"))
-        let hash = try git(repo, ["hash-object", repo.appendingPathComponent(".canvas/lens.py").path]).output.trimmingCharacters(in: .whitespacesAndNewlines)
         let uncommitted = try draw()
-        expect(header().contains("Drawn from commit \(sha.prefix(12))") && header().contains(" with lens \(hash.prefix(12)), app build"), header())
         let uncommittedFiles = try drawing(uncommitted.run)
-        expect(uncommittedFiles != plainFiles, "another lens, another line, another board")
+        expectEqual(uncommittedFiles, plainFiles, "a lens that calls the default lens draws what the default lens draws")
         try git(repo, ["add", ".canvas/lens.py"])
         try git(repo, ["commit", "-q", "-m", "the lens"])
         try write("two\n", to: repo.appendingPathComponent("notes.txt"))      // and the working tree has an edit
@@ -894,10 +871,6 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(try drawing(committedLens.run), uncommittedFiles, "committing the lens changes nothing: the same plan and the same scripts")
         expectEqual(try String(contentsOf: committedLens.run.appendingPathComponent("digest.json"), encoding: .utf8),
                     try String(contentsOf: uncommitted.run.appendingPathComponent("digest.json"), encoding: .utf8))
-        // a lens edited to say the same differently is another lens
-        try write(lens + "\n# a comment\n", to: repo.appendingPathComponent(".canvas/lens.py"))
-        _ = try draw()
-        expect(!header().contains("lens \(hash.prefix(12))"), "another content, another hash: \(header())")
 
         // what the options do together
         let both = try ingest([repo.path, "--scan", handScan(kept), "--rescan"], environment: env)
@@ -1166,7 +1139,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
             from lenskit import Digest
 
             def digest(scan, repo):
-                d = Digest("picture", "The \(label) picture.")
+                d = Digest("picture")
                 d.frame("Files")
                 for path in repo.files("src/*.txt"):
                     d.note("\(label) " + path.rpartition("/")[2], "Files", "A file.", source=path)
@@ -1199,7 +1172,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expect(one.output.contains("checking out \(first.prefix(12))") && one.output.contains("preparing"), one.output)
         expectEqual(count(counter), 1)
         expectEqual(count(prepared), 1)
-        expect(titles().isSuperset(of: ["About picture", "first a.txt"]), "\(titles().sorted())")
+        expect(titles().contains("first a.txt"), "\(titles().sorted())")
         expectEqual(scanNames().count, 1)
         // the key is the code's: 40 hex digits that are no commit's sha
         let parts = scanNames()[0].dropLast(".json".count).split(separator: "-")
@@ -1337,8 +1310,8 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         }
     },
 
-    test("the default lens makes the digest the old lens made, byte for byte but for each node's source: every fixture scan, and the overrides a spec.py gave") {
-        // the old lens's digests and words are checked in (Fixtures/ingest-lens): the lens itself is gone from the history this branch lands as
+    test("the default lens makes the digest its fixtures hold, byte for byte but for each node's source: every fixture scan, and the overrides a spec.py gave") {
+        // the digests and words are checked in (Fixtures/ingest-lens), first the old lens's, then the default lens's once the About note went
         let folder = try scratchFolder("parity")
         defer { try? FileManager.default.removeItem(at: folder) }
         let repo = try makeRepository("project", in: folder)
@@ -1349,10 +1322,10 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
             try write(scan, to: scanFile)
             let after = try lensRunner(repo, scan: scanFile, digest: folder.appendingPathComponent("\(name).new.json"))
             expectEqual(after.status, 0, after.output + after.error)
-            expect(try sameButForSource(old: oldLensFixture(name, "digest.json"), new: folder.appendingPathComponent("\(name).new.json")), "\(name): the digests differ")
-            // what the old one said of the code on standard error, the new one says too
-            for line in try String(contentsOf: oldLensFixture(name, "said"), encoding: .utf8).split(separator: "\n") where line.hasPrefix("to_digest: ") {
-                expect(after.error.contains(line.dropFirst("to_digest: ".count)), "\(name): \(line) is said by the new lens: \(after.error)")
+            expect(try sameButForSource(old: lensFixture(name, "digest.json"), new: folder.appendingPathComponent("\(name).new.json")), "\(name): the digests differ")
+            // what it said of the code on standard error, it says still
+            for line in try String(contentsOf: lensFixture(name, "said"), encoding: .utf8).split(separator: "\n") where line.hasPrefix("lens: ") {
+                expect(after.error.contains(line), "\(name): \(line) is said by the lens: \(after.error)")
             }
         }
         // a spec.py's names (BANDS, GROUPS, PURPOSES, FOLDER_BOARDS, BY_MODULE, LAYER_NAMES and TITLE, as the old lens read them), as the
@@ -1372,8 +1345,8 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         let lensed = try lensRunner(specRepo, scan: scanFile, digest: folder.appendingPathComponent("spec.new.json"),
                                     lens: specRepo.appendingPathComponent(".canvas/lens.py"))
         expectEqual(lensed.status, 0, lensed.output + lensed.error)
-        expect(try sameButForSource(old: oldLensFixture("spec", "digest.json"), new: folder.appendingPathComponent("spec.new.json")), "the overrides make the same digest")
-        let specified = try String(contentsOf: oldLensFixture("spec", "said"), encoding: .utf8)
+        expect(try sameButForSource(old: lensFixture("spec", "digest.json"), new: folder.appendingPathComponent("spec.new.json")), "the overrides make the same digest")
+        let specified = try String(contentsOf: lensFixture("spec", "said"), encoding: .utf8)
         for said in ["Ghost", "Nowhere", "Hidden", "leave out Main.swift"] {
             expect(lensed.error.contains(said) && specified.contains(said), "said by both: \(said)\n\(specified)\n\(lensed.error)")
         }
@@ -1406,7 +1379,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
             GROUPS = [("Screen", "Views"), ("Store", "Data"), ("Model", "Data")]
 
             def digest(scan, repo):
-                d = Digest(scan.name + " by convention", "Files by what they are called, not by where they are.")
+                d = Digest(scan.name + " by convention")
                 cards, frames, titles = {}, {}, {}
                 for m in scan.production:
                     cards[m] = d.claim("the module " + m, m)
@@ -1428,7 +1401,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expect(drawn.output.contains("verify ok"), drawn.output)
         let editor = board.editor
         let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        expect(titles.isSuperset(of: ["About TinyPackage by convention", "App", "Core"]), "the boards the lens made: \(titles.sorted())")
+        expect(titles.isSuperset(of: ["App", "Core"]), "the boards the lens made: \(titles.sorted())")
         let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
         let nodes = digest["nodes"]?.arrayValue ?? []
         expectEqual(nodes.first { $0["title"] == "Screen.swift" }?["in"], "Views (App)")
@@ -1578,7 +1551,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
                     repo.read("untracked.txt")
                 except FileNotFoundError:
                     seen["missing"] = True
-                return {"title": "\(title)", "text": json.dumps(seen), "nodes": [], "edges": []}
+                return {"title": "\(title)", "seen": json.dumps(seen), "nodes": [], "edges": []}
             """
         }
         let lensFile = repo.appendingPathComponent(".canvas/lens.py")
@@ -1597,10 +1570,7 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(ran.status, 0, ran.output + ran.error)
         let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
         expectEqual(digest["title"], "working lens", "the lens is the checkout's, whatever the commit holds")
-        // the lens's text ends with the line of what drew it, which `ingest` adds after the lens has run, in a paragraph of its own
-        let parts = (digest["text"]?.stringValue ?? "{}").components(separatedBy: "\n\nDrawn from commit ")
-        expectEqual(parts.count, 2, "the line is added to what the lens wrote: \(parts)")
-        let seen = try JSON(text: parts[0])
+        let seen = try JSON(text: digest["seen"]?.stringValue ?? "{}")
         expectEqual(seen["notes"], "committed\n", "the file as committed, not as edited")
         expectEqual(seen["gone"], true, "a file removed from the working tree is still in the commit")
         expectEqual(seen["new"], false, "and one that was never committed is not")
@@ -1803,12 +1773,12 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
                     "subclass": issubclass(datetime.datetime, datetime.date),
                     "json": json.dumps({"t": datetime.datetime(2020, 1, 2, 3, 4, 5)}, default=lambda o: o.isoformat() if isinstance(o, datetime.date) else None),
                 }
-                d["text"] = json.dumps(said, sort_keys=True)
+                d["said"] = json.dumps(said, sort_keys=True)
                 return d
             """, to: lens)
         let made = try lensRunner(repo, scan: scan, digest: digest, lens: lens)
         expectEqual(made.status, 0, made.output + made.error)
-        let said = try JSON(text: try require(try json(digest)["text"]?.stringValue, "the digest's text"))
+        let said = try JSON(text: try require(try json(digest)["said"]?.stringValue, "what the lens said"))
         expectEqual(said["who"], "the lens's own settings", "a helper beside the lens, named as one of the skill's, is the lens's")
         expectEqual(said["skill_modules"], [], "and none of the skill's is importable by its name")
         expectEqual(said["has_root"], false, "Repo has no root to read")
@@ -1821,31 +1791,6 @@ private func oldLensFixture(_ name: String, _ kind: String) -> URL {
         let imported = try run(URL(fileURLWithPath: python), ["-s", "-B", "-c", "import sys; sys.path.insert(0, \(pythonString(ingestSkill().path))); import settings; print(settings.KEYS[0])"])
         expectEqual(imported.status, 0, imported.output + imported.error)
         expectEqual(imported.output.trimmingCharacters(in: .whitespacesAndNewlines), "scanner")
-    },
-
-    test("the line of what drew a board names a lens by its bytes: no repository's attributes, and no folder the command runs in, change it") {
-        let folder = try scratchFolder("stamp")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = try makeRepository("repo", in: folder)
-        let sha = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        try write("* text eol=lf\n", to: repo.appendingPathComponent(".gitattributes"))
-        let lens = repo.appendingPathComponent(".canvas/lens.py")
-        try write("from lenskit import default\r\n\r\ndef digest(scan, repo):\r\n    return default.digest(scan, repo)\r\n", to: lens)
-        let raw = try git(repo, ["hash-object", "--no-filters", lens.path]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = try git(repo, ["hash-object", lens.path]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        expect(raw != filtered, "the attributes change what `git hash-object` says in this repository: \(raw) \(filtered)")
-        let digest = folder.appendingPathComponent("digest.json")
-        // from inside the repository, and from a folder that is none
-        let elsewhere = try scratchFolder("stamp-elsewhere")
-        defer { try? FileManager.default.removeItem(at: elsewhere) }
-        for (label, cwd) in [("inside the repository", repo), ("outside it", elsewhere)] {
-            try write(#"{"title": "T", "text": "About it.", "nodes": [], "edges": []}"#, to: digest)
-            let stamped = try run(URL(fileURLWithPath: "/bin/sh"), ["-c", "cd \"$1\" && shift && exec /usr/bin/python3 \"$@\"", "sh", cwd.path,
-                                  ingestSkill("runner/stamp.py").path, digest.path, repo.path, sha, lens.path, "build-1"], environment: ["GIT_CONFIG_GLOBAL": "/dev/null"])
-            expectEqual(stamped.status, 0, "\(label): " + stamped.output + stamped.error)
-            expect(stamped.output.contains(" with lens \(raw.prefix(12)), app build build-1"), "\(label): the lens is its bytes' hash: \(stamped.output)")
-            expect(try json(digest)["text"]?.stringValue?.hasPrefix("About it.\n\nDrawn from commit \(sha.prefix(12))") == true, "\(label): the line ends the text")
-        }
     },
 
     test("a codebase of 30,000 files in 2,000 modules is drawn in the time a person waits: no board looks at every file or every module to find its own") {

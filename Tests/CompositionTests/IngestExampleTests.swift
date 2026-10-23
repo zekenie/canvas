@@ -5,7 +5,6 @@ import CanvasUI
 import Foundation
 import Mentions
 import ShippedTesting
-import StickyNotes
 import TestKit
 import Titles
 
@@ -33,16 +32,15 @@ private func json(_ url: URL) throws -> JSON { try JSON(text: String(contentsOf:
 }
 
 /// The example as a repository: its files (but the scan, which a scanner makes and a repository doesn't keep) copied into
-/// `folder/shop` and committed. Returns the repository and the commit.
-@MainActor private func exampleRepository(in folder: URL) throws -> (repo: URL, sha: String) {
+/// `folder/shop` and committed. Returns the repository.
+@MainActor private func exampleRepository(in folder: URL) throws -> URL {
     let repo = folder.appendingPathComponent("shop")
     try FileManager.default.copyItem(at: example(), to: repo)
     try FileManager.default.removeItem(at: repo.appendingPathComponent("scan.json"))
     try git(repo, ["init", "-q"])
     try git(repo, ["add", "-A"])
     try git(repo, ["commit", "-q", "-m", "the orders example"])
-    let sha = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-    return (repo, sha)
+    return repo
 }
 
 /// What a typed drawing says by design: a Needed row still empty, a relationship that doesn't fit its ends, a row past Only one.
@@ -86,18 +84,18 @@ private struct ReadmeQuery {
 }
 
 @MainActor let ingestExampleTests = Suite("canvas-ingest's worked example: a TypeScript monorepo drawn by its own lens, and asked what it holds", [
-    test("the orders example is drawn from its scan by its lens, checks and verifies with only the warnings its types give by design, ends its header with what drew it, and canvas query answers its questions as drawn") {
+    test("the orders example is drawn from its scan by its lens, checks and verifies with only the warnings its types give by design, has no About note, and canvas query answers its questions as drawn") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
         let board = windowedBoard()
         defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board, build: "test-build-7")
+        let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("IngestExampleTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let (repo, sha) = try exampleRepository(in: folder)
+        let repo = try exampleRepository(in: folder)
         let environment = ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path,
                            "CANVAS_INGEST_CACHE": folder.appendingPathComponent("cache").path,
                            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]
@@ -143,13 +141,9 @@ private struct ReadmeQuery {
         }
         expect(said.contains("sendReceipt: run by is needed"), "what the drawing says of its types: \(said)")
 
-        // the root's header ends with what drew it: this commit, the lens, the app's build
+        // the root holds the services, the tables and the types, and no note of what the whole is
         let editor = board.editor
-        let header = editor.document.shapes.first { editor.registry.title(of: $0) == "About shop" }?.typed(as: StickyNote.self)?.props.text.stored ?? ""
-        let last = try require(header.split(separator: "\n").last.map(String.init), "the header: \(header)")
-        let lensHash = try git(repo, ["hash-object", ".canvas/lens.py"]).output.prefix(12)
-        expect(last.hasPrefix("Drawn from commit \(sha.prefix(12)) (") && last.contains(" with lens \(lensHash), app build test-build-7, macOS "), last)
-        expect(header.hasPrefix("shop: 2 services, 2 workflows, 8 activities, 2 Lambdas and 4 tables."), header)
+        expect(!editor.document.shapes.contains { editor.registry.title(of: $0)?.hasPrefix("About ") == true }, "no About note")
 
         @MainActor func ask(_ query: String) throws -> (titles: [String], count: Int) {
             let answer = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "10000", query])

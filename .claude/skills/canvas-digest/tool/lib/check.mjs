@@ -43,7 +43,6 @@ export function checkDigest(digest, opts = {}) {
   const typed = typeProblems(model);
   for (const m of typed.errors) errors.push(m);
   for (const m of typed.warnings) warnings.push(m);
-  for (const h of model.headers.values()) if (existing.has(h.toLowerCase())) errors.push(`the board's header "${h}" is already in the file`);
   for (const [cid, kids] of model.kids) {
     if (cid[0] === 'f' && kids.length > MAX_IN_FRAME) warnings.push(`frame "${cid.slice(2)}" holds ${kids.length} shapes; past ${MAX_IN_FRAME} it reads as a crowd (split it, or make it a subboard)`);
     if (cid[0] === 'b') {

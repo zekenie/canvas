@@ -211,12 +211,14 @@ public struct Size: Sendable, Hashable {
     }
 }
 
-/// The two words that name a box no shape is.
+/// The three words that name a box no shape is.
 public enum PlaceWord: String, Sendable, CaseIterable {
     /// The bounds of every shape on the board the script doesn't move.
     case board
     /// The part of the board in the window.
     case view
+    /// The board's point (0, 0): what a layout worked out elsewhere is measured from.
+    case origin
 }
 
 /// The language's other words: those that open a placement, join targets, or are a value.

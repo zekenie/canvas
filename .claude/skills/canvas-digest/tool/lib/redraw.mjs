@@ -44,18 +44,22 @@ export function boardView(boards, which) {
 const takes = (drawn) => drawn.takes || (drawn.into ? [drawn.into] : drawn.root || []);
 /** The subboards among them that a drawing went into (`--into`): the rest are shapes of the file's root board. */
 const intos = (drawn) => drawn.intos || (drawn.into ? [drawn.into] : []);
-const headers = (drawn) => union(drawn.header ? [drawn.header] : [], drawn.headers);
+/**
+ * The names a record's drawings are told by in a board with no file (two while a drawing made in place of another is not yet whole): the
+ * subboard each went into, else its digest's title. Only one digest is the board itself, and a subboard's title is the file's alone.
+ */
+const names = (drawn) => union(drawn.name ? [drawn.name] : [], drawn.names);
 const count = (v) => (v == null || v === '' || isNaN(+v) ? null : +v);
 
 /**
  * What a drawing of the plan makes, kept as drawn.json so a later run can take it back: the board's file (and its id, which is what tells
- * a board with no file yet), the subboard it went into (or null: the file's root), the digest's first board's header, the titles on that
- * board, what is deleted to take it back (`takes`: the subboard, or the root's shapes; `intos`: the subboards among them), every title,
+ * a board with no file yet), the subboard it went into (or null: the file's root), its name (that subboard, else the digest's title),
+ * the titles on its first board, what is deleted to take it back (`takes`: the subboard, or the root's shapes; `intos`: the subboards among them), every title,
  * and how many shapes the file held once it was drawn, or when it stopped (`shapes`: null while it is being drawn). `at` is when it was
  * written (the clock's milliseconds, handed in), which is how the newest of two records of one board is told without looking at file times.
  *
  * `over` is the record of the drawing this one replaces, while this one is being drawn: until it is whole, an undo or two in the app
- * may bring that one back, so the record holds both drawings' titles, headers and what takes either back, and `was`, how many shapes
+ * may bring that one back, so the record holds both drawings' titles, names and what takes either back, and `was`, how many shapes
  * the file held just before the take-back (what one undo past this drawing's scripts brings back; kept for a drawing made as the board,
  * which is drawn only once the take-back has left the file empty, so the count is exactly the last drawing's, whichever way it was drawn).
  */
@@ -64,26 +68,26 @@ export function drawnRecord(plan, path, id, shapes, over, was, at) {
   const titles = [];
   if (plan.into) titles.push(plan.into);
   for (const b of plan.boards) for (const s of b.shapes) titles.push(s.title);
-  const rec = { path: path || null, board: id == null || id === '' ? null : String(id), into: plan.into || null, header: root ? root.origin : null, root: root ? root.shapes.map((s) => s.title) : [], titles, shapes: count(shapes), at: count(at) };
+  const rec = { path: path || null, board: id == null || id === '' ? null : String(id), into: plan.into || null, name: plan.into || plan.title || null, root: root ? root.shapes.map((s) => s.title) : [], titles, shapes: count(shapes), at: count(at) };
   rec.takes = takes(rec); rec.intos = intos(rec);
   if (!over) return rec;
   return Object.assign(rec, {
-    takes: union(rec.takes, takes(over)), intos: union(rec.intos, intos(over)), titles: union(rec.titles, over.titles), headers: union(headers(rec), headers(over)),
+    takes: union(rec.takes, takes(over)), intos: union(rec.intos, intos(over)), titles: union(rec.titles, over.titles), names: union(names(rec), names(over)),
     was: rec.into ? null : count(was),
   });
 }
 
 /**
  * Whether the last drawing (drawn.json) is in this board's file: the same path, when both have one; or, for a drawing made on a board
- * with no file yet (which may have one since), the same board id and the drawing's header still in the file (`titles`: an id is the
+ * with no file yet (which may have one since), the same board id and a shape of the drawing still in the file (`titles`: an id is the
  * app's for as long as it runs, and a later board may get it).
  */
 export function sameFile(drawn, path, id, titles) {
   if (!drawn) return false;
   if (drawn.path) return !!path && real(drawn.path) === real(path);
   if (drawn.board == null || id == null || id === '' || drawn.board !== String(id)) return false;
-  // its header, or the subboard it went into: one that stopped after its first script has the subboard and no header yet
-  const mine = new Set(headers(drawn).concat(intos(drawn)).map(key));
+  // what takes it back: the shapes it put on the file's root, or the subboard it went into (titles are file-wide, so no other drawing has one)
+  const mine = new Set(takes(drawn).map(key));
   return Array.isArray(titles) && titles.some((t) => mine.has(key(t)));
 }
 
@@ -136,13 +140,13 @@ export function hasTitle(titles, title) {
 /**
  * Which of a folder of drawing records (`records`: [{name, record}], one per target file; `--records DIR`) is the last drawing in this
  * board's file: the one `sameFile` says, a record with a path before one told by the board's id, so that a file is its own record's
- * and never another's. Of several that are told by the id (two digests drawn into one unsaved board have a record each), the one whose
- * header is `header`, this run's own, then the newest by the `at` written in it, then by name: never the file times, so the pick is the
- * same for the same folder. The name of the record, or '' when no record is of this file.
+ * and never another's. Of several that are told by the id (two digests drawn into one unsaved board have a record each), the one named
+ * `name`, this run's own (`names`), then the newest by the `at` written in it, then by file name: never the file times, so the pick is the
+ * same for the same folder. The name of the record's file, or '' when no record is of this file.
  */
-export function pickRecord(records, path, id, titles, header) {
-  const mine = header ? key(header) : null;
-  const rank = (r) => (mine && headers(r.record).some((h) => key(h) === mine) ? 0 : 1);
+export function pickRecord(records, path, id, titles, name) {
+  const mine = name ? key(name) : null;
+  const rank = (r) => (mine && names(r.record).some((h) => key(h) === mine) ? 0 : 1);
   const list = (records || []).slice().sort((a, b) => rank(a) - rank(b) || (count(b.record.at) || 0) - (count(a.record.at) || 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const hit = (withPath) => list.find((r) => !!r.record.path === withPath && sameFile(r.record, path, id, titles));
   const found = hit(true) || hit(false);
@@ -182,9 +186,9 @@ function digestOf(text) {
 
 /**
  * The file name of a new drawing record: for a board with a file, a hash of the file's path (so the same file has the same record
- * again); for one with none yet, its id and a hash of the drawing's first board's header (`header`).
+ * again); for one with none yet, its id and a hash of the drawing's name (`name`: the subboard it goes into, else the digest's title).
  */
-export function recordName(path, id, header) {
+export function recordName(path, id, name) {
   if (path) return `file-${digestOf(real(path))}.json`;
-  return `board-${String(id).replace(/[^0-9A-Za-z_-]/g, '')}-${digestOf(String(header || ''))}.json`;
+  return `board-${String(id).replace(/[^0-9A-Za-z_-]/g, '')}-${digestOf(String(name || ''))}.json`;
 }

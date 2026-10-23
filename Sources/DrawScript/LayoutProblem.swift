@@ -4,7 +4,7 @@ import CoreGraphics
 
 /// What to place, and against what: the boxes a script moves (`free`: new shapes, and shapes it
 /// restates with placements), in script order, each with its placements resolved to boxes; the
-/// boxes that stay put that a placement names (`fixed`: board shapes, `board`, `view`); and the
+/// boxes that stay put that a placement names (`fixed`: board shapes, `board`, `view`, `origin`); and the
 /// shapes the free boxes must keep clear of (obstacles: every closed board shape the script doesn't
 /// move, met where the box that takes it along puts it, if one does), which may be thousands, so
 /// they're asked for by region and named only when a message needs one. Positions are world units,
@@ -91,9 +91,9 @@ public struct LayoutProblem {
         public var gap: Gap?
         /// The obstacle it is, if it is one, so `inside` and `on` exempt the pair.
         public var obstacle: Int?
-        /// `board` or `view`; nil for a shape. A zone holds a shape a free box is placed against at
-        /// twice that shape's area, and the `view` whatever its size; the board, framed by what's on
-        /// it, makes nothing a zone.
+        /// `board`, `view` or `origin`; nil for a shape. A zone holds a shape a free box is placed
+        /// against at twice that shape's area, and the `view` whatever its size; the board, framed by
+        /// what's on it, and the origin, a point, make nothing a zone.
         public var word: PlaceWord?
 
         public init(rect: CGRect, gap: Gap? = nil, obstacle: Int? = nil, word: PlaceWord? = nil) {

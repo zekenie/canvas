@@ -1,12 +1,12 @@
 """A digest, built: nodes and edges added by title, every title given out once, warnings gathered into the digest.
 
-    d = Digest("My system", "What the whole is.")
+    d = Digest("My system")
     band = d.claim("the band Core", "Core", "Core (layer)")        # a title no other shape has (reworded, warned, if it must)
     d.frame(band, rank=0)                                          # extra fields go into the node as they are
     d.subboard("Billing", band, text="Takes the money.", source="services/billing")
     d.note("charge.py", "Billing", "def charge()", source="services/billing/charge.py")
     d.edge("charge.py", "Billing", weight=2)
-    digest = d.finish()                                            # {title, text, nodes, edges, warnings}
+    digest = d.finish()                                            # {title, nodes, edges, warnings}
 
 A lens returns the finished digest. `ingest` takes `warnings` off it and says them; the rest is the digest canvas-digest
 lays out (its reference/graph.md has the format)."""
@@ -66,8 +66,8 @@ class Titles:
 
 
 class Digest:
-    def __init__(self, title, text=''):
-        self.title, self.text = title, text
+    def __init__(self, title):
+        self.title = title
         self.nodes, self.edges, self.warnings = [], [], []
         self.titles = Titles(self.warn)
 
@@ -107,4 +107,4 @@ class Digest:
         return edge
 
     def finish(self):
-        return {'title': self.title, 'text': self.text, 'nodes': self.nodes, 'edges': self.edges, 'warnings': list(self.warnings)}
+        return {'title': self.title, 'nodes': self.nodes, 'edges': self.edges, 'warnings': list(self.warnings)}

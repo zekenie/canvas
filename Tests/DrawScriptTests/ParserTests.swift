@@ -331,10 +331,13 @@ import TestKit
         expectEqual(parseError(#"card on "A" and "B""#)?.message, #"card: on "A" and "B" names 2 shapes, and a shape sits on one"#)
         expectEqual(parseError(#"card on "A" (gap: tight)"#)?.message, #"card: on "A" puts its middle on that point rather than leaving a space, so it takes no gap"#)
     },
-    test("several targets, joined by , and and; board and view are boxes too") {
+    test("several targets, joined by , and and; board, view and origin are boxes too") {
         let clause = try shape(#"card right of "A", "B" top and board and view top-right"#).clauses[0]
         expectEqual(clause.targets, [Target(.title("A")), Target(.title("B"), part: .top), Target(.board), Target(.view, part: .topRight)])
         expectEqual(clause.written, #"right of "A", "B" top, board and view top-right"#)
+        let origin = try shape(#"card right of origin (gap: 520) below origin top (gap: 20)"#).clauses
+        expectEqual(origin.map(\.targets), [[Target(.origin)], [Target(.origin, part: .top)]])
+        expectEqual(origin.map(\.written), ["right of origin (gap: 520)", "below origin top (gap: 20)"])
     },
     test("a part word after a target is its part, unless the word after makes it the next placement") {
         let next = try shape(#"card right of "A" left of "B" below "C" top level with "D""#)

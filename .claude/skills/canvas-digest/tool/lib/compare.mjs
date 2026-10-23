@@ -1,7 +1,6 @@
-// One run's result (a dry run's or a real one's) against the plan: every shape row's box and every pill row's spot, relative to its board's
-// origin, must be the planned one (within a unit), and a shape the plan creates must have been `created`, never found `unchanged`. A board's
-// origin is where the plan's (0, 0) landed: read off the board's two anchor shapes (the header note, for the first board), one for each axis.
-// state = { origins: { <board>: {x, y} } } carries each board's origin from the run that drew its anchors.
+// One run's result (a dry run's or a real one's) against the plan: every shape row's box and every pill row's spot must be the planned one
+// (within a unit), and a shape the plan creates must have been `created`, never found `unchanged`. A plan's (0, 0) is its board's origin,
+// which every shape on the board itself is placed from, so a row's `at` is held to the plan as it is.
 export function classifyWarning(w) {
   const m = String(w.message || w.reason || '');
   if (/landed outside the view/.test(m)) return 'view';   // the window is the user's: a big board is bigger than it
@@ -14,7 +13,7 @@ export function classifyWarning(w) {
   return 'other';
 }
 
-export function compareRun(plan, result, state, runName) {
+export function compareRun(plan, result, runName) {
   const changes = result.changes || [];
   const boardOf = {};
   for (const b of plan.boards) for (const s of b.shapes) boardOf[s.title] = b;
@@ -22,18 +21,6 @@ export function compareRun(plan, result, state, runName) {
   const runKey = (n) => String(n).replace(/ \(dry run\)$/, '').replace(/\.draw$/, '');
   const describing = new Set();
   for (const [run, titles] of Object.entries(plan.described || {})) if (runKey(run) === runKey(runName)) for (const t of titles) describing.add(t);
-  const origins = {};
-  for (const [k, v] of Object.entries(state.origins || {})) origins[k] = Object.assign({}, v);
-  const newOrigins = {};
-  for (const c of changes) {
-    const b = boardOf[c.title], a = b && b.anchors;
-    if (!a || !c.at || describing.has(c.title) || (c.title !== a.x && c.title !== a.y)) continue;
-    const s = b.shapes.find((x) => x.title === c.title);
-    const o = origins[b.board] = Object.assign({}, origins[b.board]);
-    if (c.title === a.x) o.x = c.at[0][0] - s.x;
-    if (c.title === a.y) o.y = c.at[0][1] - s.y;
-    newOrigins[b.board] = o;
-  }
   const out = { run: runName, ok: true, shapeRows: 0, shapesWithin1: 0, worstShape: 0, described: 0, mismatches: [], pillRows: 0, pillsWithin1: 0, worstPill: 0, pillDeltas: [], pushedPast: 0, warnings: { push: 0, order: 0, other: 0, view: 0, typed: 0, invalid: 0 }, warningMessages: [], typedMessages: [], otherMessages: [] };
   const used = new Set();
   for (const c of changes) {
@@ -68,17 +55,16 @@ export function compareRun(plan, result, state, runName) {
       let bn = (result.on && result.on.title) || 'root';
       if (plan.into && bn === plan.into) bn = 'root';   // the digest's own board is the subboard it was drawn into
       const b = plan.boards.find((x) => x.board === bn);
-      const o = origins[bn];
-      if (!b || !o || o.x == null || o.y == null) continue;
+      if (!b) continue;
       let best = null;
       b.pills.forEach((p, i) => {
         if (used.has(bn + '#' + i)) return;
-        const d = Math.abs(c.at[0][0] - o.x - p.x) + Math.abs(c.at[0][1] - o.y - p.y);
+        const d = Math.abs(c.at[0][0] - p.x) + Math.abs(c.at[0][1] - p.y);
         if (!best || d < best.d) best = { i, d, p };
       });
       if (best) {
         used.add(bn + '#' + best.i);
-        const dx = c.at[0][0] - o.x - best.p.x, dy = c.at[0][1] - o.y - best.p.y, dw = c.at[1][0] - best.p.w;
+        const dx = c.at[0][0] - best.p.x, dy = c.at[0][1] - best.p.y, dw = c.at[1][0] - best.p.w;
         const worst = Math.max(Math.abs(dx), Math.abs(dy));
         out.worstPill = Math.max(out.worstPill, worst);
         if (worst <= 1) out.pillsWithin1++;
@@ -89,10 +75,8 @@ export function compareRun(plan, result, state, runName) {
     }
     const b = boardOf[c.title];
     if (!b) continue;
-    const o = origins[b.board];
-    if (!o || o.x == null || o.y == null) { out.ok = false; out.mismatches.push(`${c.title}: board ${b.board} has no anchors yet`); continue; }
     const s = b.shapes.find((x) => x.title === c.title);
-    const d = { x: c.at[0][0] - o.x - s.x, y: c.at[0][1] - o.y - s.y, w: c.at[1][0] - s.w, h: c.at[1][1] - s.h };
+    const d = { x: c.at[0][0] - s.x, y: c.at[0][1] - s.y, w: c.at[1][0] - s.w, h: c.at[1][1] - s.h };
     const worst = Math.max(Math.abs(d.x), Math.abs(d.y), Math.abs(d.w), Math.abs(d.h));
     out.shapeRows++;
     out.worstShape = Math.max(out.worstShape, worst);
@@ -109,6 +93,5 @@ export function compareRun(plan, result, state, runName) {
     else if (k !== 'view') out.warningMessages.push(said);
   }
   if (out.warnings.push || out.warnings.order || out.pushedPast) out.ok = false;
-  out.newOrigins = newOrigins;
   return out;
 }

@@ -30,7 +30,7 @@ It uses the canvas skill's `canvas` command and draws only with it. Read that sk
 
 `digest all graph.json <target> [--mess N] [--promote off] [--prefer N] [--cap N] [--view WxH] [--ranks rows|columns] [--into "Title"] [--replace]` runs check, measure, plan, draw and verify in order and stops at the first that fails. If a step fails, the message says which script and what the app said (exit 1 refused, 4 not the plan). Don't fix a script by hand and run it alone: change the digest and plan again, because the later scripts are placed against the earlier ones. A drawn board's runs are each one undo step (Edit › Undo Draw), but the plan can't be resumed: run it again with `--replace` (it takes back what was drawn and draws it all; that works whether the user has undone some of it, all of it, or nothing), or plan again into a new place.
 
-A warning that shapes landed outside the window's view is not a problem: a big drawing is bigger than the window, and the camera is the user's.
+A warning that shapes landed outside the window's view is not a problem: a big drawing is bigger than the window, and the camera is the user's. Each board is drawn from its origin, its (0, 0), wherever the window is; a digest drawn as the board brings its first script into view.
 
 ## Types
 

@@ -73,7 +73,7 @@ A submodule is no file: its folder is empty. Never `open()` a file of the reposi
 ```python
 from lenskit import Digest
 
-d = Digest("shop", "What the whole is: the root's header.")
+d = Digest("shop")
 d.frame("Services", rank=0)
 d.subboard("@shop/orders", "Services", "What the service runs.", source="services/orders/src")
 d.note("orders", "Database", "The orders table.", source="db/migrations/002_orders.sql")
@@ -83,13 +83,13 @@ return d.finish()
 
 | member | what it does |
 |---|---|
-| `Digest(title, text="")` | the digest's title (the root's header is `About <title>`) and the header's text. Both can be set later: `d.title`, `d.text` |
+| `Digest(title)` | the digest's title, what the whole is called; it can be set later: `d.title`. No board has a note of what it is: a subboard's `text` is its card's description |
 | `d.claim(what, wanted, *others, most=80)` | a title no other shape has: `wanted`, else each of `others`, else the last with a number after it, cut to `most` characters (keeping its end behind an ellipsis). Two titles that differ only in case or spaces are one title. A title that gives way is said as a warning naming `what`. Claim the titles queries name first (tables, types), then the rest. A name many places share (an `example` workflow in every sample) goes bare to whichever claims it first: claim such names qualified from the start (`f"{name} ({sample})"`), so no one of them is the bare name by the order of a loop |
 | `d.add(title, kind, parent=None, text=None, **extra)` | a node: `kind` `sticky-note`, `frame`, `subboard` or `auto`; `parent` the frame or subboard it is in; `extra` goes into the node as it is. Returns the node (a dict you may still change) |
 | `d.frame(title, parent=None, **extra)`, `d.subboard(...)`, `d.note(...)` | `add` for each kind; `subboard` and `note` take `text` third (a note's words; a subboard's is its description, which may mention shapes as `@[Title]` and is shown in the card's panel, never on the canvas) |
 | `d.edge(source, target, weight=None, **extra)` | an edge between two titles (notes or subboards, never frames) |
 | `d.warn(message)` | a warning, said by `ingest` as `lens: <message>`; never stops the run |
-| `d.finish()` | the digest: `{title, text, nodes, edges, warnings}` |
+| `d.finish()` | the digest: `{title, nodes, edges, warnings}` |
 
 The fields a node or an edge can carry are in [graph.md](../../canvas-digest/reference/graph.md): on a node `rank` (rows or columns in its container), `public`, `source`, `schema`, `relationship`, `is`, `fieldValues`; on an edge `text`, `weight`, `direct` (never a pill), `via: "reference"` (always a pill), `is`, `fieldValues`, `endRule`. `is` is a word Python keeps, so pass it in a dict: `d.note("orders", "Database", **{"is": "Table"})`.
 
@@ -243,7 +243,7 @@ What keeps a lens deterministic:
 - No environment: no `os.environ`, `HOME`, the current folder, the user or the host.
 - No network and no randomness: no `random`, `uuid`, sockets.
 
-The runner catches what changes between its two runs. It can't catch a file read outside `repo` that happens not to change, and the line that ends the root's header names `lens.py` by its content, not a helper it imports: keep the lens in `lens.py`, or change it when a helper changes.
+The runner catches what changes between its two runs. It can't catch a file read outside `repo` that happens not to change.
 
 ## Python 3.9
 
@@ -266,7 +266,7 @@ NEEDS = {"type": "object", "properties": {}}
 
 
 def digest(scan, repo):
-    d = Digest(scan.name or "Services", "The services, and which needs which.")
+    d = Digest(scan.name or "Services")
     services = (yaml.load(repo.read(COMPOSE)) or {}).get("services") or {}
     title = {name: d.claim(f"the service {name}", name, f"{name} (service)") for name in sorted(services)}
     d.frame("Types", rank=1)

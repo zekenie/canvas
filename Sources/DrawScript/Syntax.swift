@@ -341,6 +341,17 @@ public struct Target: Sendable, Hashable {
         case board
         /// `view`: the part of the board in the window.
         case view
+        /// `origin`: the board's point (0, 0), a box with no size.
+        case origin
+
+        /// The box a word of the language names.
+        static func word(_ word: PlaceWord) -> Box {
+            switch word {
+            case .board: .board
+            case .view: .view
+            case .origin: .origin
+            }
+        }
     }
 
     public var box: Box
@@ -355,7 +366,7 @@ public struct Target: Sendable, Hashable {
     public var isName: Bool {
         switch box {
         case .title, .id: true
-        case .board, .view: false
+        case .board, .view, .origin: false
         }
     }
 
@@ -366,6 +377,7 @@ public struct Target: Sendable, Hashable {
         case .id(let id): ShapeName.id(id).written
         case .board: PlaceWord.board.rawValue
         case .view: PlaceWord.view.rawValue
+        case .origin: PlaceWord.origin.rawValue
         }
         return part.map { "\(named) \($0.rawValue)" } ?? named
     }

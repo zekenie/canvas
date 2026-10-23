@@ -20,9 +20,8 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
                                              [--view WxH] [--ranks rows|columns|auto]
                                                                        writes <outdir>/plan.json, report.json and runs/NN-<board>-<step>.draw; --into puts the
                                                                        whole digest in a new subboard of that title (runs/00-into.draw makes it)
-  compare <plan.json> <result.json> <state.json> [--name run] [--save true] [--text true]
-                                                                       one run's result (dry or real) against the plan: every shape's box and every pill's spot
-                                                                       relative to its board's header, and that every shape is created; --text prints "ok ..." or "MISMATCH ..."
+  compare <plan.json> <result.json> [--name run] [--text true]       one run's result (dry or real) against the plan: every shape's box and every pill's spot
+                                                                       from its board's origin, and that every shape is created; --text prints "ok ..." or "MISMATCH ..."
   clashes <plan.json> <titles.json>                                    the plan's titles that the file already holds, as "error: ..." lines (none: nothing printed)
   runs <plan.json>                                                     the run files in the order they are drawn, one a line
   into <plan.json>                                                     the title of the subboard the plan draws into (nothing for a new file)
@@ -34,10 +33,11 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
   drawn <plan.json> <path> <id> [shapes] [--over drawn.json --was N]   what drawing the plan makes, to keep as drawn.json (the board's file and id, the subboard, the titles,
                                                                        how many shapes the file held once drawn); --over: with the drawing it replaces, while it is drawn,
                                                                        and --was, how many shapes the file held before that one was taken back
-  same-file <drawn.json> <path> <id> [titles.json]                     "yes" when the last drawing is in that board's file (by its path, else by its id and its header), else "no"
+  same-file <drawn.json> <path> <id> [titles.json]                     "yes" when the last drawing is in that board's file (by its path, else by its id and its shapes), else "no"
   record-pick <path> <id> <titles.json> [record.json ...]              which record of a folder of them (--records) is the last drawing in that board's file (as same-file tells);
                                                                        prints the record's argument as given, nothing when none is
-  record-name <path> <id> <plan.json>                                  the file name for a new record: from the path, else from the id and the plan's first header
+  record-name <path> <id> <plan.json>                                  the file name for a new record: from the path, else from the id and the drawing's name
+  name <plan.json|digest.json> [--into "Title"]                        what a drawing is told by in a board with no file: the subboard it goes into, else the digest's title
   has-title <titles.json> <title>                                      "yes" when the file holds that title, else "no"
   beyond <drawn.json> <fileShapes>                                     how many shapes the file holds beyond the last drawing (drawn as the board)
   minus <titles.json> <drawn.json>                                     the file's titles less the last drawing's, as JSON
@@ -137,13 +137,8 @@ export async function run(args, io) {
     return;
   }
   if (cmd === 'compare') {
-    const state = (() => { try { return json(pos[3]); } catch (e) { return {}; } })();
-    const res = compareRun(json(pos[1]), json(pos[2]), state, flags.name || pos[2]);
+    const res = compareRun(json(pos[1]), json(pos[2]), flags.name || pos[2]);
     if (flags.text === 'true') io.print(compareText(res)); else io.print(JSON.stringify(res));
-    if (flags.save === 'true') {
-      const origins = Object.assign({}, state.origins || {}, res.newOrigins);
-      io.writeText(pos[3], JSON.stringify({ origins }));
-    }
     return;
   }
   if (cmd === 'replay') {
@@ -159,26 +154,26 @@ export async function run(args, io) {
   if (cmd === 'view') { const v = boardView(json(pos[1]), pos[2]); if (v) io.print(v); return; }
   if (cmd === 'drawn') { io.print(JSON.stringify(drawnRecord(json(pos[1]), pos[2] || null, pos[3], pos[4], flags.over ? json(flags.over) : null, flags.was, io.now()), null, 1)); return; }
   if (cmd === 'record-pick' || cmd === 'record-needs-titles') {
-    // record-pick PATH ID TITLES|'' FILES... [--header H] [--quiet true];  record-needs-titles PATH ID FILES... [--quiet true]
+    // record-pick PATH ID TITLES|'' FILES... [--name NAME] [--quiet true];  record-needs-titles PATH ID FILES... [--quiet true]
     const picking = cmd === 'record-pick', files = pos.slice(picking ? 4 : 3);
     const { records, skipped } = readRecords(files, json);
     if (skipped.length && flags.quiet !== 'true') (io.warn || (() => {}))(`digest: ignored ${skipped.length} file(s) in the records folder that aren't drawing records: ${skipped.map((s) => `${s.name.split('/').pop()} (${s.why})`).join(', ')}`);
     if (picking) {
-      const name = pickRecord(records, pos[1] || null, pos[2], pos[3] ? json(pos[3]) : null, flags.header);
+      const name = pickRecord(records, pos[1] || null, pos[2], pos[3] ? json(pos[3]) : null, flags.name);
       if (name) io.print(name);
     } else if (needsTitles(records, pos[2]) && !pickRecord(records, pos[1] || null, pos[2], null)) io.print('yes');
     return;
   }
-  if (cmd === 'header') {
-    // the header note of a plan's first board, or of the first board a digest would have: how a drawing is told from another in one unsaved board
+  if (cmd === 'name') {
+    // what a drawing is told by in one unsaved board: the subboard a plan (or `--into`) draws into, else the digest's title
     try {
       const v = json(pos[1]);
-      const h = Array.isArray(v.boards) ? (v.boards.find((b) => b.board === 'root') || {}).origin : buildModel(v).headers.get('root');
-      if (h) io.print(h);
+      const n = Array.isArray(v.boards) ? v.into || v.title : (flags.into ? fold(flags.into) : buildModel(v).title);
+      if (n) io.print(n);
     } catch (e) { /* none: the pick goes by the newest */ }
     return;
   }
-  if (cmd === 'record-name') { const plan = json(pos[3]); const root = plan.boards.find((b) => b.board === 'root'); io.print(recordName(pos[1] || null, pos[2], root ? root.origin : null)); return; }
+  if (cmd === 'record-name') { const plan = json(pos[3]); io.print(recordName(pos[1] || null, pos[2], plan.into || plan.title)); return; }
   if (cmd === 'has-title') { io.print(hasTitle(json(pos[1]), pos[2]) ? 'yes' : 'no'); return; }
   if (cmd === 'same-file') { io.print(sameFile(json(pos[1]), pos[2] || null, pos[3], pos[4] ? json(pos[4]) : null) ? 'yes' : 'no'); return; }
   if (cmd === 'beyond') { io.print(String(beyond(json(pos[1]), pos[2]))); return; }

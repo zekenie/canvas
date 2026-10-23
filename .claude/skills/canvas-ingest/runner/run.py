@@ -109,8 +109,6 @@ def differ(a, b, warnings):
     """Where two digests first differ, in words."""
     if a.get('title') != b.get('title'):
         return f"the lens made two different digests from one scan: its title is {a.get('title')!r} in one run and {b.get('title')!r} in the other."
-    if a.get('text') != b.get('text'):
-        return "the lens made two different digests from one scan: the text of the whole differs between runs."
     for key, noun in (('nodes', 'node'), ('edges', 'edge')):
         xs, ys = a.get(key, []), b.get(key, [])
         for i in range(max(len(xs), len(ys))):

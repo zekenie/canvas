@@ -389,11 +389,6 @@ def digest(scan, repo):
             for how, touched in (("reads", reads), ("writes", writes)):
                 for t, via in touched.items():
                     d.edge(title, table_title[t], **{"is": type_title[how], "fieldValues": {"via": via}})
-
-    counts = {k: sum(len(found[m][k]) for m in services) for k in ("workflows", "activities", "lambdas")}
-    d.text = as_text(f"{d.title}: {len(services)} services, {counts['workflows']} workflows, {counts['activities']} activities, "
-                     f"{counts['lambdas']} Lambdas and {len(tables)} tables.\nA card is a service: open it for what it runs. "
-                     f"An arrow is a relationship: runs, reads or writes.")
     return d.finish()
 
 

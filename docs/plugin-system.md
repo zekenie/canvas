@@ -10758,7 +10758,8 @@ against the board as the run starts:
    to 20, each statement's first.
 3. **Place** (DrawScript's `LayoutProblem.solve()`, from a problem built in DrawLayout.swift): the
    shapes that move are free boxes (new ones, and those restated with placements); what their
-   placements name that stays put is fixed (board shapes, `board`, `view`); and every board shape
+   placements name that stays put is fixed (board shapes, `board`, `view`, `origin`: the board's
+   (0, 0), a box with no size); and every board shape
    with a solid that the script doesn't move or delete is an obstacle. What has a solid is the
    core's to say (`ShapeContext.solidBounds(of:)`: a shape's bounds where its geometry is closed,
    finite and not flat; none for an arrow or a line, or a shape kept aside), so a placement of any

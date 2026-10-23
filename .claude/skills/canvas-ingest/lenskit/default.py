@@ -8,8 +8,8 @@ The root holds the modules as cards in bands, a band a layer, the top layer firs
 the skill finds the view shows larger); a module's imports are edges between the cards. A module's board holds its files as
 notes in frames (`groups`, else by folder), and a module in `folder_boards` holds a card for each of those folders, whose
 board holds its files. Which file uses which is an edge, as heavy as the names it uses; one to a file on another board is a
-pill there, and that file is public. What a board is, is said in its card's `text` (the card's description in the app), and in
-the digest's own, on the first board's header note, for the root. Every node says where it came from in `source`: a file note its path, a module's card (and a folder's) its folder.
+pill there, and that file is public. What a board is, is said in its card's `text` (the card's description in the app). Every node
+says where it came from in `source`: a file note its path, a module's card (and a folder's) its folder.
 
 The overrides are the arguments, each the value a repository's spec.py once gave its name:
 
@@ -27,13 +27,12 @@ the run. A board of over NOTES_MOST file notes draws a folder's files as one not
 import collections, os
 
 from . import derive
-from .builder import Digest, LONGEST, whole
+from .builder import Digest, whole
 from .text import as_text, declares, file_text, mention
 
 ARGUMENTS = ('title', 'bands', 'purposes', 'folder_purposes', 'folder_boards', 'groups', 'by_module', 'layer_names')
 
 MAX_WEIGHT = 4          # an edge's weight is the names its file uses of the other, up to this
-HEADED = LONGEST - len('About ')    # a card's longest title: the room its board's header note's title once needed, kept so the lens still makes what its fixtures hold
 NOTES_MOST = 4000       # file notes a digest may have: one title query lists at most 10,000 titles, and a monorepo has many thousands of files
 LISTED_MOST = 300       # files a collapsed folder's note lists
 
@@ -145,7 +144,7 @@ class _Build:
     # ---- what a note says ------------------------------------------------------------------------------------
 
     def about_text(self, board, title=lambda b: b):
-        """What a board is, for its card's description (the root's, a header note): what it is, and the boards it uses, each mentioned by the title its card was given
+        """What a board is, for its card's description: what it is, and the boards it uses, each mentioned by the title its card was given
         (`title`: a board to its card's title, which is the board's name unless another shape had it)."""
         spec, FILES, MODS, PROD = self.spec, self.FILES, self.MODS, self.PROD
         m, folder = self.BOARDS[board]
@@ -208,10 +207,10 @@ class _Build:
         # the titles, the ones that matter most first: a module's card keeps its name, then a folder's card, a band, a file
         # (file_titles: its name, else as much of its path as tells it apart; a collapsed folder's note is titled for the
         # folder), and last a frame, which takes its board's name after it when another shape has its own
-        card = {m: d.claim(f"the module {m}", m, most=HEADED) for m in PROD}
+        card = {m: d.claim(f"the module {m}", m) for m in PROD}
         for board, (m, folder) in BOARDS.items():
             if folder:
-                card[board] = d.claim(f"the folder {board}", board, most=HEADED)
+                card[board] = d.claim(f"the folder {board}", board)
         bands = [(d.claim(f"the band {band}", band, f"{band} (layer)"), mods) for band, mods in spec.BANDS]
         file_title = {}
         for k in sorted(FILES):
@@ -227,7 +226,7 @@ class _Build:
         def source(path):
             return {'source': whole(path)} if path else {}     # as a title is: half a character in a path reads as U+FFFD
 
-        # the root: the bands, a module's card in its band, and each card's board header, which says what the module is
+        # the root: the bands, a module's card in its band, and each card's description, which says what the module is
         for rank, (band, mods) in enumerate(bands):
             d.frame(band, rank=rank)
             for m in mods:
@@ -303,8 +302,4 @@ class _Build:
         for a in sorted(by_module):
             for m in sorted(by_module[a]):
                 d.edge(file_title[a], card[m])
-
-        files, lines = len(FILES), sum(f['lines'] for f in FILES.values())
-        d.text = (f"{as_text(spec.TITLE)}: {len(PROD)} modules in {len(spec.BANDS)} layers, {files} files, {lines:,} lines.\n"
-                  f"A card is a module: open it for its files. An arrow, or a pill, is an import.")
         return d.finish()

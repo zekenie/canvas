@@ -151,6 +151,7 @@ func draw(_ source: String, on board: Board = Board(), obstacleOrder: @escaping 
                 case .id: return .fixed(-1)
                 case .board: return fixedRef("board") { LayoutProblem.Fixed(rect: boardBounds ?? .zero, word: .board) }
                 case .view: return fixedRef("view") { LayoutProblem.Fixed(rect: board.view ?? .zero, word: .view) }
+                case .origin: return fixedRef("origin") { LayoutProblem.Fixed(rect: .zero, word: .origin) }
                 }
             }
             return LayoutProblem.ResolvedClause(clause, refs: refs)

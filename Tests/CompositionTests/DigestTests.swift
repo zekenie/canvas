@@ -359,10 +359,9 @@ private func isByDesign(_ message: String) -> Bool {
             expectEqual(try queried(server, board, #":edge-to("\#(hub)")"#).sorted(), Set(sources(of: hub, in: digest) + mentioners(of: hub, in: digest)).sorted(), "what points at \(hub)")
         }
         // a subboard's text is its description, written once every shape is drawn (it names one on the root board and one on its own board, which a
-        // later run draws), and its board has no About note: only the first board does
+        // later run draws), and no board has a note of what it is
         let titles = try queried(server, board, "[title]")
-        expectEqual(titles.filter { $0.hasPrefix("About ") }.count, 1, "the first board's header is the only one: \(titles.filter { $0.hasPrefix("About ") })")
-        expect(!titles.contains("About Backend"), "none on Backend's board")
+        expectEqual(titles.filter { $0.hasPrefix("About ") }, [], "no About note on any board")
         expectEqual(try queried(server, board, #"[description*="Gateway"]"#), ["Backend"], "the card holds the text as its description")
         expectEqual(try queried(server, board, #"[description*="Login"]"#), ["Backend"], "and a mention of a shape on its own board, drawn after the card")
         expect(run.process.output.contains("descriptions 1/1"), "verify counts it: \(run.process.output)")
@@ -669,7 +668,7 @@ private func isByDesign(_ message: String) -> Bool {
         expect(fileManager.fileExists(atPath: out.appendingPathComponent("results/02-root-in-1.dry.json").path), "its dry run was made")
         expect(!fileManager.fileExists(atPath: out.appendingPathComponent("results/02-root-in-1.json").path), "and it was not drawn")
         let titles = try queried(server, board, "[title]")
-        expect(titles.contains("Acme map") && titles.contains("About Acme"), "what ran before stays: \(titles)")
+        expect(titles.contains("Acme map") && titles.contains("Engineering"), "what ran before stays: \(titles)")
         expect(!titles.contains("Platform team") && !titles.contains("CTO"), "and nothing of the script that stopped: \(titles)")
     },
 
@@ -934,7 +933,6 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(ready.process.status, 0, ready.process.output + ready.process.error)
         expect(ready.process.output.contains("shows the board's root now") && ready.process.output.contains("which the new one replaces"), ready.process.output)
         expectEqual(board.editor.file.shapeCount, drawn, "ready takes nothing back")
-        expectEqual(try String(contentsOf: out.appendingPathComponent("app-build"), encoding: .utf8), "unknown\n", "ready keeps the build the app says (none, here) for a caller that says what drew its boards")
         try drawnAgain("from a board inside the drawing")
         // a canvas, or an app, from before the skill's newest command is said by ready, not at the measuring step: here a canvas
         // that answers everything but measure
@@ -1073,7 +1071,7 @@ private func isByDesign(_ message: String) -> Bool {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: records.path)) ?? []).filter { $0.hasSuffix(".json") }
         expectEqual(names.count, 2, "a record each: \(names)")
         let held = board.editor.file.shapeCount
-        // Beta again, in its place, from an out of its own: its record is the one whose header is this run's, not the first by name
+        // Beta again, in its place, from an out of its own: its record is the one of this run's digest (by its title), not the first by name
         for _ in 0..<2 {
             let again = try runDigest("all", file: beta, server: server, target: target + ["--into", "Beta map", "--replace"], extra: ["--records", records.path], out: folder.appendingPathComponent("beta-again"))
             expectEqual(again.process.status, 0, again.process.output + again.process.error)

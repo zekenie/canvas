@@ -548,6 +548,16 @@ extension Reading: ShapeProperty {
         expectEqual(rows(anchored).first?["inView"], nil)
         expectEqual(anchored["warnings"], [])
     },
+    test("origin is the board's point (0, 0): a shape's top-left at an exact offset from it, with no shape on the board to measure from, and with no window") {
+        let editor = try drawEditor()
+        let first = try drawn(#"tile "First" right of origin (gap: 520) below origin (gap: 20)"#, on: editor)
+        expectEqual(rows(first).first?["at"], [[520, 20], [120, 80]])
+        let up = try drawn(#"tile "Up" left of origin (gap: 0) above origin (gap: 0)"#, on: editor)
+        expectEqual(rows(up).first?["at"], [[-120, -80], [120, 80]])
+        let windowless = try makeEditor(drawPlugins(), viewport: .zero)
+        expectEqual(rows(try drawn(#"tile right of origin (gap: 300) below origin (gap: 200)"#, on: windowless)).first?["at"], [[300, 200], [120, 80]])
+        expectEqual(try refused(#"tile "N" inside origin top-left"#, on: editor).reason, "no_room")
+    },
     test("a shape moved inside or on another paints above it; a new one drawn inside a new one goes in after it") {
         let editor = try drawEditor()
         let small = tile("Small", CGRect(x: 700, y: 500, width: 120, height: 80), in: editor)

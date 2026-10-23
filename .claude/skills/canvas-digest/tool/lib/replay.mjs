@@ -8,7 +8,6 @@ const arrowKey = (from, to, is) => [from, to, [...(is || [])].sort().join('\u000
 /** results: {runName: the real run's JSON}. titles: the file's titles after the runs (an array), or null. Returns {ok, lines, ...counts}. */
 export function replay(plan, results, titles) {
   const problems = [], others = [];
-  const state = {};
   const out = { runs: 0, shapes: 0, shapesWithin1: 0, pills: 0, pillsWithin1: 0, worstShape: 0, worstPill: 0, arrows: 0, arrowsPlanned: 0, described: 0, warnings: 0, outOfView: 0, restated: 0, typed: 0 };
   const planned = new Set();
   const typedPlanned = new Map();   // the arrows of a relationship type the plan draws (an arrow of a pair is told from the others by its `is`)
@@ -25,8 +24,7 @@ export function replay(plan, results, titles) {
     const result = results[name];
     if (!result) { problems.push(`${name}: no result was saved (the run did not happen)`); continue; }
     out.runs++;
-    const cmp = compareRun(plan, result, state, name);
-    Object.assign(state.origins = state.origins || {}, cmp.newOrigins);
+    const cmp = compareRun(plan, result, name);
     out.shapesWithin1 += cmp.shapesWithin1; out.pillsWithin1 += cmp.pillsWithin1; out.described += cmp.described;
     out.worstShape = Math.max(out.worstShape, cmp.worstShape); out.worstPill = Math.max(out.worstPill, cmp.worstPill);
     out.warnings += cmp.warnings.push + cmp.warnings.order + cmp.warnings.other; out.outOfView += cmp.warnings.view; out.typed += cmp.warnings.typed;

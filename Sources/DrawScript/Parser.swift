@@ -770,7 +770,7 @@ struct LineParser {
             }
             at += 1
             let box: Target.Box = token.kind == .quoted ? .title(try title(token)) : Self.isIDWord(token) ? .id(try id(token))
-                : token.text == PlaceWord.board.rawValue ? .board : .view
+                : .word(PlaceWord(rawValue: token.text)!)
             targets.append(Target(box, part: try part(partFirst: partFirst)))
             guard joinsAnother() else { break }
             if let next = peek(), startsPlacement(next) { throw joined(after: "\(opening) \(listed(targets.map(\.written)))") }

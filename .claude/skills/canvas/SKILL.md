@@ -154,7 +154,7 @@ sticky-note "Risks" right of "Ship v1" top level with "Ship v1" text: "Load-test
 
 ### The board, the view, and lists
 
-`board` (unquoted) is the box around every shape the script doesn't move, and `view` is the part of the board in the window. So a column on the right is `right of board`, the space under everything is `below board`, and a legend in a corner is `inside view top-right`. Shapes whose placements are written identically form a list: they stack down the page in script order, 64 apart, and are placed as one. A later script's `right of board` won't join this column but goes right of the whole board again, so to add to a list, restate every member.
+`board` (unquoted) is the box around every shape the script doesn't move, `view` is the part of the board in the window, and `origin` is the board's (0, 0), for a layout worked out elsewhere. So a column on the right is `right of board`, the space under everything is `below board`, and a legend in a corner is `inside view top-right`. Shapes whose placements are written identically form a list: they stack down the page in script order, 64 apart, and are placed as one. A later script's `right of board` won't join this column but goes right of the whole board again, so to add to a list, restate every member.
 
 ```draw
 subboard "Design" right of board
@@ -384,7 +384,7 @@ sticky-note "Ship 1.0" text: "Blocked on @[Auth servce]"
 ```
 
 - **Between, with nothing on the other axis.** `right of "Web" left of "Cache"` alone is `unplaced`: add `level with "Web"`.
-- **Two unplaced shapes.** Only one per script may say nothing about where it goes; place the rest against it. And there are no coordinates in any form: if a shape is in the wrong place, give it another placement. A layout worked out elsewhere goes in as offsets from one shape's top-left ([An exact offset](reference/language.md#an-exact-offset)).
+- **Two unplaced shapes.** Only one per script may say nothing about where it goes; place the rest against it. And there are no coordinates as attributes (`x:`, `at:`): if a shape is in the wrong place, give it another placement. A layout worked out elsewhere goes in as offsets from the board's `origin`, its (0, 0) ([An exact offset](reference/language.md#an-exact-offset)).
 - **Re-running a whole layout script to add one line.** Its placements run again and snap back anything the user has moved since, and its untitled shapes are drawn a second time. Write only the new statements. To change attributes without moving a shape, restate it without placements.
 - **An edge to a shape on another board** goes through a reference only if that shape is public. If it isn't, the script is refused (`several_boards`, and its hint says why): don't make the shape public to get past it, ask the user, or split the script into a run for each board. The one exception is [canvas-digest](../canvas-digest/SKILL.md), which makes public only the shapes it creates itself, in the run that creates them, and says which; it never touches a shape that was already on a board.
 - **A relationship that doesn't fit is drawn, and said.** `edge "Ann" -> "Bo" is: "Employment"` with Bo not a Company draws the arrow and answers `problems` on its row and an error warning; nothing is refused. `canvas query 'arrow:misfit'` lists those on the board, and `arrow:misfit:invalid` says why. A plain arrow between two notes names, in `fits`, the relationship types that would take it; the type is yours to write (`is:`), `canvas draw` never picks one ([reference/relationships.md](reference/relationships.md)).

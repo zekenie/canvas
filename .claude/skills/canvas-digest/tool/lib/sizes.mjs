@@ -3,8 +3,7 @@ import { q, lit, byTitle } from './util.mjs';
 import { LEAF_KINDS } from './model.mjs';
 import { noteTyping, arrowTyping } from './types.mjs';
 
-export const NOTE_W = 300, HEADER_W = 360;
-export const HEADER_GAP = 80;   // between the first board's header note and what is laid out under it
+export const NOTE_W = 300;
 export const TITLE_PILL = (title) => 27 + 10.2 * title.length;   // the title pill above a frame (an estimate; a frame is never narrower than its title)
 
 /** What the tool assumes until a measurement says otherwise: draw's own numbers, which `constants` of the measure JSON replace. */
@@ -16,14 +15,9 @@ export function noteWidth(title) {
   return Math.max(NOTE_W, Math.ceil(need / 20) * 20);
 }
 
-/** What the first board's header note says: the digest's `text`, else what it is of. A subboard's `text` is its description, drawn in no note. */
-export function headerText(model) {
-  return model.text || `${model.title}. Drawn by canvas-digest.`;
-}
-
 /** The shapes to measure: [{title, kind, w, text}] in a fixed order; a note that is a type or is one also says what it is (`typing`, as draw is told it). */
 export function toMeasure(model) {
-  const items = [{ title: model.headers.get('root'), kind: 'sticky-note', w: HEADER_W, text: headerText(model) }];
+  const items = [];
   for (const n of model.nodes.values()) {
     if (!LEAF_KINDS.has(n.kind)) continue;
     items.push(n.kind === 'subboard' ? { title: n.title, kind: 'subboard' } : { title: n.title, kind: 'sticky-note', w: noteWidth(n.title), text: n.text, typing: noteTyping(n), node: n });
@@ -37,20 +31,18 @@ export function pillTargets(model) {
 }
 
 /**
- * A draw script for `canvas measure -`: every note, card and header (a type with its schema, a note with the types it is and its values), then the
+ * A draw script for `canvas measure -`: every note and card (a type with its schema, a note with the types it is and its values), then the
  * ends of the relationship types and every typed arrow between notes (a type's note grows a row for each end it has, and so does a note of it, and
  * `measure` lays the script's notes out against the script's own ends, whatever board each is on), then one edge through a reference to each end a
  * pill may be drawn for. Placements are ignored by measure.
  */
 export function measureScript(model) {
   const items = toMeasure(model);
-  const first = items[0];
   const lines = [];
   const stmt = (it, place) => it.kind === 'subboard'
     ? `subboard ${q(it.title)}${place}`
     : `sticky-note ${q(it.title)}${place} size: ${it.w}x` + (it.text ? ` text: ${lit(it.text)}` : '') + (it.typing || '');
-  lines.push(stmt(first, ''));
-  for (const it of items.slice(1)) lines.push(stmt(it, ` below ${q(first.title)}`));
+  items.forEach((it, i) => lines.push(stmt(it, i ? ` below ${q(items[0].title)}` : '')));
   const leaves = items.map((it) => it.title);
   const note = (t) => { const n = model.node(t); return n && n.kind === 'sticky-note'; };
   for (const e of model.edges) {

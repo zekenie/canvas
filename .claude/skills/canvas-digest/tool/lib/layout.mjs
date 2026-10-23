@@ -11,7 +11,7 @@ import { layoutFlat, removeOverlaps, pushApart, normalize, pack, stretched, offS
 import { warmStress } from './stress.mjs';
 import { arrowBetween, segLength } from './geom.mjs';
 import { ownCost, ownCostParts, shapeCost, FILL_WEIGHT } from './cost.mjs';
-import { DEFAULT_CONSTANTS, TITLE_PILL, HEADER_GAP } from './sizes.mjs';
+import { DEFAULT_CONSTANTS, TITLE_PILL } from './sizes.mjs';
 import { fansOut } from './moves.mjs';
 
 // draw's numbers (a pill's height, step and gap, how far `in` puts a shape from a frame's edge, a frame's least size) come from `canvas measure`: sizes.constants
@@ -58,8 +58,6 @@ export class Layouter {
     const view = this.opts.view;
     this.view = view && view.w > 0 && view.h > 0 ? { w: view.w, h: view.h } : DEFAULT_VIEW;   // the room the view has for a board fit to it
     this.aspect = this.view.w / this.view.h;
-    const header = sizes.shapes[model.headers.get(board)];   // the board's header note sits above what is laid out, and is part of what the view shows
-    this.head = header ? { w: Math.ceil(header.w), h: Math.ceil(header.h) + HEADER_GAP } : { w: 0, h: 0 };
     this.cache = new Map();
     this.elkCache = new Map();
     this.way = new Map();       // container id -> rows or columns: which way its ranked children run, once chosen
@@ -334,12 +332,11 @@ export class Layouter {
   }
 
   /**
-   * The shape a container is to be: `target` (width over height); for the board itself, its header note's room above it; and the view's size,
-   * unless the shape is a slot's (`slot`: a ranked child's is its share of the container, whatever the view could show of it).
+   * The shape a container is to be: `target` (width over height), and the view's size, unless the shape is a slot's (`slot`: a ranked
+   * child's is its share of the container, whatever the view could show of it).
    */
   shapeOf(cid, target, slot) {
-    const root = cid === this.rootCid;
-    return { aspect: target, headW: root ? this.head.w : 0, headH: root ? this.head.h : 0, viewW: slot ? 0 : this.view.w, viewH: slot ? 0 : this.view.h };
+    return { aspect: target, viewW: slot ? 0 : this.view.w, viewH: slot ? 0 : this.view.h };
   }
 
   /** A shared pill as its container lays it out: a box of its own. */
@@ -436,7 +433,7 @@ export class Layouter {
       const nudge = this.nudge ? this.nudge(cid, items) : null;    // and one with its boxes' sizes changed a little
       const sizeKey = items.map((i) => i.id + '\u0001' + i.w + 'x' + i.h + (i.nw == null ? '' : '/' + i.nw + ',' + i.ny + ',' + (i.nx || 0))).join('\u0002');
       const packMode = this.squeeze ? this.opts.pack : (this.opts.pack === 'off' ? 'off' : 'gravity');
-      const shapeKey = Math.round(target * 1000) + (slot ? 's' : '') + (shape.headH ? 'h' + shape.headW + 'x' + shape.headH : '');
+      const shapeKey = Math.round(target * 1000) + (slot ? 's' : '');
       const forced = this.force && !warm ? this.force.get(cid) : null;
       const key = packMode + (forced ? 'F' + forced : '') + (warm ? 'w' + anchor.sig : 'c' + sd + (pinned || '')) + (nudge ? 'n' + nudge : '') + algo + SEP + shapeKey + SEP + sizeKey + SEP + edges.map((e) => e.a + '>' + e.b + ':' + e.w + ':' + e.n + ':' + e.np).join(',');
       r = this.cache.get(key);
@@ -570,7 +567,7 @@ export class Layouter {
       let arrows = r.parts.arrows, n = r.parts.n, area = 0;
       items.forEach((it) => { const f = sub.get('f:' + it.id); if (f) { arrows += f.sub.arrows; n += f.sub.n; area += f.sub.area; } else area += it.w * it.h; });
       const off = offShapeOf(r.w, r.h, shape);
-      const shown = Math.min(1, shape.viewW / Math.max(r.w, shape.headW, 1), shape.viewH / Math.max(r.h + shape.headH, 1));   // how large the view shows it, fit to it
+      const shown = Math.min(1, shape.viewW / Math.max(r.w, 1), shape.viewH / Math.max(r.h, 1));   // how large the view shows it, fit to it
       const empty = area > 0 ? (r.w * r.h) / area - 1 : 0;
       return { orient, m, items, r, sub, subInfo, cost: arrows + shapeCost(off, n) + (1 + 0.25 * n) * FILL_WEIGHT * empty, off, shown };
     };

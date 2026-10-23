@@ -466,7 +466,7 @@ extension Drawing {
                     switch target.box {
                     case .title(let title): book.claim(title, statement)
                     case .id(let text): book.claim(ShapeName.id(text), statement)
-                    case .board, .view: break
+                    case .board, .view, .origin: break
                     }
                 }
             }

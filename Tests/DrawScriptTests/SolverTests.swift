@@ -56,6 +56,24 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         expectRect(solved.rects[0], rect(220, 90, 200, 100))
         expectEqual(solved.pushes, [])
     },
+    test("origin is the board's point (0, 0): two directions against it put a shape's top-left at that offset, on any side, whatever the board holds") {
+        expectRect(draw(#"card "A" right of origin (gap: 520) below origin (gap: 20)"#)["A"], rect(520, 20, 200, 100))
+        expectRect(draw(#"card "A" left of origin (gap: 10) above origin (gap: 30)"#)["A"], rect(-210, -130, 200, 100))
+        let board = Board([("F", rect(2000, 2000, 300, 200))], view: rect(5000, 5000, 1000, 800))
+        let drawn = draw(#"card "A" right of origin (gap: 100) below origin (gap: 40)"# + "\n" + #"card "B" right of "A" left (gap: 300) below "A" top (gap: 0)"#, on: board)
+        expectRect(drawn["A"], rect(100, 40, 200, 100))
+        expectRect(drawn["B"], rect(400, 40, 200, 100))
+        // It ties a shape to the board as a shape there does: a second shape with no placement is still the drawing's anchor.
+        let anchored = draw(#"card "A" right of origin (gap: 0) below origin (gap: 0)"# + "\n" + #"card "B""#, on: board)
+        expectRect(anchored["A"], rect(0, 0, 200, 100))
+        expect(anchored["B"].map { rect(5000, 5000, 1000, 800).contains($0) } == true, "B is drawn in view: \(String(describing: anchored["B"]))")
+        // It is no zone: a shape it puts on another is pushed past it, as one placed by a shape would be.
+        let big = draw(#"card "A" right of origin (gap: 100) below origin (gap: 100)"#, on: Board([("Big", rect(-500, -500, 2000, 2000))]))
+        expectEqual(big.pushedPast("A"), ["Big"])
+        expect(big["A"].map { !$0.insetBy(dx: 1, dy: 1).intersects(rect(-500, -500, 2000, 2000)) } == true, "A is off Big: \(String(describing: big["A"]))")
+        // A point holds nothing.
+        expectError(draw(#"card "N" inside origin top-left"#), .noRoom, #""N" is inside origin top-left, and there's no room left in origin"#, line: 1)
+    },
     test("a part the caller puts elsewhere (a corner on an outline) is where it says") {
         let clause = try shape(#"card right of "B" top-right"#).clauses[0]
         let problem = LayoutProblem(

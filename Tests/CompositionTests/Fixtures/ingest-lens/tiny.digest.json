@@ -1,6 +1,5 @@
 {
  "title": "TinyPackage",
- "text": "TinyPackage: 2 modules in 2 layers, 4 files, 150 lines.\nA card is a module: open it for its files. An arrow, or a pill, is an import.",
  "nodes": [
   {
    "title": "Level 2",

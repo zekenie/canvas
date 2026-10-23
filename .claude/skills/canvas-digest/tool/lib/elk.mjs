@@ -42,17 +42,15 @@ export function offShape(w, h, aspect) {
 }
 
 /**
- * The same for a container with a shape to be, `shape`: {aspect, headW, headH, viewW, viewH}. What is laid out under a board's header note
- * is seen with the note (headW, headH: its room above). And where the view's size is given (viewW, viewH: the room it has for a board fit to
- * it, which it never shows larger than life), the answer is how much larger the view would show the same room in its own shape, squared: the
- * plain ratio for a board that outgrows the view, and 1 for one that fits it as it is, whose shape costs nothing.
+ * The same for a container with a shape to be, `shape`: {aspect, viewW, viewH}. Where the view's size is given (viewW, viewH: the room it has
+ * for a board fit to it, which it never shows larger than life), the answer is how much larger the view would show the same room in its own
+ * shape, squared: the plain ratio for a board that outgrows the view, and 1 for one that fits it as it is, whose shape costs nothing.
  */
 export function offShapeOf(w, h, shape) {
-  const bw = Math.max(w, shape.headW || 0), bh = h + (shape.headH || 0);
-  if (!(bw > 0) || !(bh > 0)) return 1;
-  if (!shape.viewW || !shape.viewH) return offShape(bw, bh, shape.aspect);
-  const shown = Math.min(1, shape.viewW / bw, shape.viewH / bh);
-  const could = Math.min(1, Math.sqrt(shape.viewW * shape.viewH / (bw * bh)));
+  if (!(w > 0) || !(h > 0)) return 1;
+  if (!shape.viewW || !shape.viewH) return offShape(w, h, shape.aspect);
+  const shown = Math.min(1, shape.viewW / w, shape.viewH / h);
+  const could = Math.min(1, Math.sqrt(shape.viewW * shape.viewH / (w * h)));
   return Math.max(1, (could / shown) * (could / shown));
 }
 
@@ -107,15 +105,15 @@ export const MAX_STRETCH = 16;
  * layouts come out as round as their boxes allow; moving the centers apart one way and together the other keeps which arrows cross and gives
  * the shape wanted. The stretch is found in a few tries (the boxes pushed apart again change the shape a little). Returns {raw, pos, k}: the
  * stretched centers' top-lefts (what a warm layout starts from), the same with overlaps removed, and the stretch (1: none). `shape` is
- * {aspect, headW, headH}: the shape to be, and the room of a board's header note above what is laid out.
+ * {aspect}: the shape to be (with the view's size, offShapeOf's).
  */
 export function stretched(items, raw0, shape) {
-  const aspect = shape.aspect, headW = shape.headW || 0, headH = shape.headH || 0;
+  const aspect = shape.aspect;
   let best = null, k = 1;
   for (let t = 0; t < 4; t++) {
     const raw = stretch(items, raw0, k), pos = removeOverlaps(items, raw);
     const b = normalize(items, pos);
-    const r = b.h + headH > 0 ? Math.max(b.w, headW) / (b.h + headH) : 1, off = offShapeOf(b.w, b.h, shape);
+    const r = b.h > 0 ? b.w / b.h : 1, off = offShapeOf(b.w, b.h, shape);
     if (!best || off < best.off - 1e-9) best = { raw, pos, k, off };
     if (off < 1.08) break;
     const next = Math.min(MAX_STRETCH, Math.max(1 / MAX_STRETCH, k * aspect / r));

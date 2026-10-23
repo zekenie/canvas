@@ -1,4 +1,4 @@
-to_digest: spec.py's BANDS name modules the code lacks, passed over: Ghost
-to_digest: spec.py's PURPOSES name a module the code lacks, passed over: Nowhere
-to_digest: spec.py's FOLDER_BOARDS give Core/Hidden a board, and it has no files
-to_digest: spec.py's GROUPS for App leave out Main.swift: they go in the frame "App/"
+lens: bands name modules the code lacks, passed over: Ghost
+lens: purposes name a module the code lacks, passed over: Nowhere
+lens: folder_boards give Core/Hidden a board, and it has no files
+lens: groups for App leave out Main.swift: they go in the frame "App/"

@@ -3,7 +3,7 @@
 // Arrows are measured as straight segments between box borders (the tool draws no bends).
 // `aspect` is never a board's own width over height: it is how far the board is from the shape of the view it will be seen in
 // (elk.mjs's offShapeOf: how many times too wide for it, or too tall; 1 is the view's own shape, and any shape of a board the view shows
-// whole at its own size), its header note counted in.
+// whole at its own size).
 // A pill shared by several users is one pill, counted once for its host (the user whose column it is in); the other users'
 // arrows run to it and are measured like any arrow (they are what the host choice keeps short).
 import { median } from './util.mjs';
@@ -74,9 +74,9 @@ export function evaluate(model, layout, mu) {
     const touched = (model.out.get(t) || []).some((e) => !e.cross && model.node(e.to).board === layout.board) || (model.inn.get(t) || []).some((e) => !e.cross && model.node(e.from).board === layout.board);
     if (touched) orphans++;
   }
-  // the board as the view shows it: what is laid out, under its header note
-  const sh = layout.shape || { aspect: DEFAULT_ASPECT, headW: 0, headH: 0 };
-  const bw = Math.max(layout.w, sh.headW), bh = layout.h + sh.headH;
+  // the board as the view shows it
+  const sh = layout.shape || { aspect: DEFAULT_ASPECT };
+  const bw = layout.w, bh = layout.h;
   const aspect = offShapeOf(layout.w, layout.h, sh);
   const hw = bw > 0 && bh > 0 ? bh / bw : 1;   // taller than wide: > 1
   const cost = cr.total + 2 * NE + 3 * Fx + 0.25 * lenR + mu * pillTerm + 10 * orphans + ALPHA * Math.max(0, aspect - 3);   // the cost's aspect term does not move with the dial (the search must not), only what is good enough does
@@ -101,7 +101,7 @@ export function ranksOf(layout, tol = 60) {
 /** What the room a layout leaves empty costs, beside its shape (SHAPE_WEIGHT): the two together are how small the view shows it, fit to it. */
 export const FILL_WEIGHT = 3;
 
-/** The room a board leaves empty: its area (its header note's room counted in) over the area of its notes, cards and pills, less 1. */
+/** The room a board leaves empty: its area over the area of its notes, cards and pills, less 1. */
 export function roomLeft(layout, bw, bh) {
   let used = 0;
   for (const b of layout.boxes.values()) used += b.w * b.h;
@@ -121,8 +121,7 @@ export const shapeCost = (off, arrows) => (1 + 0.25 * arrows) * SHAPE_WEIGHT * M
 /**
  * A container's own cost, for choosing between two layouts of it: its children (items with a width and height, laid out at pos)
  * and the arrows among them (edges {a, b, n, np}: n arrows between the two, np of them into a pill beside b). X + 2 NE + 0.25 len/rank,
- * what its shape costs (`shape`: {aspect, headW, headH, viewW, viewH}, the shape it is to be, the header note above a board and the view's
- * size: elk.mjs's offShapeOf, shapeCost) and what the room it leaves empty does (area over the area of the children, less 1, times `fillWeight`). A child with a column of pills (nw, nh, ny: its note's size and
+ * what its shape costs (`shape`: {aspect, viewW, viewH}, the shape it is to be and the view's size: elk.mjs's offShapeOf, shapeCost) and what the room it leaves empty does (area over the area of the children, less 1, times `fillWeight`). A child with a column of pills (nw, nh, ny: its note's size and
  * how far down the child's box it starts; the column is the rest of the box, to the note's right) is two boxes to an arrow: the arrow
  * leaves and meets the note (or, into a pill, the column), and runs over the other, as an arrow that goes sideways from a note does.
  * Returns {total, arrows, shape, off, w, h, n}: the whole cost, the arrows' part of it, the shape's and the room's, how far off its shape it is, its size and how many arrows it has.
@@ -152,7 +151,7 @@ export function ownCostParts(items, pos, edges, fillWeight = FILL_WEIGHT, shape 
     X += cr.per[i] * s.n * 0.5;   // each crossing is counted by both arrows
   });
   const rank = (median(boxes.map((b) => b.h)) || 200) + 64;
-  const sh = shape || { aspect: DEFAULT_ASPECT, headW: 0, headH: 0 };
+  const sh = shape || { aspect: DEFAULT_ASPECT };
   const off = offShapeOf(x1, y1, sh);
   const emptiness = area > 0 ? (x1 * y1) / area - 1 : 0;
   const n = edges.reduce((t, e) => t + e.n, 0);

@@ -231,7 +231,7 @@ sticky-note "Nightly schedule" text: "Pick a time after @[Lod], and add a timeou
 ### Keys that are refused
 
 - **The title, as an attribute, on a new shape** (`unsupported`). The title goes after the kind, in quotes. On a restated shape, `title:` renames it.
-- **Coordinates** (`unsupported`). The box's `frame`, and any property that holds a point or a rectangle, can't be set: there are no coordinates here. Say where a shape goes with a placement (to the unit, with [an exact offset](#an-exact-offset) from a shape), and how big with `size:`. `x:`, `y:`, `at:` and `position:` get the same answer, and `width:` and `height:` are pointed to `size:` (a width alone is `size: 300x`).
+- **Coordinates** (`unsupported`). The box's `frame`, and any property that holds a point or a rectangle, can't be set: there are no coordinates here. Say where a shape goes with a placement (to the unit, with [an exact offset](#an-exact-offset) from a shape or the board's `origin`), and how big with `size:`. `x:`, `y:`, `at:` and `position:` get the same answer, and `width:` and `height:` are pointed to `size:` (a width alone is `size: 300x`).
 - **A kind's property named like a language key** (`size`, `gap`, `overlap`, `style`, `title`) can't be set. `canvas kinds` marks any such property; none of the shipped kinds has one.
 
 ## Placements
@@ -292,12 +292,13 @@ delete "Backend"
 
 ### Targets
 
-A target is a quoted title or an id (`#7C1E…`), optionally followed by a part, or one of two unquoted words:
+A target is a quoted title or an id (`#7C1E…`), optionally followed by a part, or one of three unquoted words:
 
 - **`board`** is the box around every [obstacle](#keeping-clear): the shapes on the board that this script doesn't move, nor a frame it moves takes along (the board the window shows, not the boards inside its subboards). `right of board` is a new column past everything, `below board` is the space under everything. On an empty board it's `unknown_title`, because there's nothing to be right of. Leave one shape unplaced instead, and the drawing goes in the window.
 - **`view`** is the part of the board in the window (below the path's pill over a subboard, which covers the window's top there). `inside view top-right` puts a legend in a corner. `view` needs the board's window to have a size, or it's `no_view`.
+- **`origin`** is the board's point (0, 0), a box with no size, wherever the board's shapes and the window are. It's what [an exact offset](#an-exact-offset) of a layout worked out elsewhere is measured from, with no shape on the board to measure from. What's drawn from it isn't moved into the window: `--reveal` brings it into view.
 
-Both are fixed boxes, measured once when the script runs.
+All three are fixed boxes, measured once when the script runs.
 
 ### Several targets
 
@@ -313,7 +314,7 @@ Both are fixed boxes, measured once when the script runs.
 
 A part narrows the target. `right of "A" top` is right of A's top side, so it's centered on the line of A's top edge. `text` isn't a part; a note's words are `text:`.
 
-`left`, `right`, `top` and `bottom` are parts, and they also start placements, so after a target the word that follows decides. Followed by `of` or `level`, or (for `left` and `right`) by a title, `board` or `view`, the word starts the next placement. Otherwise it's the target's part. So `below "A" right of "B"` is two placements, and `below "A" right` is below A's right side. After `inside`, `outside` and `on`, only `of` makes it the next placement.
+`left`, `right`, `top` and `bottom` are parts, and they also start placements, so after a target the word that follows decides. Followed by `of` or `level`, or (for `left` and `right`) by a title, `board`, `view` or `origin`, the word starts the next placement. Otherwise it's the target's part. So `below "A" right of "B"` is two placements, and `below "A" right` is below A's right side. After `inside`, `outside` and `on`, only `of` makes it the next placement.
 
 ### Gaps on a placement
 
@@ -333,9 +334,10 @@ sticky-note "Alerts" below "Runbook" (gap: tight) text: "Page the owner"
 
 ```text
 right of "A" left (gap: x) below "A" top (gap: y)      the shape's top-left x right of A's and y below it
+right of origin (gap: x) below origin (gap: y)         the shape's top-left at x, y on the board
 ```
 
-A direction against a side of a shape is measured from that side, wherever the shape lands: `right of "A" left (gap: 520)` puts the shape's left edge 520 right of A's left edge, over A or past it, and `below "A" top (gap: 20)` its top edge 20 below A's top. Together they put its top-left exactly that far from A's. That's how to draw a layout worked out elsewhere, by a script that computes positions: take one shape on the board as the origin, and give every shape its offset from it. `inside "A" top-left (gap: 20)` doesn't do it: its one gap is the same across and down, and keeps the shape that far in from every side. A gap is never negative, so make the origin a shape at the layout's top-left. An offset is a placement like any other: a shape that lands on another is pushed past it, and the result says so (`pushedPast`). For offsets inside a frame, draw the shapes `in` it ([Frames](#frames)).
+A direction against a side of a shape is measured from that side, wherever the shape lands: `right of "A" left (gap: 520)` puts the shape's left edge 520 right of A's left edge, over A or past it, and `below "A" top (gap: 20)` its top edge 20 below A's top. Together they put its top-left exactly that far from A's. That's how to draw a layout worked out elsewhere, by a script that computes positions: give every shape its offset from one point. On a board that has the layout's shapes and nothing else (an empty one, or a new subboard's), the point is `origin`, the board's (0, 0), which needs no shape drawn there; beside shapes already on a board, it's one of them. `inside "A" top-left (gap: 20)` doesn't do it: its one gap is the same across and down, and keeps the shape that far in from every side. A gap is never negative, so measure from the layout's top-left: move a layout with positions left of or above the point right and down first. An offset is a placement like any other: a shape that lands on another is pushed past it, and the result says so (`pushedPast`). For offsets inside a frame, draw the shapes `in` it ([Frames](#frames)).
 
 ```draw
 // Owner's top-left is the origin: each note's top-left is the offset written.
@@ -343,12 +345,18 @@ sticky-note "Glossary" right of "Owner" left (gap: 520) below "Owner" top (gap: 
 sticky-note "Contacts" right of "Owner" left (gap: 820) below "Owner" top (gap: 20) text: "Who to call"
 ```
 
+```draw
+// The same from the board's (0, 0), far from what's drawn so far: no shape to measure from.
+sticky-note "Intake" right of origin (gap: 6000) below origin (gap: 6000) text: "Where requests come in"
+sticky-note "Triage" right of origin (gap: 6400) below origin (gap: 6000) text: "Who looks first"
+```
+
 ## Which board
 
 A file can hold boards inside shapes, and a script draws on one of them, worked out from what it names:
 
 - A title names a shape on any board of the file: the one the window shows first, and else wherever it is. `sticky-note "Auth" text: "Done"` changes Auth on whatever board it's on.
-- A new shape goes on the board of the shapes it's placed against, or the board `in` names (a frame's is the board the frame is on). With neither (unplaced, or against `board` or `view`), it goes on the board the rest of the script draws on, else the one the window shows.
+- A new shape goes on the board of the shapes it's placed against, or the board `in` names (a frame's is the board the frame is on). With neither (unplaced, or against `board`, `view` or `origin`), it goes on the board the rest of the script draws on, else the one the window shows.
 - A statement with `in "X"` reads its titles on X's board alone: that's how to name a shape whose title is on two boards.
 - An edge between shapes on two boards doesn't pick the board by itself when one of its ends can be stood for by a reference (a public shape can: [Through a reference](#through-a-reference)). An arrow can't leave its board, so the end that can be stood for is reached through a reference put beside the other end, which is on the board the run draws on. The run draws on the first board something else says (a title, an `in`, an end that can't be stood for, the start of an edge with `via:`); with nothing else, on the board of the first such edge's start. Each such edge then needs one end on that board. `delete edge` reads its ends the same way.
 - A shape the script draws counts as on the board the run draws on, whichever that is, and says nothing of the board itself. An edge from it to a shape on another board goes into a reference beside it, if that shape can be stood for; with nothing else to decide, the run draws on that shape's board, and the edge is straight there.
@@ -440,9 +448,9 @@ Pairs are checked in a fixed order: placed shapes in script order, each against 
 
 The one new shape with no placement is the **anchor**. The anchor, everything the script places against it, and everything placed against those (lists included) make one drawing.
 
-- **If nothing in the drawing names a shape on the board, `board` or `view`**, it's worked out on its own and then put in the window. The middle of its bounds goes to the middle of the view, or to the nearest spot around it where no part of it comes within 80 of a shape on the board or a shape this script placed elsewhere. A shape that holds the whole view isn't in the way, but is a zone for the drawing, as it is for a shape placed against `view`: zoomed into a frame, the drawing lands on the frame, in view, clear of what's on it. The spots are tried on square rings 40 apart: nearest the middle first, then higher, then further left. If there's no clear spot within 100 rings, the drawing goes 160 right of everything, top-aligned with it. Where the window is changes where the drawing lands, never whether the script runs.
-- **If something in it names a shape on the board**, `board` or `view` (or restates a shape and keeps one of its axes), it gets no special treatment. The unplaced shape has to be tied to the board through what's placed against it, on both axes, or it's `unplaced`.
-- **Every other placed shape must be tied to the board on both axes**: through its placements, directly or through other shapes, to a shape on the board, `board` or `view`. Otherwise it's `unanchored`, naming the axis.
+- **If nothing in the drawing names a shape on the board, `board`, `view` or `origin`**, it's worked out on its own and then put in the window. The middle of its bounds goes to the middle of the view, or to the nearest spot around it where no part of it comes within 80 of a shape on the board or a shape this script placed elsewhere. A shape that holds the whole view isn't in the way, but is a zone for the drawing, as it is for a shape placed against `view`: zoomed into a frame, the drawing lands on the frame, in view, clear of what's on it. The spots are tried on square rings 40 apart: nearest the middle first, then higher, then further left. If there's no clear spot within 100 rings, the drawing goes 160 right of everything, top-aligned with it. Where the window is changes where the drawing lands, never whether the script runs.
+- **If something in it names a shape on the board**, `board`, `view` or `origin` (or restates a shape and keeps one of its axes), it gets no special treatment. The unplaced shape has to be tied to the board through what's placed against it, on both axes, or it's `unplaced`.
+- **Every other placed shape must be tied to the board on both axes**: through its placements, directly or through other shapes, to a shape on the board, `board`, `view` or `origin`. Otherwise it's `unanchored`, naming the axis.
 
 So on an empty board, a script leaves one shape unplaced, or places against `view`. The first script on this page did both.
 
@@ -1053,7 +1061,7 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `wrong_kind` | The title belongs to a shape of another kind. `"Ingest" is a sticky-note` | Use its kind, or change it with `delete "Ingest"` and a new statement in the same script. |
 | `read_only` | The shape or connection is locked, or in a locked frame, or on a locked subboard's board (at any depth), and the change would really change it; or a new shape or edge would go in a locked frame, or on a board that's read-only. `"Ship" is read-only (locked, say), so it can't be deleted` · `one of "Ingest"'s connections is read-only (locked, say), so "Ingest" can't be deleted with it` · a subboard whose board holds a locked shape, deleted · `the reference that delete edge "A" -> "B" leaves with no arrow is read-only (locked, say), so it can't be deleted` · `"Sprint" is read-only (locked, say), so nothing goes in it` (a frame, or a subboard with `in`) · `"N" would go in "Sprint", which is read-only (locked, say)` · `"N" would go on "Plans"'s board, which is read-only (locked, say)` · `edge "A" -> "B" would go on "Plans"'s board, which is read-only (locked, say)` · `"Ship" is read-only (locked, say), so it can't be grouped` (or `ungrouped`) | Tell the user. Leave it, or ask them to unlock it. |
 | `unplaced` | Nothing says where a shape sits. `"Between" does not say where it sits vertically: right of "Ingest" and left of "Load" would put it in different places` · `exactly one new shape may say nothing about where it goes, but 2 do: "Idea one" and "Idea two"` · `"N" says nothing about where it sits horizontally` | Add a placement for that axis (the hint names one), or place all but one shape. |
-| `unanchored` | Shapes are placed only against each other, with nothing tying them to the board. `nothing ties "Left half" to the board horizontally` | Place one against a shape on the board, `board` or `view`, or leave exactly one unplaced. |
+| `unanchored` | Shapes are placed only against each other, with nothing tying them to the board. `nothing ties "Left half" to the board horizontally` | Place one against a shape on the board, `board`, `view` or `origin`, or leave exactly one unplaced. |
 | `no_room` | The placements can't all hold. `"Squeeze" is right of "Ingest" and left of "Clean", and there's no room between them` · `… clear of "Q"` · `"N" is inside "Z" top-left, and there's no room left in "Z"` · `"Wide" is in "Sprint", and there's no room left in "Sprint"` | Drop or change a placement, or ask for a smaller gap. Shapes on the board don't move, so to make room, restate them with placements. |
 | `circular` | `"Loop" is placed against itself`, or in itself (`in`), or two shapes wait on each other: `"N" is level with "A" and "B", but "B" is placed vertically against "N" in turn` | Place one of them against something else. |
 | `unordered` | Two shapes would overlap and nothing says which side of the other either sits on. `"North" and "Far north" overlap, and nothing says which side of the other either one sits on` · `"N" is on "P" and can't move, but it overlaps "Q"` | Place one against the other, place it elsewhere, or say `overlap: allow`. Held on an empty zone, the hint says so: place it elsewhere, or, if the zone is meant to hold shapes, put a first one `inside` it. |
@@ -1197,7 +1205,7 @@ delete edge "Ingest" -> "Load"
 
 These are left out on purpose. What they protect is that the app never chooses an arrangement for you. It works out the one your sentences describe, and refuses the rest.
 
-- **Coordinates**, in any form, including as an escape hatch. A position is always said against something named, an exact one too ([An exact offset](#an-exact-offset)). The board stores positions, and the script never sees them.
+- **Coordinates** as attributes (`x:`, `at:`, a shape's `frame`). A position is always said against something named, an exact one too ([An exact offset](#an-exact-offset)): a shape, `board`, `view`, or the board's `origin`, from which an exact offset is a point on the board, for a layout worked out elsewhere. The board stores positions, and the script never reads them.
 - **Guessing an axis.** When nothing settles an axis, or two placements settle it differently, the app refuses rather than picking a row or a column.
 - **Two drawings with nothing to hang on.** Only one shape per script may be unplaced, because two unrelated drawings would have to be put somewhere relative to each other, and that's a choice.
 - **Overlap without an order.** When two shapes would overlap and nothing says which side of the other either sits on, it's refused rather than split the difference.

@@ -80,6 +80,7 @@ struct ShapeItem {
         case shape(AnyShapeRecord)
         case board
         case view
+        case origin
     }
 
     /// Whether the layout places it: it's new, or restated with placements.
@@ -971,7 +972,7 @@ struct Drawing {
     }
 
     /// What each of an item's placements names, placement by placement (`ShapeItem.targets`): a shape the script draws or
-    /// restates, one on the board the run draws on, `board` or `view`. A shape statement's, and the placements an edge writes
+    /// restates, one on the board the run draws on, `board`, `view` or `origin`. A shape statement's, and the placements an edge writes
     /// for the stand-in it makes (`addStandIn`).
     mutating func resolveTargets(_ index: Int) throws(DrawError) {
         let item = items[index], statement = item.statement
@@ -1005,6 +1006,8 @@ struct Drawing {
                                         hint: "place it against a shape, or leave it unplaced to draw it where the view would be")
                     }
                     found.append(.view)
+                case .origin:
+                    found.append(.origin)
                 }
             }
             targets.append(found)

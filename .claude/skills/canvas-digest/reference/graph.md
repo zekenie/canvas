@@ -5,7 +5,6 @@ A digest is one JSON file. It says what the things are, which holds which, and w
 ```json
 {
   "title": "Name of the whole",
-  "text": "What the whole is, said on its first board",
   "policy": {"mess": 0.1, "promote": true, "ranks": "rows"},
   "nodes": [{"title": "…", "kind": "auto", "in": "…", "text": "…", "public": true, "rank": 0,
              "schema": {}, "relationship": true, "is": "…", "fieldValues": {}}],
@@ -18,8 +17,7 @@ A digest is one JSON file. It says what the things are, which holds which, and w
 
 | field | meaning |
 |---|---|
-| `title` | what the digest is of. It names the first board's header note, `About <title>`. Default `Digest`. |
-| `text` | what the first board's header note says. Default `<title>. Drawn by canvas-digest.` |
+| `title` | what the digest is of. Default `Digest`. No board has a note of what it is: a subboard's `text` is its card's description (below). |
 | `policy.mess` | the dial, 0 (tidy) to 1 (loose). Default 0.1. `--mess` on the command wins. |
 | `policy.promote` | `false` promotes no hub, whatever the dial. Default `true`. |
 | `policy.ranks` | `"rows"` or `"columns"`: which way shapes with a `rank` run (below). Left out, whichever the view shows larger. `--ranks` on the command wins. |
@@ -130,7 +128,7 @@ All files go in the out folder (`--out`, default the digest's name with `.out`).
 | `check` | the digest, `canvas kinds`, one `canvas query` for the titles in the file (with `--board`) and `canvas boards` (drawn as the board, `--board` without `--into`: whether it is empty) | `kinds.json`, `titles.json`, `titles.all.json` |
 | `measure` | the digest, `canvas measure` | `measure.draw` (what was measured), `measure.json` (the answer) |
 | `plan` | the digest, `measure.json`, `canvas boards` (the room the target's window has for a board: the view every board is laid out for, unless `--view` says) | `plan.json`, `report.json`, `runs/NN-<board>-<step>.draw` |
-| `draw` | the plan and runs; `drawn.json` with `--replace` | the board; `results/NN-<board>-<step>.dry.json` and `.json`, what `canvas draw` said of each run; `state.json`; `target.id` for a new file; `drawn.json`, what this drawing makes (the board's file and id, the subboard, the titles), which a later `--replace` takes back; with `--replace`, `replace.draw` and `results/replace.json` |
+| `draw` | the plan and runs; `drawn.json` with `--replace` | the board; `results/NN-<board>-<step>.dry.json` and `.json`, what `canvas draw` said of each run; `target.id` for a new file; `drawn.json`, what this drawing makes (the board's file and id, the subboard, the titles), which a later `--replace` takes back; with `--replace`, `replace.draw` and `results/replace.json` |
 | `verify` | the plan, the saved results, one `canvas query` for the titles in the file | nothing |
 
-`plan.json` has each board's shapes (`x`, `y`, `w`, `h` from the board's origin: the first board's header note, a subboard's board's own two shapes, its `anchors`, the widest and the tallest of those drawn first), its pills, and its edges in the order they are drawn; for an edge into a shared pill, `share` and `host` name the shape whose pill it reuses (or, for a spine's, the shape whose edge makes it, where the plan has it). It names the subboard the digest goes in (`into`, null for a new file) and the scripts in order (`runs`). `report.json` has the promotions with their costs, where each board's loop stopped and why, the public set with a reason for each, the view the plan is for (`view`: its width and height, and whether it was `given` or `assumed`), and each board's size and how far that is from the view's shape (`end.size`, `end.aspect`: 1 is the view's own shape, or a board the view shows whole). Read the report when the summary isn't what you expected.
+`plan.json` has each board's shapes (`x`, `y`, `w`, `h` from the board's origin, its (0, 0), which every shape on the board itself is placed from: `right of origin (gap: x) below origin (gap: y)`), its pills, and its edges in the order they are drawn; for an edge into a shared pill, `share` and `host` name the shape whose pill it reuses (or, for a spine's, the shape whose edge makes it, where the plan has it). It names the subboard the digest goes in (`into`, null for a new file) and the scripts in order (`runs`). `report.json` has the promotions with their costs, where each board's loop stopped and why, the public set with a reason for each, the view the plan is for (`view`: its width and height, and whether it was `given` or `assumed`), and each board's size and how far that is from the view's shape (`end.size`, `end.aspect`: 1 is the view's own shape, or a board the view shows whole). Read the report when the summary isn't what you expected.

@@ -1,6 +1,5 @@
 {
   "title": "Spine",
-  "text": "A band of four cards that point at the same notes, and the notes they point at.",
   "nodes": [
     { "title": "Band", "kind": "frame" },
     { "title": "Base", "kind": "frame" },

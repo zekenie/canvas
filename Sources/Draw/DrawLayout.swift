@@ -120,6 +120,8 @@ extension Drawing {
                     case .view:
                         guard let view else { throw DrawError(item.statement, .noView, "the board isn't in a window") }
                         refs.append(fixedWord(.view, rect: view))
+                    case .origin:
+                        refs.append(fixedWord(.origin, rect: .zero))
                     }
                     if let part = target.part, part.isCorner, let outline, let corner = Self.corner(part, on: outline.points, in: outline.rect) {
                         parts[place] = corner
@@ -376,6 +378,7 @@ extension Drawing {
             case .shape(let record): standIn(at: record.id, in: self.target.document) != nil ? standInName(record) : named(record)
             case .board: PlaceWord.board.rawValue
             case .view: PlaceWord.view.rawValue
+            case .origin: PlaceWord.origin.rawValue
             }
         }
     }

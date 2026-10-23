@@ -67,7 +67,7 @@ extension Drawing {
         switch found {
         case .item(let index): items[index].record
         case .shape(let record): record
-        case .board, .view: nil
+        case .board, .view, .origin: nil
         }
     }
 

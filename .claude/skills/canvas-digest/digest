@@ -10,7 +10,7 @@
 #   digest verify  GRAPH TARGET                       what was drawn, against the plan and the file's titles
 #   digest all     GRAPH TARGET [PLAN FLAGS]          check, measure, plan, draw, verify; stops at the first that fails
 #   digest ready   GRAPH TARGET                       whether a draw could start: canvas found, the app answering (and both new enough
-#                                                     to measure; its build is written to OUT/app-build), the target fit to draw
+#                                                     to measure), the target fit to draw
 #                                                     on (and, with --replace, the last drawing one the app will take back: a window
 #                                                     inside a drawing that is the board is shown its root, as the draw would). GRAPH
 #                                                     needn't exist yet: for a caller with slow work to do before it has one
@@ -29,7 +29,7 @@
 #   --out DIR   where the files go (default: GRAPH without .json, plus .out)
 #   --records DIR   where the drawing records live, one for each file drawn in (default: OUT/drawn.json, the one record of this out).
 #               A run with --replace reads the record of its target's file, found by the path or, for a board with no file yet, by its id and
-#               header (of two digests drawn into one such board, the one with this run's header), and writes to that one (a new file gets a
+#               the drawing's shapes (of two digests drawn into one such board, the one with this run's name: its --into, else its title), and writes to that one (a new file gets a
 #               new record), so runs that share DIR but not OUT each know their own boards. A file in DIR that is no record is said and skipped
 #   --timeout S seconds canvas may take to answer one script (default 120)
 #
@@ -170,7 +170,6 @@ done
 if [ -n "$NEWFILE" ] && [ -n "$INTO" ]; then die "--new-file makes the digest the file's board: leave out --into"; fi
 if [ -n "$NEWFILE" ] && [ "$REPLACE" = 1 ]; then die "--new-file draws a file of its own: there is nothing in it to replace (--replace works with --board)"; fi
 mkdir -p "$OUT/runs" "$OUT/results"
-STATE=$OUT/state.json
 # canvas is found now, and said if it is not. The one command that may need none is a plan from a measure already made, with no board to read.
 if [ "$CMD" != plan ] || [ -n "$BOARD" ] || [ ! -s "$OUT/measure.json" ]; then find_canvas; fi
 # --board is resolved to an open board's id once (front, an id, a file or a name): every later call names it by its id
@@ -218,7 +217,7 @@ board_field() {
 }
 
 # Whether this run replaces the last drawing: --replace, and drawn.json says it is in the file of board $1 (by its path; one drawn on
-# a board with no file yet by the board's id and the drawing's header, which needs the file's titles). Leaves the file's titles in
+# a board with no file yet by the board's id and the drawing's shapes, which needs the file's titles). Leaves the file's titles in
 # $OUT/titles.all.json.
 replacing() {
   [ "$REPLACE" = 1 ] && [ -s "$OUT/drawn.json" ] || return 1
@@ -238,7 +237,7 @@ record_drawn() {
 }
 
 # With --records, OUT/drawn.json is the working copy of the record of the target's file (select_record); this keeps it there, whole or
-# not at all. A file with no record yet is named for its path, else for its board's id and the drawing's header. The last drawing's
+# not at all. A file with no record yet is named for its path, else for its board's id and the drawing's name. The last drawing's
 # record (drawn.prev.json) only matters while a run is drawing over it, so it stays in OUT.
 keep_record() {
   if [ -z "$RECORDS" ]; then return 0; fi
@@ -248,19 +247,19 @@ keep_record() {
   mv "$RECORDS/.$RECNAME.new" "$RECORDS/$RECNAME"
 }
 
-# The header note of the first board this run draws: the plan's, when it is drawing one, else the digest's. How the last drawings of one
-# unsaved board are told apart (the tool says nothing when it can't tell).
-record_header() {
-  if [ "$CMD" = draw ] && [ -s "$OUT/plan.json" ]; then tool header "$OUT/plan.json"
-  elif [ -f "$GRAPH" ]; then tool header "$GRAPH"
+# The name of the drawing this run makes: the subboard it goes into, else the digest's title (the plan's, when it is drawing one, else
+# the digest's and --into). How the last drawings of one unsaved board are told apart (the tool says nothing when it can't tell).
+record_name() {
+  if [ "$CMD" = draw ] && [ -s "$OUT/plan.json" ]; then tool name "$OUT/plan.json"
+  elif [ -f "$GRAPH" ]; then tool name "$GRAPH" ${INTO:+--into "$INTO"}
   fi
 }
 
 # With --records and --replace: the record of the target board's file becomes OUT/drawn.json, or there is none (a new file has none yet, and a
 # run with a new out has no record but these). Without --replace nothing reads a record, and a drawing writes to the record its file or
-# board and header name (keep_record), so none is picked. Of the records there are, the tool picks the one that is this board's file's: by
-# its path, which needs no query; only when that fails, and a record could be told by the board's id and header, the file's titles are asked
-# for. Of several told that way (two digests drawn into one unsaved board) it takes the one with this run's header, then the newest. A file in
+# board and the drawing's name (keep_record), so none is picked. Of the records there are, the tool picks the one that is this board's file's: by
+# its path, which needs no query; only when that fails, and a record could be told by the board's id and its shapes, the file's titles are asked
+# for. Of several told that way (two digests drawn into one unsaved board) it takes the one with this run's name, then the newest. A file in
 # the folder that isn't a record is said once and skipped.
 select_record() {
   mkdir -p "$RECORDS"
@@ -270,13 +269,13 @@ select_record() {
   for _r in "$RECORDS"/*.json; do if [ -f "$_r" ]; then set -- "$@" "$_r"; fi; done
   if [ $# -eq 0 ]; then return 0; fi
   _bpath=$(board_field "$BOARD" path)
-  _header=$(record_header) || exit 1
-  _pick=$(tool record-pick "$_bpath" "$BOARD" "" --header "$_header" "$@") || exit 1
+  _name=$(record_name) || exit 1
+  _pick=$(tool record-pick "$_bpath" "$BOARD" "" --name "$_name" "$@") || exit 1
   if [ -z "$_pick" ]; then
     _need=$(tool record-needs-titles "$_bpath" "$BOARD" "$@" --quiet true) || exit 1
     if [ -n "$_need" ]; then
       all_titles "$BOARD"
-      _pick=$(tool record-pick "$_bpath" "$BOARD" "$OUT/titles.all.json" --header "$_header" --quiet true "$@") || exit 1
+      _pick=$(tool record-pick "$_bpath" "$BOARD" "$OUT/titles.all.json" --name "$_name" --quiet true "$@") || exit 1
     fi
   fi
   if [ -z "$_pick" ]; then return 0; fi
@@ -359,7 +358,7 @@ step_plan() {
   fi
   # measured when there is no measurement, and again when the digest has changed since (a title or a text the old one never saw)
   if [ ! -s "$OUT/measure.json" ] || [ "$GRAPH" -nt "$OUT/measure.json" ]; then step_measure; fi
-  rm -f "$OUT"/runs/*.draw "$OUT"/results/*.json "$OUT"/results/*.err "$STATE" "$OUT/target.id"
+  rm -f "$OUT"/runs/*.draw "$OUT"/results/*.json "$OUT"/results/*.err "$OUT/target.id"
   set -- plan "$GRAPH" "$OUT/measure.json" "$OUT"
   if [ -n "$MESS" ]; then set -- "$@" --mess "$MESS"; fi
   if [ -n "$PROMOTE" ]; then set -- "$@" --promote "$PROMOTE"; fi
@@ -474,7 +473,6 @@ step_draw() {
   # the file as the app has it (canvas new adds .canvasboard to a path without it)
   _path=$(board_field "$id" path)
   record_drawn
-  echo '{}' > "$STATE"
   _total=$(echo "$_names" | wc -l | tr -d ' ')
   # stopped by hand (Ctrl-C): what is on the board is recorded and said, as for any other stop
   trap 'trap - INT TERM; echo "digest: stopped." >&2; leave_note; exit 130' INT TERM
@@ -487,21 +485,24 @@ step_draw() {
       cat "$OUT/results/$_base.dry.json.err" >&2
       leave_note; exit 1
     fi
-    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.dry.json" "$STATE" --name "$_base (dry run)" --text true) || { leave_note; exit 1; }
+    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.dry.json" --name "$_base (dry run)" --text true) || { leave_note; exit 1; }
     case $_res in
       ok*) ;;
       *) echo "$_res" >&2
          echo "digest: stopped before drawing $_name: its dry run is not the plan." >&2
          leave_note; exit 4 ;;
     esac
-    if ! canvas_try "$OUT/results/$_base.json" draw --board "$id" - < "$_file"; then
+    # a board is drawn at its origin, wherever the window is: the first script of a digest drawn as the board brings what it drew into view
+    set --
+    if [ "$_n" -eq 0 ] && [ "$_rootplan" = 1 ]; then case $_name in [0-9][0-9]-root-top.draw) set -- --reveal ;; esac; fi
+    if ! canvas_try "$OUT/results/$_base.json" draw --board "$id" "$@" - < "$_file"; then
       rm -f "$OUT/results/$_base.json"
       echo "digest: canvas refused $_name, and none of it was drawn:" >&2
       cat "$OUT/results/$_base.json.err" >&2
       leave_note; exit 1
     fi
     _n=$((_n + 1)); _drawn="$_drawn $_name"
-    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.json" "$STATE" --name "$_base" --save true --text true) || { leave_note; exit 1; }
+    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.json" --name "$_base" --text true) || { leave_note; exit 1; }
     case $_res in
       ok*) echo "[$_n/$_total] $_res" ;;
       *) echo "$_res" >&2
@@ -536,9 +537,6 @@ step_ready() {
     echo "digest: canvas measure doesn't answer, so the canvas found ($CANVAS) or the app that is running is older than this skill needs. Open the app this canvas came with, or run canvas install from the app you mean to use (in the Infinite Canvas repository: ./build.sh, then open its build). What canvas said:" >&2
     cat "$OUT/ready.measure.json.err" >&2; exit 1
   fi
-  # ... and which build it is, kept for a caller that says what drew its boards (OUT/app-build: the app's own words, else `unknown`)
-  _build=$(app_build)
-  printf '%s\n' "${_build:-unknown}" > "$OUT/app-build"
   if [ -n "$NEWFILE" ]; then
     new_file_free
     echo "ready: the app is running, and $NEWFILE is free for a new board"

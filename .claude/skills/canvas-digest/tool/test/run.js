@@ -381,9 +381,12 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var m = new RegExp('right of "' + anchor + '" left \\(gap: (\\d+)\\) below "' + anchor + '" top \\(gap: (\\d+)\\)').exec(l);
     return m ? [Number(m[1]), Number(m[2])] : null;
   };
-  // where the exact placement a line gives (`right of "A" left (gap: x) below "B" top (gap: y)`, or `left of "A" right (gap: x)` and `above "B" bottom (gap: y)`,
-  // each axis against its own shape) puts a box of w x h, given the boxes of the shapes it names by title: [x, y], or null when the line says none
+  // where the exact placement a line gives (`right of origin (gap: x) below origin (gap: y)`, from the board's (0, 0); or `right of "A" left (gap: x)
+  // below "B" top (gap: y)`, or `left of "A" right (gap: x)` and `above "B" bottom (gap: y)`, each axis against its own shape) puts a box of w x h, given
+  // the boxes of the shapes it names by title: [x, y], or null when the line says none
   var placedAt = function (l, boxes, w, h) {
+    var o = /right of origin \(gap: ([\d.]+)\) below origin \(gap: ([\d.]+)\)/.exec(l);
+    if (o) return [Number(o[1]), Number(o[2])];
     var m = /(right of|left of) "([^"]+)" (left|right) \(gap: ([\d.]+)\) (below|above) "([^"]+)" (top|bottom) \(gap: ([\d.]+)\)/.exec(l);
     if (!m) return null;
     var P = boxes[m[2]], Q = boxes[m[6]], gx = Number(m[4]), gy = Number(m[8]);
@@ -478,7 +481,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(idle.plan);
   });
 
-  await test('a spine that is the board itself places its shared pills against the shapes drawn on the board', async function () {
+  await test('a spine that is the board itself places its shared pills from the board\'s origin, as its shapes are', async function () {
     // Lib's board holds A, B and C, which point at X and Y on the root
     var nodes = [{ title: 'Lib', kind: 'subboard' }];
     ['A', 'B', 'C'].forEach(function (t) { nodes.push(note(t, 'Lib')); });
@@ -491,8 +494,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var l = edgeLines(r, 'lib').find(function (l) { return l.indexOf('edge "A" -> "X" via: reference ') === 0; });
     assert(l && l.indexOf(' in "') < 0, 'in nothing: ' + l);
     var libBoxes = {}; lib.shapes.forEach(function (s) { libBoxes[s.title] = s; });
-    eq(placedAt(l, libBoxes, x.w, x.h), [x.x, x.y], 'its place against the shapes, as the shapes have theirs');
-    assert(lib.origin === undefined && !/About/.test(JSON.stringify(lib.shapes)), 'the board has no header note');
+    assert(/ right of origin \(gap: [\d.]+\) below origin \(gap: [\d.]+\)/.test(l), 'from the board\'s origin: ' + l);
+    eq(placedAt(l, libBoxes, x.w, x.h), [x.x, x.y], 'where the plan has it');
+    eq(lib.shapes.map(function (s) { return s.title; }).sort(), ['A', 'B', 'C'], 'the board holds its shapes and nothing else');
     checkPlan(r.plan);
   });
 
@@ -680,8 +684,6 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(/over 80 characters/.test(long.errors[0]), JSON.stringify(long));
     var inFile = checkm.checkDigest(digest([note('A'), note('B')], []), { existing: ['b', 'Other'] });
     assert(inFile.errors.length === 1 && /"B" is already on a board/.test(inFile.errors[0]), JSON.stringify(inFile));
-    var hdr = checkm.checkDigest(digest([note('A')], []), { existing: ['About T'] });
-    assert(/header "About T"/.test(hdr.errors[0]), 'the header note too: ' + JSON.stringify(hdr));
     var kinds = checkm.checkDigest(digest([{ title: 'A', kind: 'schema-card' }, { title: 'B', kind: 'sticky-note' }, { title: 'C', kind: 'frame' }], []), { kinds: ['sticky-note', 'frame', 'subboard'] });
     assert(kinds.errors.length === 1 && /"A"/.test(kinds.errors[0]), 'a kind the tool does not lay out: ' + JSON.stringify(kinds));
     var gone = checkm.checkDigest(digest([note('A'), { title: 'B', kind: 'subboard' }], []), { kinds: ['sticky-note', 'frame'] });
@@ -709,12 +711,12 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(/frame has no ports/.test(re.warnings.join()), JSON.stringify(re));
   });
 
-  await test('the measure script: every note, card and the first board\'s header once, then one edge through a reference to each end that is pointed at', async function () {
+  await test('the measure script: every note and card once, then one edge through a reference to each end that is pointed at', async function () {
     var d = fixture('tree'), m = model.buildModel(d);
     var lines = sizes.measureScript(m).split('\n').filter(Boolean);
     var shapes = lines.filter(function (l) { return !/^edge /.test(l); }), edges = lines.filter(function (l) { return /^edge /.test(l); });
     var leaves = d.nodes.filter(function (n) { return n.kind !== 'frame'; }).length;
-    eq(shapes.length, leaves + 1, 'every note and subboard, and the header of the first board: a subboard\'s board has none');
+    eq(shapes.length, leaves, 'every note and subboard, and nothing else: no board has a note for what it is');
     assert(shapes.every(function (l) { return /^(sticky-note|subboard) "/.test(l); }), 'no frame is measured');
     assert(edges.every(function (l) { return / via: reference$/.test(l); }), 'every edge asks for a reference');
     eq(edges.length, sizes.pillTargets(m).length, 'one a target');
@@ -818,17 +820,16 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   await test('compare: a dry run\'s rows against the plan; an off box is a mismatch, a push or an order warning fails', async function () {
     var r = await planOf(digest([note('A'), note('B')], [{ from: 'A', to: 'B' }])), b = r.plan.boards[0];
-    var ox = 1000, oy = 2000;
-    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, at: [[ox + s.x, oy + s.y], [s.w, s.h]] }; });
-    var good = compareRun0(r.plan, { changes: rows, on: null, warnings: [] }, {});
+    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; });
+    var good = compareRun0(r.plan, { changes: rows, on: null, warnings: [] });
     eq(good.ok, true, JSON.stringify(good)); eq(good.shapesWithin1, b.shapes.length, 'all within 1');
     rows[1].at[0][0] += 5;
-    var bad = compareRun0(r.plan, { changes: rows, warnings: [] }, {});
+    var bad = compareRun0(r.plan, { changes: rows, warnings: [] });
     eq(bad.ok, false, 'a box 5 off'); assert(bad.mismatches.length === 1, JSON.stringify(bad.mismatches));
     rows[1].at[0][0] -= 5;
-    var pushed = compareRun0(r.plan, { changes: rows, warnings: [{ line: 3, message: 'B was pushed 40 right' }] }, {});
+    var pushed = compareRun0(r.plan, { changes: rows, warnings: [{ line: 3, message: 'B was pushed 40 right' }] });
     eq(pushed.ok, false, 'a push fails'); eq(pushed.warnings.push, 1, 'and is counted');
-    var view = compareRun0(r.plan, { changes: rows, warnings: [{ line: 1, message: '2 shapes landed outside the view — --reveal brings them into view' }] }, {});
+    var view = compareRun0(r.plan, { changes: rows, warnings: [{ line: 1, message: '2 shapes landed outside the view — --reveal brings them into view' }] });
     eq(view.ok, true, 'a shape outside the window is not the plan\'s business'); eq(view.warnings.view, 1, 'and is counted apart');
   });
 
@@ -838,15 +839,14 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(r.plan.into, 'Acme map');
     eq(r.plan.runs[0], '00-into.draw'); eq(r.runs[0].text, 'subboard "Acme map"\n');
     var top = r.runs[1].text.split('\n').filter(Boolean);
-    assert(/^sticky-note "About /.test(top[0]) && / in "Acme map"/.test(top[0]), 'the header is in the subboard: ' + top[0]);
     r.runs.slice(1).forEach(function (run) { run.text.split('\n').filter(function (l) { return /^(sticky-note|frame|subboard) /.test(l); }).forEach(function (l) { assert(/ in "/.test(l), 'every shape is in something: ' + l); }); });
-    assert(top.some(function (l) { return / in "Acme map"/.test(l) && !/^sticky-note "About/.test(l); }), 'shapes on the top board are in the subboard');
+    assert(top.length && top.every(function (l) { return / in "Acme map" right of origin \(gap: \d+\) below origin \(gap: \d+\)/.test(l); }), 'shapes on the top board are in the subboard, placed from its board\'s origin: ' + top[0]);
     var plain = await planOf(d, {});
     assert(plain.plan.into === null && plain.plan.runs[0] !== '00-into.draw' && !/ in "Acme map"/.test(plain.runs[0].text), 'without --into nothing changes');
-    var b = r.plan.boards[0], ox = 100, oy = 200;
-    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, at: [[ox + s.x, oy + s.y], [s.w, s.h]] }; });
-    b.pills.forEach(function (p) { rows.push({ kind: 'reference', at: [[ox + p.x, oy + p.y], [p.w, p.h]] }); });
-    var res = compareRun0(r.plan, { changes: rows, on: { board: 'x', title: 'Acme map' }, warnings: [] }, {});
+    var b = r.plan.boards[0];
+    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; });
+    b.pills.forEach(function (p) { rows.push({ kind: 'reference', at: [[p.x, p.y], [p.w, p.h]] }); });
+    var res = compareRun0(r.plan, { changes: rows, on: { board: 'x', title: 'Acme map' }, warnings: [] });
     eq(res.ok, true, JSON.stringify(res));
     eq(res.pillRows, b.pills.length, 'pills counted'); eq(res.pillsWithin1, b.pills.length, 'and found against the root board: ' + JSON.stringify(res.pillDeltas.slice(0, 2)));
   });
@@ -861,14 +861,14 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   await test('replay: the real runs\' results against the plan, every shape, pill and arrow; a missing run, a box off, a restated shape, a missing title fail', async function () {
     var replayRun = (await import('../lib/replay.mjs')).replay;
-    var d = fixture('acme'), r = await planOf(d, {}), b = r.plan.boards[0], ox = 300, oy = 400;
+    var d = fixture('acme'), r = await planOf(d, {}), b = r.plan.boards[0];
     var names = r.plan.runs.map(function (n) { return n.replace(/\.draw$/, ''); });
     var mk = function () {
       var res = {};
       r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
       var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]];
-      b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[ox + s.x, oy + s.y], [s.w, s.h]] }); });
-      b.pills.forEach(function (p) { first.changes.push({ did: 'created', kind: 'reference', at: [[ox + p.x, oy + p.y], [p.w, p.h]] }); });
+      b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }); });
+      b.pills.forEach(function (p) { first.changes.push({ did: 'created', kind: 'reference', at: [[p.x, p.y], [p.w, p.h]] }); });
       b.edges.forEach(function (e) { last.changes.push({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }); });
       return res;
     };
@@ -903,17 +903,17 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   await test('a pill 400 units off the plan fails compare and replay, as a shape does; a pill on the plan passes', async function () {
     var replayRun = (await import('../lib/replay.mjs')).replay;
-    var r = await planOf(fixture('acme'), {}), b = r.plan.boards[0], ox = 300, oy = 400;
+    var r = await planOf(fixture('acme'), {}), b = r.plan.boards[0];
     assert(b.pills.length >= 2, 'the plan has pills: ' + b.pills.length);
     var mk = function (shift) {
       var changes = [];
-      b.shapes.forEach(function (s) { changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[ox + s.x, oy + s.y], [s.w, s.h]] }); });
-      b.pills.forEach(function (p, i) { changes.push({ did: 'created', kind: 'reference', at: [[ox + p.x + (i === 0 ? shift : 0), oy + p.y], [p.w, p.h]] }); });
+      b.shapes.forEach(function (s) { changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }); });
+      b.pills.forEach(function (p, i) { changes.push({ did: 'created', kind: 'reference', at: [[p.x + (i === 0 ? shift : 0), p.y], [p.w, p.h]] }); });
       return changes;
     };
-    var good = compareRun0(r.plan, { changes: mk(0), on: null, warnings: [] }, {});
+    var good = compareRun0(r.plan, { changes: mk(0), on: null, warnings: [] });
     eq(good.ok, true, JSON.stringify(good.mismatches)); eq(good.pillsWithin1, b.pills.length, 'every pill within 1');
-    var bad = compareRun0(r.plan, { changes: mk(400), on: null, warnings: [] }, {});
+    var bad = compareRun0(r.plan, { changes: mk(400), on: null, warnings: [] });
     eq(bad.ok, false, 'a pill 400 off fails compare'); assert(bad.worstPill > 1 && bad.pillsWithin1 < b.pills.length, 'and is counted: ' + bad.worstPill);
     assert(bad.mismatches.some(function (m) { return /^pill of .* for .*: delta -?\d+,-?\d+$/.test(m); }), 'and names the pill: ' + JSON.stringify(bad.mismatches));
     assert(/MISMATCH[\s\S]*pill of/.test(clim.compareText(bad)), 'the text says so');
@@ -931,15 +931,15 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   await test('a shape the plan creates must be created: found unchanged (or updated) on the board fails compare and replay, naming it', async function () {
     var r = await planOf(digest([note('A'), note('B')], [{ from: 'A', to: 'B' }])), b = r.plan.boards[0];
-    var rows = b.shapes.map(function (s) { return { did: 'created', title: s.title, kind: s.kind, at: [[1000 + s.x, 2000 + s.y], [s.w, s.h]] }; });
-    eq(compareRun0(r.plan, { changes: rows, warnings: [] }, {}).ok, true, 'created passes');
+    var rows = b.shapes.map(function (s) { return { did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }; });
+    eq(compareRun0(r.plan, { changes: rows, warnings: [] }).ok, true, 'created passes');
     rows[1].did = 'unchanged';
-    var res = compareRun0(r.plan, { changes: rows, warnings: [] }, {});
+    var res = compareRun0(r.plan, { changes: rows, warnings: [] });
     eq(res.ok, false, 'unchanged fails'); assert(res.mismatches.join().indexOf('"' + rows[1].title + '" was unchanged, not created') >= 0, JSON.stringify(res.mismatches));
     assert(/drawn before/.test(res.mismatches.join()), 'and says the plan was drawn before');
     // an arrow row, or a reference row, with a did of its own is not a shape
     rows[1].did = 'created'; rows.push({ did: 'unchanged', kind: 'arrow', title: 'A', from: 'A', to: 'B' });
-    eq(compareRun0(r.plan, { changes: rows, warnings: [] }, {}).ok, true, 'an arrow that was already there is not a shape');
+    eq(compareRun0(r.plan, { changes: rows, warnings: [] }).ok, true, 'an arrow that was already there is not a shape');
   });
 
   await test('a cycle in `in` (A in B and B in A, A in A, or a tail leading into one) is refused by check and by the model, naming the titles, never a stack overflow', async function () {
@@ -1001,7 +1001,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(r.plan.boards[0].edges.filter(function (e) { return !e.via && e.to === 'Hub'; }).length, 0, 'no plain arrow into it is left');
     assert(r.report.public.indexOf('Hub') >= 0, 'and it is public');
     // under the count, it is a judgment call again: with that margin, nothing
-    var few = hubFixture(2, 2);   // 4 users, under the 5 of mess 0.1
+    var few = hubFixture(1, 4);   // 4 users, under the 5 of mess 0.1, on a board that isn't good enough as it is (two arrows over notes)
     eq((await planOf(digest(few.nodes, few.edges), { marginPills: 100000 })).report.promotions.length, 0, 'four arrows are not popular at 0.1');
     eq((await planOf(digest(few.nodes, few.edges), { marginPills: 100000, mess: 0 })).report.promotions.map(function (p) { return p.node; }), ['Hub'], 'and are at mess 0');
     eq((await planOf(d, { mess: 1 })).report.promotions.length, 0, 'at mess 1 nothing moves');
@@ -1015,11 +1015,12 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var left = await planOf(star, {});
     eq([left.report.promotions.length, left.report.boards.root.stop, left.report.boards.root.end.good], [0, 'good-enough', true], 'a board good enough as it is: ' + JSON.stringify(left.report.boards.root.goodTerms));
     eq(left.plan.boards[0].edges.filter(function (e) { return !e.via; }).length, 8, 'its eight arrows stay arrows');
-    // on a tie, the first node by title, whichever way its move goes: A (or Z) points at B and four more, and four more point at B
+    // on a tie, the first node by title, whichever way its move goes: A (or Z) points at B and four more in a frame, and four more in another point
+    // at B (the frames make it a mess: arrows run over notes)
     var ties = [];
     for (var k = 0; k < 2; k++) {
       var src = ['A', 'Z'][k];
-      var tie = digest([note(src), note('B')].concat(['t1', 't2', 't3', 't4', 'u1', 'u2', 'u3', 'u4'].map(function (x) { return note(x); })),
+      var tie = digest([{ title: 'F', kind: 'frame' }, { title: 'G', kind: 'frame' }, note(src), note('B')].concat(['t1', 't2', 't3', 't4'].map(function (x) { return note(x, 'F'); })).concat(['u1', 'u2', 'u3', 'u4'].map(function (x) { return note(x, 'G'); })),
         [{ from: src, to: 'B' }].concat(['t1', 't2', 't3', 't4'].map(function (x) { return { from: src, to: x }; })).concat(['u1', 'u2', 'u3', 'u4'].map(function (x) { return { from: x, to: 'B' }; })));
       var first = (await planOf(tie, { marginPills: 100000 })).report.promotions[0];
       ties.push([first.mode, first.node, first.arrows]);
@@ -1095,18 +1096,18 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert((apart.byStart.get('u1-2') || []).some(function (en) { return en.e.to === 'Hub' && !en.shared; }), 'its pill is in its own column');
   });
 
-  await test('only the first board has a header note, and a shape called what it would be makes it give way; a subboard\'s board has none', async function () {
-    var d = digest([{ title: 'T', kind: 'subboard' }, note('In T', 'T', 'x'), note('About T', null, 'taken')], []);
-    var m = model.buildModel(d);
-    eq([m.headers.get('root'), m.headers.has('T'), m.headers.size], ['About T (digest)', false, 1], 'one header, past the note called what it would be; none for the subboard');
+  await test('no board has a note for what it is: each holds the digest\'s shapes alone, placed from its origin, and the digest\'s own text is drawn nowhere', async function () {
+    var d = digest([{ title: 'T', kind: 'subboard' }, note('In T', 'T', 'x'), note('About T', null, 'taken')], [], { text: 'The whole, said once.' });
     var r = await planOf(d, { promote: false });
-    var all = r.plan.boards.reduce(function (a, b) { return a.concat(b.shapes.map(function (x) { return x.title; })); }, []);
-    eq(all.length, new Set(all).size, 'no title twice in the plan');
-    eq(r.plan.boards.map(function (b) { return b.origin || null; }), ['About T (digest)', null], 'the header is the first board\'s origin, and only it has one');
-    eq(r.plan.boards.map(function (b) { return b.anchors && b.anchors.x === b.anchors.y; }), [true, true], 'a board with one shape (or the header) is placed from it');
+    eq(r.plan.boards.map(function (b) { return b.shapes.map(function (x) { return x.title; }).sort(); }), [['About T', 'T'], ['In T']], 'each board its own shapes: a note called "About T" is a note like any');
+    eq(r.plan.boards.map(function (b) { return Object.keys(b).sort(); }), [['board', 'edges', 'pills', 'shapes'], ['board', 'edges', 'pills', 'shapes']], 'and nothing a board is placed from: its origin is the plan\'s (0, 0)');
+    var all = r.runs.map(function (x) { return x.text; }).join('\n');
+    assert(all.indexOf('The whole, said once.') < 0 && sizes.measureScript(model.buildModel(d)).indexOf('The whole, said once.') < 0, 'not drawn, not measured');
+    var top = all.split('\n').filter(function (l) { return /^(sticky-note|subboard|frame) /.test(l) && !/ in "/.test(l); });
+    assert(top.length === 2 && top.every(function (l) { return / right of origin \(gap: \d+\) below origin \(gap: \d+\)/.test(l); }), 'the root\'s shapes from its origin: ' + top.join(' | '));
   });
 
-  // ---- ranks, headers, and drawing again in place ----
+  // ---- ranks, descriptions, and drawing again in place ----
   // three ranked frames (Top 0, Mid 1, Low 2) and a note with no rank, with arrows that point up the ranks: a layered layout would put Low first; the ranks win
   function rankedDigest() {
     var nodes = [{ title: 'Low', kind: 'frame', rank: 2 }, { title: 'Top', kind: 'frame', rank: 0 }, { title: 'Mid', kind: 'frame', rank: 1 }, note('Loose', null, 'no rank')];
@@ -1155,15 +1156,12 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(wide.plan); checkPlan(tall.plan);
   });
 
-  await test('the first board\'s header says the digest\'s text; a subboard\'s text is its description, written once what it may mention is drawn', async function () {
-    var d = digest([{ title: 'Part', kind: 'subboard', text: 'What the part is, with @[Root note].' }, note('In part', 'Part', 'x'), note('Root note', null, 'y'), { title: 'Bare', kind: 'subboard' }, note('In bare', 'Bare', 'y')], [], { text: 'The whole, said once.' });
+  await test('a subboard\'s text is its description, written once what it may mention is drawn', async function () {
+    var d = digest([{ title: 'Part', kind: 'subboard', text: 'What the part is, with @[Root note].' }, note('In part', 'Part', 'x'), note('Root note', null, 'y'), { title: 'Bare', kind: 'subboard' }, note('In bare', 'Bare', 'y')], []);
     var m = model.buildModel(d);
-    eq(sizes.headerText(m), 'The whole, said once.');
-    eq(sizes.headerText(model.buildModel(digest([note('A')], []))), 'T. Drawn by canvas-digest.', 'without one it says what it is of');
     var r = await planOf(d, { promote: false });
     var all = r.runs.map(function (x) { return x.text; }).join('\n');
-    assert(all.indexOf('sticky-note "About T"') >= 0 && all.indexOf('text: "The whole, said once."') >= 0, 'the root header');
-    assert(all.indexOf('About Part') < 0 && all.indexOf('About Bare') < 0, 'no subboard\'s board has a header note');
+    assert(all.indexOf('About') < 0, 'no board has a note for what it is');
     assert(!all.split('\n').some(function (l) { return /^subboard /.test(l) && /size:/.test(l) && /description:/.test(l); }), 'a subboard\'s card is drawn with no description: it is written after');
     var names = r.runs.map(function (x) { return x.name; });
     var describe = r.runs.filter(function (x) { return /-describe\.draw$/.test(x.name); });
@@ -1172,33 +1170,22 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var lastShape = Math.max.apply(null, names.map(function (n, i) { return /-(top|in-\d+|notes)\.draw$/.test(n) ? i : -1; }));
     assert(names.indexOf(describe[0].name) > lastShape, 'after every run that draws a shape: ' + names.join(' '));
     var mm = sizes.measureScript(m);
-    assert(mm.indexOf('"About Part"') < 0 && mm.indexOf('What the part is') < 0, 'only the first board\'s header is measured, and a description is not');
-    assert(mm.indexOf('"About T"') >= 0, 'that one is');
+    assert(mm.indexOf('What the part is') < 0, 'a description is not measured');
     var none = await planOf(digest([note('A', null, 'x')], []), { promote: false });
     eq(none.plan.described, undefined, 'a digest with no description has none in its plan');
   });
 
-  await test('a shape is placed against the drawn shapes it does not span, with no negative gap: right of and below, else left of and above; none to place against is none said', async function () {
+  await test('a shape on the board itself is placed at its offset from the board\'s origin; a layout that reaches left of it or above it is moved right and down', async function () {
     var emitm = await import('../lib/emit.mjs');
-    var A = { x: 100, y: 0, w: 300, h: 200 }, boxes = { A: A, B: { x: 100, y: 300, w: 400, h: 40 } };
-    var boxMap = new Map(Object.keys(boxes).map(function (t) { return [t, boxes[t]]; }));
-    var at = function (s, refs) { var l = emitm.against('b', s, 'S', refs, boxMap); return [l, placedAt(l, boxes, s.w, s.h)]; };
-    eq(at({ x: 150, y: 20, w: 60, h: 60 }, ['A'])[1], [150, 20], 'right of its left edge, below its top');
-    var left = at({ x: 0, y: 50, w: 100, h: 50 }, ['A']);
-    assert(/^left of "A" right \(gap: 300\) below "A" top \(gap: 50\)$/.test(left[0]) && left[1][0] === 0, 'left of A: its right edge a gap left of A\'s right edge: ' + left[0]);
-    var above = at({ x: 150, y: -60, w: 50, h: 40 }, ['A']);
-    assert(/^right of "A" left \(gap: 50\) above "A" bottom \(gap: 220\)$/.test(above[0]) && above[1][1] === -60, 'above A: ' + above[0]);
-    eq(at({ x: 20, y: -10, w: 30, h: 30 }, ['A'])[1], [20, -10], 'left of and above at once');
-    // a shape that spans the first on an axis is placed against the next it does not span
-    eq(at({ x: 90, y: 10, w: 330, h: 20 }, ['A', 'B'])[1], [90, 10], 'wider than A, and left of it: against B');
-    assert(/"B" right/.test(emitm.against('b', { x: 90, y: 10, w: 330, h: 20 }, 'S', ['A', 'B'], boxMap)), 'by its right edge, since it is left of B and does not span it');
-    var threw = ''; try { emitm.against('b', { x: 0, y: 0, w: 1000, h: 20 }, 'S', ['A'], boxMap); } catch (e) { threw = e.message; }
-    assert(/"S" is wider than every shape drawn before it/.test(threw), 'a shape spanning every one it could be placed against is said: ' + threw);
-    eq(emitm.against('b', A, 'A', [], boxMap), '', 'nothing drawn: no placement');
+    eq(emitm.fromOrigin({ x: 120, y: 0, w: 300, h: 200 }), 'right of origin (gap: 120) below origin (gap: 0)');
+    var layout = function (boxes, frames, pills) { return { boxes: new Map(boxes), frames: new Map(frames || []), pills: pills || [] }; };
+    eq(emitm.shiftOf(layout([['A', { x: 0, y: 0, w: 10, h: 10 }], ['B', { x: 40, y: 300, w: 10, h: 10 }]])), { x: 0, y: 0 }, 'a layout from its origin stays where it is');
+    eq(emitm.shiftOf(layout([['A', { x: -40, y: 10, w: 10, h: 10 }]], [['F', { x: 0, y: -25, w: 100, h: 100 }]])), { x: 40, y: 25 }, 'a shape left of it, a frame above it');
+    eq(emitm.shiftOf(layout([['A', { x: 0, y: 0, w: 10, h: 10 }]], [], [{ x: -16, y: -32, w: 80, h: 32 }])), { x: 16, y: 32 }, 'and a pill');
   });
 
-  // draws the plan's shape runs as an app would, exactly: a shape with no placement where the app puts a drawing with nothing to hang on, every other where its
-  // placement puts it, and the result is every title's box
+  // draws the plan's shape runs as an app would, exactly: every shape where its placement puts it (each says where it goes: from its board's origin, or
+  // from its frame's top-left), and the result is every title's box
   function simulate(r) {
     var boxesOf = {};
     r.runs.filter(function (x) { return /-(top|in-\d+|notes)\.draw$/.test(x.name); }).forEach(function (run) {
@@ -1207,45 +1194,43 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
         if (!m) return;
         var w = Number(m[3]), h = Number(m[4]), at = placedAt(l, boxesOf, w, h);
         assert(!/gap: -/.test(l), 'no negative gap: ' + l);
-        boxesOf[m[2]] = { x: (at || [640, 480])[0], y: (at || [640, 480])[1], w: w, h: h };
+        assert(at, 'every shape says where it goes: ' + l);
+        boxesOf[m[2]] = { x: at[0], y: at[1], w: w, h: h };
       });
     });
     return boxesOf;
   }
-  // every shape lands where the plan has it, relative to the board's origin, read off the board's two anchors
+  // every shape lands where the plan has it: the plan's (0, 0) is its board's origin
   function landsAsPlanned(r, boxesOf) {
     r.plan.boards.forEach(function (b) {
-      if (!b.shapes.length) return;
-      var by = {}; b.shapes.forEach(function (s) { by[s.title] = s; });
-      var ox = boxesOf[b.anchors.x].x - by[b.anchors.x].x, oy = boxesOf[b.anchors.y].y - by[b.anchors.y].y;
       b.shapes.forEach(function (s) {
         var g = boxesOf[s.title];
         assert(g, b.board + ': ' + s.title + ' was not drawn');
-        assert(Math.abs(g.x - ox - s.x) < 1e-6 && Math.abs(g.y - oy - s.y) < 1e-6 && g.w === s.w && g.h === s.h, b.board + ': ' + s.title + ' planned ' + JSON.stringify([s.x, s.y, s.w, s.h]) + ', placed ' + JSON.stringify([g.x - ox, g.y - oy, g.w, g.h]));
+        assert(Math.abs(g.x - s.x) < 1e-6 && Math.abs(g.y - s.y) < 1e-6 && g.w === s.w && g.h === s.h, b.board + ': ' + s.title + ' planned ' + JSON.stringify([s.x, s.y, s.w, s.h]) + ', placed ' + JSON.stringify([g.x, g.y, g.w, g.h]));
       });
     });
   }
 
-  await test('every board\'s shapes land where the plan has them when placed as their runs say: from the header note, or from two of the board\'s own shapes', async function () {
+  await test('every board\'s shapes land where the plan has them when placed as their runs say: from the board\'s origin, or from their frame\'s top-left', async function () {
     var names = ['acme', 'tree', 'flat60', 'spine', 'typed'];
     for (var i = 0; i < names.length; i++) {
       var r = await planOf(fixture(names[i]), { into: i % 2 ? 'Map' : null });
       landsAsPlanned(r, simulate(r));
       checkPlan(r.plan);
     }
-    // a subboard's board of notes with no arrows: packed, so the widest and the tallest are anywhere, and some shapes are left of and above them
+    // subboards' boards of notes with no arrows, packed, beside a frame and a loose note on the root
     var nodes = [{ title: 'Part', kind: 'subboard', text: 'Part.' }, { title: 'Other', kind: 'subboard', text: 'Other.' }, { title: 'Frame', kind: 'frame' }];
     var words = ['Short', 'A rather longer note title here', 'Mid title', 'Tiny', 'The longest title of all, which makes its note the widest of them', 'Another one', 'And one more', 'Last'];
     words.forEach(function (w) { nodes.push(note(w, 'Part', 'x'), note(w + ' two', 'Other', 'y')); });
     nodes.push(note('In frame A', 'Frame', 'z'), note('In frame B', 'Frame', 'z'), note('Loose'));
     var many = await planOf(digest(nodes, []), { promote: false });
     landsAsPlanned(many, simulate(many));
-    var part = many.plan.boards.find(function (b) { return b.board === 'Part'; });
-    var forms = many.runs.filter(function (x) { return /-part-/.test(x.name); }).map(function (x) { return x.text; }).join('');
-    assert(/left of "/.test(forms) || /above "/.test(forms), 'a board where some shape is left of or above the one it is placed against, so those forms are drawn: ' + part.anchors.x + ' ' + part.anchors.y);
+    var lines = many.runs.filter(function (x) { return /-part-top\.draw$/.test(x.name); }).map(function (x) { return x.text; }).join('').split('\n').filter(Boolean);
+    eq(lines.length, words.length, 'Part\'s board in one run');
+    assert(lines.every(function (l) { return / in "Part" right of origin \(gap: \d+\) below origin \(gap: \d+\) /.test(l); }), 'each from its board\'s origin: ' + lines[0]);
   });
 
-  await test('what the runs do on the app is compared to the plan from the anchors, and a description is checked as written, not as created', async function () {
+  await test('what the runs do on the app is compared to the plan as it is, and a description is checked as written, not as created', async function () {
     var rpl = await import('../lib/replay.mjs');
     var d = digest([{ title: 'Part', kind: 'subboard', text: 'The part, with @[Loose].' }, note('One', 'Part', 'x'), note('A longer second note', 'Part', 'y'), note('Third', 'Part', 'z'), note('Loose', null, 'w')], []);
     var r = await planOf(d, { promote: false });
@@ -1257,14 +1242,12 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
         var m = /^(sticky-note|frame|subboard) "([^"]+)"/.exec(l), sz = /size: (\d+)x(\d+)/.exec(l);
         line++;
         if (/-describe\.draw$/.test(run.name)) { var b = boxesOf[m[2]]; changes.push({ line: line, did: 'updated', kind: m[1], title: m[2], at: [[b.x, b.y], [b.w, b.h]] }); return; }
-        var w = Number(sz[1]), h = Number(sz[2]), at = placedAt(l, boxesOf, w, h) || [200, 300];
-        boxesOf[m[2]] = { x: at[0] + 1000, y: at[1] + 500, w: w, h: h };   // the first of a board lands anywhere
+        var w = Number(sz[1]), h = Number(sz[2]), at = placedAt(l, boxesOf, w, h);
+        boxesOf[m[2]] = { x: at[0], y: at[1], w: w, h: h };
         changes.push({ line: line, did: 'created', kind: m[1], title: m[2], at: [[boxesOf[m[2]].x, boxesOf[m[2]].y], [w, h]] });
       });
       results[run.name] = { changes: changes, warnings: [] };
     });
-    // placements are against where the shapes landed, not the plan: put it right, the board's own offset being the first shape's (1000, 500 more than planned)
-    Object.keys(boxesOf).forEach(function (t) { var b = boxesOf[t]; b.x -= 1000; b.y -= 500; });
     var ok = rpl.replay(r.plan, results, Object.keys(boxesOf));
     eq([ok.described, ok.describedPlanned, ok.restated], [1, 1, 0], 'one description, written once, and no shape restated: ' + ok.lines.join(' | '));
     assert(/descriptions 1\/1/.test(ok.lines[1]), 'the summary says it: ' + ok.lines[1]);
@@ -1275,7 +1258,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(!fail.ok && /was unchanged: its description was not written/.test(fail.problems.join()), 'said: ' + fail.problems.join(' | '));
     // the driver names a run as the plan does less `.draw`, and a dry run too: the same run, the same description
     var cmpm = await import('../lib/compare.mjs');
-    eq([cmpm.compareRun(r.plan, results[name], {}, name.replace(/\.draw$/, '') + ' (dry run)').described, cmpm.compareRun(r.plan, results[name], {}, name.replace(/\.draw$/, '')).described], [1, 1], 'a description is a description under either name');
+    eq([cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, '') + ' (dry run)').described, cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, '')).described], [1, 1], 'a description is a description under either name');
     // and a run that never happened is said
     var gone = JSON.parse(JSON.stringify(results)); delete gone[name];
     assert(/was planned/.test(rpl.replay(r.plan, gone, null).problems.join()) || /no result was saved/.test(rpl.replay(r.plan, gone, null).problems.join()), 'a description run that did not happen is said');
@@ -1285,67 +1268,70 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var rd = await import('../lib/redraw.mjs');
     var r = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('In part', 'Part', 'x'), note('Root note', null, 'y')], []), { promote: false });
     var d = rd.drawnRecord(r.plan, '/f.canvasboard', 7, 12);
-    eq(d.into, null); eq(d.path, '/f.canvasboard'); eq(d.board, '7'); eq(d.header, 'About T'); eq(d.shapes, 12);
+    eq(d.into, null); eq(d.path, '/f.canvasboard'); eq(d.board, '7'); eq(d.name, 'T'); eq(d.shapes, 12);
     eq(rd.drawnRecord(r.plan, '/f.canvasboard', 7).shapes, null, 'while it is drawn, the count is not known');
-    eq(d.root.slice().sort(), ['About T', 'Part', 'Root note'], 'the root board\'s shapes');
-    assert(d.titles.indexOf('In part') >= 0 && d.titles.indexOf('About Part') < 0, 'every title: a subboard\'s board has no header note');
+    eq(d.root.slice().sort(), ['Part', 'Root note'], 'the root board\'s shapes');
+    eq(d.titles.slice().sort(), ['In part', 'Part', 'Root note'], 'every title');
     assert(rd.sameFile(d, '/f.canvasboard', 9) && !rd.sameFile(d, '/g.canvasboard', 7) && !rd.sameFile(d, '', 7), 'by path, when there is one');
     var unsaved = rd.drawnRecord(r.plan, '', 4);
-    assert(rd.sameFile(unsaved, '', 4, ['About T', 'Part']) && !rd.sameFile(unsaved, '', 5, ['About T']), 'by id, for a board with no file');
-    assert(!rd.sameFile(unsaved, '', 4, ['Part']) && !rd.sameFile(unsaved, '', 4), 'and only while the drawing\'s header is in it: a later board may get the id');
-    assert(rd.sameFile(unsaved, '/f.canvasboard', 4, ['About T']) && !rd.sameFile(unsaved, '/f.canvasboard', 4, ['Part']) && !rd.sameFile(unsaved, '/f.canvasboard', 5, ['About T']), 'a board saved since it was drawn on is still told by its id and the header');
-    assert(rd.sameFile(rd.drawnRecord(r.plan, '/private/tmp/f.canvasboard', 7), '/tmp/f.canvasboard', 7) && !rd.sameFile(d, '/g.canvasboard', 7, ['About T']), 'a path is the file\'s own (/tmp is /private/tmp); two paths that differ are two files, whatever the id');
+    assert(rd.sameFile(unsaved, '', 4, ['Part', 'Mine']) && !rd.sameFile(unsaved, '', 5, ['Part']), 'by id, for a board with no file');
+    assert(!rd.sameFile(unsaved, '', 4, ['In part', 'Mine']) && !rd.sameFile(unsaved, '', 4), 'and only while a shape it put on the root is in it: a later board may get the id');
+    assert(rd.sameFile(unsaved, '/f.canvasboard', 4, ['Root note']) && !rd.sameFile(unsaved, '/f.canvasboard', 4, ['Mine']) && !rd.sameFile(unsaved, '/f.canvasboard', 5, ['Root note']), 'a board saved since it was drawn on is still told by its id and the drawing\'s shapes');
+    assert(rd.sameFile(rd.drawnRecord(r.plan, '/private/tmp/f.canvasboard', 7), '/tmp/f.canvasboard', 7) && !rd.sameFile(d, '/g.canvasboard', 7, ['Part']), 'a path is the file\'s own (/tmp is /private/tmp); two paths that differ are two files, whatever the id');
     eq(rd.minus(['Root  note', 'Mine', 'root note'], d), ['Mine', 'root note'], 'the file less the drawing (spaces folded, case kept: "root note" is another shape)');
     eq([rd.beyond(d, 12), rd.beyond(d, 13), rd.beyond(d, 9), rd.beyond(rd.drawnRecord(r.plan, '/f', 7), 40)], [0, 1, 0, 0], 'shapes beyond the drawing: one added; fewer is fine; unknown counts none');
-    eq(rd.foreign(['About T', 'Part'], d), [], 'nothing foreign');
-    // a folder of records, one a target file: the one told by the file's path, else by the board's id and header; never another's
+    eq(rd.foreign(['Part', 'Root note'], d), [], 'nothing foreign');
+    // a folder of records, one a target file: the one told by the file's path, else by the board's id and the drawing's shapes; never another's
     var recs = [{ name: 'b.json', record: unsaved }, { name: 'a.json', record: d }];
-    eq([rd.pickRecord(recs, '/f.canvasboard', 7, ['About T']), rd.pickRecord(recs, '/g.canvasboard', 7, ['About T']), rd.pickRecord(recs, '', 4, ['About T']), rd.pickRecord(recs, '', 4, ['Part']), rd.pickRecord([], '/f.canvasboard', 7, [])], ['a.json', '', 'b.json', '', ''], 'the record of a file');
-    var pn = rd.recordName('/tmp/f.canvasboard', 7, 'About T');
-    assert(pn === rd.recordName('/private/tmp/f.canvasboard', 9, 'x') && pn !== rd.recordName('/tmp/g.canvasboard', 7, 'About T') && /^file-[0-9a-f]{16}\.json$/.test(pn), 'a file has one record name; two files two');
-    assert(rd.recordName('', 4, 'About T') !== rd.recordName('', 4, 'About U') && /^board-4-[0-9a-f]{16}\.json$/.test(rd.recordName('', 4, 'About T')), 'a board with no file: its id and header');
-    eq(rd.replaceScript(d, ['About T', 'Part', 'In part']), 'delete "About T"\ndelete "Part"', 'the root\'s shapes the file still holds; a subboard takes what is on its board');
+    eq([rd.pickRecord(recs, '/f.canvasboard', 7, ['Part']), rd.pickRecord(recs, '/g.canvasboard', 7, ['Part']), rd.pickRecord(recs, '', 4, ['Part']), rd.pickRecord(recs, '', 4, ['Mine']), rd.pickRecord([], '/f.canvasboard', 7, [])], ['a.json', '', 'b.json', '', ''], 'the record of a file');
+    var pn = rd.recordName('/tmp/f.canvasboard', 7, 'T');
+    assert(pn === rd.recordName('/private/tmp/f.canvasboard', 9, 'x') && pn !== rd.recordName('/tmp/g.canvasboard', 7, 'T') && /^file-[0-9a-f]{16}\.json$/.test(pn), 'a file has one record name; two files two');
+    assert(rd.recordName('', 4, 'T') !== rd.recordName('', 4, 'U') && /^board-4-[0-9a-f]{16}\.json$/.test(rd.recordName('', 4, 'T')), 'a board with no file: its id and the digest\'s title');
+    eq(rd.replaceScript(d, ['Part', 'In part']), 'delete "Part"', 'the root\'s shapes the file still holds; a subboard takes what is on its board');
     eq(rd.replaceScript(d, []), '', 'nothing left to take back');
     var into = await planOf(digest([note('A', null, 'x')], []), { promote: false, into: 'Map' });
     var di = rd.drawnRecord(into.plan, '/f.canvasboard', 7);
-    eq(rd.replaceScript(di, ['Map', 'A', 'About T']), 'delete "Map"', 'into a subboard: the subboard alone');
+    eq(rd.replaceScript(di, ['Map', 'A', 'Part']), 'delete "Map"', 'into a subboard: the subboard alone');
+    eq(di.name, 'Map', 'and named by it, not by the digest\'s title: a subboard\'s title is the file\'s alone');
     // a drawing made in place of the last one, until it is whole: the record is of both, since an undo or two may bring the last one back
     var next = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('New note', null, 'z')], []), { promote: false });
     var both = rd.drawnRecord(next.plan, '/f.canvasboard', 7, 3, d, 12);   // it stopped with 3 shapes in the file, which held 12 before the take-back
     eq([both.shapes, both.was], [3, 12], 'how many shapes the file holds as it stopped, and held before the last drawing was taken back');
-    eq(both.takes.slice().sort(), ['About T', 'New note', 'Part', 'Root note'], 'what takes either back');
+    eq(both.takes.slice().sort(), ['New note', 'Part', 'Root note'], 'what takes either back');
+    eq(both.names, ['T'], 'the name both are told by');
     assert(both.titles.indexOf('In part') >= 0 && both.titles.indexOf('New note') >= 0, 'the titles of both');
-    eq(rd.foreign(['About T', 'Part', 'In part', 'Root note'], both), [], 'the last drawing, undone back, is not foreign');
+    eq(rd.foreign(['Part', 'In part', 'Root note'], both), [], 'the last drawing, undone back, is not foreign');
     eq([rd.beyond(both, 3), rd.beyond(both, 0), rd.beyond(both, 12)], [0, 0, 0], 'part of the new drawing, none of it, or the last one whole: nothing added');
     eq([rd.beyond(both, 14), rd.beyond(both, 5), rd.beyond(both, 11)], [2, 2, 8], 'an arrow and a note added to either are counted, so the take-back is refused; a count that is neither drawing\'s is too');
     var early = rd.drawnRecord(next.plan, '/f.canvasboard', 7, null, d, 12);   // stopped before a count was taken
     eq([early.shapes, rd.beyond(early, 9), rd.beyond(early, 12), rd.beyond(early, 13)], [null, 0, 0, 1], 'with no count of its own, up to the last drawing\'s may be part of this one');
-    eq(rd.replaceScript(both, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part', 'Root note']), 'delete "About T"\ndelete "Part"\ndelete "Root note"', 'the last drawing is taken back by its own shapes');
-    eq(rd.replaceScript(both, ['About T', 'New note'], ['About T', 'New note']), 'delete "About T"\ndelete "New note"', 'and as much of the new one as was drawn by its');
+    eq(rd.replaceScript(both, ['Part', 'Root note', 'In part'], ['Part', 'Root note']), 'delete "Part"\ndelete "Root note"', 'the last drawing is taken back by its own shapes');
+    eq(rd.replaceScript(both, ['New note'], ['New note']), 'delete "New note"', 'and as much of the new one as was drawn by its');
     eq(rd.replaceScript({ into: null, root: ['A', 'B'] }, ['B']), 'delete "B"', 'a record made before `takes` reads the same');
     // a shape the last drawing had on the root that this one holds inside a subboard goes with its subboard: one `delete` of it there
     // would put the script on two boards, which draw refuses
     var movedIn = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('Root note', 'Part', 'y')], []), { promote: false });
     var mv = rd.drawnRecord(movedIn.plan, '/f.canvasboard', 7, 2, d, 12);
-    eq(rd.replaceScript(mv, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part']), 'delete "About T"\ndelete "Part"', 'only what is on the root board');
-    eq(rd.replaceScript(mv, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part', 'Root note']), 'delete "About T"\ndelete "Part"\ndelete "Root note"', 'and the last drawing, undone back, by all three');
+    eq(rd.replaceScript(mv, ['Part', 'Root note', 'In part'], ['Part']), 'delete "Part"', 'only what is on the root board');
+    eq(rd.replaceScript(mv, ['Part', 'Root note', 'In part'], ['Part', 'Root note']), 'delete "Part"\ndelete "Root note"', 'and the last drawing, undone back, by both');
     // the last one drawn as the board, this one into a subboard of it (or the other way round): the subboard where the file holds it, the root's shapes where they are on the root
     var intoB = await planOf(digest([{ title: 'Part', kind: 'subboard' }, note('In part', 'Part', 'x'), note('Root note', null, 'y')], []), { promote: false, into: 'B' });
     var mixed = rd.drawnRecord(intoB.plan, '/f.canvasboard', 7, 5, d, 12);
     eq([mixed.was, mixed.intos, rd.beyond(mixed, 99)], [null, ['B'], 0], 'a drawing into a subboard counts nothing of the file');
-    eq(rd.replaceScript(mixed, ['B', 'About T', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'the new subboard, with the same titles inside it');
-    eq(rd.replaceScript(mixed, ['About T', 'Part', 'Root note', 'In part'], ['About T', 'Part', 'Root note']), 'delete "About T"\ndelete "Part"\ndelete "Root note"', 'the last drawing, back on the root');
+    eq(rd.replaceScript(mixed, ['B', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'the new subboard, with the same titles inside it');
+    eq(rd.replaceScript(mixed, ['Part', 'Root note', 'In part'], ['Part', 'Root note']), 'delete "Part"\ndelete "Root note"', 'the last drawing, back on the root');
     // the other way round: the last one into a subboard, this one as the board, which is drawn only on a file the take-back left empty,
     // so the count before it is the last drawing's own
     var back = rd.drawnRecord(next.plan, '/f.canvasboard', 7, 2, rd.drawnRecord(intoB.plan, '/f.canvasboard', 7, 9), 9);
     eq([back.was, rd.beyond(back, 9), rd.beyond(back, 10), rd.beyond(back, 2)], [9, 0, 1, 0], 'the subboard\'s drawing, undone back, is not counted as shapes added');
-    eq(rd.replaceScript(back, ['B', 'About T', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'and is taken back by its subboard');
+    eq(rd.replaceScript(back, ['B', 'Part', 'Root note', 'In part'], ['B']), 'delete "B"', 'and is taken back by its subboard');
     var intoUnsaved = rd.drawnRecord(intoB.plan, '', 4);
-    assert(rd.sameFile(intoUnsaved, '', 4, ['B', 'Mine']) && !rd.sameFile(intoUnsaved, '', 4, ['Mine']), 'a drawing into a subboard that stopped after its first script is told by the subboard: its header is not drawn yet');
+    assert(rd.sameFile(intoUnsaved, '', 4, ['B', 'Mine']) && !rd.sameFile(intoUnsaved, '', 4, ['Mine']), 'a drawing into a subboard that stopped after its first script is told by the subboard: nothing else is drawn yet');
     var rp = await import('../lib/replay.mjs');
     eq(rp.extract('root-titles', { rows: [{ board: 'root', title: 'A' }, { board: 'X', title: 'B' }, { board: 'root' }] }), ['A'], 'the titles on the root board');
     var renamed = rd.drawnRecord((await planOf(Object.assign(digest([note('A', null, 'x')], []), { title: 'U' }), { promote: false })).plan, '', 4, null, unsaved);
-    assert(rd.sameFile(renamed, '', 4, ['About T']) && rd.sameFile(renamed, '', 4, ['About U']), 'either drawing\'s header tells the board');
+    assert(rd.sameFile(renamed, '', 4, ['Part']) && rd.sameFile(renamed, '', 4, ['A']), 'either drawing\'s shapes tell the board');
+    eq(renamed.names, ['U', 'T'], 'and the record has both drawings\' names');
     eq([rd.hasTitle(['Root  note'], 'root note'), rd.hasTitle(['Root note'], 'Root')], [true, false], 'a title the file holds, spaces folded and case aside');
     var boards = [{ id: 2, path: '/a', fileShapes: 5, frontmost: false }, { id: 3, path: null, fileShapes: 0, frontmost: true }];
     boards[0].name = 'Plans'; boards[1].shows = 'root';
@@ -1410,12 +1396,11 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(checkm.checkDigest(Object.assign(rankedDigest(), { policy: { ranks: 'sideways' } })).errors.length, 1, 'and check says so');
   });
 
-  await test('how far off its shape a container is: the ratio of the two shapes; a board\'s header note counted; nothing for a board the view shows whole', async function () {
+  await test('how far off its shape a container is: the ratio of the two shapes; nothing for a board the view shows whole', async function () {
     eq(elkm.offShape(300, 100, 1.5), 2, 'twice too wide');
     eq(elkm.offShape(100, 300, 1.5), 4.5, 'four and a half times too tall');
     eq(elkm.offShape(150, 100, 1.5), 1, 'the shape itself');
     eq(elkm.offShapeOf(300, 100, { aspect: 1.5 }), 2, 'a shape with no view: the ratio');
-    eq(elkm.offShapeOf(300, 100, { aspect: 1.5, headW: 0, headH: 100 }), 1, 'the header\'s room is part of the board');
     var view = { aspect: 1.5, viewW: 1500, viewH: 1000 };
     eq(elkm.offShapeOf(900, 950, view), 1, 'a board the view shows whole, at its own size: any shape');
     assert(Math.abs(elkm.offShapeOf(6000, 2000, view) - 2) < 1e-9, 'a board that outgrows the view: the ratio');
@@ -1692,8 +1677,8 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(plainArrow.summary.edgesMissing, ['root: w1 -> t1 is reads'], 'a plain arrow is not a relationship');
     var replayRun = (await import('../lib/replay.mjs')).replay;
     var res = {}; r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
-    var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]], ox = 300, oy = 400;
-    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[ox + s.x, oy + s.y], [s.w, s.h]] }); });
+    var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]];
+    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }); });
     b.edges.forEach(function (e) { last.changes.push(Object.assign({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }, e.is ? { is: e.is } : {})); });
     var titles = b.shapes.map(function (s) { return s.title; });
     var good = replayRun(r.plan, res, titles);
@@ -1707,29 +1692,29 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var d = typed([note('w1'), note('t1')], []);
     d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1' }; d.nodes[5].is = 'Table';
     var r = await planOf(d), b = r.plan.boards[0];
-    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, did: 'created', at: [[1000 + s.x, 2000 + s.y], [s.w, s.h]] }; });
+    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, did: 'created', at: [[s.x, s.y], [s.w, s.h]] }; });
     var warnings = [
       { line: 6, severity: 'incomplete', attribute: 'tables', message: '"w1": tables is needed' },
       { line: 7, severity: 'error', attribute: 'to', message: 'edge "w1" -> "t1": reads runs to a Table. “w1” is a Workflow.' },
       { line: 8, severity: 'error', attribute: 'jobs', message: '"Ann": jobs has 2 notes, and should have at most 1' },
       { line: 9, message: '2 shapes landed outside the view' }];
-    var res = compareRun0(r.plan, { changes: rows, warnings: warnings }, {});
+    var res = compareRun0(r.plan, { changes: rows, warnings: warnings });
     eq(res.ok, true, JSON.stringify(res)); eq(res.warnings.typed, 3, 'the three typed ones are counted'); eq(res.warnings.view, 1);
     eq(res.warningMessages, [], 'and are no failure to name'); assert(res.typedMessages.length === 3 && /tables is needed/.test(res.typedMessages[0]), res.typedMessages.join());
     var withProblems = rows.map(function (x, i) { return i === 2 ? Object.assign({ problems: [{ field: 'tables', class: 'needed', message: 'tables is needed' }] }, x) : x; });
-    var viaRows = compareRun0(r.plan, { changes: withProblems, warnings: [] }, {});
+    var viaRows = compareRun0(r.plan, { changes: withProblems, warnings: [] });
     eq(viaRows.ok, true); eq(viaRows.warnings.typed, 1, 'a row\'s problems are counted too'); assert(/^[^:]+: tables is needed$/.test(viaRows.typedMessages[0]), viaRows.typedMessages[0]);
-    var pushed = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, message: 'B was pushed 40 right' }]) }, {});
+    var pushed = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, message: 'B was pushed 40 right' }]) });
     eq(pushed.ok, false, 'a push still fails'); eq(pushed.warnings.push, 1);
-    var ordered = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, code: 'unordered', message: 'these two cannot be ordered' }]) }, {});
+    var ordered = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([{ line: 3, code: 'unordered', message: 'these two cannot be ordered' }]) });
     eq(ordered.ok, false, 'an order warning still fails');
     var off = rows.map(function (x, i) { return i === 1 ? Object.assign({}, x, { at: [[x.at[0][0] + 9, x.at[0][1]], x.at[1]] }) : x; });
-    eq(compareRun0(r.plan, { changes: off, warnings: warnings }, {}).ok, false, 'a shape off its box still fails');
+    eq(compareRun0(r.plan, { changes: off, warnings: warnings }).ok, false, 'a shape off its box still fails');
     var text = clim.compareText(res);
     assert(/^ok .*; 3 warning\(s\) a typed drawing gives by design: /.test(text), text);
     // any other warning fails nothing and is said, never only counted: a title near one the board has, in the run's line and in verify's
     var near = { line: 4, code: 'near_title', message: 'created "worker (x)"; the board has "Workers (x)": to change that one, write its title exactly' };
-    var withNear = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([near]) }, {});
+    var withNear = compareRun0(r.plan, { changes: rows, warnings: warnings.concat([near]) });
     eq(withNear.ok, true, 'another warning fails nothing'); eq(withNear.warnings.other, 1); eq(withNear.warningMessages, [], 'and is no failure to name');
     assert(/; 1 other warning\(s\): line 4: created "worker \(x\)"; the board has "Workers \(x\)"/.test(clim.compareText(withNear)), clim.compareText(withNear));
     var said = (await import('../lib/replay.mjs')).replay(r.plan, { [r.plan.runs[0]]: { changes: rows, warnings: [near] } }, null);
@@ -1760,19 +1745,25 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   // ---- review fixes: records, the validator, merging, a list of types --------------------------------------------------------------------
 
-  await test('two digests drawn into one unsaved board have two records, and the one replaced is this run\'s own: its header first, then the newest by the time written in it', async function () {
+  await test('two digests drawn into one unsaved board have two records, and the one replaced is this run\'s own: its digest\'s title first, then the newest by the time written in it', async function () {
     var rd = await import('../lib/redraw.mjs');
     var one = await planOf(digest([note('A1')], [], { title: 'Alpha' }), { promote: false });
     var two = await planOf(digest([note('B1')], [], { title: 'Beta' }), { promote: false });
     var older = rd.drawnRecord(one.plan, '', 4, 3, null, null, 1000), newer = rd.drawnRecord(two.plan, '', 4, 6, null, null, 2000);
     eq([older.at, newer.at, rd.drawnRecord(one.plan, '', 4, 3).at], [1000, 2000, null], 'a record says when it was written');
-    var titles = ['About Alpha', 'A1', 'About Beta', 'B1'];
+    var titles = ['A1', 'B1'];
     var recs = [{ name: 'board-4-0001.json', record: older }, { name: 'board-4-0002.json', record: newer }];
-    eq(rd.pickRecord(recs, '', 4, titles, 'About Beta'), 'board-4-0002.json', 'this run draws Beta: its record, though Alpha\'s is first by name');
-    eq(rd.pickRecord(recs, '', 4, titles, 'About Alpha'), 'board-4-0001.json', 'this run draws Alpha: its own');
-    eq(rd.pickRecord(recs.slice().reverse(), '', 4, titles, 'About Alpha'), 'board-4-0001.json', 'whatever order the folder lists them');
-    eq(rd.pickRecord(recs, '', 4, titles), 'board-4-0002.json', 'no header known: the newest');
-    eq(rd.pickRecord(recs, '', 4, titles, 'About Gamma'), 'board-4-0002.json', 'a header of neither: the newest');
+    eq(rd.pickRecord(recs, '', 4, titles, 'Beta'), 'board-4-0002.json', 'this run draws Beta: its record, though Alpha\'s is first by name');
+    eq(rd.pickRecord(recs, '', 4, titles, 'Alpha'), 'board-4-0001.json', 'this run draws Alpha: its own');
+    eq(rd.pickRecord(recs.slice().reverse(), '', 4, titles, 'Alpha'), 'board-4-0001.json', 'whatever order the folder lists them');
+    eq(rd.pickRecord(recs, '', 4, titles), 'board-4-0002.json', 'no title known: the newest');
+    eq(rd.pickRecord(recs, '', 4, titles, 'Gamma'), 'board-4-0002.json', 'a title of neither: the newest');
+    // two digests of one title, each into a subboard of its own: told apart by the subboard, in the record's file name and in the pick
+    var mapA = (await planOf(digest([note('A1')], []), { promote: false, into: 'Map A' })).plan, mapB = (await planOf(digest([note('B1')], []), { promote: false, into: 'Map B' })).plan;
+    var ra = rd.drawnRecord(mapA, '', 4, 2, null, null, 1000), rb = rd.drawnRecord(mapB, '', 4, 2, null, null, 2000);
+    assert(rd.recordName('', 4, ra.name) !== rd.recordName('', 4, rb.name), 'two record files: ' + ra.name + ' ' + rb.name);
+    var two = [{ name: 'board-4-a.json', record: ra }, { name: 'board-4-b.json', record: rb }];
+    eq([rd.pickRecord(two, '', 4, ['Map A', 'Map B'], 'Map A'), rd.pickRecord(two, '', 4, ['Map A', 'Map B'], 'Map B')], ['board-4-a.json', 'board-4-b.json'], 'each its own, though both are titled T');
     var tie = [{ name: 'b.json', record: Object.assign({}, newer, { at: 5 }) }, { name: 'a.json', record: Object.assign({}, older, { at: 5 }) }];
     eq(rd.pickRecord(tie, '', 4, titles), 'a.json', 'the same time: by name, so the pick is the same every time');
     eq(rd.pickRecord([{ name: 'x.json', record: older }, { name: 'p.json', record: rd.drawnRecord(one.plan, '/f.canvasboard', 4, 3, null, null, 1) }], '/f.canvasboard', 4, titles), 'p.json', 'a record with a path still comes before one told by the id');
@@ -1826,13 +1817,13 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var d = typed([note('w1'), note('t1')], []);
     d.nodes[4].is = 'Workflow'; d.nodes[4].fieldValues = { name: 'w1' }; d.nodes[5].is = 'Table';
     var r = await planOf(d), b = r.plan.boards[0];
-    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, did: 'created', at: [[1000 + s.x, 2000 + s.y], [s.w, s.h]] }; });
+    var rows = b.shapes.map(function (s) { return { title: s.title, kind: s.kind, did: 'created', at: [[s.x, s.y], [s.w, s.h]] }; });
     var withProblem = function (p) { return rows.map(function (x, i) { return i === 2 ? Object.assign({ problems: [p] }, x) : x; }); };
-    var bad = compareRun0(r.plan, { changes: withProblem({ field: 'retries', path: '/retries', class: 'wrong', message: 'retries is "abc", and should be an integer' }), warnings: [] }, {});
+    var bad = compareRun0(r.plan, { changes: withProblem({ field: 'retries', path: '/retries', class: 'wrong', message: 'retries is "abc", and should be an integer' }), warnings: [] });
     eq(bad.ok, false, 'a value that breaks its schema fails the run'); assert(/retries is "abc"/.test(bad.mismatches.join('\n')), 'and says which: ' + JSON.stringify(bad.mismatches));
     assert(/retries is "abc"/.test(clim.compareText(bad)), clim.compareText(bad));
     [{ field: 'tables', class: 'needed', message: 'tables is needed' }, { field: 'to', class: 'wrong', message: 'writes runs to a Table. "w1" is a Workflow.' }, { field: 'jobs', class: 'wrong', message: 'jobs has 2 notes, and should have at most 1' }, { field: 'to', class: 'warning', message: 'an end that cannot be read' }].forEach(function (p) {
-      var ok = compareRun0(r.plan, { changes: withProblem(p), warnings: [] }, {});
+      var ok = compareRun0(r.plan, { changes: withProblem(p), warnings: [] });
       eq(ok.ok, true, p.message + ' is by design'); eq(ok.warnings.typed, 1);
     });
   });
@@ -1886,7 +1877,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var replayRun = (await import('../lib/replay.mjs')).replay;
     var res = {}; r.plan.runs.forEach(function (n) { res[n] = { changes: [], warnings: [], on: null }; });
     var first = res[r.plan.runs[0]], last = res[r.plan.runs[r.plan.runs.length - 1]];
-    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[300 + s.x, 400 + s.y], [s.w, s.h]] }); });
+    b.shapes.forEach(function (s) { first.changes.push({ did: 'created', title: s.title, kind: s.kind, at: [[s.x, s.y], [s.w, s.h]] }); });
     b.edges.forEach(function (e) { last.changes.push(Object.assign({ did: 'connected', kind: 'arrow', from: e.from, to: e.to }, e.is ? { is: e.is.slice().reverse() } : {})); });
     var good = replayRun(r.plan, res, b.shapes.map(function (s) { return s.title; }));
     eq(good.ok, true, 'replay: ' + good.lines.join('\n'));
@@ -1907,17 +1898,23 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     out.length = 0; warned.length = 0;
     await clim.run(['record-pick', '/f.canvasboard', '4', '', '/r/good.json'], mio);
     eq([out, warned], [['/r/good.json'], []], 'a folder of records says nothing');
-    // the header and the time: drawn writes when, and record-pick takes the header of this run
+    // the title and the time: drawn writes when, and record-pick takes the title of this run's digest
     out.length = 0;
     files['/plan.json'] = JSON.stringify(one.plan);
     await clim.run(['drawn', '/plan.json', '/f.canvasboard', '4', '3'], mio);
     eq(JSON.parse(out[0]).at, 7, 'drawn writes the time (the engine\'s clock)');
     out.length = 0;
-    await clim.run(['header', '/plan.json'], mio);
-    eq(out, ['About Alpha'], 'a plan\'s header');
+    await clim.run(['name', '/plan.json'], mio);
+    eq(out, ['Alpha'], 'a plan drawn as the board: its digest\'s title');
     out.length = 0; files['/d.json'] = JSON.stringify(digest([note('A1')], [], { title: 'Alpha' }));
-    await clim.run(['header', '/d.json'], mio);
-    eq(out, ['About Alpha'], 'and a digest\'s');
+    await clim.run(['name', '/d.json'], mio);
+    eq(out, ['Alpha'], 'and a digest\'s');
+    out.length = 0;
+    await clim.run(['name', '/d.json', '--into', 'Alpha  map'], mio);
+    eq(out, ['Alpha map'], 'a digest drawn into a subboard: the subboard, as a title is folded');
+    out.length = 0; files['/into.json'] = JSON.stringify((await planOf(digest([note('A1')], [], { title: 'Alpha' }), { promote: false, into: 'Alpha map' })).plan);
+    await clim.run(['name', '/into.json'], mio);
+    eq(out, ['Alpha map'], 'and a plan of one');
     // titles are asked for only when the path does not say: a board with no file needs them, a file with a record does not
     files['/r/unsaved.json'] = JSON.stringify(rd.drawnRecord(one.plan, '', 9, 3, null, null, 5));
     out.length = 0;
@@ -1942,7 +1939,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(rep.algorithms.find(function (a) { return a.container === 'Pages'; }).algorithm, 'rectpacking', 'the crowd packed as boxes');
     var pages = r.plan.boards[0].shapes.find(function (s) { return s.title === 'Pages'; });
     assert(pages.w < 20000 && pages.h < 20000 && Math.max(pages.w / pages.h, pages.h / pages.w) < 4, 'a grid, not a row: ' + pages.w + ' x ' + pages.h);
-    eq(r.plan.boards[0].shapes.length, promote.CROWD + 3, 'every shape planned: the pages, the index, the frame and the header');
+    eq(r.plan.boards[0].shapes.length, promote.CROWD + 2, 'every shape planned: the pages, the index and the frame');
     checkPlan(r.plan);
     assert(r.report.warnings.some(function (w) { return /board "root" was laid out once and not searched: its frame "Pages" holds 151 shapes side by side, past 150.*split it into subboards/.test(w); }), r.report.warnings.join('\n'));
     assert(/warning: board "root" was laid out once/.test(clim.summarize(r)), clim.summarize(r));

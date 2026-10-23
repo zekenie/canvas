@@ -1045,7 +1045,7 @@ struct Solver {
                     switch fixed.word {
                     case nil: if holds(zone.rect, fixed.rect, times: Self.zoneArea) { return true }
                     case .view?: if holds(zone.rect, fixed.rect) { return true }
-                    case .board?: break
+                    case .board?, .origin?: break
                     }
                 case .obstacle: break
                 }

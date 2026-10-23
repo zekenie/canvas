@@ -78,7 +78,7 @@ How tidy a board is, as a whole, is the `mess` setting (0 tidy to 1 loose), and 
 
 ## Any commit, and proposals
 
-- `--commit REF` draws a commit, a branch or a tag: that commit's code, with the settings and lens of the folder you run in. The root's header ends with a line naming the commit, the lens, the app's build and macOS: the same line, the same boards. An older commit runs today's `prepare` and `scip` on its code: an older lockfile can need other options, and the error names the command. In a partial clone what the commit lacks is fetched first; a shallow clone has no older commits (`git fetch --unshallow`).
+- `--commit REF` draws a commit, a branch or a tag: that commit's code, with the settings and lens of the folder you run in. The same commit, lens, app and macOS draw the same boards. An older commit runs today's `prepare` and `scip` on its code: an older lockfile can need other options, and the error names the command. In a partial clone what the commit lacks is fetched first; a shallow clone has no older commits (`git fetch --unshallow`).
 - A proposal is a commit drawn into a new file, which people then write on: `"$SKILL/ingest" --commit feature/split-billing --new-file ~/Boards/split-billing.canvasboard`.
 - Drawing again never touches a board someone wrote on: `ingest` refuses it. A drawing of a later commit goes on an empty board or into a new file.
 

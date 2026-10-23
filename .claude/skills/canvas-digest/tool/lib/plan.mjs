@@ -34,7 +34,7 @@ export async function planDigest(digest, sizes, options, elk, now) {
     if (opts.progress && r.report.ms > SLOW) opts.progress(`plan: board "${board}" (${layouter.leaves.length} shapes) took ${Math.round(r.report.ms / 1000)} s; ${done} of ${order.length} boards laid out`);
   }
   const ordered = new Map(model.boards.map((b) => [b, results.get(b)]));
-  const { plan, runs } = buildPlan(model, sizes, ordered, opts);
+  const { plan, runs } = buildPlan(model, ordered, opts);
   const report = buildReport(model, ordered, { loopMs: (now || Date.now)() - t0, perBoard: Object.fromEntries(model.boards.map((b) => [b, ordered.get(b).report.ms])) });
   report.view = view;
   return { model, results: ordered, plan, runs, report };
