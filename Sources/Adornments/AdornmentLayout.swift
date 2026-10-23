@@ -14,6 +14,10 @@ import Geometry
 /// - the top-right corner (`cornerHeight` tall, centered on the top edge), leftward from
 ///   `cornerOverhang` past the right edge.
 ///
+/// A tab on the top edge (`AdornmentPlacement.onTopEdge`) is placed apart, with the other shapes' tabs
+/// (`tabs(_:)`), since tabs give way to each other across shapes; the layout of one shape leaves its slot
+/// empty, and the caller fills it in.
+///
 /// On an open shape that is slanted (`Slant.slope`, the chord's dy / dx, y down), the shape's own body runs
 /// through the middle of its anchor, and the row above it slides along the anchor, toward the side the body
 /// leaves clear, only as far as it must to keep `margin` between the body's centre line and an edge (grown by
@@ -128,6 +132,88 @@ public enum AdornmentLayout {
         placement == .onTopRightCorner ? cornerHeight : rowHeight
     }
 
+    // MARK: The tab on the top edge
+
+    /// A tab's height across its edge, half each side of it: a row's.
+    public static let tabHeight: CGFloat = rowHeight
+    /// How far along its edge from the shape's corner a tab starts.
+    public static let tabInset: CGFloat = 10
+    /// What a tab leaves free at the far end of its edge.
+    public static let tabEndGap: CGFloat = 4
+    /// A tab's corners: a tab, not a capsule.
+    public static let tabRadius: CGFloat = 5
+    /// How far a shape reaches past the edge a tab is on, at least, for the tab's inner half to lie on it.
+    public static let tabLeastDepth: CGFloat = tabHeight / 2 + 3
+
+    /// A shape's tab, in view points in the space its shape was given in: flat on the top edge, or turned
+    /// down the left one.
+    public struct Tab: Equatable, Sendable {
+        public var frame: CGRect
+        public var isTurned: Bool
+        public init(frame: CGRect, isTurned: Bool) {
+            self.frame = frame
+            self.isTurned = isTurned
+        }
+        /// How long it is along its edge.
+        public var length: CGFloat { isTurned ? frame.height : frame.width }
+    }
+
+    /// A shape that asks for a tab: its rect, in view points (any origin, the same for every request), and
+    /// its tab's item.
+    public struct TabRequest: Equatable, Sendable {
+        public var shape: CGRect
+        public var item: Item
+        public init(shape: CGRect, item: Item) {
+            self.shape = shape
+            self.item = item
+        }
+    }
+
+    /// Each shape's tab, placed in the order given (the caller ranks them: the outermost shape first, then
+    /// the larger), nil for one left out: each clear of those placed before it by `spacing`, by sliding
+    /// along its edge past what it meets. Flat on the top edge where that shows the whole text; on a shape
+    /// at least twice as tall as it is wide, turned down the left edge where that shows more of it.
+    public static func tabs(_ requests: [TabRequest]) -> [Tab?] {
+        var placed: [CGRect] = []
+        return requests.map { request in
+            guard let tab = tab(of: request, clearOf: placed) else { return nil }
+            placed.append(tab.frame)
+            return tab
+        }
+    }
+
+    /// One shape's tab, clear of `placed`.
+    static func tab(of request: TabRequest, clearOf placed: [CGRect]) -> Tab? {
+        let shape = request.shape, item = request.item
+        let flat = slide(along: shape, turned: false, item: item, clearOf: placed)
+        if let flat, flat.length >= item.width { return flat }
+        guard shape.height >= 2 * shape.width, let turned = slide(along: shape, turned: true, item: item, clearOf: placed),
+              turned.length > flat?.length ?? 0 else { return flat }
+        return turned
+    }
+
+    /// A tab along one edge, from `tabInset` in, slid past each tab of `placed` it meets while its edge
+    /// has room: text needs `minTextRoom` and its lead, a symbol its width.
+    private static func slide(along shape: CGRect, turned: Bool, item: Item, clearOf placed: [CGRect]) -> Tab? {
+        guard (turned ? shape.width : shape.height) >= tabLeastDepth else { return nil }
+        let end = (turned ? shape.maxY : shape.maxX) - tabEndGap
+        let least = item.isText ? minTextRoom + item.lead : item.width
+        var start = (turned ? shape.minY : shape.minX) + tabInset
+        while end - start >= least {
+            let length = min(item.width, end - start)
+            let frame = turned ? CGRect(x: shape.minX - tabHeight / 2, y: start, width: tabHeight, height: length)
+                               : CGRect(x: start, y: shape.minY - tabHeight / 2, width: length, height: tabHeight)
+            var past: CGFloat?
+            for other in placed where other.insetBy(dx: -spacing, dy: -spacing).intersects(frame) {
+                past = max(past ?? -.infinity, (turned ? other.maxY : other.maxX) + spacing)
+            }
+            guard let past else { return Tab(frame: frame, isTurned: turned) }
+            // What it meets overlaps it, so its far end is past `start`: each step goes forward.
+            start = max(past, start + 1)
+        }
+        return nil
+    }
+
     /// What an open shape's row goes by, in view points: how tall its anchor is, and the slope of the chord from its
     /// outline's first point to its last (dy / dx, y down; infinite for an upright chord, 0 for a level one), which
     /// slides the row clear of a slanted shape's body. A closed shape has none.
@@ -150,10 +236,18 @@ public enum AdornmentLayout {
     /// points (so in world units at 100%, where adornments keep their size): what the row above holds
     /// reaches `rowGap + rowHeight`, a chip on the corner `cornerHeight / 2`, nothing 0. Only what is
     /// shown counts: text left out for want of room reaches nowhere.
-    public static func extent(of items: [Item], in width: CGFloat) -> CGFloat {
+    /// `height` is the shape's, in view points: a shape too short for a tab, or so narrow and tall that its
+    /// tab turns down its left edge, has none above it.
+    public static func extent(of items: [Item], in width: CGFloat, height: CGFloat = .infinity) -> CGFloat {
         var reach: CGFloat = 0
         for slot in slots(of: items, width: width) {
             if let slot { reach = max(reach, -slot.frame.minY) }
+        }
+        // A tab, on a shape with nothing beside it, reaches half its height above the edge where it lies flat.
+        if let tab = items.first(where: { $0.placement == .onTopEdge }),
+           let alone = Self.tab(of: TabRequest(shape: CGRect(x: 0, y: 0, width: width, height: height.isFinite ? height : tabLeastDepth), item: tab),
+                                clearOf: []), !alone.isTurned {
+            reach = max(reach, tabHeight / 2)
         }
         return reach
     }
@@ -179,6 +273,11 @@ public enum AdornmentLayout {
         /// gave it, and which of the label's faces is drawn there (0 the whole one). Its frame is that rect at the
         /// origin, one world unit to a point.
         var lead: (rect: CGRect, face: Int)?
+        /// A tab on the top edge (`AdornmentPlacement.onTopEdge`): world units a point, the same size on screen
+        /// at every zoom, where the rest shrink below `fullSizeZoom`. Its frame is from the top-left corner.
+        var tabUnit: CGFloat?
+        /// The tab is turned down the left edge: its frame is upright, and its face is drawn turned a quarter.
+        var isTurned = false
 
         /// From the top-left corner.
         func frame(width: CGFloat) -> CGRect { isFromRight ? frame.offsetBy(dx: width, dy: 0) : frame }
@@ -189,15 +288,16 @@ public enum AdornmentLayout {
             return CGPoint(x: isFromRight ? bounds.maxX : bounds.minX, y: bounds.minY)
         }
 
-        /// World units a point: `scale` for what is placed from the shape's edge, one for a label's lead.
-        func unit(_ scale: CGFloat) -> CGFloat { lead == nil ? scale : 1 }
+        /// World units a point: `scale` for what is placed from the shape's edge, one for a label's lead, a
+        /// tab's own.
+        func unit(_ scale: CGFloat) -> CGFloat { tabUnit ?? (lead == nil ? scale : 1) }
 
         /// The frame in world units, for a shape with these bounds, at `scale` world units per point.
         func worldRect(in bounds: CGRect, scale: CGFloat) -> CGRect {
             if let lead { return lead.rect }
-            let corner = corner(in: bounds)
-            return CGRect(x: corner.x + frame.minX * scale, y: corner.y + frame.minY * scale,
-                          width: frame.width * scale, height: frame.height * scale)
+            let corner = corner(in: bounds), unit = unit(scale)
+            return CGRect(x: corner.x + frame.minX * unit, y: corner.y + frame.minY * unit,
+                          width: frame.width * unit, height: frame.height * unit)
         }
     }
 
@@ -378,7 +478,7 @@ public enum AdornmentLayout {
         guard shift != 0 else { return 0 }
         for i in items.indices {
             guard let slot = slots[i] else { continue }
-            guard slot.lead == nil else { continue }
+            guard slot.lead == nil, slot.tabUnit == nil else { continue }
             slots[i] = Slot(frame: slot.frame.offsetBy(dx: shift, dy: 0), isFromRight: slot.isFromRight, isCompact: slot.isCompact,
                             isOverflow: slot.isOverflow)
         }
@@ -403,6 +503,15 @@ public enum AdornmentLayout {
         let a = CGPoint(x: frame.minX + radius, y: frame.minY + radius)
         let b = CGPoint(x: frame.maxX - radius, y: frame.maxY - radius)
         return distanceToSegment(from: point, a, b) - radius
+    }
+
+    /// How far a point is outside a rounded rect with corners of `radius` (negative inside it): a tab's.
+    public static func distance(from point: CGPoint, to frame: CGRect, radius: CGFloat) -> CGFloat {
+        let radius = max(0, min(radius, frame.width / 2, frame.height / 2))
+        let inner = frame.insetBy(dx: radius, dy: radius)
+        let dx = max(inner.minX - point.x, 0, point.x - inner.maxX), dy = max(inner.minY - point.y, 0, point.y - inner.maxY)
+        if dx == 0, dy == 0 { return -min(point.x - frame.minX, frame.maxX - point.x, point.y - frame.minY, frame.maxY - point.y) }
+        return (dx * dx + dy * dy).squareRoot() - radius
     }
 
     /// The world rect whose shapes may have adornments in `visible`: grown by as far as they reach

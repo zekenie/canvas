@@ -354,13 +354,14 @@ enum AdornmentStyle {
         if let known = tintFillsKept[key] { return known }
         let color = NSColor(cgColor: tint.color.cgColor) ?? tint.color
         let fills: TintFills
+        let edge = tint.edge.map { NSColor(cgColor: $0.cgColor) ?? $0 }
         switch tint.style {
         case .solid:
             fills = TintFills(normal: color, hovered: color.blended(withFraction: 0.15, of: .white) ?? color,
-                              pressed: color.blended(withFraction: 0.2, of: .black) ?? color, line: nil)
+                              pressed: color.blended(withFraction: 0.2, of: .black) ?? color, line: edge)
         case .light:
             fills = TintFills(normal: color.withAlphaComponent(lightFill[0]), hovered: color.withAlphaComponent(lightFill[1]),
-                              pressed: color.withAlphaComponent(lightFill[2]), line: color.withAlphaComponent(lightLine))
+                              pressed: color.withAlphaComponent(lightFill[2]), line: edge ?? color.withAlphaComponent(lightLine))
         }
         if tintFillsKept.count >= tintFillsCapacity { tintFillsKept.removeAll(keepingCapacity: true) }
         tintFillsKept[key] = fills
@@ -403,8 +404,19 @@ enum AdornmentStyle {
     /// when it's drawn less than opaque.
     /// `isDark`: whether the appearance being drawn is the dark one, which a line of text is drawn by; a caller that
     /// draws many in one frame asks it once.
+    /// `turned`: a tab turned down its edge (`AdornmentLayout.Slot.isTurned`), its upright frame holding the
+    /// face drawn a quarter turn clockwise, reading downward.
     static func draw(_ label: AdornmentLabel, in placement: AdornmentPlacement, face: Face, in frame: CGRect, from corner: CGPoint, scale: CGFloat, look: Look,
-                     isDark: Bool? = nil, in cg: CGContext) {
+                     isDark: Bool? = nil, turned: Bool = false, in cg: CGContext) {
+        if turned {
+            cg.saveGState()
+            defer { cg.restoreGState() }
+            cg.translateBy(x: corner.x + frame.maxX * scale, y: corner.y + frame.minY * scale)
+            cg.rotate(by: .pi / 2)
+            draw(label, in: placement, face: face, in: CGRect(x: 0, y: 0, width: frame.height, height: frame.width), from: .zero, scale: scale,
+                 look: look, isDark: isDark, in: cg)
+            return
+        }
         let opacity = label.opacity
         cg.saveGState()
         defer { cg.restoreGState() }
@@ -464,7 +476,8 @@ enum AdornmentStyle {
             let text = label.isMissing ? resolvedMissing(laidOut) : laidOut
             cg.translateBy(x: corner.x, y: corner.y)
             cg.scaleBy(x: scale, y: scale)
-            let radius = min(frame.width, frame.height) / 2
+            // A tab's corners are a tab's; anything else is a capsule.
+            let radius = placement == .onTopEdge ? AdornmentLayout.tabRadius : min(frame.width, frame.height) / 2
             let capsule = CGPath(roundedRect: frame, cornerWidth: radius, cornerHeight: radius, transform: nil)
             if label.isMissing {
                 paintMissing(capsule, unit: 1, look: look, in: cg)
@@ -516,20 +529,22 @@ enum AdornmentStyle {
 /// Every shape's adornments, above every shape, in one pass: a shape at a time, back to front, so
 /// a front shape's are over a back shape's. They go where their shape is drawn
 /// (`editor.setDrawingOffset`), so they shake with it, and keep drawing while a session runs.
-/// Zoomed out, where shapes are drawn as skeletons (`OverlayContext.drawsSkeleton(of:)`), none are
-/// drawn: a skeleton shows what a shape is and where, and what's said just outside it (a title,
-/// a lock) is left off, as the shape's text is greeked; Titles puts a title on the shape itself
-/// there. The shape being edited, drawn in full, keeps its own, in full. The frame allocates
-/// nothing per shape once its labels are kept. Shapes never know about them.
+/// Zoomed out, where shapes are drawn as skeletons (`OverlayContext.drawsSkeleton(of:)`), only tabs
+/// are drawn (`AdornmentPlacement.onTopEdge`: what names a shape that holds others): a skeleton shows
+/// what a shape is and where, and what's said just outside it (a title, a lock) is left off, as the
+/// shape's text is greeked; Titles puts a title on the shape itself there. The shape being edited,
+/// drawn in full, keeps its own, in full. The frame allocates nothing per shape once its labels are
+/// kept, but for the tabs placed together, once a frame. Shapes never know about them.
 struct AdornmentOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
 
     func draw(in context: OverlayContext) {
         guard let state = context.editor.adornmentState, !state.isEmpty else { return }
-        // Zoomed out, only the shape being edited has any: it's the one shape drawn in full.
+        // Zoomed out, only tabs, and the shape being edited's: it's the one shape drawn in full.
         let skeletons = context.drawsSkeletons, editing = context.editor.editingShapeID
-        if skeletons && editing == nil { return }
+        if skeletons && editing == nil && !state.hasTabs { return }
         let scale = AdornmentLayout.scale(atZoom: context.zoom), cg = context.cg
+        let tabs = state.hasTabs ? state.drawnTabs(in: context.visibleRect) : nil
         // The clickable adornment hovered and pressed, if either is one: each adornment is compared
         // with them as it is, never boxed as a button of its own.
         let hovered = context.editor.hoveredButton?.base as? AdornmentButton
@@ -540,18 +555,24 @@ struct AdornmentOverlay: CanvasOverlay {
         let visible = context.visibleRect.insetBy(dx: -reach, dy: -reach)
         let records: [AnyShapeRecord]
         if skeletons {
-            records = editing.flatMap { context.editor.document[$0] }.map { [$0] } ?? []
+            // The shapes with a tab, back to front, and the one being edited, drawn in full, last.
+            let document = context.editor.document
+            var shown = (tabs?.shapes ?? []).compactMap { $0 == editing ? nil : document[$0] }
+            if let editing, let record = document[editing] { shown.append(record) }
+            records = shown
         } else {
             records = context.editor.paintOrder(in: AdornmentLayout.area(showing: visible, scale: scale))
         }
         var slots: [AdornmentLayout.Slot?] = []
         let isDark = AdornmentStyle.isDarkAppearance()
         for record in records {
+            let skeleton = context.drawsSkeleton(of: record.id), hasTab = tabs?.tabs[record.id] != nil
             // The area is the widest reach any shape has: nothing is made for a shape whose own does not reach the view.
-            guard state.mayShow(record, in: visible, scale: scale, shapes: context.shapes) else { continue }
-            guard let laidOut = state.laidOut(record), let anchored = AdornmentState.anchored(of: record.id, in: context.shapes, zoom: context.zoom) else { continue }
+            guard skeleton ? hasTab : hasTab || state.mayShow(record, in: visible, scale: scale, shapes: context.shapes) else { continue }
+            guard let laidOut = state.laidOut(record, tabsOnly: skeleton),
+                  let anchored = AdornmentState.anchored(of: record.id, in: context.shapes, zoom: context.zoom) else { continue }
             let anchor = anchored.rect
-            state.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
+            state.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: tabs, into: &slots)
             // Where the shape is drawn.
             let offset = context.worldDrawingOffset(of: record.id)
             let drawn = anchor.offsetBy(dx: offset.x, dy: offset.y)
@@ -572,7 +593,8 @@ struct AdornmentOverlay: CanvasOverlay {
                 }
                 let (label, face) = laidOut.look(of: index, in: slot)
                 AdornmentStyle.draw(label, in: adornment.id.placement, face: face, in: slot.frame,
-                                    from: slot.lead == nil ? slot.corner(in: drawn) : placed.origin, scale: unit, look: look, isDark: isDark, in: cg)
+                                    from: slot.lead == nil ? slot.corner(in: drawn) : placed.origin, scale: unit, look: look, isDark: isDark,
+                                    turned: slot.isTurned, in: cg)
             }
         }
     }

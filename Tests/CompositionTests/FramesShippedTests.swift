@@ -4,6 +4,7 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
+import Colors
 import CoreGraphics
 import DetailPanel
 import Frames
@@ -11,6 +12,7 @@ import Geometry
 import LanguageModels
 import Locking
 import Mentions
+import Palette
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -249,19 +251,20 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expectEqual(h.editor.box(frame)?.origin, CGPoint(x: 100, y: 180), "by its border")
         expectEqual(h.editor.box(note)?.origin, CGPoint(x: 150, y: 230), "what it holds with it")
     },
-    test("an untitled frame's pill says Frame, dimmed; titled, its title, and its row's") {
+    test("an untitled frame's tab says Frame, dimmed; titled, its title, and its row's") {
         let h = frameBoard()
         let frame = h.frame()
-        expectEqual(h.editor.adornmentFrames(of: frame).map(\.label), [AdornmentLabel(placeholder: "Frame")])
+        expectEqual(h.editor.adornmentFrames(of: frame).map(\.label.text), ["Frame"])
+        expect(h.editor.adornmentFrames(of: frame).first?.label.isPlaceholder == true, "dimmed")
         expectEqual(h.editor.tableOfContents?.entries.first { $0.id == frame }?.label?.text, "Untitled Frame")
         let untitled = renderBitmap(h.editor, size: CGSize(width: 800, height: 600))
         h.editor.transact { $0.update(frame) { $0[TitleProperty.self] = "Sprint 3" } }
-        expectEqual(h.editor.adornmentFrames(of: frame).map(\.label), [AdornmentLabel("Sprint 3")])
+        expectEqual(h.editor.adornmentFrames(of: frame).map(\.label.text), ["Sprint 3"])
         expectEqual(h.editor.tableOfContents?.entries.first { $0.id == frame }?.label?.text, "Sprint 3")
         let titled = renderBitmap(h.editor, size: CGSize(width: 800, height: 600))
-        let row = CGRect(x: 100, y: 70, width: 200, height: 24)
-        expect(changedPixels(untitled, titled, in: row) > 50, "the pill, in the row above it")
-        expectEqual(changedPixels(untitled, titled, in: sprint.insetBy(dx: 2, dy: 2)), 0, "the frame draws no title")
+        let tab = CGRect(x: 108, y: 90, width: 200, height: 20)
+        expect(changedPixels(untitled, titled, in: tab) > 50, "the tab, on its top edge")
+        expectEqual(changedPixels(untitled, titled, in: sprint.insetBy(dx: 2, dy: 12)), 0, "the frame draws no title past its tab")
     },
     test("the Frame tool as shipped: F, a drag over notes draws a frame that takes them in, Add Frame; a click into a locked frame puts none down, and it shakes") {
         let h = frameBoard()
@@ -304,6 +307,37 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expect(h.editor.drawingOffset(of: note) != .zero, "it shakes")
         expectEqual(h.editor.adornmentFrames(of: note), [], "no lock of its own")
         expectEqual(h.editor.adornmentFrames(of: frame).count, 2, "the frame's pill, and its lock")
+    },
+    test("a frame's title is a tab on its top edge, 10 in and half above it, 18 tall at 100%, 30% and 5%, with no pill and no cover; in its surface and border, a colored frame's in its color's") {
+        let h = frameBoard()
+        // Big enough on screen at 5% for its tab: 300 by 200 points there.
+        let region = CGRect(x: 100, y: 100, width: 6000, height: 4000)
+        let frame = h.frame(region, title: "Sprint 3")
+        for zoom in [1, 0.3, 0.05] as [CGFloat] {
+            h.editor.camera = Camera(origin: .zero, zoom: zoom)
+            let shown = h.editor.adornmentFrames(of: frame)
+            expectEqual(shown.map(\.adornment), [.of(TitleTab.self)], "at \(zoom)")
+            let tab = h.editor.camera.toView(try require(shown.first).rect), corner = h.editor.camera.toView(region.origin)
+            expectClose(tab.minX, corner.x + 10, within: 0.01)
+            expectClose(tab.midY, corner.y, within: 0.01)
+            expectClose(tab.height, 18, within: 0.01)
+            expectEqual(shown.first?.label.text, "Sprint 3")
+            expect(h.editor.titleCover(of: frame) == nil, "no cover at \(zoom)")
+        }
+        func resolved(_ color: NSColor?, in name: NSAppearance.Name) -> CGFloat? {
+            var white: CGFloat?
+            NSAppearance(named: name)?.performAsCurrentDrawingAppearance { white = color.flatMap { NSColor(cgColor: $0.cgColor)?.usingColorSpace(.sRGB)?.redComponent } }
+            return white
+        }
+        let plain = try require(h.editor.adornmentFrames(of: frame).first?.label.tint)
+        expectEqual(resolved(plain.color, in: .aqua), 1, "white on the light canvas, as the frame")
+        expectClose(try require(resolved(plain.color, in: .darkAqua)), 0.15, within: 0.01)  // its gray on the dark
+        expect(try require(resolved(plain.ink, in: .darkAqua)) > 0.5, "light words on the dark")
+        h.editor.setColor(.teal, of: [frame])
+        let teal = try require(h.editor.adornmentFrames(of: frame).first?.label.tint)
+        let record = try require(h.editor.document[frame])
+        expect(teal.color === h.editor.service(ColorBook.self)?.color(\.surface, of: record), "the color's surface")
+        expect(teal.edge === h.editor.service(ColorBook.self)?.color(\.solid, of: record), "its solid on the edge")
     },
     test("zoomed out to 30% a frame is its skeleton, square; at 35%, in full") {
         let h = frameBoard()

@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -11,13 +12,15 @@ import Selection
 import ShippedTesting
 import StickyNotes
 import TestKit
+import Titles
 
 // Frames on a board of the board's worth of generated shapes: a note dropped across a frame's edge,
 // settled in on the release (the in-or-out rule looks at every container on the board once); a frame
 // resized over the board's shapes, settled on the release; and a frame dragged, which carries what it
 // holds every event: holding a row of the board's shapes, within a drag event's input budget, and
 // holding every box shape on it, reported (moving thousands of shapes an event costs what it costs
-// with them selected, as ⌘A and a drag do).
+// with them selected, as ⌘A and a drag do). And titled frames zoomed out, each saying its title in a tab
+// on its edge, three deep at shared corners, so their tabs give way to each other every frame.
 
 extension Budget {
     /// A drop's release on a board of 10,000 shapes with a frame: the last move, and settling what
@@ -28,6 +31,10 @@ extension Budget {
     /// commit that restacks shapes, which every service that keeps the stack's order follows (some
     /// 5.8 ms at 10,000): half a frame, since a release is one event, never a run of them.
     static let settleResize = frame / 2
+    /// A frame zoomed out over the generated board with sixty titled frames on it, three deep in twenty
+    /// bands (fitted, and at 6%): their tabs placed together, each frame (a look at each shape in view and
+    /// a sort of the frames with one), within what a frame zoomed out may cost.
+    static let tabsZoomedOut = zoomedOut
 }
 
 /// The generated board, a frame `right` of it and an editor over the shipped list.
@@ -40,6 +47,53 @@ extension Budget {
 }
 
 @MainActor let frameBenchmarks = Suite("Frame benchmarks", [
+    test("titled frames zoomed out say their titles in tabs, placed together every frame, within what a frame zoomed out may cost") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
+        for size in sizes {
+            let (h, document, _) = try frameHarness(shapes: size)
+            h.editor.viewportDidResize(to: viewport)
+            let bounds = document.shapes.compactMap(\.box).reduce(CGRect.null) { $0.union($1) }
+            // Twenty bands down the board, each a titled frame holding one over its left half, which holds
+            // one over its first quarter: three deep at a shared corner, so the inner tabs slide past the outer.
+            // Twenty on the board of 10,000; four on a small one, so each is tall enough at 6% for a tab.
+            let bands = size >= 10_000 ? 20 : 4, height = bounds.height / CGFloat(bands)
+            var ids: [ShapeID] = []
+            h.editor.transact { transaction in
+                for band in 0..<bands {
+                    let rect = CGRect(x: bounds.minX - 40, y: bounds.minY + CGFloat(band) * height - 20, width: bounds.width + 80, height: height)
+                    var chain: [ShapeID] = []
+                    for (part, name) in [(1.0, "Band \(band)"), (0.5, "Left of band \(band)"), (0.25, "First of band \(band)")] {
+                        var frame = ShapeRecord(Frame(frame: CGRect(x: rect.minX, y: rect.minY, width: rect.width * part, height: rect.height)))
+                        frame[TitleProperty.self] = name
+                        transaction.insert(frame)
+                        if let outer = chain.last { transaction.setContainer([frame.id], to: outer) }
+                        chain.append(frame.id)
+                    }
+                    ids += chain
+                }
+            }
+            var lines: [String] = [], worst = 0.0
+            for (name, camera) in [("fitted", Camera(fitting: h.editor.shapeBounds, in: viewport, inset: 0)),
+                                   ("at 6%", camera(centering: bounds, at: 0.06, in: viewport))] {
+                h.editor.camera = camera
+                expect(h.editor.drawsSkeletons, "\(name): skeletons")
+                draw(h.editor, into: context, size: viewport)
+                let titled = median(runs: 21, onThread: true) {
+                    // The camera a hair off the last frame's, so the tabs are placed again, as in a pan.
+                    h.editor.camera.origin.x += 0.5
+                    draw(h.editor, into: context, size: viewport)
+                }
+                let tabs = ids.filter { id in h.editor.adornmentFrames(of: id).contains { $0.adornment == .of(TitleTab.self) } }.count
+                expect(tabs >= bands, "\(name): the bands' tabs, at least: \(tabs)")
+                worst = max(worst, titled)
+                lines.append(String(format: "%@ (%.0f%%) %5.1f ms, %d tabs", name, camera.zoom * 100, titled, tabs))
+            }
+            report(String(format: "%6d shapes, %d titled frames zoomed out: a frame %@ (budget %.0f)", size, ids.count, lines.joined(separator: "; "),
+                          Budget.tabsZoomedOut))
+            if holdsToBudgets { expect(worst < Budget.tabsZoomedOut, "a frame zoomed out with \(ids.count) titled frames over \(size) shapes took \(worst) ms") }
+        }
+    },
     test("a note dropped across a frame's edge settles in on the release, in what a gesture's end may cost, whatever the board") {
         for size in sizes {
             let (h, _, right) = try frameHarness(shapes: size)

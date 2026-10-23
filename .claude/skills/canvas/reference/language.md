@@ -109,7 +109,7 @@ A kind is drawable when a tool places it. These are the shipped ones:
 |---|---|---|---|---|
 | `sticky-note` | 260x200 | its title, a pill above its top-left corner | `text:`; a type's `schema:` in its panel | `note-link`, all four sides |
 | `subboard` | 240x160 | its title, drawn on its card | `description:`, what it's for, in its panel; its board is its own | every channel (`subboard-link`, `note-link`), all four sides |
-| `frame` | 640x400 | its title, a pill above its top-left corner | nothing else: it holds what's drawn `in` it | none |
+| `frame` | 640x400 | its title, a tab on its top edge | nothing else: it holds what's drawn `in` it | none |
 | `reference` | 120x32 | nothing: it has no title (an edge to a shape on another board draws one, [Through a reference](#through-a-reference)); one drawn by its query is named by its id ([References](#references)) | `query:`, a query in the query language; `all:` | none |
 
 `arrow` is what edges are: write `edge "A" -> "B"`, never `arrow`. A kind that isn't installed is `unknown_kind`, with the drawable kinds listed and the one like it named (`did you mean sticky-note?`). Words from other languages get a hint with what to write instead: `node`, `note` and `box` that a statement starts with its kind, `link` to write `edge "A" -> "B"`, `-->` in an edge the arrow to write, and a line that joins two titles without `edge` (`API --> DB`, `"A" -> "B"`) the edge it means (`edge "API" -> "DB"`).

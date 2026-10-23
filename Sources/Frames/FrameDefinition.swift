@@ -9,7 +9,7 @@ struct FrameDefinition {}
 
 /// The region is the whole frame, rounded, so its outline (the selection's, a hover's, the hint a drag
 /// into it shows) is its edge: its surface, and its border just inside its edge. What it holds paints
-/// above it; its title is Titles' pill above it.
+/// above it; its title is Titles' tab on its top edge.
 extension FrameDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Frame>, in context: RenderContext) {
         FrameStyle.draw(shape.frame, zoom: context.zoom, colors: context.colors(of: shape), in: context.cg)
@@ -21,8 +21,8 @@ extension FrameDefinition: ShapeDefinition {
 
     /// Hollow: a frame that holds shapes is pressed, and hovered, only on its border, a few view
     /// points either side of its edge (`FrameStyle.borderReach`), and its inside is the canvas, where
-    /// a drag is a marquee; one that holds nothing is pressed anywhere inside too. Its title's pill
-    /// grabs it as well (Titles', through Selection's `DecorationHits`).
+    /// a drag is a marquee; one that holds nothing is pressed anywhere inside too. Its title's tab
+    /// grabs it as well, at every zoom (Titles', through Selection's `DecorationHits`).
     func hitTest(_ point: CGPoint, on shape: ShapeRecord<Frame>, in context: ShapeContext) -> Bool {
         let box = shape.frame, reach = FrameStyle.borderReach / context.zoom
         guard box.insetBy(dx: -reach, dy: -reach).contains(point) else { return false }

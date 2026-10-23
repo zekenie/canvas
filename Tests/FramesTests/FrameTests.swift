@@ -88,16 +88,20 @@ import Titles
         h.editor.goBack()
         expectEqual(h.editor.selection, other, "one step back")
     },
-    test("an untitled frame's pill says Frame, dimmed: the placeholder, never its title; titled, its title, with no symbol") {
+    test("an untitled frame's tab says Frame, dimmed: the placeholder, never its title; titled, its title, with no symbol, on its top edge") {
         let h = try frameHarness()
         let frame = h.addFrame()
-        expectEqual(h.editor.adornmentFrames(of: frame).map(\.label), [AdornmentLabel(placeholder: "Frame")])
+        let untitled = try require(h.editor.adornmentFrames(of: frame).first)
+        expectEqual(untitled.adornment, .of(TitleTab.self))
+        expectEqual(untitled.label.text, "Frame")
+        expect(untitled.label.isPlaceholder, "dimmed")
         expectEqual(h.editor.registry.title(of: try require(h.editor.document[frame])), nil, "untitled")
         h.editor.transact("Rename") { $0.update(frame) { $0[TitleProperty.self] = "Sprint 3" } }
-        expectEqual(h.editor.adornmentFrames(of: frame).map(\.label), [AdornmentLabel("Sprint 3")])
-        let pill = try require(h.editor.adornmentFrames(of: frame).first?.rect)
-        expectEqual(pill.minX, frameRect.minX, "above its top-left corner")
-        expect(pill.maxY < frameRect.minY)
+        let titled = try require(h.editor.adornmentFrames(of: frame).first)
+        expectEqual(titled.label.text, "Sprint 3")
+        expectEqual(titled.label.systemImage, nil, "no symbol")
+        expectEqual(titled.rect.minX, frameRect.minX + 10, "10 in from its top-left corner")
+        expectEqual(titled.rect.midY, frameRect.minY, "half above its top edge, half below")
     },
     test("selected, it has eight handles; resized, it's never smaller than 96 × 64") {
         let h = try frameHarness()

@@ -11,8 +11,8 @@ import Selection
 /// tool, hover and the context menu (Selection's `DecorationHits`), but a clickable one (the lock)
 /// is a canvas button, its shape's only for the context menu. Zoomed out, on a shape the canvas
 /// draws as a skeleton (`editor.drawsSkeleton(of:)`: every shape but the one being edited), none is
-/// drawn or pointed at: a skeleton is the shape alone, and what it's called is said on it (Titles'
-/// cover). An adornment is never a shape or a record: it's made from its shape's data, so it
+/// drawn or pointed at but a tab (`AdornmentPlacement.onTopEdge`, a frame's title): a skeleton is the
+/// shape alone, and what it's called is said on it (Titles' cover) or on its edge. An adornment is never a shape or a record: it's made from its shape's data, so it
 /// moves, copies, deletes and saves with the shape. The core never learns what an adornment is.
 extension PluginID {
     public static let adornments: PluginID = "adornments"
@@ -122,6 +122,17 @@ public enum AdornmentPlacement: Hashable, Sendable, CaseIterable {
     /// gave (`AdornmentLabel.narrowing(to:)`). The geometry asks how wide it is (`AdornmentLead.faces`, a layout
     /// input Adornments provides) and leaves that room; a shape whose geometry leaves none shows none.
     case inLabelLead
+    /// A tab on the top edge of a closed shape, half above it and half below (18 points tall), from 10
+    /// points in from its left end, as long as its text and no longer than the edge leaves it, ending in
+    /// "…" (it needs 30 points, as text in the row does); turned down the left edge, reading downward, on
+    /// a shape at least twice as tall as it is wide where that shows more of its text. The one place
+    /// shown zoomed out too, on a shape drawn as a skeleton, and the same size on screen at every zoom:
+    /// what names a shape that holds others (a frame). Tabs on different shapes give way to each other,
+    /// the outermost shape's first, then the larger's: one that meets a tab already placed slides along
+    /// its edge past it, and is left out where its edge has no room left. One to a shape, the first
+    /// contribution that shows anything; zoomed out, a placeholder's (`AdornmentLabel(placeholder:)`)
+    /// isn't shown, since it names nothing.
+    case onTopEdge
 }
 
 /// An adornment's identity: its type. Equal when the types are.
@@ -195,7 +206,8 @@ public struct AdornmentButton: Hashable, Sendable {
 /// each. Solid, the capsule is the color and its text and symbol are its `ink`, white by default;
 /// light, the capsule is the color faint, with a thin line of it, and the text and symbol are its
 /// `ink`, the color itself by default. An ink may follow the appearance too (a color that reads on
-/// the capsule whichever it is).
+/// the capsule whichever it is). An `edge` is a 1-point line of its own inside the capsule's edge, in
+/// place of a light tint's: a frame's tab, in its surface and its border.
 ///
 /// A dynamic color is equal to itself only: a caller that makes a tint again and again for one
 /// color keeps the tint (or the `NSColor`s it is made of), or what Adornments keeps per tint grows.
@@ -205,11 +217,13 @@ public struct AdornmentTint: Hashable, @unchecked Sendable {
     public let color: NSColor
     public let ink: NSColor
     public let style: Style
+    public let edge: NSColor?
 
     /// `ink` is white for a solid tint and the color itself for a light one, by default.
-    public init(_ color: NSColor, ink: NSColor? = nil, style: Style) {
+    public init(_ color: NSColor, ink: NSColor? = nil, edge: NSColor? = nil, style: Style) {
         self.color = color
         self.ink = ink ?? (style == .solid ? .white : color)
+        self.edge = edge
         self.style = style
     }
 }
@@ -220,7 +234,7 @@ public struct AdornmentTint: Hashable, @unchecked Sendable {
 /// one (a kind's mark: a subboard's title's `rectangle.stack`), or a symbol alone in a disc. Its height, font
 /// and padding are its place's: 18 points, 11-point text, 7 in, in the row; 16 points, 10-point
 /// semibold figures, 5 in, on the corner. On a shape drawn as a skeleton, zoomed out
-/// (`editor.drawsSkeleton(of:)`), it isn't drawn.
+/// (`editor.drawsSkeleton(of:)`), it isn't drawn, unless it's a tab (`onTopEdge`).
 public struct AdornmentLabel: Hashable, Sendable {
     public enum Tone: Hashable, Sendable {
         case neutral
@@ -667,9 +681,9 @@ extension CanvasEditor {
     /// the board is asked as it would be shown there, and nothing is kept for it; 0 for one with none, or
     /// without a size, or where no plugin places adornments.
     public func adornmentExtent(of record: AnyShapeRecord) -> CGFloat {
-        guard let state = adornmentState, let width = record.box?.width,
+        guard let state = adornmentState, let box = record.box,
               let laidOut = state.laidOut(record, keeping: false) else { return 0 }
-        return AdornmentLayout.extent(of: laidOut.items, in: width)
+        return AdornmentLayout.extent(of: laidOut.items, in: box.width, height: box.height)
     }
 
     /// What these shapes' adornments show changed other than through the document (an open lock

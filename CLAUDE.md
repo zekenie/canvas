@@ -80,7 +80,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [selection](.claude/rules/selection.md): the select tool, handles and resizing, opening, Back, canvas buttons, going to shapes, faces, the shake a refused change gives, groups selected as one, moving between shapes (Tab, ⌥⌘ arrows, in and out of groups and frames).
 - [detail panel](.claude/rules/detail-panel.md): sections, tabs, status lines, headers, bindings, text boxes, list rows (a row, a group's header, a search field), the code editor and its completions, and its overview and takeovers (what other plugins show in it).
 - [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, the keyboard (walking the list with the panel holding it, Show All Shapes, what VoiceOver hears, the outline's keys), dragging rows.
-- [adornments](.claude/rules/adornments.md): pills and chips on shapes: placing them, their places, drawing and pointing.
+- [adornments](.claude/rules/adornments.md): pills, chips and tabs on shapes: placing them, their places (the tab on the top edge, shown at every zoom, giving way across shapes), drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items (an item can run a command, and show its key), right-clicks and Control-clicks, the selection's menu.
 - [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text.
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
@@ -88,7 +88,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 **Platform**, horizontals that are shape traits (what a shape has)
 - [topology](.claude/rules/topology.md): edges and edge types (a child under another plugin's), their sources, stand-ins and the views through them, provided answers, the one delivery of every change (`follow`) and settling, containment as one tree, snapshots for other threads.
 - [validation](.claude/rules/validation.md): rules and issues (and where in a value one is), the schema rule, what each commit re-checks and `recheck`, rings, where issues show.
-- [titles](.claude/rules/titles.md): named and derived titles, the pill and the looks other plugins give it, the cover zoomed out, `TitleHeader`, `/title`.
+- [titles](.claude/rules/titles.md): named and derived titles, the pill and the looks other plugins give it, the tab a frame takes in its place, the cover zoomed out, `TitleHeader`, `/title`.
 - [locking](.claude/rules/locking.md): locked shapes, read-only, the chip, `/lock`.
 - [grouping](.claude/rules/grouping.md): shapes grouped, selected as one: the groups a shape is in (`groups`, unlisted), what counts as a group on a board (`BoardGroups`), Group and Ungroup (⌥⌘G, ⌥⇧⌘G, the context menu, Arrange), copies, and agents' `group`, `ungroup` and `:grouped-with`; what a click does with groups is [selection](.claude/rules/selection.md)'s.
 - [publishing](.claude/rules/publishing.md): public shapes (what another shape may stand for), the two dials, the chip and its count, refusing while held (the panel goes to Connections), `/public`.

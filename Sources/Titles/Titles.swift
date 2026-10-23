@@ -101,6 +101,60 @@ extension ShapeRegistrar {
     }
 }
 
+/// The kinds whose title is a tab on the shape's top edge (`titleTab`), in place of a pill above it and a
+/// cover zoomed out, and what each shape's tab looks like. At most one per kind.
+public enum TitleTabs {}
+
+extension TitleTabs: KeyedExtensionPoint {
+    public typealias Contribution = TitleTabContribution
+    public static var owner: PluginID { .titles }
+    public static func uniqueKeys(of _: TitleTabContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
+    public static func summary(of _: TitleTabContribution, for target: ShapeTarget) -> String { "title tab → \(target)" }
+}
+
+/// A shape's tab's colors: the surface it's filled with and the line inside its edge, the shape's own
+/// (a frame's surface and border), so the tab reads as part of the shape. Its text is dark on a light
+/// surface and light on a dark one, as a cover's is. Dynamic colors follow the appearance.
+public struct TitleTabLook {
+    public var surface: NSColor
+    public var edge: NSColor
+
+    public init(surface: NSColor, edge: NSColor) {
+        self.surface = surface
+        self.edge = edge
+    }
+}
+
+/// One kind's: only the sugar makes one.
+@MainActor
+public struct TitleTabContribution {
+    let look: @MainActor (AnyShapeRecord, TitleLookContext) -> TitleTabLook?
+}
+
+extension ShapeRegistrar {
+    /// This kind's title is a tab on the shape's top edge (Adornments' `onTopEdge`), in the colors `look`
+    /// gives each shape (nil: the pill's gray), where a pill would be above it: what names a shape that holds
+    /// others, a frame. The tab is the same size on screen at every zoom, shown zoomed out too, where it takes
+    /// the place of the cover; tabs give way to each other, the outermost shape's first. An untitled shape's
+    /// placeholder (`placeholderInPill`) is its tab's, but zoomed out it shows none. Asked where the tab's
+    /// label is made, when a commit names the shape, with the editor's services. The kind opts into a title
+    /// too (`title()`); a look's tint (`titlePillLook`) wins over these colors.
+    ///
+    ///     frame.titleTab { shape, context in TitleTabLook(surface: …, edge: …) }
+    public mutating func titleTab(_ look: @escaping @MainActor (ShapeRecord<Definition.Props>, TitleLookContext) -> TitleTabLook?) {
+        contribute(TitleTabContribution { record, context in record.typed(as: Definition.Props.self).flatMap { look($0, context) } },
+                   to: TitleTabs.self)
+    }
+}
+
+extension PluginRegistrar {
+    /// A title tab for a kind another plugin registers, as `titleTab` on a kind's own registrar.
+    public mutating func titleTab<P: ShapeProps>(_: P.Type, _ look: @escaping @MainActor (ShapeRecord<P>, TitleLookContext) -> TitleTabLook?) {
+        contribute(TitleTabContribution { record, context in record.typed(as: P.self).flatMap { look($0, context) } },
+                   to: TitleTabs.self, for: .kind(P.kind))
+    }
+}
+
 /// What `ShapeTitles` stores for a kind: its shapes' titles, as they read (`TitleProperty.folded`),
 /// whether they're derived from what the kind keeps, whether its shapes show `TitlePill`, whether
 /// the pill starts with the kind's symbol, and what it says, dimmed, on a shape without a title.
@@ -338,42 +392,81 @@ extension TitlePill: Adornment {
     public static var placement: AdornmentPlacement { .aboveTopLeft }
 }
 
+/// A title's tab: the pill's words on the shape's top edge, for a kind whose title is one (`titleTab`), in
+/// the colors it gives, at every zoom (Adornments' `onTopEdge`: zoomed out too, where the shape has no cover,
+/// and the same size on screen, giving way to other shapes' tabs, the outermost's first).
+public enum TitleTab {}
+
+extension TitleTab: Adornment {
+    public static var placement: AdornmentPlacement { .onTopEdge }
+}
+
 extension CanvasEditor {
-    /// The rect of a shape's title pill, in world units, at the zoom now, where the shape is (not where
-    /// a shake draws it): what something that hangs from the pill (a card to name the shape) goes by,
+    /// The rect of a shape's title pill, or its tab, in world units, at the zoom now, where the shape is (not
+    /// where a shake draws it): what something that hangs from the pill (a card to name the shape) goes by,
     /// and what Find rings. Nil where the shape shows none: a plain untitled one, a look that hides the
-    /// pill, a shape drawn as a skeleton (zoomed out, its title is its cover, `titleCover(of:)`), a
-    /// pill left out for want of room, one not on the board.
+    /// pill, a shape drawn as a skeleton with no tab (zoomed out, its title is its cover, `titleCover(of:)`),
+    /// a pill left out for want of room, one not on the board.
     public func titlePillRect(of id: ShapeID) -> CGRect? {
-        adornmentFrames(of: id).first { $0.adornment == .of(TitlePill.self) }?.rect
+        adornmentFrames(of: id).first { $0.adornment == .of(TitlePill.self) || $0.adornment == .of(TitleTab.self) }?.rect
     }
 }
 
 private struct TitleKey: Hashable { let kind: ShapeKind }
 private struct PillLooksKey: Hashable { let kind: ShapeKind }
+private struct TabKey: Hashable { let kind: ShapeKind }
 
 extension ShapeCapability {
     /// The kinds that took a title (`x.title()`, or one derived, `x.title { … }`): where what says a
     /// title goes (Find's texts, the check of a title two shapes share).
     public static let titled = ShapeCapability("with a title") { $0.registry.isTitled($0.kind) }
 
-    /// The kinds whose title shows in a pill above the shape: titled, and not with `pill: false`.
+    /// The kinds whose title shows in a pill above the shape: titled, and not with `pill: false` or a tab.
     public static let titlePill = ShapeCapability("with a title pill") { $0.registry.showsTitlePill($0.kind) }
+
+    /// The kinds whose title shows in a tab on the shape's top edge (`titleTab`): titled, and not with
+    /// `pill: false`.
+    public static let titleTab = ShapeCapability("with a title tab") { $0.registry.showsTitleTab($0.kind) }
 }
 
 extension Registry {
-    /// Whether a kind's shapes show their title in a pill: it's titled, and not with `pill: false`.
+    /// Whether a kind's shapes show their title in a pill: it's titled, not with `pill: false`, and not
+    /// with a tab in its place.
     func showsTitlePill(_ kind: ShapeKind) -> Bool {
-        titleContribution(for: kind)?.showsPill == true
+        titleContribution(for: kind)?.showsPill == true && tabContribution(for: kind) == nil
+    }
+
+    /// Whether a kind's shapes show their title in a tab on their top edge: it's titled, not with `pill:
+    /// false`, and gives a tab (`titleTab`).
+    func showsTitleTab(_ kind: ShapeKind) -> Bool {
+        titleContribution(for: kind)?.showsPill == true && tabContribution(for: kind) != nil
+    }
+
+    private func tabContribution(for kind: ShapeKind) -> TitleTabContribution? {
+        memo(TabKey(kind: kind)) { contributions(to: TitleTabs.self, for: kind).first }
     }
 
     /// Whether a kind's shapes have titles: named (`title()`), derived (`title { … }`), or both.
     func isTitled(_ kind: ShapeKind) -> Bool { titleContribution(for: kind) != nil }
 
+    /// What a shape's title tab says, as its pill would (`titlePill(of:in:)`), in the colors its kind gives
+    /// it (`titleTab`) unless a look gives a tint: its ink by its surface, dark on light and light on dark.
+    func titleTab(of shape: AnyShapeRecord, in context: TitleLookContext) -> AdornmentLabel? {
+        guard let tab = tabContribution(for: shape.kind), let label = titleLabel(of: shape, in: context) else { return nil }
+        guard label.tint == nil, let look = tab.look(shape, context) else { return label }
+        return label.tinted(TitleTabStyle.tint(look))
+    }
+
     /// What a shape's title pill says: its title, after its kind's symbol (`label(of:)`) where the
     /// kind asks for it (`symbolInPill`); on an untitled shape, the kind's placeholder, dimmed, where
     /// it gives one (`placeholderInPill`); else nothing.
     func titlePill(of shape: AnyShapeRecord, in context: TitleLookContext) -> AdornmentLabel? {
+        guard tabContribution(for: shape.kind) == nil else { return nil }
+        return titleLabel(of: shape, in: context)
+    }
+
+    /// The words of a shape's pill or tab, as `titlePill(of:in:)` says.
+    private func titleLabel(of shape: AnyShapeRecord, in context: TitleLookContext) -> AdornmentLabel? {
         guard let titles = titleContribution(for: shape.kind), titles.showsPill else { return nil }
         let title = titles.title(shape)
         let look = titlePillLook(of: shape, title: title, in: context)
@@ -422,9 +515,9 @@ extension Registry {
 
     /// What a shape's cover says (`TitleCoverStyle`) and what its kind's skeleton is drawn on: its
     /// title, for a kind that shows one in a pill; nil for an untitled shape (a placeholder is its
-    /// pill's alone), and a kind with no pill.
+    /// pill's alone), a kind with no pill, and one whose title is a tab, which shows zoomed out itself.
     func titleCover(of shape: AnyShapeRecord, in editor: CanvasEditor) -> (title: String, surface: NSColor?)? {
-        guard let titles = titleContribution(for: shape.kind), titles.showsPill,
+        guard let titles = titleContribution(for: shape.kind), titles.showsPill, tabContribution(for: shape.kind) == nil,
               let title = titles.title(shape) else { return nil }
         // A look's surface, asked with no services; then the shape's own, which its kind answers from
         // a service; then the kind's.
@@ -448,6 +541,10 @@ public struct TitlesPlugin: ListedPlugin {
         // The pill, on the shapes of the kinds whose title shows one: Titles places it, and defines no kind.
         registrar.forShapes(adopting: .titlePill) { pilled in
             pilled.adornment(TitlePill.self) { shape, context in context.registry.titlePill(of: shape, in: TitleLookContext(context)) }
+        }
+        // The tab, on the shapes of the kinds whose title is one: on the top edge, at every zoom.
+        registrar.forShapes(adopting: .titleTab) { tabbed in
+            tabbed.adornment(TitleTab.self) { shape, context in context.registry.titleTab(of: shape, in: TitleLookContext(context)) }
         }
         // `/title Groceries` typed on a line of a shape's text: names the shape, on the kinds that can
         // be named. A derived title isn't Titles' to set, and is renamed where it's

@@ -7,11 +7,14 @@ import Selection
 /// frozen), and what each shape shows, laid out: its labels made once, with their faces (text set
 /// and measured, symbols' images), and kept until a commit names the shape or
 /// `adornmentsDidChange` does. A shape drawn as a skeleton, zoomed out (`editor.drawsSkeleton(of:)`),
-/// shows none: nothing is made, drawn or pointed at for it, and what was kept goes as the canvas
-/// starts drawing skeletons, but for the shape being edited, drawn in full, which has its own.
+/// shows only its tab (`AdornmentPlacement.onTopEdge`): nothing else is made, drawn or pointed at for
+/// it, a shape with no tab has nothing made at all, and what was kept goes as the canvas starts or stops
+/// drawing skeletons, but for the shape being edited, drawn in full, which has its own.
 /// Where they go is worked out when it's asked, from what's kept: it follows the zoom, and
-/// geometry that follows other shapes, neither of which reaches a service. Drawing and hit
-/// testing go through the same layout, so what answers the pointer is what's drawn.
+/// geometry that follows other shapes, neither of which reaches a service. Tabs, which give way to each
+/// other across shapes, are placed together for the shapes in a region (`tabs(in:)`: the view), and kept
+/// while nothing they're placed by changes. Drawing and hit testing go through the same layout, so what
+/// answers the pointer is what's drawn.
 @MainActor
 final class AdornmentState {
     private unowned let editor: CanvasEditor
@@ -19,6 +22,23 @@ final class AdornmentState {
     let isEmpty: Bool
     /// Some adornment is clickable. Without one, no point is looked at for a button.
     private let hasButtons: Bool
+    /// Some adornment is a tab (`AdornmentPlacement.onTopEdge`). Without one, a skeleton shows nothing and
+    /// no tabs are placed.
+    let hasTabs: Bool
+    /// Each kind's tab contributions, found once.
+    private var tabCandidatesKept: [ShapeKind: Bool] = [:]
+    /// The tabs placed lately, newest last, and what each was placed for: the view's, and a few asked about
+    /// a shape out of view, so asking about one doesn't throw the view's away.
+    private var tabsKept: [(key: TabsKey, tabs: PlacedTabs)] = []
+    /// The region the overlay last placed tabs for: what pointing and `adornmentFrames(of:)` place them
+    /// for too, so what's hit is what's drawn.
+    private var drawnTabRegion: CGRect?
+    /// Counts what changes where a tab goes (a shape with a tab added, changed, removed or its labels
+    /// forgotten; a board shown; the level of detail): tabs placed before it are placed again. A shape with
+    /// no tab changes nothing of them: tabs give way only to tabs.
+    private var generation = 0
+    /// The shapes the tabs placed last are on, so a commit that removes one places them again.
+    private var tabShapesPlaced: Set<ShapeID> = []
     /// Each kind's contributions in claim order: its own (and other plugins' for it), then those whose
     /// scope reaches it, less those of a type it has its own of; sorted by order, then first appearance.
     private var candidates: [ShapeKind: [AdornmentContribution]] = [:]
@@ -46,6 +66,7 @@ final class AdornmentState {
         let contributions = editor.registry.contributions(to: ShapeAdornments.self)
         isEmpty = contributions.isEmpty
         hasButtons = contributions.contains { $0.value.click != nil }
+        hasTabs = contributions.contains { $0.value.adornment.placement == .onTopEdge }
     }
 
     var keptCount: Int { kept.count }
@@ -56,24 +77,29 @@ final class AdornmentState {
 
     /// The adornments a shape shows, in claim order (its kind's candidates whose labels say
     /// something: text that isn't blank, or a symbol), each with its face; nil for none, and on a
-    /// shape kept aside. Callers go by `editor.drawsSkeleton(of:)` first: a skeleton shows none.
-    func laidOut(_ record: AnyShapeRecord, keeping: Bool = true) -> LaidOutAdornments? {
+    /// shape kept aside. Callers go by `editor.drawsSkeleton(of:)` first: a skeleton shows only its tab
+    /// (`tabsOnly`), and not a placeholder's.
+    func laidOut(_ record: AnyShapeRecord, keeping: Bool = true, tabsOnly: Bool = false) -> LaidOutAdornments? {
         guard !isEmpty, !record.isOpaque else { return nil }
+        if tabsOnly, !hasTab(record.kind) { return nil }
         let candidates = candidates(for: record.kind)
         guard !candidates.isEmpty else { return nil }
-        if keeping, let known = kept[record.id] { return known.shown.isEmpty ? nil : known }
+        if keeping, let known = kept[record.id], known.tabsOnly == tabsOnly { return known.shown.isEmpty ? nil : known }
         let context = AdornmentContext(editor: editor)
         // Each contribution's labels that say something, one adornment each, in order; a group's
         // know how many follow them, for the "+N" chip that stands for them.
         var shown: [ShownAdornment] = []
-        for (index, candidate) in candidates.enumerated() {
-            let labels = candidate.labels(record, context).filter(\.showsSomething)
+        for (index, candidate) in candidates.enumerated() where !tabsOnly || candidate.adornment.placement == .onTopEdge {
+            let labels = candidate.labels(record, context).filter { $0.showsSomething && !(tabsOnly && $0.isPlaceholder) }
             for (position, label) in labels.enumerated() {
                 shown.append(ShownAdornment(candidate, label: label, group: candidate.isGroup ? index : nil, remaining: labels.count - position))
             }
         }
         guard !shown.isEmpty else {
-            if keeping { kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: [], overflowFaces: [], leadLooks: []) }
+            if keeping {
+                kept[record.id] = LaidOutAdornments(shown: [], items: [], faces: [], compactFaces: [], overflowFaces: [], leadLooks: [],
+                                                    tabsOnly: tabsOnly)
+            }
             return nil
         }
         let faces = shown.map { AdornmentStyle.face(of: $0.label, in: $0.id.placement) }
@@ -94,7 +120,7 @@ final class AdornmentState {
             return [(shown[index].label, faces[index])] + shown[index].label.narrowerFaces.map { ($0, AdornmentStyle.face(of: $0, in: .inLabelLead)) }
         }
         let laidOut = LaidOutAdornments(shown: shown, items: items, faces: faces, compactFaces: compactFaces, overflowFaces: overflowFaces,
-                                        leadLooks: leadLooks)
+                                        leadLooks: leadLooks, tabsOnly: tabsOnly)
         if keeping { kept[record.id] = laidOut }
         return laidOut
     }
@@ -105,6 +131,110 @@ final class AdornmentState {
             kept[id] = nil
             leadMemo[id] = nil
         }
+        if touchesTabs(ids) { generation += 1 }
+    }
+
+    /// Whether any of these shapes has, or had, a tab: what changes where tabs go.
+    private func touchesTabs<S: Sequence>(_ ids: S) -> Bool where S.Element == ShapeID {
+        guard hasTabs else { return false }
+        return ids.contains { id in tabShapesPlaced.contains(id) || editor.document[id].map { hasTab($0.kind) } == true }
+    }
+
+    // MARK: Tabs
+
+    /// Whether a kind's shapes may show a tab: some contribution it has is one. Found once a kind.
+    private func hasTab(_ kind: ShapeKind) -> Bool {
+        if let known = tabCandidatesKept[kind] { return known }
+        let found = hasTabs && candidates(for: kind).contains { $0.adornment.placement == .onTopEdge }
+        tabCandidatesKept[kind] = found
+        return found
+    }
+
+    /// How far past a region tabs are placed with those in it, in view points, so one that a tab just
+    /// outside it pushes along is placed as it would be with the region moved a little: the view's tabs
+    /// are placed alike from frame to frame as it pans.
+    static let tabMargin: CGFloat = 240
+
+    /// Where the tabs of the shapes in `region` (world units: the view) and `tabMargin` past it go, each
+    /// clear of the others: placed in rank, the outermost shape first (fewest containers, the core's
+    /// containment), then the larger, then the higher, then the farther left; each slid along its edge past
+    /// those placed before it (`AdornmentLayout.tabs`); an untitled shape's placeholder after every title, so
+    /// a word that names nothing never pushes a name along. Only closed shapes have one. Kept while the
+    /// region, the zoom, the shapes with tabs and their labels are as they were, so drawing a frame and
+    /// pointing in it place them once. Costs a look at each shape in the region (a kind's lookup), and a
+    /// sort of those with one.
+    func tabs(in region: CGRect) -> PlacedTabs {
+        let zoom = editor.camera.zoom
+        let key = TabsKey(region: region, zoom: zoom, generation: generation, editing: editor.editingShapeID)
+        if let known = tabsKept.last(where: { $0.key == key }) { return known.tabs }
+        let unit = 1 / zoom, shapes = editor.shapeContext, document = editor.document, kinds = editor.registry.containingKinds
+        let grown = region.insetBy(dx: -(Self.tabMargin + AdornmentLayout.tabHeight) * unit, dy: -(Self.tabMargin + AdornmentLayout.tabHeight) * unit)
+        struct Asked {
+            let id: ShapeID
+            let order: Int
+            let isPlaceholder: Bool
+            let depth: Int
+            let bounds: CGRect
+            let request: AdornmentLayout.TabRequest
+        }
+        var asked: [Asked] = []
+        for (order, record) in editor.paintOrder(in: grown).enumerated() where hasTab(record.kind) {
+            guard let geometry = shapes.geometry(of: record.id), geometry.isClosed, !geometry.bounds.isNull,
+                  let laidOut = laidOut(record, tabsOnly: editor.drawsSkeleton(of: record.id)),
+                  let index = laidOut.shown.firstIndex(where: { $0.id.placement == .onTopEdge }) else { continue }
+            let bounds = geometry.bounds
+            let rect = CGRect(x: bounds.minX / unit, y: bounds.minY / unit, width: bounds.width / unit, height: bounds.height / unit)
+            asked.append(Asked(id: record.id, order: order, isPlaceholder: laidOut.shown[index].label.isPlaceholder,
+                               depth: document.containers(of: record.id, containingKinds: kinds).count,
+                               bounds: bounds, request: AdornmentLayout.TabRequest(shape: rect, item: laidOut.items[index])))
+        }
+        let ranked = asked.sorted { a, b in
+            if a.isPlaceholder != b.isPlaceholder { return b.isPlaceholder }
+            if a.depth != b.depth { return a.depth < b.depth }
+            let areas = (a.bounds.width * a.bounds.height, b.bounds.width * b.bounds.height)
+            if areas.0 != areas.1 { return areas.0 > areas.1 }
+            if a.bounds.minY != b.bounds.minY { return a.bounds.minY < b.bounds.minY }
+            if a.bounds.minX != b.bounds.minX { return a.bounds.minX < b.bounds.minX }
+            return a.order < b.order
+        }
+        var placed: [ShapeID: AdornmentLayout.Tab] = [:]
+        for (asked, tab) in zip(ranked, AdornmentLayout.tabs(ranked.map(\.request))) {
+            guard var tab else { continue }
+            // From the shape's top-left corner, as a slot is.
+            tab.frame = tab.frame.offsetBy(dx: -asked.request.shape.minX, dy: -asked.request.shape.minY)
+            placed[asked.id] = tab
+        }
+        let tabs = PlacedTabs(tabs: placed, shapes: asked.filter { placed[$0.id] != nil }.map(\.id), unit: unit)
+        tabShapesPlaced.formUnion(asked.lazy.map(\.id))
+        if tabsKept.count >= 4 { tabsKept.removeFirst() }
+        tabsKept.append((key, tabs))
+        return tabs
+    }
+
+    /// The tabs the overlay draws for the view it draws: kept as the region pointing goes by.
+    func drawnTabs(in visible: CGRect) -> PlacedTabs {
+        drawnTabRegion = visible
+        return tabs(in: visible)
+    }
+
+    /// The region whose tabs are placed together for a shape or a point at `rect`: the one last drawn where
+    /// `rect` meets it, so what's hit is what's drawn; else the view the editor has, where it meets it; else
+    /// `rect` itself.
+    func tabRegion(around rect: CGRect) -> CGRect {
+        let near = rect.insetBy(dx: -1, dy: -1)
+        if let drawn = drawnTabRegion, drawn.intersects(near) { return drawn }
+        let size = editor.viewportSize
+        if size.width > 0, size.height > 0 {
+            let visible = editor.camera.toWorld(CGRect(origin: .zero, size: size))
+            if visible.intersects(rect.insetBy(dx: -1, dy: -1)) { return visible }
+        }
+        return rect
+    }
+
+    /// A shape's tab into its slot, where it was placed (`tabs(in:)`).
+    private func placeTab(of laidOut: LaidOutAdornments, id: ShapeID, tabs: PlacedTabs?, into slots: inout [AdornmentLayout.Slot?]) {
+        guard let tabs, let tab = tabs.tabs[id], let index = laidOut.shown.firstIndex(where: { $0.id.placement == .onTopEdge }) else { return }
+        slots[index] = AdornmentLayout.Slot(frame: tab.frame, isFromRight: false, tabUnit: tabs.unit, isTurned: tab.isTurned)
     }
 
     // MARK: A label's lead
@@ -266,10 +396,11 @@ final class AdornmentState {
     }
 
     /// A shape's adornments' slots, into `slots`: the layout against its anchor, and the slope of an open shape's
-    /// chord, which slides the row clear of its body (a closed shape reads nothing of the sort).
+    /// chord, which slides the row clear of its body (a closed shape reads nothing of the sort); its tab where
+    /// `tabs` placed it (none where they didn't).
     /// Returns how far the row slid, in view points (`AdornmentLayout.slots`).
     @discardableResult
-    func slots(of laidOut: LaidOutAdornments, anchored: Anchored, scale: CGFloat,
+    func slots(of laidOut: LaidOutAdornments, id: ShapeID, anchored: Anchored, scale: CGFloat, tabs: PlacedTabs?,
                into slots: inout [AdornmentLayout.Slot?]) -> CGFloat {
         let slant = anchored.slope.map {
             AdornmentLayout.Slant(anchorHeight: anchored.rect.height / scale, slope: $0, maxSlide: AdornmentLayout.slideLimit(atScale: scale),
@@ -277,6 +408,7 @@ final class AdornmentState {
         }
         let shift = AdornmentLayout.slots(of: laidOut.items, width: anchored.rect.width / scale, slant: slant, into: &slots)
         placeLeads(of: laidOut, in: anchored, into: &slots)
+        if laidOut.hasTab { placeTab(of: laidOut, id: id, tabs: tabs, into: &slots) }
         return shift
     }
 
@@ -304,18 +436,20 @@ final class AdornmentState {
         guard anchored.slope != nil, let record = editor.document[id], !editor.drawsSkeleton(of: id), let laidOut = laidOut(record) else { return anchored.rect }
         let scale = AdornmentLayout.scale(atZoom: zoom)
         var slots: [AdornmentLayout.Slot?] = []
-        let shift = self.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
+        let shift = self.slots(of: laidOut, id: id, anchored: anchored, scale: scale, tabs: nil, into: &slots)
         return anchored.rect.offsetBy(dx: shift * scale, dy: 0)
     }
 
-    /// Where a shape's adornments are now, in world units: none on a shape drawn as a skeleton.
+    /// Where a shape's adornments are now, in world units: on a shape drawn as a skeleton, only its tab.
     func frames(of record: AnyShapeRecord) -> [AdornmentFrame] {
         let shapes = editor.shapeContext, zoom = editor.camera.zoom
-        guard !editor.drawsSkeleton(of: record.id), let laidOut = laidOut(record),
+        let skeleton = editor.drawsSkeleton(of: record.id)
+        guard !skeleton || hasTabs, let laidOut = laidOut(record, tabsOnly: skeleton),
               let anchored = Self.anchored(of: record.id, in: shapes, zoom: zoom) else { return [] }
         let anchor = anchored.rect, scale = AdornmentLayout.scale(atZoom: zoom)
+        let tabs = laidOut.hasTab ? self.tabs(in: tabRegion(around: anchor)) : nil
         var slots: [AdornmentLayout.Slot?] = []
-        self.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
+        self.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: tabs, into: &slots)
         return laidOut.shown.indices.compactMap { index in
             slots[index].map {
                 AdornmentFrame(adornment: laidOut.shown[index].id, label: laidOut.look(of: index, in: $0).label,
@@ -328,24 +462,36 @@ final class AdornmentState {
 
     /// The front-most adornment within `hitMargin` of a world point, of the shapes `include`
     /// accepts, where they are (not where a shake draws them), as it's drawn: of one shape's, the
-    /// nearest. None on a shape drawn as a skeleton, which shows none.
+    /// nearest. On a shape drawn as a skeleton, only its tab.
     func hit(at point: CGPoint, where include: (AnyShapeRecord) -> Bool) -> (shape: ShapeID, adornment: ShownAdornment, isOverflow: Bool)? {
-        guard !isEmpty, !editor.drawsSkeletons || editor.editingShapeID != nil else { return nil }
-        let scale = AdornmentLayout.scale(atZoom: editor.camera.zoom), shapes = editor.shapeContext
-        let near = CGRect(origin: point, size: .zero).insetBy(dx: -AdornmentLayout.hitMargin * scale, dy: -AdornmentLayout.hitMargin * scale)
-        for record in editor.paintOrder(in: AdornmentLayout.area(around: point, scale: scale)).reversed()
-        where include(record) && !editor.drawsSkeleton(of: record.id) && mayShow(record, in: near, scale: scale, shapes: shapes) {
-            guard let laidOut = laidOut(record),
-                  let anchored = Self.anchored(of: record.id, in: shapes, zoom: editor.camera.zoom) else { continue }
+        guard !isEmpty, !editor.drawsSkeletons || editor.editingShapeID != nil || hasTabs else { return nil }
+        let zoom = editor.camera.zoom, scale = AdornmentLayout.scale(atZoom: zoom), shapes = editor.shapeContext
+        let at = CGRect(origin: point, size: .zero)
+        let near = at.insetBy(dx: -AdornmentLayout.hitMargin * scale, dy: -AdornmentLayout.hitMargin * scale)
+        // Zoomed out, only tabs and the shape being edited show anything: with none edited, only the tabs near the point.
+        var area = editor.drawsSkeletons && editor.editingShapeID == nil ? at : AdornmentLayout.area(around: point, scale: scale)
+        // A tab's shape meets the point grown by half the tab's height, as large on screen at every zoom.
+        let tabs = hasTabs ? self.tabs(in: tabRegion(around: at)) : nil
+        if tabs != nil {
+            let reach = (AdornmentLayout.tabHeight / 2 + AdornmentLayout.hitMargin) / zoom
+            area = area.union(at.insetBy(dx: -reach, dy: -reach))
+        }
+        for record in editor.paintOrder(in: area).reversed() where include(record) {
+            let skeleton = editor.drawsSkeleton(of: record.id), hasTab = tabs?.tabs[record.id] != nil
+            guard skeleton ? hasTab : hasTab || mayShow(record, in: near, scale: scale, shapes: shapes),
+                  let laidOut = laidOut(record, tabsOnly: skeleton),
+                  let anchored = Self.anchored(of: record.id, in: shapes, zoom: zoom) else { continue }
             let anchor = anchored.rect
             var nearest: (index: Int, distance: CGFloat, isOverflow: Bool)?
             var slots: [AdornmentLayout.Slot?] = []
-            self.slots(of: laidOut, anchored: anchored, scale: scale, into: &slots)
+            self.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: tabs, into: &slots)
             for (index, slot) in slots.enumerated() {
                 guard let slot else { continue }
                 let corner = slot.corner(in: anchor), unit = slot.unit(scale)
                 let local = CGPoint(x: (point.x - corner.x) / unit, y: (point.y - corner.y) / unit)
-                let distance = AdornmentLayout.distance(from: local, to: slot.frame)
+                // A tab is a rounded rect with a tab's corners; the rest are capsules.
+                let distance = slot.tabUnit == nil ? AdornmentLayout.distance(from: local, to: slot.frame)
+                                                   : AdornmentLayout.distance(from: local, to: slot.frame, radius: AdornmentLayout.tabRadius)
                 if distance <= AdornmentLayout.hitMargin, distance < nearest?.distance ?? .infinity { nearest = (index, distance, slot.isOverflow) }
             }
             if let nearest { return (record.id, laidOut.shown[nearest.index], nearest.isOverflow) }
@@ -400,6 +546,7 @@ extension AdornmentState: EditorService {
             kept[id] = nil
             leadMemo[id] = nil
         }
+        if touchesTabs(changes.added) || touchesTabs(changes.changed) || touchesTabs(changes.removed) { generation += 1 }
     }
 
     /// Another board is shown: what the board left's shapes showed goes, and the shown board's
@@ -413,16 +560,39 @@ extension AdornmentState: EditorService {
         leadAnswered = [:]
         leadMemo = [:]
         leadsToLookAt = []
+        generation += 1
+        tabsKept = []
+        tabShapesPlaced = []
+        drawnTabRegion = nil
     }
 
-    /// The canvas started or stopped drawing skeletons: zoomed out, a skeleton shows no adornments, so
+    /// The canvas started or stopped drawing skeletons: zoomed out, a skeleton shows only its tab, so
     /// what's kept goes (the shape being edited makes its own again as it's drawn); zoomed in, the
-    /// labels and faces of what's in view are made again as it's drawn. What's under a still
-    /// pointer, a button come or gone, the select tool looks for again (Selection hears this too,
-    /// first), and the layouts it reads answer at the new level whether this has heard it or not.
+    /// labels and faces of what's in view are made again as it's drawn, the tabs kept zoomed out with them.
+    /// What's under a still pointer, a button come or gone, the select tool looks for again (Selection
+    /// hears this too, first), and the layouts it reads answer at the new level whether this has heard it
+    /// or not.
     func drawsSkeletonsDidChange(in editor: CanvasEditor) {
-        if editor.drawsSkeletons { kept = [:] }
+        kept = [:]
+        generation += 1
     }
+}
+
+/// The tabs placed for a region (`AdornmentState.tabs(in:)`): each shape's, from its top-left corner in view
+/// points, `unit` world units a point (the same size on screen at every zoom), and the shapes that have one,
+/// in paint order.
+struct PlacedTabs {
+    let tabs: [ShapeID: AdornmentLayout.Tab]
+    let shapes: [ShapeID]
+    let unit: CGFloat
+}
+
+/// What tabs were placed for: they're placed again when any of it changes.
+struct TabsKey: Equatable {
+    let region: CGRect
+    let zoom: CGFloat
+    let generation: Int
+    let editing: ShapeID?
 }
 
 /// A shape's adornments, laid out: each label, with how wide it's laid out (its face's width), and
@@ -440,9 +610,13 @@ struct LaidOutAdornments {
     /// For an adornment at a label's lead, each face it may take: the whole one, then the narrower ones, widest
     /// first (empty for any other).
     let leadLooks: [[(label: AdornmentLabel, face: AdornmentStyle.Face)]]
+    /// Made for a shape drawn as a skeleton: only its tab, and not a placeholder's.
+    let tabsOnly: Bool
 
     /// Some adornment is at a label's lead.
     var hasLead: Bool { shown.contains { $0.id.placement == .inLabelLead } }
+    /// Some adornment is a tab.
+    var hasTab: Bool { shown.contains { $0.id.placement == .onTopEdge } }
 
     /// The label and face drawn for adornment `index` in `slot`: its compact ones where the layout
     /// placed those, the "+N" chip's where it folded into one, the face of a label's lead that its room is the size of.

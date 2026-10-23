@@ -80,6 +80,6 @@ import Titles
         // Titles' line goes on past `/title` (the cover overlay, `overlay TitleCoverOverlay`), whose whole line
         // TitlesTests' report test pins; here only that the three come one after another, so what Titles adds
         // after them doesn't make this test about something else.
-        expect(String(titles).contains("property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title"), report)
+        expect(String(titles).contains("property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title"), report)
     },
 ])

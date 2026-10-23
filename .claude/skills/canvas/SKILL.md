@@ -401,7 +401,7 @@ sticky-note "Ship 1.0" text: "Blocked on @[Auth servce]"
 - **Frames don't grow.** A frame stays the size it was drawn, so `in` one that's full is `no_room`: restate it with a bigger `size:`.
 - **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a height with `size:`, which cuts long text off, so give a note with long text no `size:`, or a width alone, `size: 320x`) or whether a line crosses other shapes: a picture does ([Looking at the board](#looking-at-the-board)).
 - **Edges are arcs.** They don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
-- **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom (below 35% shapes are skeletons: no pill or chip is drawn, and a title is said on the shape instead).
+- **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom (below 35% shapes are skeletons: no pill or chip is drawn, and a title is said on the shape instead; a frame's title is a tab on its top edge, at every zoom).
 - **One board per run.** A run draws on one board (`in` says which, and the window never moves), and an arrow can't leave it: an edge to a shape on another board is drawn into a reference to that shape, which only a public one can have.
 
 ## Reference

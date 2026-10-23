@@ -100,7 +100,7 @@ enum TitleCoverStyle {
 
     /// Whether dark ink reads on a surface: its luminance, as it's drawn in now (a dynamic color
     /// resolves in the appearance being drawn), is over half.
-    private static func isLight(_ surface: NSColor) -> Bool {
+    nonisolated static func isLight(_ surface: NSColor) -> Bool {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let color = surface.cgColor.converted(to: space, intent: .defaultIntent, options: nil),
               let components = color.components, components.count >= 3 else { return true }

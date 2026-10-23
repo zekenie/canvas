@@ -254,7 +254,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         expectEqual(try JSON(text: result.output), [
             "shapes": [
                 ["line": 1, "title": "Checkout v2", "kind": "sticky-note", "size": [300, 200], "above": 27],
-                ["line": 2, "title": "Region", "kind": "frame", "size": [400, 300], "above": 27],
+                ["line": 2, "title": "Region", "kind": "frame", "size": [400, 300], "above": 9],
                 ["line": 3, "title": "Hub", "kind": "sticky-note", "size": [260, 200], "above": 27],
             ],
             "references": [["line": 4, "for": "Hub", "size": [91, 32]]],

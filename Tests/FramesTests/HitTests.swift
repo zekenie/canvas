@@ -52,19 +52,20 @@ import TestKit
         h.editor.transact { $0.delete([box]) }
         expectEqual(h.editor.selectableShape(at: CGPoint(x: 300, y: 250)), frame, "empty again")
     },
-    test("its pill grabs it, an untitled one's too; for the select tool, not for what finds shapes by their own outline") {
+    test("its tab grabs it, an untitled one's too; for the select tool, not for what finds shapes by their own outline") {
         let h = try frameHarness()
         let frame = h.addFrame()
         let box = h.addBox(CGRect(x: 150, y: 150, width: 100, height: 100), in: frame)
         let pill = try require(h.editor.adornmentFrames(of: frame).first?.rect)
-        let middle = CGPoint(x: pill.midX, y: pill.midY)
+        // On the tab's half above the edge, past the border's reach (6), so its own outline doesn't find it.
+        let middle = CGPoint(x: pill.midX, y: pill.minY + 1.5)
         expectEqual(h.editor.selectableShape(at: middle), frame)
         expectEqual(h.editor.shape(at: middle), nil)
         h.press(at: middle)
         h.drag(to: middle + CGPoint(x: 30, y: 40))
         h.drag(to: middle + CGPoint(x: 60, y: 80))
         h.release()
-        expectEqual(h.editor.box(frame)?.origin, frameRect.origin + CGPoint(x: 60, y: 80), "dragged by its pill")
+        expectEqual(h.editor.box(frame)?.origin, frameRect.origin + CGPoint(x: 60, y: 80), "dragged by its tab")
         expectEqual(h.editor.box(box)?.origin, CGPoint(x: 210, y: 230), "and what it holds with it")
     },
     test("a press on its empty inside is the canvas: a click deselects, and a drag is a marquee that selects what it holds, not the frame") {

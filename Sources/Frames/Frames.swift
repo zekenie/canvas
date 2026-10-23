@@ -25,7 +25,7 @@ public struct Frame: BoxShapeProps {
     }
     /// What a click with the Frame tool places, centered on the click.
     public static let defaultSize = CGSize(width: 640, height: 400)
-    /// The smallest a frame is drawn or resized to: its pill's row, and a small shape inside it. Said once,
+    /// The smallest a frame is drawn or resized to: its title's tab, and a small shape inside it. Said once,
     /// by its placement (`Placement.minimumSize`), which the Frame tool, resizing, Create Frame and
     /// `canvas draw` all read.
     public static let minimumSize = CGSize(width: 96, height: 64)
@@ -39,16 +39,16 @@ public struct Frame: BoxShapeProps {
 extension Frame {
     /// What a frame is called while it has no title, in its row and its panel's header.
     static let placeholder = "Untitled Frame"
-    /// What an untitled frame's pill says, dimmed, so there's something to grab it by.
+    /// What an untitled frame's tab says, dimmed, so there's something to grab it by.
     static let pillPlaceholder = "Frame"
-    /// Its symbol, on its tool, row, header and mentions (never in its pill).
+    /// Its symbol, on its tool, row, header and mentions (never in its tab).
     static let systemImage = "rectangle.dashed"
 }
 
 /// Frames: the Frame tool (F), which draws a frame with a drag, or places one with a click, and the
 /// frame, a region that holds what's put down in it (the core's containment). Pressed, it's hollow:
-/// its border and its title's pill grab it, and its inside is the canvas, unless it holds nothing. It
-/// opts into Titles (its name, in a pill above it, dimmed "Frame" while untitled), Mentions (by its
+/// its border and its title's tab grab it, and its inside is the canvas, unless it holds nothing. It
+/// opts into Titles (its name, in a tab on its top edge at every zoom, dimmed "Frame" while untitled), Mentions (by its
 /// name; following a mention goes to it), Selection's resizing, the table of
 /// contents (a row Titles names), the detail panel (a header that renames it) and Transform (it offers
 /// the container channel, so it can be turned into whatever takes that: a subboard, in the app). Create
@@ -68,9 +68,11 @@ public struct FramesPlugin: ListedPlugin {
             frame.tool(label: "Frame", systemImage: Frame.systemImage, shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
             frame.colorable()                                               // a color of its own; none, the neutral surface
             frame.tint(FrameStyle.tint)                                     // its gray, wherever it's listed by its kind
-            frame.title(placeholderInPill: Frame.pillPlaceholder, coverSurface: FrameStyle.fill)  // Titles keeps its name, in a pill above it
-            frame.titleCoverSurface { shape, context in       // a colored frame's cover is drawn over its own surface
-                context.service(ColorBook.self)?.color(\.surface, of: shape)
+            frame.title(placeholderInPill: Frame.pillPlaceholder)          // Titles keeps its name
+            frame.titleTab { shape, context in                              // said in a tab on its top edge, at every zoom, in its own colors
+                let book = context.service(ColorBook.self)
+                return TitleTabLook(surface: book?.color(\.surface, of: shape) ?? FrameStyle.fill,
+                                    edge: book?.color(\.solid, of: shape) ?? FrameStyle.border)
             }
             frame.mentionable()                                             // by its name; followed, it's gone to
             frame.resizable(minimumSize: place.minimumSize)                 // eight handles, Selection's

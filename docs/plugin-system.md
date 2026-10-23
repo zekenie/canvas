@@ -1375,15 +1375,15 @@ splits and joins none of them. What a title brings:
 - <a id="a-cover-zoomed-out"></a>**A cover, zoomed out.** A shape the canvas draws as a
   [skeleton](#skeletons) (below 35%, but for the one being edited) shows no pill, and Titles puts
   its title on the shape instead, large, so a board zoomed out reads from afar. Titles' own
-  overlay draws it (`TitleCoverOverlay`), over every shape back to front, so a frame's title isn't
-  hidden by what the frame holds. It's plain text, no plate: in a dark ink on a light surface and
+  overlay draws it (`TitleCoverOverlay`), over every shape back to front, so a container's title isn't
+  hidden by what it holds. It's plain text, no plate: in a dark ink on a light surface and
   a light one on a dark surface, by the surface the kind says its skeleton is drawn on
   (`x.title(coverSurface: NoteStyle.color)`, or `registrar.title(K.self, coverSurface:)`; a dynamic
-  color follows the appearance, so a frame's ink flips with the canvas; the default skeleton's
+  color follows the appearance, so a subboard's ink flips with the canvas; the default skeleton's
   gray, which dark ink reads on, without one), with a halo of that surface around the glyphs so it
-  stays clear over what lies under it (a frame's notes, a note's greeked lines). It's centered on
-  the shape, or at the top left of a container (`registry.isContainer`: a frame), where its pill is
-  in full.
+  stays clear over what lies under it (a container's notes, a note's greeked lines). It's centered on
+  the shape, or at the top left of a container (`registry.isContainer`), where its pill is in full
+  (a frame has none: its title is a [tab](#a-tab-on-the-edge)).
   Its **size follows the shape's, not the title's**, so equal shapes have equal titles: 0.22 of
   the shorter side, between 9 and 28 view points, to half points. It's made smaller only as far as
   the title needs: where the title wouldn't fill the room (the shape less a 4-point inset, which
@@ -1401,11 +1401,24 @@ splits and joins none of them. What a title brings:
   is even looked up, a shape's kept bounds say whether it's big enough, so a board of thousands
   zoomed out costs a look at each shape in view, and only the shapes big enough lay text out.
   `editor.titleCover(of:)` is where one's text is (world units), what it says and how large it is;
-  it's no face and no decoration for the pointer, so a frame zoomed out is pressed on its border
-  as ever. `editor.titlePillRect(of:)` is where a shape's pill is in full (world units, at the zoom
-  now, where the shape is): what a card that names the shape hangs from, and what Find rings; nil
-  where the shape shows none (a plain untitled one, a look that hides it, a skeleton, one not on the
-  board).
+  it's no face and no decoration for the pointer. `editor.titlePillRect(of:)` is where a shape's pill
+  (or tab) is (world units, at the zoom now, where the shape is): what a card that names the shape
+  hangs from, and what Find rings; nil where the shape shows none (a plain untitled one, a look that
+  hides it, a skeleton with no tab, one not on the board). A kind whose title is a tab has no cover.
+- <a id="a-tab-on-the-edge"></a>**A tab on the edge**, for a kind that holds shapes:
+  `frame.titleTab { shape, context in TitleTabLook(surface:edge:) }` (or `registrar.titleTab(K.self)`
+  for another plugin's kind; the `TitleTabs` point, one a kind, the report's `title tab → frame`) says
+  the title in a tab on the shape's top edge in place of the pill (`TitleTab`, at Adornments'
+  [`.onTopEdge`](#adornments), placed `forShapes(adopting: .titleTab)`), in the shape's own surface and
+  edge, its words dark on a light surface and light on a dark one (the cover's inks, chosen in the
+  appearance drawn). It keeps its size on screen at every zoom and shows zoomed out too, where it
+  takes the place of the cover: a cover sized by its shape grew louder the farther out you went, and on
+  a frame it was the biggest text on the board and printed over its frames' own. Tabs give way to each
+  other, the outermost frame's first, then the larger's, sliding along their edge, and a narrow
+  column's turns down its left edge. Asked where its label is made, when a commit names the shape, with
+  the editor's services (Colors' book, for a colored frame); a look's tint wins over its colors. An
+  untitled frame's tab says its placeholder, dimmed, in full, and nothing zoomed out. It's its shape's
+  for the pointer at every zoom, as a pill is, so a frame zoomed out is grabbed by its name too.
 - **A pill to grab while untitled**, for a kind that asks: `frame.title(placeholderInPill: "Frame")`
   (any form of the sugar takes it) puts the placeholder in the pill of each of its shapes nobody has
   named, laid out as a title is (after the symbol where the kind asks, giving way at the row's
@@ -5113,6 +5126,22 @@ narrower one, `AdornmentLabel.narrowing(to:)`); Adornments draws the face that f
 units, so it follows the zoom as the words do, and a click on it is a click on a clickable adornment. A
 shape whose geometry keeps no room shows none.
 
+A fifth, `.onTopEdge`, is a tab: the one place that names a shape at every zoom, a frame's title.
+On a closed shape's top edge, half above it and half below (18 points tall), from 10 points in from
+its left end, as long as its text and no longer than the edge leaves it (4 short of its right end),
+ending in "…" and needing 30 points, as text in the row does; on a shape twice as tall as it is wide,
+turned down its left edge, reading downward, where that shows more of its text (a narrow column). It
+keeps its size on screen at every zoom, where the rest shrink below 25%, and it's the one adornment a
+[skeleton](#skeletons) shows (a placeholder's excepted, which names nothing), so a frame says what it
+is from far out without its words growing with it. Tabs on different shapes give way to each other,
+placed together for the shapes in view (`AdornmentState.tabs(in:)`, kept while the view, the zoom, the
+document and the labels are as they were, which drawing and pointing both read, so what's hit is
+what's drawn): every title before any placeholder, then the outermost shape's first (fewest
+containers, the core's containment), then the larger's; one that meets a tab already placed slides along its edge past it, 4 points clear, and is
+left out where its edge has no room left (`AdornmentLayout.tabs`, pure). It's drawn with a tab's
+corners (5), not a capsule's, in its label's tint, whose `edge` is the line inside it (a frame's
+surface and border). One to a shape, the first contribution that shows anything.
+
 In a place, adornments sit 4 points apart. They keep their size on screen down to 25% zoom, and
 shrink with the shapes below it (0.4× at 10%); below 35% a shape drawn as a skeleton shows none, but
 the shape being edited, drawn in full, keeps its own ([the label](#the-label)). A shape without an
@@ -5460,7 +5489,7 @@ tool looks for a button under a still pointer then too.
   nothing drawn.
 - **`editor.adornmentExtent(of: record)`** is how far above its top edge a shape reaches with the
   adornments it would show at 100% zoom (`AdornmentLayout.extent(of:in:)`: the row above reaches 27, a
-  chip on the corner 8, none 0), in world units, for a record that need not be on any board (nothing is
+  chip on the corner 8, a tab on the edge 9, none 0), in world units, for a record that need not be on any board (nothing is
   kept for it): what a tool that lays shapes out clear of each other's titles needs (`canvas measure`).
 
 ### Something the user turns on
@@ -9526,7 +9555,8 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
     let place = frame.placement(size: Frame.defaultSize, minimumSize: Frame.minimumSize) { Frame() }   // what a click and draw place, never under 96 × 64
     frame.tool(label: "Frame", systemImage: "rectangle.dashed", shortcut: "f", placing: place) { _ in FrameTool(placing: place) }
     frame.tint(FrameStyle.tint)                                    // its gray, wherever it's listed by its kind
-    frame.title(placeholderInPill: "Frame")                        // Titles keeps its name; untitled, a dimmed pill to grab
+    frame.title(placeholderInPill: "Frame")                        // Titles keeps its name; untitled, a dimmed tab to grab
+    frame.titleTab { shape, context in TitleTabLook(…) }           // said in a tab on its top edge, at every zoom, in its own colors
     frame.mentionable()                                            // Mentions: by its title; followed, it's gone to
     frame.resizable(minimumSize: place.minimumSize)                // Selection's eight handles, no smaller than it's drawn
     frame.frameRow()                                               // the table of contents, named by Titles
@@ -9550,16 +9580,16 @@ registrar.createFrameItem()                                        // Create Fra
   selection's, a hover's, the hint a drag into it shows) is its rounded edge. Zoomed out it's its
   [skeleton](#skeletons) ([FrameSkeleton.swift](../Sources/Frames/FrameSkeleton.swift)): its surface
   and its border's ring over it, square, two fills, in the colors they are in full; what it holds
-  draws its own skeletons over it, and its title is Titles' [cover](#a-cover-zoomed-out), over both, at its top left (there's no pill zoomed out). In the minimap and a board's
+  draws its own skeletons over it, and its title is its [tab](#a-tab-on-the-edge), over both, as in full. In the minimap and a board's
   preview it's its outline, as every container's silhouette is (`Silhouettes`, `hollow`), so what it
   holds shows there too.
 - **Pressed hollow** (its `hitTest`): a frame that holds shapes is pressed and hovered only on its
   border, 6 view points either side of its edge (`FrameStyle.borderReach`, which its `hitMargin`
   declares), so a press inside it is the canvas, where a click deselects and a drag is a marquee,
   and the pointer there hovers nothing; one that holds nothing (`ShapeContext.hasContents`) is
-  pressed anywhere inside too, as any box is. Its title's pill grabs it, as every pill does its
-  shape ([DecorationHits](#drawn-for-a-shape-decorationhits)), and so does an untitled frame's
-  dimmed "Frame", there for that (`title(placeholderInPill:)`). What finds shapes by point
+  pressed anywhere inside too, as any box is. Its title's tab grabs it, at every zoom, as every pill
+  does its shape ([DecorationHits](#drawn-for-a-shape-decorationhits)), and so does an untitled frame's
+  dimmed "Frame" in full, there for that (`title(placeholderInPill:)`). What finds shapes by point
   (`editor.shape(at:)`: an arrow's end) goes by the same test.
 - **The marquee** selects a frame when it reaches the frame's edge, or holds it whole, never when
   it's drawn wholly inside it, where it selects what the frame holds (Selection's `BrushHitTesting`);
@@ -9604,8 +9634,9 @@ registrar.createFrameItem()                                        // Create Fra
   into does, where tldraw frames the rest around it. Its key is ⇧⌘F, not tldraw's ⌥⌘G, which is Group's
   here (Keynote's and Freeform's); the step is named "Create Frame" for the key as for the item, and no menu bar
   item runs it, so the Shape menu carries it. Not built: Remove Frame and Fit to Content.
-- **Opt-ins.** Titles keeps its name, shown in its pill (untitled, a dimmed "Frame"; no symbol, since
-  its look says what it is), and `TitleHeader` renames it in its panel's header ("Untitled Frame").
+- **Opt-ins.** Titles keeps its name, shown in a tab on its top edge at every zoom, in its surface and
+  border (a colored frame's color's surface and solid, from Colors' book; untitled, a dimmed "Frame" in
+  full; no symbol, since its look says what it is), and `TitleHeader` renames it in its panel's header ("Untitled Frame").
   Mentions offers it by its title, its symbol in its gray (`NSColor.systemGray`, its row's too), and
   following a mention goes to it (`goTo`), with Show What Mentions in
   its menu; untitled, the picker leaves it out. Selection resizes it, and the core settles, at the
@@ -14135,7 +14166,7 @@ topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → Add Note Beside · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link
 subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
-framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title cover surface → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
+framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -14144,7 +14175,7 @@ context-menus        service ContextMenuState · secondary-click menu · selecti
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
 table-of-contents    service ContentsState · command showAllShapes last in ViewMenu.Panels
 contents-overview    detail overview
-titles               property title · adornment TitlePill → every shape with a title pill · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
+titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
 mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
 board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
 board-contents       contents heading
