@@ -8,7 +8,7 @@ import { compareRun } from './compare.mjs';
 import { replay, extract } from './replay.mjs';
 import { boardField, boardView, drawnRecord, sameFile, pickRecord, needsTitles, readRecords, recordName, beyond, minus, foreign, replaceScript, hasTitle } from './redraw.mjs';
 import { checkDigest } from './check.mjs';
-import { typeProblems } from './types.mjs';
+import { typeProblems, isType, isInstance } from './types.mjs';
 import { TOOL_DIR, fold } from './util.mjs';
 
 export const USAGE = `digest tool (the driver, ./digest, runs these; the tool never runs canvas)
@@ -234,8 +234,9 @@ export function summarize(r) {
   if (long || left) lines.push(`long arrows: ${long} made pills of their own (over ${r.model.dial.longest} units, as the view sees them)` + (left ? `; ${left} still longer after the last pass` : ''));
   const all = r.model.nodes ? [...r.model.nodes.values()] : [];
   const types = all.filter((n) => n.schema && !n.relationship).length, rels = all.filter((n) => n.schema && n.relationship).length;
-  const notes = all.filter((n) => n.is.length).length, arrows = (r.model.edges || []).reduce((s, e) => s + e.arrows.filter((a) => a.is.length).length, 0);
-  if (types + rels + notes + arrows) lines.push(`types: ${types} type(s), ${rels} relationship type(s), ${notes} note(s) of a type, ${arrows} arrow(s) of a relationship type; a board's types, relationship types and their ends are one script, and the notes of a type are drawn after every such script`);
+  const notes = all.filter(isInstance).length, built = all.filter((n) => isType(n) && n.is.length).length;
+  const arrows = (r.model.edges || []).reduce((s, e) => s + e.arrows.filter((a) => a.is.length).length, 0);
+  if (types + rels + notes + arrows) lines.push(`types: ${types} type(s), ${rels} relationship type(s)${built ? ` (${built} built on others)` : ''}, ${notes} note(s) of a type, ${arrows} arrow(s) of a relationship type; a board's types, relationship types and their ends are one script (a type built on one of another board waits for it, in a later round after every board's shapes), and the notes of a type are drawn after every such script`);
   for (const w of rep.warnings) lines.push('warning: ' + w);
   return lines.join('\n');
 }

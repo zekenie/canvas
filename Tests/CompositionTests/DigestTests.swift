@@ -249,6 +249,15 @@ private func isByDesign(_ message: String) -> Bool {
     return said
 }
 
+/// The frame the app lays the shape called `title` out in, on whichever board of the file it is.
+@MainActor private func laidOut(_ title: String, in board: BoardDocument) throws -> CGRect {
+    let editor = board.editor
+    let all = editor.file.root.shapes + editor.file.children.values.flatMap(\.shapes)
+    let record = try require(all.first { editor.registry.title(of: $0) == title }, "no shape called \(title)")
+    let reading = try require(editor.file.board(containing: record.id).flatMap { editor.reading(of: $0) }, "no board holds \(title)")
+    return try require(reading.shapes.frame(of: record.id))
+}
+
 /// How many rows `canvas query` answers for a query on a board.
 @MainActor private func queriedCount(_ server: CommandServer, _ board: BoardDocument, _ query: String) throws -> Int {
     let answer = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "10000", query])
@@ -553,7 +562,64 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(try queried(server, board, #":start-of(arrow:is-a("writes"):ends-at("orders"))"#).sorted(), ["Loose", "NightlyRollup", "OrderWorkflow", "RefundWorkflow"])
     },
 
-    test("digest check refuses what a typed digest cannot be drawn with, naming the shape: an is with no type, is on a frame, a relationship without a schema, an endRule that is no end, a $ref to an id, values that don't fit, ends on another board") {
+    test("a digest of types built on types, on three boards: each type drawn after what it builds on (a round later for another board's) at the size its inherited fields and rows give it, the notes holding the fields their types build on, and what is of a type found however far") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("inherit")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let run = try runDigest("all", "inherit", server: server, target: ["--board", "\(board.number)", "--into", "Garage"], out: folder)
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        expect(run.process.output.contains("types: 7 type(s), 4 relationship type(s) (5 built on others), 6 note(s) of a type, 4 arrow(s) of a relationship type"), run.process.output)
+        try expectOnPlan(run, board: board, digestRoot: "Garage", "inherit")
+
+        // The runs: the first board's types of the first round in its frame's script, as ever, and the later rounds after every board's shapes,
+        // a script a board a round. Truck (Fleet) waits for Vehicle (the first board), tows (Fleet) and powers (Parts) for uses (the first
+        // board), Rechargeable and Cell for powers, whose ends they are, and Electric (the first board) for Rechargeable, Hybrid with it.
+        let plan = try run.plan
+        let runs = try require(plan["runs"]?.arrayValue?.compactMap(\.stringValue))
+        let steps = runs.map { $0.replacingOccurrences(of: #"^[0-9]+-"#, with: "", options: .regularExpression).replacingOccurrences(of: ".draw", with: "") }
+        expectEqual(steps.filter { $0.contains("types") || $0 == "root-in-1" }, ["root-in-1", "fleet-types-1", "parts-types-1", "root-types-2"], "\(runs)")
+        for (name, result) in try run.results() where name.contains("-types") || name.contains("-root-in-1") {
+            for change in result["changes"]?.arrayValue ?? [] where change["kind"]?.stringValue == "sticky-note" {
+                expectEqual(change["did"], "created", "\(name): \(change["title"] ?? .null)")
+            }
+        }
+        // once everything is drawn, every note is the size it was planned at: a type has the fields and rows of the types it builds on, wherever
+        // they are, and nothing drawn after a type changes it
+        let shapes = try require(plan["boards"]?.arrayValue).flatMap { $0["shapes"]?.arrayValue ?? [] }
+        for shape in shapes where shape["kind"]?.stringValue == "sticky-note" {
+            let title = try require(shape["title"]?.stringValue)
+            let frame = try laidOut(title, in: board)
+            expect(abs(frame.width - (shape["w"]?.numberValue ?? 0)) <= 1 && abs(frame.height - (shape["h"]?.numberValue ?? 0)) <= 1,
+                   "\(title) is laid out at \(frame.size), and was planned at \(shape["w"] ?? .null) x \(shape["h"] ?? .null)")
+        }
+        let tall = { (t: String) -> Double in shapes.first { $0["title"]?.stringValue == t }?["h"]?.numberValue ?? 0 }
+        expect(tall("Truck") > tall("Cell"), "Truck has Vehicle's fields and its owner row besides its own: \(tall("Truck")) against \(tall("Cell"))")
+
+        // What the drawing says is by design: Trailer truck has no owner, a row Vehicle's end gives every Truck, and Needed. No value is wrong:
+        // Rig's wheels are text, as Truck says, where Vehicle says a number, and the type that restates a field is the one.
+        let said = try expectOnlyTypedWarnings(run, "inherit")
+        expect(said.contains { $0.hasPrefix("Trailer truck") && $0.hasSuffix("owner is needed") }, "\(said)")
+        expect(!said.contains { $0.contains("wheels") }, "\(said)")
+
+        // What the app answers of what was drawn
+        expectEqual(try queried(server, board, #"[schema]:is-a("Vehicle")"#).sorted(), ["Electric", "Hybrid", "Truck"], "the types built on Vehicle, however far")
+        expectEqual(try queried(server, board, #":is-a("Vehicle"):not([schema])"#).sorted(), ["Leaf", "Rig", "Trailer truck"], "and the notes that are Vehicles through them")
+        expectEqual(try queried(server, board, #":is-a("Rechargeable"):not([schema])"#).sorted(), ["Leaf", "Pack 1"], "Leaf through Hybrid and Electric, a board away")
+        expectEqual(try queriedCount(server, board, #"arrow:is-a("uses")"#), 2, "an arrow of tows or powers is one of uses")
+        expectEqual(try queriedCount(server, board, #"arrow:is-a("owns")"#), 2)
+        expectEqual(try queriedCount(server, board, "arrow:misfit"), 0, "Ann owns a Hybrid and a Truck, which are Vehicles")
+        expectEqual(try queried(server, board, ":incomplete"), ["Trailer truck"])
+    },
+
+    test("digest check refuses what a typed digest cannot be drawn with, naming the shape: an is with no type, is on a frame, a relationship without a schema, an endRule that is no end, a $ref to an id, values that don't fit, ends on another board, a type built on itself") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -573,7 +639,9 @@ private func isByDesign(_ message: String) -> Bool {
               {"title": "Odd", "is": "Thing", "fieldValues": {"n": "three"}},
               {"title": "Refd", "schema": {"type": "object", "properties": {"x": {"$ref": "urn:uuid:7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11"}}}, "text": "Refs an id"},
               {"title": "Far", "kind": "subboard"},
-              {"title": "Remote", "in": "Far", "schema": {"type": "object"}, "text": "On another board"}
+              {"title": "Remote", "in": "Far", "schema": {"type": "object"}, "text": "On another board"},
+              {"title": "Loop", "schema": {"type": "object"}, "text": "Built on Knot", "is": "Knot"},
+              {"title": "Knot", "schema": {"type": "object"}, "text": "Built on Loop", "is": "Loop"}
             ], "edges": [
               {"from": "Ghost", "to": "Odd", "endRule": {"needed": true}},
               {"from": "Thing", "to": "Links"},
@@ -592,6 +660,7 @@ private func isByDesign(_ message: String) -> Bool {
             #""Refd": the schema has a $ref to urn:uuid:"#,
             #"edge "Ghost" -> "Odd": endRule is only for an end of a relationship type"#,
             #"edge "Links" -> "Remote": an end of the relationship type "Links""#,
+            #""Knot": builds on "Loop", which builds on "Knot": a type can't build on itself, however far"#,
         ] { expect(said.contains(expected), "check says \(expected):\n\(said)") }
         // and plan, which is not check, will not measure what it refuses
         let planned = try runDigest("plan", file: file, server: server, target: [], extra: ["--into", "Bad map"], out: folder.appendingPathComponent("out2"))

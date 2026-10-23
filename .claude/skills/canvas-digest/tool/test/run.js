@@ -1167,7 +1167,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var describe = r.runs.filter(function (x) { return /-describe\.draw$/.test(x.name); });
     eq(describe.map(function (x) { return x.text; }), ['subboard "Part" description: "What the part is, with @[Root note]."\n'], 'one statement a card with a description, restating nothing else; Bare has none');
     eq(r.plan.described, (function () { var o = {}; o[describe[0].name] = ['Part']; return o; })(), 'the plan says which run describes which card');
-    var lastShape = Math.max.apply(null, names.map(function (n, i) { return /-(top|in-\d+|notes)\.draw$/.test(n) ? i : -1; }));
+    var lastShape = Math.max.apply(null, names.map(function (n, i) { return /-(top|in-\d+|types(-\d+)?|notes)\.draw$/.test(n) ? i : -1; }));
     assert(names.indexOf(describe[0].name) > lastShape, 'after every run that draws a shape: ' + names.join(' '));
     var mm = sizes.measureScript(m);
     assert(mm.indexOf('What the part is') < 0, 'a description is not measured');
@@ -1188,7 +1188,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   // from its frame's top-left), and the result is every title's box
   function simulate(r) {
     var boxesOf = {};
-    r.runs.filter(function (x) { return /-(top|in-\d+|notes)\.draw$/.test(x.name); }).forEach(function (run) {
+    r.runs.filter(function (x) { return /-(top|in-\d+|types(-\d+)?|notes)\.draw$/.test(x.name); }).forEach(function (run) {
       run.text.split('\n').filter(Boolean).forEach(function (l) {
         var m = /^(sticky-note|frame|subboard) "([^"]+)".* size: (\d+)x(\d+)/.exec(l);
         if (!m) return;
@@ -1212,7 +1212,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   }
 
   await test('every board\'s shapes land where the plan has them when placed as their runs say: from the board\'s origin, or from their frame\'s top-left', async function () {
-    var names = ['acme', 'tree', 'flat60', 'spine', 'typed'];
+    var names = ['acme', 'tree', 'flat60', 'spine', 'typed', 'inherit'];
     for (var i = 0; i < names.length; i++) {
       var r = await planOf(fixture(names[i]), { into: i % 2 ? 'Map' : null });
       landsAsPlanned(r, simulate(r));
@@ -1497,7 +1497,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     said(e, /^"Card": a subboard can't be a type's instance/, 'is on a subboard');
     said(e, /^"Orphan": relationship: true needs a schema/, 'relationship without schema');
     said(e, /^"Rel note": is "writes", a relationship type: only an arrow is one/, 'a note of a relationship type');
-    said(e, /^"Typed type": a type can't say is/, 'a type that is of a type');
+    assert(!e.some(function (x) { return /^"Typed type"/.test(x); }), 'a type that is of a type builds on it: ' + JSON.stringify(e));
     said(e, /^"Refd": the schema has a \$ref to urn:uuid:7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11/, 'a $ref to an id');
     said(e, /^"Frame type": a frame can't be a type/, 'a schema on a frame');
     said(e, /^"No schema object": schema is a JSON object/, 'a schema that is text');
@@ -1626,6 +1626,106 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(at(/-root-notes/) < at(/-root-edges/), 'then the arrows');
     assert(/edge "T1" -> "R"/.test(r.runs[at(/-model-top/)].text) && /edge "R" -> "T1"/.test(r.runs[at(/-model-top/)].text), 'the ends are in the types\' script');
     assert(!/edge "T1" -> "R"/.test(r.runs[at(/-root-edges/)].text), 'and not in the arrows\'');
+  });
+
+  await test('the order a chain of types is read in is the app\'s (TypeOrder): a type before what it builds on, C3 where it has an order, and the walk where it has none', async function () {
+    // as the app's OrderTests: each list as `heads` reads it, latest first
+    var graph = function (lists) { return function (t) { return lists[t] || []; }; };
+    var lin = typesm.linearized;
+    eq(lin([], graph({ 1: ['2'] })), []);
+    eq(lin(['2'], graph({ 1: ['2'] })), ['2']);
+    eq(lin(['1', '1'], graph({ 1: ['2'] })), ['1', '2'], 'repeats are once');
+    eq(lin(['9'], graph({ 1: ['2'] })), ['9'], 'nothing knows 9');
+    eq(lin(['1'], graph({ 1: ['9', '2'] })), ['1', '9', '2']);
+    eq(lin(['2', '1'], graph({})), ['2', '1'], 'unrelated types in the order the heads name them');
+    eq(lin(['2', '1'], graph({ 1: ['3'], 2: ['4'] })), ['2', '4', '1', '3'], 'a type\'s own types before the next head\'s');
+    eq(lin(['3', '2'], graph({ 2: ['1'], 3: ['1'] })), ['3', '2', '1'], 'a diamond is read once');
+    eq(lin(['2', '1'], graph({ 2: ['1'] })), ['2', '1'], 'added Person, then Employee');
+    eq(lin(['1', '2'], graph({ 2: ['1'] })), ['2', '1'], 'added Employee, then Person: C3 has no order, and Employee is still first');
+    eq(lin(['4', '3'], graph({ 3: ['2', '1'], 4: ['1', '2'] })), ['4', '3', '1', '2'], 'two lists that disagree: the walk breaks the tie');
+    eq(lin(['2'], graph({ 1: ['2'], 2: ['3'], 3: ['1'] }), '1'), ['2', '3'], 'a ring ends where it comes back');
+    eq(lin(['1'], graph({ 1: ['2'], 2: ['3'], 3: ['1'] })), ['1', '2', '3']);
+    eq(lin(['2', '1'], graph({ 1: ['1', '2'] }), '1'), ['2'], 'the shape asked about is never listed');
+    // a digest's chain: the types of the list, later first, and what they build on
+    var m = model.buildModel(fixture('inherit'));
+    eq(typesm.chainOf(m, ['Hybrid']), ['Hybrid', 'Electric', 'Rechargeable', 'Vehicle'], 'Electric is a Vehicle, then a Rechargeable: the later first');
+    eq(typesm.chainOf(m, ['Truck']), ['Truck', 'Vehicle']);
+    eq(typesm.chainOf(m, ['Person', 'Truck']), ['Truck', 'Vehicle', 'Person'], 'a list is read latest first');
+  });
+
+  await test('a type may build on types: is on a type names them, of its own sort; check refuses a ring, a type of the other sort and values on a type, and warns of an arrow between two types', async function () {
+    var r = checkm.checkDigest(fixture('inherit'));
+    eq(r.errors, [], 'types on three boards built on each other, relationship types built on one, notes of them with values their types build on');
+    eq(r.warnings, []);
+    var obj = { type: 'object' };
+    var d = digest([{ title: 'A', schema: obj, text: 'a', is: 'B' }, { title: 'B', schema: obj, text: 'b', is: ['C', 'A'] }, { title: 'C', schema: obj, text: 'c' },
+      { title: 'Self', schema: obj, text: 's', is: 'Self' }, { title: 'R', relationship: true, schema: obj, text: 'r' },
+      { title: 'On a relationship', schema: obj, text: 'x', is: 'R' }, { title: 'On a type', relationship: true, schema: obj, text: 'y', is: 'C' },
+      { title: 'Valued', schema: obj, text: 'v', is: 'C', fieldValues: { a: 1 } }, { title: 'D', schema: obj, text: 'd' }],
+    [{ from: 'C', to: 'D' }, { from: 'R', to: 'On a type' }]);
+    var e = errorsOf(d);
+    said(e, /^"A": builds on "B", which builds on "A": a type can't build on itself, however far$/, 'a ring');
+    eq(e.filter(function (x) { return /^"B": builds on "A"/.test(x); }), [], 'said once, by its first title');
+    said(e, /^"Self": is "Self", itself: a type can't build on itself$/, 'a type that is itself');
+    said(e, /^"On a relationship": builds on "R", a relationship type: a type builds only on types that aren't$/, 'a type on a relationship type');
+    said(e, /^"On a type": builds on "C", which isn't a relationship type: a relationship type builds only on relationship types$/, 'a relationship type on a type');
+    said(e, /^"Valued": fieldValues on a type: a type's note shows its fields and never values, which are for its notes$/, 'values on a type');
+    eq(e.filter(function (x) { return /^"(C|D)"|^edge "C"/.test(x); }), [], 'the rest are fine');
+    said(checkm.checkDigest(d).warnings, /^edge "C" -> "D": both ends are types, so the arrow says nothing; a type that builds on another says is \("is": "D" on "C"\)$/, 'an arrow between two types');
+  });
+
+  await test('the values of a note are held to its types and what they build on: a field by the type that names it first in the chain, alone, and required as that type says', async function () {
+    var chained = function (values) {
+      return digest([{ title: 'Vehicle', schema: { type: 'object', properties: { wheels: { type: 'integer' }, maker: { type: 'string', pattern: '^[A-Z]' } }, required: ['wheels', 'maker'] }, text: 'v' },
+        { title: 'Truck', schema: { type: 'object', properties: { wheels: { type: 'string' }, axles: { type: 'integer' } } }, text: 't', is: 'Vehicle' },
+        { title: 'uses', relationship: true, schema: { type: 'object', properties: { how: { type: 'string' } } }, text: 'u' },
+        { title: 'tows', relationship: true, schema: { type: 'object', properties: { load: { type: 'string' } } }, text: 't', is: 'uses' },
+        { title: 'Rig', is: 'Truck', fieldValues: values }, { title: 'Van', is: 'Truck' }],
+      [{ from: 'Truck', to: 'tows' }, { from: 'tows', to: 'Truck' }, { from: 'Rig', to: 'Van', is: 'tows', fieldValues: { load: 'timber', how: 7 } }]);
+    };
+    eq(errorsOf(chained({ wheels: '6x4', maker: 'Volvo', axles: 3 })).filter(function (x) { return /^"Rig"/.test(x); }), [], 'wheels as text: Truck restates it, and its definition is the one');
+    eq(errorsOf(chained({ maker: 'Volvo' })).filter(function (x) { return /^"Rig"/.test(x); }), [], 'and Truck doesn\'t require it, though Vehicle did');
+    said(errorsOf(chained({ wheels: 6, maker: 'Volvo' })), /^"Rig": fieldValues\.wheels is 6, and the schema wants string \(the type "Truck"\)$/, 'the restated field, by its own definition alone');
+    said(errorsOf(chained({ wheels: '6x4' })), /^"Rig": fieldValues\.maker is required, and has no value \(the type "Vehicle", which "Truck" builds on\)$/, 'a field the type builds on is required as its type says');
+    said(errorsOf(chained({ wheels: '6x4', maker: 7 })), /^"Rig": fieldValues\.maker is 7, and the schema wants string \(the type "Vehicle", which "Truck" builds on\)$/);
+    said(errorsOf(chained({ maker: 'Volvo' })), /^edge "Rig" -> "Van": fieldValues\.how is 7, and the schema wants string \(the relationship type "uses", which "tows" builds on\)$/, 'an arrow\'s, through its relationship type\'s');
+    said(checkm.checkDigest(chained({ maker: 'Volvo' })).warnings, /^"Rig": fieldValues\.maker uses "pattern" in the type "Vehicle"/, 'a keyword passed over is said of the type that has it');
+    // one type, with nothing to build on, is checked as checkValue checks it, but for a required name no property has, which names no field (the app's
+    // rule), in a chain too: Vehicle's stray `vin` refuses no Truck
+    var T = { type: 'object', properties: { a: { type: 'integer' }, b: { type: 'string' } }, required: ['b'] };
+    eq(typesm.checkChain({ a: 'x' }, [{ title: 'T', schema: T }], 'v'), [{ type: 'T', errors: ['v.b is required, and has no value', 'v.a is "x", and the schema wants integer'], unchecked: [] }]);
+    eq(typesm.checkChain({ a: 'x' }, [{ title: 'T', schema: T }], 'v')[0].errors.slice().sort(), typesm.validateValue({ a: 'x' }, T, 'v').slice().sort());
+    eq(typesm.checkChain({}, [{ title: 'T', schema: { type: 'object', properties: {}, required: ['vin'] } }], 'v')[0].errors, [], 'a required name no property has');
+    var stray = chained({ wheels: '6x4', maker: 'Volvo' });
+    stray.nodes[0].schema.required = ['maker', 'vin'];
+    eq(errorsOf(stray).filter(function (x) { return /^"Rig"/.test(x); }), [], 'Vehicle requires a vin it has no field for: no Truck is refused for it');
+  });
+
+  await test('types built on types are drawn in rounds: a type after the types it builds on, a round later for one of another board, with the ends of its type; a board\'s first round in its shapes\' scripts, as ever, and a later round after every board\'s shapes', async function () {
+    var d = fixture('inherit'), m = model.buildModel(d);
+    var rounds = typesm.typeRounds(m), got = {};
+    [...rounds.keys()].sort().forEach(function (t) { got[t] = rounds.get(t); });
+    eq(got, { Cell: 1, Electric: 2, Hybrid: 2, Person: 0, Rechargeable: 1, Truck: 1, Vehicle: 0, owns: 0, powers: 1, tows: 1, uses: 0 },
+      'Truck (Fleet) on Vehicle (the first board); Rechargeable and Cell (Parts) ends of powers, which is built on uses (the first board); Electric (the first board) on Rechargeable, and Hybrid on Electric');
+    var r = await planOf(d, { into: 'Map' });
+    var names = r.runs.map(function (x) { return x.name.replace(/^\d+-/, '').replace(/\.draw$/, ''); });
+    eq(names.filter(function (n) { return /types/.test(n); }), ['fleet-types-1', 'parts-types-1', 'root-types-2'], 'a script a board a later round, the boards in their order');
+    assert(names.indexOf('root-in-1') < names.indexOf('fleet-types-1') && names.indexOf('parts-types-1') > names.indexOf(names.filter(function (n) { return /-(top|in-\d+)$/.test(n); }).pop()), 'the first round in the first board\'s frame\'s script, the later after every board\'s shapes: ' + names.join(' '));
+    var text = function (n) { return r.runs[names.indexOf(n)].text; };
+    ['Vehicle', 'Person', 'owns', 'uses'].forEach(function (t) { assert(text('root-in-1').indexOf('sticky-note "' + t + '"') >= 0, t + ' in the first round'); });
+    assert(!/^sticky-note "(Electric|Hybrid)"/m.test(text('root-in-1')), 'and not what waits for another board');
+    assert(/^edge "Person" -> "owns"/m.test(text('root-in-1')) && /^edge "owns" -> "Vehicle"/m.test(text('root-in-1')), 'with its ends');
+    assert(/^sticky-note "Truck" .*is: "Vehicle"$/m.test(text('fleet-types-1')) && /^sticky-note "tows" .*relationship: true is: "uses"$/m.test(text('fleet-types-1')), 'Truck and tows in the second, built on what the first drew');
+    assert(/^edge "Truck" -> "tows"/m.test(text('fleet-types-1')) && /^edge "tows" -> "Truck"/m.test(text('fleet-types-1')), 'with their ends');
+    ['Rechargeable', 'Cell', 'powers'].forEach(function (t) { assert(text('parts-types-1').indexOf('sticky-note "' + t + '"') >= 0, t + ' in the second round'); });
+    assert(/^sticky-note "Electric" .*is: \["Vehicle","Rechargeable"\]$/m.test(text('root-types-2')) && /^sticky-note "Hybrid" .*is: "Electric"$/m.test(text('root-types-2')), 'Electric waits for Rechargeable, Hybrid is with it');
+    eq(r.runs.filter(function (x) { return /^sticky-note "(Vehicle|Truck|Electric|Hybrid|Rechargeable)" /m.test(x.text); }).length, 4, 'each type in one script');
+    var at = function (n) { return names.indexOf(n); };
+    assert(at('root-types-2') < at('root-notes') && at('fleet-types-1') < at('fleet-notes'), 'the notes after every type');
+    assert(at('fleet-notes') < at('fleet-edges'), 'the arrows after the notes');
+    assert(!/^sticky-note "(Vehicle|Truck|tows)"/m.test(text('root-notes') + text('fleet-notes')), 'a type built on another is no note of one');
+    landsAsPlanned(r, simulate(r));
+    checkPlan(r.plan);
   });
 
   await test('typed arrows: two between one pair are one edge to the layout (weights added) and an arrow each when drawn; an untyped one beside them is dropped, warned of', async function () {

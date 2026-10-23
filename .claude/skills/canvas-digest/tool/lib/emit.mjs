@@ -1,10 +1,11 @@
 // plan.json and the draw scripts. Every shape at an exact offset from its container's top-left (a frame's, or the board's origin, its point
 // (0, 0), for the board itself), frames at their final size, shapes made public one run before the edges through them.
-// Typed shapes change the order of the runs (below): every type, relationship type and end of a board in one run, every note that is of a type
-// after every such run. A subboard's `text` is its description, written in a run of its own once everything it may mention is drawn.
+// Typed shapes change the order of the runs (below): every type, relationship type and end of a board in one run, but for a type that waits for a
+// type of another board, drawn in a later round, every note that is of a type after every such run. A subboard's `text` is its description, written
+// in a run of its own once everything it may mention is drawn.
 import { q, lit, byTitle, slug, pad2, fold } from './util.mjs';
 import { fanTargets } from './moves.mjs';
-import { noteTyping, arrowTyping } from './types.mjs';
+import { noteTyping, arrowTyping, typeRounds, isType, isInstance } from './types.mjs';
 
 /** What the plan makes public by its moves: the promoted nodes, and what the fanned-out nodes' pills stand for. */
 export function madePublic(model, results) {
@@ -78,18 +79,31 @@ export function buildPlan(model, results, opts) {
 
   // shape runs, board by board: what is on the board itself, then what is in the frames, a depth at a time.
   // A type's note, a relationship type's and the ends between them are one script on one board (an end gives each note of its types a row, and a
-  // type's note grows by the rows its ends give it; a run lays a note out against the ends it draws itself): they go in the run of the deepest frame
-  // any of them is in, whatever depth each is at. A note that is of a type waits for every such run (`is:` finds a type anywhere in the file, drawn
-  // before it), in a run of its own for its board after the last of them; an arrow that is of a relationship type is in the edge runs, after them.
-  const typedDepth = new Map();   // board -> the depth of the run that draws its types (none: the board has no type)
-  const isInstance = (n) => n.kind === 'sticky-note' && n.is.length > 0;
-  const isTyped = (n) => !!n.schema;
+  // type's note grows by the rows its ends give it, and has the rows and fields of the types it builds on; a run lays a note out against everything
+  // it draws itself): a board's types of the first round (`typeRounds`: those that wait for no type of another board) go in the run of the deepest
+  // frame any of them is in, whatever depth each is at. A type of a later round waits for that round, after every board's shapes: a run for each
+  // board with types in it. A note that is of a type waits for every such run (`is:` finds a type anywhere in the file, drawn before it), in a run of
+  // its own for its board after the last of them; an arrow that is of a relationship type is in the edge runs, after them.
+  const rounds = typeRounds(model);
+  const typedDepth = new Map();   // board -> the depth of the run that draws its first round's types (none: the board has none)
   for (const board of model.boards) {
     const { boxOf } = drawn.get(board);
-    const types = [...boxOf.keys()].map((t) => model.node(t)).filter(isTyped);
-    if (types.length) typedDepth.set(board, Math.max(...types.map((n) => n.frames.length)));
+    const first = [...boxOf.keys()].map((t) => model.node(t)).filter((n) => isType(n) && rounds.get(n.title) === 0);
+    if (first.length) typedDepth.set(board, Math.max(...first.map((n) => n.frames.length)));
   }
-  const depthOf = (board, t) => { const n = model.node(t); return isTyped(n) ? typedDepth.get(board) : n.frames.length; };
+  // the run a shape is drawn in, by order: its depth for a shape, its board's types' depth for a type of the first round, after every board's shapes
+  // for a later round's, and last for a note of a type
+  const runOf = (t) => {
+    const n = model.node(t);
+    if (isInstance(n)) return Infinity;
+    if (!isType(n)) return n.frames.length;
+    return rounds.get(t) ? 1e6 + rounds.get(t) : typedDepth.get(n.board);
+  };
+  // the ends of a board's types of a round, in the run that draws them (an end's type is never in a round before its relationship type's)
+  const ends = model.edges.filter((e) => e.end).sort((a, b) => byTitle(a.from, b.from) || byTitle(a.to, b.to));
+  const typeOfEnd = (e) => (model.node(e.from).relationship ? e.to : e.from);
+  const endLines = (board, r, here) => (!here ? [] : ends.filter((e) => model.node(typeOfEnd(e)).board === board && rounds.get(typeOfEnd(e)) === r)
+    .flatMap((e) => e.arrows.map((a) => `edge ${q(e.from)} -> ${q(e.to)}` + (a.text ? ` text: ${lit(a.text)}` : '') + arrowTyping(a))));
   const sortedOf = new Map(); // board -> its shapes' titles in the order they are drawn: by title
   for (const board of model.boards) sortedOf.set(board, [...drawn.get(board).boxOf.keys()].sort(byTitle));
   const stmts = new Map();
@@ -110,18 +124,22 @@ export function buildPlan(model, results, opts) {
       return `sticky-note ${q(t)}${inClause(parent || holder)}${sp} size: ${b.w}x${b.h}${pub}` + (n.text ? ` text: ${lit(n.text)}` : '') + noteTyping(n);
     };
     stmts.set(board, stmt);
-    const titles = sortedOf.get(board).filter((t) => !isInstance(model.node(t)));
-    // the ends of this board's relationship types, after the shapes of the run that draws the types
-    const ends = model.edges.filter((e) => e.end && model.node(e.from).board === board).sort((a, b) => byTitle(a.from, b.from) || byTitle(a.to, b.to));
-    const endLines = (d) => (typedDepth.get(board) === d
-      ? ends.flatMap((e) => e.arrows.map((a) => `edge ${q(e.from)} -> ${q(e.to)}` + (a.text ? ` text: ${lit(a.text)}` : '') + arrowTyping(a)))
-      : []);
-    const top = titles.filter((t) => depthOf(board, t) === 0).map(stmt).concat(endLines(0));
+    const titles = sortedOf.get(board).filter((t) => runOf(t) < 1e6);
+    // the ends of this board's types of the first round, after the shapes of the run that draws them
+    const top = titles.filter((t) => runOf(t) === 0).map(stmt).concat(endLines(board, 0, typedDepth.get(board) === 0));
     if (top.length) addRun(board, 'top', top);
-    const maxDepth = Math.max(0, ...titles.map((t) => depthOf(board, t)));
+    const maxDepth = Math.max(0, ...titles.map(runOf));
     for (let d = 1; d <= maxDepth; d++) {
-      const lines = titles.filter((t) => depthOf(board, t) === d).map(stmt).concat(endLines(d));
+      const lines = titles.filter((t) => runOf(t) === d).map(stmt).concat(endLines(board, 0, typedDepth.get(board) === d));
       if (lines.length) addRun(board, 'in-' + d, lines);
+    }
+  }
+  // the later rounds, after every board's shapes: a run for each board with types in the round, of them and the ends of its types of the round
+  const lastRound = Math.max(0, ...rounds.values());
+  for (let r = 1; r <= lastRound; r++) {
+    for (const board of model.boards) {
+      const lines = sortedOf.get(board).filter((t) => runOf(t) === 1e6 + r).map(stmts.get(board)).concat(endLines(board, r, true));
+      if (lines.length) addRun(board, 'types-' + r, lines);
     }
   }
   for (const board of model.boards) {

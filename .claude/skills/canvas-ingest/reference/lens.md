@@ -183,6 +183,7 @@ WRITES = {"type": "object", "properties": {"via": {"type": "array", "items": {"t
 d.frame("Types", rank=2)
 d.note("Table", "Types", "A Postgres table: its name and its columns.", schema=TABLE)              # a type
 d.note("Activity", "Types", "A Temporal activity: its name.", schema=ACTIVITY)
+d.note("Local activity", "Types", "An activity run in the workflow's worker: its timeout.", schema=LOCAL, **{"is": "Activity"})   # a type built on another
 d.note("writes", "Types", "An activity writes a table.", schema=WRITES, relationship=True)        # a relationship type
 d.edge("Activity", "writes", text="writes")                                                     # its from end: the row an Activity gets
 d.edge("writes", "Table", text="written by", endRule={"needed": True})                          # its to end: every Table needs a writer
@@ -191,6 +192,7 @@ d.edge("createOrder", "orders", **{"is": "writes", "fieldValues": {"via": ["inse
 ```
 
 - A type's `text` and its `schema` say the same thing, in words and as JSON Schema. Its title is its name: no `"title"` in the schema.
+- A type with `is` builds on those types (a relationship type on relationship types): its notes have their fields too, with its own, and its schema holds only what it adds or restates. A note of Local activity is an Activity, so `:is-a("Activity")` finds it, an end at Activity gives it its row, and a relationship whose end is an Activity fits it. What a type builds on may be on any board.
 - A relationship type and the types at its ends are on one board (a frame on the root is the usual place). Notes of a type can be on any board; a relationship to a note on another board is drawn into a pill, and the note is made public.
 - Values are held to the schema's `type`, `properties`, `required`, `enum` and `items`. Leave an empty value out (None counts as none). Lists of strings read well in a note's row.
 - `endRule` `{"needed": true}` makes every note at that end need such a relationship, and one without is `:incomplete`, said by the drawing as a warning by design. Use it for what the team wants found (an activity no workflow runs).

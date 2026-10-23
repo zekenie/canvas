@@ -31,10 +31,10 @@ export function pillTargets(model) {
 }
 
 /**
- * A draw script for `canvas measure -`: every note and card (a type with its schema, a note with the types it is and its values), then the
- * ends of the relationship types and every typed arrow between notes (a type's note grows a row for each end it has, and so does a note of it, and
- * `measure` lays the script's notes out against the script's own ends, whatever board each is on), then one edge through a reference to each end a
- * pill may be drawn for. Placements are ignored by measure.
+ * A draw script for `canvas measure -`: every note and card (a type with its schema and the types it builds on, a note with the types it is and
+ * its values), then the ends of the relationship types and every typed arrow between notes (a type's note grows a row for each end it has and
+ * those of what it builds on, and so does a note of it, and `measure` lays the script's notes out against the script's own types and ends,
+ * whatever board each is on), then one edge through a reference to each end a pill may be drawn for. Placements are ignored by measure.
  */
 export function measureScript(model) {
   const items = toMeasure(model);

@@ -1,6 +1,7 @@
 // Types in a digest: a note that holds a JSON Schema is a type, a note that is one is an instance, an arrow that is one of a relationship type is a
-// relationship, and an arrow between a type and a relationship type is one of its ends. This is what the tool says of them: how they are written
-// into a draw script, and what check refuses. Pure, and the same under jsc and node.
+// relationship, and an arrow between a type and a relationship type is one of its ends. A type may be of types too: it builds on them, and its
+// notes have their fields. This is what the tool says of them: how they are written into a draw script, the order a chain of them is read in, the
+// round each is drawn in, and what check refuses. Pure, and the same under jsc and node.
 import { lit, byTitle } from './util.mjs';
 
 /** `is:` as draw takes it: a title, or several as JSON. */
@@ -30,11 +31,134 @@ export function arrowTyping(a) {
  */
 export const isKey = (is) => [...(is || [])].sort().join('\u0000');
 
+/** Whether a node is a type: a note that holds a schema (a relationship type is one too). */
+export const isType = (n) => n.kind === 'sticky-note' && !!n.schema;
+
+/** Whether a node is a note of a type: one that says `is` and is no type itself (a type's `is` is what it builds on). */
+export const isInstance = (n) => n.kind === 'sticky-note' && n.is.length > 0 && !n.schema;
+
 /** Whether an edge between these two nodes is an end of a relationship type: it joins a relationship type and a type, whichever way it points. */
 export function isEndOf(a, b) {
-  const type = (n) => n.kind === 'sticky-note' && !!n.schema && !n.relationship;
-  const rel = (n) => n.kind === 'sticky-note' && !!n.schema && n.relationship;
+  const type = (n) => isType(n) && !n.relationship;
+  const rel = (n) => isType(n) && n.relationship;
   return (rel(a) && type(b)) || (type(a) && rel(b));
+}
+
+// ---- the order a chain of types is read in ---------------------------------------------------------------------------------------------
+
+const unique = (xs) => { const seen = new Set(); return xs.filter((x) => !seen.has(x) && seen.add(x)); };
+
+/** A list of types as a chain reads it: each once, the first, latest first (the app's `TypeOrder.heads`). */
+export const heads = (list) => unique(list).reverse();
+
+/** The first head that is in no other list's tail, taken out of every list, until none is left; null where none is. */
+function merge(lists) {
+  let ls = lists.filter((l) => l.length);
+  const out = [];
+  while (ls.length) {
+    const head = ls.map((l) => l[0]).find((h) => !ls.some((l) => l.indexOf(h, 1) > 0));
+    if (head === undefined) return null;
+    out.push(head);
+    ls = ls.map((l) => (l[0] === head ? l.slice(1) : l)).filter((l) => l.length);
+  }
+  return out;
+}
+
+/** C3 alone: `L(x) = [x] + merge(L(p1), ..., L(pn), [p1...pn])`, and for the heads the same with no head of its own; null where it has no order. */
+function c3(hs, parents, excluding) {
+  const memo = new Map(), active = new Set();
+  const linear = (s) => {
+    if (s === excluding) return null;
+    if (memo.has(s)) return memo.get(s);
+    if (active.has(s)) return null;
+    active.add(s);
+    const rest = merged(unique(parents(s)));
+    active.delete(s);
+    if (!rest) return null;
+    memo.set(s, [s].concat(rest));
+    return memo.get(s);
+  };
+  const merged = (own) => {
+    const lists = [];
+    for (const p of own) { const l = linear(p); if (!l) return null; lists.push(l); }
+    return merge(lists.concat([own]));
+  };
+  return merged(unique(hs));
+}
+
+/**
+ * Where C3 has no order: walk depth first from the heads, each type's parents in order, a type's place in the walk its rank, an edge back to a type
+ * on the walk's path dropped; then list, of the types not listed that no unlisted type builds on, the one of lowest rank, until none is left.
+ */
+function fallback(hs, parents, excluding) {
+  const walked = [], seen = new Set(), path = new Set(), edges = new Map();
+  const walk = (s) => {
+    seen.add(s); walked.push(s); path.add(s);
+    const kept = [];
+    for (const p of unique(parents(s))) {
+      if (p === excluding || path.has(p)) continue;
+      kept.push(p);
+      if (!seen.has(p)) walk(p);
+    }
+    edges.set(s, kept);
+    path.delete(s);
+  };
+  for (const h of unique(hs)) if (h !== excluding && !seen.has(h)) walk(h);
+  const blockers = new Map();
+  for (const ps of edges.values()) for (const p of ps) blockers.set(p, (blockers.get(p) || 0) + 1);
+  const listed = [], done = new Set();
+  for (let next; (next = walked.find((s) => !done.has(s) && !blockers.get(s))) !== undefined;) {
+    listed.push(next); done.add(next);
+    for (const p of edges.get(next)) blockers.set(p, blockers.get(p) - 1);
+  }
+  return listed;
+}
+
+/**
+ * The types `hs` (a list as `heads` reads it) lead to, in the one order the app reads them in (`TypeOrder.linearized`, ported: the two must agree,
+ * since the first type in it to name a field is the one whose definition the field has): a type before every type it builds on, each once, and
+ * where that leaves a choice, the one a list names later. C3 (Python's method resolution order) where it has an order, else a depth-first walk
+ * breaks the ties. `parents(t)` is t's own list as `heads` reads it; `excluding` is never listed.
+ */
+export function linearized(hs, parents, excluding = null) {
+  return c3(hs, parents, excluding) || fallback(hs, parents, excluding);
+}
+
+/** The types of the digest a shape's list (`is`) leads to, in the order their fields are read: its own types, later first, and what they build on. */
+export function chainOf(model, list) {
+  const type = (t) => { const n = model.nodes.get(t); return n && n.schema ? n : null; };
+  return linearized(heads(list), (t) => (type(t) ? heads(type(t).is) : [])).filter(type);
+}
+
+/**
+ * The round each type and relationship type of the digest is drawn in, after every board's shapes (a script for each board a round): no earlier
+ * than every type it builds on, and a round later than one on another board, since a script draws on one board and `is:` names a type drawn before
+ * it or in it; and a type no earlier than a relationship type it is an end of, since the end is drawn with the type (it gives the type a row, and a
+ * note is drawn at the size it keeps). So when a type is drawn, everything that sizes it is there or in its script. Check refuses a type that
+ * builds on itself; this ends a ring all the same.
+ */
+export function typeRounds(model) {
+  const rounds = new Map(), active = new Set();
+  const ends = new Map();   // type -> the relationship types it is an end of
+  for (const e of model.edges) {
+    if (!e.end) continue;
+    const a = model.nodes.get(e.from), type = a.relationship ? e.to : e.from, rel = a.relationship ? e.from : e.to;
+    ends.set(type, (ends.get(type) || []).concat([rel]));
+  }
+  const round = (t) => {
+    if (rounds.has(t)) return rounds.get(t);
+    if (active.has(t)) return 0;
+    active.add(t);
+    const n = model.nodes.get(t);
+    let r = 0;
+    for (const p of n.is) { const s = model.nodes.get(p); if (s && s.schema) r = Math.max(r, round(p) + (s.board === n.board ? 0 : 1)); }
+    for (const rel of ends.get(t) || []) r = Math.max(r, round(rel));
+    active.delete(t);
+    rounds.set(t, r);
+    return r;
+  };
+  for (const n of model.nodes.values()) if (n.schema) round(n.title);
+  return rounds;
 }
 
 // ---- values against a schema ------------------------------------------------------------------------------------------------------------
@@ -72,18 +196,21 @@ function resolveRef(ref, root) {
   return plainObject(cur) ? cur : undefined;
 }
 
-function walk(value, schema, path, root, stack, out) {
+// `own` (for the value a type's fields are held in, and nothing under it): whether a member is this type's to check, since a chain checks a field
+// by the first of its types that names it alone; null, every member.
+function walk(value, schema, path, root, stack, out, own = null) {
   if (value === null || value === undefined) return;
   if (!plainObject(schema)) return;
   const skip = (keyword) => {
     const at = path.replace(/\[\d+\]/g, '[]'), k = at + '\u0000' + keyword;
     if (!out.seen.has(k)) { out.seen.add(k); out.unchecked.push({ path: at, keyword }); }
   };
+  const mine = (k) => !own || own(k);
   if (typeof schema.$ref === 'string') {
     const target = resolveRef(schema.$ref, root);
     // a ref that names nothing here, or that comes back to itself over the same value (a cycle), is passed over and said
     if (!target || stack.length >= MAX_REF_DEPTH || stack.some((s) => s.ref === schema.$ref && s.value === value)) skip('$ref');
-    else walk(value, target, path, root, stack.concat([{ ref: schema.$ref, value }]), out);
+    else walk(value, target, path, root, stack.concat([{ ref: schema.$ref, value }]), out, own);
   }
   if (schema.type !== undefined) {
     const types = Array.isArray(schema.type) ? schema.type : [schema.type];
@@ -96,9 +223,9 @@ function walk(value, schema, path, root, stack, out) {
     out.errors.push(`${path} is ${show(value)}, and the schema allows only ${schema.enum.map(show).join(', ')}`);
   }
   if (kind === 'object') {
-    if (Array.isArray(schema.required)) for (const r of schema.required) if (!hasOwn(value, r) || value[r] === undefined || value[r] === null) out.errors.push(`${path}.${r} is required, and has no value`);
+    if (Array.isArray(schema.required)) for (const r of schema.required) if (mine(r) && (!hasOwn(value, r) || value[r] === undefined || value[r] === null)) out.errors.push(`${path}.${r} is required, and has no value`);
     const props = plainObject(schema.properties) ? schema.properties : {};
-    for (const k of Object.keys(props)) if (hasOwn(value, k)) walk(value[k], props[k], `${path}.${k}`, root, stack, out);
+    for (const k of Object.keys(props)) if (mine(k) && hasOwn(value, k)) walk(value[k], props[k], `${path}.${k}`, root, stack, out);
   } else if (kind === 'array' && plainObject(schema.items)) {
     value.forEach((item, i) => walk(item, schema.items, `${path}[${i}]`, root, stack, out));
   }
@@ -125,6 +252,22 @@ export function checkValue(value, schema, path) {
 /** The messages for a value that doesn't fit a schema (`checkValue`'s errors). */
 export const validateValue = (value, schema, path) => checkValue(value, schema, path).errors;
 
+/**
+ * A value against a chain of types (`[{title, schema}]`, in `chainOf`'s order), as the app holds a note's values to its types and what they build
+ * on: each field by the first type in the chain that names it in its `properties`, alone and with its `required` (so a field a type restates is
+ * checked by its definition, never the one it replaces), and nothing else at the top: a `required` name no type has a property for names no field,
+ * as in the app. What is under a field is checked as `checkValue` checks it. Returns `[{type, errors, unchecked}]`, a type each.
+ */
+export function checkChain(value, chain, path) {
+  const winner = new Map();
+  for (const t of chain) if (plainObject(t.schema.properties)) for (const k of Object.keys(t.schema.properties)) if (!winner.has(k)) winner.set(k, t.title);
+  return chain.map((t) => {
+    const out = { errors: [], unchecked: [], seen: new Set() };
+    walk(value, t.schema, path, t.schema, [], out, (k) => winner.get(k) === t.title);
+    return { type: t.title, errors: [...new Set(out.errors)], unchecked: out.unchecked };
+  });
+}
+
 /** The `$ref`s of a schema that name a shape by its id (`urn:uuid:...`), which a digest cannot know. */
 export function idRefs(schema) {
   const found = [];
@@ -142,26 +285,53 @@ export function idRefs(schema) {
 
 // ---- what check refuses -------------------------------------------------------------------------------------------------------------------
 
+/** A ring of types through `start` (each building on the next, the last on `start`), the shortest; null for none. `next(t)`: what t builds on. */
+function ringFrom(start, next) {
+  const from = new Map(), level = [start];
+  for (let i = 0; i < level.length; i++) {
+    for (const p of next(level[i])) {
+      if (p === start) { const ring = []; for (let t = level[i]; t !== start; t = from.get(t)) ring.unshift(t); return [start].concat(ring); }
+      if (!from.has(p)) { from.set(p, level[i]); level.push(p); }
+    }
+  }
+  return null;
+}
+
 /**
  * Everything wrong with how a model's shapes and edges are typed, as {errors, warnings} of sentences that name the shape. An `is` that names no type
- * in the digest (or a relationship type on a note, or a plain type on an arrow); `is` on a frame, a subboard or a type; `relationship` without a
- * `schema`; a `schema` that is no object, or on a shape that is no note; a `$ref` to a shape's id; `endRule` on an arrow that is no end of a
- * relationship type; an end of one that sits on another board than the relationship type; values with no type, or that don't fit their type.
+ * in the digest (or a relationship type on a note, or a plain type on an arrow); `is` on a frame or a subboard; a type that builds on a type of the
+ * other sort (a relationship type on a type, or a type on a relationship type), or on itself, however far; `relationship` without a `schema`; a
+ * `schema` that is no object, or on a shape that is no note; a `$ref` to a shape's id; `endRule` on an arrow that is no end of a relationship type;
+ * an end of one that sits on another board than the relationship type; values on a type, values with no type, or that don't fit their types
+ * (`checkChain`). Warns of an edge between two types, which says nothing.
  */
 export function typeProblems(model) {
   const errors = [], warnings = [];
   const nodes = [...model.nodes.values()].sort((a, b) => byTitle(a.title, b.title));
   const typeNamed = (t) => { const n = model.nodes.get(t); return n && n.schema ? n : null; };
+  const builtOn = (t) => { const n = typeNamed(t); return n ? n.is.filter(typeNamed) : []; };
+  const reaches = (t, target) => {
+    const seen = new Set([t]), level = [t];
+    for (let i = 0; i < level.length; i++) for (const p of builtOn(level[i])) { if (p === target) return true; if (!seen.has(p)) { seen.add(p); level.push(p); } }
+    return false;
+  };
   // the keywords of a type's schema that a value passed through without being checked, once for the type, the member and the keyword
   const passed = new Map();
-  const values = (owner, value, type, what) => {
-    const r = checkValue(value, type.schema, 'fieldValues');
-    for (const u of r.unchecked) {
-      const k = [type.title, u.path, u.keyword].join('\u0000');
-      if (!passed.has(k)) passed.set(k, { type: type.title, what, path: u.path, keyword: u.keyword, owners: [] });
-      passed.get(k).owners.push(owner);
+  // a value against its types and what they build on, of one sort (types for a note, relationship types for an arrow); an error names the type whose
+  // field it breaks, and, for one the list doesn't name, the type of the list that builds on it
+  const values = (owner, value, list, relationship, what) => {
+    const chain = chainOf(model, list).map(typeNamed).filter((t) => !!t.relationship === relationship && plainObject(t.schema));
+    const out = [];
+    for (const r of checkChain(value, chain, 'fieldValues')) {
+      for (const u of r.unchecked) {
+        const k = [r.type, u.path, u.keyword].join('\u0000');
+        if (!passed.has(k)) passed.set(k, { type: r.type, what, path: u.path, keyword: u.keyword, owners: [] });
+        passed.get(k).owners.push(owner);
+      }
+      const via = list.includes(r.type) ? '' : `, which "${list.find((t) => reaches(t, r.type))}" builds on`;
+      for (const m of r.errors) out.push(`${m} (the ${what} "${r.type}"${via})`);
     }
-    return r.errors;
+    return out;
   };
   for (const n of nodes) {
     const q = `"${n.title}"`;
@@ -183,16 +353,26 @@ export function typeProblems(model) {
       else if (n.relationship && !n.schemaGiven) errors.push(`${q}: relationship: true needs a schema (a relationship type is a type that says what an arrow between two notes holds)`);
     }
     if (n.isBad) errors.push(`${q}: is is a type's title, or a list of them`);
-    if (n.is.length && n.schemaGiven) errors.push(`${q}: a type can't say is (a type that builds on another isn't drawn by a digest)`);
+    // a type's is names the types it builds on, of its own sort: a type built on a relationship type would make its notes of one, which only an
+    // arrow is, and a relationship type built on a type would make its arrows of a type
+    const asType = n.schemaGiven, asRelationship = asType && n.relationship;
     for (const t of n.is) {
       const type = typeNamed(t);
       if (!type) errors.push(`${q}: is "${t}", which names no type in the digest`);
-      else if (type.relationship) errors.push(`${q}: is "${t}", a relationship type: only an arrow is one`);
+      else if (asRelationship && !type.relationship) errors.push(`${q}: builds on "${t}", which isn't a relationship type: a relationship type builds only on relationship types`);
+      else if (!asRelationship && type.relationship) errors.push(asType ? `${q}: builds on "${t}", a relationship type: a type builds only on types that aren't` : `${q}: is "${t}", a relationship type: only an arrow is one`);
+    }
+    // a ring has no order to draw it in, and the app makes none (draw refuses one through the file's shapes, not among one script's): said once, by
+    // its first title
+    const ring = asType ? ringFrom(n.title, builtOn) : null;
+    if (ring && ring.every((t) => byTitle(n.title, t) <= 0)) {
+      errors.push(ring.length === 1 ? `${q}: is "${n.title}", itself: a type can't build on itself` : `${q}: builds on ${ring.slice(1).concat([n.title]).map((t) => `"${t}"`).join(', which builds on ')}: a type can't build on itself, however far`);
     }
     if (n.fieldValuesGiven) {
-      if (!plainObject(n.fieldValues)) errors.push(`${q}: fieldValues is a JSON object, not ${Array.isArray(n.fieldValues) ? 'a list' : JSON.stringify(n.fieldValues)}`);
+      if (asType) errors.push(`${q}: fieldValues on a type: a type's note shows its fields and never values, which are for its notes`);
+      else if (!plainObject(n.fieldValues)) errors.push(`${q}: fieldValues is a JSON object, not ${Array.isArray(n.fieldValues) ? 'a list' : JSON.stringify(n.fieldValues)}`);
       else if (!n.is.length) errors.push(`${q}: fieldValues needs an is (the type whose fields they are)`);
-      else for (const t of n.is) { const type = typeNamed(t); if (type && !type.relationship && plainObject(type.schema)) for (const m of values(q, n.fieldValues, type, 'type')) errors.push(`${q}: ${m} (the type "${t}")`); }
+      else for (const m of values(q, n.fieldValues, n.is, false, 'type')) errors.push(`${q}: ${m}`);
     }
   }
   for (const e of model.edges) {
@@ -202,6 +382,8 @@ export function typeProblems(model) {
       const rel = a.relationship ? a : b, other = rel === a ? b : a;
       if (a.board !== b.board) errors.push(`${q}: an end of the relationship type "${rel.title}", but "${other.title}" is on ${other.board === 'root' ? 'the first board' : `the board of "${other.board}"`} and "${rel.title}" on ${rel.board === 'root' ? 'the first board' : `the board of "${rel.board}"`}; a relationship type, its ends and the types they join are drawn in one script on one board`);
       if (e.via) errors.push(`${q}: an end of the relationship type "${rel.title}" is a plain arrow, never a reference`);
+    } else if (a.kind === 'sticky-note' && b.kind === 'sticky-note' && a.schema && b.schema) {
+      warnings.push(`${q}: both ends are types, so the arrow says nothing; a type that builds on another says is ("is": "${e.to}" on "${e.from}")`);
     }
     for (const arrow of e.arrows) {
       if (arrow.isBad) errors.push(`${q}: is is a relationship type's title, or a list of them`);
@@ -214,7 +396,7 @@ export function typeProblems(model) {
       if (arrow.fieldValuesGiven) {
         if (!plainObject(arrow.fieldValues)) errors.push(`${q}: fieldValues is a JSON object, not ${Array.isArray(arrow.fieldValues) ? 'a list' : JSON.stringify(arrow.fieldValues)}`);
         else if (!arrow.is.length) errors.push(`${q}: fieldValues needs an is (the relationship type whose fields they are)`);
-        else for (const t of arrow.is) { const type = typeNamed(t); if (type && type.relationship && plainObject(type.schema)) for (const m of values(q, arrow.fieldValues, type, 'relationship type')) errors.push(`${q}: ${m} (the relationship type "${t}")`); }
+        else for (const m of values(q, arrow.fieldValues, arrow.is, true, 'relationship type')) errors.push(`${q}: ${m}`);
       }
       // two edges of one pair and one type that give a member two values: which wins would be the digest's order, so neither does
       const tag = arrow.is.length ? ` (is ${arrow.is.join(', ')})` : '';

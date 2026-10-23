@@ -1,0 +1,37 @@
+{
+  "title": "Garage",
+  "nodes": [
+    {"title": "Model", "kind": "frame"},
+    {"title": "Vehicle", "in": "Model", "text": "A vehicle: how many wheels it has, and who made it.", "schema": {"type": "object", "properties": {"wheels": {"type": "integer"}, "maker": {"type": "string"}}, "required": ["wheels"]}},
+    {"title": "Person", "in": "Model", "text": "A person: their name.", "schema": {"type": "object", "properties": {"name": {"type": "string"}}}},
+    {"title": "owns", "in": "Model", "text": "A person owns a vehicle, since a year.", "relationship": true, "schema": {"type": "object", "properties": {"since": {"type": "integer"}}}},
+    {"title": "uses", "in": "Model", "text": "One thing uses another, and how.", "relationship": true, "schema": {"type": "object", "properties": {"how": {"type": "string"}}}},
+    {"title": "Electric", "in": "Model", "text": "An electric vehicle: its range in km.", "is": ["Vehicle", "Rechargeable"], "schema": {"type": "object", "properties": {"range": {"type": "integer"}}}},
+    {"title": "Hybrid", "in": "Model", "text": "A hybrid: an electric vehicle that burns a fuel too.", "is": "Electric", "schema": {"type": "object", "properties": {"fuel": {"enum": ["petrol", "diesel"]}}}},
+    {"title": "Ann", "is": "Person", "fieldValues": {"name": "Ann"}},
+    {"title": "Leaf", "is": "Hybrid", "fieldValues": {"wheels": 4, "range": 300, "fuel": "petrol", "capacity": 40}},
+    {"title": "Fleet", "kind": "subboard", "text": "The trucks, and what tows what."},
+    {"title": "Truck", "in": "Fleet", "text": "A truck: its axle layout, as 6x4, and how many axles.", "is": "Vehicle", "schema": {"type": "object", "properties": {"wheels": {"type": "string"}, "axles": {"type": "integer"}}}},
+    {"title": "tows", "in": "Fleet", "text": "A truck tows another, with a load.", "relationship": true, "is": "uses", "schema": {"type": "object", "properties": {"load": {"type": "string"}}}},
+    {"title": "Rig", "in": "Fleet", "is": "Truck", "fieldValues": {"wheels": "6x4", "axles": 3, "maker": "Volvo"}},
+    {"title": "Trailer truck", "in": "Fleet", "is": "Truck", "fieldValues": {"axles": 2}},
+    {"title": "Parts", "kind": "subboard", "text": "What powers a vehicle."},
+    {"title": "Rechargeable", "in": "Parts", "text": "Something with a battery: its capacity in kWh.", "schema": {"type": "object", "properties": {"capacity": {"type": "number"}}}},
+    {"title": "Cell", "in": "Parts", "text": "A battery cell: its chemistry.", "schema": {"type": "object", "properties": {"chemistry": {"type": "string"}}}},
+    {"title": "powers", "in": "Parts", "text": "A cell powers something rechargeable.", "relationship": true, "is": "uses", "schema": {"type": "object", "properties": {}}},
+    {"title": "Cell A", "in": "Parts", "is": "Cell", "fieldValues": {"chemistry": "LFP"}},
+    {"title": "Pack 1", "in": "Parts", "is": "Rechargeable", "fieldValues": {"capacity": 75}}
+  ],
+  "edges": [
+    {"from": "Person", "to": "owns", "text": "vehicles"},
+    {"from": "owns", "to": "Vehicle", "text": "owner", "endRule": {"needed": true}},
+    {"from": "Truck", "to": "tows", "text": "towing"},
+    {"from": "tows", "to": "Truck", "text": "towed by"},
+    {"from": "Cell", "to": "powers", "text": "powers"},
+    {"from": "powers", "to": "Rechargeable", "text": "cells"},
+    {"from": "Ann", "to": "Leaf", "is": "owns", "fieldValues": {"since": 2021}},
+    {"from": "Ann", "to": "Rig", "is": "owns", "fieldValues": {"since": 2019}},
+    {"from": "Rig", "to": "Trailer truck", "is": "tows", "fieldValues": {"load": "timber", "how": "hitched"}},
+    {"from": "Cell A", "to": "Pack 1", "is": "powers", "fieldValues": {"how": "wired"}}
+  ]
+}
