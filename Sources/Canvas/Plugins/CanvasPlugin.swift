@@ -106,6 +106,14 @@ public struct PluginRegistrar {
         contribute(begin, to: CorePoints.TranslationAdjusters.self)
     }
 
+    /// What box a drag that resizes a shape (Selection's resize handles) gives it: `begin` gets the
+    /// drag as it begins, and returns what each of its events asks for the box, and what draws while
+    /// it runs (`ResizeAdjuster`), or nil to leave the box following the pointer. At most one plugin
+    /// may claim it (Snapping, in the shipped app); otherwise boxes always follow the pointer.
+    public mutating func resizeAdjuster(_ begin: @escaping @MainActor (CanvasEditor, ResizeStart) -> (any ResizeAdjuster)?) {
+        contribute(begin, to: CorePoints.ResizeAdjusters.self)
+    }
+
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
     /// shapes, and delete more (their handlers run too), read-only ones included: what it does keeps
     /// the board whole, which a lock doesn't stand in the way of. It may change shapes on other boards

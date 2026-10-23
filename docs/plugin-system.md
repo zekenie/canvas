@@ -339,6 +339,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make or change a shape without the pointer: what a kind's tool places, a shape from its JSON, or some of a shape's properties set from JSON | `registry.placement(for:)`, `placement.shape(at:)`; `registry.shape(_:properties:)`, `registry.shape(_:setting:)` | [The command line](#making-and-changing-shapes-without-the-pointer) |
 | Draw a shape away from where it is, for an animation (a shake) | `editor.setDrawingOffset(_:for:)`; adornments follow by themselves, and an overlay with `context.worldDrawingOffset(of:)` | [Refusing a change: the shake](#refusing-a-change-the-shake) |
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
+| Change what box a drag of a resize handle gives a shape (snap its sides), and draw while it does | `registrar.resizeAdjuster { editor, start in … }`, a `ResizeAdjuster`: Snapping claims it | [The resize adjuster](#the-cores-part-the-resize-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
 | Say which words of a text say which part of a lower-level text (a schema, code, a query), to highlight them | A `ProseTarget` (a name and a guide); `editor.proseMaps?.map(T.self, of:prose:target:askingIf:)` where the words are drawn | [Prose maps](#prose-maps) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
@@ -2482,8 +2483,14 @@ overrides; a minimum that isn't above zero and finite either way refuses the plu
   it's pressed or let go, without the pointer moving.
 - **Never smaller than the kind's minimum** along a side the handle moves (keeping proportions,
   either way), and never inside out: a side dragged past the one opposite stops at the minimum.
-- **Nothing snaps** while it resizes: the translation adjuster isn't asked (Snapping's resize
-  handles aren't built).
+- **The sides it moves snap** to the shapes around it (Snapping's, [below](#snapping)): the core's
+  [resize adjuster](#the-cores-part-the-resize-adjuster), which the session asks for as the drag
+  begins (`editor.resizeAdjuster(for:)`, given the shape, its box as it began, its minimum and its
+  room) and on each event with the box the pointer gives it and how the drag scales it
+  (`ResizeHandle`'s `scaling(of:keepingProportions:fromCenter:)`: the corner, side or middle that
+  stays put, which ways change, whether in proportion), gives the box; the session keeps it in its
+  room whatever it says, and draws what it shows. The translation adjuster isn't asked: that's a
+  move's. ⌥ and an arrow resize by a unit, unsnapped, as a nudge moves one.
 - **Escape** puts the box back as it was as the drag began (its box alone, so what else changed
   meanwhile stays), and the step comes to nothing.
 - **The cursor** over a resize handle, and while it's pressed and dragged, is the frame-resize
@@ -12640,15 +12647,18 @@ if let map = context.proseMaps?.map(Snippet.self, of: shape.id, prose: words, ta
 
 What a drag moves snaps to the shapes around it, as it does in Keynote and Freeform: its edges and
 its middle line up with theirs, and it keeps the spaces between them even, centered between two or
-as far from one as the space beside it, while guides show what lines up. It's a thing you do
+as far from one as the space beside it, while guides show what lines up; and a box resized by a
+handle snaps the sides it moves to their edges and middles. It's a thing you do
 ([`Sources/Snapping`](../Sources/Snapping)) with no extension point of its own: every kind with a
-frame takes part, and the core lends one hook, the [translation
-adjuster](#the-cores-part-the-translation-adjuster), which Snapping claims
+frame takes part, and the core lends two hooks, the [translation
+adjuster](#the-cores-part-the-translation-adjuster) and the [resize
+adjuster](#the-cores-part-the-resize-adjuster), which Snapping claims
 ([Snapping.swift](../Sources/Snapping/Snapping.swift)):
 
 ```swift
-registrar.service { _ in SnapState() }                                          // the drag under way, told of others' writes
+registrar.service { _ in SnapState() }                                          // the drag or resize under way, told of others' writes
 registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }   // nil for a drag that moves no frame
+registrar.resizeAdjuster { editor, start in SnapResize(start, in: editor) }      // a drag of a resize handle
 ```
 
 - **What snaps** is everything a `TranslatingSession` moves: the selection dragged with the select
@@ -12698,7 +12708,23 @@ registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }  
   event after is a binary search for each edge and a pass over the neighbors' spaces, 0.12 ms with
   10,000 in view, and a drag at 100% costs what it did without Snapping. `./build.sh bench` holds
   the first event to a frame and the rest to a drag event's input budget.
-- **Undo** is as without it: the drag is one step, Move, and Escape puts everything back.
+- **Resizing.** A box resized by a handle (Selection's [resize handles](#resizing): frames, as
+  shipped) snaps the sides the drag moves, along the ways it changes them, to the nearest edge or
+  middle of the frames in view but its own within the same 8 view points (tldraw's resize
+  snapping: no spaces), from the box the pointer gives it (`SnapResize`, `SnapTargets`'
+  `snap(_:resizedFrom:about:along:inProportion:minimum:room:within:)`). A side moves when it isn't
+  where the drag holds the box still: by a side or a corner the one opposite stays and the dragged
+  one moves; with ⌥ both move about the middle, and the side nearer a line snaps, the other
+  mirroring it. Each way snaps on its own, but kept in proportion (⇧) the box has one scale, so of
+  every side that moves the one nearest a line goes onto it and the rest follow at that scale. A
+  line that would leave it under its kind's minimum, or reach past its room (a shape in a
+  container stops 16 inside its edge), isn't snapped to, and one further off within the threshold
+  may be. Guides show every line its edges are on along the ways it changes (tldraw's: the side
+  that stays too, when it lines up); ⌘ or ⌃ let it follow the pointer, as for a move. A frame's own
+  contents are in view, so its edge snaps to theirs: on one exactly they're still inside, and
+  settling leaves them be. ⌥ and an arrow resize by a unit, unsnapped, as nudges are.
+- **Undo** is as without it: the drag is one step, Move (Resize, for a resize), and Escape puts
+  everything back.
 
 ### The core's part: the translation adjuster
 
@@ -12715,6 +12741,21 @@ it says. While ⇧ keeps the drag to one axis, `along` says which (`TranslationA
 zero across it, and what the adjuster says across it is ignored: what moves stays there. When held
 keys change mid-drag, the session asks again with the same pointer, and moves again. `draw(in:)` draws with the session, above the world overlays, so what it shows goes when the
 drag does. At most one plugin may claim it; the report shows it as `translation adjuster`.
+
+### The core's part: the resize adjuster
+
+`registrar.resizeAdjuster { editor, start in … }` lets one plugin decide what box a drag that
+resizes a shape gives it. The core runs no resize: the plugin that does (Selection, for its
+[resize handles](#resizing)) asks for one as the drag begins, `editor.resizeAdjuster(for:)`, with a
+`ResizeStart` (the shape, its box as it began, its minimum, and its room: inside its container's
+edge, or nil), and keeps it for the drag, so Snapping and Selection never know each other. On each
+drag event, and again with the same pointer when held keys change, it asks
+`adjust(_:scaling:for:in:)` for the box, given the one the pointer gives it (within the minimum and
+the room) and how the drag scales the box (`ResizeScaling`: the anchor, the point of the box as it
+began that stays put; which ways change; whether they change together, keeping its proportions),
+and keeps what it says in the room. What it gives back keeps to the scaling, the minimum and the
+room; `resized` itself leaves the box under the pointer. `draw(in:)` draws with the session. At most
+one plugin may claim it; the report shows it as `resize adjuster`.
 
 ## Capabilities
 
@@ -14224,7 +14265,7 @@ colors               property color · file property colors · service ColorBook
 color-validation     service ColorWarnings · ValidationRules → every shape holding color
 color-details        ShapeDetails in Style last → every shape holding color
 type-colors          inherited color → every shape holding is
-snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
+snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
 arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
@@ -14732,9 +14773,13 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   names, else of the shape pressed, in a 1000 × 800 view at 100%, so view points are world units.
   A test that snaps gives the editor a view (`viewportDidResize`): with none, nothing is in view to
   snap to. `editor.snapGuides` is what shows. ⌘ and ⌃ are `h.hold`, and a key let go counts as held
-  until `h.wait(150)`. CanvasTests' TranslationAdjusterTests hold the core's hook with a fixture
-  adjuster (x on a grid of 10), and CompositionTests' SnappingShippedTests the shipped pieces through
-  the select tool: notes, an arrow, a subboard placed with its tool.
+  until `h.wait(150)`. Their ResizeTargetsTests hold the resize snapping pure (a rect resized from
+  where it began about its anchor: by a side, a corner, from the center, in proportion, its minimum
+  and its room). CanvasTests' TranslationAdjusterTests hold the core's hook with a fixture
+  adjuster (x on a grid of 10), and the resize adjuster's claim; SelectionTests' ResizeTests the
+  resize asking it with a fixture of their own (`resizerPlugin`, a rule over the box); and
+  CompositionTests' SnappingShippedTests the shipped pieces through the select tool: notes, an
+  arrow, a subboard placed with its tool, and frames resized by a side and by a corner.
 - **The command line.** A test listens on a socket of its own (`temporarySocketPath()`, TestKit),
   never the app's. The app answers on the main actor, so a test that's also the client makes its
   request off the main thread while the main run loop turns (`offMain`), or runs `canvas` as it's

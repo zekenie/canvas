@@ -168,6 +168,20 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
         if fromCenter || side == 0 { return (low + high) / 2 - resized / 2 }
         return side < 0 ? high - resized : low
     }
+
+    /// How a drag of this handle resizes `box`, as `resizing` does (`ResizeScaling`, what a resize
+    /// adjuster keeps to): about the corner or side opposite, or about the middle from the center
+    /// (`fromCenter`) and across a side kept in proportion; along the ways the handle moves, and both
+    /// ways while it keeps proportions (`keepingProportions`, of a box with area).
+    func scaling(of box: CGRect, keepingProportions: Bool, fromCenter: Bool) -> ResizeScaling {
+        let together = keepingProportions && box.width > 0 && box.height > 0
+        func anchor(_ low: CGFloat, _ high: CGFloat, side: CGFloat) -> CGFloat {
+            if fromCenter || side == 0 { return (low + high) / 2 }
+            return side < 0 ? high : low
+        }
+        return ResizeScaling(anchor: CGPoint(x: anchor(box.minX, box.maxX, side: x), y: anchor(box.minY, box.maxY, side: y)),
+                             changesWidth: x != 0 || together, changesHeight: y != 0 || together, keepsProportions: together)
+    }
 }
 
 /// Dragging a resize handle (`ResizeHandle`), past the drag threshold: the box follows the pointer
@@ -175,9 +189,11 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
 /// event, the press one undo step, "Resize". ⇧ keeps its proportions and ⌥ its center, taking effect
 /// as they're pressed or let go, without the pointer moving; never smaller than its kind's minimum.
 /// A shape in a container (a frame) stops `Settlement.gap` inside its edge, so it never grows across
-/// it. Nothing snaps. On the release, what the box now reaches or lets go of settles in or out of
-/// it, if it's a container (`Transaction.settle(container:)`), gliding there, in the same step.
-/// Escape puts the box back as it was, which leaves no step.
+/// it. Where the pointer puts the box is the resize adjuster's to change, if a plugin claims it
+/// (`registrar.resizeAdjuster`: Snapping's snaps the sides that move to other shapes), and it draws
+/// what it shows with the session. On the release, what the box now reaches or lets go of settles in
+/// or out of it, if it's a container (`Transaction.settle(container:)`), gliding there, in the same
+/// step. Escape puts the box back as it was, which leaves no step.
 @MainActor
 final class ResizingSession {
     let shapeID: ShapeID
@@ -190,19 +206,24 @@ final class ResizingSession {
     /// Where the box may reach, for a shape in a container: inside its container's edge, or as far
     /// as the box already did. Nil on its board directly.
     private let room: CGRect?
+    /// What changes the box the pointer gives (`registrar.resizeAdjuster`), asked as the drag began.
+    private let adjuster: (any ResizeAdjuster)?
     /// The last drag event's pointer, to resize again from when held keys change.
     private var last: Pointer?
 
-    /// Nil for a shape that isn't there, has no box, or whose kind isn't resizable.
+    /// Nil for a shape that isn't there, has no box, or whose kind isn't resizable. The resize
+    /// adjuster, if a plugin claims it, is asked now.
     init?(shapeID: ShapeID, handle: ResizeHandle, from origin: CGPoint, in editor: CanvasEditor) {
         guard let record = editor.document[shapeID], let box = record.box,
               let minimum = editor.selectionState?.minimumSizes[record.kind] else { return nil }
+        let room = ResizingSession.room(for: record, box: box, in: editor)
         self.shapeID = shapeID
         self.handle = handle
         self.origin = origin
         start = box
         self.minimum = minimum
-        room = Self.room(for: record, box: box, in: editor)
+        self.room = room
+        adjuster = editor.resizeAdjuster(for: ResizeStart(id: shapeID, box: box, minimum: minimum, room: room))
     }
 
     /// Where a box may reach as it's resized, for a shape in a container: inside its container's edge, or as far as
@@ -213,11 +234,19 @@ final class ResizingSession {
             .map { $0.insetBy(dx: gap, dy: gap).union(box) }
     }
 
+    /// The box where the pointer puts it, then where the adjuster puts that, if there is one (kept in
+    /// the room whatever it says).
     private func resize(to pointer: Pointer, in editor: CanvasEditor) {
         last = pointer
-        var box = handle.resizing(start, by: pointer.world - origin, keepingProportions: pointer.modifiers.contains(.shift),
-                                  fromCenter: pointer.modifiers.contains(.option), minimum: minimum)
+        let keepingProportions = pointer.modifiers.contains(.shift), fromCenter = pointer.modifiers.contains(.option)
+        var box = handle.resizing(start, by: pointer.world - origin, keepingProportions: keepingProportions,
+                                  fromCenter: fromCenter, minimum: minimum)
         if let room { box = box.intersection(room) }
+        if let adjuster {
+            let scaling = handle.scaling(of: start, keepingProportions: keepingProportions, fromCenter: fromCenter)
+            box = adjuster.adjust(box, scaling: scaling, for: pointer, in: editor)
+            if let room { box = box.intersection(room) }
+        }
         editor.transact("Resize") { $0.update(shapeID) { $0.box = box } }
     }
 }
@@ -227,7 +256,8 @@ extension ResizingSession: Session {
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) { resize(to: pointer, in: editor) }
 
-    /// ⇧ or ⌥ came or went: the box is resized again where the pointer is, without its moving.
+    /// Held keys changed (⇧ or ⌥, or a key the adjuster reads: Snapping's ⌘ and ⌃): the box is resized
+    /// again where the pointer is, without its moving.
     func modifiersChanged(_ modifiers: Modifiers, in editor: CanvasEditor) {
         guard var pointer = last else { return }
         pointer.world = editor.camera.toWorld(pointer.view)
@@ -235,9 +265,9 @@ extension ResizingSession: Session {
         resize(to: pointer, in: editor)
     }
 
-    /// The release: the box takes the size the pointer gives it there, and then, for a container,
-    /// what it now reaches or lets go of settles in or out of it and glides there, the last of the
-    /// press's step.
+    /// The release: the box takes the size the pointer gives it there (as the adjuster puts it), and
+    /// then, for a container, what it now reaches or lets go of settles in or out of it and glides
+    /// there, the last of the press's step.
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         resize(to: pointer, in: editor)
         editor.glide(editor.transact("Resize") { $0.settle(container: shapeID) })
@@ -249,6 +279,9 @@ extension ResizingSession: Session {
         editor.transact("Resize") { $0.update(shapeID) { $0.box = start } }
         return true
     }
+
+    /// What the resize adjuster shows (Snapping's guides).
+    func draw(in context: OverlayContext) { adjuster?.draw(in: context) }
 }
 
 // MARK: By the keys

@@ -513,6 +513,9 @@ public struct Registry {
     var translationAdjuster: (@MainActor (CanvasEditor, TranslationStart) -> (any TranslationAdjuster)?)? {
         contributions(to: CorePoints.TranslationAdjusters.self).first?.value
     }
+    var resizeAdjuster: (@MainActor (CanvasEditor, ResizeStart) -> (any ResizeAdjuster)?)? {
+        contributions(to: CorePoints.ResizeAdjusters.self).first?.value
+    }
 
     /// Who contributes what, where: the runtime counterpart of Package.swift. A test pins it.
     public var report: String {
@@ -599,6 +602,7 @@ struct RawContribution {
             case is CorePoints.KeyStrokes.Type: "key strokes"
             case is CorePoints.KeyReleases.Type: "key releases"
             case is CorePoints.TranslationAdjusters.Type: "translation adjuster"
+            case is CorePoints.ResizeAdjusters.Type: "resize adjuster"
             case is CorePoints.ShapeAccessibility.Type: "accessibility → \(target)"
             case is CorePoints.AccessibleOrder.Type: "accessible order"
             case is CorePoints.AccessibleParts.Type: "accessible parts"

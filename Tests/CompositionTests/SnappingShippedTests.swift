@@ -4,6 +4,7 @@ import Arrows
 import CanvasTesting
 import CanvasUI
 import CoreGraphics
+import Frames
 import LanguageModels
 import Mentions
 import Selection
@@ -13,11 +14,16 @@ import StickyNotes
 import TestKit
 
 // Snapping as shipped: dragged with the select tool, notes snap to the shapes in view, arrows
-// neither snap nor are snapped to, and a shape placed by a tool snaps as it follows the pointer. In a
-// 1200 × 800 view at 100%, where view points are world units.
+// neither snap nor are snapped to, a shape placed by a tool snaps as it follows the pointer, and a
+// frame resized by a handle snaps the sides it moves. In a 1200 × 800 view at 100%, where view points
+// are world units.
 
 @MainActor private func note(_ frame: CGRect) -> AnyShapeRecord {
     AnyShapeRecord(ShapeRecord(StickyNote(frame: frame, text: MentionText(plain: "Hi"))))
+}
+
+@MainActor private func frame(_ rect: CGRect) -> AnyShapeRecord {
+    AnyShapeRecord(ShapeRecord(Frame(frame: rect)))
 }
 
 /// The shipped plugins on a board of `shapes`, in a view.
@@ -101,6 +107,58 @@ import TestKit
         expectEqual(moved.end, .free(CGPoint(x: 603, y: 250)))
         expectEqual(h.editor.snapGuides, [])
         h.release()
+    },
+    test("a frame resized by its side's handle snaps that side onto another frame's edge, with a guide, and ⌘ lets it go where the pointer is") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let a = frame(CGRect(x: 600, y: 100, width: 400, height: 300)), b = frame(CGRect(x: 100, y: 100, width: 400, height: 300))
+        let h = shipped([a, b], pasteboard)
+        h.editor.selection = b.id
+        let side = CGPoint(x: 500, y: 250)
+        h.move(to: side)
+        h.press(at: side)
+        h.drag(to: CGPoint(x: 550, y: 255))
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 450, height: 300))
+        expectEqual(h.editor.snapGuides, [])
+        // Its right side 3 short of the other's left edge.
+        h.drag(to: CGPoint(x: 597, y: 263))
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 500, height: 300), "its left side and its height stay")
+        expectEqual(h.editor.snapGuides, [.alignment(.x, at: 600, points: [CGPoint(x: 600, y: 100), CGPoint(x: 600, y: 400)])])
+        h.hold(.command)
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 497, height: 300))
+        expectEqual(h.editor.snapGuides, [])
+        h.hold([])
+        h.wait(150)
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 500, height: 300))
+        h.release()
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 500, height: 300))
+        expectEqual(h.editor.snapGuides, [], "the guides go with the resize")
+        expectEqual(h.editor.document[a.id]?.box, CGRect(x: 600, y: 100, width: 400, height: 300))
+        expectEqual(h.editor.undoHistory.undoName, "Resize")
+        h.editor.undo()
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 400, height: 300), "one step")
+    },
+    test("a frame resized by its corner snaps each way on its own, onto a note's edges, with a guide for each") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let n = note(CGRect(x: 700, y: 500, width: 200, height: 200)), b = frame(CGRect(x: 100, y: 100, width: 400, height: 300))
+        let h = shipped([n, b], pasteboard)
+        h.editor.selection = b.id
+        let corner = CGPoint(x: 500, y: 400)
+        h.move(to: corner)
+        h.press(at: corner)
+        h.drag(to: CGPoint(x: 600, y: 450))
+        // Its right side 3 short of the note's left, its bottom 3 past the note's top.
+        h.drag(to: CGPoint(x: 697, y: 503))
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 600, height: 400))
+        expectEqual(h.editor.snapGuides, [
+            .alignment(.x, at: 700, points: [CGPoint(x: 700, y: 100), CGPoint(x: 700, y: 500), CGPoint(x: 700, y: 700)]),
+            .alignment(.y, at: 500, points: [CGPoint(x: 100, y: 500), CGPoint(x: 700, y: 500), CGPoint(x: 900, y: 500)]),
+        ])
+        h.release()
+        expectEqual(h.editor.document[b.id]?.box, CGRect(x: 100, y: 100, width: 600, height: 400))
+        expectEqual(h.editor.document[n.id]?.box, CGRect(x: 700, y: 500, width: 200, height: 200), "the note, only touching its corner, stays out")
+        expectEqual(h.editor.holder(of: n.id), nil)
     },
     test("a shape placed with its tool snaps as it follows the pointer") {
         let pasteboard = NSPasteboard.withUniqueName()

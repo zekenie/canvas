@@ -42,6 +42,14 @@ public struct Snap: Equatable, Sendable {
     public var guides: [SnapGuide]
 }
 
+/// A resized rect, snapped (`SnapTargets.snap(_:resizedFrom:about:along:inProportion:minimum:room:within:)`).
+public struct ResizeSnap: Equatable, Sendable {
+    /// The rect resized: the one asked about, but with a side it moves on a line.
+    public var rect: CGRect
+    /// Every line its sides are on exactly, along the axes it's resized along.
+    public var guides: [SnapGuide]
+}
+
 /// The frames a drag may snap to, kept so that snapping a rect to them costs about as much however
 /// many there are: each frame's edges and middle along either axis, in order, and the spaces between
 /// frames next to each other along either axis (tldraw's gaps, but only between neighbors, so there
@@ -137,14 +145,67 @@ public struct SnapTargets: Sendable {
         return best
     }
 
+    // MARK: Resizing
+
+    /// `rect` resized from `start` about `anchor` (what stays put) along `axes`, with the side that
+    /// moves nearest a line within `threshold` along each put on it (tldraw's resize snapping: the
+    /// sides that move, onto frames' edges and middles), and the guides for every line its sides are
+    /// on exactly along those axes. A side moves when it isn't at the anchor as it began: the one
+    /// opposite it, or both, about a middle. `inProportion`, the axes change together, so of every side
+    /// that moves the one nearest a line goes onto it and the rest follow at the scale that puts it
+    /// there. A line that would leave it smaller than `minimum` along an axis it changes, or reaching
+    /// past `room`, isn't snapped to. Ties go to what's asked first: x before y, the near side before
+    /// the far. Along an axis where nothing snaps, it's `rect`'s, untouched.
+    public func snap(_ rect: CGRect, resizedFrom start: CGRect, about anchor: CGPoint, along axes: [SnapAxis], inProportion: Bool,
+                     minimum: CGSize, room: CGRect?, within threshold: CGFloat) -> ResizeSnap {
+        let room = room?.insetBy(dx: -Self.tolerance, dy: -Self.tolerance)
+        // The nearest line each axis's sides snap to (one for both, in proportion): how far it is,
+        // and the rect it gives.
+        var nearest: [SnapAxis: (distance: CGFloat, rect: CGRect)] = [:]
+        for axis in axes {
+            let lines = self.lines[axis] ?? []
+            let key = inProportion ? SnapAxis.x : axis, changed = inProportion ? SnapAxis.allCases : [axis]
+            for part in [FramePart.low, .high] {
+                // How far the side began from the anchor: one at it stays put.
+                let reach = start.line(part, axis) - anchor[axis]
+                guard abs(reach) > Self.tolerance else { continue }
+                let current = rect.line(part, axis)
+                var i = lines.partitioningIndex { $0.value >= current - threshold - Self.tolerance }
+                while i < lines.count, lines[i].value <= current + threshold + Self.tolerance {
+                    let line = lines[i].value, distance = abs(line - current)
+                    i += 1
+                    if let found = nearest[key], distance >= found.distance - Self.tolerance { continue }
+                    let scale = (line - anchor[axis]) / reach
+                    guard scale > 0 else { continue }
+                    var resized = rect
+                    for along in changed { resized = resized.scaled(from: start, by: scale, about: anchor[along], along: along) }
+                    // The side exactly on the line, whatever the scale rounds to.
+                    resized = resized.with(part, at: line, along: axis)
+                    guard changed.allSatisfy({ resized.length($0) >= minimum.length($0) - Self.tolerance }),
+                          room?.contains(resized) ?? true else { continue }
+                    nearest[key] = (distance, resized)
+                }
+            }
+        }
+        var snapped = rect
+        if inProportion {
+            if let found = nearest[.x] { snapped = found.rect }
+        } else {
+            for axis in axes {
+                if let found = nearest[axis] { snapped = snapped.spanning(found.rect.low(axis), found.rect.high(axis), along: axis) }
+            }
+        }
+        return ResizeSnap(rect: snapped, guides: axes.flatMap { alignments(along: $0, of: snapped, parts: [.low, .high]) })
+    }
+
     // MARK: Guides
 
-    /// A guide for each line along `axis` that one of `rect`'s edges or its middle is on, through
-    /// every frame's corners or center on it too.
-    private func alignments(along axis: SnapAxis, of rect: CGRect) -> [SnapGuide] {
+    /// A guide for each line along `axis` that one of `rect`'s `parts` (its edges and its middle,
+    /// unless it says) is on, through every frame's corners or center on it too.
+    private func alignments(along axis: SnapAxis, of rect: CGRect, parts: [FramePart] = FramePart.allCases) -> [SnapGuide] {
         let lines = self.lines[axis] ?? []
         var found: [(position: CGFloat, points: [CGPoint])] = []
-        for part in FramePart.allCases {
+        for part in parts {
             let position = rect.line(part, axis)
             var points: [CGPoint] = []
             var j = lines.partitioningIndex { $0.value >= position - Self.tolerance }
@@ -408,6 +469,21 @@ extension CGRect {
     func length(_ axis: SnapAxis) -> CGFloat { axis == .x ? width : height }
     func span(_ axis: SnapAxis) -> ClosedRange<CGFloat> { low(axis)...high(axis) }
 
+    /// It, but from `low` to `high` along `axis`.
+    func spanning(_ low: CGFloat, _ high: CGFloat, along axis: SnapAxis) -> CGRect {
+        axis == .x ? CGRect(x: low, y: minY, width: high - low, height: height) : CGRect(x: minX, y: low, width: width, height: high - low)
+    }
+
+    /// It, but along `axis` as `start` is there scaled by `scale` about `anchor`.
+    func scaled(from start: CGRect, by scale: CGFloat, about anchor: CGFloat, along axis: SnapAxis) -> CGRect {
+        spanning(anchor + (start.low(axis) - anchor) * scale, anchor + (start.high(axis) - anchor) * scale, along: axis)
+    }
+
+    /// It, but with its edge `part` (not its middle) at `position` along `axis`, the other edge where it is.
+    func with(_ part: FramePart, at position: CGFloat, along axis: SnapAxis) -> CGRect {
+        part == .low ? spanning(position, high(axis), along: axis) : spanning(low(axis), position, along: axis)
+    }
+
     func line(_ part: FramePart, _ axis: SnapAxis) -> CGFloat {
         switch part {
         case .low: low(axis)
@@ -425,6 +501,10 @@ extension CGRect {
         case .low, .high: return [CGPoint(line(part, axis), low(across), on: axis), CGPoint(line(part, axis), high(across), on: axis)]
         }
     }
+}
+
+extension CGSize {
+    func length(_ axis: SnapAxis) -> CGFloat { axis == .x ? width : height }
 }
 
 extension CGPoint {

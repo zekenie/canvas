@@ -134,6 +134,14 @@ enum CorePoints {
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the translation adjuster"] }
     }
 
+    /// What box a drag that resizes a shape gives it (`ResizeAdjuster`). One plugin may claim it;
+    /// otherwise the box follows the pointer.
+    enum ResizeAdjusters: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, ResizeStart) -> (any ResizeAdjuster)?
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the resize adjuster"] }
+    }
+
     /// What VoiceOver says of a shape (`scope.accessibility`, `shape.accessibility`): every
     /// contribution that reaches its kind, in plugin order, the kind's own first.
     enum ShapeAccessibility: ExtensionPoint {
