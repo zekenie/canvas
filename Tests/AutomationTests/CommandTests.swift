@@ -212,14 +212,14 @@ extension SizeWord: ShapeProperty {
         expectEqual(draw.usage(), "canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]")
         expect(draw.arguments.first { $0.name == "script" }?.readsStandardInput == true)
         expectEqual(registry.automationCommands.first { $0.name == "kinds" }?.scope, .app)
-        expect(registry.report.contains("automation    command line draw · command line show · command line kinds · command line measure · host commands"), registry.report)
+        expect(registry.report.contains("automation    command line draw · command line show · command line capture · command line kinds · command line measure · host commands"), registry.report)
     },
     test("the app's command server is handed every command, the plugin's own and another's, and runs each by name") {
         let more = Contributor(id: "more") { $0.automationCommand("ping", "Answers pong.", scope: .app, params: NoParams.self) { _, _ throws(AutomationError) in "pong" } }
         let registry = try Registry(plugins: [AutomationPlugin(), more])
         let commands = registry.hostCommands
         expectEqual(commands.specs, registry.automationCommands)
-        expectEqual(commands.specs.map(\.name), ["draw", "show", "kinds", "measure", "ping"])
+        expectEqual(commands.specs.map(\.name), ["draw", "show", "capture", "kinds", "measure", "ping"])
         expectEqual(try awaitResult { try await commands.run("ping", [:], nil) }, "pong")
         do {
             _ = try awaitResult { try await commands.run("pang", [:], nil) }

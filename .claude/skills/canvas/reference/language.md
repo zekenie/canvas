@@ -1072,8 +1072,9 @@ The messages below are examples. The wording can differ, but the reason doesn't.
 | `ambiguous_board` | Several boards are open and none is in front, or two open boards have the name `--board` gives. | Name one by its id, from `canvas boards`. |
 | `unknown_board` | No open board has that id, file or name (an id goes when its board closes). | Run `canvas boards` and use an id it lists. |
 | `file_exists` | `new` was given a file that's there already, or that a board open is. | Use that board (`--board`, with the id the message names, if it's open), or name another file. |
-| `no_folder` | `new` was given a file in a folder that isn't there. | Make the folder, or name a file in another. |
-| `cannot_save` | `new` couldn't save the file there (no permission, say). | Name a file somewhere else. |
+| `no_folder` | `new` or `capture` was given a file in a folder that isn't there. | Make the folder, or name a file in another. |
+| `cannot_save` | `new` couldn't save the file there, or `capture` couldn't write its picture (no permission, say). | Name a file somewhere else. |
+| `empty_board` | `capture` was asked for a picture of a board with nothing on it. | Draw on it first, or picture another board (`--in`, `--root`). |
 | `usage` | The command line is wrong (exit 2): no such command or option, a value that isn't one, `--board` on a command about the app, or standard input that can't be read or isn't UTF-8. | Follow the hint; `canvas help draw` says what `draw` takes. |
 | `not_running` | The app isn't running (exit 3). | Start Infinite Canvas (in its repository: `./build.sh && open build/InfiniteCanvas.app`). |
 | `unreachable` | The socket can't be reached (exit 3), usually a sandbox. | Ask the user. |

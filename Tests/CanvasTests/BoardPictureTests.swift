@@ -1,7 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import CanvasUI
 import TestKit
 
 /// A box that owns a board and shows its preview, inset 10 from its edges, on a white body: what a
@@ -70,7 +69,7 @@ private func isLightCanvas(_ color: [Int]) -> Bool { color[0...2].allSatisfy { $
         expectEqual(empty.size(within: CGSize(width: 2000, height: 2000), minimum: CGSize(width: 480, height: 320)), CGSize(width: 480, height: 320))
     },
     test("a box laid out larger than it stores takes room in the picture by its laid-out frame, as it does on the canvas") {
-        let gauge = ShapeRecord(Gauge(CGRect(x: 700, y: 100, width: 10, height: 10), width: 600, height: 300))
+        let gauge = ShapeRecord(StretchGauge(CGRect(x: 700, y: 100, width: 10, height: 10), width: 600, height: 300))
         let stretch = ShapeRecord(Stretch(CGRect(x: 100, y: 100, width: 200, height: 100), gauge: gauge.id))
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(gauge), AnyShapeRecord(stretch)]))
         let registry = try Registry(plugins: [FixturesPlugin(), StretchesPlugin()])
@@ -80,7 +79,7 @@ private func isLightCanvas(_ color: [Int]) -> Bool { color[0...2].allSatisfy { $
         expectEqual(picture.size(within: CGSize(width: 2000, height: 2000)), CGSize(width: 674, height: 364), "at 100%, with 64 in all")
     },
     test("a box laid out smaller than it stores takes room in the picture by its smaller frame: the board's bounds, and so the picture's size, are the frame's") {
-        let gauge = ShapeRecord(Gauge(CGRect(x: 400, y: 100, width: 10, height: 10), width: 50, height: 30))
+        let gauge = ShapeRecord(StretchGauge(CGRect(x: 400, y: 100, width: 10, height: 10), width: 50, height: 30))
         let stretch = ShapeRecord(Stretch(CGRect(x: 100, y: 100, width: 800, height: 400), gauge: gauge.id))
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(gauge), AnyShapeRecord(stretch)]))
         let registry = try Registry(plugins: [FixturesPlugin(), StretchesPlugin(shrinking: true)])
@@ -173,5 +172,67 @@ private func isLightCanvas(_ color: [Int]) -> Bool { color[0...2].allSatisfy { $
         var threw = false
         do { _ = try BoardPicture(data: Data("not a board".utf8), registry: registry) } catch { threw = true }
         expect(threw, "not a board")
+    },
+    test("its framing says the zoom, the part of the board in the picture and what it's about; none for an empty board") {
+        // 500 × 300 from (100, 100), fitted at 100% in 564 × 364: the board's middle, (350, 250), in the picture's.
+        let picture = BoardPicture(file: boxes([CGRect(x: 100, y: 100, width: 200, height: 100), CGRect(x: 500, y: 300, width: 100, height: 100)]),
+                                   registry: try pictureRegistry())
+        let size = picture.size(within: CGSize(width: 2000, height: 2000))
+        let framing = try require(picture.framing(in: size))
+        expectEqual(framing.zoom, 1)
+        expectEqual(framing.region, CGRect(x: 68, y: 68, width: 564, height: 364))
+        expectEqual(framing.about, CGRect(x: 100, y: 100, width: 500, height: 300))
+        expect(!framing.drawsSkeletons)
+        expect(BoardPicture(file: CanvasFile(), registry: try pictureRegistry()).framing(in: size) == nil, "an empty board has none")
+    },
+    test("about some of its shapes, it's fitted to them, no closer than its closest, and what's around them is drawn too") {
+        let first = ShapeRecord(Box(CGRect(x: 100, y: 100, width: 200, height: 100))), second = ShapeRecord(Box(CGRect(x: 500, y: 300, width: 100, height: 100)))
+        let picture = BoardPicture(file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(first), AnyShapeRecord(second)])), registry: try pictureRegistry())
+        picture.focus = [first.id]
+        expectEqual(picture.size(within: CGSize(width: 2000, height: 2000)), CGSize(width: 264, height: 164), "a fit's size is what it's about's")
+        // The first box's middle, (200, 150), in the middle of 800 × 600 at 100%: the box at (300, 250), and the
+        // second beside it at (700, 450), drawn though the fit isn't about it.
+        let size = CGSize(width: 800, height: 600)
+        let framing = try require(picture.framing(in: size))
+        expectEqual(framing.zoom, 1)
+        expectEqual(framing.region, CGRect(x: -200, y: -150, width: 800, height: 600))
+        expectEqual(framing.about, CGRect(x: 100, y: 100, width: 200, height: 100))
+        let bitmap = render(picture, size: size)
+        for point in [CGPoint(x: 310, y: 260), CGPoint(x: 490, y: 340), CGPoint(x: 750, y: 500)] {
+            expect(isBox(pixel(bitmap, at: point)), "a box at \(point): \(pixel(bitmap, at: point))")
+        }
+        expect(isLightCanvas(pixel(bitmap, at: CGPoint(x: 600, y: 300))), "the canvas between them")
+        picture.focus = [ShapeID()]
+        expectEqual(picture.framing(in: size)?.about, CGRect(x: 100, y: 100, width: 500, height: 300), "a focus with no bounds: what it shows")
+    },
+    test("at a zoom it's centered on what it's about, however much of the board that leaves out, and says when shapes are skeletons") {
+        let second = ShapeRecord(Box(CGRect(x: 500, y: 300, width: 100, height: 100)))
+        let picture = BoardPicture(file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(Box(CGRect(x: 100, y: 100, width: 200, height: 100)))),
+                                                                                AnyShapeRecord(second)])),
+                                   registry: try pictureRegistry())
+        picture.focus = [second.id]
+        picture.zoom = 2
+        // Its middle, (550, 350), in the middle of 400 × 300 at 200%: the box at (100, 50), 200 × 200.
+        let size = CGSize(width: 400, height: 300)
+        let framing = try require(picture.framing(in: size))
+        expectEqual(framing.zoom, 2)
+        expectEqual(framing.region, CGRect(x: 450, y: 275, width: 200, height: 150))
+        expect(!framing.drawsSkeletons)
+        let bitmap = render(picture, size: size)
+        expect(isBox(pixel(bitmap, at: CGPoint(x: 200, y: 150))), "the box at 200%: \(pixel(bitmap, at: CGPoint(x: 200, y: 150)))")
+        expect(isLightCanvas(pixel(bitmap, at: CGPoint(x: 50, y: 20))), "the canvas left of it")
+        picture.zoom = 0.2
+        let far = try require(picture.framing(in: size))
+        expectEqual(far.region, CGRect(x: -450, y: -400, width: 2000, height: 1500))
+        expect(far.drawsSkeletons, "20% is under the canvas's skeleton zoom")
+    },
+    test("as PNG data of a size it's that size at the scale asked; nil for an empty board") {
+        let picture = BoardPicture(file: boxes([CGRect(x: 0, y: 0, width: 100, height: 100)]), registry: try pictureRegistry())
+        let decoded = try require(NSBitmapImageRep(data: try require(picture.pngData(size: CGSize(width: 300, height: 200), scale: 2,
+                                                                                     appearance: NSAppearance(named: .aqua)!))))
+        expectEqual([decoded.pixelsWide, decoded.pixelsHigh], [600, 400])
+        expectEqual([decoded.size.width, decoded.size.height], [300, 200], "said in points by its resolution")
+        expectEqual(BoardPicture(file: CanvasFile(), registry: try pictureRegistry()).pngData(size: CGSize(width: 300, height: 200), scale: 1,
+                                                                                              appearance: NSAppearance(named: .aqua)!), nil)
     },
 ])

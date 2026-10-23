@@ -323,7 +323,7 @@ let package = Package(
         // APP: the window, the executables and the command line.
         .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "FuzzyMatching", "Geometry", "Palette"]), // layer: app
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI"] + shipped),               // layer: app
-        .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas", "CanvasUI"] + shipped),              // layer: app of InfiniteCanvas
+        .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas"] + shipped),                          // layer: app of InfiniteCanvas
         .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport

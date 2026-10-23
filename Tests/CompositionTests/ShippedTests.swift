@@ -96,7 +96,7 @@ import Validation
     },
     test("and what the app takes besides is the plugins' too: every plugin's command for its server") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "kinds", "measure", "query", "query-vocabulary"])
+        expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "capture", "kinds", "measure", "query", "query-vocabulary"])
     },
     test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -163,7 +163,7 @@ import Validation
         language-models      service LanguageModelState
         prose-maps           service ProseMapService · overlay ProseMapFrames
         draw-engine          draw engine
-        automation           command line draw · command line show · command line kinds · command line measure · host commands
+        automation           command line draw · command line show · command line capture · command line kinds · command line measure · host commands
         title-names          draw names
         port-edges           draw edges
         validation-checks    draw checks

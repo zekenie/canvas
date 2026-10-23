@@ -2,6 +2,7 @@ import Canvas
 import CoreGraphics
 import DrawScript
 import Foundation
+import FuzzyMatching
 import Topology
 
 // Which board a script draws on: worked out from what it names, never said. A title names a shape
@@ -72,7 +73,7 @@ public struct FileNames {
     }
 
     /// A board, as a message names it: by the shape that holds it (without names, by its kind).
-    static func named(_ board: BoardID, in editor: CanvasEditor, naming: DrawNaming?) -> String {
+    public static func named(_ board: BoardID, in editor: CanvasEditor, naming: DrawNaming?) -> String {
         guard let owner = board.owner, let record = editor.file.record(owner) else { return "the root board" }
         return naming?.name(record, editor.registry).map { "\(quoted($0))'s board" } ?? "\(indefinite(record.kind))'s board"
     }
@@ -174,6 +175,38 @@ public struct FileNames {
         guard let holder = holders.count == 1 ? holders[0] : here.count == 1 ? here[0] : nil else { return .ambiguous(holders.map(\.board)) }
         if let record = editor.file.record(holder.id), registry.boardOwningKinds.contains(record.kind) { return .board(BoardID(owner: holder.id)) }
         return .shape(holder.id, on: holder.board)
+    }
+
+    /// What a title names as a shape of any kind, for what looks at shapes rather than drawing them
+    /// (`canvas capture --shape`).
+    public enum Found {
+        /// The one shape called that, and the board it's on.
+        case shape(ShapeID, on: BoardID)
+        /// No shape is called that: the titles most like it, best first.
+        case none(like: [String])
+        /// The board looked on has none called that, and this board has.
+        case elsewhere(BoardID)
+        /// Several are called that where it looks: what's wrong, and what to do about it.
+        case ambiguous(message: String, hint: String)
+    }
+
+    /// The shape called `title` (folded, as the plugin that names shapes folds a title): on `board`
+    /// alone when one is given, else wherever it is in the file, found as a script's title is
+    /// (`beyond`: the board shown's first, else the only other board that has one).
+    public func shape(called title: String, on board: BoardID? = nil) -> Found {
+        let all = places[title] ?? []
+        guard let board else {
+            switch beyond(title, among: all) {
+            case .shape(let place): return .shape(place.id, on: place.board)
+            case .none: return .none(like: Suggestions.closest(to: title, among: titles))
+            case .ambiguous(let message): return .ambiguous(message: message, hint: Self.oneEach)
+            }
+        }
+        let here = all.filter { $0.board == board }
+        if here.count > 1 { return .ambiguous(message: several(here, title, on: called(board)), hint: Self.oneEach) }
+        if let found = here.first { return .shape(found.id, on: board) }
+        if let other = all.first { return .elsewhere(other.board) }
+        return .none(like: Suggestions.closest(to: title, among: entries(on: board).map(\.name)))
     }
 }
 

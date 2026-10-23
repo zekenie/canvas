@@ -6,7 +6,9 @@ import Draw
 // on a board from a script; `kinds` says what a script can draw, and with what; `measure` says how
 // big a script's shapes would be. Each is the draw engine's (Draw) behind the command line: it finds
 // the board, hands the engine the script, and says what the engine did, or why it couldn't, as the
-// wire does. Other plugins add theirs with `registrar.automationCommand`.
+// wire does. `show` moves the window to another board (Show.swift), and `capture` takes a picture of
+// one (Capture.swift), each finding shapes by the engine's names. Other plugins add theirs with
+// `registrar.automationCommand`.
 
 public struct AutomationPlugin: ListedPlugin {
     public init() {}
@@ -66,6 +68,30 @@ public struct AutomationPlugin: ListedPlugin {
             ]
         ) { params, context throws(AutomationError) in
             try show(params, in: context)
+        }
+        let limit = CaptureStyle.said(CaptureStyle.limit), view = CaptureStyle.said(CaptureStyle.view)
+        registrar.automationCommand(
+            "capture", "Take a picture of a board, or of part of one, as the app draws it, in a PNG file.",
+            discussion: """
+                Draws the board apart from the window, as the canvas shows it with nothing selected: the window \
+                doesn't move and needn't be in view, and nothing on any board changes. With no shapes, it's the whole \
+                board, fitted, as big as the board is at 100% (at most \(limit) points). With --shape (a title, or \
+                #<id> for a shape with none, as a script names one), the view is fitted to those shapes, with what's \
+                around them, and with --zoom it's at that zoom, centered on them (or on the whole board), in a picture \
+                of \(view) points unless --size says. The board is the one --in or --root names, else the one the \
+                shapes are on, else the one the window shows. The result says the file, its size in pixels, the zoom, \
+                and the part of the board in it ([[x, y], [width, height]], as a draw's at says where a shape is), and \
+                warns when shapes are drawn as skeletons, without their words, or when what's asked for doesn't all fit.
+                """,
+            params: CaptureParams.self, positionals: ["file"],
+            examples: [
+                CommandExample("\(canvas) capture board.png", "The whole board the window shows."),
+                CommandExample(#"\#(canvas) capture api.png --shape "API""#, "Fitted to the shape titled API, with what's around it."),
+                CommandExample(#"\#(canvas) capture api.png --shape "API" --zoom 100"#, "At 100%, centered on API."),
+                CommandExample(#"\#(canvas) capture q3.png --in "Q3""#, "The board the subboard titled Q3 holds, the window staying where it is."),
+            ]
+        ) { params, context throws(AutomationError) in
+            try capture(params, in: context)
         }
         registrar.automationCommand(
             "kinds", "List the kinds of shape the app has: what a script can draw, and with what.",

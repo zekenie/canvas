@@ -1,6 +1,5 @@
 import AppKit
 @_spi(Product) import Canvas
-import CanvasUI
 import ImageIO
 import UniformTypeIdentifiers
 

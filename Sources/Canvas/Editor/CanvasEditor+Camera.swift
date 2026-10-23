@@ -216,7 +216,7 @@ extension CanvasEditor {
 
     /// The margin a board's first visit fits its shapes with, view points in all (half on each side),
     /// as Zoom to Fit does: for a picture of a board that shows it as a first visit would
-    /// (CanvasUI's `BoardPicture`).
+    /// (the core's `BoardPicture`).
     @_spi(Host) public static var firstVisitInset: CGFloat { Style.firstVisitInset }
 
     /// Every shape of the board shown in view: fitted into what the host leaves clear of the view

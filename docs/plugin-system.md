@@ -443,8 +443,8 @@ holds three more groups, which are not interfaces a kind plugs into but are stil
   module, through the engine's points. And an engine may declare no point at all and only lend
   something: LanguageModels lends every editor the model plugins ask, and ProseMaps what a text's
   words say of a lower-level text, which it asks that model.
-- **What agents speak**: the [command line](#the-command-line) (Automation: `draw`, `show`, `kinds`
-  and `measure`) and `canvas query` (QueryCommands), whose words are the query language's and their
+- **What agents speak**: the [command line](#the-command-line) (Automation: `draw`, `show`, `capture`,
+  `kinds` and `measure`) and `canvas query` (QueryCommands), whose words are the query language's and their
   owners'. The engines that answer a draw and a query are engines, not these, since every plugin may
   run them.
 
@@ -10437,6 +10437,8 @@ canvas boards                           the open boards: each one's id, name, fi
 canvas new <file>                       a new board's file, made and opened
 canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]
                                         shapes, and the edges between them, made, changed or deleted by a script, all at once
+canvas capture <file> [--shape <name>]… [--zoom <number>] [--in <name> | --root] [--size <width,height>] [--scale <number>] [--dark] [--board <board>]
+                                        a picture of a board, or of part of it, as the app draws it, in a PNG file
 canvas kinds [<kind>] [--schema]        what a script can draw, and with what
 canvas measure <script>|-               how big a script's shapes would be, and what the placement is done with, drawing nothing
 canvas query <query>|- [--limit <number>] [--count] [--brief] [--fields <attribute>]… [--board <board>]
@@ -10453,7 +10455,7 @@ The modules, one job each:
 | CanvasRPC | core (the wire) | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | app | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own four, `draw`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` as the wire's `AutomationError`) and `show`, which borrows Draw's naming. The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
+| Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own five, `draw`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` as the wire's `AutomationError`), `show` and `capture`, which borrow Draw's naming (`capture` draws with the core's `BoardPicture`). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
 | Draw | platform | The engine of `canvas draw`, `measure` and `kinds` ([draw](#draw)), and the nine points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
 | DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
@@ -10599,6 +10601,18 @@ a shape or an edge on a board that can't change (a locked subboard's, and every 
 `read_only`. Its result's `on` says which (`board`, that shape's `title`, `shown`). `canvas show
 "<title>"` (or `--root`) moves the window, through `editor.showBoard`, and says where it is in a
 `board` of its own, which the server completes.
+
+`canvas capture <file>` is how an agent looks at what it drew: a PNG of a board as the canvas draws it,
+with nothing selected, drawn apart from the window by the core's `BoardPicture` (as Edit › Copy as
+Image's is), so the window doesn't move, needn't be in view, and nothing changes. With no shapes it's
+the whole board, fitted, as big as the board is at 100% up to 1600 × 1200 points; `--shape` (a title,
+or `#<id>` for any shape, found as a script's are, the board shown's first) fits the view to those
+shapes, with what's around them drawn too, and `--zoom <percent>` centers it on them (or on the whole
+board) at that zoom, both in 1200 × 800 points unless `--size` says; `--in "<title>"` or `--root`
+pictures another board of the file, `--scale` sets pixels to a point and `--dark` the appearance. It
+answers the file, its size in pixels, the zoom, the part of the board in it (`region`, as a draw's `at`)
+and the board, in a `board` of its own, and warns when shapes are skeletons, their words not drawn,
+or what was asked for doesn't all fit.
 
 The app that holds the socket's lock (`canvas.sock.lock`, beside it) is the one listening: a second
 copy of the app gives up and runs without the command line, and a socket that one that crashed left
@@ -13755,7 +13769,7 @@ it, as a file put in place there (`replaceFile(with:showing:)`), so it isn't a s
 edit; each board has its camera as it was left (`rememberedCameras`).
 
 **Quick Look.** In the Finder, a board file's Quick Look preview (space) and its thumbnail (its
-icon) are its root board as the app draws it, with nothing selected: CanvasUI's `BoardPicture`
+icon) are its root board as the app draws it, with nothing selected: the core's `BoardPicture`
 reads the file as the app opens one, fits the whole board into the picture, no closer than 100%
 and as far out as it takes, past the canvas's 10%, builds the previews its cards show in the one
 frame, and draws it with the editor's own drawing, skeletons and all, so a kind needs nothing for
@@ -14036,7 +14050,7 @@ arrow-ports          service ArrowTypeRows · property channel → arrow · edge
 language-models      service LanguageModelState
 prose-maps           service ProseMapService · overlay ProseMapFrames
 draw-engine          draw engine
-automation           command line draw · command line show · command line kinds · command line measure · host commands
+automation           command line draw · command line show · command line capture · command line kinds · command line measure · host commands
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks

@@ -12,9 +12,10 @@ import Foundation
 /// command server takes them from the host's slot for them (`registry.hostCommands`,
 /// which this plugin fills with `automationCommands` and `runAutomationCommand`), and does the
 /// talking: this plugin never sees a socket, and the core never sees a command. It registers
-/// `draw`, `show`, `kinds` and `measure` (Commands.swift, Show.swift): `draw`, `kinds` and
-/// `measure` run the draw engine (Draw), which takes what it doesn't own (names, edges, checks)
-/// from its own points, and which any plugin may run; `show` borrows its naming.
+/// `draw`, `show`, `capture`, `kinds` and `measure` (Commands.swift, Show.swift, Capture.swift):
+/// `draw`, `kinds` and `measure` run the draw engine (Draw), which takes what it doesn't own (names,
+/// edges, checks) from its own points, and which any plugin may run; `show` and `capture` borrow its
+/// naming, and `capture` draws with the core's `BoardPicture`.
 extension PluginID {
     public static let automation: PluginID = "automation"
 }

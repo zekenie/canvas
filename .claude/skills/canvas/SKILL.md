@@ -1,13 +1,13 @@
 ---
 name: canvas
-description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, types, relationships, frames, subboards, references and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, types, relationships, frames, subboards, references and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English, and look at it with `canvas capture`, a picture of a board or part of one. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
 # Drawing on and reading a board with canvas
 
 `canvas draw` puts shapes on a board that's open in the Infinite Canvas app, while the user watches. You write one statement a line: what the shape is, what it's called, and where it sits against things already named (`right of "API"`, `below board`). The app works out only the distances. A script is applied in one step, or not at all.
 
-You can't see the board, and `canvas query` reads it back: which shapes match, with their titles and ids. Where they are it doesn't read, and that's why the language works this way: the arrangement is in the sentences you wrote, so re-reading your script tells you where everything is. The result says what actually happened to each line, and what had to be pushed aside to keep clear. Anything ambiguous is refused rather than guessed, so a script that runs is one whose arrangement you fully stated.
+You don't see the board as you write. `canvas query` reads it back (which shapes match, with their titles and ids, but not where they are), and `canvas capture` takes a picture of it to look at afterwards ([Looking at the board](#looking-at-the-board)). That's why the language works this way: the arrangement is in the sentences you wrote, so re-reading your script tells you where everything is. The result says what actually happened to each line, and what had to be pushed aside to keep clear. Anything ambiguous is refused rather than guessed, so a script that runs is one whose arrangement you fully stated.
 
 ## Check the app
 
@@ -267,7 +267,7 @@ edge "Rate-limit sign-ups" -> "Verify emails"
 
 ## Reading the board
 
-You can't see the board, so this is how you look at it: before drawing on a board you didn't just draw, to learn the titles already there, and after, to check what's connected to what. `canvas query` takes a query, a selector as CSS writes one, and lists every shape of the file that matches, on every board, in file order. It changes nothing. Pass the query through a heredoc with a quoted delimiter, as you pass a script: queries are full of `"`, `*`, `>`, `[` and `#`, which the shell mangles.
+This is how you read a board: before drawing on one you didn't just draw, to learn the titles already there, and after, to check what's connected to what. To see how it looks, take a picture ([Looking at the board](#looking-at-the-board)). `canvas query` takes a query, a selector as CSS writes one, and lists every shape of the file that matches, on every board, in file order. It changes nothing. Pass the query through a heredoc with a quoted delimiter, as you pass a script: queries are full of `"`, `*`, `>`, `[` and `#`, which the shell mangles.
 
 ```bash
 canvas query --board 2 - <<'EOF'
@@ -337,6 +337,27 @@ sticky-note:inside("Backend")
 
 A relationship is an arrow of a relationship type, so it is read by the arrow's type, never by an edge word's second argument (a title in quotes after a comma is not an edge type): `arrow:is-a("Employment")` is the relationships of a type, `:end-of(arrow:is-a("Employment"):starts-at("Ann"))` where Ann works, and `arrow:misfit` those whose ends don't fit ([reference/relationships.md](reference/relationships.md), [reference/query.md](reference/query.md)).
 
+## Looking at the board
+
+`canvas capture` takes a picture of a board as the app draws it, in a PNG file you then open and look at: whether notes overlap or cut their text off, where arrows run, whether the layout reads. It's drawn apart from the window, so the user's view doesn't move and nothing on the board changes.
+
+```bash
+canvas capture --board 2 /tmp/board.png                                    # the whole board the window shows
+canvas capture --board 2 /tmp/auth.png --shape "Auth service"              # fitted to one shape, with what's around it
+canvas capture --board 2 /tmp/auth.png --shape "Auth service" --zoom 100   # at actual size, centered on it
+canvas capture --board 2 /tmp/payments.png --in "Payments"                 # the board a subboard holds
+```
+
+```json
+{"board": {"id": 2, "name": "Sign-up", "shows": "root", "showsPath": ["root"]}, "file": "/tmp/board.png",
+ "width": 1600, "height": 936, "zoom": 41.5, "region": [[-118, -78], [3856, 2256]]}
+```
+
+- **The file** is any path; one that doesn't end in `.png` gets it, and one that's there is replaced. `--shape` takes a title, or `#<id>` for a shape with none, once for each shape to fit. The board pictured is theirs, else the one `--in "<subboard>"` or `--root` names, else the one the window shows.
+- **How big**: the whole board as it is at 100%, at most 1600 × 1200 points; shapes, or a `--zoom`, in 1200 × 800 points. `--size 1600,1000` sets it, `--scale 2` doubles the pixels (to read small text), `--dark` draws the dark appearance.
+- **`region`** is the part of the board in the picture, `[[x, y], [width, height]]`, in the units of a draw's `at`: a shape whose `at` is `[[x, y], …]` is at (x − region's x) × zoom / 100 points from the picture's left, and likewise down.
+- **Zoomed out, words aren't drawn.** Below 35% shapes are skeletons, with no text, and the result warns: picture fewer shapes (`--shape`), or zoom in.
+
 ## What will bite you
 
 **Habits from other languages**: bare or curly-quoted titles, `node`, `note` or `box` for a kind (the hint lists the kinds, and names the one like it), `link` for an edge, `-->` or a bare `"A" -> "B"`, `#` for a comment (comments are `//`), a quoted label after an edge (write `text: "…"`), coordinates (`x:`, `at:`). Each is refused, most with a hint naming what to write instead, and every unreadable line comes back in one pass:
@@ -377,7 +398,7 @@ sticky-note "Ship 1.0" text: "Blocked on @[Auth servce]"
 - **Some shapes aren't in any answer**: shapes the app keeps aside (a kind this app doesn't have), and those on boards it can't show.
 - **Placement happens once.** The board doesn't remember `right of "API"`. When the user moves API, nothing follows it (but what's in a frame moves with the frame).
 - **Frames don't grow.** A frame stays the size it was drawn, so `in` one that's full is `no_room`: restate it with a bigger `size:`.
-- **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a height with `size:`, which cuts long text off, so give a note with long text no `size:`, or a width alone, `size: 320x`) or whether a line crosses other shapes.
+- **The result confirms intent, not the picture.** It tells you where each shape landed and what was pushed. It doesn't tell you whether a note's text overflowed (a note grows to fit its text unless you gave it a height with `size:`, which cuts long text off, so give a note with long text no `size:`, or a width alone, `size: 320x`) or whether a line crosses other shapes: a picture does ([Looking at the board](#looking-at-the-board)).
 - **Edges are arcs.** They don't route around shapes. Only closed shapes are kept clear, so a shape can land across an arrow or a drawn line.
 - **Pills overlap when zoomed out.** A title's pill (and a lock's chip, in the same row just above a shape) clears the shape above it in a list down to about 42% zoom (below 35% shapes are skeletons: no pill or chip is drawn, and a title is said on the shape instead).
 - **One board per run.** A run draws on one board (`in` says which, and the window never moves), and an arrow can't leave it: an edge to a shape on another board is drawn into a reference to that shape, which only a public one can have.
