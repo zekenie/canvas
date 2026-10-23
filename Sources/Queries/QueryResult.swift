@@ -53,7 +53,9 @@ public struct QueryMatchRequest: Sendable {
     /// The edges its edge words see: `.recorded` for a stand-in's own query, which asks what to
     /// stand for and so can't see through itself.
     public var edges: EdgeView
-    /// At most this many ids, 1 to `QueryBudget.maxRows`; `count` is of all admitted.
+    /// At most this many ids, at least 1 (`every`: all of them); `count` is of all admitted. Ids are
+    /// no rows, so none is built for them, and the rows' most (`QueryBudget.maxRows`) is only the
+    /// default.
     public var limit: Int
     /// Whether a match may be listed, asked off the main actor of each before `limit` is applied:
     /// the first match is the first admitted one, and `count` counts the admitted.
@@ -72,6 +74,10 @@ public struct QueryMatchRequest: Sendable {
         self.admitting = admitting
         self.holdingBack = holdingBack
     }
+
+    /// The `limit` of a request for every match, however many: what a plugin that stands for all of
+    /// them asks (a reference that stands for every match).
+    public static let every = Int.max
 }
 
 /// A batched query's answer: what ran, and the shapes, by id.

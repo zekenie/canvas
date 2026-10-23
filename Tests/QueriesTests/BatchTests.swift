@@ -78,6 +78,15 @@ func tiled(_ count: Int) -> CanvasFile {
         expectEqual(found(answers[2])?.count, 3)
         expectEqual(found(answers[3])?.ids, [id(1)], "a limit under 1 is 1")
     },
+    test("a request for every match isn't held to the rows' most: ids are no rows") {
+        let many = QueryBudget.maxRows + 1
+        let h = try EditorHarness(plugins: queryPlugins(), file: CanvasFile(root: CanvasDocument(shapes: (0..<many).map { _ in chore(ShapeID()) })))
+        let answers = try batched([QueryMatchRequest("chore", limit: QueryMatchRequest.every), QueryMatchRequest("chore")], on: h)
+        expectEqual(found(answers[0])?.ids.count, many, "every one")
+        expectEqual(found(answers[0])?.ids, h.editor.document.shapes.map(\.id), "in file order")
+        expectEqual(found(answers[1])?.ids.count, QueryBudget.maxRows, "the default is the rows' most")
+        expectEqual(found(answers[1])?.count, many)
+    },
     test("admission is asked off the main actor, of each match once") {
         let h = try relay()
         let askers = Askers()

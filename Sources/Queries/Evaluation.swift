@@ -272,7 +272,7 @@ final class Evaluation {
                         heldBack += 1
                     }
                 }
-                let ids = Array(try inFileOrder(kept).prefix(min(max(query.request.limit, 1), QueryBudget.maxRows)))
+                let ids = Array(try inFileOrder(kept).prefix(max(query.request.limit, 1)))
                 answers.append(.success(QueryMatches(canonical: query.plan.canonical, ids: ids, count: kept.count, heldBack: heldBack,
                                                      revision: snapshot.revision)))
             } catch {

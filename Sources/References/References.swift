@@ -189,7 +189,7 @@ public struct ReferencesPlugin: ListedPlugin {
             reference.portsOnEveryChannel(sides: [.left, .right])
             // Made to stand for a shape as picking it does, which refits its width to the name: how
             // `canvas draw` puts one beside what points at a shape on another board.
-            reference.standsIn(maxTargets: ReferenceStyle.maxTargets, admitting: { target, registry in registry.isPublic(target) },
+            reference.standsIn(admitting: { registry in registry.publicShapes },
                                needs: "public",
                                fulfilling: { record, registry in registry.makePublic(&record) },
                                calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },

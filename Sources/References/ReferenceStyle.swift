@@ -23,25 +23,34 @@ enum ReferenceStyle {
     /// The symbol's box, and the gap between it and the label.
     static let symbolBox: CGFloat = 16
     static let gap: CGFloat = 6
-    /// A dynamic pill always reserves room for its widest badge, "50+": the gap and the badge.
-    static let badgeRoom: CGFloat = 6 + 30
+    /// A dynamic pill always reserves room for its widest badge, "9.9k" (some 37 points, its pads in):
+    /// the gap and the badge. A count of 100,000 or a million ("120k", "1.2M") reaches a point or three
+    /// into the gap.
+    static let badgeRoom: CGFloat = 6 + 37
     /// A direct pill reserves room for what may come to trail it (the eye of a shape gone private, a
     /// channel's warning): the gap and the glyph, so neither cuts a short name short.
     static let glyphRoom: CGFloat = gap + eyeSize
-    /// The most shapes a reference stands for.
-    static let maxTargets = 50
-
     // MARK: The count
 
-    /// The count a pill that stands for every match trails ("12", "50+" past fifty), and the "0" of
-    /// one that found none: a capsule 18 tall, its digits 11 semibold, 6 either side, on the label's
-    /// color at 8%.
+    /// The count a pill that stands for every match trails ("12", "1.2k"), and the "0" of one that
+    /// found none: a capsule 18 tall, its digits 11 semibold, 6 either side, on the label's color at 8%.
     static let badgeHeight: CGFloat = 18
     static let badgePad: CGFloat = 6
     static let badgeFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
     static let badgeFill = fading(NSColor.labelColor, to: 0.08)
-    /// What a count past what a reference stands for reads.
-    static func badge(_ count: Int) -> String { count > maxTargets ? "\(maxTargets)+" : "\(count)" }
+    /// What a count reads in its capsule: as it is below a thousand, then in thousands with a tenth
+    /// below ten thousand ("1.2k", "9.9k") and whole above ("12k", "999k"), then in millions alike
+    /// ("1.2M", "12M"); cut down, never rounded up, so it never says more than were found. The panel
+    /// says the count whole.
+    static func badge(_ count: Int) -> String {
+        func cut(_ count: Int, _ unit: Int, _ suffix: String) -> String {
+            guard count < unit * 10 else { return "\(count / unit)\(suffix)" }
+            let tenths = count / (unit / 10)
+            return tenths % 10 == 0 ? "\(tenths / 10)\(suffix)" : "\(tenths / 10).\(tenths % 10)\(suffix)"
+        }
+        if count < 1_000 { return "\(count)" }
+        return count < 1_000_000 ? cut(count, 1_000, "k") : cut(count, 1_000_000, "M")
+    }
     /// The first match's kind symbol, trailing a pill that stands for it alone.
     static let firstSize: CGFloat = 13
 
@@ -49,14 +58,17 @@ enum ReferenceStyle {
 
     /// How long a pill's answers wait for quiet after a commit (each commit waits again), how long an
     /// answer is out before it's said to be looked for ("Finding…"), how many matches a first-match
-    /// pill is given (the first, and what All would add, for the panel), how many answers each
-    /// keeps for its undo and redo, and for how many references answers are kept at all, deleted
-    /// ones' too (the least recently landed or used let go first).
+    /// pill is given (the first, and what All would add, for the panel; an All one is given every
+    /// match), how many answers each keeps for its undo and redo, and for how many references answers
+    /// are kept at all, deleted ones' too, and how many shapes all the answers kept may name between
+    /// them (16 MB of ids), however many a query finds: the least recently landed or used let go
+    /// first, never the one just landed.
     static let settle: Duration = .milliseconds(250)
     static let findingDelay: Duration = .milliseconds(250)
     static let firstFetched = 8
     static let answersKept = 4
     static let memosKept = 256
+    static let memoIDsKept = 1_000_000
     /// How long the words a person types rest, with nothing public to pick, before they're turned
     /// into a query (and each keystroke starts the wait again).
     static let interpretDelay: Duration = .milliseconds(600)
@@ -263,11 +275,10 @@ enum ReferenceStyle {
     static func more(_ count: Int) -> String { "and \(count) more" }
 
     /// The header's line under a dynamic reference that found shapes: "First of 7", "12 matches",
-    /// "50 of 73".
+    /// "1,284 matches" (the count whole, as the locale writes it).
     static func matchesLine(_ found: ReferenceFound) -> String {
         if found.count == 1 { return "1 match" }
-        if !found.all { return "First of \(found.count)" }
-        return found.count > found.ids.count ? "\(found.ids.count) of \(found.count)" : "\(found.count) matches"
+        return found.all ? "\(found.count.formatted()) matches" : "First of \(found.count.formatted())"
     }
 
     // MARK: The memo

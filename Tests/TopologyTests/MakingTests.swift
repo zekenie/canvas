@@ -124,7 +124,7 @@ struct EchoesPlugin: CanvasPlugin {
             }
         }
         registrar.shape(EchoDefinition()) { echo in
-            echo.standsIn(admitting: { target, _ in target.meta[Ajar.self] == true }, needs: needs,
+            echo.standsIn(admitting: { _ in { target in target.meta[Ajar.self] == true } }, needs: needs,
                           fulfilling: fulfilling,
                           calls: { shape, _ in shape.props.says.isEmpty ? nil : shape.props.says },
                           makes: { props, target, label in

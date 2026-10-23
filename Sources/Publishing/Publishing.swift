@@ -44,6 +44,14 @@ extension Registry {
         record[PublicProperty.self] == true || definition(for: record.kind) is any AlwaysPublic
     }
 
+    /// `isPublic` for any thread, the kinds whose every shape is public read once here: what a
+    /// stand-in kind admits (`standsIn(admitting: { $0.publicShapes })`), which Topology reads off the
+    /// main actor too.
+    public var publicShapes: @Sendable (AnyShapeRecord) -> Bool {
+        let always = Set(kinds.filter { definition(for: $0) is any AlwaysPublic })
+        return { record in record[PublicProperty.self] == true || always.contains(record.kind) }
+    }
+
     /// Whether shapes of the kind can be public: they hold the property, or every one is.
     public func canBePublic(_ kind: ShapeKind) -> Bool {
         definition(for: kind) is any AlwaysPublic || holdsPublic(kind)

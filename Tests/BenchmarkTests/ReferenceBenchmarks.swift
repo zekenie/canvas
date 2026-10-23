@@ -39,6 +39,17 @@ extension Budget {
 }
 
 extension Budget {
+    /// A reference that stands for every note of the board (its query `sticky-note`, every note
+    /// public), 100 arrows into it, answered after a commit: the main actor's time from the wait
+    /// firing to the answer landing, the batch's (the file taken up once) and the landing's, which
+    /// takes in what came and went (worked out off the main actor, `TopologyIndex.preparer()`) and
+    /// never every note. After a commit that leaves what it finds as it was, and after one that adds
+    /// a match. The thread's CPU time; one budget at both sizes, since it never reads every note:
+    /// release, 2026-10-22, 0.05 and 0.10 ms at 608 notes, 0.07 and 0.12 at 6,086.
+    static let referenceEveryMatchMain = SizedBudget(thousand: 1, tenThousand: 1)
+}
+
+extension Budget {
     /// A keystroke in the list over a pill's field, the one that opens it included, over a board of
     /// 10,000 shapes of which 20 are public: the `@` picker's. The thread's CPU time.
     static let referencePickerKeystroke = pickerKeystroke
@@ -128,6 +139,59 @@ extension Budget {
             report(String(format: "%6d shapes, 20 dynamic references answered after a commit: main %6.3f ms (budget %.1f)",
                           size, main, Budget.referenceAnswersMain.at(size)))
             if holdsToBudgets { expect(main < Budget.referenceAnswersMain.at(size), "twenty references answered on \(size) shapes took \(main) ms on the main actor") }
+        }
+    },
+    test("a reference that stands for every note, 100 arrows into it, answered after a commit: the main actor's time from the wait firing to the answer landing") {
+        for size in sizes {
+            let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+            let document = generatedBoard(shapes: size)
+            let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+            h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+            let every = document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
+            h.editor.makePublic(every)
+            // The locked ones stay private: a reference stands for the public ones.
+            let open = h.editor.document.shapes.filter { $0.kind == StickyNote.kind && $0[PublicProperty.self] == true }.count
+            var props = Reference(frame: CGRect(x: 0, y: -200, width: 120, height: 32), all: true)
+            ReferenceEdits.find(&props, words: "", query: "sticky-note")
+            let pill = h.editor.add(props)
+            h.editor.transact("Arrows") { transaction in
+                for n in 0..<100 { transaction.insert(arrow(from: every[(100 + n) % every.count], to: pill)) }
+            }
+            let topology = try require(h.editor.topology)
+            h.wait(0)
+            _ = try awaitResult(timeout: 60) { await topology.settled(timeout: .seconds(600)) }
+            expectEqual(topology.forwards(of: pill).count, open, "every public note")
+            var same: [Double] = [], more: [Double] = []
+            for run in 0..<11 {
+                // A note that isn't public: what the reference finds is as it was.
+                _ = h.editor.add(StickyNote(frame: CGRect(x: CGFloat(run) * 210, y: -500, width: 200, height: 200), text: ""))
+                let (_, unchanged, _) = try cpu {
+                    h.wait(250)
+                    _ = await topology.settled(timeout: .seconds(600))
+                }
+                same.append(unchanged)
+                // A public one: one match more.
+                var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(run) * 210, y: -800, width: 200, height: 200), text: "")))
+                note[PublicProperty.self] = true
+                h.editor.transact("Add") { $0.insert(note) }
+                let (_, added, _) = try cpu {
+                    h.wait(250)
+                    _ = await topology.settled(timeout: .seconds(600))
+                }
+                more.append(added)
+            }
+            expectEqual(topology.forwards(of: pill).count, open + 11, "and each public note added")
+            #if DEBUG
+            expect(topology.preparedTaken >= 22 && topology.preparedRedone == 0,
+                   "each answer taken as it was worked out off the main actor: \(topology.preparedTaken) taken, \(topology.preparedRedone) redone")
+            #endif
+            let unchanged = middle(same), added = middle(more)
+            report(String(format: "%6d shapes, a reference for every note (%d), 100 arrows into it, answered after a commit: main %6.3f ms as it was, %6.3f with one more (budget %.1f)",
+                          size, open, unchanged, added, Budget.referenceEveryMatchMain.at(size)))
+            if holdsToBudgets {
+                expect(unchanged < Budget.referenceEveryMatchMain.at(size), "a reference for \(open) notes answered as it was took \(unchanged) ms on the main actor")
+                expect(added < Budget.referenceEveryMatchMain.at(size), "a reference for \(open) notes given one more took \(added) ms on the main actor")
+            }
         }
     },
     test("a keystroke in the list over a pill's field costs what matches, not the board: 10,000 mentionable shapes of which 20 are public") {

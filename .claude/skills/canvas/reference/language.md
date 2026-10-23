@@ -885,7 +885,7 @@ group "Billing" and "Cutoff"
 
 ## References
 
-A script draws a reference in one of two ways. As an edge's stand-in it's a direct one, standing for the one shape on the other end ([Through a reference](#through-a-reference)): the statement is the edge, and never names the pill. On a statement of its own it's drawn by its query: it stands for what the query finds among the file's public shapes (the first in file order, or with `all: true` every one, up to fifty), and the app finds it a moment after the script, and again whenever the file changes. `canvas query` waits for that answer (up to two seconds) before it reads edges, so a query just after the script reads arrows into the pill as arrows into what it found. A script can't pick the shape a pill stands for or type words into it: those are the user's. [references.md](references.md) is what a reference does to what you read.
+A script draws a reference in one of two ways. As an edge's stand-in it's a direct one, standing for the one shape on the other end ([Through a reference](#through-a-reference)): the statement is the edge, and never names the pill. On a statement of its own it's drawn by its query: it stands for what the query finds among the file's public shapes (the first in file order, or with `all: true` every one, however many), and the app finds it a moment after the script, and again whenever the file changes. `canvas query` waits for that answer (up to two seconds) before it reads edges, so a query just after the script reads arrows into the pill as arrows into what it found. A script can't pick the shape a pill stands for or type words into it: those are the user's. [references.md](references.md) is what a reference does to what you read.
 
 ```draw
 reference above "Owner" query: "sticky-note[public]" all: true
@@ -922,7 +922,7 @@ The arrow runs straight into the pill, on the board the pill is on, and the row 
 
 ### Testing what it stands for
 
-A query says what a reference stands for now: a shape that stands for others has a `stands-for` edge to each of them ([references.md](references.md#reading-through-a-reference)), here the public shapes its query finds (the first in file order, or with `all: true` up to fifty). Like any query that reads edges, it waits up to two seconds for the app to find them, and says `pending` among its warnings if they were still arriving. The pill stands for Runbook and Cutoff, the two public notes:
+A query says what a reference stands for now: a shape that stands for others has a `stands-for` edge to each of them ([references.md](references.md#reading-through-a-reference)), here the public shapes its query finds (the first in file order, or with `all: true` every one). Like any query that reads edges, it waits up to two seconds for the app to find them, and says `pending` among its warnings if they were still arriving. The pill stands for Runbook and Cutoff, the two public notes:
 
 ```query
 /* count: 2 */

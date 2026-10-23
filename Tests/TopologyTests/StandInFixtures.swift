@@ -69,23 +69,21 @@ extension GateDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Gate>, in context: RenderContext) {}
 }
 
-/// Proxies (each standing for at most `most` shapes, 50 by default; given a second rule, `twice`)
-/// and gates.
+/// Proxies (given a second rule, `twice`) and gates.
 struct StandInsPlugin: CanvasPlugin {
-    var most = 50
     var twice = false
     var id: PluginID { "stand-ins" }
 
     func register(into registrar: inout PluginRegistrar) {
         registrar.shape(ProxyDefinition()) { proxy in
-            proxy.standsIn(maxTargets: most) { shape, _ in shape.props.stands.isEmpty ? nil : .shapes(shape.props.stands.map(\.shape)) }
+            proxy.standsIn { shape, _ in shape.props.stands.isEmpty ? nil : .shapes(shape.props.stands.map(\.shape)) }
             if twice { proxy.standsIn { _, _ in nil } }
             proxy.edges { shape, _, sink in
                 if let next = shape.props.next { sink.emit(WireEdge.id, from: shape.id, to: next) }
             }
         }
         registrar.shape(GateDefinition()) { gate in
-            gate.standsIn(admitting: { target, _ in target.meta[Open.self] == true }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
+            gate.standsIn(admitting: { _ in { target in target.meta[Open.self] == true } }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
         }
     }
 }
@@ -106,8 +104,8 @@ func open(_ id: ShapeID) -> AnyShapeRecord {
 }
 
 /// The graph's fixtures with stand-ins: `more` after them.
-@MainActor func standing(_ file: CanvasFile = CanvasFile(), most: Int = 50, more: [any CanvasPlugin] = []) throws -> EditorHarness {
-    try graph(file, more: [StandInsPlugin(most: most)] + more)
+@MainActor func standing(_ file: CanvasFile = CanvasFile(), more: [any CanvasPlugin] = []) throws -> EditorHarness {
+    try graph(file, more: [StandInsPlugin()] + more)
 }
 
 /// An edge forwarded through stand-ins, as the index resolves it.
@@ -150,16 +148,14 @@ extension LensDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Lens>, in context: RenderContext) {}
 }
 
-/// Lenses, each standing for at most `most` shapes, and only open ones if `gated`; one that asks
-/// nothing stands for nothing.
+/// Lenses, each standing for only open shapes if `gated`; one that asks nothing stands for nothing.
 struct LensesPlugin: CanvasPlugin {
-    var most = 50
     var gated = false
     var id: PluginID { "lenses" }
 
     func register(into registrar: inout PluginRegistrar) {
         registrar.shape(LensDefinition()) { lens in
-            lens.standsIn(maxTargets: most, admitting: { target, _ in !gated || target.meta[Open.self] == true }) { shape, _ in
+            lens.standsIn(admitting: { [gated] _ in { target in !gated || target.meta[Open.self] == true } }) { shape, _ in
                 shape.props.asks.isEmpty ? nil : .provided(ForwardingKey(shape.props.asks))
             }
         }
@@ -171,8 +167,8 @@ func lens(_ id: ShapeID, asks: String) -> AnyShapeRecord {
 }
 
 /// The graph's fixtures with proxies, gates and lenses.
-@MainActor func lensing(_ file: CanvasFile = CanvasFile(), most: Int = 50, gated: Bool = false) throws -> EditorHarness {
-    try standing(file, more: [LensesPlugin(most: most, gated: gated)])
+@MainActor func lensing(_ file: CanvasFile = CanvasFile(), gated: Bool = false) throws -> EditorHarness {
+    try standing(file, more: [LensesPlugin(gated: gated)])
 }
 
 /// An answer for a lens.

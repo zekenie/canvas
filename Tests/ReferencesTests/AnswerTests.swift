@@ -122,7 +122,7 @@ let pickedWord = Contributor(id: "picked") { registrar in
         expectEqual(h.state(of: id), .privateMatches(text: "box", count: 2), "private again: held back again")
         expectEqual(h.standsFor(id), [])
     },
-    test("a first-match pill is given eight matches and an All one fifty; the count is all of them") {
+    test("a first-match pill is given eight matches and an All one every match; the count is all of them") {
         let h = try referenceHarness()
         var ids: [ShapeID] = []
         for index in 0..<60 {
@@ -134,8 +134,8 @@ let pickedWord = Contributor(id: "picked") { registrar in
         h.answer()
         expectEqual(found(h, first)?.ids, Array(ids.prefix(8)))
         expectEqual(found(h, first)?.count, 60)
-        expectEqual(found(h, all)?.ids, Array(ids.prefix(50)))
-        expectEqual(h.standsFor(all), Array(ids.prefix(50)), "at most fifty")
+        expectEqual(found(h, all)?.ids, ids)
+        expectEqual(h.standsFor(all), ids, "all sixty")
         expectEqual(h.standsFor(first), [ids[0]])
     },
     test("any other commit asks after 250 ms of quiet, every commit waiting again; one batch for every reference") {
@@ -280,6 +280,31 @@ let pickedWord = Contributor(id: "picked") { registrar in
         for i in 0..<10 { h.addReference(query: "tile", at: CGPoint(x: 400 + CGFloat(i), y: 600)) }
         h.answer()
         expectEqual(state.memoCount, 256, "and so on, past the bound with every one alive")
+    },
+    test("the answers kept name at most so many shapes between them: past it the least recently landed let go first, never the one just landed") {
+        let h = try referenceHarness()
+        _ = boxes(h)
+        let state = try require(h.editor.references)
+        state.boundMemo(toIDs: 5)
+        let first = h.addReference(query: "box", all: true)
+        h.answer()
+        expectEqual(state.memoIDCount, 2, "Alpha and Beta")
+        h.editor.transact { $0.delete([first]) }
+        let second = h.addReference(query: "box", all: true, at: CGPoint(x: 400, y: 300))
+        h.answer()
+        expectEqual(state.memoIDCount, 4)
+        expect(state.isRemembered(first), "kept past its deletion, under the bound")
+        let third = h.addReference(query: "box", all: true, at: CGPoint(x: 400, y: 500))
+        h.answer()
+        expect(!state.isRemembered(first), "the deleted one's, landed least recently, let go")
+        expect(state.isRemembered(second) && state.isRemembered(third))
+        expectEqual(state.memoIDCount, 4)
+        state.boundMemo(toIDs: 1)
+        let fourth = h.addReference(query: "box", all: true, at: CGPoint(x: 400, y: 700))
+        h.answer()
+        expectEqual(state.memoCount, 1, "only the one landed last, though it alone names more")
+        expectEqual(state.memoIDCount, 2)
+        expect([second, third, fourth].contains(where: state.isRemembered))
     },
     test("an answer older than the latest for its question is dropped, and an answer to another question") {
         let h = try referenceHarness()

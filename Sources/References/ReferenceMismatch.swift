@@ -43,16 +43,35 @@ extension ReferenceState {
         return ReferenceStyle.mismatchLine(name: name, channels: mismatch.channel.pluralName)
     }
 
+    /// The channel alone, for a pill drawn (`drawnMismatch(of:)`): read from the kinds the reference
+    /// stands for (`topology.standingKinds(of:)`), each once, never its shapes, so a frame costs the
+    /// same for a reference of three shapes and of ten thousand.
+    func mismatchedChannel(of id: ShapeID) -> ChannelID? {
+        guard let topology = editor.topology else { return nil }
+        return refusal(of: id, in: topology)?.channel
+    }
+
     private func findMismatch(of id: ShapeID, in topology: TopologyIndex) -> ChannelMismatch? {
-        let targets = topology.forwards(of: id).compactMap { editor.shape(inFile: $0) }
+        guard let (channel, refusing) = refusal(of: id, in: topology) else { return nil }
+        // The first shape it stands for of a kind that doesn't: a walk only once there is one.
+        for target in topology.forwards(of: id) {
+            if let record = editor.shape(inFile: target), refusing.contains(record.kind) { return ChannelMismatch(channel: channel, target: target) }
+        }
+        return nil
+    }
+
+    /// The first channel of an arrow attached to `id` that a kind it stands for doesn't take in that
+    /// end's role, and those kinds (what stands for shapes is never kept aside, so a kind's ports say
+    /// it all: `registry.accepts`).
+    private func refusal(of id: ShapeID, in topology: TopologyIndex) -> (channel: ChannelID, refusing: Set<ShapeKind>)? {
+        let kinds = topology.standingKinds(of: id)
         let registry = editor.registry
-        guard !targets.isEmpty, let connections = registry.connectorEdgeType else { return nil }
+        guard !kinds.isEmpty, let connections = registry.connectorEdgeType else { return nil }
         for (direction, role) in [(EdgeDirection.incoming, PortRole.target), (.outgoing, .source)] {
             for edge in topology.edges(of: id, direction, types: .within(connections), view: .literal) {
                 guard let channel = editor.shape(inFile: edge.carrier)?[ChannelProperty.self], registry.declares(channel) else { continue }
-                if let culprit = targets.first(where: { !registry.accepts($0, on: channel, as: role) }) {
-                    return ChannelMismatch(channel: channel, target: culprit.id)
-                }
+                let refusing = Set(kinds.filter { !registry.takes($0, channel, as: role) })
+                if !refusing.isEmpty { return (channel, refusing) }
             }
         }
         return nil

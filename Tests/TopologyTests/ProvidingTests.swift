@@ -120,19 +120,18 @@ import Topology
         let loaded = try hiddenFile()
         let a = ShapeID(), c = ShapeID(), d = ShapeID(), b = ShapeID(), r = ShapeID(), p = ShapeID(), l = ShapeID(), gone = ShapeID()
         let records = [box(a), box(c), box(d), box(b), lens(r, asks: "q"), proxy(p, [a]), link(l, b, r)]
-        let h = try lensing(CanvasFile(root: CanvasDocument(shapes: loaded.file.root.shapes + records), children: loaded.file.children),
-                            most: 2)
+        let h = try lensing(CanvasFile(root: CanvasDocument(shapes: loaded.file.root.shapes + records), children: loaded.file.children))
         let topology = h.topology
         let named = [gone, id(10), id(11), p, r, a, a, c, d]
         topology.provide([r: answer("q", named)])
-        expectEqual(topology.forwards(of: r), [a, c], "missing, kept aside, unavailable, a stand-in, itself, again, past its most")
+        expectEqual(topology.forwards(of: r), [a, c, d], "missing, kept aside, unavailable, a stand-in, itself, again")
         let read = topology.recordsRead
         h.editor.transact("Delete") { $0.delete([a]) }
         expectEqual(topology.forwards(of: r), [c, d])
         expectEqual(topology.edges(carriedBy: l), [c, d].map { forwarded(WireEdge.id, b, $0, by: l, to: r) })
         expectEqual(topology.recordsRead, read, "a box and a lens carry nothing to read; the answer is kept")
         h.editor.undo()
-        expectEqual(topology.forwards(of: r), [a, c])
+        expectEqual(topology.forwards(of: r), [a, c, d], "back in its place")
         try expectAnswered(h, [r: answer("q", named)], "after undo")
         h.editor.transact { $0.moveBox(c, to: CGPoint(x: 400, y: 0)) }
         expectEqual(topology.recordsRead, read, "a move reads nothing")
@@ -145,22 +144,80 @@ import Topology
         expectEqual(gated.topology.forwards(of: r), [a, c], "opened: a change to an answer's shape alone")
     },
 
-    test("an arrow between two lenses for 50 each is held to the cap, and a provide sets only the carriers at the lenses it changed") {
+    test("an arrow between two lenses for 50 each is every pair, and a provide touches only the ends at the lenses it changed") {
         let first = (0..<50).map { _ in ShapeID() }, second = (0..<50).map { _ in ShapeID() }
         let r = ShapeID(), s = ShapeID(), l = ShapeID(), b = ShapeID(), m = ShapeID(), far = ShapeID(), n = ShapeID()
         let shapes = (first + second + [b, far]).map(box) + [lens(r, asks: "all"), lens(s, asks: "all"), link(l, r, s), link(m, b, r), link(n, far, far)]
         let h = try lensing(CanvasFile(root: CanvasDocument(shapes: shapes)))
         let topology = h.topology
         topology.provide([r: answer("all", first), s: answer("all", second)])
-        expectEqual(topology.edges(carriedBy: l).count, EdgeForwarding.maxPairsPerCarrier)
+        expectEqual(topology.edges(carriedBy: l).count, 50 * 50)
         expectEqual(topology.edges(carriedBy: m).count, 50)
         let onFar = topology.revision(of: far)
         topology.provide([r: answer("all", second, 2)])
         expectEqual(topology.edges(carriedBy: m).map(\.target), second)
-        expectEqual(topology.edges(carriedBy: l).count, EdgeForwarding.maxPairsPerCarrier)
+        expectEqual(topology.edges(carriedBy: l).count, 50 * 50)
         expectEqual(topology.revision(of: far), onFar)
         expect(!topology.touched.contains(far))
         try expectAnswered(h, [r: answer("all", second), s: answer("all", second)], "fanned out")
+    },
+
+    test("answers prepared off the main actor: taken as prepared, worked out again after a commit to what they name, dropped as provide drops them") {
+        let a = ShapeID(), c = ShapeID(), d = ShapeID(), b = ShapeID(), r = ShapeID(), l = ShapeID()
+        let h = try lensing(CanvasFile(root: board(box(a), box(c), box(d), box(b), lens(r, asks: "q"), link(l, b, r))))
+        let topology = h.topology
+        let first = answer("q", [a, c])
+        let preparer = topology.preparer()
+        let prepared = try require(offMain { preparer.prepare([r: first]) })
+        topology.provide([r: first], prepared: prepared)
+        expectEqual(topology.forwards(of: r), [a, c])
+        expectEqual(topology.preparedTaken, 1)
+        expectEqual(topology.touched, [b, a, c, r], "as if worked out here")
+        try expectAnswered(h, [r: first], "taken as prepared")
+
+        // A newer answer naming the same shapes moves nothing.
+        let again = answer("q", [a, c], 2), onA = topology.revision(of: a)
+        topology.provide([r: again], prepared: topology.preparer().prepare([r: again]))
+        expectEqual(topology.preparedTaken, 2)
+        expectEqual(topology.revision(of: a), onA)
+
+        // A commit between preparing and providing to a shape the answer names: worked out here.
+        let third = answer("q", [c, d], 3)
+        let stale = topology.preparer().prepare([r: third])
+        h.editor.transact("Delete") { $0.delete([d]) }
+        topology.provide([r: third], prepared: stale)
+        expectEqual(topology.preparedRedone, 1)
+        expectEqual(topology.forwards(of: r), [c], "the deleted one left out")
+        try expectAnswered(h, [r: third], "worked out again")
+
+        // A commit to a shape it doesn't name leaves what was prepared standing.
+        let fourth = answer("q", [a, c], 4)
+        let fresh = topology.preparer().prepare([r: fourth])
+        h.editor.transact { $0.update(b) { $0.meta[Open.self] = true } }
+        topology.provide([r: fourth], prepared: fresh)
+        expectEqual(topology.preparedTaken, 3)
+        expectEqual(topology.forwards(of: r), [a, c])
+        expectEqual(topology.edges(carriedBy: l), [a, c].map { forwarded(WireEdge.id, b, $0, by: l, to: r) })
+        try expectAnswered(h, [r: fourth], "taken past a commit to another shape")
+
+        // A file put in place in between: every answer is let go of, and one prepared before is worked out
+        // here, for the file as it is.
+        let sixth = answer("q", [c], 6)
+        let before = topology.preparer().prepare([r: sixth])
+        h.editor.replaceFile(with: h.file)
+        expectEqual(topology.forwarding(of: r), .pending, "its answer let go of")
+        let redone = topology.preparedRedone
+        topology.provide([r: sixth], prepared: before)
+        expectEqual(topology.preparedRedone, redone + 1)
+        expectEqual(topology.forwards(of: r), [c])
+
+        // The lens asks another question in between: its answer is dropped, as one not prepared is.
+        let fifth = answer("q", [a], 5)
+        let dropped = topology.preparer().prepare([r: fifth])
+        h.editor.transact { $0.update(r, as: Lens.self) { $0.props.asks = "other" } }
+        topology.provide([r: fifth], prepared: dropped)
+        expectEqual(topology.forwarding(of: r), .pending)
+        try expectAnswered(h, [:], "dropped")
     },
 
     test("followers hear every change to the edges once, a commit's, a provide's and a rebuild's, and touched is the last change's") {
@@ -267,7 +324,8 @@ import Topology
         asking.cancel()
     },
 
-    test("through seeded commits, undo, boards it can't show and answers: the index is as a fresh one given the answers it still holds, in every view") {
+    test("through seeded commits, undo, boards it can't show and answers, some prepared and some past a commit: the index is as a fresh one given the answers it still holds, in every view") {
+        var taken = 0, redone = 0
         for seed: UInt64 in [3, 11, 24, 58, 90, 123] {
             let churn = try Turnover(seed: seed, lenses: true)
             var answered = 0
@@ -278,7 +336,11 @@ import Topology
                 if !churn.answers.isEmpty { answered += 1 }
             }
             expect(answered > 30, "lenses stood for answers through much of the run (\(answered) of 150), seed \(seed)")
+            taken += churn.h.topology.preparedTaken
+            redone += churn.h.topology.preparedRedone
         }
+        expect(taken > 20, "answers taken as prepared: \(taken)")
+        expect(redone > 0, "and some worked out again after a commit to what they name: \(redone)")
     },
 ])
 

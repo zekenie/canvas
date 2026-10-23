@@ -209,15 +209,15 @@ struct KindsPlugin: CanvasPlugin {
         registrar.shape(SealDefinition())
         registrar.shape(DraftDefinition())
         registrar.shape(HolderDefinition()) { holder in
-            holder.standsIn(admitting: { target, registry in registry.isPublic(target) }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
+            holder.standsIn(admitting: { registry in registry.publicShapes }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
         }
         registrar.shape(LensDefinition()) { lens in
-            lens.standsIn(admitting: { target, registry in registry.isPublic(target) }) { shape, _ in
+            lens.standsIn(admitting: { registry in registry.publicShapes }) { shape, _ in
                 shape.props.asks.isEmpty ? nil : .provided(ForwardingKey(shape.props.asks))
             }
         }
         registrar.shape(RelayDefinition()) { relay in
-            relay.standsIn(admitting: { target, registry in registry.isPublic(target) }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
+            relay.standsIn(admitting: { registry in registry.publicShapes }) { shape, _ in .shapes(shape.props.stands.map(\.shape)) }
         }
     }
 }

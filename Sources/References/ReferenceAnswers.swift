@@ -116,6 +116,9 @@ struct RememberedAnswer {
 struct Memo {
     var answers: [RememberedAnswer] = []
     var used = 0
+
+    /// How many shapes its answers name between them.
+    var ids: Int { answers.reduce(0) { $0 + $1.matches.ids.count } }
 }
 
 /// Which references' answers changed, for SwiftUI: reading a reference's revision observes it alone,
@@ -229,6 +232,7 @@ extension ReferenceState {
         let before = Set(dynamic.keys)
         dynamic = [:]
         memo = [:]
+        memoIDs = 0
         let file = editor.file, topology = editor.topology
         func scan(_ document: CanvasDocument) {
             for record in document.shapes where record.kind == Reference.kind && (topology.map { Self.isReference(record.id, in: $0) } ?? false) {
@@ -288,7 +292,7 @@ extension ReferenceState {
     /// One batch for every dirty dynamic reference not being typed into, on one snapshot of the file:
     /// each asked on the recorded view (what direct references forward, never another's answer),
     /// admitting public shapes alone, first-match ones for eight (what All would add, for the panel),
-    /// all-match ones for fifty. A query that can't be read, or reads what the person is doing,
+    /// all-match ones for every match. A query that can't be read, or reads what the person is doing,
     /// isn't asked: it's refused at once. A batch already out is let go of, and what it asked asked again.
     func ask() {
         debounce?.cancel()
@@ -341,8 +345,13 @@ extension ReferenceState {
         batch = Task { [weak self, queries] in
             let results = await queries.matches(requests)
             guard !Task.isCancelled, let self else { return }
+            let landed = zip(asked, results).map { ($0.id, $0.key, Landed($1)) }
+            // What Topology takes of them worked out off the main actor too, so landing takes in what
+            // came and went, however many shapes a query found.
+            let prepared = await prepare(providing(landed, revision: revision))
+            guard !Task.isCancelled else { return }
             batch = nil
-            land(zip(asked, results).map { ($0.id, $0.key, Landed($1)) }, revision: revision)
+            land(landed, revision: revision, prepared: prepared)
             #if DEBUG
             batchesLanded += 1
             #endif
@@ -359,11 +368,40 @@ extension ReferenceState {
     }
 
     /// What a reference's query is asked as: on the recorded view, its public matches, first-match ones
-    /// for eight (what All would add, for the panel), all-match ones for fifty, counting apart the
+    /// for eight (what All would add, for the panel), all-match ones for every one, counting apart the
     /// matches that would be stood for once made public (Publishing's `admittable`).
     func request(_ query: String, all: Bool) -> QueryMatchRequest {
-        QueryMatchRequest(query, edges: .recorded, limit: all ? ReferenceStyle.maxTargets : ReferenceStyle.firstFetched,
+        QueryMatchRequest(query, edges: .recorded, limit: all ? QueryMatchRequest.every : ReferenceStyle.firstFetched,
                           admitting: admission, holdingBack: editor.publishing?.admittable)
+    }
+
+    /// What `land` would hand Topology of what a batch answered, read and changing nothing: an answer for
+    /// each reference still asking the question it was asked, no older than the latest that landed for
+    /// that question, standing for what `land` has it stand for (the same ids, not copies).
+    private func providing(_ results: [(id: ShapeID, key: ForwardingKey, landed: Landed)], revision: Int) -> [ShapeID: ProvidedForwarding] {
+        var answers: [ShapeID: ProvidedForwarding] = [:]
+        for (id, key, landed) in results {
+            guard let finding = dynamic[id], finding.key == key else { continue }
+            let found: QueryMatches
+            switch landed {
+            case .matches(let matches): found = matches
+            case .refused: found = QueryMatches(canonical: "", ids: [], count: 0, revision: revision)
+            case .failed, .askAgain: continue
+            }
+            if let applied = finding.applied[key], found.revision < applied { continue }
+            answers[id] = ProvidedForwarding(key: key, shapes: stoodFor(found, all: finding.all), revision: found.revision)
+        }
+        return answers
+    }
+
+    /// `answers` worked out off the main actor as Topology would take them, against the index as it is
+    /// as this asks (`TopologyIndex.preparer()`): what each will stand for and what came and went, for
+    /// `land` to hand over with them. Nil without Topology or with nothing to hand over.
+    private func prepare(_ answers: [ShapeID: ProvidedForwarding]) async -> PreparedForwarding? {
+        guard !answers.isEmpty, let preparer = editor.topology?.preparer() else { return nil }
+        let working = Task.detached(priority: Task.currentPriority) { preparer.prepare(answers) }
+        // A batch let go of (`ask()` cancels it) stops its preparing too.
+        return await withTaskCancellationHandler { await working.value } onCancel: { working.cancel() }
     }
 
     /// No batch is out any more: waiters on Topology look again, as nothing may be provided to say so.
@@ -383,7 +421,8 @@ extension ReferenceState {
     /// the panel and the row. A refusal (a title or an id no shape has, a container that can't hold
     /// shapes, a query that can't be read or reads what the person is doing) is no matches, saying
     /// why; the deadline passing is a failure that can be retried; a query cancelled is asked again.
-    private func land(_ results: [(id: ShapeID, key: ForwardingKey, landed: Landed)], revision: Int) {
+    /// `prepared` is what Topology was worked out to take of them off the main actor (`prepare`).
+    private func land(_ results: [(id: ShapeID, key: ForwardingKey, landed: Landed)], revision: Int, prepared: PreparedForwarding? = nil) {
         var answers: [ShapeID: ProvidedForwarding] = [:], changed: Set<ShapeID> = []
         for (id, key, landed) in results {
             guard var finding = dynamic[id], finding.key == key else { continue }
@@ -422,7 +461,7 @@ extension ReferenceState {
             slowTimer?.cancel()
             slowTimer = nil
         }
-        deliver(answers, changed: changed)
+        deliver(answers, changed: changed, prepared: prepared)
         if batch == nil { editor.topology?.settleSourceChanged() }
     }
 
@@ -444,15 +483,16 @@ extension ReferenceState {
         return status == other
     }
 
-    /// What a reference stands for of what it found: the first match, or every one (up to fifty).
+    /// What a reference stands for of what it found: the first match, or every one (the ids as found,
+    /// not copied).
     private func stoodFor(_ matches: QueryMatches, all: Bool) -> [ShapeID] {
-        all ? Array(matches.ids.prefix(ReferenceStyle.maxTargets)) : Array(matches.ids.prefix(1))
+        all ? matches.ids : Array(matches.ids.prefix(1))
     }
 
     /// Hands answers to Topology, and tells the pills (drawn again), the panels (observed) and the
     /// table of contents' rows of `changed`.
-    private func deliver(_ answers: [ShapeID: ProvidedForwarding], changed: Set<ShapeID>) {
-        if !answers.isEmpty { editor.topology?.provide(answers) }
+    private func deliver(_ answers: [ShapeID: ProvidedForwarding], changed: Set<ShapeID>, prepared: PreparedForwarding? = nil) {
+        if !answers.isEmpty { editor.topology?.provide(answers, prepared: prepared) }
         guard !changed.isEmpty else { return }
         for id in changed { answered.bump(id) }
         editor.setNeedsDisplay()
@@ -470,16 +510,30 @@ extension ReferenceState {
 
     /// Keeps `answer` as one of the last `ReferenceStyle.answersKept` of the reference, which is
     /// kept past its deletion (for its undo) but only among the `ReferenceStyle.memosKept` most
-    /// recently landed or used: a reference made past that lets go of the least recent one's, so
-    /// the memo never grows with every dynamic reference a session has made. A frame and a commit
-    /// cost nothing of it; the scan is only when a reference is first remembered past the bound.
+    /// recently landed or used, and while all the answers kept name at most
+    /// `ReferenceStyle.memoIDsKept` shapes: a reference made past either lets go of the least recent
+    /// one's, so the memo grows neither with every dynamic reference a session has made nor with how
+    /// many shapes their queries find. A frame and a commit cost nothing of it; the scan is only when
+    /// a bound is passed.
     private func remember(_ answer: RememberedAnswer, for id: ShapeID) {
         memoClock += 1
         let isNew = memo[id] == nil
-        memo[id, default: Memo()].answers.removeAll { $0.key == answer.key }
-        memo[id]?.answers.append(answer)
-        if let count = memo[id]?.answers.count, count > ReferenceStyle.answersKept { memo[id]?.answers.removeFirst(count - ReferenceStyle.answersKept) }
-        memo[id]?.used = memoClock
-        if isNew, memo.count > ReferenceStyle.memosKept, let oldest = memo.min(by: { $0.value.used < $1.value.used })?.key { memo[oldest] = nil }
+        var kept = memo[id] ?? Memo()
+        memoIDs -= kept.ids
+        kept.answers.removeAll { $0.key == answer.key }
+        kept.answers.append(answer)
+        if kept.answers.count > ReferenceStyle.answersKept { kept.answers.removeFirst(kept.answers.count - ReferenceStyle.answersKept) }
+        kept.used = memoClock
+        memo[id] = kept
+        memoIDs += kept.ids
+        if isNew, memo.count > ReferenceStyle.memosKept { forgetLeastRecent(sparing: id) }
+        while memoIDs > memoIDBound, memo.count > 1 { forgetLeastRecent(sparing: id) }
+    }
+
+    /// Lets go of the answers of the reference landed or used least recently, but `id`'s.
+    private func forgetLeastRecent(sparing id: ShapeID) {
+        guard let oldest = memo.filter({ $0.key != id }).min(by: { $0.value.used < $1.value.used })?.key,
+              let gone = memo.removeValue(forKey: oldest) else { return }
+        memoIDs -= gone.ids
     }
 }

@@ -11,7 +11,7 @@ import TestKit
 import Titles
 
 // A dynamic reference's panel, row and menu: the header says how many it found ("First of 7",
-// "12 matches", "50 of 73", "No matches", "Not public"; nothing while it's looked for); the Query
+// "12 matches", "73 matches", "No matches", "Not public"; nothing while it's looked for); the Query
 // section has the query, a status line only when there's something to say (what it found that isn't
 // public, with Make Public, among it), and Match ☐ All; the Matches section, while
 // it found shapes, a row each (the board's name where that isn't the board shown, the rows All would
@@ -42,7 +42,7 @@ import Titles
 }
 
 @MainActor let dynamicPanelTests = Suite("A dynamic reference's panel, row and menu", [
-    test("the header says how many it found: First of 7, 12 matches, 50 of 73, 1 match, No matches; nothing while it's looked for") {
+    test("the header says how many it found: First of 7, 12 matches, 73 matches, 1 match, No matches; nothing while it's looked for") {
         let h = try referenceHarness()
         boxes(h, 73)
         let first = h.addReference(words: "the boxes", query: "box")
@@ -54,7 +54,7 @@ import Titles
         h.answer()
         expectEqual(try header(h, first), ReferenceHeaderContent(symbol: "magnifyingglass", title: "the boxes", subtitle: "First of 73"))
         expectEqual(try header(h, some).subtitle, "11 matches", "B1 and B10 to B19")
-        expectEqual(try header(h, many), ReferenceHeaderContent(symbol: "magnifyingglass", title: "box", subtitle: "50 of 73"), "an agent's, called by its query")
+        expectEqual(try header(h, many), ReferenceHeaderContent(symbol: "magnifyingglass", title: "box", subtitle: "73 matches"), "an agent's, called by its query")
         expectEqual(try header(h, one).subtitle, "1 match")
         expectEqual(try header(h, none).subtitle, "No matches")
         let refused = h.addReference(words: "nobody", query: "\"Nobody\"", at: CGPoint(x: 400, y: 800))
@@ -167,18 +167,19 @@ import Titles
         let dimmed = try require(h.secondaryClick(at: h.view(CGPoint(x: noneFrame.midX, y: noneFrame.midY))))
         expect(dimmed.outline.contains("(Show Matches)"), "dimmed with none: \(dimmed.outline)")
     },
-    test("Show Matches selects every match the header counts: the eleven of a first-match pill, given eight, and an All one's sixty, past fifty") {
+    test("Show Matches selects every match the header counts: the eleven of a first-match pill, given eight, and an All one's sixty") {
         let h = try referenceHarness()
         let ids = boxes(h, 60)
         let first = h.addReference(query: "box[title^=\"B1\"]")
         let all = h.addReference(query: "box", all: true, at: CGPoint(x: 400, y: 400))
         h.answer()
         expectEqual(try header(h, first).subtitle, "First of 11")
-        expectEqual(try header(h, all).subtitle, "50 of 60")
+        expectEqual(try header(h, all).subtitle, "60 matches")
         for (id, expected) in [(first, Set([ids[1]] + ids[10...19])), (all, Set(ids))] {
             let frame = try require(h.editor.document[id]?.box)
             try require(h.secondaryClick(at: h.view(CGPoint(x: frame.midX, y: frame.midY)))).choose("Show Matches")
-            _ = spinRunLoop(until: { h.editor.selectedShapeIDs.count > 1 })
+            // The All one holds every match: gone to a turn later, with no question asked.
+            _ = spinRunLoop(until: { h.wait(0); return h.editor.selectedShapeIDs.count > 1 })
             expectEqual(Set(h.editor.selectedShapeIDs), expected, "every one, not only those it was given")
         }
     },
@@ -248,5 +249,15 @@ import Titles
         expectEqual(counted.systemImage, "magnifyingglass")
         expectEqual(counted.badge, "3")
         expect(try row(none).isPlaceholder, "found nothing: dimmed")
+    },
+    test("past a thousand the count is cut down, never rounded up, the header says it whole, and every match is stood for") {
+        let h = try referenceHarness()
+        let ids = boxes(h, 1_299)
+        let all = h.addReference(words: "the boxes", query: "box", all: true, at: CGPoint(x: 400, y: 400))
+        h.answer()
+        let label = try require(try require(try require(h.editor.tableOfContents).entries.first { $0.id == all }).label)
+        expectEqual(label.badge, "1.2k", "1,299 is 1.2 thousand, not 1.3")
+        expectEqual(try header(h, all).subtitle, "\(1_299.formatted()) matches")
+        expectEqual(h.standsFor(all), ids, "all of them, in file order")
     },
 ])

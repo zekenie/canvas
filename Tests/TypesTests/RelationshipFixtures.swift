@@ -147,7 +147,7 @@ struct RelaysPlugin: CanvasPlugin {
     var id: PluginID { "relays" }
     func register(into registrar: inout PluginRegistrar) {
         registrar.shape(RelayDefinition()) { relay in
-            relay.standsIn(admitting: { target, _ in target.meta[Open.self] == true },
+            relay.standsIn(admitting: { _ in { target in target.meta[Open.self] == true } },
                            needs: "open",
                            fulfilling: { record, _ in
                                record.meta[Open.self] = true

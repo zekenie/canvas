@@ -8049,7 +8049,7 @@ placed where they're wanted. The kind says so, and Topology does the rest; it kn
 (no kind, no publicness, no query):
 
 ```swift
-x.standsIn(maxTargets: 50, admitting: { target, registry in … }) { shape, registry in
+x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
     .shapes(shape.props.stands)             // what its record names, on any board
     // or .provided(ForwardingKey(shape.props.question)): whatever is provided for that key
 }
@@ -8058,17 +8058,20 @@ x.standsIn(maxTargets: 50, admitting: { target, registry in … }) { shape, regi
 - **What it stands for** (`effective`, worked out from records alone): what the rule names, in
   order, each once (a name again is left out, the first kept), taking only shapes on a board the
   editor can show, not kept aside, not itself, not stand-ins (one hop: a stand-in never stands for
-  a stand-in), and that `admitting` takes (pure, of the target's record and the registry), up to
-  `maxTargets` (50 by default; `EdgeForwarding.check` refuses fewer than 1). `.provided` stands for
+  a stand-in), and that its admission takes, however many (no cap). `admitting` makes the admission
+  from the registry, once an index (`ForwardAdmissionMaker`): what it needs of the registry it reads
+  there, so the admission itself is `@Sendable` and reads the target's record alone, and what a
+  stand-in stands for can be worked out on another thread ([below](#provided-answers-the-one-delivery-settling)).
+  References' is Publishing's `registry.publicShapes`. `.provided` stands for
   nothing until an answer comes for the key its record holds now ([`provide`](#provided-answers-the-one-delivery-settling)),
   and the answer's shapes are taken by the same rule. The rule (`ForwardingRule`) is
   pure, as a source is: never another shape, geometry, a service or the time. One rule per kind
   (the `EdgeForwarding` point, keyed by kind; the report says `stands in → kind`).
 - **Edges, resolved.** An edge any other shape carries with a stand-in at an end becomes one edge
   per pair of what each end stands for (an end that's no stand-in, or stands for nothing, stays
-  itself), source by source, each `.forwarded` with the stand-in at each end it replaced, at most
-  `EdgeForwarding.maxPairsPerCarrier` (256) per carrier, though every edge a carrier emits keeps
-  one (an arrow between two stand-ins for 50 each is held to 256, not 2,500). A stand-in that
+  itself), source by source, each `.forwarded` with the stand-in at each end it replaced, every
+  pair (an arrow between two stand-ins for 50 each is 2,500 edges, read as they're asked for and
+  never kept: below). A stand-in that
   stands for nothing leaves an edge into it as it was: nothing dangles because of a stand-in, and
   what's wrong is for the stand-in's kind to show. A stand-in's own edges are never forwarded, and
   it carries a `stands-for` edge (`StandingEdge`, Topology's own, a root `TopologyPlugin` declares:
@@ -8089,14 +8092,15 @@ x.standsIn(maxTargets: 50, admitting: { target, registry in … }) { shape, regi
   (`Forwarding.onlyShape`), with `standInKind(of:)`, a stand-in's kind (References asks these and keeps
   no index of its own of who names what); `forwarding(of:)`, `ForwardingState` (`.none`, `.record([…])`,
   `.provided([…])`, `.pending`, waiting for an answer); `edges(through:)`, the resolved edges
-  forwarded through a stand-in, one per shape it stands for; and `standInKinds`, on the index and
-  a snapshot.
+  forwarded through a stand-in, one per shape it stands for; `standingKinds(of:)`, the kinds a
+  stand-in stands for, each once, the first shape's first (what its ports are read from, a few kinds
+  however many shapes); and `standInKinds`, on the index and a snapshot.
 - **Making one for a shape.** A kind a plugin may put down beside a shape by name rather than by a
   gesture (`canvas draw`'s edge to a shape on another board, [below](#draw)) says how, in the same
   rule:
 
   ```swift
-  x.standsIn(admitting: { target, registry in … },
+  x.standsIn(admitting: { registry in { target in … } },
              needs: "public",                        // one word, for a message: what a shape must be to be stood for
              fulfilling: { record, registry in … },  // make a shape one the kind may stand for (References': make it public); true if it did
              calls: { shape, registry in … },        // what it calls what it stands for (the label it keeps): outlives the shape
@@ -8116,14 +8120,17 @@ x.standsIn(maxTargets: 50, admitting: { target, registry in … }) { shape, regi
   as writing its properties would (`DerivedProps`: a pill's width fits its label). `make` doesn't ask
   `admits`: whoever puts the shape down does, since a stand-in for a shape it may not stand for stands
   for nothing.
-- **Kept sparse.** The index keeps what each carrier emitted (`byCarrier`), the resolved edges by
-  each end and type (an edge filed under its ends and its literal ends, so it's found from the
-  stand-in it went through too), and a carrier's resolved edges apart only where forwarding
-  changed them; the other views are read by mapping each forwarded edge back through its origin.
-  A file with no stand-ins keeps exactly what it did before there were any, and costs what it did
-  (TopologyTests read `resolvedCarrierCount`, debug builds): each record's kind is looked up once, and
-  the stand-in tables only while they hold something. An `Edge` hashes its two ends alone (it's equal
-  by every field), so the sets the tables diff and collapse in cost a fraction; its origin is boxed (one
+- **Forwarded on read.** The index keeps what each carrier emitted (`byCarrier`, by each end and
+  type) and what each stand-in stands for, and no copy: every view is read from them as it's asked.
+  A read at the far end of an arrow into a stand-in makes one copy for each shape it stands for; a
+  read at one of those shapes makes its own alone (through `standIns(for:)`); a standing edge is
+  made from what the stand-in stands for. So a read costs what it returns, and a change to what a
+  stand-in stands for costs what came and went, never those shapes times the arrows at it (a commit
+  to one of a thousand shapes a stand-in names looks at that one again, and puts it back in its
+  place on an undo). A file with no stand-ins keeps exactly what it did before there were any, and
+  costs what it did (TopologyTests read `storedEdgeCount`, debug builds): each record's kind is looked
+  up once, and the stand-in tables only while they hold something. An `Edge` hashes its two ends alone
+  (it's equal by every field), so the sets the tables diff in cost a fraction; its origin is boxed (one
   word), and a `ShapeID` is two words, so an edge copies and compares as plain words do.
 
 ### Provided answers, the one delivery, settling
@@ -8146,10 +8153,18 @@ let settled = await topology.settled(timeout: .seconds(5))   // false if it ran 
   show), or older (`revision`) than the one held for that key is dropped and touches nothing. A
   commit that changes a stand-in's key, deletes it or hides its board lets go of its answer, as
   every rebuild does (they were for the file as it was), so an answer given again after an undo
-  (a memo) is taken whatever its revision. It runs a commit's stand-in pass seeded with the
-  stand-ins it answered: what each stands for is worked out (the same rule as named shapes), the
-  carriers at those whose shapes changed are set again, revisions bump, `touched` is its ends. A
-  commit to a shape an answer names looks at the stand-in again, as one to a named shape does.
+  (a memo) is taken whatever its revision; one that names what the one held names is taken as newer
+  and changes nothing else. For the rest, what each stands for is worked out (the same rule as named
+  shapes), revisions bump, `touched` is the ends of what came and went. A commit to a shape an answer
+  names looks at that shape again, as one to a named shape does.
+- **Worked out on another thread.** An answer may name thousands of shapes, and comes again after
+  every commit; working out what a stand-in stands for reads each of them. A provider can do that
+  off the main actor: `topology.preparer()` (O(1), the index as it is now, shared as a snapshot is),
+  then, on any thread, `preparer.prepare(answers)` (pure: what `provide` would make of each, and what
+  came and went), then, back on the main actor, `topology.provide(answers, prepared: prepared)`, which
+  takes each answer as it was worked out unless a change since read the stand-in or a shape it names
+  again (then that one is worked out on the main actor, as with no preparing). References prepares
+  every batch: an answer adding one of 7,000 notes costs the main actor some 0.07 ms.
   `forwarding(of:)` is `.provided([…])` once answered, `.pending` before; `pendingStandIns` lists
   those waiting. Call it from a scheduled callback or a task's continuation on the main actor:
   never while a service hears a commit or a switch, and never from a follower (a debug assert).
@@ -10242,7 +10257,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
     let place = reference.editingPlacement(size: Reference.defaultSize) { Reference() }
     reference.tool(label: "Reference", systemImage: "arrow.turn.up.right", shortcut: "r", placing: place)
     reference.portsOnEveryChannel(sides: [.left, .right])  // what it takes is what it stands for ([Ports at a stand-in](#ports-at-a-stand-in))
-    reference.standsIn(maxTargets: 50, admitting: { target, registry in registry.isPublic(target) },
+    reference.standsIn(admitting: { registry in registry.publicShapes },
                        needs: "public",                // a message says "only a public shape can be stood for"
                        fulfilling: { record, registry in registry.makePublic(&record) },
                        calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
@@ -10293,29 +10308,32 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   **recorded** view (what direct references forward, never another dynamic one's answer), admitting
   public shapes alone (`editor.publishing.admitting`) and counting apart those that would be once
   made public (`holdingBack: editor.publishing.admittable`), eight matches for a first-match one (what All
-  would add, for its panel) and fifty for an All one. When: its own question changed (its query or flag,
+  would add, for its panel) and every one for an All one (`QueryMatchRequest.every`). When: its own question changed (its query or flag,
   a gesture or an undo), at once, on the scheduler's next turn; any other commit but a move, after
   250 ms of quiet (`ReferenceStyle.settle`, each commit waiting again, on `editor.scheduler`); a commit
   that only moved shapes, never (one test). A plan that reads the person (`editorWords`) isn't asked:
   it's refused, “`:selected` can’t be used here.” (`queries.checkStored`, Queries' one gate for a
   stored query, which the reference's draft, its warning and `canvas draw` go through too). An answer lands only for the question the record
   asks now and only if no older than the latest that landed for it (kept per key), and goes to Topology
-  in one `provide` (the first match, or up to fifty), then, if it says something new (every quiet asks
+  in one `provide` (the first match, or every one), worked out for Topology off the main actor first
+  (`preparer()`, [above](#provided-answers-the-one-delivery-settling)), so a landing costs the main
+  actor what came and went, then, if it says something new (every quiet asks
   every reference again, and most answers are what they were), the pills (`setNeedsDisplay`), panels
   (observed per reference) and rows (`contentsDidChange(for:)`) are told. A title or id no shape has,
   or a container that can't hold shapes, is no matches, saying why; the deadline is a failure that
   Retry asks again. The last four answers of each reference are kept by key, so an undo, a redo or an
   All toggled back shows its answer at once (provided from a hop of the scheduler, exempt from the
   stale rule, then asked again). They are kept past the reference's deletion (for its undo), but for
-  at most 256 references (`ReferenceStyle.memosKept`): the least recently landed or used gives way, so a
-  long session's deleted references don't pile up. It's one of Topology's settle sources (busy while a wait is armed, a
+  at most 256 references (`ReferenceStyle.memosKept`), naming at most a million shapes between them
+  (`memoIDsKept`): the least recently landed or used gives way, never the one just landed, so a long
+  session's deleted references don't pile up and an answer of every shape isn't kept four times over. It's one of Topology's settle sources (busy while a wait is armed, a
   hop is due or a batch is out), so `canvas query` right after a draw waits for it, and "Finding…"
   shows only once a batch has been out 250 ms.
 - **The pill** (`ReferenceStyle`): a capsule 32 tall, a leading symbol (the kind's, tinted, or a
   magnifier for every dynamic one, or a dashed square for what's gone), the label (14 medium, one line;
   a dynamic one's words, never its matches' names), and what trails (the eye of a shape gone private,
   and of a query whose every match isn't public;
-  the first match's kind symbol in its tint, an All one's count in a capsule, "50+" past fifty, a "0"
+  the first match's kind symbol in its tint, an All one's count in a capsule ("1.2k" past a thousand, cut down, never rounded up), a "0"
   for none or a refusal, the warning for a failure); filled and bordered, or, when it stands for
   nothing, a dashed border with no fill and the label in italic at two thirds; while it's looked for,
   solid with its words at half. A pill whose shape is on another board than its own says that board's
@@ -10388,10 +10406,10 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   arrow; a click goes as following a mention does, one step back, the pill not selected first), and the
   same command is the context menu's first item and the panel's plain "Go to Original" button, which work
   on a locked reference too. A dynamic one's symbol goes to what it stands for, and its menu has Show
-  Matches (every match its header counts, selected: a reference given fewer, eight for a first-match
-  one or fifty, asks its query for every one first) and Match All or Match First.
+  Matches (every match its header counts, selected: a first-match one, given eight, asks its query for
+  every one first) and Match All or Match First.
 - **The panel of a dynamic reference**: the header's line says how many it found ("First of 7", "12
-  matches", "50 of 73", "No matches", "Not public" when what it found is all not public; nothing while
+  matches", "1,284 matches", "No matches", "Not public" when what it found is all not public; nothing while
   it's looked for). The Query section has the query,
   read-only and colored as code, one line per line, scrolling sideways (`DetailCodeEditor`), a status
   line only when there's something to say ("Interpreting…", "Finding…", a refusal, "Too slow" or a failed

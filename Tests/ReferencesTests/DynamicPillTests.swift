@@ -118,7 +118,7 @@ private func trailingBox(of frame: CGRect) -> CGRect {
             }
         }
     },
-    test("the count is what it stands for, '50+' past fifty, and a pill that found nothing says 0: each drawn differently") {
+    test("the count is what it stands for, and a pill that found nothing says 0: each drawn differently") {
         let h = try referenceHarness()
         targets(h)
         let all = h.addReference(words: "the boxes", query: "box", all: true)

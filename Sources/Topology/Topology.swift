@@ -99,8 +99,8 @@ public struct Edge: Hashable, Sendable, Codable {
 
     /// Hashes its ends alone (each id two words): equal edges have equal ends, and edges that share
     /// both ends are few (a carrier's are told apart by their ends; copies of one forwarded edge by
-    /// where they end), so the sets the tables diff and collapse in hash a fraction of what every
-    /// field would cost.
+    /// where they end), so the sets the tables diff in, and a reader collects edges in, hash a
+    /// fraction of what every field would cost.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(source)
         hasher.combine(target)

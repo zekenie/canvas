@@ -60,14 +60,15 @@ final class PortState {
     /// stands for nothing: empty, pending, missing, private, unavailable), none, so no dots show
     /// and no connection ends there. Kept for each stand-in until its revision in Topology changes
     /// (re-pointed, what it stands for made private or deleted, an answer provided for it), so
-    /// asking costs a dictionary hit.
+    /// asking costs a dictionary hit; working them out reads the kinds it stands for, each once
+    /// (`topology.standingKinds(of:)`), however many shapes it stands for.
     func ports(of record: AnyShapeRecord) -> KindPorts? {
         guard let own = kinds[record.kind] else { return nil }
         guard let (topology, standingKinds) = standIns, standingKinds.contains(record.kind) else { return own }
         let revision = topology.revision(of: record.id)
         if let kept = standingPorts[record.id], kept.revision == revision { return kept.ports }
-        let targets = topology.forwards(of: record.id).compactMap { editor.shape(inFile: $0) }
-        let ports = targets.isEmpty ? nil : own.standing(for: targets.map { kinds[$0.kind] })
+        let stood = topology.standingKinds(of: record.id)
+        let ports = stood.isEmpty ? nil : own.standing(for: stood.map { kinds[$0] })
         standingPorts[record.id] = (revision, ports)
         return ports
     }
@@ -75,9 +76,10 @@ final class PortState {
     /// What a connection made by name (Connect) reads of a shape as an end, as a drag reads its ports:
     /// none for a shape that stands in for nothing, the kinds a stand-in stands for, and nil for a
     /// stand-in that stands for nothing now (empty, pending, missing, private), where no connection ends.
+    /// Each kind once, the first shape's first.
     func standingKinds(of record: AnyShapeRecord) -> [ShapeKind]? {
         guard let (topology, standingKinds) = standIns, standingKinds.contains(record.kind) else { return [] }
-        let kinds = topology.forwards(of: record.id).compactMap { editor.shape(inFile: $0)?.kind }
+        let kinds = topology.standingKinds(of: record.id)
         return kinds.isEmpty ? nil : kinds
     }
 

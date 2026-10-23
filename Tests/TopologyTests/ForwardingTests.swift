@@ -6,13 +6,14 @@ import TestKit
 import Topology
 
 // Forwarding through stand-ins (`EdgeForwarding`): what a stand-in stands for (duplicates, what it
-// can't stand for, one hop, its most), the edges into and out of it in each view, standing edges,
-// the cap on one carrier's copies, the reserved slot, what a commit reads, and the sparse tables.
+// can't stand for, one hop, however many), the edges into and out of it in each view, standing edges,
+// one carrier's copies however many, the reserved slot, what a commit reads, and tables that keep no
+// copies.
 
 private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), ("recorded", .recorded), ("literal", .literal)]
 
 @MainActor let forwardingTests = Suite("Forwarding through stand-ins", [
-    test("a stand-in's rule: one per kind, at least one shape, and the kinds that have one") {
+    test("a stand-in's rule: one per kind, and the kinds that have one") {
         let h = try standing()
         expectEqual(h.topology.standInKinds, [Proxy.kind, Gate.kind])
         expectEqual(h.topology.snapshot().standInKinds, [Proxy.kind, Gate.kind])
@@ -20,9 +21,6 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         let report = try Registry(plugins: graphPlugins(more: [StandInsPlugin()])).report
         expect(report.contains("stands in → proxy"), "the report shows each rule:\n\(report)")
 
-        expectThrows(RegistryError.invalid(point: "EdgeForwarding", reason: "stand-ins lets proxy stand for at most 0 shapes; at least 1")) {
-            _ = try Registry(plugins: graphPlugins(more: [StandInsPlugin(most: 0)]))
-        }
         expectThrows(RegistryError.conflict(point: "EdgeForwarding", key: "proxy", plugins: ["stand-ins", "stand-ins"])) {
             _ = try Registry(plugins: graphPlugins(more: [StandInsPlugin(twice: true)]))
         }
@@ -100,7 +98,7 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         expectEqual(topology.forwards(of: g), [shut])
     },
 
-    test("a stand-in stands for each shape once, in order, up to its most, and an edge into it fans out to each") {
+    test("a stand-in stands for each shape once, in order, and an edge into it fans out to each") {
         let a = ShapeID(), c = ShapeID(), d = ShapeID(), b = ShapeID(), r = ShapeID(), l = ShapeID()
         let file = CanvasFile(root: board(box(a), box(c), box(d), box(b), proxy(r, [c, a, c, d, a]), link(l, b, r)))
         let h = try standing(file)
@@ -111,10 +109,55 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         expectEqual(h.topology.edges(of: r, view: .literal), [edge(WireEdge.id, b, r, by: l)], "the copies are one arrow, as emitted")
         expectEqual(h.topology.edges(ofType: .all, view: .literal), [edge(WireEdge.id, b, r, by: l)])
         try expectRebuilt(h, "with a name twice")
+    },
 
-        let few = try standing(file, most: 2)
-        expectEqual(few.topology.forwards(of: r), [c, a], "its most")
-        expectEqual(few.topology.edges(carriedBy: l).count, 2)
+    test("a commit to one of a thousand shapes a stand-in names looks at that one alone, and puts it back in its place") {
+        let boxes = (0..<1_000).map { _ in ShapeID() }, r = ShapeID(), b = ShapeID(), l = ShapeID()
+        let h = try standing(CanvasFile(root: CanvasDocument(shapes: (boxes + [b]).map(box) + [proxy(r, boxes), link(l, b, r)])))
+        let topology = h.topology
+        expectEqual(topology.forwards(of: r), boxes)
+        var read = topology.targetsRead
+        h.editor.transact { $0.update(boxes[500]) { $0.meta[Open.self] = true } }
+        expectEqual(topology.targetsRead, read + 1, "the box changed, and no other")
+        expectEqual(topology.touched, [], "nothing it stands for changed")
+        read = topology.targetsRead
+        h.editor.transact("Delete") { $0.delete([boxes[500]]) }
+        expectEqual(topology.targetsRead, read + 1)
+        expectEqual(topology.forwards(of: r), boxes.filter { $0 != boxes[500] })
+        expectEqual(topology.touched, [r, boxes[500], b], "its standing edge, the arrow's copy into it, and the arrow's ends")
+        h.editor.undo()
+        expectEqual(topology.forwards(of: r), boxes, "back in its place")
+        expectEqual(topology.edges(carriedBy: l)[500], forwarded(WireEdge.id, b, boxes[500], by: l, to: r))
+        try expectRebuilt(h, "after undo")
+    },
+
+    test("the kinds a stand-in stands for, each once, the first shape's first, kept as shapes come and go") {
+        let a = ShapeID(), m = ShapeID(), p = ShapeID(), c = ShapeID(), r = ShapeID()
+        let h = try standing(CanvasFile(root: board(box(a), memo(m), pocket(p), box(c), proxy(r, [m, a, p, c]))))
+        let topology = h.topology
+        expectEqual(topology.standingKinds(of: r), [Memo.kind] + [Box.kind, Pocket.kind].sorted { $0.rawValue < $1.rawValue })
+        h.editor.transact("Delete") { $0.delete([m]) }
+        expectEqual(topology.standingKinds(of: r).first, Box.kind, "the first shape's kind first")
+        expectEqual(Set(topology.standingKinds(of: r)), [Box.kind, Pocket.kind])
+        h.editor.transact("Delete") { $0.delete([p]) }
+        expectEqual(topology.standingKinds(of: r), [Box.kind], "two boxes, one kind")
+        h.editor.transact { $0.update(r, as: Proxy.self) { $0.props.stands = [] } }
+        expectEqual(topology.standingKinds(of: r), [])
+        expectEqual(topology.standingKinds(of: a), [], "a shape that isn't a stand-in")
+        h.editor.undo()
+        expectEqual(topology.standingKinds(of: r), [Box.kind])
+        try expectRebuilt(h, "kinds")
+        // A shape it stands for turned into another kind under its id: counted as that, and the stand-in
+        // told, though no edge changed, so what reads its kinds (its ports) reads them again.
+        let onR = topology.revision(of: r)
+        h.editor.transact("Turn") { _ = $0.turn(a, into: pocket(a)) }
+        expectEqual(topology.forwards(of: r), [a, c])
+        expectEqual(topology.standingKinds(of: r), [Pocket.kind, Box.kind])
+        expect(topology.revision(of: r) > onR, "the stand-in's revision moved")
+        expect(topology.touched.contains(r))
+        try expectRebuilt(h, "a shape turned into another kind")
+        h.editor.undo()
+        expectEqual(topology.standingKinds(of: r), [Box.kind])
     },
 
     test("one hop: a stand-in never stands for a stand-in, and its own edges are never forwarded") {
@@ -138,19 +181,22 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         expectEqual(h.topology.edges(of: a, view: .literal), [edge(WireEdge.id, a, r, by: l)])
     },
 
-    test("one carrier's copies stop at the cap, though every edge it emits keeps one") {
-        let fifty = (0..<50).map { _ in ShapeID() }, more = (0..<50).map { _ in ShapeID() }
+    test("a stand-in stands for every shape it names, however many, and one carrier's copies are one for each pair, none kept") {
+        let many = (0..<300).map { _ in ShapeID() }, more = (0..<50).map { _ in ShapeID() }
         let r = ShapeID(), s = ShapeID(), l = ShapeID()
-        let h = try standing(CanvasFile(root: CanvasDocument(shapes: (fifty + more).map(box) + [proxy(r, fifty), proxy(s, more), link(l, r, s)])))
+        let h = try standing(CanvasFile(root: CanvasDocument(shapes: (many + more).map(box) + [proxy(r, many), proxy(s, more), link(l, r, s)])))
+        expectEqual(h.topology.forwards(of: r), many, "all 300")
         let carried = h.topology.edges(carriedBy: l)
-        expectEqual(carried.count, EdgeForwarding.maxPairsPerCarrier, "50 by 50, held to the cap")
-        expectEqual(EdgeForwarding.maxPairsPerCarrier, 256)
+        expectEqual(carried.count, 300 * 50, "300 by 50")
         expectEqual(Set(carried).count, carried.count)
-        expectEqual(Array(carried.prefix(51)).map(\.source), Array(repeating: fifty[0], count: 50) + [fifty[1]], "source by source")
+        expectEqual(Array(carried.prefix(51)).map(\.source), Array(repeating: many[0], count: 50) + [many[1]], "source by source")
         expectEqual(h.topology.edges(carriedBy: l, view: .literal), [edge(WireEdge.id, r, s, by: l)])
+        expectEqual(h.topology.edges(of: many[7]), more.map { forwarded(WireEdge.id, many[7], $0, by: l, from: r, to: s) } + [stands(r, for: many[7])],
+                    "one shape reads its own copies, and no other's")
+        expectEqual(h.topology.edges(of: more[3], .incoming, types: .only(WireEdge.id)).count, 300)
+        expectEqual(h.topology.storedEdgeCount, 1, "the arrow, as emitted")
 
-        // A memo whose quotes go into six stand-ins for 50 each, then into a box: 250, then 6 to the
-        // cap, then the box's one, past it.
+        // A memo whose quotes go into six stand-ins for 50 each, then into a box: every one.
         let proxies = (0..<6).map { _ in ShapeID() }, plain = ShapeID(), m = ShapeID()
         let targets = (0..<300).map { _ in ShapeID() }
         let notes = proxies.map { MemoNote("", cites: [Citation($0)]) } + [MemoNote("", cites: [Citation(plain)])]
@@ -158,8 +204,8 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
             + proxies.enumerated().map { proxy($1, Array(targets[($0 * 50)..<($0 * 50 + 50)])) }
         let cited = try standing(CanvasFile(root: CanvasDocument(shapes: shapes)))
         let quotes = cited.topology.edges(carriedBy: m)
-        expectEqual(quotes.count, 257)
-        expectEqual(quotes.filter { $0.literalTarget == proxies[5] }.count, 6)
+        expectEqual(quotes.count, 301)
+        expectEqual(quotes.filter { $0.literalTarget == proxies[5] }.count, 50)
         expectEqual(quotes.last, edge(QuoteEdge.id, m, plain, by: m, slot: "notes"))
         expectEqual(Set(cited.topology.edges(of: m, view: .literal)), Set(cited.editor.registry.edges(of: try require(cited.editor.document[m]))),
                     "every quote, as emitted")
@@ -304,16 +350,18 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         try expectRebuilt(h, "the chain back")
     },
 
-    test("a file with no stand-ins keeps nothing apart from what its carriers emitted, and only those at a stand-in once there are") {
+    test("the tables keep what carriers emitted, whatever stands for what") {
         let tree = Nest(), r = ShapeID(), x = ShapeID()
         let h = try standing(tree.file)
-        expectEqual(h.topology.resolvedCarrierCount, 0)
+        let emitted = h.topology.storedEdgeCount
         h.editor.transact { $0.insert(proxy(r, [tree.a])) }
-        expectEqual(h.topology.resolvedCarrierCount, 1, "the stand-in's standing edge")
+        expectEqual(h.topology.storedEdgeCount, emitted, "the stand-in's standing edge is read from what it stands for")
+        expectEqual(h.topology.edges(carriedBy: r), [stands(r, for: tree.a)])
         h.editor.transact { $0.insert(memo(x, lead: r)) }
-        expectEqual(h.topology.resolvedCarrierCount, 2, "and the memo quoting it; the others as they were")
+        expectEqual(h.topology.storedEdgeCount, emitted + 1, "and the memo's quote, as emitted")
+        expectEqual(h.topology.edges(carriedBy: x), [forwarded(QuoteEdge.id, x, tree.a, by: x, to: r, slot: "lead")])
         h.editor.transact("Delete") { $0.delete([r]) }
-        expectEqual(h.topology.resolvedCarrierCount, 0)
+        expectEqual(h.topology.storedEdgeCount, emitted + 1)
         expectEqual(h.topology.edges(carriedBy: x), [edge(QuoteEdge.id, x, r, by: x, slot: "lead")])
         try expectRebuilt(h, "")
     },
@@ -351,7 +399,7 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
                 let what = churn.step(), context = "seed \(seed), step \(step), after \(what)"
                 guard try expectRebuilt(churn.h, context), expectLiteral(churn.h, context), expectRecorded(churn.h, context),
                       expectResolved(churn.h, context) else { break }
-                if churn.h.topology.resolvedCarrierCount > 0 { forwardedSteps += 1 }
+                if churn.h.topology.edges(ofType: .all).contains(where: { $0.origin != .emitted }) { forwardedSteps += 1 }
             }
             expect(forwardedSteps > 60, "edges were forwarded through much of the run (\(forwardedSteps) of 150), seed \(seed)")
         }
@@ -387,7 +435,10 @@ private func expectRebuilt(_ h: EditorHarness, _ context: String, file: StaticSt
         if index.forwarding(of: id) != fresh.forwarding(of: id) { problems.append("forwarding(of: \(id))") }
         if Set(index.edges(through: id)) != Set(fresh.edges(through: id)) { problems.append("edges(through: \(id))") }
     }
-    if index.resolvedCarrierCount != fresh.resolvedCarrierCount { problems.append("carriers kept apart") }
+    if index.storedEdgeCount != fresh.storedEdgeCount { problems.append("edges kept") }
+    for id in questioned(h) where Set(index.standingKinds(of: id)) != Set(fresh.standingKinds(of: id)) || index.standingKinds(of: id).first != fresh.standingKinds(of: id).first {
+        problems.append("standingKinds(of: \(id))")
+    }
     expect(problems.isEmpty, "as reading the file afresh, \(context): \(problems.prefix(4).joined(separator: "; "))", file: file, line: line)
     return problems.isEmpty
 }
@@ -435,7 +486,7 @@ private func expectRebuilt(_ h: EditorHarness, _ context: String, file: StaticSt
         else if let gate = record.typed(as: Gate.self) { (named, gated) = (gate.props.stands, true) }
         else { return [] }
         var taken: [ShapeID] = []
-        for citation in named where !taken.contains(citation.shape) && citation.shape != id && taken.count < 50 {
+        for citation in named where !taken.contains(citation.shape) && citation.shape != id {
             guard let target = live(citation.shape), !isStandIn(target), !gated || target.meta[Open.self] == true else { continue }
             taken.append(citation.shape)
         }
@@ -563,7 +614,9 @@ struct Seeded: RandomNumberGenerator {
     }
 
     /// Gives a lens an answer: mostly for the key it asks now, and a recent one; sometimes for
-    /// another, or an older one, which the index drops.
+    /// another, or an older one, which the index drops. Half the time it's prepared first (as a
+    /// provider works one out off the main actor), and a third of those a commit comes between
+    /// preparing and providing (a change to a shape, or a delete).
     private func provide() -> String {
         let all = questioned(h).filter { h.editor.shape(inFile: $0)?.kind == Lens.kind }
         guard let id = pick(all), let asks = h.editor.shape(inFile: id)?.typed(as: Lens.self)?.props.asks else { return "no lens to answer" }
@@ -573,11 +626,30 @@ struct Seeded: RandomNumberGenerator {
         if Int.random(in: 0..<6, using: &random) == 0 { revision = max(0, revision - 3) }
         let given = ProvidedForwarding(key: ForwardingKey(key), shapes: (0..<Int.random(in: 0...5, using: &random)).compactMap { _ in target() },
                                        revision: revision)
-        let takes = h.topology.forwarding(of: id) != .none && key == asks
-        h.topology.provide([id: given])
+        var prepared: PreparedForwarding?, how = ""
+        if Bool.random(using: &random) {
+            prepared = h.topology.preparer().prepare([id: given])
+            how = ", prepared"
+            if Int.random(in: 0..<3, using: &random) == 0, let between = pick(h.editor.document.shapes.filter { $0.id != Turnover.gadget }) {
+                if Bool.random(using: &random) {
+                    h.editor.transact("Between") { rewire(between.id, in: &$0) }
+                    how += ", then \(between.id) rewired"
+                } else {
+                    h.editor.transact("Between") { $0.delete([between.id]) }
+                    how += ", then \(between.id) deleted"
+                }
+                keepHeld()
+            }
+        }
+        let asksNow = h.editor.shape(inFile: id)?.typed(as: Lens.self)?.props.asks
+        let takes = h.topology.forwarding(of: id) != .none && key == asksNow
+        h.topology.provide([id: given], prepared: prepared)
         if takes, answers[id].map({ given.revision >= $0.revision }) ?? true { answers[id] = given }
-        return "answering lens \(id) with \(given.shapes.count) shapes at \(revision) for \(key)"
+        return "answering lens \(id) with \(given.shapes.count) shapes at \(revision) for \(key)\(how)"
     }
+
+    /// The gadget, kept aside on a board the editor can't show: no commit picks it.
+    static let gadget = id(10)
 
     /// Forgets the answers a commit made the index let go of: those of lenses that ask another
     /// question, were deleted or hidden.

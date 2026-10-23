@@ -157,7 +157,7 @@ extension ReferenceCondition {
 
 /// What a dynamic reference's query found, as its pill, row and panel show it: whether it stands for
 /// every match or the first, how many there were in all, those it was given (in file order: the
-/// first, and what All would add, or up to fifty), and how the first shows (for one that stands for
+/// first, and what All would add, or every one), and how the first shows (for one that stands for
 /// it alone: its kind's symbol and tint trail the pill).
 public struct ReferenceFound: Equatable {
     public var all: Bool

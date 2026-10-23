@@ -35,9 +35,15 @@ public struct ForwardingKey: Hashable, Sendable {
     public init(_ raw: String) { self.raw = raw }
 }
 
-/// Whether a stand-in may stand for a shape: pure, of that shape's record and the registry (never
-/// another shape, geometry, a service or the time, and never where a box is).
-public typealias ForwardAdmission = @MainActor (_ target: AnyShapeRecord, _ registry: Registry) -> Bool
+/// Whether a stand-in may stand for a shape: pure, of that shape's record (never another shape,
+/// geometry, a service or the time, and never where a box is), and safe on any thread, so what a
+/// stand-in stands for can be worked out off the main actor (`TopologyIndex.preparer()`).
+public typealias ForwardAdmission = @Sendable (_ target: AnyShapeRecord) -> Bool
+
+/// Makes a kind's admission from the registry, once for an index (the registry never changes): what
+/// it needs of the registry (the kinds whose every shape is public) is read here, so the admission
+/// reads only the record.
+public typealias ForwardAdmissionMaker = @MainActor (_ registry: Registry) -> ForwardAdmission
 
 /// What a stand-in stands for, from its record: pure, as an `EdgeEmitter` is of its carrier's (never
 /// another shape, geometry, a service or the time, and never where a box is). Nil: nothing.
@@ -63,9 +69,7 @@ public typealias ForwardingMaker = @MainActor (_ blank: AnyShapeRecord, _ target
 /// A kind's stand-in rule, as `standsIn` says it. Only the sugar makes one.
 @MainActor
 public struct StandIn {
-    /// The most shapes one stands for: those past it are left out, in order.
-    public let maxTargets: Int
-    let admitting: ForwardAdmission
+    let admitting: ForwardAdmissionMaker
     let forward: ForwardingRule
     /// What a shape must be for this kind to stand for it, in a word (`public`): said for a person
     /// (`only a public shape`, `make it public`), never read.
@@ -86,34 +90,32 @@ extension EdgeForwarding: KeyedExtensionPoint {
     public static var owner: PluginID { .topology }
     public static func uniqueKeys(of _: StandIn, for target: ShapeTarget) -> [AnyHashable] { [target] }
     public static func summary(of _: StandIn, for target: ShapeTarget) -> String { "stands in → \(target)" }
-
-    /// No stand-in stands for fewer than one shape at most.
-    public static func check(_ registry: Registry) throws(RegistryError) {
-        for rule in registry.contributions(to: EdgeForwarding.self) where rule.value.maxTargets < 1 {
-            throw .invalid(point: "EdgeForwarding", reason: "\(rule.pluginID) lets \(rule.target) stand for at most \(rule.value.maxTargets) shapes; at least 1")
-        }
-    }
-
-    /// The most edges one carrier's edges are forwarded into (an arrow between two stand-ins for 50
-    /// shapes each would be 2,500): copies past it are left out, though every edge a carrier emits
-    /// keeps one, so its ends as emitted are always read.
-    public static let maxPairsPerCarrier = 256
 }
 
 extension Registry {
     /// Each kind's stand-in rule, for the kinds that have one. Worked out on each call: keep it (the
     /// index does).
     func standInRules() -> [ShapeKind: StandIn] { contributionByKind(to: EdgeForwarding.self) }
+
+    /// Each stand-in kind's admission, made from its rule once for the registry (`memo`): what a reader
+    /// of many shapes asks again and again, and what reads a shape on any thread.
+    var standInAdmissions: [ShapeKind: ForwardAdmission] {
+        memo(StandInAdmissionsKey()) { standInRules().mapValues { $0.admitting(self) } }
+    }
 }
+
+/// The key `standInAdmissions` is kept under.
+private struct StandInAdmissionsKey: Hashable {}
 
 extension ShapeRegistrar {
     /// This kind's shapes stand in for other shapes: an edge another shape carries that ends at one
     /// ends instead at each shape it stands for (`EdgeView.resolved`; the copies name it in their
-    /// `origin`), and a `stands-for` edge goes from it to each (`StandingEdge`). `forward` says what
-    /// one stands for, from its record, pure; it stands for those of them, in order and each once,
-    /// that are on a board the editor can show, aren't kept aside, aren't stand-ins themselves (one
-    /// hop), and `admitting` takes, up to `maxTargets`. While it stands for nothing, an edge into it
-    /// stays an edge into it.
+    /// `origin`), and a `stands-for` edge goes from it to each (`StandingEdge`): as many as it stands
+    /// for, read as they're asked for, never kept. `forward` says what one stands for, from its
+    /// record, pure; it stands for those of them, in order and each once, that are on a board the
+    /// editor can show, aren't kept aside, aren't stand-ins themselves (one hop), and the admission
+    /// `admitting` makes takes (made once from the registry, and read on any thread). While it stands
+    /// for nothing, an edge into it stays an edge into it.
     ///
     /// `makes` says how a shape of the kind is made to stand for a given shape, which a plugin that
     /// puts shapes down by name (the command line's `draw`) asks of it: it's given the props the
@@ -130,8 +132,7 @@ extension ShapeRegistrar {
     ///
     /// `calls` says what a shape of the kind calls what it stands for (the label a direct one keeps,
     /// the words of a query one), which outlives the shape: a pill whose shape is gone keeps its name.
-    public mutating func standsIn(maxTargets: Int = 50,
-                                  admitting: @escaping ForwardAdmission = { _, _ in true },
+    public mutating func standsIn(admitting: @escaping ForwardAdmissionMaker = { _ in { _ in true } },
                                   needs: String? = nil,
                                   fulfilling: (@MainActor (_ record: inout AnyShapeRecord, _ registry: Registry) -> Bool)? = nil,
                                   calls: (@MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> String?)? = nil,
@@ -149,7 +150,7 @@ extension ShapeRegistrar {
         if let calls {
             erasedCalls = { record, registry in record.typed(as: Definition.Props.self).flatMap { calls($0, registry) } }
         }
-        contribute(StandIn(maxTargets: maxTargets, admitting: admitting, forward: { record, registry in
+        contribute(StandIn(admitting: admitting, forward: { record, registry in
             record.typed(as: Definition.Props.self).flatMap { forward($0, registry) }
         }, needs: needs, make: make, fulfil: fulfilling, calls: erasedCalls), to: EdgeForwarding.self)
     }
@@ -170,6 +171,9 @@ public struct StandIns {
         self.registry = registry
         rules = registry.standInRules()
     }
+
+    /// Each kind's admission, made once a registry (`Registry.standInAdmissions`), and only once one is asked.
+    private var admissions: [ShapeKind: ForwardAdmission] { registry.standInAdmissions }
 
     /// The kinds whose shapes stand in for others.
     public var kinds: Set<ShapeKind> { Set(rules.keys) }
@@ -202,8 +206,8 @@ public struct StandIns {
     /// Whether a stand-in of `kind` may stand for `target`: the kind's admission, and what stands for
     /// no shape whatever (one kept aside, or a stand-in: one hop).
     public func admits(_ kind: ShapeKind, _ target: AnyShapeRecord) -> Bool {
-        guard let rule = rules[kind], !target.isOpaque, rules[target.kind] == nil else { return false }
-        return rule.admitting(target, registry)
+        guard let admits = admissions[kind], !target.isOpaque, rules[target.kind] == nil else { return false }
+        return admits(target)
     }
 
     /// What a shape must be for a stand-in of `kind` to stand for it, in a word (`public`), for a

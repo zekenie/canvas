@@ -166,7 +166,7 @@ func relaysPlugin() -> Contributor {
     Contributor(id: "relays") { registrar in
         registrar.shape(RelayDefinition()) { relay in
             relay.portsOnEveryChannel(sides: [.left, .right])
-            relay.standsIn(admitting: { target, _ in target.meta[Open.self] == true }, needs: "open", makes: { props, target, label in
+            relay.standsIn(admitting: { _ in { target in target.meta[Open.self] == true } }, needs: "open", makes: { props, target, label in
                 props.stands = [Citation(target)]
                 props.says = label
             }) { shape, _ in shape.props.stands.isEmpty ? nil : .shapes(shape.props.stands.map(\.shape)) }

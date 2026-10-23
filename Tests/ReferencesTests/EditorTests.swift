@@ -14,7 +14,7 @@ import TextEditing
 @MainActor private func width(_ h: EditorHarness, _ id: ShapeID) -> CGFloat { h.editor.document[id]?.box?.width ?? 0 }
 
 @MainActor let editorTests = Suite("The pill's field", [
-    test("the width follows each keystroke, from the pill's left edge: a dynamic pill reserves room for its count, so it's the fit of its text and 36 more") {
+    test("the width follows each keystroke, from the pill's left edge: a dynamic pill reserves room for its count, so it's the fit of its text and 43 more") {
         let h = try referenceHarness()
         let field = try h.placeReference(at: CGPoint(x: 300, y: 300))
         defer { field.close() }
@@ -31,7 +31,7 @@ import TextEditing
         words.words = "payment notes about launch"
         var direct = Reference()
         direct.target = ReferenceTarget(id: ShapeID(), label: "payment notes about launch")
-        expectEqual(ReferenceEdits.width(of: words), ReferenceEdits.width(of: direct) + 36 - 17, "the reserved count, where a direct pill keeps its glyph's")
+        expectEqual(ReferenceEdits.width(of: words), ReferenceEdits.width(of: direct) + 43 - 17, "the reserved count, where a direct pill keeps its glyph's")
         expectEqual(widths.last, ReferenceEdits.width(of: words))
         expectEqual(try require(h.editor.document[field.id]?.box).height, 32)
     },

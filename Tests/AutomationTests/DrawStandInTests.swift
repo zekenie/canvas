@@ -71,7 +71,7 @@ extension RelayDefinition: DerivedProps {
 @MainActor func relaysPlugin(tool: Bool = true, makes: Bool = true, needs: String? = "open", fulfils: Bool = false) -> Contributor {
     Contributor(id: "relays") { registrar in
         registrar.shape(RelayDefinition()) { relay in
-            let admitting: ForwardAdmission = { target, _ in target.meta[Open.self] == true }
+            let admitting: ForwardAdmissionMaker = { _ in { target in target.meta[Open.self] == true } }
             let open: @MainActor (inout AnyShapeRecord, Registry) -> Bool = { record, _ in
                 record.meta[Open.self] = true
                 return true

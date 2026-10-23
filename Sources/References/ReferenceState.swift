@@ -1,6 +1,7 @@
 import AppKit
 import Boards
 import Canvas
+import Connections
 import Geometry
 import LanguageModels
 import Mentions
@@ -41,7 +42,7 @@ public final class ReferenceState {
     /// the edges touches its reference: what bumps the revision `mismatches` is kept by, heard
     /// without reading one (each read makes an observation's key path, a cost a frame of a thousand
     /// pills shouldn't pay).
-    private var drawnMismatches: [ShapeID: ChannelMismatch?] = [:]
+    private var drawnMismatches: [ShapeID: ChannelID?] = [:]
     /// Following Topology's changes to the edges, for `drawnMismatches`.
     private var following: TopologyFollowing?
     /// The shapes each direct reference's row in the table of contents read its path from (the shapes
@@ -58,8 +59,11 @@ public final class ReferenceState {
     /// else than their own questions): asked of them all at the next batch.
     var everyDirty = false
     /// The last answers of each reference, by key, newest last: kept past its deletion, for its undo,
-    /// for at most `ReferenceStyle.memosKept` references (`remember(_:for:)`).
+    /// for at most `ReferenceStyle.memosKept` references, naming at most `ReferenceStyle.memoIDsKept`
+    /// shapes between them (`remember(_:for:)`), which `memoIDs` counts.
     var memo: [ShapeID: Memo] = [:]
+    var memoIDs = 0
+    var memoIDBound = ReferenceStyle.memoIDsKept
     /// What stamps a memo as it's landed or used, so the bound lets go of the least recent.
     var memoClock = 0
     /// The wait for quiet after a commit, a hop to ask at once, and the batch out.
@@ -89,6 +93,11 @@ public final class ReferenceState {
     /// How many references answers are kept for (at most `ReferenceStyle.memosKept`), and whether
     /// any are for `id` (debug builds).
     public var memoCount: Int { memo.count }
+    /// How many shapes the answers kept name between them (debug builds).
+    public var memoIDCount: Int { memoIDs }
+    /// Bounds the shapes the answers kept may name to `ids`, in place of `ReferenceStyle.memoIDsKept`
+    /// (debug builds): for a test of the bound, which a million ids would make slow.
+    public func boundMemo(toIDs ids: Int) { memoIDBound = ids }
     public func isRemembered(_ id: ShapeID) -> Bool { memo[id] != nil }
     /// How many times a row has read its path (`rowPath(of:to:)`: a direct reference's row made, or
     /// made again), so a test holds a change to remaking the rows whose paths it changes (debug builds).
@@ -163,10 +172,10 @@ public final class ReferenceState {
     /// whose shape isn't there. As `drawnCondition` kept it: a board's rename lets go of it.
     public func drawnBoard(of id: ShapeID) -> String? { drawnConditions[id]?.board }
 
-    /// `channelMismatch(of:)`, for a render: kept until a change to the edges touches the reference.
-    func drawnMismatch(of id: ShapeID) -> ChannelMismatch? {
+    /// `mismatchedChannel(of:)`, for a render: kept until a change to the edges touches the reference.
+    func drawnMismatch(of id: ShapeID) -> ChannelID? {
         if let kept = drawnMismatches[id] { return kept }
-        let found = channelMismatch(of: id)
+        let found = mismatchedChannel(of: id)
         drawnMismatches.updateValue(found, forKey: id)
         return found
     }
@@ -342,16 +351,16 @@ public final class ReferenceState {
         return record.props.mode == .dynamic
     }
 
-    /// The matches a dynamic reference was given (the first and what All would add, or up to fifty);
-    /// nil while it has none.
+    /// The matches a dynamic reference was given (the first and what All would add, or every one); nil
+    /// while it has none.
     func matches(of reference: ShapeID) -> [ShapeID]? {
         guard case .found(_, let found)? = state(of: reference) else { return nil }
         return found.ids
     }
 
     /// Shows the matches of the only reference among these: their board, every one its header counts
-    /// selected on it. A reference given fewer than it counts (a first-match one is given eight, an
-    /// all-match one fifty) has its query asked for every one first.
+    /// selected on it. A reference given fewer than it counts (a first-match one is given eight) has its
+    /// query asked for every one first.
     func showMatches(of ids: Set<ShapeID>) {
         guard ids.count == 1, let id = ids.first, case .found(_, let found)? = state(of: id) else { return }
         showing?.cancel()
@@ -387,7 +396,7 @@ public final class ReferenceState {
         guard let queries = editor.queries, let props = editor.shape(inFile: id)?.typed(as: Reference.self)?.props,
               let query = shown(props, id: id).query else { return nil }
         return Task { @MainActor [weak self, queries] in
-            let results = await queries.matches([QueryMatchRequest(query, edges: .recorded, admitting: admitting)])
+            let results = await queries.matches([QueryMatchRequest(query, edges: .recorded, limit: QueryMatchRequest.every, admitting: admitting)])
             guard !Task.isCancelled, let self else { return }
             let asks = editor.shape(inFile: id)?.typed(as: Reference.self).flatMap { shown($0.props, id: id).query }
             guard asks == query, case .success(let matches)? = results.first else { return then(nil) }
@@ -446,7 +455,7 @@ public final class ReferenceState {
     // MARK: The panel's header
 
     /// What the panel's header says of a reference: its symbol, what it stands for, and a line under it
-    /// (for a dynamic one, how many it found: "First of 7", "12 matches", "50 of 73", "No matches",
+    /// (for a dynamic one, how many it found: "First of 7", "12 matches", "1,284 matches", "No matches",
     /// or "Not public" when none of what it found is; none while it's being looked for or failed,
     /// which the Query section says).
     public func header(of props: Reference, id: ShapeID? = nil) -> ReferenceHeaderContent {

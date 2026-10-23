@@ -16,7 +16,8 @@ import Topology
 // Topology's forwarding through stand-ins, on generated boards (`StandInBenchmarks.swift`): its index
 // built as a file with stand-ins opens, what's connected to a shape through 100 of them, a stand-in
 // with 100 arrows re-pointed, a drag with 50 stand-ins for what's provided costing nothing more, a
-// commit while a query holds the file among 500 stand-ins, and a provide that fans out. No shipped
+// commit while a query holds the file among 500 stand-ins, a provide that fans out, and an answer
+// prepared off the main actor for a lens of every note. No shipped
 // kind stands in yet, so the stand-ins are this file's: a mirror stands for the shapes its record
 // names (`Forwarding.shapes`), a lens for what's provided for what it asks (`Forwarding.provided`).
 
@@ -35,12 +36,18 @@ extension Budget {
     /// 500 stand-ins: the tables it shares, each copied once, as `queryHeldCommit`.
     static let heldCommitStandIns = queryHeldCommit
     /// A provide that fans out, on the main actor, outside any gesture: a lens with 100 arrows whose
-    /// answer changes from 50 shapes to 50 others, and one whose arrow to another lens is held to the
-    /// cap (256 pairs), some 10,600 edges out and in, each diffed and filed under its ends and type.
-    /// A frame, so it costs the window none: the design's 2 ms (200 ns an edge) is past what an
-    /// `Edge` costs to copy and hash (its ids are `UUID`s, whose layout isn't known here, so every
-    /// copy goes through a witness); some 14 ms on a loaded machine.
+    /// answer changes from 50 shapes to 50 others, and one whose arrow to another lens is 2,500
+    /// pairs. Forwarded on read, no copy is made or kept: it costs what came and went (100 shapes
+    /// and the ends they touch), not those times the arrows: release, 2026-10-22, 0.65 ms at either
+    /// size, where making the copies was some 6. A frame, so it costs the window none.
     static let provideFanOut = frame
+    /// An answer for a lens of every note of the board (100 arrows into it) that adds or drops one
+    /// note, worked out off the main actor (`TopologyIndex.preparer()`) and taken in on it: what came
+    /// and went, and the arrows at the lens, never the notes. The thread's CPU time; the same answer
+    /// worked out on the main actor, every note looked at, is reported beside it. Release,
+    /// 2026-10-22: 0.07 ms at 695 notes and at 6,956 (0.003 for the same shapes again), against 0.5
+    /// and 3.2 worked out on the main actor.
+    static let preparedProvide = 1.0
 }
 
 /// Stands for the shapes its record names.
@@ -320,7 +327,7 @@ extension ThreadStopwatchEnd: EditorService {}
         }
     },
 
-    test("a provide that fans out, on the main actor: 100 arrows into a lens whose 50 shapes change, and an arrow between two held to the cap") {
+    test("a provide that fans out, on the main actor: 100 arrows into a lens whose 50 shapes change, and an arrow between two of 2,500 pairs") {
         for size in sizes {
             let base = generatedBoard(shapes: size)
             let from = notes(of: base)
@@ -342,11 +349,54 @@ extension ThreadStopwatchEnd: EditorService {}
                                   left.id: ProvidedForwarding(key: key, shapes: shapes, revision: revision)])
             }
             expectEqual(topology.edges(through: fanned.id).count, 100 * 50)
-            expectEqual(topology.edges(carriedBy: between.id).count, EdgeForwarding.maxPairsPerCarrier)
-            report(String(format: "%6d shapes, a provide changing a lens's 50 shapes (100 arrows into it) and one with an arrow to another (held to %d pairs): %6.3f ms (budget %.0f)",
-                          size, EdgeForwarding.maxPairsPerCarrier, provide, Budget.provideFanOut))
+            expectEqual(topology.edges(carriedBy: between.id).count, 50 * 50)
+            report(String(format: "%6d shapes, a provide changing a lens's 50 shapes (100 arrows into it) and one with an arrow to another (%d pairs): %6.3f ms (budget %.0f)",
+                          size, 50 * 50, provide, Budget.provideFanOut))
             if holdsToBudgets {
                 expect(provide < Budget.provideFanOut, "a provide that fans out, of \(size) shapes, took \(provide) ms")
+            }
+        }
+    },
+
+    test("a lens of every note, 100 arrows into it: an answer that adds or drops one, prepared off the main actor, costs the main actor what came and went") {
+        for size in sizes {
+            let base = generatedBoard(shapes: size)
+            let every = notes(of: base)
+            let fanned = lens(asks: "all")
+            let into = (0..<100).map { arrow(from: every[(100 + $0) % every.count], to: fanned.id) }
+            let registry = try Registry(plugins: ShippedPlugins.plugins(model: ScriptedLanguageModel()) + [StandInBenchPlugin()])
+            let editor = CanvasEditor(registry: registry, document: CanvasDocument(shapes: base.shapes + [fanned] + into), scheduler: ManualScheduler())
+            let topology = try require(editor.topology)
+            let key = ForwardingKey("all"), most = Array(every.dropLast())
+            topology.provide([fanned.id: ProvidedForwarding(key: key, shapes: most, revision: 1)])
+            var revision = 1, answers: [ShapeID: ProvidedForwarding] = [:], prepared: PreparedForwarding?
+            let next = {
+                revision += 1
+                answers = [fanned.id: ProvidedForwarding(key: key, shapes: revision % 2 == 0 ? every : most, revision: revision)]
+            }
+            let taken = median(runs: 21, prepare: {
+                next()
+                let preparer = topology.preparer(), asked = answers
+                prepared = offMain { preparer.prepare(asked) }
+            }, onThread: true) {
+                topology.provide(answers, prepared: prepared)
+            }
+            let newer = median(runs: 21, prepare: {
+                revision += 1
+                answers = [fanned.id: ProvidedForwarding(key: key, shapes: topology.forwards(of: fanned.id), revision: revision)]
+                let preparer = topology.preparer(), asked = answers
+                prepared = offMain { preparer.prepare(asked) }
+            }, onThread: true) {
+                topology.provide(answers, prepared: prepared)
+            }
+            let here = median(runs: 11, prepare: next, onThread: true) { topology.provide(answers) }
+            expectEqual(topology.forwards(of: fanned.id).count, every.count - revision % 2)
+            expect(topology.edges(of: every[0], .incoming, types: .within(ArrowEdge.id)).count >= 100, "a hundred arrows into it, read as asked")
+            report(String(format: "%6d shapes, a lens of %d notes given one more or one fewer: prepared, the main actor %6.3f ms, the same shapes again %6.3f (budget %.1f); worked out on the main actor %6.3f",
+                          size, every.count, taken, newer, Budget.preparedProvide, here))
+            if holdsToBudgets {
+                expect(taken < Budget.preparedProvide, "a prepared answer for a lens of \(every.count) notes took \(taken) ms on the main actor")
+                expect(newer < Budget.preparedProvide, "a prepared answer saying the same took \(newer) ms on the main actor")
             }
         }
     },

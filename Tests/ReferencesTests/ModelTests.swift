@@ -56,7 +56,7 @@ private let placed = CGRect(origin: origin, size: Reference.defaultSize)
         var direct = Reference(frame: placed), dynamic = Reference(frame: placed)
         ReferenceEdits.pick(&direct, ReferenceTarget(id: ShapeID(), label: "payment notes"))
         ReferenceEdits.find(&dynamic, words: "payment notes")
-        expectEqual(dynamic.frame.width - direct.frame.width, 36 - 17, "the gap and the badge, less a direct pill's gap and glyph")
+        expectEqual(dynamic.frame.width - direct.frame.width, 43 - 17, "the gap and the badge, less a direct pill's gap and glyph")
     },
     test("a pill is never under 64 wide or over 280, and clearing puts it back to what a placed one is") {
         var props = Reference(frame: placed)

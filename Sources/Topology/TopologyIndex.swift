@@ -18,11 +18,14 @@ import Observation
 /// does), and its followers hear once it has (`editor.onceHeard`).
 ///
 /// Stand-ins (`EdgeForwarding`) forward: every read gives the edges as they resolve through them
-/// unless it asks for another view (`EdgeView`), each a mapping of the same tables. A commit
-/// re-reads, beside the carriers it changed, the stand-ins it changed and those whose record names
-/// (or whose answer holds) a shape it changed, and sets again only the carriers with an edge at a
-/// stand-in whose shapes changed: still what it changed, and a move reads nothing. Answers for
-/// stand-ins that stand for what's provided come with no commit (`provide`).
+/// unless it asks for another view (`EdgeView`), each read from the same tables, which keep what
+/// carriers emitted and what each stand-in stands for, and no copies (`EdgeTables`). A commit
+/// re-reads, beside the carriers it changed, the stand-ins it changed, and looks again at only the
+/// shapes it changed among those a stand-in's record names (or its answer holds): still what it
+/// changed, however many shapes a stand-in stands for, and a move reads nothing. Answers for
+/// stand-ins that stand for what's provided come with no commit (`provide`), worked out on another
+/// thread first if the provider likes (`preparer()`), so the main actor takes in only what came and
+/// went.
 ///
 /// Every change to the edges, a commit's or a provide's, is told once to each follower (`follow`):
 /// the one way to hear one. Whoever provides answers says while it has work (`keepsSettling`), so a
@@ -46,6 +49,8 @@ public final class TopologyIndex {
     @ObservationIgnored private var upkeep: [ShapeKind: KindUpkeep] = [:]
     /// Each stand-in kind's rule.
     @ObservationIgnored private let standInRules: [ShapeKind: StandIn]
+    /// Each stand-in kind's admission, made once from the registry: safe on any thread.
+    @ObservationIgnored private let admissions: [ShapeKind: ForwardAdmission]
     /// Each stand-in on a board the editor can show (not kept aside): its kind, and what its record
     /// says it stands for.
     @ObservationIgnored private var standing: [ShapeID: Declared] = [:]
@@ -87,6 +92,15 @@ public final class TopologyIndex {
     @ObservationIgnored public private(set) var touched: Set<ShapeID> = []
     /// `touched`, by the type of each edge that changed.
     @ObservationIgnored private var touchedByType: [EdgeTypeID: Set<ShapeID>] = [:]
+    /// +1 for each change to what the index holds (a commit that read a shape again, a provide that
+    /// took an answer, the file read afresh): when a preparer was taken (`preparer()`).
+    @ObservationIgnored private var generation = 0
+    /// What each recent change read again, answered or changed what it stands for (nil: everything,
+    /// the file read afresh), oldest first: what `provide(_:prepared:)` asks of what was worked out
+    /// before it.
+    @ObservationIgnored private var changeLog: [(generation: Int, ids: Set<ShapeID>?)] = []
+    /// Whether a preparer has been taken: only then is the log kept.
+    @ObservationIgnored private var logs = false
 
     #if DEBUG
     /// How many records sources and stand-ins' forwarding rules have read (debug builds), so tests
@@ -95,9 +109,16 @@ public final class TopologyIndex {
     /// How many edges sources emitted that were dropped for being Topology's own (debug builds): an
     /// edge in the slot `stands-for`, or of that type (`StandingEdge`).
     @ObservationIgnored public private(set) var reservedEdgesDropped = 0
-    /// How many carriers' resolved edges are kept apart from what they emitted (debug builds): none
-    /// in a file with no stand-ins, so tests can hold the tables to being sparse.
-    public var resolvedCarrierCount: Int { tables.resolvedByCarrier.count }
+    /// How many edges the tables keep (debug builds): what carriers emitted, whatever stands for
+    /// what, so tests can hold forwarding to keeping no copies.
+    public var storedEdgeCount: Int { tables.byCarrier.values.reduce(0) { $0 + $1.count } }
+    /// How many answers prepared on another thread were taken as prepared, and how many were worked
+    /// out again here (debug builds): a commit to what one names came after it was prepared.
+    @ObservationIgnored public private(set) var preparedTaken = 0
+    @ObservationIgnored public private(set) var preparedRedone = 0
+    /// How many shapes a stand-in names have been looked at, to say whether it may stand for them
+    /// (debug builds): a commit to one of a thousand looks at one.
+    @ObservationIgnored public private(set) var targetsRead = 0
     #endif
 
     init(editor: CanvasEditor) {
@@ -106,6 +127,7 @@ public final class TopologyIndex {
         types = editor.registry.edgeTypes
         standInRules = editor.registry.standInRules()
         standInKinds = Set(standInRules.keys)
+        admissions = editor.registry.standInAdmissions
         for kind in editor.registry.kinds {
             let found = editor.registry.edgeEmitters(for: kind)
             if !found.isEmpty || standInRules[kind] != nil { upkeep[kind] = KindUpkeep(emitters: found, rule: standInRules[kind]) }
@@ -190,6 +212,12 @@ public final class TopologyIndex {
     /// The stand-ins that stand for `target` now, in the order they came to: what stands for it.
     public func standIns(for target: ShapeID) -> [ShapeID] { tables.standIns(for: target) }
 
+    /// The kinds of the shapes `standIn` stands for now, each once: the first shape's kind first,
+    /// then the rest by name. None for a shape that stands for nothing. O(those kinds), however many
+    /// shapes it stands for: what a reader of a stand-in's kinds (its ports, what an edge into it may
+    /// be) reads instead of its shapes.
+    public func standingKinds(of standIn: ShapeID) -> [ShapeKind] { tables.standingKinds(of: standIn) }
+
     /// The stand-ins whose record names `target`, whether or not they stand for it now (an admission they
     /// don't meet, a target on a board the editor can't show, or one that is gone): who points at it, for a
     /// reader that treats a direct stand-in as the shape it names. Provided ones are not here. No order.
@@ -263,38 +291,92 @@ public final class TopologyIndex {
     /// (`Forwarding.provided`): what each stands for now. Not a commit: never saved, never undone.
     /// An answer for another key than the one the stand-in's record holds now, for a shape that
     /// isn't such a stand-in (on a board the editor can show), or older (`revision`) than the one
-    /// held for that key, is dropped. The carriers at the stand-ins whose shapes changed are set
-    /// again, the revisions of the ends that changed bumped, and, if any edge changed, the change
-    /// told to followers (`.provide`); `touched` is then its ends.
+    /// held for that key, is dropped; one that names what the one held names is taken as newer and
+    /// changes nothing else. What each stand-in stands for is worked out again, the revisions of the
+    /// ends of the edges that changed bumped, and, if any edge changed, the change told to followers
+    /// (`.provide`); `touched` is then its ends.
+    ///
+    /// `prepared` is what a preparer worked out of these answers on another thread
+    /// (`preparer()`, `ForwardingPreparer.prepare`): each answer it holds as given is taken as it was
+    /// worked out, what came and went alone, unless a change since it was taken read a shape the
+    /// answer names, or its stand-in, again; any other answer is worked out here.
     ///
     /// Never call it while a service hears a commit or a switch (`documentDidChange`,
     /// `boardDidChange`), nor from a follower: from a scheduled callback or a task's continuation on
     /// the main actor, so that each commit is told with one consistent table.
-    public func provide(_ answers: [ShapeID: ProvidedForwarding]) {
+    public func provide(_ answers: [ShapeID: ProvidedForwarding], prepared: PreparedForwarding? = nil) {
         assert(!delivering, "a follower never provides")
-        var work = Upkeep()
+        let since = prepared.flatMap { changes(since: $0.generation) }
+        var work = Upkeep(), answered: Set<ShapeID> = [], taken: [(id: ShapeID, answer: PreparedAnswer)] = []
         for (id, answer) in answers {
+            if let since, let entry = prepared?.answers[id], entry.answer == answer, !since.contains(id), entry.holds(since) {
+                taken.append((id, entry))
+                continue
+            }
+            #if DEBUG
+            if prepared?.answers[id] != nil { preparedRedone += 1 }
+            #endif
             guard case .provided(let key)? = standing[id]?.forwarding, key == answer.key else { continue }
-            if let held = provided[id] {
-                guard answer.revision >= held.revision, answer != held else { continue }
+            answered.insert(id)
+            switch answer.taken(over: provided[id]) {
+            case .dropped:
+                continue
+            case .newer:
+                // What it names, and so what it stands for, is as it was.
+                provided[id] = answer
+                continue
+            case .anew:
+                break
             }
             setAnswer(id, answer)
             pendingStandIns.remove(id)
             work.standIn(id)
         }
-        if !work.standIns.isEmpty {
-            let before = (touched, touchedByType)
-            clearTouched()
-            var lookup = Lookup(editor)
-            apply(&work, in: &lookup)
-            if touched.isEmpty {
-                (touched, touchedByType) = before
-            } else {
-                bump(touched)
-                deliver(.provide)
+        let before = (touched, touchedByType)
+        clearTouched()
+        var moved: Set<ShapeID> = []
+        for (id, entry) in taken {
+            #if DEBUG
+            preparedTaken += 1
+            #endif
+            switch entry.outcome {
+            case .dropped:
+                continue
+            case .newer:
+                provided[id] = entry.answer
+            case .stands(let targets, let change, let came, let went):
+                setAnswer(id, entry.answer, came: came, went: went)
+                pendingStandIns.remove(id)
+                tables.setForwards(id, targets, kind: .provided, change: change)
+                if change.moved {
+                    touchForwards(id, change)
+                    moved.insert(id)
+                }
             }
+            answered.insert(id)
+        }
+        if !work.standIns.isEmpty {
+            var lookup = Lookup(editor)
+            moved.formUnion(apply(&work, in: &lookup))
+        }
+        if !answered.isEmpty { log(answered.union(moved)) }
+        if touched.isEmpty {
+            (touched, touchedByType) = before
+        } else {
+            bump(touched)
+            deliver(.provide)
         }
         wakeWaiters()
+    }
+
+    /// What answers worked out on another thread start from (`ForwardingPreparer.prepare`): the index
+    /// as it is now, shared, not copied (O(1)), reading no record and observing nothing. Take it on
+    /// the main actor just before preparing, and hand what it prepares, with the answers, to
+    /// `provide(_:prepared:)`; hold it no longer than that, as a snapshot.
+    public func preparer() -> ForwardingPreparer {
+        logs = true
+        return ForwardingPreparer(generation: generation, tables: tables, containment: containment(observing: false), standing: standing,
+                                  provided: provided, admissions: admissions)
     }
 
     /// Calls `follower` once after every change to the edges, whatever its cause: a commit (undo,
@@ -414,13 +496,14 @@ public final class TopologyIndex {
     // MARK: Following the file
 
     /// What a commit changed, applied: the records it touched read again (each carrier's edges set
-    /// through the stand-ins as they stood), what stand-ins stand for worked out again where that may
-    /// have changed and the carriers at those whose shapes changed set again, then the revisions of
-    /// the shapes whose edges changed bumped, and the change told to followers.
+    /// as emitted), what stand-ins stand for worked out again where that may have changed (whole for
+    /// a stand-in read again, for the shapes it changed alone for one that names them), then the
+    /// revisions of the shapes whose edges changed bumped, and the change told to followers.
     private func hear(_ changes: ChangeSet) {
         clearTouched()
         if changes.replacedDocument {
             rebuild()
+            log(nil)
         } else {
             var lookup = Lookup(editor), work = Upkeep()
             // Removed first: one commit can take a shape off one board and put it on another.
@@ -428,7 +511,12 @@ public final class TopologyIndex {
             for id in changes.elsewhere { refresh(id, in: &lookup, &work) }
             for id in changes.added { refresh(id, in: &lookup, &work) }
             for id in changes.changed where !changes.moved.contains(id) { refresh(id, in: &lookup, &work) }
-            apply(&work, in: &lookup)
+            let moved = apply(&work, in: &lookup)
+            if logs, work.read > 0 {
+                var read = moved.union(changes.removed).union(changes.elsewhere).union(changes.added)
+                for id in changes.changed where !changes.moved.contains(id) { read.insert(id) }
+                log(read)
+            }
         }
         bump(touched)
         deliver(changes.replacedDocument ? .rebuild : .commit)
@@ -436,14 +524,16 @@ public final class TopologyIndex {
 
     /// Reads a shape again, wherever it is now (on no board the editor can show, it carries nothing
     /// and stands for nothing): what it emits, what it says it stands for if it's a stand-in, and,
-    /// as a shape a stand-in's record may name, which stand-ins to look at again. Its kind is looked
-    /// up once, and the stand-in tables only while they hold something: a file with no stand-ins
-    /// reads a shape as it did before there were any.
+    /// as a shape a stand-in's record may name, which stand-ins to look at again for it. Its kind is
+    /// looked up once, and the stand-in tables only while they hold something: a file with no
+    /// stand-ins reads a shape as it did before there were any.
     private func refresh(_ id: ShapeID, in lookup: inout Lookup, _ work: inout Upkeep) {
         // The record bound once, and no closures: each would check, at every shape, that it runs
         // on the main actor.
         var emitted: [Edge] = [], declares = false
-        if let record = lookup.shape(id), let kind = upkeep[record.kind] {
+        work.read += 1
+        let record = lookup.shape(id)
+        if let record, let kind = upkeep[record.kind] {
             // Whether it's a stand-in first: a stand-in's own edges are never forwarded.
             if let rule = kind.rule, !record.isOpaque {
                 declares = true
@@ -460,33 +550,50 @@ public final class TopologyIndex {
             work.standIn(id)
         }
         set(id, emitted: emitted)
+        // A shape stood for, turned into another kind: what stands for it counts it as that now, and its
+        // edge to it is noted, so a reader of its kinds (its ports, kept by its revision) hears of it.
+        if let record, !tables.forwardedKinds.isEmpty, let kept = tables.forwardedKinds[id], kept != record.kind {
+            for standIn in tables.setKind(record.kind, of: id) {
+                touched.insert(standIn)
+                touched.insert(id)
+                touchedByType[StandingEdge.id, default: []].formUnion([standIn, id])
+            }
+        }
         // A shape a stand-in names, or an answer holds: whether it's there, and may be stood for,
         // may have changed.
-        if !declaredBy.isEmpty { for standIn in declaredBy[id] ?? [] { work.standIn(standIn) } }
-        if !providedBy.isEmpty { for standIn in providedBy[id] ?? [] { work.standIn(standIn) } }
+        if !declaredBy.isEmpty { for standIn in declaredBy[id] ?? [] { work.recheck(standIn, id) } }
+        if !providedBy.isEmpty { for standIn in providedBy[id] ?? [] { work.recheck(standIn, id) } }
     }
 
-    /// What the records read change for stand-ins: what each stand-in looked at again stands for,
-    /// then, for each whose shapes changed, the carriers with an edge at it (as set, so those read
-    /// this commit too) and itself set again. A carrier set twice in one commit may leave in `touched`
-    /// a shape its edges reached only in between: one a stand-in it was just pointed at stood for
-    /// until this commit.
-    private func apply(_ work: inout Upkeep, in lookup: inout Lookup) {
+    /// What the records read change for stand-ins: what each stand-in read again stands for, worked
+    /// out whole, and, for each that only names shapes the commit changed, those shapes looked at
+    /// again; then, for each whose shapes changed, the ends of the edges that changed noted. The
+    /// stand-ins whose shapes changed.
+    @discardableResult
+    private func apply(_ work: inout Upkeep, in lookup: inout Lookup) -> Set<ShapeID> {
+        var moved: Set<ShapeID> = []
         for standIn in work.standIns {
-            let (targets, kind) = effective(standIn, in: &lookup)
-            guard tables.setForwards(standIn, targets, kind: kind) else { continue }
-            for carrier in tables.carriers(at: standIn) { work.carrier(carrier) }
-            work.carrier(standIn)
+            let (targets, kinds, kind) = effective(standIn, in: &lookup)
+            let change = ForwardsChange.between(tables.forwards(of: standIn), targets, kinds: kinds)
+            tables.setForwards(standIn, targets, kind: kind, change: change)
+            guard change.moved else { continue }
+            touchForwards(standIn, change)
+            moved.insert(standIn)
         }
-        for carrier in work.carriers { set(carrier, emitted: tables.byCarrier[carrier] ?? []) }
+        for standIn in work.rechecked where !work.isWhole(standIn) {
+            let change = recheck(standIn, work.named(by: standIn), in: &lookup)
+            guard change.moved else { continue }
+            touchForwards(standIn, change)
+            moved.insert(standIn)
+        }
+        return moved
     }
 
     /// Reads every board the editor can show afresh, and lets go of carriers and stand-ins it no
     /// longer finds. Carriers whose edges didn't change touch nothing. Each carrier is set as it's
-    /// read, through the stand-ins as they stood; then what every stand-in, there before or now,
-    /// stands for is worked out, and the carriers at those whose shapes changed are set again: a
-    /// file with no stand-ins costs what it did before there were any. Answers provided are let go
-    /// of: they were for the file as it was, and are asked again.
+    /// read; then what every stand-in, there before or now, stands for is worked out: a file with no
+    /// stand-ins costs what it did before there were any. Answers provided are let go of: they were
+    /// for the file as it was, and are asked again.
     private func rebuild() {
         var seen: Set<ShapeID> = []
         let before = Array(tables.forwards.keys)
@@ -507,7 +614,7 @@ public final class TopologyIndex {
                 }
             }
         }
-        for carrier in Set(tables.byCarrier.keys).union(tables.resolvedByCarrier.keys) where !seen.contains(carrier) {
+        for carrier in Array(tables.byCarrier.keys) where !seen.contains(carrier) {
             set(carrier, emitted: [])
         }
         guard !before.isEmpty || !found.isEmpty else { return }
@@ -546,6 +653,7 @@ public final class TopologyIndex {
                 if declaredBy.values[index].isEmpty { declaredBy.remove(at: index) }
             }
         }
+        if (standing[id] == nil) != (declared == nil) { tables.setStandIn(id, declared != nil) }
         standing[id] = declared
         if case .shapes(let new)? = declared?.forwarding {
             for target in new { declaredBy[target, default: []].insert(id) }
@@ -560,85 +668,111 @@ public final class TopologyIndex {
 
     /// Keeps a stand-in's answer (nil: none), and which stand-ins' answers name each shape, in step.
     private func setAnswer(_ id: ShapeID, _ answer: ProvidedForwarding?) {
-        for target in provided[id]?.shapes ?? [] {
+        let old = provided[id]?.shapes ?? []
+        setAnswer(id, answer, came: answer?.shapes ?? [], went: old)
+    }
+
+    /// `setAnswer(_:_:)` where what the answer names that the one before didn't (`came`) and what it
+    /// no longer names (`went`) are known: only those are filed again.
+    private func setAnswer(_ id: ShapeID, _ answer: ProvidedForwarding?, came: [ShapeID], went: [ShapeID]) {
+        for target in went {
             guard let index = providedBy.index(forKey: target) else { continue }
             providedBy.values[index].remove(id)
             if providedBy.values[index].isEmpty { providedBy.remove(at: index) }
         }
         provided[id] = answer
-        for target in answer?.shapes ?? [] { providedBy[target, default: []].insert(id) }
+        for target in came { providedBy[target, default: []].insert(id) }
     }
 
-    /// What a stand-in stands for now: the shapes it declares, in order, each once, that are on a
-    /// board the editor can show, not kept aside, not stand-ins (one hop), not itself, and that its
-    /// rule admits, up to its rule's most; and whether its record names them or they were provided.
-    private func effective(_ standIn: ShapeID, in lookup: inout Lookup) -> ([ShapeID], ForwardKind) {
-        guard let declared = standing[standIn], let forwarding = declared.forwarding, let rule = standInRules[declared.kind] else {
-            return ([], .record)
-        }
-        let named: [ShapeID], kind: ForwardKind
+    /// What a stand-in names as it stands now: the shapes its record names, or those of the answer
+    /// held for the key its record holds (none while there's none), and which.
+    private func named(by standIn: ShapeID, _ forwarding: Forwarding) -> ([ShapeID], ForwardKind) {
         switch forwarding {
-        case .shapes(let ids): (named, kind) = (ids, .record)
-        // Nothing provided for the key it holds now: it stands for nothing yet.
-        case .provided(let key): (named, kind) = (provided[standIn].flatMap { $0.key == key ? $0.shapes : nil } ?? [], .provided)
+        case .shapes(let ids): (ids, .record)
+        case .provided(let key): (provided[standIn].flatMap { $0.key == key ? $0.shapes : nil } ?? [], .provided)
         }
-        var taken: [ShapeID] = [], met: Set<ShapeID> = []
-        for target in named where taken.count < rule.maxTargets && met.insert(target).inserted && target != standIn {
-            guard let record = lookup.shape(target), !record.isOpaque, standInRules[record.kind] == nil,
-                  rule.admitting(record, registry) else { continue }
-            taken.append(target)
-        }
-        return (taken, kind)
     }
 
-    /// What a carrier carries as stand-ins forward it: a stand-in's own edges as emitted, then one to
-    /// each shape it stands for; any other's with each end that's a stand-in for something replaced
-    /// by each shape it stands for, at most `EdgeForwarding.maxPairsPerCarrier` (every edge keeping
-    /// one). Nil when that's what it emitted.
-    private func resolve(_ carrier: ShapeID, _ emitted: [Edge]) -> [Edge]? {
-        guard !tables.forwards.isEmpty else { return nil }
-        if standing[carrier] != nil {
-            let targets = tables.forwards(of: carrier)
-            guard !targets.isEmpty else { return nil }
-            return emitted + targets.map {
-                Edge(type: StandingEdge.id, source: carrier, target: $0, carrier: carrier, slot: StandingEdge.slot, origin: .standing)
-            }
+    /// What a stand-in stands for now: the shapes it names, in order, each once, that are on a board
+    /// the editor can show, not kept aside, not stand-ins (one hop), not itself, and that its rule
+    /// admits, with their kinds; and whether its record names them or they were provided.
+    private func effective(_ standIn: ShapeID, in lookup: inout Lookup) -> (targets: [ShapeID], kinds: [ShapeKind], kind: ForwardKind) {
+        guard let declared = standing[standIn], let forwarding = declared.forwarding, let admits = admissions[declared.kind] else {
+            return ([], [], .record)
         }
-        var resolved: [Edge] = [], forwarded = false
-        for edge in emitted {
-            let sources = tables.forwards[edge.source], targets = tables.forwards[edge.target]
-            guard sources != nil || targets != nil else {
-                resolved.append(edge)
-                continue
-            }
-            forwarded = true
-            let origin = EdgeOrigin.forwarded(source: sources == nil ? nil : edge.source, target: targets == nil ? nil : edge.target)
-            var first = true
-            pairs: for source in sources ?? [edge.source] {
-                for target in targets ?? [edge.target] {
-                    guard first || resolved.count < EdgeForwarding.maxPairsPerCarrier else { break pairs }
-                    resolved.append(Edge(type: edge.type, source: source, target: target, carrier: carrier, slot: edge.slot,
-                                         count: edge.count, origin: origin))
-                    first = false
-                }
-            }
+        let (named, kind) = named(by: standIn, forwarding)
+        let taken = Effective.taking(named, for: standIn, isStandIn: { standInRules[$0] != nil }, admits: admits) { target in
+            #if DEBUG
+            targetsRead += 1
+            #endif
+            return lookup.shape(target)
         }
-        return forwarded ? resolved : nil
+        return (taken.targets, taken.kinds, kind)
     }
 
-    /// Makes `emitted` what `carrier` emitted, resolved through the stand-ins as they stand now, and
-    /// notes the ends of the edges that changed in `touched`.
+    /// What a commit to `ids`, among the shapes `standIn` names, changes of what it stands for, those
+    /// alone: each it may stand for now and didn't comes, in its place among what it names, and each
+    /// it can't and did goes. O(those shapes, and a pass along what it names): a commit to one of a
+    /// thousand shapes looks at one. The change, as applied.
+    private func recheck(_ standIn: ShapeID, _ ids: [ShapeID], in lookup: inout Lookup) -> ForwardsChange {
+        guard let declared = standing[standIn], let forwarding = declared.forwarding, let admits = admissions[declared.kind] else {
+            return .none
+        }
+        let (named, kind) = named(by: standIn, forwarding)
+        var change = ForwardsChange()
+        for id in ids where id != standIn {
+            #if DEBUG
+            targetsRead += 1
+            #endif
+            let standsFor = tables.standIns(for: id).contains(standIn)
+            let record = lookup.shape(id)
+            let may = record.map { !$0.isOpaque && standInRules[$0.kind] == nil && admits($0) } ?? false
+            if may, !standsFor, let record, let index = Self.place(of: id, in: named, among: tables.forwards(of: standIn)) {
+                tables.insertForward(standIn, id, at: index, record.kind, as: kind)
+                change.came.append((id, record.kind))
+                change.moved = true
+            } else if !may, standsFor {
+                tables.removeForward(standIn, id)
+                change.went.append(id)
+                change.moved = true
+            }
+        }
+        return change
+    }
+
+    /// Where `id` goes among `taken`, the shapes of `named` stood for, in its order: after each one
+    /// that comes before its first place in `named`. One pass, comparing ids; nil for one `named`
+    /// doesn't hold.
+    private static func place(of id: ShapeID, in named: [ShapeID], among taken: [ShapeID]) -> Int? {
+        var index = 0
+        for shape in named {
+            if shape == id { return index }
+            if index < taken.count, shape == taken[index] { index += 1 }
+        }
+        return nil
+    }
+
+    /// Makes `emitted` what `carrier` emitted, and notes the ends of the edges that changed in
+    /// `touched`.
     private func set(_ carrier: ShapeID, emitted: [Edge]) {
-        touch(tables.set(carrier, emitted: emitted, resolved: resolve(carrier, emitted)))
+        touch(tables.set(carrier, emitted: emitted))
     }
 
-    /// Notes each edge's ends, and its literal ends, in `touched`, under its type: a run of edges of
-    /// one type (a carrier's, mostly) looks its type up once, and an end the edge before of that type
-    /// had (the source of every copy of an arrow fanned out, the stand-in it went through) is noted
-    /// once.
+    /// Notes each edge's ends in `touched`, under its type, and, for an end that's a stand-in that
+    /// stands for something (of an edge its carrier, not a stand-in, carries), each shape it stands
+    /// for: the ends of the edge's copies. A run of edges of one type (a carrier's, mostly) looks its
+    /// type up once, and an end the edge before of that type had (the source of every mention in a
+    /// text) is noted once.
     private func touch(_ edges: [Edge]) {
         guard var type = edges.first?.type else { return }
         var ofType = touchedByType.removeValue(forKey: type) ?? []
+        let forwarding = !tables.forwards.isEmpty
+        func noteForwards(of end: ShapeID) {
+            for target in tables.forwards[end] ?? [] {
+                touched.insert(target)
+                ofType.insert(target)
+            }
+        }
         // By index, with no arrays made: the edge before, if of this type, is in this run.
         for index in edges.indices {
             let edge = edges[index], first = index == edges.startIndex
@@ -649,13 +783,74 @@ public final class TopologyIndex {
             }
             let sameRun = !first && edges[index - 1].type == type
             edge.forEachNode { node in
-                guard !sameRun || !edges[index - 1].isFiled(under: node) else { return }
+                guard !sameRun || (edges[index - 1].source != node && edges[index - 1].target != node) else { return }
                 touched.insert(node)
                 ofType.insert(node)
             }
+            guard forwarding, !tables.standInCarriers.contains(edge.carrier) else { continue }
+            noteForwards(of: edge.source)
+            if edge.target != edge.source { noteForwards(of: edge.target) }
         }
         touchedByType[type] = ofType
     }
+
+    /// Notes in `touched` the ends of the edges a change to what `standIn` stands for changed (applied
+    /// to the tables already): its own edges to what came and went, and, for each edge another shape
+    /// carries at it, its copies' ends: the two it was emitted with, what came and went at this end,
+    /// and, at the other, what that end reads as (each shape it stands for, if it's a stand-in that
+    /// stands for something; for an edge from `standIn` to itself, every shape it stood for or stands
+    /// for now, each of which is an end of a copy that came or went).
+    private func touchForwards(_ standIn: ShapeID, _ change: ForwardsChange) {
+        func note(_ id: ShapeID, _ type: EdgeTypeID) {
+            touched.insert(id)
+            touchedByType[type, default: []].insert(id)
+        }
+        note(standIn, StandingEdge.id)
+        for (target, _) in change.came { note(target, StandingEdge.id) }
+        for target in change.went { note(target, StandingEdge.id) }
+        tables.forEachEmitted(at: standIn) { edge in
+            guard !tables.standInCarriers.contains(edge.carrier) else { return }
+            let other = edge.source == standIn ? edge.target : edge.source
+            note(standIn, edge.type)
+            note(other, edge.type)
+            if other == standIn {
+                for target in tables.forwards(of: standIn) { note(target, edge.type) }
+                for target in change.went { note(target, edge.type) }
+                return
+            }
+            for (target, _) in change.came { note(target, edge.type) }
+            for target in change.went { note(target, edge.type) }
+            for target in tables.forwards[other] ?? [] { note(target, edge.type) }
+        }
+    }
+
+    /// Notes that a change read `ids` again, answered them or changed what they stand for (nil:
+    /// everything, the file read afresh), for what was prepared before it (`changes(since:)`). Only
+    /// once a preparer has been taken: an index nothing prepares for keeps no log.
+    private func log(_ ids: Set<ShapeID>?) {
+        guard logs else { return }
+        generation += 1
+        changeLog.append((generation, ids.flatMap { $0.count > Self.loggedMost ? nil : $0 }))
+        if changeLog.count > Self.changesKept { changeLog.removeFirst(changeLog.count - Self.changesKept) }
+    }
+
+    /// What changed since `then` (a preparer's generation): nil when the log can't say (the file read
+    /// afresh, a change too large to keep, or one older than the log keeps).
+    private func changes(since then: Int) -> Set<ShapeID>? {
+        guard then <= generation else { return nil }
+        guard then < generation else { return [] }
+        guard let oldest = changeLog.first, oldest.generation <= then + 1 else { return nil }
+        var found: Set<ShapeID> = []
+        for entry in changeLog where entry.generation > then {
+            guard let ids = entry.ids else { return nil }
+            found.formUnion(ids)
+        }
+        return found
+    }
+
+    /// How many changes the log keeps, and the most shapes one may name and still be kept by name.
+    private static let changesKept = 64
+    private static let loggedMost = 4_096
 
     private func clearTouched() {
         touched = []
@@ -684,6 +879,7 @@ extension TopologyIndex: EditorService {
         clearTouched()
         guard change.isFileReplaced else { return }
         rebuild()
+        log(nil)
         bump(touched)
         deliver(.rebuild)
     }
@@ -702,26 +898,40 @@ private final class KindUpkeep {
 }
 
 /// What a stand-in declares: its kind (whose rule it goes by), and what its record says it stands for.
-private struct Declared: Equatable {
+struct Declared: Equatable, Sendable {
     let kind: ShapeKind
     let forwarding: Forwarding?
 }
 
-/// What one commit has the index do about stand-ins: the stand-ins to look at again, and the carriers
-/// to set again, each once, in the order they came.
+/// What one commit has the index do about stand-ins: the stand-ins to work out whole again (read
+/// again themselves), and, for those that only name shapes it changed, which; each once, in the order
+/// they came; and how many records it read.
 private struct Upkeep {
-    private(set) var carriers: [ShapeID] = []
     private(set) var standIns: [ShapeID] = []
-    private var dirtyCarriers: Set<ShapeID> = []
-    private var dirtyStandIns: Set<ShapeID> = []
-
-    mutating func carrier(_ id: ShapeID) {
-        if dirtyCarriers.insert(id).inserted { carriers.append(id) }
-    }
+    /// The stand-ins whose named shapes changed, in the order they came.
+    private(set) var rechecked: [ShapeID] = []
+    var read = 0
+    private var whole: Set<ShapeID> = []
+    private var changedNamed: [ShapeID: [ShapeID]] = [:]
 
     mutating func standIn(_ id: ShapeID) {
-        if dirtyStandIns.insert(id).inserted { standIns.append(id) }
+        if whole.insert(id).inserted { standIns.append(id) }
     }
+
+    /// `named`, a shape `standIn` names, changed.
+    mutating func recheck(_ standIn: ShapeID, _ named: ShapeID) {
+        if let index = changedNamed.index(forKey: standIn) {
+            changedNamed.values[index].append(named)
+        } else {
+            changedNamed[standIn] = [named]
+            rechecked.append(standIn)
+        }
+    }
+
+    func isWhole(_ standIn: ShapeID) -> Bool { whole.contains(standIn) }
+
+    /// The shapes `standIn` names that changed.
+    func named(by standIn: ShapeID) -> [ShapeID] { changedNamed[standIn] ?? [] }
 }
 
 extension CanvasEditor {

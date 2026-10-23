@@ -35,7 +35,7 @@ struct ReferenceLook {
     var strength: CGFloat
     var isPlaceholder: Bool
     var trailing: Symbol?
-    /// The count trailing a pill that stands for every match ("12", "50+"), or the "0" of one that
+    /// The count trailing a pill that stands for every match ("12", "1.2k"), or the "0" of one that
     /// found none, in the room a dynamic pill reserves.
     var badge: String?
     var dashed: Bool
