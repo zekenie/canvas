@@ -11,7 +11,7 @@ import { layoutFlat, removeOverlaps, pushApart, normalize, pack, stretched, offS
 import { warmStress } from './stress.mjs';
 import { arrowBetween, segLength } from './geom.mjs';
 import { ownCost, ownCostParts, shapeCost, FILL_WEIGHT } from './cost.mjs';
-import { DEFAULT_CONSTANTS, TITLE_PILL } from './sizes.mjs';
+import { DEFAULT_CONSTANTS, TITLE_PILL, pillKey } from './sizes.mjs';
 import { fansOut } from './moves.mjs';
 
 // draw's numbers (a pill's height, step and gap, how far `in` puts a shape from a frame's edge, a frame's least size) come from `canvas measure`: sizes.constants
@@ -235,12 +235,13 @@ export class Layouter {
     const hosts = new Map(state.hosts);
     for (const g of this.pillPlan(state).groups) {
       if (!g.shared || g.free || (only && !only.has(g.key))) continue;
-      hosts.set(g.key, bestHost(layout.boxes, g.froms, this.pillW(g.target), this.k));
+      hosts.set(g.key, bestHost(layout.boxes, g.froms, this.pillW(g.target, g.container), this.k));
     }
     return hosts;
   }
 
-  pillW(target) { return this.sizes.pillWidth[target] || 120; }
+  /** How wide a pill for `target` is beside a start in container `cid`: as measured from there (a pill that says where its shape is), else anywhere. */
+  pillW(target, cid) { const w = this.sizes.pillWidth; return w[pillKey(target, cid)] || w[target] || 120; }
 
   unit(title, pills) {
     const s = this.sizes.shapes[title];
@@ -249,7 +250,7 @@ export class Layouter {
     const w = Math.ceil(s.w), h = Math.ceil(s.h);
     const k = pills ? pills.length : 0;
     if (!k) return { w, h, noteW: w, noteH: h, ny: 0, colTop: 0, k: 0, nx: 0 };
-    const colW = pillGap + Math.max(...pills.map((x) => this.pillW(x.e.to)));
+    const colW = pillGap + Math.max(...pills.map((x) => this.pillW(x.e.to, this.m.node(x.e.from).container)));
     const colH = k * pillHeight + (k - 1) * pillStep;
     const top = h / 2 - colH / 2;   // draw centres a column of pills as a whole on its start
     const minY = Math.floor(Math.min(0, top)), maxY = Math.ceil(Math.max(h, top + colH));   // whole units: the note lands on an integer
@@ -285,7 +286,7 @@ export class Layouter {
     this.free = new Map(); this.freeIn = new Map();
     for (const g of plan.groups) {
       if (!g.free) continue;
-      this.free.set(g.pill, { container: g.container, target: g.target, host: g.host, users: g.edges.length, froms: g.froms, key: g.key, w: this.pillW(g.target) });
+      this.free.set(g.pill, { container: g.container, target: g.target, host: g.host, users: g.edges.length, froms: g.froms, key: g.key, w: this.pillW(g.target, g.container) });
       let l = this.freeIn.get(g.container); if (!l) this.freeIn.set(g.container, l = []); l.push(g.pill);
     }
     for (const l of this.freeIn.values()) l.sort();
@@ -312,7 +313,7 @@ export class Layouter {
         boxes.set(t, { x: x + (u.nx || 0), y: y + u.ny, w: u.noteW, h: u.noteH });
         (plan.byStart.get(t) || []).forEach((en, i) => {
           pillAt.set(t + SEP + en.e.to, pills.length);
-          const pw = this.pillW(en.e.to);
+          const pw = this.pillW(en.e.to, this.m.node(t).container);
           const px = u.nx ? x + u.nx - this.k.pillGap - pw : x + u.noteW + this.k.pillGap;   // a column on the left: each pill its gap left of the note
           pills.push({ start: t, target: en.e.to, users: en.users, shared: en.shared, left: !!u.nx, x: px, y: y + u.ny + u.colTop + i * (this.k.pillHeight + this.k.pillStep), w: pw, h: this.k.pillHeight });
         });

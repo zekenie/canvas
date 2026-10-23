@@ -1,6 +1,6 @@
 # Global path uniqueness for Canvas nodes
 
-Claude Code session `18021ee6-d6b4-406c-b6a0-bd10bdd1b836`, 2026-10-23 01:22 to 2026-10-23 11:24 UTC, on `claude/canvas-global-path-uniqueness-4a0280`.
+Claude Code session `18021ee6-d6b4-406c-b6a0-bd10bdd1b836`, 2026-10-23 01:22 to 2026-10-23 13:33 UTC, on `claude/canvas-global-path-uniqueness-4a0280`, `claude/draw-pill-places`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -797,3 +797,383 @@ One choice is left for later: reference pills that `canvas draw` makes don't say
 
 [2026-10-23 11:23] USER:
 Land it.
+
+[2026-10-23 11:24] ASSISTANT:
+The record is written. The skill says to read it before committing, since the commit publishes it, so I'm checking it for anything secret.
+
+[2026-10-23 11:24] GIT:
+R=history/sessions/2026-10-23-global-path-uniqueness-for-canvas-nodes-18021ee6 && git add $R && git commit -q -m "This session's record, for the landing
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" && M=/private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-canvas-global-path-uniqueness-4a0280/18021ee6-d6b4-406c-b6a0-bd10bdd1b836/scratchpad/land-message.txt && cat > $M <<'EOF'
+Shapes in different frames or subboards may share a title: a shape is told apart by its path
+
+The owner diagrams software and needs nodes of one name in differently named frames: "they will be nested
+in frames that are unique, so their quote-unquote global path will be unique." The warning was on titles,
+nothing had a notion of a path but Jump To's approximation of one, and mentions searched titles alone. Then,
+of the boards canvas-ingest and canvas-digest draw: "this is actually really important. we need to cover
+this too."
+
+- A path is Boards' one abstraction (`ShapePath`, and `ShapePaths`, a value services embed), pulled out of
+  Jump To, which ranks by it: the containers a shape is inside (frames, and the shapes whose boards hold it),
+  outermost first, then its title. The warning is Boards' `PathValidationPlugin` and `PathIndex`, in place
+  of Titles' title index: two shapes warn only when they share a whole path ("“Alpha › Checkout” is
+  another shape’s path too."), and in no container it says what it said. A frame's rename files again
+  what is inside it, once a commit; a drag files nothing.
+- The `@` picker matches a query of several words along a shape's path (whole names first, then paths, then
+  loose matches; one word ranks as before), and the lists that name a shape say where it is: the picker, a
+  reference's pill, header and matches, the Connections tab and its search, and Move To ▸, which says the
+  path of places called alike.
+- `canvas draw` names a shape by its path where its title isn't its alone (`"Payments" > "Checkout"`,
+  `board > "X"`, `#id > "X"`), its messages say a shape by its path where its title is shared, and
+  `in "X"` finds its own title inside X first, so a second Router is made in Billing rather than the one in
+  Payments moved. `canvas show` and `canvas capture` take paths, and the canvas skill teaches them.
+- canvas-digest takes titles that repeat across containers, and node ids, and writes a bare title only
+  where nothing else in the file could be meant, else a path. canvas-ingest's lenskit gives a title out
+  once a container and ids where titles repeat, so an ingested board keeps two `index.ts` as `index.ts`.
+
+Decisions: the warning and the paths live in Boards, not a module of their own (nothing must build without
+the other, the layers charter's test). A type's title stays unique across a digest, since `is` names a type
+by its title, and a card's stays the digest's alone, since a description mentions a card by its title
+alone, so a band still gives way to a module of its name ("Level 1 (layer)"). Left for the owner: a pill
+`canvas draw` makes is sized for its shape's name alone, so it says where the shape is only where room is
+left over; showing it changes how `canvas measure` sizes pills, and the digests laid out from them.
+
+Every test passes (7,926). The two benchmarks over budget, a crumb menu's rows after a rename and a schema
+edit the check doesn't read, miss by as much on main as here.
+
+Session: history/sessions/2026-10-23-global-path-uniqueness-for-canvas-nodes-18021ee6/
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+EOF
+SHA=$(git commit-tree "HEAD^{tree}" -p main -F $M) && echo "squash $SHA" && git diff --stat main $SHA | tail -1 && git diff --quiet HEAD $SHA && echo "tree equals the branch's"
+
+[2026-10-23 11:25] ASSISTANT:
+The squashed commit holds exactly the branch's tree. Fast-forwarding main in the main checkout to it.
+
+[2026-10-23 11:25] ASSISTANT:
+Main is now one commit ahead of origin. It isn't pushed, since you didn't ask. Cleaning up the scratch clones.
+
+[2026-10-23 11:25] WRAP-UP:
+Landed: main is at bd8ee669 with this session's record, one commit ahead of origin and not pushed. The scratch clones are gone.
+Ask: Make the pills canvas draw creates show where their shape is?
+
+[2026-10-23 11:25] ASSISTANT:
+It's on main as one commit (`bd8ee669`), with this session's record. I didn't push it; main is one commit ahead of origin. The scratch clones are deleted.
+
+The picture shows the change: five notes called Checkout in the `@` picker, each saying where it is.
+
+[2026-10-23 11:28] USER:
+Yes, plan making the pills canvas draw creates show where their shape is.
+
+[2026-10-23 11:30] ASSISTANT:
+Planning that. I'm first checking how a pill is made and sized today, in draw and in `canvas measure`.
+
+[2026-10-23 11:31] WRAP-UP:
+The plan for making draw's pills show where their shape is is above. Nothing is built yet.
+Ask: Show the place only when a pill's name is shared?
+
+[2026-10-23 11:31] ASSISTANT:
+I'll build it once you pick one; it all goes on a new branch off main.
+
+[2026-10-23 11:43] USER:
+Build it: only when the name is shared.
+
+[2026-10-23 11:48] ASSISTANT:
+Building it on a new branch off main. First I'm mapping where a pill's width is used, in draw, measure and canvas-digest's layout, since the place depends on where each pill sits.
+
+[2026-10-23 11:53] ASSISTANT:
+Draw already works out the frame a new pill will sit in. Checking how a pill's frame is resolved when an edge places it with `in`.
+
+[2026-10-23 11:54] ASSISTANT:
+Now References: the pill's own rule for where its shape is, used both to draw it and to fit a made pill.
+
+[2026-10-23 11:54] ASSISTANT:
+Now draw: a new pill whose shape's name another shape has is told where it sits, in both of addStandIn's paths.
+
+[2026-10-23 11:56] COMPACTED:
+(the context was summarized here)
+
+[2026-10-23 11:57] ASSISTANT:
+Adding the "is this name shared" check to draw's pill-making; checking what draw knows of the file's names next.
+
+[2026-10-23 11:58] ASSISTANT:
+Checking how the pill's render handles a place that doesn't fit, so the width rule matches it.
+
+[2026-10-23 11:59] ASSISTANT:
+Draw's pill sizing is in place; now checking how the digest orders its runs, since a pill's "shared" test depends on which shapes exist when it's drawn.
+
+[2026-10-23 12:01] ASSISTANT:
+Draw's side is written; now giving `canvas measure` the same sizing for a pill whose end is written as a path.
+
+[2026-10-23 12:02] ASSISTANT:
+Compiling the Swift side now (audit, then a test build).
+
+[2026-10-23 12:03] ASSISTANT:
+Everything compiles. Next, tests: looking at the existing stand-in fixtures first.
+
+[2026-10-23 12:05] ASSISTANT:
+Adding test fixtures: a seating rule on the test relay so draw's choice of seat is visible.
+
+[2026-10-23 12:06] ASSISTANT:
+Writing the fixture tests for draw and measure now.
+
+[2026-10-23 12:08] ASSISTANT:
+Adding the References test (a pill sized for where it sits matches what it draws).
+
+[2026-10-23 12:09] ASSISTANT:
+Adding the end-to-end shipped test (draw, render and measure agree).
+
+[2026-10-23 12:10] ASSISTANT:
+The audit refused a string key in the fixture test; switching it to decode the answer instead.
+
+[2026-10-23 12:14] ASSISTANT:
+New Swift tests pass (Topology, References, the five draw/measure fixture tests). Running the shipped end-to-end test next.
+
+[2026-10-23 12:14] ASSISTANT:
+Draw and measure are done and tested. Moving to the canvas-digest tool: per-seat pill widths.
+
+[2026-10-23 12:16] ASSISTANT:
+Now the digest tool: per-seat measure lines for shared titles, keyed widths, and the layout reading them.
+
+[2026-10-23 12:17] ASSISTANT:
+Now the driver: measure with the same titles the plan uses, and measure again when that script changes.
+
+[2026-10-23 12:19] ASSISTANT:
+Updating the tool's test helper and tests for the new per-seat lines.
+
+[2026-10-23 12:20] ASSISTANT:
+The tool's 103 tests pass, the byte-identical hash tests among them. Adding tests for the layout reading per-seat widths and for titles beside the drawing.
+
+[2026-10-23 12:21] ASSISTANT:
+A layout check failed with wide per-seat pills (two frames overlap). Checking whether that's my change or wide pills in general.
+
+[2026-10-23 12:22] ASSISTANT:
+The overlap is a false alarm: the test's plan checker keys shapes by title, and this fixture repeats "components". Dropping that check from the new test.
+
+[2026-10-23 12:23] ASSISTANT:
+Tool tests pass under jsc and node (105). Now the end-to-end digest tests against the app.
+
+[2026-10-23 12:23] ASSISTANT:
+While the digest tests run, updating the docs. Finding the passages first.
+
+[2026-10-23 12:24] ASSISTANT:
+The measure answer's key is `for`, not `target`; correcting the tool and its helper.
+
+[2026-10-23 12:24] ASSISTANT:
+Tool fixed and green. Now the docs; reading the guide's stand-in passages first.
+
+[2026-10-23 12:25] ASSISTANT:
+20 of 21 digest tests pass, the repeats drawings among them (every pill as wide as planned). Looking at the one that fails.
+
+[2026-10-23 12:26] ASSISTANT:
+All digest tests now pass, including the draw beside a board that already has those titles. Docs next; reading the canvas skill's two sections.
+
+[2026-10-23 12:27] ASSISTANT:
+Writing the doc updates: canvas skill first.
+
+[2026-10-23 12:28] ASSISTANT:
+Still on the docs; updating the digest topic file's paragraph on measuring.
+
+[2026-10-23 12:28] ASSISTANT:
+Updating the guide (making, draw's stand-ins, measure, and References' registration).
+
+[2026-10-23 12:29] ASSISTANT:
+Docs are done. Final step: audit, the full test run (in the background), and a review of the diff meanwhile.
+
+[2026-10-23 12:29] ASSISTANT:
+Full suite running. Reviewing the source diff myself meanwhile.
+
+[2026-10-23 12:30] ASSISTANT:
+Reviewing an edge case: a run that deletes a subboard also takes the shapes on its board, which `sharesName` should leave out too.
+
+[2026-10-23 12:30] ASSISTANT:
+Found one gap: a run that deletes a subboard also takes the shapes on its board, and `sharesName` still counted them. Fixing it the way `farShape` does, with a test.
+
+[2026-10-23 12:31] ASSISTANT:
+The full run started before that fix, so I'll rerun the affected tests after it. Checking the edited doc sentences read right meanwhile.
+
+[2026-10-23 12:31] ASSISTANT:
+While the full suite runs, I'll get an independent review of the diff. Routing it first.
+
+[2026-10-23 12:31] AGENT Review pill seating diff:
+Review an uncommitted change in the git worktree at /Users/zekenie/code/native-canvas/.claude/worktrees/canvas-global-path-uniqueness-4a0280 (branch claude/draw-pill-places, based on main). Work only in that directory; read-only: do not edit files, commit, or run the full test suite (another run is in progress; `./test.sh` would collide). You may read anything, and run `git diff`, `git diff main --stat`, grep, and the JS unit tests with `/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc .claude/skills/canvas-digest/tool/test/run.js`.
+
+What the change is meant to do (the owner approved: "only when the name is shared"):
+- A reference pill that `canvas draw` makes for an edge to a shape on another board (a "stand-in") is sized to show where its shape is ("Alpha › Beta": the containers the shape is inside that the pill isn't) only when the shape's title is shared with another shape (anywhere in the file on a showable board, minus what the run deletes, plus shapes the run itself draws). Otherwise it stays as wide as its name.
+- `canvas measure` must give the same size, so the canvas-digest tool plans the layout with it: measure seats a pill only when the edge's end is written as a path, using the containers named in the end's path and in the start's path.
+- The canvas-digest tool writes extra measure lines for shared titles, one per container its users are in, keyed `pillKey(target, container)`, and the layout reads widths by that key.
+
+Files: Source […1548 more chars]
+
+[2026-10-23 12:31] ASSISTANT:
+Both the full suite and the review are running; I'll pick up when they report.
+
+[2026-10-23 12:32] ASSISTANT:
+Using the wait to check one adjacent path: the Types row picker also makes pills by name (`editor.relate`), and I want to know whether it now differs from draw.
+
+[2026-10-23 12:32] ASSISTANT:
+Waiting on the full test run and the independent review; both report back on their own.
+
+[2026-10-23 12:35] NOTICE:
+background task completed: Background command "Run the full test suite" completed (exit code 0)
+
+[2026-10-23 12:35] ASSISTANT:
+Full suite: 7,934 passed, 0 failed. That run predates the deleted-board fix, so rerunning the stand-in tests with it.
+
+[2026-10-23 12:36] ASSISTANT:
+All 361 draw tests pass with the fix. Waiting on the reviewer now.
+
+[2026-10-23 12:36] ASSISTANT:
+Still waiting on the independent review; it reports back on its own.
+
+[2026-10-23 13:00] ASSISTANT:
+The reviewer found no break in the digest paths and four narrow issues. Checking the first one (a seated width of exactly 120) in the code.
+
+[2026-10-23 13:00] ASSISTANT:
+Finding 1 is real: a pill seated to exactly 120 wide hits the derive rule's "placed default" exception and is refit to its name. Checking whether inserting it re-derives too, before choosing a fix.
+
+[2026-10-23 13:00] ASSISTANT:
+The derive rule refits any direct pill that sits at exactly the tool's 120, to tell a placed default from a pick. Checking whether draw re-derives its stand-ins anywhere else.
+
+[2026-10-23 13:02] ASSISTANT:
+Adding regression tests for both: pills fitted to many name and place pairs (one lands at exactly 120), and an edge `in` a subboard.
+
+[2026-10-23 13:03] ASSISTANT:
+Both pass, and two of the pairs land at exactly 120 on this machine. Removing the debug print and noting why the loop is there.
+
+[2026-10-23 13:03] ASSISTANT:
+Now the doc lines for those fixes, and an accurate caveat where the docs say a row's pick and draw make the same pill.
+
+[2026-10-23 13:04] ASSISTANT:
+Docs are updated. The full suite is running again with the review fixes; I'll report when it finishes.
+
+[2026-10-23 13:10] NOTICE:
+background task completed: Background command "Caveat the row pick, audit, rerun the full suite" completed (exit code 0)
+
+[2026-10-23 13:10] WRAP-UP:
+Pills canvas draw makes for a shared title now say where their shape is and are sized for it; canvas measure and canvas-digest size them the same. 7,936 tests pass and a review's fixes are in. Nothing committed.
+Ask: Should a row's pick size its pill the same way before landing?
+
+[2026-10-23 13:10] ASSISTANT:
+I've built it. When a pill's shape shares its title with another shape, the pill `canvas draw` makes now shows where that shape is ("Payments › Gateway") and is wide enough to fit it. A pill whose title is unique is unchanged. `canvas measure` gives the same size, and canvas-digest plans each pill from where it sits, so the drawn pills match the plan.
+
+- **Tests:** all 7,936 pass and the audit is clean. A digest drawn beside a board that already holds shapes with the same titles comes out with every pill as wide as planned.
+- **Review fixes:**
+  - A pill whose fitted width came out at exactly 120 was being shrunk back to its bare name.
+  - An edge placed `in` a subboard was being sized as if it sat in a frame.
+- **Not sized for the board name:** when the shape sits loose on another board, the pill still shows that board's name only in whatever room is left.
+- **Row picks:** a note picked from a row (`editor.relate`) still gets a pill only as wide as its name. So for a shared title, a pick and `canvas draw` no longer leave the same pill. The docs now say so.
+
+Nothing is committed yet; it's all on branch `claude/draw-pill-places`.
+
+[2026-10-23 13:15] USER:
+Yes: make a row's pick (editor.relate and the far relationship type) size its pill the same way, so a pick and draw leave the same pill again.
+
+[2026-10-23 13:16] ASSISTANT:
+Making a row's pick and the far relationship type seat their pills the way draw does. First, the two Types call sites and the shared route they already use.
+
+[2026-10-23 13:16] ASSISTANT:
+The fix belongs in `StandInRoute`, the one route both draw and these writers use. Reading the Types test fixture for pills and the shipped test that holds a pick and a draw to the same pill.
+
+[2026-10-23 13:17] ASSISTANT:
+Adding the seat and the shared-title rule to `StandInRoute`, then calling it from both Types writers.
+
+[2026-10-23 13:18] ASSISTANT:
+Now the Types fixture relay records the seat it's told, and tests for the row pick and the far relationship type.
+
+[2026-10-23 13:19] ASSISTANT:
+Test slips hold titles, so the Types tests can title the far note and add a twin. Updating the Types relay fixture and adding the two tests.
+
+[2026-10-23 13:19] ASSISTANT:
+Adding the shipped check: with a second "Acme", the pick and the script still leave the same pill, now saying where Acme is.
+
+[2026-10-23 13:21] ASSISTANT:
+The Types tests pass. Running the shipped pick-against-draw suite.
+
+[2026-10-23 13:21] ASSISTANT:
+Both pass, including the new one: with a second "Acme", the pick and the script leave the same pill, sized and showing "Clients". Updating the docs to say pick and draw match again.
+
+[2026-10-23 13:21] ASSISTANT:
+The first six edits landed; the guide's wording had changed since. Applying that one against its current text.
+
+[2026-10-23 13:22] ASSISTANT:
+Audit passes. Running the full suite on the finished change.
+
+[2026-10-23 13:22] ASSISTANT:
+Reviewing this increment's code while the suite runs.
+
+[2026-10-23 13:22] ASSISTANT:
+The increment reads correctly: both writers seat before the spot and landing, as draw does, and an untitled far note never seats (so the cost test's pick doesn't scan). Waiting on the full suite.
+
+[2026-10-23 13:27] NOTICE:
+background task completed: Background command "Run the full test suite" completed (exit code 0)
+
+[2026-10-23 13:27] WRAP-UP:
+A row's pick and a far relationship type now make the same pill as canvas draw, also for a title another shape has, through one rule in StandInRoute. 7,939 tests pass and the audit is clean. Nothing committed.
+Ask: Land it on main?
+
+[2026-10-23 13:27] ASSISTANT:
+A row's pick and a far relationship type now leave the same pill as `canvas draw` again. That includes a title another shape has: the pill shows where its shape is and is wide enough to fit it.
+
+- **How:** the rule now lives in `StandInRoute` (`seat` and `sharesTitle`), and both Types writers call it before placing the pill, the same way draw does.
+- **Tests:** all 7,939 pass. A new shipped test adds a second "Acme" and checks that the pick and the script put the identical pill in the identical place, showing "Clients".
+- **Cost:** a pick of a titled note now reads every title in the file once. That's a few milliseconds on a large file. An untitled note skips it.
+- **Docs:** the topic files and the guide say again that a pick and a script leave the same pill.
+
+Nothing is committed; it's all on `claude/draw-pill-places`.
+
+[2026-10-23 13:31] USER:
+Land it.
+
+[2026-10-23 13:31] ASSISTANT:
+Landing it: I'll check where main is, write this session's record, and squash the change onto main.
+
+[2026-10-23 13:31] GIT:
+git log --oneline -3 main && git log --oneline -2 HEAD && git merge-base HEAD main && git worktree list | head -5 && grep -o '"command":"[^"]*\(update-ref\|merge --squash\|commit-tree\|push \.\)[^"]*"' /Users/zekenie/.claude/projects/-Users-zekenie-code-native-canvas--claude-worktrees-canvas-global-path-uniqueness-4a0280/18021ee6-d6b4-406c-b6a0-bd10bdd1b836.jsonl | head -8
+
+[2026-10-23 13:31] ASSISTANT:
+Main moved since I branched: another session landed 63a5f207, a frame title change. Checking how the last landing was done, then bringing main in.
+
+[2026-10-23 13:31] GIT:
+cat /Users/zekenie/.claude/projects/-Users-zekenie-code-native-canvas/memory/work-in-worktree.md; grep -o 'git commit-tree [^"\\]\{0,200\}' /Users/zekenie/.claude/projects/-Users-zekenie-code-native-canvas--claude-worktrees-canvas-global-path-uniqueness-4a0280/18021ee6-d6b4-406c-b6a0-bd10bdd1b836.jsonl | head -3
+
+[2026-10-23 13:32] ASSISTANT:
+Following the landing routine: one squashed commit rebased on main, carrying this session's record, then a fast-forward of main and cleanup. Committing on the branch and rebasing.
+
+[2026-10-23 13:32] GIT:
+git -C /Users/zekenie/code/native-canvas status --short | head -5; echo "main checkout status above"; git add -A && git commit -q -m "wip: pills say where their shape is" && git rebase main 2>&1 | tail -5; git status --short | head -10; git log --oneline -3
+
+[2026-10-23 13:32] ASSISTANT:
+One conflict, in the command-line topic file. Looking at it.
+
+[2026-10-23 13:32] ASSISTANT:
+Both sides changed one long line in different places: main reworded the title row's height, and my side added the measure seat. Keeping both.
+
+[2026-10-23 13:33] GIT:
+python3 - <<'EOF'
+p = ".claude/rules/command-line.md"
+text = open(p).read()
+lines = text.split("\n")
+assert lines[52].startswith("<<<<<<<") and lines[54] == "=======" and lines[56].startswith(">>>>>>>")
+main_line, branch_line = lines[53], lines[55]
+anchor = "refused as `draw` refuses it), "
+added_start = branch_line.index(anchor) + len(anchor)
+rest_main = main_line[main_line.index(anchor) + len(anchor):]
+# what the branch added after the anchor, up to where main's text after the anchor begins
+rest_branch = branch_line[added_start:]
+assert rest_branch.endswith(rest_main[ -200:]) or True
+# the branch's addition is the text before main's continuation ("because Draw knows no kind...")
+cont = "because Draw knows no kind of stand-in"
+addition = rest_branch[:rest_branch.index(cont)]
+merged = main_line[:main_line.index(anchor) + len(anchor)] + addition + rest_main
+assert merged.count("seated as written for an end written as a path") == 1 and "9 for one whose title is a tab" in merged
+lines[52:57] = [merged]
+open(p, "w").write("\n".join(lines))
+print("resolved", len(addition))
+EOF
+grep -c "^<<<<<<<\|^>>>>>>>" .claude/rules/command-line.md; git add .claude/rules/command-line.md && GIT_EDITOR=true git rebase --continue 2>&1 | tail -2 && git log --oneline -3 && git status --short | head -3
+
+[2026-10-23 13:33] ASSISTANT:
+Rebased cleanly. A quick check that main's new commit touched none of the source files this change edits (not a test run).
+
+[2026-10-23 13:33] ASSISTANT:
+Only docs overlap, all merged. Writing the session record.

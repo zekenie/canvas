@@ -294,6 +294,38 @@ private final class FarWorld {
 ])
 
 @MainActor let relationshipsFarDrawShippedTests = Suite("The app's pick and canvas draw leave the same pill in the same place", [
+    test("for a title another note has too, the app's pick and `canvas draw` of the same edge put the same pill at the same spot, saying where its note is") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let world = Clients()
+        let drawn = windowedBoard(), picked = windowedBoard()
+        defer {
+            drawn.close()
+            picked.close()
+        }
+        // A second Acme, a plain note on the root, the same in both files.
+        var twin = ShapeRecord(StickyNote(frame: CGRect(x: 40, y: 1500, width: 200, height: 200), text: MentionText(plain: "")))
+        twin[TitleProperty.self] = "Acme"
+        for board in [drawn, picked] {
+            board.editor.replaceFile(with: world.file)
+            board.editor.transact { $0.insert(AnyShapeRecord(twin)) }
+        }
+        let server = try startCommandServer(boards: [drawn, picked], frontmost: drawn)
+        defer { server.stop() }
+        let result = try canvas(server, ["draw", #"edge "Ann Lee" -> "Clients" > "Acme" is: "Employment""#, "--board", "\(drawn.number)"])
+        expectEqual(result.status, 0, result.error)
+        let row = try require(picked.editor.relationships?.rows(for: [world.person], isType: false).first { $0.key.type == world.employment })
+        expect(picked.editor.relate(world.ann, to: world.acme, in: row) != nil)
+        @MainActor func reference(_ editor: CanvasEditor) throws -> ShapeRecord<Reference> {
+            try require(editor.document.shapes.compactMap { $0.typed(as: Reference.self) }.first)
+        }
+        let a = try reference(drawn.editor), b = try reference(picked.editor)
+        expectEqual(a.props.frame, b.props.frame, "the same pill in the same place")
+        expectEqual(b.props.frame.width, ReferenceEdits.width(of: b.props, place: "Clients"), "as wide as it is saying where Acme is")
+        _ = renderBitmap(picked.editor, size: CGSize(width: 1440, height: 900))
+        expectEqual(try require(picked.editor.service(ReferenceState.self)).drawnPlace(of: b.id), "Clients")
+    },
     test("step 13 and the equivalence: the app's pick and `canvas draw` of the same edge, on the same file, put a pill of the same size at the same spot with the same arrow; a draw of the edge after the pick is unchanged, and a query reads it through the pill") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

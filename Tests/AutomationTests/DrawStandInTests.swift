@@ -67,8 +67,9 @@ extension RelayDefinition: DerivedProps {
 /// Relays: they stand for the shapes they cite, but only open ones, and are made to stand for one by
 /// citing it and saying its name (what the hook is given). With `tool` false, no tool places one, so
 /// none can be made. With `makes` false, the kind says nothing of how one is made. With `fulfils`, it
-/// says how a shape is made one it may stand for: open.
-@MainActor func relaysPlugin(tool: Bool = true, makes: Bool = true, needs: String? = "open", fulfils: Bool = false) -> Contributor {
+/// says how a shape is made one it may stand for: open. With `seats`, one made is told where it sits
+/// (`relaySeating`).
+@MainActor func relaysPlugin(tool: Bool = true, makes: Bool = true, needs: String? = "open", fulfils: Bool = false, seats: Bool = false) -> Contributor {
     Contributor(id: "relays") { registrar in
         registrar.shape(RelayDefinition()) { relay in
             let admitting: ForwardAdmissionMaker = { _ in { target in target.meta[Open.self] == true } }
@@ -84,7 +85,7 @@ extension RelayDefinition: DerivedProps {
                 relay.standsIn(admitting: admitting, needs: needs, fulfilling: fulfilling, makes: { props, target, label in
                     props.stands = [Citation(target)]
                     props.says = label
-                }, stands)
+                }, seats: seats ? relaySeating : nil, stands)
             } else {
                 relay.standsIn(admitting: admitting, needs: needs, stands)
             }
@@ -92,6 +93,19 @@ extension RelayDefinition: DerivedProps {
         }
         registrar.readOnlyShapes { $0.meta[Sealed.self] == true }
     }
+}
+
+/// Where a relay is told it sits, said after its name, and as wide as it then says: in the pen that holds it or
+/// the board ("Deep in Pen", "Deep in the board"), or, as a measure writes it, in the containers its shape is in,
+/// from those it sits in ("Deep in P from Pen").
+@MainActor func relaySeating(_ props: inout Relay, _ seat: StandInSeat, _ context: ShapeContext) {
+    switch seat {
+    case .file(let container, _):
+        props.says += " in " + (container.flatMap { context.document[$0]?.typed(as: Pen.self)?.props.label } ?? "the board")
+    case .written(let shape, let seat):
+        props.says += " in " + shape.joined(separator: " > ") + (seat.isEmpty ? "" : " from " + seat.joined(separator: " > "))
+    }
+    props.frame.size.width = Relay.width(saying: props.says)
 }
 
 /// A harbor: on the root, tiles Hub, Dock (open) and Gate, and pockets P and Q; on P's board, tiles Deep

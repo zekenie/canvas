@@ -193,7 +193,12 @@ public struct ReferencesPlugin: ListedPlugin {
                                needs: "public",
                                fulfilling: { record, registry in registry.makePublic(&record) },
                                calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
-                               makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) }) { shape, _ in
+                               makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) },
+                               // Where its shape is, beside the name, when the name is another shape's too: fitted as a pick fits it.
+                               seats: { props, seat, context in
+                                   guard let target = props.target, let place = ReferenceState.place(of: target.id, at: seat, in: context) else { return }
+                                   ReferenceEdits.fit(&props, place: place)
+                               }) { shape, _ in
                 if let target = shape.props.target { return .shapes([target.id]) }
                 if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
                 return nil

@@ -156,10 +156,15 @@ extension CanvasEditor {
             if let existing = route.existing(for: other, kind: found.kind, sharing: .host(note), near: note, in: document) {
                 reused = existing
             } else {
-                // The pill the far note is stood for by, made as a draw run makes it, and where a draw run puts it.
+                // The pill the far note is stood for by, made as a draw run makes it (saying where the note is, when another shape
+                // has its title), and where a draw run puts it.
                 let label = registry.mentionAppearance(of: far)?.label ?? ""
-                guard var made = registry.standIns.make(found.kind, standingFor: other, label: label), let size = made.box?.size,
-                      let surroundings = Surroundings(on: board, moving: size, in: self) else {
+                guard var made = registry.standIns.make(found.kind, standingFor: other, label: label) else {
+                    refuseChanges(to: [note])
+                    return nil
+                }
+                route.seat(&made, for: far, beside: note, in: self)
+                guard let size = made.box?.size, let surroundings = Surroundings(on: board, moving: size, in: self) else {
                     refuseChanges(to: [note])
                     return nil
                 }

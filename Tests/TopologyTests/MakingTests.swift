@@ -101,8 +101,10 @@ extension PhantomDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Phantom>, in context: RenderContext) {}
 }
 
-/// Echoes (made for ajar shapes, by a tool that places them 90 wide), a mute that stands in without a
-/// way to be made, and a phantom whose rule says how but that no tool places.
+/// Echoes (made for ajar shapes, by a tool that places them 90 wide, and told where they sit by saying
+/// it, as wide as they then say: the kind of what holds them, else "board", or the containers written),
+/// a mute that stands in without a way to be made, and a phantom whose rule says how but that no tool
+/// places.
 struct EchoesPlugin: CanvasPlugin {
     var needs: String? = "ajar"
     var fulfils = true
@@ -130,6 +132,13 @@ struct EchoesPlugin: CanvasPlugin {
                           makes: { props, target, label in
                               props.cites = Citation(target)
                               props.says = label
+                          },
+                          seats: { props, seat, context in
+                              switch seat {
+                              case .file(let container, _): props.says += " · " + (container.flatMap { context.document[$0]?.kind.rawValue } ?? "board")
+                              case .written(let shape, _): props.says += " · " + shape.joined(separator: " › ")
+                              }
+                              props.frame.size.width = Echo.width(saying: props.says)
                           }) { shape, _ in shape.props.cites.map { .shapes([$0.shape]) } }
             echo.tool(label: "Echo", systemImage: "arrow.right", placing: echo.placement(size: CGSize(width: 90, height: 30)) { Echo() })
         }
@@ -232,6 +241,31 @@ func ajar(_ id: ShapeID) -> AnyShapeRecord {
         // The kind's hook gets the blank, and the label as given, however long.
         let long = try require(standIns.make(Echo.kind, standingFor: target, label: String(repeating: "w", count: 40)))
         expectEqual(long.typed(as: Echo.self)?.props.frame.width, Echo.width(saying: String(repeating: "w", count: 40)))
+    },
+    test("a stand-in made, then told where it sits, takes it as its kind says; a kind that says nothing of it, or a shape that doesn't stand in, is left as it is") {
+        let target = ShapeID(), holder = ShapeID()
+        let h = try graph(CanvasFile(root: board(ajar(target), box(holder))), more: [EchoesPlugin()])
+        let standIns = h.editor.registry.standIns
+        let context = h.editor.shapeContext
+        var written = try require(standIns.make(Echo.kind, standingFor: target, label: "Target"))
+        standIns.seat(&written, at: .written(shape: ["Alpha", "Beta"], seat: []), in: context)
+        expectEqual(written.typed(as: Echo.self)?.props.says, "Target · Alpha › Beta")
+        expectEqual(written.box?.width, Echo.width(saying: "Target · Alpha › Beta"), "as its seats left it: its width follows its words")
+        var held = try require(standIns.make(Echo.kind, standingFor: target, label: "Target"))
+        standIns.seat(&held, at: .file(container: holder, board: .root), in: context)
+        expectEqual(held.typed(as: Echo.self)?.props.says, "Target · box", "it reads the file through the context it's given")
+        var loose = try require(standIns.make(Echo.kind, standingFor: target, label: "Target"))
+        standIns.seat(&loose, at: .file(container: nil, board: .root), in: context)
+        expectEqual(loose.typed(as: Echo.self)?.props.says, "Target · board")
+        expectEqual(standIns.forwarding(of: loose), .shapes([target]), "and stands for what it was made to")
+        let phantom = AnyShapeRecord(ShapeRecord(Phantom(unit, cites: target)))
+        var unseated = phantom
+        standIns.seat(&unseated, at: .written(shape: ["Alpha"], seat: []), in: context)
+        expectEqual(unseated, phantom, "a kind whose rule says nothing of where it sits")
+        let plain = try require(h.editor.document[holder])
+        var same = plain
+        standIns.seat(&same, at: .file(container: nil, board: .root), in: context)
+        expectEqual(same, plain, "a shape that doesn't stand in")
     },
     test("what a stand-in calls what it stands for is its kind's word for it, or nothing: a kind that says nothing, one that calls it nothing, a shape that doesn't stand in") {
         let target = ShapeID()

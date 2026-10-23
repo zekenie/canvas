@@ -1,10 +1,29 @@
 // A stand-in for `canvas measure`, for tests that run without the app: the JSON it would give, with sizes estimated.
-import { toMeasure, pillTargets, measurePlan, DEFAULT_CONSTANTS } from '../lib/sizes.mjs';
+import { toMeasure, measurePlan, DEFAULT_CONSTANTS } from '../lib/sizes.mjs';
 
-/** A note is as tall as its text needs, at least 200 (the app measures the real height); a pill's width is its label's, 64..280. */
-export function estimateMeasure(model) {
+/**
+ * What a pill keyed by measurePlan says beside its name: for a key that says where it sits (`pillKey`), the titles of the containers its end is in that
+ * the pill isn't in too, outermost first, as the app works it out; nothing for a node's key alone.
+ */
+export function placeOf(model, key) {
+  const [t, c] = key.split('\u0000');
+  if (c == null) return '';
+  const seat = c === 'b:root' ? [] : model.node(c.slice(2)).chain.concat([c.slice(2)]), above = model.node(t).chain;
+  let k = 0;
+  while (k < seat.length && k < above.length && seat[k] === above[k]) k++;
+  return above.slice(k).map((x) => model.node(x).title).join(' › ');
+}
+
+/** How wide the app makes a pill that says this, with where its shape is beside it: 64..280. */
+export const pillEstimate = (title, place) => Math.min(280, Math.max(64, Math.ceil(10 + 16 + 6 + 7.3 * title.length + (place ? 6 + 7.3 * place.length : 0) + 17 + 14)));
+
+/**
+ * A note is as tall as its text needs, at least 200 (the app measures the real height); a pill's width is its label's and its place's, 64..280.
+ * `opts` are measurePlan's (the titles beside the drawing).
+ */
+export function estimateMeasure(model, opts) {
   const shapes = [], references = [];
-  const at = measurePlan(model);   // the line of each statement in the script `canvas measure` is given: its rows are read by line
+  const at = measurePlan(model, opts);   // the line of each statement in the script `canvas measure` is given: its rows are read by line
   for (const it of toMeasure(model)) {
     const line = at.shapeAt.get(it.key);
     if (it.kind === 'subboard') { shapes.push({ line, title: it.title, kind: 'subboard', size: [240, 160], above: 30 }); continue; }
@@ -25,8 +44,10 @@ export function estimateMeasure(model) {
     }
     shapes.push({ line, title: it.title, kind: 'sticky-note', size: [w, h], above: 30 });
   }
-  const lineOfPill = new Map([...at.pillAt].map(([line, key]) => [key, line]));
-  for (const t of pillTargets(model)) { const title = model.node(t).title; references.push({ line: lineOfPill.get(t), for: title, size: [Math.min(280, Math.max(64, Math.ceil(10 + 16 + 6 + 7.3 * title.length + 17 + 14))), DEFAULT_CONSTANTS.pillHeight] }); }
+  for (const [line, key] of at.pillAt) {
+    const title = model.node(key.split('\u0000')[0]).title;
+    references.push({ line, for: title, size: [pillEstimate(title, placeOf(model, key)), DEFAULT_CONSTANTS.pillHeight] });
+  }
   return {
     shapes, references,
     constants: { gaps: { none: 0, tight: 40, normal: 80, wide: 160 }, defaultGap: 80, listStep: 16, referenceStep: DEFAULT_CONSTANTS.pillStep, frameInset: DEFAULT_CONSTANTS.frameInset, smallest: { frame: [96, 64] } },

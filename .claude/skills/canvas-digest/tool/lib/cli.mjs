@@ -15,7 +15,9 @@ export const USAGE = `digest tool (the driver, ./digest, runs these; the tool ne
   check <digest.json> [--existing titles.json] [--kinds kinds.json] [--into "Title"]
                                                                        {"errors": [...], "warnings": [...]}; titles.json and kinds.json are arrays of strings
   check-text <check.json>                                              what check found, as "error: ..." and "warning: ..." lines ("ok" for none)
-  measure-script <digest.json>                                         the draw script for \`canvas measure -\`
+  measure-script <digest.json> [--into "Title"] [--existing titles.json]
+                                                                       the draw script for \`canvas measure -\`; the --into title and the titles the file holds
+                                                                       beside the drawing are among the titles a pill says where its shape is for (as for plan)
   plan <digest.json> <measure.json> <outdir> [--mess 0..1] [--promote off] [--prefer N] [--cap 0..1] [--margin PILLS] [--popular ARROWS] [--into "Title"]
                                              [--view WxH] [--ranks rows|columns|auto] [--existing titles.json]
                                                                        writes <outdir>/plan.json, report.json, statements.json (what each line of each run says,
@@ -125,7 +127,11 @@ export async function run(args, io) {
   if (cmd === 'clashes') { const lines = clashes(json(pos[1]), json(pos[2]), pos[3] ? json(pos[3]) : null); if (lines.length) io.print(lines.join('\n')); return; }
   if (cmd === 'into') { const p = json(pos[1]); if (p.into) io.print(p.into); return; }
   if (cmd === 'runs') { io.print(json(pos[1]).runs.join('\n')); return; }
-  if (cmd === 'measure-script') { io.print(measureScript(typedModel(json(pos[1]))).replace(/\n$/, '')); return; }
+  if (cmd === 'measure-script') {
+    for (const k of Object.keys(flags)) if (!['into', 'existing'].includes(k)) throw new Error(`unknown option --${k}\n${USAGE}`);
+    io.print(measureScript(typedModel(json(pos[1])), { into: flags.into || null, existing: flags.existing ? json(flags.existing) : [] }).replace(/\n$/, ''));
+    return;
+  }
   if (cmd === 'plan') {
     const [, digestPath, measurePath, outdir] = pos;
     if (!outdir) throw new Error(USAGE);
@@ -134,7 +140,7 @@ export async function run(args, io) {
     const opts = { promote: onOff(flags.promote, DEFAULTS.promote), cap: num(flags.cap), marginPills: num(flags.margin), popular: num(flags.popular), prefer: num(flags.prefer), mess: num(flags.mess), into: flags.into || null, view: viewOf(flags.view), ranks: ranksOf(flags.ranks), progress: io.warn };
     if (flags.existing) opts.existing = json(flags.existing);
     const model = typedModel(digest);
-    const sizes = sizesFrom(model, json(measurePath));
+    const sizes = sizesFrom(model, json(measurePath), { into: opts.into, existing: opts.existing });
     const elk = await loadElk(io, TOOL_DIR);
     const t0 = io.now();
     const r = await planDigest(digest, sizes, opts, elk, io.now);

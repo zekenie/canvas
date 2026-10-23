@@ -116,17 +116,20 @@ enum Open: ShapeMetaKey {
     typealias Value = Bool
 }
 
-/// A pill: it stands for the shapes it cites, and says what it stands for.
+/// A pill: it stands for the shapes it cites, and says what it stands for, and where it was told it sits (`seat`: "board",
+/// "frame", or the containers a measure writes; empty for one told nothing).
 struct Relay: BoxShapeProps {
     static let kind: ShapeKind = "relay"
     static let properties = Properties<Relay> {
         Property("frame", \.frame).required()
         Property("stands", \.stands)
         Property("says", \.says)
+        Property("seat", \.seat)
     }
     var frame: CGRect
     var stands: [Citation]
     var says: String
+    var seat = ""
     init(_ frame: CGRect = CGRect(x: 0, y: 0, width: 100, height: 32), stands: [ShapeID] = [], says: String = "") {
         self.frame = frame
         self.stands = stands.map(Citation.init)
@@ -141,8 +144,8 @@ extension RelayDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Relay>, in context: RenderContext) {}
 }
 
-/// Relays, which stand for the open shapes they cite (a memo or a slip), say how a shape is made open, and
-/// call what they stand for what they say.
+/// Relays, which stand for the open shapes they cite (a memo or a slip), say how a shape is made open, call
+/// what they stand for what they say, and keep where they're told they sit.
 struct RelaysPlugin: CanvasPlugin {
     var id: PluginID { "relays" }
     func register(into registrar: inout PluginRegistrar) {
@@ -157,6 +160,12 @@ struct RelaysPlugin: CanvasPlugin {
                            makes: { props, target, label in
                                props.stands = [Citation(target)]
                                props.says = label
+                           },
+                           seats: { props, seat, _ in
+                               switch seat {
+                               case .file(let container, _): props.seat = container == nil ? "board" : "frame"
+                               case .written(let shape, _): props.seat = shape.joined(separator: " › ")
+                               }
                            }) { shape, _ in
                 shape.props.stands.isEmpty ? nil : .shapes(shape.props.stands.map(\.shape))
             }

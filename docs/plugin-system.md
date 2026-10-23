@@ -8119,13 +8119,19 @@ x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
              needs: "public",                        // one word, for a message: what a shape must be to be stood for
              fulfilling: { record, registry in … },  // make a shape one the kind may stand for (References': make it public); true if it did
              calls: { shape, registry in … },        // what it calls what it stands for (the label it keeps): outlives the shape
-             makes: { props, target, label in … }) { shape, registry in … }   // fill what the tool places, so it stands for `target`
+             makes: { props, target, label in … },  // fill what the tool places, so it stands for `target`
+             seats: { props, seat, context in … }) { shape, registry in … }   // say where `target` is, from where it sits
   ```
 
   `makes` is given the props the kind's tool places (`registry.placement(for:)`), the shape to stand
   for and what to call it there (what a person picking it would have been shown: the shape's name), and
   leaves them as the kind's own writers would (References': `ReferenceEdits.pick`); `needs` is read by
   no rule, only said ("only a public shape can be stood for", "ask the user to make it public").
+  `seats` is for a kind whose shape can say where the shape it stands for is: given where one `make`
+  made sits (`StandInSeat`: `.file(container:board:)`, a frame, else the board, in the file `context`
+  reads; or `.written(shape:seat:)`, the names of the containers a script wrote for the shape and for
+  where it sits, with no file to read), it leaves the props saying that, as its writers would
+  (References': fitted to the path from the seat to the shape, as a pick from the list is).
   `registry.standIns` (`StandIns`, main actor, nothing kept, so a caller that asks of many shapes makes it once: `RelationshipIndex.standIns`, `FarVerdicts`; the registry never changes) reads the
   rules without an index: `kinds`, `isEmpty`, `forwarding(of: record)` (a record's rule, applied: what
   it says it stands for, as the index reads it), `makers` (the kinds whose rule says how and that a
@@ -8134,7 +8140,11 @@ x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
   label:)`, a new record in no document: the tool's shape at the origin, `makes` applied, put in step
   as writing its properties would (`DerivedProps`: a pill's width fits its label). `make` doesn't ask
   `admits`: whoever puts the shape down does, since a stand-in for a shape it may not stand for stands
-  for nothing.
+  for nothing. `seat(&record, at:, in:)` runs the kind's `seats` on a record `make` made, which leave
+  it in step as the kind's writers would (it isn't derived again: a pill fitted to its place at the
+  tool's width would be taken for one placed; a kind that doesn't say is left as it is): `canvas draw`
+  asks it of a pill whose shape's title another shape has, so two pills for two `index.ts` say which
+  ([below](#draw)).
 - **Forwarded on read.** The index keeps what each carrier emitted (`byCarrier`, by each end and
   type) and what each stand-in stands for, and no copy: every view is read from them as it's asked.
   A read at the far end of an arrow into a stand-in makes one copy for each shape it stands for; a
@@ -10384,7 +10394,8 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
                        needs: "public",                // a message says "only a public shape can be stood for"
                        fulfilling: { record, registry in registry.makePublic(&record) },
                        calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
-                       makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) }) { shape, _ in
+                       makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) },
+                       seats: { props, seat, context in … }) { shape, _ in   // fitted to say where its shape is (ReferenceState.place(of:at:in:))
         if let target = shape.props.target { return .shapes([target.id]) }
         if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
         return nil
@@ -11098,6 +11109,14 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   `existing(for:kind:sharing:near:in:)`, `spot(beside:edgeIs:side:in:excluding:staying:)` and
   `landing(of:at:in:avoiding:)`) is that making, for a writer that is not a script: it lands a pill
   of its size at a spot against `Surroundings`, in the rect a run gives the same pill.
+- **What it says.** A stand-in made for a shape whose title another shape has (`Drawing.sharesName`:
+  one of the file's on a board the app can show, but those the run deletes, or one the run draws) is
+  told where it sits before it's placed (`StandIns.seat`, `.file`: the frame that holds it, the top of
+  the board an `in` names, else the frame of the end beside it, else the board), so a reference says
+  where its shape is after the name and is as wide as that; one whose title is its alone is as wide
+  as its name. A writer that is not a script asks the route the same before it lands its pill,
+  `StandInRoute.seat(_:for:beside:in:)` over `sharesTitle(_:in:)` (the rule over the file as it is):
+  Types' row pick and a far relationship type do, so a pick and a script leave the same pill.
 - **An edge may place it** (`EdgeStatement.clauses` and `container`: placements and `in`, written on
   the edge as on a shape). Then the stand-in it makes is placed by them, as a shape statement's
   placements place a shape (`addStandIn` asks `contain` and `resolveTargets`, as `complete` does, and
@@ -11254,7 +11273,10 @@ points (`AdornmentLayout.extent(of:in:)`, pure over the layout, so text left out
 reaches nowhere); asked of a record that is not on any board, nothing is kept for it. A reference
 row is the size of `registry.standIns.make(kind, standingFor:, label:)` for the end's title, for
 each edge that says `via:` (the kind it names): Draw knows no kind of stand-in, and a bare edge's
-goes through one or not by the boards, which it does not read. The constants are read from the
+goes through one or not by the boards, which it does not read. An end written as a path, as a script
+writes a title another shape has, is seated as written (`.written(shape:seat:)`: the containers its
+path names, and those of the start's path, none for a start named by its title alone; no seat for a
+start named by its id), so its pill measures as draw makes one. The constants are read from the
 source and never copied: the gaps (`GapName`), the step between references
 (`LayoutProblem.impliedListStep`), the inset of what `in "F"` holds (`LayoutProblem.insideGap`),
 the default gap, the list step, the clearances, and each kind's least size

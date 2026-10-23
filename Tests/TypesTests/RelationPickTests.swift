@@ -318,6 +318,24 @@ extension RelationScene {
         expectEqual(shown.first?.via, pill.id)
         expectEqual(s.editor.board, .root)
     },
+    test("a far note whose title another shape has: its pill is told where it sits beside the note, as a draw run's is; one whose title is its own, nothing") {
+        let s = try RelationScene.drawn()
+        s.setOpen(s.awayLayer)
+        s.editor.transact { $0.update(inFile: s.awayLayer) { $0[TitleProperty.self] = "Down" } }
+        s.editor.undoHistory.seal()
+        _ = try require(s.editor.relate(s.note, to: s.awayLayer, in: try s.featureRow()))
+        expectEqual(try require(s.relays().first).props.seat, "", "a title its own: told nothing")
+        s.editor.undo()
+        expectEqual(s.relays().count, 0)
+        var twin = slipRecord(at: CGPoint(x: 1600, y: 1600))
+        twin[TitleProperty.self] = "Down"
+        s.editor.transact { $0.insert(twin) }
+        s.editor.undoHistory.seal()
+        _ = try require(s.editor.relate(s.note, to: s.awayLayer, in: try s.featureRow()))
+        let pill = try require(s.relays().first)
+        expectEqual(pill.props.seat, "board", "beside the note, on the board shown")
+        expectEqual(pill.props.says, "Down")
+    },
     test("a far private note is made open in the same step, and one Undo returns both boards byte for byte; Redo brings the pill, the arrow and the note back") {
         let s = try RelationScene.drawn()
         let start = try s.bytes()
@@ -496,6 +514,20 @@ extension RelationScene {
         expectEqual(s.relays().count, 1)
         let reused = try require(s.relays().first)
         expectEqual(s.bonds().filter { $0.props.to == reused.id }.count, 1)
+    },
+    test("the far type's pill is told where it sits when another shape has its title, as a draw run's is") {
+        let s = try RelationScene(more: drawing())
+        let far = ShapeID()
+        let record = slipTypeRecord(TypeSchemaProperty.starter, title: "Company", at: CGPoint(x: 200, y: 0), id: far)
+        s.editor.transact(on: s.pocketBoard, "Draw") { $0.insert(record) }
+        var twin = slipRecord(at: CGPoint(x: 1600, y: 1600))
+        twin[TitleProperty.self] = "Company"
+        s.editor.transact(on: .root, "Draw") { $0.insert(twin) }
+        expect(s.editor.showBoard(.root))
+        s.editor.undoHistory.seal()
+        _ = try require(s.editor.newRelationshipType(from: s.feature, to: far))
+        s.editor.closeCard()
+        expectEqual(try require(s.relays().first, "a pill for the far type").props.seat, "board")
     },
     test("two far ends, a far type that cannot be picked and one on no board make nothing and leave no step") {
         let s = try RelationScene(more: drawing() + [FreezingPlugin(log: RefusalLog())])

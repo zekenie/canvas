@@ -143,9 +143,15 @@ public func measure(script text: String, program: String, in registry: Registry,
         // A pill is called what the shape is: the last part of its path.
         case .path(let path): label = drawing.fold(path.last) ?? path.last
         }
-        guard let size = standIns.make(kind, standingFor: ShapeID(), label: label)?.box?.size else {
+        guard var record = standIns.make(kind, standingFor: ShapeID(), label: label), record.box != nil else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")
         }
+        // An end named by its path is one whose title another shape has: its pill says where it is from where the pill sits,
+        // the container of the shape the edge starts at, as draw's pill for a shared title does (`Drawing.sharesName`).
+        if case .path(let path) = edge.to, let shape = drawing.writtenContainers(of: path), let seat = drawing.writtenSeat(of: edge.from) {
+            standIns.seat(&record, at: .written(shape: shape, seat: seat), in: scratch.shapeContext)
+        }
+        let size = record.box!.size
         references.append(MeasureResult.Reference(line: statement.line, target: label, size: [size.width, size.height]))
     }
 
@@ -161,4 +167,28 @@ public func measure(script text: String, program: String, in registry: Registry,
                              referenceStep: LayoutProblem.impliedListStep, horizontalClearance: LayoutProblem.horizontalClearance,
                              verticalClearance: LayoutProblem.verticalClearance, frameInset: LayoutProblem.insideGap, smallest: smallest),
                          warnings: drawing.measureWarnings.isEmpty ? nil : drawing.measureWarnings.map { MeasureResult.Warning(line: $0.line, message: $0.message) })
+}
+
+extension Drawing {
+    /// The titles of the containers a path says its shape is in, outermost first, folded: nil for a path that starts at an id,
+    /// which names no title.
+    func writtenContainers(of path: ShapePath) -> [String]? {
+        let head: [String]
+        switch path.head {
+        case .title(let title): head = [title]
+        case .board: head = []
+        case .id: return nil
+        }
+        return (head + path.rest.dropLast()).map { fold($0) ?? $0 }
+    }
+
+    /// Where the pill an edge starting at `start` makes sits, as a measure reads it: the containers its path names (none for a
+    /// lone title, read as the top of the board), nil for an id.
+    func writtenSeat(of start: ShapeName) -> [String]? {
+        switch start {
+        case .title: []
+        case .id: nil
+        case .path(let path): writtenContainers(of: path)
+        }
+    }
 }

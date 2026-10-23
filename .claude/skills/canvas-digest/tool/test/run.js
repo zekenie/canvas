@@ -2352,8 +2352,17 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(lines.some(function (l) { return /^sticky-note board > "Checkout" /.test(l); }) && lines.some(function (l) { return /^sticky-note "Billing" > "Checkout" /.test(l); }), 'the one in no container is board > "Checkout", the other is in Billing');
     assert(lines.some(function (l) { return /^sticky-note "Config" /.test(l); }) && lines.some(function (l) { return /^subboard "Billing"/.test(l); }), 'a title that is its own is bare');
     assert(lines.filter(function (l) { return /^edge /.test(l); }).every(function (l) { return / via: reference$/.test(l); }), 'the edges are the pills');
-    // every statement has a line, and every edge through a reference is for a node
-    eq(at.shapeAt.size, 10, 'a line for each note and card'); eq(at.pillAt.size, sizes.pillTargets(m).length, 'and for each pill');
+    // every statement has a line, and every edge through a reference is for a node, or for a node from where its pill sits
+    eq(at.shapeAt.size, 10, 'a line for each note and card');
+    var ends = sizes.pillTargets(m), keys = [...at.pillAt.values()];
+    eq(keys.filter(function (k) { return ends.indexOf(k) >= 0; }).sort(), ends.slice().sort(), 'a line for each pill');
+    // an end whose title another node has is measured again from each place it is pointed at from, both ends by their paths: its pill says where it is
+    eq(keys.filter(function (k) { return ends.indexOf(k) < 0; }).sort(), [sizes.pillKey('admin/components/index.ts', 'f:components'), sizes.pillKey('billing/checkout', 'b:Billing'),
+      sizes.pillKey('billing/checkout', 'b:root'), sizes.pillKey('billing/checkout', 'f:admin/components'), sizes.pillKey('checkout', 'f:lib'),
+      sizes.pillKey('components/index.ts', 'f:app'), sizes.pillKey('lib/index.ts', 'f:app')].sort(), 'and one from each place the five repeated ends are pointed at from');
+    at.pillAt.forEach(function (key, line) { if (key === sizes.pillKey('billing/checkout', 'f:admin/components')) eq(lines[line - 1], 'edge "admin" > "components" > "index.ts" -> "Billing" > "Checkout" via: reference'); });
+    at.pillAt.forEach(function (key, line) { if (key === sizes.pillKey('billing/checkout', 'b:root')) eq(lines[line - 1], 'edge board > "Checkout" -> "Billing" > "Checkout" via: reference', 'a start on the root, from the top'); });
+    assert(!keys.some(function (k) { return k.indexOf('Config') === 0 && k !== 'Config'; }), 'a title that is its own is measured once');
     at.shapeAt.forEach(function (line, key) { assert(lines[line - 1] && lines[line - 1].indexOf(m.node(key).title) > 0, key + ' is on line ' + line); });
     // the sizes come back by line: a measure that answers with rows in any order, titles the same, gives each node its own
     var me = helpers.estimateMeasure(m);
@@ -2365,8 +2374,59 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var lost = JSON.parse(JSON.stringify(me)); lost.shapes = lost.shapes.filter(function (s) { return s.line !== at.shapeAt.get('lib/index.ts'); });
     var threw = ''; try { sizes.sizesFrom(m, lost); } catch (e) { threw = e.message; }
     assert(/no size for: lib\/index\.ts/.test(threw), 'a missing row is said by the node: ' + threw);
-    // a pill is for the node its line says
-    eq(Object.keys(sz.pillWidth).sort(), sizes.pillTargets(m).sort(), 'a pill width for each end');
+    // a pill is for the node its line says, and for one from where it sits, as wide as what it says there
+    eq(Object.keys(sz.pillWidth).sort(), keys.slice().sort(), 'a pill width for each end, and each from where it sits');
+    eq(sz.pillWidth[sizes.pillKey('billing/checkout', 'f:admin/components')], helpers.pillEstimate('Checkout', 'Billing'));
+    eq(sz.pillWidth[sizes.pillKey('billing/checkout', 'b:Billing')], helpers.pillEstimate('Checkout', ''), 'on its own board, it says nothing more');
+    eq(sz.pillWidth[sizes.pillKey('admin/components/index.ts', 'f:components')], helpers.pillEstimate('index.ts', 'admin › components'));
+    // a measurement of another script (made with other titles beside the drawing, say) is refused, not read by the wrong lines
+    var other = helpers.estimateMeasure(m, { existing: ['Config'] });
+    threw = ''; try { sizes.sizesFrom(m, other); } catch (e) { threw = e.message; }
+    assert(/the measurement is of another script: line \d+ is a pill for "[^"]+", not "[^"]+"; measure again/.test(threw), threw);
+    eq(Object.keys(sizes.sizesFrom(m, other, { existing: ['Config'] }).pillWidth).length, keys.length + 1, 'read with the titles it was made with: Config from lib too');
+  });
+
+  await test('a pill for an end whose title another shape has is laid out as wide as measure says from where it sits; one whose title is its own, as wide as anywhere', async function () {
+    var d = fixture('repeats'), m = model.buildModel(d), me = helpers.estimateMeasure(m), at = sizes.measurePlan(m);
+    // make each width from where a pill sits its own, so a pill laid out at another's would show
+    var n = 0;
+    me.references.forEach(function (r) { if (at.pillAt.get(r.line).indexOf('\u0000') >= 0) r.size = [200 + 10 * (n++), r.size[1]]; });
+    var sz = sizes.sizesFrom(m, me), r = await planm.planDigest(d, sz, {}, elk), seen = 0;
+    r.plan.boards.forEach(function (b) {
+      b.pills.forEach(function (p) {
+        var seated = sz.pillWidth[sizes.pillKey(p.for, m.node(p.start).container)];
+        if (seated != null) seen++;
+        eq(p.w, seated != null ? seated : sz.pillWidth[p.for], 'the pill of ' + p.start + ' for ' + p.for);
+      });
+    });
+    assert(seen > 0, 'some pill is laid out from where it sits');
+  });
+
+  await test('a title the file holds beside the drawing, or the subboard the drawing goes in, is another shape: measure-script measures its pills from where they sit, and the plan reads them so', async function () {
+    var d = fixture('tree'), m = model.buildModel(d), ends = sizes.pillTargets(m), t = ends[0], title = m.node(t).title;
+    var plain = sizes.measurePlan(m);
+    eq(plain.pillAt.size, ends.length, 'titles all its own: a line for each pill and no more');
+    var beside = sizes.measurePlan(m, { existing: [title] }), into = sizes.measurePlan(m, { into: title });
+    var extra = function (at) { return [...at.pillAt.values()].filter(function (k) { return k.indexOf('\u0000') >= 0; }); };
+    assert(extra(beside).length > 0 && extra(beside).every(function (k) { return k.split('\u0000')[0] === t; }), 'the file has its title: ' + extra(beside).join(', '));
+    eq(extra(into), extra(beside), 'and so does the card it all goes in');
+    eq(plain.text, beside.text.split('\n').filter(function (l) { return !/ via: reference$/.test(l) || plain.text.indexOf(l + '\n') >= 0; }).join('\n'), 'the rest is as it was');
+    // through the commands: measure-script and plan given the same titles read the same lines
+    var files = {}, out = [];
+    var mio = { readText: function (p) { if (files[p] != null) return files[p]; return io.readText(p); }, writeText: function (p, x) { files[p] = x; }, mkdirp: function () {}, print: function (x) { out.push(x); }, warn: function () {}, now: function () { return 0; }, engine: 'test' };
+    files['/d.json'] = JSON.stringify(d); files['/t.json'] = JSON.stringify([title]);
+    await clim.run(['measure-script', '/d.json', '--existing', '/t.json'], mio);
+    eq(out[0] + '\n', beside.text, 'measure-script --existing');
+    out.length = 0;
+    await clim.run(['measure-script', '/d.json', '--into', title], mio);
+    eq(out[0] + '\n', into.text, 'measure-script --into');
+    files['/m.json'] = JSON.stringify(helpers.estimateMeasure(m, { existing: [title] }));
+    await clim.run(['plan', '/d.json', '/m.json', '/out', '--existing', '/t.json'], mio);
+    assert(files['/out/plan.json'], 'planned from that measurement');
+    var threw = ''; try { await clim.run(['plan', '/d.json', '/m.json', '/out2'], mio); } catch (e) { threw = e.message; }
+    assert(/the measurement is of another script/.test(threw), 'and without the titles it was measured with, refused: ' + threw);
+    threw = ''; try { await clim.run(['measure-script', '/d.json', '--mess', '1'], mio); } catch (e) { threw = e.message; }
+    assert(/unknown option --mess/.test(threw), threw);
   });
 
   // what the app would answer for every run of a plan, the rows told by the statements of the run (their lines) and by nothing else: a result's `title` is a shape's own

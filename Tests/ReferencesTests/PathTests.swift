@@ -8,6 +8,7 @@ import TableOfContents
 import TestKit
 import TextEditing
 import Titles
+import Topology
 
 // The path a reference's row says before the name of what it stands for: the frames and boards that
 // shape is inside and the reference isn't, outermost first, over CanvasTesting's corrals (which hold
@@ -244,6 +245,58 @@ extension EditorHarness {
         expectEqual(state.drawnPlace(of: farPill), "Clients › Drawer")
     },
 
+    test("a pill made by name and told where it sits is as wide as what it will say there, as a pick is fitted; with nothing to say, as wide as its name") {
+        let h = try pathHarness()
+        let cart = h.addCorral("Cart"), items = h.addCorral("Items", at: CGPoint(x: 20, y: 20))
+        h.editor.put([items], in: cart)
+        let note = h.addBox("Checkout", at: CGRect(x: 40, y: 40, width: 50, height: 50))
+        h.editor.put([note], in: items)
+        let standIns = h.editor.registry.standIns
+        @MainActor func made(for target: ShapeID, _ label: String, _ seat: StandInSeat) throws -> ShapeRecord<Reference> {
+            var record = try require(standIns.make(Reference.kind, standingFor: target, label: label))
+            standIns.seat(&record, at: seat, in: h.editor.shapeContext)
+            return try require(record.typed(as: Reference.self))
+        }
+        let named = try require(standIns.make(Reference.kind, standingFor: note, label: "Checkout")?.typed(as: Reference.self)).props
+        @MainActor func width(_ place: String?) -> CGFloat { ReferenceEdits.width(of: named, place: place) }
+        expect(width("Cart › Items") > width(nil))
+        expectEqual(named.frame.width, width(nil), "made, it is as wide as its name")
+        expectEqual(try made(for: note, "Checkout", .file(container: nil, board: .root)).props.frame.width, width("Cart › Items"))
+        expectEqual(try made(for: note, "Checkout", .file(container: cart, board: .root)).props.frame.width, width("Items"), "the frame it sits in is left out")
+        expectEqual(try made(for: note, "Checkout", .file(container: items, board: .root)).props.frame.width, width(nil), "in its shape's own frame")
+        expectEqual(try made(for: note, "Checkout", .written(shape: ["Cart", "Items"], seat: [])).props.frame.width, width("Cart › Items"), "as a measure writes it")
+        expectEqual(try made(for: note, "Checkout", .written(shape: ["Cart", "Items"], seat: ["Cart"])).props.frame.width, width("Items"))
+        expectEqual(try made(for: note, "Checkout", .written(shape: ["Cart"], seat: ["Cart", "Bag"])).props.frame.width, width(nil))
+        // Put down where it was told it sits, it says what it was fitted for.
+        var outside = try made(for: note, "Checkout", .file(container: nil, board: .root))
+        outside.props.frame.origin = CGPoint(x: 800, y: 400)
+        h.editor.transact { $0.insert(outside) }
+        _ = render(h.editor)
+        expectEqual(try require(h.editor.references).drawnPlace(of: outside.id), "Cart › Items")
+        // A shape on a pocket's board in no frame is where that board is, seen from the root; from its own board, nowhere.
+        let pocket = h.addPocket("Clients")
+        expect(h.enter(pocket))
+        let far = h.addBox("Acme")
+        expect(h.editor.showBoard(.root))
+        let acme = try require(standIns.make(Reference.kind, standingFor: far, label: "Acme")?.typed(as: Reference.self)).props
+        expectEqual(try made(for: far, "Acme", .file(container: nil, board: .root)).props.frame.width, ReferenceEdits.width(of: acme, place: "Clients"))
+        expectEqual(try made(for: far, "Acme", .file(container: nil, board: BoardID(owner: pocket))).props.frame.width, acme.frame.width)
+    },
+    test("a pill told where it sits keeps the width it was fitted to, whatever that comes to, the width a pill is placed at among them") {
+        let h = try pathHarness()
+        let note = h.addBox("x")
+        let standIns = h.editor.registry.standIns
+        // Short names and places, some of which come to 120, the width the tool places a pill at: the kind's derive takes a
+        // pill that wide for one placed, not one fitted to a place, so a seat that derived it again would lose the place.
+        for name in ["ui", "db", "x", "io", "api", "app", "lib", "web", "auth", "core"] {
+            for place in ["Billing", "Cart", "Items", "Ops", "Payments", "Sync", "Admin", "Search"] {
+                var record = try require(standIns.make(Reference.kind, standingFor: note, label: name))
+                standIns.seat(&record, at: .written(shape: [place], seat: []), in: h.editor.shapeContext)
+                let props = try require(record.typed(as: Reference.self)).props
+                expectEqual(props.frame.width, ReferenceEdits.width(of: props, place: place), "\(name) in \(place)")
+            }
+        }
+    },
     test("the list over a pill's field says a shape's path: \"Kind · path\" for two called alike, the path for one alone") {
         let h = try pathHarness()
         let alpha = h.addCorral("Alpha"), beta = h.addCorral("Beta", at: CGPoint(x: 400, y: 0))

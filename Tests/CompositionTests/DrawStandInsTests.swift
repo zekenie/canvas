@@ -2,6 +2,7 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
+import CanvasTesting
 import CanvasUI
 import Connections
 import CoreGraphics
@@ -121,6 +122,40 @@ extension CanvasEditor {
         expectEqual(connection["via"]?["to"]?["id"], .string(pill.id.description), "through the pill")
     },
 
+    test("a public note whose title another note has: its reference says where it is beside the name and is as wide as that, which measure says too") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let wharf = Wharf()
+        let board = wharf.board()
+        defer { board.close() }
+        let editor = board.editor
+        var other = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: 1100, y: 100, width: 200, height: 200), text: MentionText(plain: "Auth"))))
+        other[TitleProperty.self] = "Auth"
+        editor.transact { $0.insert(other) }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let edge = #"edge "Checkout" -> "Payments" > "Gateway" > "Auth""#
+        let result = try canvas(server, ["draw", edge])
+        expectEqual(result.status, 0, result.error)
+        let pill = try require(editor.references().first)
+        expectEqual(pill.props.target, ReferenceTarget(id: wharf.auth, label: "Auth"))
+        expectEqual(pill.props.frame.width, ReferenceEdits.width(of: pill.props, place: "Payments › Gateway"), "fitted to where Auth is, from the root")
+        expect(pill.props.frame.width > ReferenceEdits.width(of: pill.props), "wider than its name")
+        let checkout = try require(editor.file.record(wharf.checkout)?.box)
+        expectEqual(pill.frame.minX, checkout.maxX + 80, "right of Checkout, as any")
+        _ = renderBitmap(editor, size: CGSize(width: 1440, height: 900))
+        expectEqual(try require(editor.service(ReferenceState.self)).drawnPlace(of: pill.id), "Payments › Gateway", "what it was fitted for is what it says")
+        let measured = try canvas(server, ["measure", "-"], input: edge + " via: reference\n")
+        expectEqual(measured.status, 0, measured.error)
+        let size = try JSON(text: measured.output)["references"]?.arrayValue?.first?["size"]?.arrayValue?.compactMap(\.numberValue)
+        expectEqual(size, [Double(pill.props.frame.width), Double(pill.props.frame.height)], "measure says the size draw made")
+        // With the title Auth's alone again, a reference to it is as wide as its name.
+        editor.transact { $0.delete([other.id]) }
+        _ = try canvas(server, ["draw", #"edge "Ledger" -> "Auth""#])
+        let plain = try require(editor.references().first { $0.id != pill.id })
+        expectEqual(plain.props.frame.width, ReferenceEdits.width(of: plain.props))
+    },
     test("the references beside a note are a column of their own, 16 apart; a later run's joins it, 16 below its end, in line with it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

@@ -66,6 +66,20 @@ public enum ForwardingState: Hashable, Sendable {
 /// a person picking it would have been shown, the shape's name). Nil: it can't.
 public typealias ForwardingMaker = @MainActor (_ blank: AnyShapeRecord, _ target: ShapeID, _ label: String) -> AnyShapeRecord?
 
+/// Where a stand-in put down by name sits, from the shape it stands for: what a kind that shows where that shape is
+/// beside its name (a pill's "Alpha › Beta") works it out from (`standsIn(seats:)`, `StandIns.seat`).
+public enum StandInSeat: Sendable, Equatable {
+    /// In the file: in `container` (a frame), else directly on `board`. The kind reads the file to say where its shape is.
+    case file(container: ShapeID?, board: BoardID)
+    /// As a script wrote it, where there's no file to read (a measure): the names of the containers the shape it stands for
+    /// is inside, outermost first, and of those where it sits.
+    case written(shape: [String], seat: [String])
+}
+
+/// How a stand-in kind's shape, made to stand for a shape (`ForwardingMaker`), takes where it sits: it shows where that shape
+/// is beside its name, and is fitted to it. `context` reads the file, with the editor's services.
+public typealias ForwardingSeating = @MainActor (_ record: inout AnyShapeRecord, _ seat: StandInSeat, _ context: ShapeContext) -> Void
+
 /// A kind's stand-in rule, as `standsIn` says it. Only the sugar makes one.
 @MainActor
 public struct StandIn {
@@ -76,6 +90,8 @@ public struct StandIn {
     let needs: String?
     /// How one is made to stand for a shape, if the kind says.
     let make: ForwardingMaker?
+    /// How one so made shows where its shape is, from where it sits, if the kind says.
+    let seat: ForwardingSeating?
     /// How a shape is made something the kind may stand for, if the kind says (opaque to Topology).
     let fulfil: (@MainActor (_ record: inout AnyShapeRecord, _ registry: Registry) -> Bool)?
     /// What one calls what it stands for, if the kind says.
@@ -132,11 +148,17 @@ extension ShapeRegistrar {
     ///
     /// `calls` says what a shape of the kind calls what it stands for (the label a direct one keeps,
     /// the words of a query one), which outlives the shape: a pill whose shape is gone keeps its name.
+    ///
+    /// `seats` says how a shape `makes` made shows where the shape it stands for is, from where it sits
+    /// (`StandInSeat`), and leaves its props in step as the kind's writers would (fitted to it as a pick
+    /// from a list is): what a plugin that puts one down asks when the name it shows is another shape's
+    /// too (`StandIns.seat`).
     public mutating func standsIn(admitting: @escaping ForwardAdmissionMaker = { _ in { _ in true } },
                                   needs: String? = nil,
                                   fulfilling: (@MainActor (_ record: inout AnyShapeRecord, _ registry: Registry) -> Bool)? = nil,
                                   calls: (@MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> String?)? = nil,
                                   makes: (@MainActor (_ props: inout Definition.Props, _ target: ShapeID, _ label: String) -> Void)? = nil,
+                                  seats: (@MainActor (_ props: inout Definition.Props, _ seat: StandInSeat, _ context: ShapeContext) -> Void)? = nil,
                                   _ forward: @escaping @MainActor (_ shape: ShapeRecord<Definition.Props>, _ registry: Registry) -> Forwarding?) {
         var make: ForwardingMaker?
         if let makes {
@@ -146,13 +168,21 @@ extension ShapeRegistrar {
                 return AnyShapeRecord(shape)
             }
         }
+        var seat: ForwardingSeating?
+        if let seats {
+            seat = { record, place, context in
+                guard var shape = record.typed(as: Definition.Props.self) else { return }
+                seats(&shape.props, place, context)
+                record = AnyShapeRecord(shape)
+            }
+        }
         var erasedCalls: (@MainActor (AnyShapeRecord, Registry) -> String?)?
         if let calls {
             erasedCalls = { record, registry in record.typed(as: Definition.Props.self).flatMap { calls($0, registry) } }
         }
         contribute(StandIn(admitting: admitting, forward: { record, registry in
             record.typed(as: Definition.Props.self).flatMap { forward($0, registry) }
-        }, needs: needs, make: make, fulfil: fulfilling, calls: erasedCalls), to: EdgeForwarding.self)
+        }, needs: needs, make: make, seat: seat, fulfil: fulfilling, calls: erasedCalls), to: EdgeForwarding.self)
     }
 }
 
@@ -244,6 +274,15 @@ public struct StandIns {
               var made = make(placement.shape(at: .zero), target, label) else { return nil }
         if let properties = made.propertiesJSON, let derived = try? registry.shape(made, setting: properties) { made = derived }
         return made
+    }
+
+    /// A stand-in `make` made, told where it sits (`StandInSeat`): its kind shows where the shape it stands for is,
+    /// beside its name, and leaves it in step as its own writers do (`standsIn(seats:)`; not derived again, which would
+    /// take a pill fitted to its place for one placed at the tool's width). What a plugin that puts one down asks when
+    /// the name it shows is another shape's too. A kind that doesn't say leaves it as it is.
+    public func seat(_ record: inout AnyShapeRecord, at seat: StandInSeat, in context: ShapeContext) {
+        guard !record.isOpaque, let seats = rules[record.kind]?.seat else { return }
+        seats(&record, seat, context)
     }
 }
 

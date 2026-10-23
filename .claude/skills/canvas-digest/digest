@@ -5,7 +5,8 @@
 #   digest check   GRAPH [TARGET] [--into TITLE]     the digest against the rules, the app's kinds and the titles already in the file
 #   digest measure GRAPH                              how big the app makes each shape and pill (canvas measure)
 #   digest plan    GRAPH [TARGET] [PLAN FLAGS]        lay out every board, decide the promotions, write the draw scripts; draws nothing
-#                                                     (measures first when there is no measurement, or the digest is newer than it)
+#                                                     (measures first when there is no measurement, the digest is newer than it, or
+#                                                     the titles beside the drawing changed what it would measure)
 #   digest draw    GRAPH TARGET [--into TITLE]        each script a dry run first and held to the plan, then drawn for real
 #   digest verify  GRAPH TARGET                       what was drawn, against the plan and the file's titles
 #   digest all     GRAPH TARGET [PLAN FLAGS]          check, measure, plan, draw, verify; stops at the first that fails
@@ -339,8 +340,18 @@ step_check() {
   do_check loud || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
 }
 
+# The script canvas measure is given, written to $1: the digest's shapes and a pill for each end, and, for an end whose title another shape
+# has (another node, the subboard it goes in, a title the file holds beside the drawing, which do_check has read), a pill from each place it
+# is pointed at from, since such a pill says where its shape is.
+measure_script() {
+  set -- "$1" measure-script "$GRAPH"
+  if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
+  if [ -n "$BOARD" ] && [ -s "$OUT/titles.json" ]; then set -- "$@" --existing "$OUT/titles.json"; fi
+  tool_to "$@"
+}
+
 step_measure() {
-  tool_to "$OUT/measure.draw" measure-script "$GRAPH"
+  measure_script "$OUT/measure.draw"
   canvas_to "$OUT/measure.json" measure - < "$OUT/measure.draw"
   echo "measure: $(wc -l < "$OUT/measure.draw" | tr -d ' ') statements measured by canvas measure"
 }
@@ -361,8 +372,13 @@ step_plan() {
     if [ -z "$INTO" ]; then root_ok "$BOARD"; fi
     do_check quiet || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
   fi
-  # measured when there is no measurement, and again when the digest has changed since (a title or a text the old one never saw)
-  if [ ! -s "$OUT/measure.json" ] || [ "$GRAPH" -nt "$OUT/measure.json" ]; then step_measure; fi
+  # measured when there is no measurement, and again when the digest has changed since (a title or a text the old one never saw) or the
+  # script it would measure now isn't the one it measured (a title the file holds came or went)
+  if [ ! -s "$OUT/measure.json" ] || [ "$GRAPH" -nt "$OUT/measure.json" ]; then step_measure
+  else
+    measure_script "$OUT/measure.now.draw"
+    cmp -s "$OUT/measure.now.draw" "$OUT/measure.draw" || step_measure
+  fi
   rm -f "$OUT"/runs/*.draw "$OUT"/results/*.json "$OUT"/results/*.err "$OUT/target.id"
   set -- plan "$GRAPH" "$OUT/measure.json" "$OUT"
   if [ -n "$MESS" ]; then set -- "$@" --mess "$MESS"; fi

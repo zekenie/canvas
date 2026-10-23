@@ -1211,7 +1211,8 @@ private func isByDesign(_ message: String) -> Bool {
         try expectNoWarnings(run, "repeats", titlesRepeat: true)
         expect((plan["boards"]?.arrayValue ?? []).flatMap { $0["pills"]?.arrayValue ?? [] }.count > 0, "an edge to a note of the same title on another board is a pill")
 
-        // measured on the board that holds the titles, as on none: the same sizes, each row read by its line (two statements of a title are two shapes)
+        // measured on the board that holds the titles, as on none: the same script, the same sizes, each row read by its line (two statements of a
+        // title are two shapes); a title the board holds too (Config) has its pill measured again from where it sits, as it will say where Config is
         let spare = windowedBoard(), other = windowedBoard()
         defer { spare.close(); other.close() }
         let alone = try startCommandServer(boards: [spare, other], frontmost: nil)
@@ -1220,8 +1221,16 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(bare.process.status, 0, bare.process.output + bare.process.error)
         let withTitles = try json(run.out.appendingPathComponent("measure.json")), without = try json(bare.out.appendingPathComponent("measure.json"))
         expect(withTitles["board"] != nil && without["board"] == nil, "the first was measured on the board that holds the titles, the second on none")
-        for key in ["shapes", "references", "constants"] { expectEqual(withTitles[key], without[key], "\(key) measured the same") }
+        let script = try String(contentsOf: run.out.appendingPathComponent("measure.draw"), encoding: .utf8)
+        let remeasured = try canvas(alone, ["measure", "-"], input: script)
+        expectEqual(remeasured.status, 0, remeasured.error)
+        let onNone = try JSON(text: remeasured.output)
+        for key in ["shapes", "references", "constants"] { expectEqual(withTitles[key], onNone[key], "\(key) measured the same") }
         expectEqual(withTitles["warnings"], nil, "and said nothing of the board's titles")
+        expectEqual(withTitles["shapes"], without["shapes"], "the shapes are the same whatever titles the file holds")
+        let pills = { (measured: JSON) in (measured["references"]?.arrayValue ?? []).filter { $0["for"] == "Config" }.count }
+        expectEqual(pills(without), 1, "Config's title is its own in the digest")
+        expectEqual(pills(withTitles), 2, "and the board's Config makes it another's: measured again from where its pill sits")
 
         // the scripts name a shape by a path wherever its title is the file's or repeats, and bare only where nothing else can be meant
         let runs = try require(plan["runs"]?.arrayValue?.compactMap(\.stringValue))
