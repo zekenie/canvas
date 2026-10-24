@@ -10,21 +10,9 @@
 
 ## What it looks like
 
-```
-   ┌────────┐ ┌────────┐ ┌────────┐
-   │ Milk   │ │ Eggs   │ │ Coffee │          three notes selected
-   └────────┘ └────────┘ └────────┘
-   ┌────────────────────────────────────────┐
-   │ /move-to @Roa▍               3 shapes  │
-   └────────────────────────────────────────┘
-               ┌──────────────────────────────────┐
-               │▌▢ Roadmap                        │   the @ picker: only what takes all three,
-               │ ▢ Road trip        Plans › 2026  │   nearest the selection first, on every board
-               └──────────────────────────────────┘
+![/move-to @Roa in the bar, the @ list of places that take all three](wireframes/5-name-a-shape.svg)
 
-   Return picks Roadmap, a pill in the field; Return again moves the three into it, as one block,
-   kept where they are to each other.  Edit › Undo Move
-```
+The `@` list shows only the places that take all three, nearest the selection first, on every board. Return picks Roadmap, a pill in the field; Return again moves the three into it as one block, kept where they are to each other. Edit › Undo Move.
 
 ## Justification
 
@@ -109,5 +97,4 @@
 
 ## Not in this commit
 
-- The reach drawn on the canvas ([06](06-the-reach-on-the-canvas.md)).
 - `/move-near @X below` (naming the side), as Moving's not-built list has it.

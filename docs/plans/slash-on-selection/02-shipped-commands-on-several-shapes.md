@@ -14,7 +14,7 @@ Every plural writer exists; each command only has to call it with what it's hand
 
 | Command | Where | Today | The writer it calls on several |
 |---|---|---|---|
-| `/title` | `Sources/Titles/Titles.swift:553` | `edit` over the record | (none: one shape, D4) |
+| `/title` | `Sources/Titles/Titles.swift:553` | `edit` over the record | (none: one shape) |
 | `/lock` | `Sources/Locking/Locking.swift:130` | `SlashCommand("lock", command: .lock)` | `.lock` already takes a subject of many |
 | `/public`, `/private` | `Sources/Publishing/PublishMenus.swift:46` | declared, `/private` a try | `.makePublic`, `.makePrivate` already pick out what can change ("a mix makes public only what can be") |
 | `/turn-into-<kind>` | `Sources/Transform/Transform.swift:211` | `perform`, `turn([id], into:)` | `TransformState.turn(_ ids:into:)` (`Sources/Transform/TransformState.swift:50`): innermost first, all or nothing, one step. Run one by one it would turn an outer frame first, and its inner frame, now on the subboard's board, would not turn |
@@ -29,7 +29,7 @@ And two commands that text could never reach become reachable: `/unlock` (Lockin
 
 ### Code, a plugin at a time
 
-1. **Titles** (`Titles.swift:554`): `SlashCommand("title", argument: "title", reach: .one) { … }`. A title is how a shape is told apart, and Boards warns of two shapes with one path; with several selected, `/title` isn't listed (D4).
+1. **Titles** (`Titles.swift:554`): `SlashCommand("title", argument: "title", reach: .one) { … }`. A title is how a shape is told apart, and Boards warns of two shapes with one path; with several selected, `/title` isn't listed.
 
 2. **Locking** (`Locking.swift:130`):
 
@@ -108,7 +108,6 @@ Each plugin's own, headless through `editor.slashCommands?.commands(for: .select
 
 ## Risks and open questions
 
-- **D4, `/title`.** If the owner wants several shapes titled at once, it's `reach: .each` and the path warning says the rest.
 - **`/move-to` by Move To ▸'s rule** may refuse a destination `Destination` admitted for one shape (a frame exactly the shape's size, where the block's laid-out frame is wider). One shape's block is that shape, so the tests that hold `Destination` today say whether anything moved.
 - **`/is-a`'s rows for several** drop the types every owner is already, where Is a ▸ shows them checked to take them off. Taking a type off stays the menu's and the chips' (there's no `/is-not-a`).
 - **`/lock`'s count** is the shapes not locked of its own; a shape held read-only by a locked frame around it is among them though Lock leaves it, which only a selection that holds such a shape and others shows.

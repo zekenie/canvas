@@ -6,7 +6,7 @@
 
 ## The ask
 
-"beneath your selection you have a slash command that you're typing". The command bar is a core card ([04](04-the-command-bar.md), decision D5), and it has to work zoomed out: forty notes selected at 20%, `/color red`. Today no card can show there.
+"beneath your selection you have a slash command that you're typing". The command bar is a core card ([04](04-the-command-bar.md)), and it has to work zoomed out: forty notes selected at 20%, `/color red`. Today no card can show there.
 
 ## Justification
 
@@ -53,7 +53,6 @@ With CanvasTesting's `CardProbe` and `probeCard`, `skeletonZoom` set above the z
 
 ## Risks and open questions
 
-- **The name.** `showsZoomedOut` says what it does; `isAboutContent` (inverted) says why. The owner's call.
 - **A card that sets it but shows content** would show it at a zoom where its shape doesn't. Its doc says what it's for; no shipped card but the bar sets it.
 
 ## Not in this commit

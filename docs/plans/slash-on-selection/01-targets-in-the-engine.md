@@ -19,7 +19,7 @@
 - **The declared form is plural underneath already:** `SlashCommand(_:command:)` runs `editor.attempt(command, on: [id])` (`SlashCommand.swift:193`), and every declared command's rule and run take a `CommandSubject` of many shapes (`Sources/Canvas/Plugins/Commands.swift:13`). Lock, Make Public and Make Private already act on a selection from a key and a menu.
 - **The plural writers exist for every other shipped command** ([02](02-shipped-commands-on-several-shapes.md)): `TransformState.turn(_ ids:)`, `editor.setColor(_:of: [ShapeID])`, `giveType(_:to: [ShapeID])`, `makeTypes(_:)`, Moving's `Block` and `Drop`. What's missing is the engine handing them more than one shape.
 - **Running a one-shape action on each shape is not a plural.** `/move-near` run on each of five shapes lands them one by one beside the target, where a block keeps them where they are to each other (`Sources/Moving/Move.swift:48`, "they keep where they are to each other"). `/turn-into-subboard` run on an outer frame, then an inner one, finds the inner one already moved to the subboard's board, off the board shown, where `turn` doesn't reach it; handed both at once, `TransformState.turn` turns innermost first, "so a container inside another has moved what it held by the time the outer one reads what it holds" (`.claude/rules/transform.md`). So a command must say how it acts on several, and one written today must stay one-shape until it says otherwise.
-- **A precedent for several shapes, and why the bar differs.** The context menu lists an item when every shape shows it, enables it when any does, runs each shape's own, in one step (`Sources/ContextMenus/Resolution.swift:165`). The bar lists what *some* shape takes and counts it (decision D1 in the [README](README.md)): a typed command says what you want, and the menu keeps its rule.
+- **A precedent for several shapes, and why the bar differs.** The context menu lists an item when every shape shows it, enables it when any does, runs each shape's own, in one step (`Sources/ContextMenus/Resolution.swift:165`). The bar lists what *any* shape takes and counts it (the owner's call, [README](README.md#decided)): a typed command says what you want, and the menu keeps its rule.
 
 ## Tactics
 
@@ -104,8 +104,6 @@
 
    `commands(for id:)` stays, as `commands(for: .text(id))`; `command(named:for:)` takes either.
 
-   D1's alternative, listing only what every shape takes, is one more condition in step 4: `reach.count == target.shapes.count`.
-
 6. **Running** (`SlashCommandState.run`, `:199`): `run(_ command: OfferedSlashCommand, with arguments:)` and `run(_:choosing:)` run on the command's reach (the shapes of it still there and not kept aside; false, doing nothing, with none left), in one `undoHistory.group(stepName)` as now, each part on its shapes. The one-shape forms (`run(_:on:with:)`, `run(_:on:choosing:)`, by name too) stay for a text's owner: they check that the command's reach is that shape. `when` is not asked again, as now.
 
 7. **`SlashCommandTyping`** (`SlashCommandTyping.swift:72`) holds a target: `init(over:target:commands:arguments:takesShapes:)`, the `owner:` init kept as `.text(owner)`. Every `commands(for: owner)`, `command(named:for: owner)` and `run(… on: owner …)` goes through the target. Two additions for the bar ([04](04-the-command-bar.md)), inert for a text: `takesShapes: false` leaves the commands that take a shape out of its lists, its marks and its Return (a field that can't name a shape couldn't give them one); and `willRun: (@MainActor () -> Void)?`, called once the line is out of the text and before the command runs (`run`, `:309`, and `choose`, `:251`), so the bar can close first.
@@ -155,7 +153,7 @@ Every existing suite stays as it is: the text surface is `.text(owner)`. Add the
 
 ## Risks and open questions
 
-- **`.each` as an edit's default.** A plugin's edit command becomes plural with no word from it. Every edit is over one shape's value, so running it on each is what it means; the one shipped edit, `/title`, says `.one` in [02](02-shipped-commands-on-several-shapes.md), before any surface reaches several shapes. If the owner prefers every form to default to `.one`, it's the edit form's default parameter.
+- **`.each` as an edit's default.** A plugin's edit command becomes plural with no word from it. Every edit is over one shape's value, so running it on each is what it means; the one shipped edit, `/title`, says `.one` in [02](02-shipped-commands-on-several-shapes.md), before any surface reaches several shapes.
 - **Two commands of one name in one target.** No shipped command has it (every shipped one is a scope's, one object on every kind). The rule mirrors the context menu's (each kind's own runs on its shapes) and leaves out what can't be merged.
 - **The memo** is keyed by `editor.revision`, which every commit moves; a command whose `when` or rule reads something no commit changes (none does) would be stale until the next one. Its `boardDidChange` empties it.
 - **The `together` factories' generic `Value`** is inferred from the builder (`SlashCommandBuilder<Value>.buildExpression`), as an `init` is now. If Swift won't infer it from a static call, they become initializers with a first label (`SlashCommand(together: "move-to", …)`).
