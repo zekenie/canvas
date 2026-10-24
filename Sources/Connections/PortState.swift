@@ -190,9 +190,10 @@ final class PortState {
             .sorted { $0.distance < $1.distance }
         // Whether a dot shows is worked out only for the few this near.
         let hit = near.first { !liveDots(of: $0.dot.shape, on: [$0.dot.side]).isEmpty }?.dot
-        if hit == nil, editor.handle(atViewPoint: point) != nil {
-            // A handle takes the hover, as the select tool has it: no shape is hovered, so none shows
-            // its dots.
+        if hit == nil, let handle = editor.handle(atViewPoint: point), !(handle.base is ResizeHandle) {
+            // A kind's own handle takes the hover, as the select tool has it: no shape is hovered, so
+            // none shows its dots. A resize handle leaves them be: its sides run their whole length,
+            // and the pointer crosses one on its way out to a dot.
             host = nil
             return nil
         }

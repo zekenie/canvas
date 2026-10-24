@@ -6,8 +6,9 @@ import Geometry
 /// `x.resizable(minimumSize:)`. The only selected shape of such a kind, unless it's read-only or
 /// being edited, has eight handles (`ResizeHandle`), on the corners of its box and the middles of
 /// its sides, drawn, hit, hovered and pressed as any handle is, each with the resize cursor for its
-/// place; a drag on one resizes the box (`ResizingSession`). At most one per kind, plus one for
-/// every kind (`.any`), which a kind's own overrides; a minimum above zero and finite either way.
+/// place, a side's pressed from anywhere along it too (`ResizeHandle.side`); a drag on one resizes
+/// the box (`ResizingSession`). At most one per kind, plus one for every kind (`.any`), which a
+/// kind's own overrides; a minimum above zero and finite either way.
 public enum ShapeResizing {}
 
 extension ShapeResizing: KeyedExtensionPoint {
@@ -31,9 +32,9 @@ extension ShapeResizing: KeyedExtensionPoint {
 extension ShapeRegistrar where Definition.Props: BoxShapeProps {
     /// Its shapes are resized with handles: the only selected one, unless it's read-only or being
     /// edited, has eight, on the corners of its box and the middles of its sides, and a drag on one
-    /// moves that corner or side, the one opposite staying put (⇧ keeps the proportions the box had,
-    /// ⌥ keeps its center), never to less than `minimumSize` (world units) either way, as one undo
-    /// step, "Resize".
+    /// (a side's from anywhere along it) moves that corner or side, the one opposite staying put (⇧
+    /// keeps the proportions the box had, ⌥ keeps its center), never to less than `minimumSize`
+    /// (world units) either way, as one undo step, "Resize".
     public mutating func resizable(minimumSize: CGSize) {
         contribute(minimumSize, to: ShapeResizing.self)
         contribute(ResizeHandle.parts, to: ShapeParts.self)
@@ -96,6 +97,22 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
     /// Where it is on a box.
     func point(on box: CGRect) -> CGPoint {
         CGPoint(x: x < 0 ? box.minX : x > 0 ? box.maxX : box.midX, y: y < 0 ? box.minY : y > 0 ? box.maxY : box.midY)
+    }
+
+    /// The side of a box, in view points, a press at `point` takes, as tldraw's edges do: one whose handle shows
+    /// (`shown`), with the point between its ends, from `SelectionStyle.resizeSideReach` inside it to as far past
+    /// the outline drawn `outline` off it, the nearer of two; nil off every side.
+    @MainActor
+    static func side(of box: CGRect, at point: CGPoint, outline: CGFloat) -> ResizeHandle? {
+        let reach = SelectionStyle.resizeSideReach
+        return shown(on: box).filter { $0.x == 0 || $0.y == 0 }.compactMap { side -> (side: ResizeHandle, off: CGFloat)? in
+            let edge = side.point(on: box)
+            // How far out past the side the point is (inside, below zero), and whether it's between the side's ends.
+            let out = side.x != 0 ? (point.x - edge.x) * side.x : (point.y - edge.y) * side.y
+            let along = side.x != 0 ? (box.minY...box.maxY).contains(point.y) : (box.minX...box.maxX).contains(point.x)
+            guard along, out >= -reach, out <= outline + reach else { return nil }
+            return (side, abs(out - outline / 2))
+        }.min { $0.off < $1.off }?.side
     }
 
     /// The cursor over it, and while it's dragged: the frame-resize cursor for its place.
@@ -324,6 +341,15 @@ extension CanvasEditor {
                 glide(transact("Resize") { $0.settle(container: id) })
             }
         }
+    }
+
+    /// The side of the only selected shape's box a press at a view point takes, as a drag of that side's handle:
+    /// anywhere along a side whose handle shows, from just inside it to just past the outline drawn off it
+    /// (`ResizeHandle.side`). Nil off them, and where the shape has no resize handles (`visibleHandles`).
+    func resizeSide(atViewPoint point: CGPoint) -> ResizeHandle? {
+        guard let id = selection, id != editingShapeID, let record = document[id], let box = record.box,
+              selectionState?.minimumSizes[record.kind] != nil, !isReadOnly(id) else { return nil }
+        return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap)
     }
 
     /// The only selected shape's resize handles as parts (`ResizeHandle.parts`): those shown on its box, as

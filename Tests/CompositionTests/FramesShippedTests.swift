@@ -236,7 +236,7 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expectEqual(h.editor.holder(of: a), frame)
         expectEqual(h.editor.holder(of: b), frame)
     },
-    test("a press on a frame's empty inside is the canvas, a marquee there selects what it holds; its pill and its border grab it") {
+    test("a press on a frame's empty inside is the canvas, a marquee there selects what it holds; its pill grabs it, and its border until it's selected, when the border is its sides and its empty inside grabs it") {
         let h = frameBoard()
         let frame = h.frame(title: "Sprint 3")
         let note = h.note(at: CGPoint(x: 150, y: 150), in: frame)
@@ -247,9 +247,18 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         h.drag(from: middle(pill), by: CGPoint(x: 0, y: 40))
         expectEqual(h.editor.box(frame)?.origin, CGPoint(x: 100, y: 140), "by its pill")
         expectEqual(h.editor.selectedShapeIDs, [frame])
+        h.editor.selection = nil
         h.drag(from: CGPoint(x: 699, y: 300), by: CGPoint(x: 0, y: 40))
         expectEqual(h.editor.box(frame)?.origin, CGPoint(x: 100, y: 180), "by its border")
         expectEqual(h.editor.box(note)?.origin, CGPoint(x: 150, y: 230), "what it holds with it")
+        expectEqual(h.editor.selectedShapeIDs, [frame])
+        h.drag(from: CGPoint(x: 699, y: 300), by: CGPoint(x: 40, y: 0))
+        expectEqual(h.editor.box(frame), CGRect(x: 100, y: 180, width: 640, height: 400), "selected, its border resizes it, anywhere along a side")
+        expectEqual(h.editor.box(note)?.origin, CGPoint(x: 150, y: 230), "what it holds staying put")
+        h.drag(from: CGPoint(x: 600, y: 450), by: CGPoint(x: 0, y: -40))
+        expectEqual(h.editor.box(frame)?.origin, CGPoint(x: 100, y: 140), "selected, by its empty inside")
+        expectEqual(h.editor.box(note)?.origin, CGPoint(x: 150, y: 190), "what it holds with it")
+        expectEqual(h.editor.selectedShapeIDs, [frame])
     },
     test("an untitled frame's tab says Frame, dimmed; titled, its title, and its row's") {
         let h = frameBoard()

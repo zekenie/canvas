@@ -2411,8 +2411,9 @@ shakes them).
 
 **The select tool** follows tldraw's states. A plugin's [canvas buttons](#canvas-buttons) win,
 then handles, then the selectable shape under the pointer, or [something drawn for it outside
-it](#drawn-for-a-shape-decorationhits) (a title's pill), then empty space inside a
-multi-selection's box, then the canvas.
+it](#drawn-for-a-shape-decorationhits) (a title's pill), then empty space inside the
+selection's bounds (`editor.isInSelectionBounds`: the box around several shapes, or the one
+selected shape's if it has a box), then the canvas.
 
 - A press on a shape selects just it, and leaves it where it is in the paint order (as tldraw
   does; the POC brought it to the front); ⇧ adds it. With ⌘, or on a
@@ -2436,8 +2437,10 @@ multi-selection's box, then the canvas.
   It selects as it goes: whatever it touches, or with ⌘ only what it strictly encloses; ⇧ adds to
   the selection from before. ⇧ and ⌘ take effect as they're pressed or let go, and a ⌘-drag from a
   shape brushes too.
-- A drag from empty space inside a multi-selection's box moves the selection; a click there is a
-  click on the canvas.
+- A drag from empty space inside the selection's bounds moves the selection; a click there is a
+  click on the canvas. With one shape selected that's tldraw's rule too: its bounds count unless it
+  has no box (an arrow, whose bounds tldraw's `hideSelectionBoundsBg` leaves out), so a selected
+  frame is dragged from its empty inside, and a disc from its box's corners.
 - The selection stays outlined while it moves, box and all (tldraw, and the POC, hide it). Only
   a session that `hidesOutlines` (dragging an arrow's handle, or drawing an arrow) takes the
   outlines away.
@@ -2472,6 +2475,10 @@ overrides; a minimum that isn't above zero and finite either way refuses the plu
   the box itself, not on the shape's outline, which [stands off the edge](#outlines) 4 view points:
   the handles are drawn over the line, so it runs under their discs (a side's handle just reaches
   it), and hit as before.
+- **A side is pressed anywhere along it**, as tldraw's edges are: off every handle's disc, a point
+  between a side's ends, from 6 view points inside it to 6 past the outline drawn off it
+  (`SelectionStyle.resizeSideReach`, `ResizeHandle.side`), is that side's handle for the press, the
+  hover (its halo and its cursor) and `editor.handle(atViewPoint:)`, on a side whose handle shows.
 - **A drag** on one, past the drag threshold, resizes the box (`ResizingSession`): the corner or
   side the handle's on follows the pointer from where it was pressed (grabbed off its middle, it
   doesn't jump), the one opposite staying put, a transaction a drag event and one more at the
@@ -4436,7 +4443,7 @@ The menu is for the selection, as in Keynote and tldraw.
 | Right-click | Does |
 |---|---|
 | On a shape that isn't selected | The menu is for that shape, which becomes the selection. |
-| On a selected shape, or on empty space inside a multi-selection's box | The menu is for the whole selection, which stays. |
+| On a selected shape, or on empty space inside the selection's bounds (`isInSelectionBounds`: a selected frame's empty inside too) | The menu is for the whole selection, which stays. |
 | On the rest of the canvas | The canvas's items alone (Paste, landing centered on the click; Select All while the board has shapes); the selection stays. |
 | Where nothing applies | Nothing: no menu, and the selection and any editing stay. With Selection installed every shape has Delete, so that's empty canvas on an empty board, or wherever every item that applies is left out by `when`. |
 | During a press | Nothing. |
@@ -6242,9 +6249,10 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   straight from empty canvas shows its shape's, as data-canvas's halo does); else the shape the
   pointer's over, if it has dots; and over empty canvas or a shape without ports, the last one,
   while the pointer stays within reach of its dots (its bounds grown by 24 view points, a dot's 12
-  out and its 12 of reach), so the pointer can leave a shape for one of its dots. None while a handle is under the pointer, which takes the
-  hover from shapes as it does in Selection, and none once the tool changes or the shape is
-  deleted. A shape has dots when its kind has a side with ports that aren't `.target`, it isn't
+  out and its 12 of reach), so the pointer can leave a shape for one of its dots. None while a
+  kind's own handle is under the pointer, which takes the hover from shapes as it does in
+  Selection (a resize handle leaves them: a side is one along its whole length, and the pointer
+  crosses it on the way out to a dot), and none once the tool changes or the shape is deleted. A shape has dots when its kind has a side with ports that aren't `.target`, it isn't
   kept aside, and the connector can start from it (`canConnect`, asked of the editor's shapes: an
   arrow can bind to it, so it's closed and isn't an arrow).
 - **When.** In the select tool, while the pointer's over the canvas (`editor.pointerOverCanvas`)
@@ -9606,8 +9614,11 @@ registrar.createFrameItem()                                        // Create Fra
   and the pointer there hovers nothing; one that holds nothing (`ShapeContext.hasContents`) is
   pressed anywhere inside too, as any box is. Its title's tab grabs it, at every zoom, as every pill
   does its shape ([DecorationHits](#drawn-for-a-shape-decorationhits)), and so does an untitled frame's
-  dimmed "Frame" in full, there for that (`title(placeholderInPill:)`). What finds shapes by point
-  (`editor.shape(at:)`: an arrow's end) goes by the same test.
+  dimmed "Frame" in full, there for that (`title(placeholderInPill:)`). Selected alone, its border
+  is its resize sides, as any resizable box's is ([Resizing](#resizing)), so a drag there resizes
+  it, and its empty inside is the selection's bounds, so a drag there moves it (tldraw's); it's
+  also moved by its tab, and by its border with one press while it isn't selected. What finds
+  shapes by point (`editor.shape(at:)`: an arrow's end) goes by the same test.
 - **The marquee** selects a frame when it reaches the frame's edge, or holds it whole, never when
   it's drawn wholly inside it, where it selects what the frame holds (Selection's `BrushHitTesting`);
   with ⌘, only what it holds whole, as ever.

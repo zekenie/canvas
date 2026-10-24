@@ -70,7 +70,7 @@ extension SelectTool: Tool {
             if isDoubleClick, let placement = editor.registry.contributions(to: DoubleClickPlacement.self).first?.value {
                 editor.selection = nil
                 editor.place(placement, at: pointer.world)
-            } else if insideSelection {
+            } else if editor.isInSelectionBounds(pointer.world) {
                 editor.session = PointingSelectionSession(press: pointer.view)
             } else {
                 if !shift && !command {
@@ -257,7 +257,7 @@ extension PointingShapeSession: Session {
 }
 
 /// tldraw's selectOnCanvasPointerUp: the release of a press on empty canvas, or on empty space in
-/// a multi-selection's box. ⇧ or ⌘ toggles the shape under the release (its group, whole);
+/// the selection's bounds. ⇧ or ⌘ toggles the shape under the release (its group, whole);
 /// otherwise it's selected (if it isn't already), or with nothing there, nothing is, and a release
 /// outside the box of the group the selection was inside leaves it.
 @MainActor
@@ -292,7 +292,8 @@ extension PointingCanvasSession: Session {
     func end(_ pointer: Pointer, in editor: CanvasEditor) { selectOnCanvasRelease(pointer, in: editor) }
 }
 
-/// Empty space inside a multi-selection's box was pressed (tldraw's PointingSelection): a drag
+/// Empty space inside the selection's bounds was pressed (tldraw's PointingSelection: several
+/// shapes' box, or the inside of the one selected shape, a frame's, `isInSelectionBounds`): a drag
 /// moves the selection; a click is a click on the canvas.
 @MainActor
 final class PointingSelectionSession {

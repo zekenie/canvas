@@ -215,6 +215,21 @@ import TestKit
         h.click(at: CGPoint(x: 250, y: 60))
         expectEqual(h.editor.selectedShapeIDs, [])
     },
+    test("pressing empty space inside the only selected shape's box drags it, as tldraw's does (a frame's empty inside); a click there deselects") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
+        let disc = h.add(Disc(CGRect(x: 100, y: 100, width: 200, height: 200)))
+        let corner = CGPoint(x: 110, y: 110)                     // in its box, off the disc
+        h.press(at: corner); h.drag(to: corner + CGPoint(x: 20, y: 0)); h.drag(to: corner + CGPoint(x: 40, y: 30)); h.release()
+        expectEqual(h.editor.document[disc]?.box?.origin, CGPoint(x: 100, y: 100), "unselected, it's the canvas")
+        h.editor.selection = disc
+        h.press(at: corner)
+        expectEqual(h.editor.selectedShapeIDs, [disc], "kept on the press")
+        h.drag(to: corner + CGPoint(x: 20, y: 0)); h.drag(to: corner + CGPoint(x: 40, y: 30)); h.release()
+        expectEqual(h.editor.document[disc]?.box?.origin, CGPoint(x: 140, y: 130))
+        expectEqual(h.editor.selectedShapeIDs, [disc])
+        h.click(at: CGPoint(x: 150, y: 140))
+        expectEqual(h.editor.selectedShapeIDs, [], "a click on the canvas")
+    },
     test("panned and zoomed, dragging a multi-selection by its box's empty space and ⌘-brushing from a shape both start at the press's world point") {
         let (h, a, _, c) = try threeBoxes()
         let camera = Camera(origin: CGPoint(x: 37, y: -12), zoom: 0.6)

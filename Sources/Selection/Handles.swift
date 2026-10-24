@@ -67,13 +67,15 @@ extension CanvasEditor {
     }
 
     /// The only selected shape's handle under a view point: the nearest within
-    /// `SelectionStyle.handleHitRadius`.
+    /// `SelectionStyle.handleHitRadius`, else, anywhere along a side of a resizable box, that
+    /// side's (`resizeSide(atViewPoint:)`).
     public func handle(atViewPoint viewPoint: CGPoint) -> AnyHashable? {
-        visibleHandles()
+        let nearest = visibleHandles()
             .map { ($0.handle, $0.point.distance(to: viewPoint)) }
             .filter { $0.1 <= SelectionStyle.handleHitRadius }
             .min { $0.1 < $1.1 }?
             .0
+        return nearest ?? resizeSide(atViewPoint: viewPoint).map(AnyHashable.init)
     }
 
     /// A press on one of the only selected shape's handles: a resize handle's waits for a drag; one

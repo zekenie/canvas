@@ -129,7 +129,7 @@ final class RuleResizer: ResizeAdjuster {
             expectEqual(h.editor.hovered, nil, "a handle takes the hover from its shape")
         }
         expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 200, y: 150)), nil, "its middle is the shape's")
-        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 150, y: 100)), nil, "between two handles, the edge is the shape's")
+        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 150, y: 100)), AnyHashable(ResizeHandle.top), "between two handles, the edge is its side's")
         h.move(to: CGPoint(x: 200, y: 150))
         expectEqual(h.editor.hoveredHandle, nil)
         expectEqual(h.editor.hovered, box)
@@ -165,6 +165,7 @@ final class RuleResizer: ResizeAdjuster {
         for handle in ResizeHandle.allCases {
             expectEqual(h.editor.handle(atViewPoint: point(of: handle, on: resizeFrame)), nil, "\(handle)")
         }
+        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 150, y: 100)), nil, "nor its sides")
         h.press(at: CGPoint(x: 295, y: 195))
         h.drag(to: CGPoint(x: 330, y: 230))
         expect(h.editor.session is TranslatingSession, "a press on the shape, which moves the selection")
@@ -193,6 +194,39 @@ final class RuleResizer: ResizeAdjuster {
                 expectEqual(h.editor.selection, box, "still selected")
             }
         }
+    },
+    test("a side is pressed anywhere along it, from 6 points inside its edge to 6 past the outline drawn off it, the corners' handles first") {
+        let (h, box) = try resizeHarness()
+        h.editor.outlineStandoff = Style.outlineStandoff                          // 4, as the app draws it
+        let sides: [(ResizeHandle, CGPoint, CGPoint)] = [               // a point on the side, and the way out of the box
+            (.top, CGPoint(x: 130, y: 100), CGPoint(x: 0, y: -1)),
+            (.right, CGPoint(x: 300, y: 120), CGPoint(x: 1, y: 0)),
+            (.bottom, CGPoint(x: 270, y: 200), CGPoint(x: 0, y: 1)),
+            (.left, CGPoint(x: 100, y: 180), CGPoint(x: -1, y: 0)),
+        ]
+        for (side, at, out) in sides {
+            for off: CGFloat in [-6, 0, 4, 10] {
+                expectEqual(h.editor.handle(atViewPoint: at + out * off), AnyHashable(side), "\(side), \(off) out")
+            }
+            expectEqual(h.editor.handle(atViewPoint: at + out * -7), nil, "\(side): further in is the shape's")
+            expectEqual(h.editor.handle(atViewPoint: at + out * 11), nil, "\(side): further out is the canvas's")
+        }
+        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 295, y: 106)), AnyHashable(ResizeHandle.topRight), "a corner's handle first")
+        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 316, y: 90)), nil, "past a side's end")
+        h.editor.outlineStandoff = 0
+        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 130, y: 94)), AnyHashable(ResizeHandle.top), "6 past an outline on the edge")
+        expectEqual(h.editor.handle(atViewPoint: CGPoint(x: 130, y: 93)), nil)
+        h.editor.outlineStandoff = Style.outlineStandoff
+        h.move(to: CGPoint(x: 296, y: 120))
+        expectEqual(h.editor.hoveredHandle, AnyHashable(ResizeHandle.right), "hovered as its side's handle")
+        expectEqual(h.editor.cursor, .resize(.right))
+        expectEqual(h.editor.hovered, nil, "the shape under it isn't")
+        h.press(at: CGPoint(x: 296, y: 120))
+        h.drag(to: CGPoint(x: 311, y: 130))
+        h.drag(to: CGPoint(x: 326, y: 140))
+        h.release()
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 230, height: 100), "the side alone moved, with the pointer")
+        expectEqual(h.editor.undoHistory.undoName, "Resize")
     },
     test("zoomed in, a handle follows the pointer in world units") {
         let (h, box) = try resizeHarness()
@@ -342,6 +376,7 @@ final class RuleResizer: ResizeAdjuster {
         let shown = ResizeHandle.allCases.filter { h.editor.handle(atViewPoint: h.view(point(of: $0, on: resizeFrame))) == AnyHashable($0) }
         expectEqual(shown, [.topLeft, .top, .topRight, .bottomRight, .bottom, .bottomLeft])
         expectEqual(h.editor.handle(atViewPoint: h.view(point(of: .left, on: resizeFrame))), nil, "its left is the shape's")
+        expectEqual(h.editor.handle(atViewPoint: h.view(CGPoint(x: 150, y: 100))), AnyHashable(ResizeHandle.top), "its top's, along it")
         h.editor.camera = Camera(origin: .zero, zoom: 0.5)        // 100 by 50: all eight
         expect(ResizeHandle.allCases.allSatisfy { h.editor.handle(atViewPoint: h.view(point(of: $0, on: resizeFrame))) == AnyHashable($0) })
     },

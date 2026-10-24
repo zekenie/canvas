@@ -562,10 +562,21 @@ extension CanvasEditor {
     /// while the selection, the board and the camera don't change.
     public var selectionBounds: CGRect? { selectionState?.selectionBounds }
 
-    /// Whether a world point is inside the box around several selected shapes, where a press on
-    /// empty space acts on the selection (tldraw's selection bounds). False with one or none.
+    /// Whether a world point is inside the box around several selected shapes, where a press on a
+    /// shape keeps the selection (tldraw's PointingShape, behind the selection's bounds). False with
+    /// one or none.
     public func isInSelectionBox(_ point: CGPoint) -> Bool {
         selectedShapeIDs.count > 1 && selectionBounds?.contains(point) == true
+    }
+
+    /// Whether a world point is inside the selection's bounds, where a press or a right-click on
+    /// empty space acts on the selection (tldraw's, from its idle state): the box around several
+    /// selected shapes, or the one selected shape's, so a hollow one (a frame holding shapes, pressed
+    /// only on its border) is dragged from its empty inside; not one with no box (an arrow, whose
+    /// bounds tldraw's `hideSelectionBoundsBg` leaves out). False with none.
+    public func isInSelectionBounds(_ point: CGPoint) -> Bool {
+        guard let first = selectedShapeIDs.first, selectedShapeIDs.count > 1 || document[first]?.box != nil else { return false }
+        return selectionBounds?.contains(point) == true
     }
 
     /// The shape the pointer is over: on the canvas, where the select tool sets it as the pointer

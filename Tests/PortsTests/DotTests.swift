@@ -216,6 +216,23 @@ import Topology
         h.move(to: CGPoint(x: 150, y: 130))
         expectEqual(dotPixels(plain, render(h), at: rightDot), 16, "off the handle, back")
     },
+    test("a resize handle leaves the dots be: a side, pressed anywhere along it, is crossed on the way out to one") {
+        let resizable = Contributor(id: "resizable-boxes") { $0.resizable(Box.self, minimumSize: CGSize(width: 10, height: 10)) }
+        let h = try portsHarness(more: [resizable])
+        let box = h.add(Box(boxFrame))
+        h.editor.selection = box
+        let plain = render(h)
+        h.move(to: boxMiddle)
+        h.move(to: CGPoint(x: 297, y: 120))                  // on its right side, off the side's handle
+        expectEqual(h.editor.hoveredHandle, AnyHashable(ResizeHandle.right))
+        let onSide = render(h)
+        for (side, center) in boxDots { expectEqual(dotPixels(plain, onSide, at: center), 16, "\(side)") }
+        h.move(to: CGPoint(x: 320, y: 125))                  // past it
+        expectEqual(dotPixels(plain, render(h), at: rightDot), 16, "still")
+        h.move(to: CGPoint(x: 300, y: 100))                  // a corner
+        expectEqual(h.editor.hoveredHandle, AnyHashable(ResizeHandle.topRight))
+        expectEqual(dotPixels(plain, render(h), at: rightDot), 16, "and on a corner's")
+    },
     test("a read-only shape keeps its ports: its dots show, and a drag from one connects without trying to change it") {
         let connections = ConnectionLog(), log = RefusalLog()
         let h = try portsHarness(connections, more: [FreezingPlugin(log: log)])

@@ -23,6 +23,9 @@ enum SelectionStyle {
     /// screen either way (its corners' reach would cover its middle), and a side's only on a side
     /// at least twice this long (its reach clear of the corners').
     static let resizeHandleRoom: CGFloat = 2 * handleHitRadius
+    /// A press this far inside a resizable box's side, or as far past the outline drawn off it, takes that side
+    /// anywhere along it (`ResizeHandle.side`): tldraw's 6 either side of its edges, which its outline lies on.
+    static let resizeSideReach: CGFloat = 6
     /// The marquee: tldraw's hsl(0, 0%, 56%), in light and dark alike.
     static let brushFill = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.102)
     static let brushStroke = NSColor(srgbRed: 0.56, green: 0.56, blue: 0.56, alpha: 0.251)

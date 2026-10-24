@@ -34,7 +34,7 @@ final class ContextMenuState {
         if let hit, case let unit = editor.selectionUnit(of: hit), !editor.areSelected(unit) {
             ids = unit
             selects = unit
-        } else if hit != nil || editor.isInSelectionBox(pointer.world) {
+        } else if hit != nil || editor.isInSelectionBounds(pointer.world) {
             ids = editor.selectedShapeIDs
         } else {
             ids = []
