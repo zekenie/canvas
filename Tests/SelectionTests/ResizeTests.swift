@@ -70,6 +70,53 @@ final class StillAdjuster: TranslationAdjuster {
     func draw(in context: OverlayContext) {}
 }
 
+/// What the fixture resize adjuster heard: the drags it was made for, and each event's box, scaling and keys.
+@MainActor
+final class ResizerLog {
+    var begun: [ResizeStart] = []
+    var asked: [(resized: CGRect, scaling: ResizeScaling, modifiers: Modifiers)] = []
+    var draws = 0
+}
+
+/// A resize adjuster that gives the box its rule says, and draws a black square at the world's origin.
+@MainActor
+final class RuleResizer: ResizeAdjuster {
+    let log: ResizerLog
+    let rule: @MainActor (CGRect, ResizeScaling, Modifiers) -> CGRect
+    init(log: ResizerLog, rule: @escaping @MainActor (CGRect, ResizeScaling, Modifiers) -> CGRect) {
+        self.log = log
+        self.rule = rule
+    }
+
+    func adjust(_ resized: CGRect, scaling: ResizeScaling, for pointer: Pointer, in editor: CanvasEditor) -> CGRect {
+        log.asked.append((resized, scaling, pointer.modifiers))
+        return rule(resized, scaling, pointer.modifiers)
+    }
+
+    func draw(in context: OverlayContext) {
+        log.draws += 1
+        context.cg.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.cg.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+    }
+}
+
+/// The resize adjuster, claimed with `rule`: the box as the pointer gives it, unless it says otherwise.
+@MainActor func resizerPlugin(_ log: ResizerLog,
+                              rule: @escaping @MainActor (CGRect, ResizeScaling, Modifiers) -> CGRect = { resized, _, _ in resized }) -> Contributor {
+    Contributor(id: "resizer") { r in
+        r.resizeAdjuster { _, start in
+            log.begun.append(start)
+            return RuleResizer(log: log, rule: rule)
+        }
+    }
+}
+
+/// `box` with its right side on a grid of 50, unless ⌘ is held.
+@MainActor func rightOnGrid(_ box: CGRect, _ scaling: ResizeScaling, _ modifiers: Modifiers) -> CGRect {
+    guard !modifiers.contains(.command) else { return box }
+    return CGRect(x: box.minX, y: box.minY, width: (box.maxX / 50).rounded() * 50 - box.minX, height: box.height)
+}
+
 @MainActor let resizeTests = Suite("Resizing", [
     test("the only selected shape of a resizable kind has eight handles, on its corners and the middles of its sides, hovered as handles are") {
         let (h, box) = try resizeHarness()
@@ -298,7 +345,7 @@ final class StillAdjuster: TranslationAdjuster {
         h.editor.camera = Camera(origin: .zero, zoom: 0.5)        // 100 by 50: all eight
         expect(ResizeHandle.allCases.allSatisfy { h.editor.handle(atViewPoint: h.view(point(of: $0, on: resizeFrame))) == AnyHashable($0) })
     },
-    test("nothing snaps while resizing: the translation adjuster isn't asked, as it is for a move") {
+    test("a resize asks the resize adjuster, once as it begins and at each event, and the box takes what it says; the translation adjuster is a move's") {
         let count = AdjusterCount()
         let adjuster = Contributor(id: "adjuster") { r in
             r.translationAdjuster { _, _ in
@@ -306,14 +353,96 @@ final class StillAdjuster: TranslationAdjuster {
                 return StillAdjuster()
             }
         }
-        let (h, box) = try resizeHarness([adjuster])
+        let log = ResizerLog()
+        let (h, box) = try resizeHarness([adjuster, resizerPlugin(log, rule: rightOnGrid)])
         h.resize(box, .right, by: CGPoint(x: 33, y: 0))
-        expectEqual(count.begun, 0)
-        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 233, height: 100))
+        expectEqual(count.begun, 0, "a resize doesn't ask the translation adjuster")
+        expectEqual(log.begun.count, 1)
+        expectEqual(log.asked.map { $0.resized.maxX }, [316.5, 333, 333], "two drag events and the release, as the pointer gives it")
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 250, height: 100), "its right side on the grid")
+        expectEqual(h.editor.undoHistory.undoName, "Resize")
         h.press(at: CGPoint(x: 200, y: 150))
         h.drag(to: CGPoint(x: 210, y: 160))
         h.release()
         expectEqual(count.begun, 1, "a move asks it")
+        expectEqual(log.begun.count, 1, "and not the resize adjuster")
+    },
+    test("the resize adjuster is told the shape, its box, its minimum and its room; what it gives past the room is cut to it") {
+        let log = ResizerLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), CorralsPlugin(), resizableBoxes(),
+                                            resizerPlugin(log) { resized, _, _ in resized.insetBy(dx: -1000, dy: 0) }])
+        let corral = h.add(Corral(CGRect(x: 0, y: 0, width: 600, height: 400)))
+        let box = h.add(Box(resizeFrame))
+        h.editor.put([box], in: corral)
+        h.editor.selection = box
+        h.resize(box, .right, by: CGPoint(x: 30, y: 0))
+        let start = try require(log.begun.first)
+        expectEqual(start.id, box)
+        expectEqual(start.box, resizeFrame)
+        expectEqual(start.minimum, CGSize(width: 20, height: 10))
+        expectEqual(start.room, CGRect(x: 16, y: 16, width: 568, height: 368), "16 inside the corral's edge")
+        expectEqual(h.frame(of: box), CGRect(x: 16, y: 100, width: 568, height: 100), "the room's, whatever it said")
+        expectEqual(h.editor.holder(of: box), corral)
+    },
+    test("each event tells the resize adjuster how the box changes: about what stays put, along which ways, and whether in proportion") {
+        let cases: [(ResizeHandle, Modifiers, ResizeScaling)] = [
+            (.right, [], ResizeScaling(anchor: CGPoint(x: 100, y: 150), changesWidth: true, changesHeight: false, keepsProportions: false)),
+            (.bottom, [], ResizeScaling(anchor: CGPoint(x: 200, y: 100), changesWidth: false, changesHeight: true, keepsProportions: false)),
+            (.topLeft, [], ResizeScaling(anchor: CGPoint(x: 300, y: 200), changesWidth: true, changesHeight: true, keepsProportions: false)),
+            (.bottomRight, .shift, ResizeScaling(anchor: CGPoint(x: 100, y: 100), changesWidth: true, changesHeight: true, keepsProportions: true)),
+            (.top, .shift, ResizeScaling(anchor: CGPoint(x: 200, y: 200), changesWidth: true, changesHeight: true, keepsProportions: true)),
+            (.topLeft, .option, ResizeScaling(anchor: CGPoint(x: 200, y: 150), changesWidth: true, changesHeight: true, keepsProportions: false)),
+            (.left, [.option, .shift], ResizeScaling(anchor: CGPoint(x: 200, y: 150), changesWidth: true, changesHeight: true, keepsProportions: true)),
+        ]
+        for (handle, held, scaling) in cases {
+            let log = ResizerLog()
+            let (h, box) = try resizeHarness([resizerPlugin(log)])
+            h.hold(held)
+            h.resize(box, handle, by: CGPoint(x: 30, y: 20))
+            expect(!log.asked.isEmpty, "\(handle) with \(held)")
+            expect(log.asked.allSatisfy { $0.scaling == scaling }, "\(handle) with \(held): \(log.asked.map { $0.scaling })")
+            h.hold([])
+        }
+    },
+    test("held keys ask the resize adjuster again where the pointer is, and what it draws shows while the resize lasts") {
+        let log = ResizerLog()
+        let (h, box) = try resizeHarness([resizerPlugin(log, rule: rightOnGrid)])
+        let side = point(of: .right, on: resizeFrame), size = CGSize(width: 400, height: 300)
+        h.move(to: side)
+        h.press(at: side)
+        h.drag(to: side + CGPoint(x: 10, y: 0))
+        h.drag(to: side + CGPoint(x: 33, y: 0))
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 250, height: 100))
+        expectEqual(pixel(renderBitmap(h.editor, size: size), at: CGPoint(x: 10, y: 10)), [0, 0, 0, 255])
+        h.hold(.command)
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 233, height: 100), "asked again with ⌘, the pointer still")
+        expect(log.asked.last?.modifiers.contains(.command) == true)
+        h.hold([])
+        h.wait(150)                                              // a key let go counts as held until then
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 250, height: 100))
+        h.release()
+        expect(log.draws > 0)
+        expect(pixel(renderBitmap(h.editor, size: size), at: CGPoint(x: 10, y: 10)) != [0, 0, 0, 255], "gone with the resize")
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 250, height: 100))
+    },
+    test("Escape puts the box back whatever the resize adjuster said; ⌥ and an arrow don't ask it") {
+        let log = ResizerLog()
+        let (h, box) = try resizeHarness([resizerPlugin(log, rule: rightOnGrid)])
+        let side = point(of: .right, on: resizeFrame)
+        h.move(to: side)
+        h.press(at: side)
+        h.drag(to: side + CGPoint(x: 33, y: 0))
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 250, height: 100))
+        h.escape()
+        expectEqual(h.frame(of: box), resizeFrame)
+        h.release()
+        expect(!h.editor.canUndo, "the step came to nothing")
+        let asked = log.asked.count
+        h.hold(.option)
+        expect(h.key("\u{F703}"))
+        expectEqual(h.frame(of: box), CGRect(x: 100, y: 100, width: 201, height: 100), "a unit, as a nudge moves one, unsnapped")
+        expectEqual(log.asked.count, asked)
+        h.hold([])
     },
     test("the handles are the canvas's: discs on its corners and sides; the one hovered, and the one dragged, haloed") {
         let size = CGSize(width: 400, height: 300)

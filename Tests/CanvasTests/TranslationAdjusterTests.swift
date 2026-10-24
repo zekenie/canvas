@@ -7,7 +7,8 @@ import TestKit
 
 // The translation adjuster (`registrar.translationAdjuster`): what Snapping claims, here a fixture
 // that puts x on a grid of 10 and leaves y alone, unless ⌥ is held. The core has no Selection here,
-// so tests start drags themselves.
+// so tests start drags themselves. And the resize adjuster (`registrar.resizeAdjuster`), which the
+// core only hands out: Selection's resize asks it (SelectionTests' ResizeTests).
 
 /// What the fixture adjuster heard.
 @MainActor
@@ -39,6 +40,15 @@ final class GridAdjuster: TranslationAdjuster {
         context.cg.setFillColor(NSColor.black.cgColor)
         context.cg.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
     }
+}
+
+/// A resize adjuster that leaves the box as the pointer gives it, keeping the drag it was made for.
+@MainActor
+final class StillResizer: ResizeAdjuster {
+    let start: ResizeStart
+    init(_ start: ResizeStart) { self.start = start }
+    func adjust(_ resized: CGRect, scaling: ResizeScaling, for pointer: Pointer, in editor: CanvasEditor) -> CGRect { resized }
+    func draw(in context: OverlayContext) {}
 }
 
 @MainActor func gridPlugin(_ log: AdjusterLog) -> Contributor {
@@ -156,5 +166,24 @@ final class GridAdjuster: TranslationAdjuster {
         }
         let report = try Registry(plugins: [FixturesPlugin(), gridPlugin(AdjusterLog())]).report
         expect(report.contains("grid          translation adjuster"), report)
+    },
+    test("the resize adjuster: the core runs no resize, but makes the claim's adjuster for a drag beginning, or none; two plugins can't both claim it") {
+        let start = ResizeStart(id: ShapeID(), box: CGRect(x: 10, y: 20, width: 30, height: 40), minimum: CGSize(width: 5, height: 5),
+                                room: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let claimed = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "resizer") { $0.resizeAdjuster { _, begun in StillResizer(begun) } }])
+        let made = try require(claimed.editor.resizeAdjuster(for: start) as? StillResizer)
+        expectEqual(made.start.id, start.id)
+        expectEqual(made.start.box, start.box)
+        expectEqual(made.start.room, start.room)
+        let declined = try EditorHarness(plugins: [FixturesPlugin(), Contributor(id: "resizer") { $0.resizeAdjuster { _, _ in nil } }])
+        expect(declined.editor.resizeAdjuster(for: start) == nil)
+        let none = try EditorHarness(plugins: [FixturesPlugin()])
+        expect(none.editor.resizeAdjuster(for: start) == nil)
+        expectThrows(RegistryError.conflict(point: "ResizeAdjusters", key: "the resize adjuster", plugins: ["x", "y"])) {
+            _ = try Registry(plugins: [Contributor(id: "x") { $0.resizeAdjuster { _, _ in nil } },
+                                       Contributor(id: "y") { $0.resizeAdjuster { _, _ in nil } }])
+        }
+        let report = try Registry(plugins: [FixturesPlugin(), Contributor(id: "resizer") { $0.resizeAdjuster { _, _ in nil } }]).report
+        expect(report.contains("resizer       resize adjuster"), report)
     },
 ])

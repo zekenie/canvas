@@ -6,12 +6,13 @@ import Geometry
 /// shapes in view, by their frames. Along each axis, its edges and its middle snap to theirs, and it
 /// snaps to spaces between them: centered between two neighbors, or as far from one as the space
 /// beside it (tldraw's bounds snapping, `SnapTargets`), within 8 view points, while guides show what
-/// lines up. It's on whenever shapes are dragged, as Keynote's alignment guides are (tldraw's snap
-/// only while ⌘ is held); ⌘ or ⌃ held once the drag is under way lets them follow the pointer
-/// exactly, as ⌘ lets an arrow's end bind to nothing (at the press, ⌘ on a shape starts a marquee and
-/// ⌃ is the secondary click). Kinds with a frame snap and are snapped to; those without one (arrows,
-/// lines) neither. The core only lends the hook (`registrar.translationAdjuster`), which this plugin
-/// claims.
+/// lines up. A box resized by a handle (Selection's) snaps the sides it moves to their edges and
+/// middles the same way (tldraw's resize snapping). It's on whenever shapes are dragged or resized,
+/// as Keynote's alignment guides are (tldraw's snap only while ⌘ is held); ⌘ or ⌃ held once the drag
+/// is under way lets them follow the pointer exactly, as ⌘ lets an arrow's end bind to nothing (at
+/// the press, ⌘ on a shape starts a marquee and ⌃ is the secondary click). Kinds with a frame snap
+/// and are snapped to; those without one (arrows, lines) neither. The core only lends the hooks
+/// (`registrar.translationAdjuster`, `registrar.resizeAdjuster`), which this plugin claims.
 extension PluginID {
     public static let snapping: PluginID = "snapping"
 }
@@ -23,26 +24,47 @@ public struct SnappingPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { _ in SnapState() }
         registrar.translationAdjuster { editor, start in SnapDrag(start, in: editor) }
-        registrar.keyHint("⌘ or ⌃ Drag", "Move Without Snapping", while: .pointer)
+        registrar.resizeAdjuster { editor, start in SnapResize(start, in: editor) }
+        registrar.keyHint("⌘ or ⌃ Drag", "Move or Resize Without Snapping", while: .pointer)
     }
 }
 
 extension CanvasEditor {
-    /// What the drag under way shows of how what it moves lines up, in world units: nothing while
-    /// nothing lines up, or no drag is under way.
-    public var snapGuides: [SnapGuide] { service(SnapState.self)?.drag?.guides ?? [] }
+    /// What the drag or the resize under way shows of how what it moves lines up, in world units:
+    /// nothing while nothing lines up, or neither is under way.
+    public var snapGuides: [SnapGuide] {
+        guard let state = service(SnapState.self) else { return [] }
+        return (state.drag?.guides ?? []) + (state.resize?.guides ?? [])
+    }
 }
 
-/// The drag under way, while one snaps: told when a shape it doesn't move changes (a plugin's write,
-/// an agent's), so it reads what's in view again, and when one it moves changes other than by moving
-/// (resized by a plugin's write), so it takes its frames together again.
+/// The drag under way, or the resize, while one snaps (one at a time): told when a shape it doesn't
+/// move or resize changes (a plugin's write, an agent's), so it reads what's in view again, and, for a
+/// drag, when one it moves changes other than by moving (resized by a plugin's write), so it takes
+/// its frames together again.
 @MainActor
 final class SnapState {
-    weak var drag: SnapDrag?
+    private(set) weak var drag: SnapDrag?
+    private(set) weak var resize: SnapResize?
+
+    func began(_ drag: SnapDrag) {
+        self.drag = drag
+        resize = nil
+    }
+
+    func began(_ resize: SnapResize) {
+        self.resize = resize
+        drag = nil
+    }
 }
 
 extension SnapState: EditorService {
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        // A resize's own commits change only the shape it resizes, which it doesn't snap to.
+        if let resize, resize.hasTargets,
+           !changes.added.isEmpty || !changes.removed.isEmpty || changes.changed.contains(where: { $0 != resize.id }) {
+            resize.dropTargets()
+        }
         guard let drag else { return }
         if drag.hasTargets, !changes.added.isEmpty || !changes.removed.isEmpty || !changes.changed.isSubset(of: drag.moving) {
             drag.dropTargets()
@@ -70,10 +92,8 @@ final class SnapDrag {
     /// Its frames together, where they began, as big as they are now.
     private var bounds: CGRect
     private var isPastThreshold = false
-    private var targets: SnapTargets?
-    /// What `targets` were read in: the camera, the view's size and the layout (shapes laid out
-    /// again with no commit change the frames they were read from).
-    private var view: (camera: Camera, size: CGSize, layout: Int)?
+    /// What it snaps to: the frames in view but those it moves.
+    private var inView: FramesInView
     /// The layout `bounds` was taken at.
     private var layout: Int
     private(set) var guides: [SnapGuide] = []
@@ -88,16 +108,18 @@ final class SnapDrag {
             bounds = bounds.union(context.frame(of: id) ?? box)
         }
         guard !starts.isEmpty else { return nil }
-        moving = Set(start.ids)
+        let moving = Set(start.ids)
+        self.moving = moving
         origin = start.origin
         self.starts = starts
         self.bounds = bounds
+        inView = FramesInView(excluding: moving)
         layout = editor.layoutRevision
-        editor.service(SnapState.self)?.drag = self
+        editor.service(SnapState.self)?.began(self)
     }
 
-    var hasTargets: Bool { targets != nil }
-    func dropTargets() { targets = nil }
+    var hasTargets: Bool { inView.isRead }
+    func dropTargets() { inView.drop() }
     func movesFrame(_ id: ShapeID) -> Bool { starts[id] != nil }
 
     /// A frame it moves changed size (a plugin's write, or the shape laid out again): its frames
@@ -109,24 +131,6 @@ final class SnapDrag {
             context.frame(of: start.key).map { bounds.union(CGRect(origin: start.value, size: $0.size)) } ?? bounds
         }
     }
-
-    /// The frames in view, but those it moves, as the camera shows them now: none without a view.
-    private func targets(in editor: CanvasEditor) -> SnapTargets {
-        let camera = editor.camera, size = editor.viewportSize, layout = editor.layoutRevision
-        if let targets, let view, view.camera == camera, view.size == size, view.layout == layout { return targets }
-        var frames: [CGRect] = []
-        if size.width > 0, size.height > 0 {
-            let visible = camera.toWorld(CGRect(origin: .zero, size: size))
-            let context = editor.shapeContext
-            for record in editor.paintOrder(in: visible) where !moving.contains(record.id) {
-                if let frame = context.frame(of: record), frame.touches(visible) { frames.append(frame) }
-            }
-        }
-        let targets = SnapTargets(frames)
-        self.targets = targets
-        view = (camera, size, layout)
-        return targets
-    }
 }
 
 extension SnapDrag: TranslationAdjuster {
@@ -136,16 +140,98 @@ extension SnapDrag: TranslationAdjuster {
         defer { if guides != shown { editor.setNeedsDisplay() } }
         guides = []
         // Shapes laid out again with no commit (a note's type gained a field): the frames it moves, and
-        // the targets (`targets(in:)`), follow.
+        // the targets (`FramesInView`), follow.
         if layout != editor.layoutRevision { framesChanged(in: editor) }
         if !isPastThreshold { isPastThreshold = pointer.view.distance(to: editor.camera.toView(origin)) > Style.dragThreshold }
         // Its frames all gone (deleted mid-drag): nothing to snap.
         guard isPastThreshold, !bounds.isNull, pointer.modifiers.isDisjoint(with: SnappingStyle.freeMoveModifiers) else { return delta }
-        let snap = targets(in: editor).snap(bounds, movedBy: delta, within: SnappingStyle.threshold / editor.camera.zoom,
-                                            only: axis.map { $0 == .x ? SnapAxis.x : .y })
+        let snap = inView.targets(in: editor).snap(bounds, movedBy: delta, within: SnappingStyle.threshold / editor.camera.zoom,
+                                                   only: axis.map { $0 == .x ? SnapAxis.x : .y })
         guides = snap.guides
         return snap.delta
     }
 
     func draw(in context: OverlayContext) { SnappingStyle.draw(guides, in: context) }
+}
+
+/// One resize's snapping (a drag of a resize handle, Selection's): on each event, the sides it moves
+/// snap to the edges and middles of the frames in view but the shape's own (`SnapTargets`' resize
+/// snapping), as the resize scales the box (about what stays put, in proportion or not), never to less
+/// than its minimum or out of its room, and guides show every line its sides are on along the ways it
+/// changes. The drag threshold is behind it already (the handle's press waited for it). What's in view
+/// is read at its first event, and again once the camera moves or shapes other than the one it resizes
+/// change.
+@MainActor
+final class SnapResize {
+    /// The shape it resizes.
+    let id: ShapeID
+    private let start: ResizeStart
+    /// What it snaps to: the frames in view but the shape's own.
+    private var inView: FramesInView
+    private(set) var guides: [SnapGuide] = []
+
+    init(_ start: ResizeStart, in editor: CanvasEditor) {
+        id = start.id
+        self.start = start
+        inView = FramesInView(excluding: [start.id])
+        editor.service(SnapState.self)?.began(self)
+    }
+
+    var hasTargets: Bool { inView.isRead }
+    func dropTargets() { inView.drop() }
+}
+
+extension SnapResize: ResizeAdjuster {
+    func adjust(_ resized: CGRect, scaling: ResizeScaling, for pointer: Pointer, in editor: CanvasEditor) -> CGRect {
+        let shown = guides
+        defer { if guides != shown { editor.setNeedsDisplay() } }
+        guides = []
+        guard pointer.modifiers.isDisjoint(with: SnappingStyle.freeMoveModifiers) else { return resized }
+        let axes = SnapAxis.allCases.filter { $0 == .x ? scaling.changesWidth : scaling.changesHeight }
+        let snap = inView.targets(in: editor).snap(resized, resizedFrom: start.box, about: scaling.anchor, along: axes,
+                                                   inProportion: scaling.keepsProportions, minimum: start.minimum, room: start.room,
+                                                   within: SnappingStyle.threshold / editor.camera.zoom)
+        guides = snap.guides
+        return snap.rect
+    }
+
+    func draw(in context: OverlayContext) { SnappingStyle.draw(guides, in: context) }
+}
+
+/// The frames in view that a drag or a resize snaps to, but those it changes, as the camera shows them
+/// now: none without a view (`viewportSize` zero, headless). Read when first asked, and again once the
+/// camera, the view's size or the layout has changed since (shapes laid out again with no commit change
+/// the frames they were read from), or once they're dropped (a shape the gesture doesn't change
+/// changed).
+@MainActor
+struct FramesInView {
+    /// What the gesture changes, which nothing snaps to.
+    let excluded: Set<ShapeID>
+    private var targets: SnapTargets?
+    /// What `targets` were read in: the camera, the view's size and the layout.
+    private var view: (camera: Camera, size: CGSize, layout: Int)?
+
+    init(excluding excluded: Set<ShapeID>) {
+        self.excluded = excluded
+    }
+
+    var isRead: Bool { targets != nil }
+    mutating func drop() { targets = nil }
+
+    mutating func targets(in editor: CanvasEditor) -> SnapTargets {
+        let camera = editor.camera, size = editor.viewportSize, layout = editor.layoutRevision
+        if let targets, let view, view.camera == camera, view.size == size, view.layout == layout { return targets }
+        var frames: [CGRect] = []
+        if size.width > 0, size.height > 0 {
+            let visible = camera.toWorld(CGRect(origin: .zero, size: size))
+            let context = editor.shapeContext
+            for record in editor.paintOrder(in: visible) where !excluded.contains(record.id) {
+                if let frame = context.frame(of: record), frame.touches(visible) { frames.append(frame) }
+            }
+        }
+        let targets = SnapTargets(frames)
+        self.targets = targets
+        view = (camera, size, layout)
+        return targets
+    }
 }

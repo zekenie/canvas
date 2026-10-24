@@ -156,7 +156,7 @@ import Validation
         color-validation     service ColorWarnings · ValidationRules → every shape holding color
         color-details        ShapeDetails in Style last → every shape holding color
         type-colors          inherited color → every shape holding is
-        snapping             service SnapState · translation adjuster · key hint ⌘ or ⌃ Drag Move Without Snapping
+        snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
         connect-menu         CanvasContextMenu in ShapeMenuGroup first
         arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
