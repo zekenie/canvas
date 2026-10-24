@@ -60,6 +60,7 @@ import TestKit
         expectEqual(row("Edit", "Paste at Pointer"), ["⇧⌘V"], "Clipboard's command, with the item that runs it")
         expectEqual(row("Edit", "Copy as Image"), ["⇧⌘C"], "the window's own item, its key from the menu bar")
         expectEqual(row("Canvas", "Tool Lock"), ["Q"], "a key that runs no command, under the canvas")
+        expectEqual(row("Canvas", "Run a Command"), ["/"], "the command bar's: no menu item runs it")
         expectEqual(row("Help", "Keyboard Shortcuts"), ["⌥⌘/"])
         expectEqual(row("Arrange", "Group"), ["⌥⌘G"])
         expectEqual(row("Arrange", "Bring to Front"), ["]"], "the shape commands with a fixed item are filed with it")

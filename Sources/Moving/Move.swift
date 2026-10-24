@@ -2,38 +2,35 @@ import Canvas
 import CoreGraphics
 import Draw
 
-/// One shape a command moves: on the board shown, with a box. Each command asks its rule again before it
-/// moves anything (what it was given may have changed since the line was typed): a target it no longer
-/// takes moves nothing.
+/// The shapes a command moves, as one block: on the board shown, with a box, kept where they are to each
+/// other. Each command asks its rule again before it moves anything (what it was given may have changed
+/// since the line was typed): a target it no longer takes moves nothing.
 @MainActor
 struct Move {
     let editor: CanvasEditor
+    /// The shapes the command acts on, as it was given them.
+    let ids: [ShapeID]
     let block: Block
 
-    /// Nil for a shape that isn't on the board shown, is kept aside, or has no box.
-    init?(_ id: ShapeID, in editor: CanvasEditor) {
-        guard editor.document[id] != nil, let block = Block([id], in: editor) else { return nil }
+    /// Nil for no shapes, and for a shape that isn't on the board shown, is kept aside, or has no box.
+    init?(_ ids: [ShapeID], in editor: CanvasEditor) {
+        guard !ids.isEmpty, ids.allSatisfy({ editor.document[$0] != nil }), let block = Block(ids, in: editor) else { return nil }
         self.editor = editor
+        self.ids = ids
         self.block = block
     }
 
-    private var id: ShapeID { block.shapes[0].id }
-
-    /// `/move-to`: into the frame the line names, on its board, or onto the subboard's board, anywhere.
+    /// `/move-to`: into the frame the line names, on its board, or onto the subboard's board, anywhere; the
+    /// drop Move To ▸ and the table of contents make of them (`Drop`), landed and committed as theirs, in
+    /// one step, so the three refuse and land alike.
     func into(_ target: ShapeID) {
-        guard let destination = Destination(of: id, into: target, in: editor),
-              let surroundings = Surroundings(on: destination.board, moving: block, in: editor) else { return }
-        switch destination {
-        case .container(let container, on: _):
-            if let landing = surroundings.inside(container) { block.commit(landing) }
-        case .board:
-            block.commit(surroundings.anywhere())
-        }
+        guard let place = movePlace(of: target, in: editor) else { return }
+        Drop(ids, to: place, in: editor)?.commit()
     }
 
     /// `/move-near`: beside the shape the line names, on its board.
     func near(_ target: ShapeID) {
-        guard admitsNear(target, for: id, in: editor), let board = editor.file.board(containing: target),
+        guard admitsNear(target, for: ids, in: editor), let board = editor.file.board(containing: target),
               let surroundings = Surroundings(on: board, moving: block, in: editor),
               let found = surroundings.reading.document[target], !found.isOpaque,
               let landing = surroundings.near(target) else { return }

@@ -39,13 +39,16 @@ func registerPublishMenus(into registrar: inout PluginRegistrar) {
 }
 
 /// `/public` while the shape can be made public, `/private` while it's public, typed on a line of its
-/// own in a shape's text, as `/lock` is, on the kinds that can be public (`scope`). A read-only shape's
-/// text can't be edited, so neither is ever offered there. `/private` on a shape something stands for
-/// is refused as the chip is: nothing is written, the shape shakes.
+/// own in a shape's text, as `/lock` is, or for the shapes selected, on the kinds that can be public
+/// (`scope`). Each reaches exactly the shapes it would change (`when`: `/public` the private ones,
+/// `/private` the public ones), so a selection of a public and a private shape counts `1 of 2` for each.
+/// A read-only shape's text can't be edited, so neither is ever offered there. `/private` on a shape
+/// something stands for is refused as the chip is: nothing is written, the shape shakes, and the rest
+/// of what it was given go private.
 @MainActor
 func registerPublishSlashCommands(into scope: inout ScopedRegistrar) {
     scope.slashCommands {
-        SlashCommand("public", command: .makePublic)
+        SlashCommand("public", command: .makePublic, when: { $0[PublicProperty.self] != true })
         SlashCommand("private", command: .makePrivate, when: { $0[PublicProperty.self] == true }, tries: true)
     }
 }

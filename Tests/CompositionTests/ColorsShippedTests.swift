@@ -76,6 +76,42 @@ import Types
         expectEqual(editor.document[note]?.ownColor, nil)
         expectEqual(text(), "keep")
     },
+    test("/color for two notes and a frame selected lists the colors once and a pick colors all three in one step, Change Color; a reference selected too is left out, `3 of 4`; one undo takes it all back") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let ann = editor.add(StickyNote(frame: CGRect(x: 100, y: 100, width: 200, height: 200), text: "Ann"))
+        let bo = editor.add(StickyNote(frame: CGRect(x: 400, y: 100, width: 200, height: 200), text: "Bo"))
+        let group = editor.add(Frame(frame: CGRect(x: 100, y: 400, width: 500, height: 300)), title: "Group")
+        let reference = editor.add(Reference(frame: CGRect(x: 700, y: 100, width: 120, height: 32)))
+        let state = try require(editor.slashCommands)
+        let three = [ann, bo, group]
+        @MainActor func owns() -> [ShapeColor?] { three.map { editor.document[$0]?.ownColor } }
+
+        editor.selectedShapeIDs = three
+        let command = try require(state.command(named: "color", for: .selection(editor.selectedShapeIDs)))
+        expectEqual(command.shapes, three)
+        expect(!command.isPartial)
+        expectEqual(command.choices().map(\.title), ["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink", "Edit Colors…"])
+        expect(state.run(command, choosing: try require(command.choices().first { $0.title == "teal" })))
+        expectEqual(owns(), [.teal, .teal, .teal])
+        expectEqual(editor.undoHistory.undoName, "Change Color")
+        editor.undo()
+        expectEqual(owns(), [nil, nil, nil], "one step")
+        editor.redo()
+        expectEqual(owns(), [.teal, .teal, .teal])
+
+        editor.selectedShapeIDs = three + [reference]
+        let withReference = try require(state.command(named: "color", for: .selection(editor.selectedShapeIDs)))
+        expectEqual(withReference.shapes, three, "a reference has no color")
+        expectEqual(withReference.targetCount, 4)
+        expect(withReference.isPartial)
+        expect(withReference.choices().map(\.title).contains("None"), "they hold one now")
+        expect(state.run(withReference, choosing: try require(withReference.choices().first { $0.title == "None" })))
+        expectEqual(owns(), [nil, nil, nil])
+        expectEqual(editor.undoHistory.undoName, "Change Color")
+        expectEqual(editor.document[reference]?.ownColor, nil)
+    },
     test("Color ▸ is in the menu of a note, a frame and an arrow, after Is a ▸ where there is one, and not in a reference's; choosing a color colors the shape") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

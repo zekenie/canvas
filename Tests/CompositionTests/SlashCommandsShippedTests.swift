@@ -3,14 +3,17 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Frames
 import LanguageModels
 import Locking
 import Mentions
 import Publishing
+import References
 import Selection
 import ShippedTesting
 import SlashCommands
 import StickyNotes
+import Subboards
 import TestKit
 import TextEditing
 import Titles
@@ -21,6 +24,30 @@ import Titles
 private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
 
 @MainActor let slashCommandsShippedTests = Suite("Slash commands, as shipped", [
+    test("typed for a selection, as the command bar is, one shape of each shipped kind lists what it can take, in order; a locked note unlock alone; a mix counts each row's reach") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let state = try require(editor.slashCommands)
+        let note = editor.add(StickyNote(frame: noteFrame, text: "Note"))
+        let frame = editor.add(Frame(frame: CGRect(x: 400, y: 100, width: 400, height: 300)))
+        let subboard = editor.add(Subboard(frame: CGRect(x: 900, y: 100, width: 240, height: 160)))
+        let arrow = editor.add(Arrow(start: .free(CGPoint(x: 100, y: 600)), end: .free(CGPoint(x: 400, y: 600))))
+        let reference = editor.add(Reference(frame: CGRect(x: 500, y: 600, width: 120, height: 32)))
+        let locked = editor.add(StickyNote(frame: CGRect(x: 100, y: 800, width: 200, height: 200), text: "Locked"))
+        editor.lock([locked])
+        @MainActor func listed(_ ids: [ShapeID]) -> [String] { state.commands(for: .selection(ids)).map(\.name) }
+        expectEqual(listed([note]), ["title", "lock", "public", "is-a", "color", "move-to", "move-near"], "a note's text lists the same")
+        expectEqual(listed([frame]), ["turn-into-subboard", "title", "lock", "public", "color", "move-to", "move-near"], "typeable nowhere before: a frame has no text")
+        expectEqual(listed([subboard]), ["title", "lock", "public", "color", "move-to", "move-near"])
+        expectEqual(listed([arrow]), ["lock", "is-a", "color"], "its label's list, and its color")
+        expectEqual(listed([reference]), ["lock", "move-to", "move-near"])
+        expectEqual(listed([locked]), ["unlock"], "a locked note only what can act on it")
+        let mixed = state.commands(for: .selection([note, frame, arrow])).map { "\($0.name) \($0.shapes.count) of \($0.targetCount)" }
+        expectEqual(mixed, ["lock 3 of 3", "public 2 of 3", "is-a 2 of 3", "color 3 of 3", "move-to 2 of 3", "move-near 2 of 3", "turn-into-subboard 1 of 3"],
+                    "the first shape's order, then what only later shapes offer; title, one shape's, left out")
+    },
+
     test("/lock typed on a new line of a note and entered locks it: editing ends, the line is gone from its text, Undo is Undo Lock, and the step before is the typing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

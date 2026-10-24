@@ -5,7 +5,9 @@ import TestKit
 
 // Which shapes each command takes: its rule, which is also what the `@` picker lists on its line. /move-to
 // takes a corral or a pocket (a frame, a subboard) on any board the app can show, that would take the
-// shape; /move-near any shape but what goes with the one moved.
+// shape; /move-near any shape but what goes with the one moved. For several shapes (the shapes selected),
+// /move-to asks the rule Move To ▸ and the table of contents' drops ask, of the block they make, and
+// /move-near the same of every one of them.
 
 @MainActor let movingTakingTests = Suite("What each command takes", [
     test("/move-to takes corrals and pockets, on the board shown and on other boards: a pocket's board, and a pocket's pocket") {
@@ -124,5 +126,48 @@ import TestKit
         expect(!h.admits("move-near", on: p, t), "what's on its board")
         expect(h.admits("move-near", on: p, b))
         expect(h.admits("move-near", on: a, k), "a shape near the corral it's in")
+    },
+
+    test("/move-to takes no corral too small to hold the box around the shapes selected, though it takes one of them; one just the block's size it takes") {
+        let a = ShapeID(), b = ShapeID(), c = ShapeID(), narrow = ShapeID(), short = ShapeID(), snug = ShapeID(), roomy = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(box(a, 0, 0), box(b, 200, 0), box(c, 0, 200), corral(narrow, at(500, 0, 250, 800)),
+                                                         corral(short, at(900, 0, 800, 250)), corral(snug, at(1800, 0, 300, 300)), corral(roomy, at(2200, 0, 400, 400)))))
+        for target in [narrow, short, snug, roomy] { expect(h.admits("move-to", on: a, target), "one box goes in \(target)") }
+        let block = [a, b, c]
+        expect(!h.admits("move-to", onSelection: block, narrow), "300 across the block, 250 across the corral")
+        expect(!h.admits("move-to", onSelection: block, short))
+        expect(h.admits("move-to", onSelection: block, snug), "just its size")
+        expect(h.admits("move-to", onSelection: block, roomy))
+        expect(!h.admits("move-to", onSelection: [a, b], narrow), "two boxes, 300 across")
+        expect(h.admits("move-to", onSelection: [a, c], narrow), "two boxes, 100 across and 300 down")
+        let before = h.file, revision = h.editor.revision
+        expect(!h.run("move-to", onSelection: block, with: narrow), "not accepted: nothing is run")
+        expectEqual(h.file, before)
+        expectEqual(h.editor.revision, revision, "nothing committed")
+    },
+
+    test("/move-to takes nothing that goes with any of the shapes selected, which the box alone would take: a corral among them, what it holds at any depth, a corral on the board of a pocket it holds") {
+        let k = ShapeID(), kk = ShapeID(), kp = ShapeID(), g = ShapeID(), s = ShapeID(), f = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(k, at(0, 0, 900, 700)), corral(kk, at(50, 50, 500, 400), in: k), pocket(kp, 600, 50, in: k),
+                                                         box(s, 1000, 1000), corral(f, at(1200, 0, 1400, 1300))),
+                                             children: [kp: board(corral(g, at(0, 0, 400, 300)))]))
+        let selection = [s, k]
+        for target in [k, kk, kp, g] {
+            expect(h.admits("move-to", onSelection: [s], target), "the box alone goes in \(target)")
+            expect(!h.admits("move-to", onSelection: selection, target), "not with the corral that has it: \(target)")
+        }
+        expect(h.admits("move-to", onSelection: selection, f), "another corral takes both: the box around them, 1100 across, goes in one 1400 across")
+    },
+
+    test("/move-near takes nothing that goes with any of the shapes selected, or that is one of them: a corral among them, what it holds, a box that is one of them; the others it takes") {
+        let k = ShapeID(), a = ShapeID(), s = ShapeID(), t = ShapeID(), p = ShapeID(), u = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(k, at(0, 0, 600, 400)), box(a, 50, 50, in: k), box(s, 800, 0), box(t, 1000, 0), pocket(p, 0, 600)),
+                                             children: [p: board(box(u, 0, 0))]))
+        for target in [s, k, a, u] { expect(!h.admits("move-near", onSelection: [s, k, p], target), "\(target)") }
+        expect(h.admits("move-near", onSelection: [s, k, p], t))
+        expect(h.admits("move-near", onSelection: [s, t], k), "boxes beside a corral")
+        expect(h.admits("move-near", onSelection: [s, t], a), "or beside a box in it")
+        expect(!h.admits("move-near", onSelection: [s, t], t), "but not beside one of them")
+        expect(!h.admits("move-near", onSelection: [t, s], s), "whichever is first")
     },
 ])

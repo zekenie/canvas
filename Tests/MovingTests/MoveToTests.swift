@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import SlashCommands
+import TableOfContents
 import TestKit
 
 // /move-to: into a corral, as `canvas draw` puts a shape `in "F"` (against its top-left, 40 in, pushed clear
@@ -48,14 +49,22 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expectEqual(h.editor.holder(of: s), f, "in the corral it was moved to")
     },
 
-    test("a shape in the inner corral, moved to the outer one, leaves the inner one") {
+    test("a shape in the inner corral, moved to the outer one, leaves the inner one: beside it, kept in the outer one, as Move To ▸ and a drop on the outer corral's row put it") {
         let f = ShapeID(), g = ShapeID(), b = ShapeID(), s = ShapeID()
-        let h = try movingHarness(CanvasFile(root: board(corral(f, at(100, 100, 800, 500)), corral(g, at(120, 120, 300, 300), in: f),
-                                                         box(b, 140, 140, in: g), box(s, 280, 280, in: g))))
+        let file = CanvasFile(root: board(corral(f, at(100, 100, 800, 500)), corral(g, at(120, 120, 300, 300), in: f),
+                                          box(b, 140, 140, in: g), box(s, 280, 280, in: g)))
+        let h = try movingHarness(file)
         expect(h.admits("move-to", on: s, f), "the outer corral isn't where it is: it's in the inner one")
         expect(h.run("move-to", on: s, with: f))
-        expectEqual(h.frame(of: s), at(460, 140))
+        // `/move-to` goes by Move To ▸'s rule (`Drop`), so that it, the menu and the table of contents refuse and land
+        // alike, and it can move several shapes as one block: a shape nested in the corral it is moved to leaves the
+        // nested one beside it (right of it, 80 away, centered on it), kept within the outer one. It used to be put at the
+        // outer corral's top-left, 40 in, pushed clear of what it holds ((460, 140)).
+        expectEqual(h.frame(of: s), at(500, 220))
         expectEqual(h.editor.holder(of: s), f)
+        let reference = try droppingHarness(file)
+        expect(reference.drop([s], on: f, .on))
+        expectEqual(h.frame(of: s), reference.frame(of: s), "where a drop on the outer corral's row puts it")
     },
 
     test("into a corral with no room from its top-left (the inner corral pushes it out the bottom): from its top-right corner") {
@@ -176,6 +185,112 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expectEqual(h.editor.undoHistory.undoName, "Move")
         h.editor.undo()
         expectEqual(h.file.board(containing: s), BoardID(owner: p), "undone")
+    },
+
+    test("three boxes selected, /move-to a corral: one block, the box around them 40 in from its top-left as a single box is, each where it was to the others, in the corral; one step, Move, that undo takes back exactly") {
+        let f = ShapeID(), a = ShapeID(), b = ShapeID(), c = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(f, at(100, 100, 800, 600)), box(a, 1000, 0), box(b, 1200, 0), box(c, 1000, 200))))
+        let before = h.file, selection = [a, b, c]
+        expect(h.admits("move-to", onSelection: selection, f))
+        expect(h.run("move-to", onSelection: selection, with: f))
+        expectEqual(selection.map { h.frame(of: $0) }, [at(140, 140), at(340, 140), at(140, 340)], "300 across and down, 40 in; the same 200 apart")
+        expectEqual(selection.map { h.editor.holder(of: $0) }, [f, f, f])
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+        expect(selection.allSatisfy { h.editor.isGliding($0) }, "from where they were")
+        let after = h.file
+        h.editor.undo()
+        try expectFile(h, before, "all three where they were, in nothing: one step")
+        h.editor.redo()
+        try expectFile(h, after, "and in the corral again")
+    },
+
+    test("several selected, /move-to a corral that holds a box: the block lands clear of it, still in one piece") {
+        let f = ShapeID(), x = ShapeID(), a = ShapeID(), b = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(f, at(100, 100, 800, 500)), box(x, 140, 140, in: f), box(a, 1000, 0), box(b, 1200, 100))))
+        expect(h.run("move-to", onSelection: [a, b], with: f))
+        // The block is 300 across and 200 down; it is put right of the box at the corral's top-left, as one box is.
+        expectEqual(h.frame(of: a), at(280, 140))
+        expectEqual(h.frame(of: b), at(480, 240))
+        expectEqual([a, b, x].map { h.editor.holder(of: $0) }, [f, f, f])
+    },
+
+    test("a corral and a box selected, /move-to another corral: one block, the corral taking what it holds along, each where it was to the others") {
+        let k = ShapeID(), a = ShapeID(), s = ShapeID(), f = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(k, at(0, 0, 300, 200)), box(a, 40, 40, in: k), box(s, 400, 0), corral(f, at(1000, 0, 900, 600)))))
+        expect(h.run("move-to", onSelection: [k, s], with: f))
+        // The box around the corral and the box: (0, 0) to (500, 200), put 40 in.
+        expectEqual(h.frame(of: k), at(1040, 40, 300, 200))
+        expectEqual(h.frame(of: a), at(1080, 80), "carried by as much")
+        expectEqual(h.frame(of: s), at(1440, 40))
+        expectEqual([k, s].map { h.editor.holder(of: $0) }, [f, f])
+        expectEqual(h.editor.holder(of: a), k, "still in the corral it was in")
+    },
+
+    test("boxes some of which are in the corral already: those that aren't come in, those that are stay where they are") {
+        let f = ShapeID(), a = ShapeID(), b = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(f, at(100, 100, 800, 500)), box(a, 500, 300, in: f), box(b, 1000, 0))))
+        expect(h.run("move-to", onSelection: [a, b], with: f))
+        expectEqual(h.frame(of: a), at(500, 300), "where it was")
+        expectEqual(h.frame(of: b), at(140, 140), "40 in, clear of it")
+        expectEqual([a, b].map { h.editor.holder(of: $0) }, [f, f])
+        expect(!h.admits("move-to", onSelection: [a], f), "all of them in it: nowhere to go")
+    },
+
+    test("three boxes selected, /move-to a pocket: onto its board as one block, the box around them at the middle of the view it would be shown with, each where it was to the others; gone from the board shown; one step that undo takes back, both boards exactly") {
+        let p = ShapeID(), a = ShapeID(), b = ShapeID(), c = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(a, 400, 0), box(b, 600, 0), box(c, 400, 200))))
+        h.editor.viewportDidResize(to: viewSize)
+        let before = h.file, selection = [a, b, c]
+        expect(h.run("move-to", onSelection: selection, with: p))
+        expectEqual(selection.map { h.editor.document[$0] == nil }, [true, true, true], "off the board shown")
+        expectEqual(selection.map { h.file.board(containing: $0) }, Array(repeating: BoardID(owner: p), count: 3))
+        expectEqual(selection.map { h.frame(of: $0) }, [at(350, 200), at(550, 200), at(350, 400)], "300 across and down, centered on (500, 350)")
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+        expectEqual(h.editor.board, .root, "the window stays where it is")
+        let after = h.file
+        h.editor.undo()
+        try expectFile(h, before, "the root as it was, and no board for the pocket")
+        h.editor.redo()
+        try expectFile(h, after, "and on the pocket's board again")
+    },
+
+    test("several selected, /move-to a corral on a pocket's board: onto that board, in the corral there") {
+        let p = ShapeID(), q = ShapeID(), a = ShapeID(), b = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(a, 400, 0), box(b, 600, 100)),
+                                             children: [p: board(corral(q, at(0, 0, 800, 600)))]))
+        expect(h.run("move-to", onSelection: [a, b], with: q))
+        expectEqual([a, b].map { h.file.board(containing: $0) }, [BoardID(owner: p), BoardID(owner: p)])
+        expectEqual(h.frame(of: a), at(40, 40))
+        expectEqual(h.frame(of: b), at(240, 140))
+        expectEqual([a, b].map { h.container(of: $0) }, [q, q])
+    },
+
+    test("a shape in a corral on a pocket's board, /move-to the pocket whose board is shown: out of the corral and onto the board, beside the corral, as a drop among the board's rows puts it; a box already on the board is not taken") {
+        let p = ShapeID(), k = ShapeID(), s = ShapeID(), t = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0)), children: [p: board(corral(k, at(0, 0, 600, 400)), box(s, 100, 100, in: k), box(t, 900, 0))]))
+        expect(h.enter(p))
+        expect(!h.admits("move-to", on: t, p), "a box on the pocket's board already")
+        expect(h.admits("move-to", on: s, p), "a box in a corral there is not")
+        expect(h.run("move-to", on: s, with: p))
+        expectEqual(h.frame(of: s), at(680, 150), "right of the corral, 80 away, centered on it")
+        expectEqual(h.container(of: s), nil)
+        expectEqual(h.editor.board, BoardID(owner: p), "the window stays where it is")
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+    },
+
+    test("into a corral that a corral nested in it covers, with no room clear of it: nothing changes and no step is made, since put down over the nested corral the shape would be in that one, not in the corral it was moved to") {
+        let f = ShapeID(), g = ShapeID(), s = ShapeID()
+        let file = CanvasFile(root: board(corral(f, at(100, 100, 300, 300)), corral(g, at(110, 110, 280, 280), in: f), box(s, 1000, 1000)))
+        let h = try movingHarness(file)
+        let before = h.file, revision = h.editor.revision
+        expect(h.admits("move-to", on: s, f), "the rule is about the corral's size, not what's in it")
+        h.run("move-to", on: s, with: f)
+        expectEqual(h.file, before, "where it was: a drop puts them where it says, or nowhere")
+        expectEqual(h.editor.revision, revision, "nothing committed")
+        expectEqual(h.editor.undoHistory.undoName, nil, "no step")
+        let reference = try droppingHarness(file)
+        reference.drop([s], on: f, .on)
+        expectEqual(reference.file, before, "and a drop of its row on the corral's leaves it so")
     },
 
     test("a target it no longer takes moves nothing: a corral that's gone") {

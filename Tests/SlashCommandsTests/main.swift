@@ -1,4 +1,4 @@
 import TestKit
 
 runTests([slashRegistrationTests, slashResolutionTests, slashArgumentsTests, slashLineTests, slashPickerTests, slashTypingTests,
-          slashChoiceListTests, slashChoicePickTests, slashChoiceClosingTests, slashDeclaredCommandTests])
+          slashChoiceListTests, slashChoicePickTests, slashChoiceClosingTests, slashDeclaredCommandTests, slashTargetTests, slashBarTests])

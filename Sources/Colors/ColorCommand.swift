@@ -16,14 +16,15 @@ enum ColorCommandRows {
     /// What reads on its chip: white on most, black on a yellow.
     static func chipInk(_ swatch: Swatch) -> NSColor { NSColor(swatch.onSolid) }
 
-    /// The built-in colors in one group, the file's in the next, then `None` while the shape has a
-    /// color of its own.
-    static func rows(for owner: ShapeID, in editor: CanvasEditor) -> [SlashChoice] {
+    /// The built-in colors in one group, the file's in the next, then `None` while any of the shapes has
+    /// a color of its own (taking it away from those that have one, and leaving the rest), then Edit
+    /// Colors…. For one shape these are the rows its text lists.
+    static func rows(for owners: [ShapeID], in editor: CanvasEditor) -> [SlashChoice] {
         guard let book = editor.colors else { return [] }
         var rows = book.names.map { named in
             SlashChoice(named.name, title: named.name, group: named.isBuiltIn ? 0 : 1, chip: chip(named.swatch), chipInk: chipInk(named.swatch))
         }
-        if editor.document[owner]?.ownColor != nil {
+        if owners.contains(where: { editor.document[$0]?.ownColor != nil }) {
             rows.append(SlashChoice(noneID, title: ColorsStyle.none, group: 2))
         }
         rows.append(SlashChoice(editID, title: ColorsStyle.editColors, group: 3))
@@ -40,19 +41,22 @@ enum ColorCommandRows {
 }
 
 /// `/color`, on the kinds that have colors (`scope`): a list of the named colors, each row a chip in
-/// its color, and a typed hex value as a row of its own. `None` is in the list while the shape has a
-/// color of its own. Edit Colors… is its last row, opening the list of the file's colors. A pick runs at once ("Change Color"). A read-only shape is offered nothing.
+/// its color, and a typed hex value as a row of its own. `None` is in the list while any of the shapes
+/// it acts on has a color of its own. Edit Colors… is its last row, opening the list of the file's
+/// colors. A pick runs at once ("Change Color"), on every shape the command acts on together, in one
+/// step: a text's line is one shape, a selection's the selected shapes that have colors (a shape of a
+/// kind with none isn't among them: the list says "2 of 3"). A read-only shape is offered nothing.
 @MainActor
 func registerColorCommand(into scope: inout ScopedRegistrar) {
     scope.slashCommands {
-        SlashCommand("color", argument: ColorsStyle.colorArgument,
-                     choices: { owner, editor in ColorCommandRows.rows(for: owner, in: editor) },
-                     otherwise: { typed, _, editor in ColorCommandRows.valueRow(typed: typed, in: editor) },
-                     step: ColorsStyle.changeColor) { owner, choice, editor in
+        SlashCommand.together("color", argument: ColorsStyle.colorArgument,
+                              choices: { owners, editor in ColorCommandRows.rows(for: owners, in: editor) },
+                              otherwise: { typed, _, editor in ColorCommandRows.valueRow(typed: typed, in: editor) },
+                              step: ColorsStyle.changeColor) { owners, choice, editor in
             if choice.id == ColorCommandRows.editID {
                 ColorListPanel.show(for: editor)
             } else {
-                editor.setColor(ShapeColor(choice.id), of: [owner])
+                editor.setColor(ShapeColor(choice.id), of: owners)
             }
         }
     }

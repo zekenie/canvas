@@ -89,16 +89,25 @@ public final class MentionPicker {
         list.onChange = { [weak self] in self?.onChange?() }
     }
 
-    /// A picker listing what `mentions` offers text of `scope` on `owner` (which may mention itself),
-    /// and of that only the shapes of `kinds` and what `admitting` admits, if there are any: the shapes
-    /// a slash command on the line takes (`SlashCommandTyping.admittedShapes(at:)`), asked wherever a
-    /// shape is listed. With kinds only their shapes are ranked (`MentionState.candidates`).
-    public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owner: ShapeID?,
+    /// A picker listing what `mentions` offers text of `scope` for `owners` (the text's shape, which may
+    /// mention itself, or the shapes the command bar types for: nearness is measured from the middle of
+    /// them, and each is left out of Nearby), and of that only the shapes of `kinds` and what
+    /// `admitting` admits, if there are any: the shapes a slash command on the line takes
+    /// (`SlashCommandTyping.admittedShapes(at:)`), asked wherever a shape is listed. With kinds only
+    /// their shapes are ranked (`MentionState.candidates`).
+    public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owners: [ShapeID],
                                              kinds: Set<ShapeKind>? = nil,
                                              admitting admits: (@MainActor (ShapeID) -> Bool)? = nil) {
         self.init(at: location) { [weak mentions] query in
-            mentions?.candidates(matching: query, in: scope, for: owner, kinds: kinds, admitting: admits) ?? MentionCandidates()
+            mentions?.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits) ?? MentionCandidates()
         }
+    }
+
+    /// `init(at:mentions:scope:owners:kinds:admitting:)` for text on `owner`, or on no shape.
+    public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owner: ShapeID?,
+                                             kinds: Set<ShapeKind>? = nil,
+                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil) {
+        self.init(at: location, mentions: mentions, scope: scope, owners: owner.map { [$0] } ?? [], kinds: kinds, admitting: admits)
     }
 
     // MARK: Opening and closing

@@ -548,10 +548,13 @@ public struct TitlesPlugin: ListedPlugin {
         }
         // `/title Groceries` typed on a line of a shape's text: names the shape, on the kinds that can
         // be named. A derived title isn't Titles' to set, and is renamed where it's
-        // derived from; a pill in the line is its name, "@Label", as the argument's text reads it.
+        // derived from; a pill in the line is its name, "@Label", as the argument's text reads it. It
+        // acts on one shape (`reach: .one`): a title tells a shape apart, and several shapes given one
+        // would be several paths alike, which Boards warns of, so it isn't listed for a selection of
+        // more than one.
         registrar.forShapes(holding: TitleProperty.self) { named in
             named.slashCommands {
-                SlashCommand("title", argument: "title") { shape, arguments in shape[TitleProperty.self] = arguments.text }
+                SlashCommand("title", argument: "title", reach: .one) { shape, arguments in shape[TitleProperty.self] = arguments.text }
             }
         }
         // Zoomed out, where a skeleton has no pill, the title is said on the shape.

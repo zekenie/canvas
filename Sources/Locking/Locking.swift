@@ -12,8 +12,8 @@ import TableOfContents
 /// so the list says which are locked at a glance. Shapes are locked from the context menu or with
 /// ⇧L, and unlocked there or with a click on the chip, which then shows the lock open for a moment (a
 /// click on it locks the shape again) before it goes; a shape's text can lock it too, with `/lock` on
-/// a line of its own (slash commands). Each of them runs one of two commands, Lock or Unlock (⇧L
-/// whichever can). Whether a shape is locked is something it knows (tldraw's `isLocked`): an added
+/// a line of its own, and `/lock` and `/unlock` act on the shapes selected (slash commands). Each of
+/// them runs one of two commands, Lock or Unlock (⇧L whichever can). Whether a shape is locked is something it knows (tldraw's `isLocked`): an added
 /// property every kind opts into, `locked`. What makes it hold is
 /// the core's: this plugin says locked shapes are read-only (`registrar.readOnlyShapes`), and the
 /// core refuses changes to them.
@@ -124,11 +124,16 @@ public struct LockingPlugin: ListedPlugin {
             }
             // VoiceOver says a locked shape is, after what it is: "Checkout, Note, locked".
             lock.accessibility { shape, _ in shape.isLocked ? AccessibleTraits(states: [LockingStyle.accessibleState]) : nil }
-            // `/lock` typed on a line of a shape's text (Titles offers `/title`, the other command that
-            // ships), while the shape can be locked. There is no `/unlock`: a locked shape's text can't be
-            // edited, so it couldn't be typed.
+            // `/lock` and `/unlock`, typed on a line of a shape's text or for the shapes selected, each
+            // reaching exactly the shapes it changes (`when`, so a mix of locked and unlocked shapes counts
+            // `1 of 2` for each) while Lock or Unlock can act on them (its rule). `/unlock` is reached
+            // for a selection, never from a shape's text: a locked shape's text can't be edited, so
+            // nothing could be typed there, while a selection offers a locked shape the commands a
+            // plugin declared, whose rule can act on it (Unlock on a locked shape; neither on one a
+            // locked frame holds).
             lock.slashCommands {
-                SlashCommand("lock", command: .lock)
+                SlashCommand("lock", command: .lock, when: { !$0.isLocked })
+                SlashCommand("unlock", command: .unlock, when: { $0.isLocked })
             }
         }
     }

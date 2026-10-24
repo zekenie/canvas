@@ -429,6 +429,45 @@ private let petAnswer = """
         expectEqual(editor.undoHistory.undoName, "New Type")
         window.pressEscape()
     },
+    test("/is-a on ten notes selected: New type “Feat” puts one type note beside them and makes all ten Feats, in one step, New Type; a frame selected with them is not one of the shapes it acts on; undo takes the note and the ten links") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        var notes: [ShapeID] = []
+        for index in 0..<10 {
+            let origin = CGPoint(x: 100 + CGFloat(index % 5) * 240, y: 100 + CGFloat(index / 5) * 240)
+            notes.append(editor.add(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: "Note \(index)"))))
+        }
+        let frame = editor.add(Frame(frame: CGRect(x: 100, y: 800, width: 400, height: 300)), title: "Group")
+        editor.selectedShapeIDs = notes + [frame]
+        let state = try require(editor.slashCommands)
+        let command = try require(state.command(named: "is-a", for: .selection(notes + [frame])), "/is-a is offered for the selection")
+        expectEqual(command.shapes, notes, "a frame holds no `is`")
+        expectEqual(command.targetCount, 11)
+        expect(command.isPartial)
+        expectEqual(command.choices().map(\.title), ["Type", "Relationship Type"], "no types in the file yet")
+        let row = try require(command.choice(otherwise: "feat"), "the New type row")
+        expectEqual(row.title, "New type “Feat”")
+        expect(state.run(command, choosing: row))
+        let feat = try require(editor.document.shapes.map(\.id).first { !notes.contains($0) && $0 != frame }, "the new note")
+        expectEqual(editor.document.shapes.count, 12, "one note")
+        expectEqual(editor.document[feat]?[TitleProperty.self], "Feat")
+        expectEqual(editor.document[feat]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
+        expectEqual(editor.document[feat]?[PublicProperty.self], nil, "not public")
+        for note in notes { expectEqual(editor.document[note]?[IsAProperty.self]?.map(\.shape), [feat], "Note \(notes.firstIndex(of: note) ?? -1) is a Feat") }
+        expectEqual(editor.document[frame]?[IsAProperty.self], nil)
+        expectEqual(editor.types?.instances(of: feat), Set(notes))
+        expectEqual(editor.undoHistory.undoName, "New Type")
+        expectEqual(editor.selectedShapeIDs, [feat])
+        // Beside the box around the ten, clear of each.
+        let around = notes.compactMap { editor.document[$0]?.box }.reduce(CGRect.null) { $0.union($1) }
+        let box = try require(editor.document[feat]?.box)
+        expect(!box.intersects(around), "beside the ten: \(box) and \(around)")
+        editor.endEditing()
+        editor.undo()
+        expectEqual(editor.document[feat], nil, "the note goes")
+        for note in notes { expectEqual(editor.document[note]?[IsAProperty.self], nil, "and the links, in the one step") }
+    },
     test("New type from an arrow's label puts a note beside the arrow; in a frame the new note is in the frame") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

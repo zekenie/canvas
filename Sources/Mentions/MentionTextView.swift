@@ -35,7 +35,10 @@ extension NSPasteboard.PasteboardType {
 ///   that takes one shape the `@` picker lists only the shapes the command admits, ranking only
 ///   those of the kinds it names (`SlashCommandTyping.admittedShapes(at:)`), so what's picked there
 ///   is one it can take. The `@` picker's keys come first while it's open, so Return in the picker
-///   picks.
+///   picks. With no owner it may host them for another target (`hostSlashCommands(for:)`: the command
+///   bar's field, typing for the shapes selected, which the `@` picker then lists for).
+/// - It may be one line (`isOneLine`, the command bar's field): Return and line breaks insert
+///   nothing, one pasted is a space, and `onEmptied` hears the text emptied.
 /// - Copy writes the stored form (`.mentionText`) and the plain one ("@Label"); paste reads the
 ///   stored form first, then plain text, where a whole `@[label](shape:UUID)` becomes a pill.
 /// - Each pill shows its target as it's called now: the view observes its targets
@@ -71,9 +74,15 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// The open picker, and the window its list shows in.
     public private(set) var picker: MentionPicker?
     private var pickerWindow: CaretListWindow?
-    /// The slash commands typed in the text: nil without a shape that owns it, or without the
-    /// plugin that offers them.
+    /// The slash commands typed in the text: nil without a shape that owns it (unless it hosts them
+    /// for another target), or without the plugin that offers them.
     public private(set) var slashCommands: SlashCommandTyping?
+    /// One line of text (the command bar's field): Return and line breaks insert nothing, and a line
+    /// break or tab put in some other way (a paste, a drop) is a space, a pill staying a pill. Its
+    /// container's lines are its host's to set.
+    public var isOneLine = false
+    /// The text was emptied, while it's one line (the command bar closes as its `/` goes).
+    public var onEmptied: (@MainActor () -> Void)?
     /// The substitutions the picker turned off while it's open, to put back as they were.
     private var substitutions: CaretListSubstitutions?
     /// The target the picker's highlight hovers, and the one the pointer hovers.
@@ -226,11 +235,37 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     }
 
     public override func didChangeText() {
+        if isOneLine { foldLineBreaks() }
         isChangingText = false
         reported = mentionText
         holdWrittenLabels()
         super.didChangeText()
         textDidChangeHere()
+        if isOneLine, textStorage?.length == 0 { onEmptied?() }
+    }
+
+    /// Each line break and tab of one line's text a space, in place: a character for a character, so the
+    /// selection and the steps of undo stay where they were, and a pill stays a pill.
+    private func foldLineBreaks() {
+        guard let storage = textStorage else { return }
+        let breaks = CharacterSet.newlines.union(CharacterSet(charactersIn: "\t"))
+        var found = (storage.string as NSString).rangeOfCharacter(from: breaks)
+        guard found.location != NSNotFound else { return }
+        storage.beginEditing()
+        while found.location != NSNotFound {
+            storage.replaceCharacters(in: found, with: String(repeating: " ", count: found.length))
+            let rest = NSRange(location: NSMaxRange(found), length: storage.length - NSMaxRange(found))
+            found = (storage.string as NSString).rangeOfCharacter(from: breaks, options: [], range: rest)
+        }
+        storage.endEditing()
+    }
+
+    // One line: Return with nothing to pick, and a line break, insert nothing.
+    public override func insertNewline(_ sender: Any?) { if !isOneLine { super.insertNewline(sender) } }
+    public override func insertLineBreak(_ sender: Any?) { if !isOneLine { super.insertLineBreak(sender) } }
+    public override func insertParagraphSeparator(_ sender: Any?) { if !isOneLine { super.insertParagraphSeparator(sender) } }
+    public override func insertNewlineIgnoringFieldEditor(_ sender: Any?) {
+        if !isOneLine { super.insertNewlineIgnoringFieldEditor(sender) }
     }
 
     /// Each pill holds the name the host was last told it has (its live one, when the text was
@@ -545,6 +580,20 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         openPicker(at: at)
     }
 
+    /// Hosts slash commands typed for `target`, in place of those it hosts for its owner, if any: the
+    /// command bar's field, typing for the shapes selected (`MentionSlashBarPlugin`). A pill is a shape
+    /// given, as in an owner's text, and the `@` picker lists for the target's shapes. Nil, hosting
+    /// none, without the plugin that offers them.
+    @discardableResult
+    public func hostSlashCommands(for target: SlashTarget) -> SlashCommandTyping? {
+        slashCommands?.close()
+        slashCommands = mentions?.slashCommandState.map { commands in
+            SlashCommandTyping(over: self, target: target, commands: commands,
+                               arguments: { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) })
+        }
+        return slashCommands
+    }
+
     /// A Return that runs a command line, or picks from the slash commands' list, is the commands'
     /// before the view's own; the `@` picker's keys come first while it's open.
     public override func keyDown(with event: NSEvent) {
@@ -559,7 +608,9 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         guard let mentions, style != nil, isEditable else { return }
         slashCommands?.close()
         let shapes = slashCommands?.admittedShapes(at: location)
-        let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owner: owner,
+        // Listed for the shapes its commands type for (the owner, or the bar's selection), else the owner.
+        let owners = slashCommands?.target.shapes ?? owner.map { [$0] } ?? []
+        let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owners: owners,
                                    kinds: shapes?.kinds, admitting: shapes?.rule)
         self.picker = picker
         substitutions = CaretListSubstitutions(of: self)

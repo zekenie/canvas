@@ -113,8 +113,8 @@ public final class SlashCommandPicker {
         }
         listed = found.map(\.command)
         let rows: [CaretListRow] = found.isEmpty ? [.empty(SlashCommandStyle.noMatches)] : found.map { command, matched in
-            .item(CaretListItem(command.name, matched: matched, detail: command.argument,
-                                spoken: command.argument.map { "\(command.name), takes \($0)" } ?? command.name))
+            .item(CaretListItem(command.name, matched: matched, detail: SlashCommandStyle.detail(of: command),
+                                spoken: SlashCommandStyle.spoken(of: command)))
         }
         list.setRows(rows)
     }
@@ -145,6 +145,29 @@ enum SlashCommandStyle {
     static let accessibilityLabel = "Commands"
     /// The longest name that's typed to list by, in characters.
     static let nameLimit = 40
+
+    // MARK: How many shapes a row acts on
+
+    /// How many of the target's shapes a command acts on, where that's fewer than all: "4 of 5".
+    static func reach(_ count: Int, of total: Int) -> String { "\(count) of \(total)" }
+
+    /// The same, said: "acts on 4 of 5 shapes".
+    static func spokenReach(_ count: Int, of total: Int) -> String { "acts on \(count) of \(total) shapes" }
+
+    /// What a row says after the name: the hint, and how many it acts on where that's fewer than the
+    /// target's shapes ("type · 4 of 5"). A text's line is never partial, so a note's rows are its hints.
+    static func detail(of command: OfferedSlashCommand) -> String? {
+        guard command.isPartial else { return command.argument }
+        let reach = reach(command.shapes.count, of: command.targetCount)
+        return command.argument.map { "\($0) · \(reach)" } ?? reach
+    }
+
+    /// What VoiceOver says of a row: "is-a, takes type, acts on 4 of 5 shapes".
+    static func spoken(of command: OfferedSlashCommand) -> String {
+        let said = command.argument.map { "\(command.name), takes \($0)" } ?? command.name
+        guard command.isPartial else { return said }
+        return said + ", " + spokenReach(command.shapes.count, of: command.targetCount)
+    }
 
     // MARK: The command as typed (`SlashCommandTyping`'s highlights)
 

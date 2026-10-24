@@ -117,23 +117,76 @@ extension CanvasEditor {
     }
 }
 
-/// The rows of `/is-a`'s list for a shape.
+extension TypesStyle {
+    /// What a type's row says when only some of the shapes `/is-a` acts on would gain it: `2 of 3`.
+    static func reach(_ count: Int, of total: Int) -> String { "\(count) of \(total)" }
+}
+
+/// The rows of `/is-a`'s list for the shapes it acts on.
 @MainActor
 enum TypeChoices {
+    /// The rows for the shapes `/is-a` acts on, asked once when the list opens (a line of one shape's text is one shape). For
+    /// one shape they are `rowsForOne`'s; for several, as Is a ▸ lists them for a selection: `Type` while every shape can
+    /// be one and none is, `Relationship Type` likewise for its mark, then the types some shape would gain (the role partition,
+    /// `TypeRole`, and `admits` decide), by name, each saying how many would where that's fewer than all (`2 of 3`). Taking a type
+    /// off stays the menu's and the chips'. The cost is the distinct lists the shapes hold and their roles, never one ask for
+    /// each shape and type.
+    static func rows(for owners: [ShapeID], in editor: CanvasEditor) -> [SlashChoice] {
+        var seen = Set<ShapeID>()
+        let records = owners.filter { seen.insert($0).inserted }.compactMap { editor.document[$0] }
+        guard records.count > 1 else { return records.first.map { rowsForOne($0.id, in: editor) } ?? [] }
+        var rows: [SlashChoice] = []
+        let roles = records.map { TypeRole(of: $0, in: editor) }
+        if records.allSatisfy({ canBecomeType($0, in: editor) }) {
+            rows.append(typeRow())
+        }
+        if records.allSatisfy({ canBecomeRelationshipType($0, in: editor) }) {
+            rows.append(relationshipTypeRow())
+        }
+        guard let index = editor.types else { return rows }
+        // What a shape may be depends on its role and the list it holds, and, for a type (never its own type, nor one built on
+        // it) or a shape some list still names (a type taken away), on which shape it is. The others are asked a group at a time,
+        // for the distinct (role, list) they come in, and counted by the group's size; an arrow that is an end is of nothing.
+        struct Group: Hashable {
+            let role: TypeRole
+            let list: [TypeLink]
+        }
+        var groups: [Group: (owner: ShapeID, count: Int)] = [:]
+        var gains: [ShapeID: Int] = [:]
+        func ask(_ owner: ShapeID, as role: TypeRole, count: Int) {
+            for type in index.admitted(to: owner, replacing: role.replacing(owner, in: index)) where role.offers(type, in: index) {
+                gains[type, default: 0] += count
+            }
+        }
+        for (record, role) in zip(records, roles) where role != .end {
+            if role == .type || index.isType(record.id) || index.hasInstances(record.id) {
+                ask(record.id, as: role, count: 1)
+            } else {
+                groups[Group(role: role, list: index.links(of: record.id)), default: (record.id, 0)].count += 1
+            }
+        }
+        for (group, held) in groups { ask(held.owner, as: group.role, count: held.count) }
+        let graph = index.graph
+        for (position, type) in TypeIndex.sorted(gains.map { ($0.key, graph.names[$0.key]) }).enumerated() {
+            let gained = gains[type.type] ?? 0
+            let look = index.look(of: type.type)
+            rows.append(SlashChoice(type.type.rawValue.uuidString, title: type.name ?? TypesStyle.untitledType,
+                                    symbol: graph.relationshipTypes.contains(type.type) ? TypesStyle.relationshipTypeSymbol : TypesStyle.typeSymbol,
+                                    detail: gained < records.count ? TypesStyle.reach(gained, of: records.count) : nil,
+                                    group: 1, step: TypesStyle.addType, isPreferred: position == 0,
+                                    chip: type.name == nil ? TypesStyle.grayChip : look.row, chipInk: type.name == nil ? nil : look.rowInk))
+        }
+        return rows
+    }
+
     /// `Type` and `Relationship Type` (group 0) while the shape can be one and isn't, then the types the shape may be
     /// (`typeChoices`: the fitting in group 1, an arrow's misfits in group 2), by name, the first the one highlighted
     /// when nothing is typed. Asked once when the list opens. An arrow that is an end has none.
-    static func rows(for owner: ShapeID, in editor: CanvasEditor) -> [SlashChoice] {
+    private static func rowsForOne(_ owner: ShapeID, in editor: CanvasEditor) -> [SlashChoice] {
         var rows: [SlashChoice] = []
         guard let record = editor.document[owner], editor.relationships?.end(owner) == nil else { return rows }
-        if record[TypeSchemaProperty.self] == nil, editor.registry.canBeType(record.kind) {
-            rows.append(SlashChoice(TypeChoice.typeID, title: TypesStyle.typeChoice, symbol: TypesStyle.typeSymbol, group: 0, step: TypesStyle.makeType,
-                                    chip: TypesStyle.grayChip))
-        }
-        if record[RelationshipProperty.self] != true || record[TypeSchemaProperty.self] == nil, editor.registry.canBeRelationshipType(record.kind) {
-            rows.append(SlashChoice(TypeChoice.relationshipTypeID, title: TypesStyle.relationshipTypeChoice, symbol: TypesStyle.relationshipTypeSymbol, group: 0,
-                                    step: TypesStyle.makeRelationshipType, chip: TypesStyle.grayChip))
-        }
+        if canBecomeType(record, in: editor) { rows.append(typeRow()) }
+        if canBecomeRelationshipType(record, in: editor) { rows.append(relationshipTypeRow()) }
         let marked = editor.types?.graph.relationshipTypes ?? []
         for (index, type) in editor.typeChoices(for: owner).enumerated() {
             // A type's color, `Untitled` gray: what its pill and the chips of its instances are.
@@ -147,15 +200,44 @@ enum TypeChoices {
         return rows
     }
 
+    /// Whether `Type` makes the shape one: it holds no schema and its kind can.
+    private static func canBecomeType(_ record: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
+        record[TypeSchemaProperty.self] == nil && editor.registry.canBeType(record.kind)
+    }
+
+    /// Whether `Relationship Type` makes the shape one: it isn't one already and its kind can hold the mark.
+    private static func canBecomeRelationshipType(_ record: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
+        (record[RelationshipProperty.self] != true || record[TypeSchemaProperty.self] == nil) && editor.registry.canBeRelationshipType(record.kind)
+    }
+
+    private static func typeRow() -> SlashChoice {
+        SlashChoice(TypeChoice.typeID, title: TypesStyle.typeChoice, symbol: TypesStyle.typeSymbol, group: 0, step: TypesStyle.makeType,
+                    chip: TypesStyle.grayChip)
+    }
+
+    private static func relationshipTypeRow() -> SlashChoice {
+        SlashChoice(TypeChoice.relationshipTypeID, title: TypesStyle.relationshipTypeChoice, symbol: TypesStyle.relationshipTypeSymbol, group: 0,
+                    step: TypesStyle.makeRelationshipType, chip: TypesStyle.grayChip)
+    }
+
+    /// The shapes a pick acts on: those `/is-a` was found for, less an arrow that is an end of a relationship type, which is of
+    /// nothing (its list has no rows).
+    static func takers(among owners: [ShapeID], in editor: CanvasEditor) -> [ShapeID] {
+        guard let relationships = editor.relationships else { return owners }
+        return owners.filter { relationships.end($0) == nil }
+    }
+
     /// The one row offered for what was typed, when no row is titled so (the list puts it last): a new
-    /// type of that name, beside the shape (a relationship type, for an arrow). Nil for nothing typed, a name over a
-    /// title's limit, no kind that can be a type or has nothing to place it with, and an arrow that is an end.
-    static func newRow(typed: String, owner: ShapeID, editor: CanvasEditor) -> SlashChoice? {
-        guard editor.relationships?.end(owner) == nil, let name = newTypeName(typed), let kind = editor.newTypeKind(for: owner),
-              editor.registry.placement(for: kind) != nil else { return nil }
-        let relationship = editor.document[owner].map { editor.registry.relates($0.kind) } ?? false
+    /// type of that name, beside the shapes (a relationship type, for arrows). Nil for nothing typed, a name over a
+    /// title's limit, no kind that can be a type or has nothing to place it with, an arrow that is an end, and shapes
+    /// of two roles (some arrows that relate, some not): a new type is one kind of type.
+    static func newRow(typed: String, owners: [ShapeID], editor: CanvasEditor) -> SlashChoice? {
+        guard !owners.isEmpty, owners.allSatisfy({ editor.relationships?.end($0) == nil }) else { return nil }
+        let relating = owners.map { editor.ownerRelates($0) }
+        guard relating.allSatisfy({ $0 }) || !relating.contains(true) else { return nil }
+        guard let name = newTypeName(typed), let kind = editor.newTypeKind(for: owners), editor.registry.placement(for: kind) != nil else { return nil }
         return SlashChoice(TypeChoice.newPrefix + name, title: TypesStyle.newTypeRow(name),
-                           step: relationship && editor.registry.canBeRelationshipType(kind) ? TypesStyle.newRelationshipType : TypesStyle.newType)
+                           step: relating[0] && editor.registry.canBeRelationshipType(kind) ? TypesStyle.newRelationshipType : TypesStyle.newType)
     }
 
     /// What the typed text names a new type: trimmed, its spaces folded, the first letter a capital,

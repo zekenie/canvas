@@ -67,4 +67,24 @@ import TestKit
         expectEqual(h.editor.holder(of: k), f)
         expectEqual(h.frame(of: a), at(580, 80), "the box went along")
     },
+
+    test("a frozen box among the shapes selected is not one of the shapes the commands act on, `2 of 3`: the others move as a block and the frozen one stays; with every one frozen, neither command is offered") {
+        let f = ShapeID(), a = ShapeID(), b = ShapeID(), c = ShapeID(), log = RefusalLog()
+        let h = try movingHarness(CanvasFile(root: board(corral(f, at(100, 100, 800, 600)), box(a, 1000, 0), box(b, 1200, 0), box(c, 1000, 200))), log: log)
+        h.freeze([b])
+        let state = try require(h.editor.slashCommands)
+        for name in ["move-to", "move-near"] {
+            let command = try require(state.command(named: name, for: .selection([a, b, c])), name)
+            expectEqual(command.shapes, [a, c], name)
+            expect(command.isPartial, name)
+        }
+        expect(h.run("move-to", onSelection: [a, b, c], with: f))
+        expectEqual(h.frame(of: a), at(140, 140), "the two that can move are a block of 100 across and 300 down, 40 in")
+        expectEqual(h.frame(of: c), at(140, 340))
+        expectEqual(h.frame(of: b), at(1200, 0), "the frozen one stays")
+        expectEqual(h.editor.holder(of: b), nil)
+        expectEqual(log.refusals, [], "left out, not refused: nothing shakes")
+        h.freeze([a, c])
+        expectEqual(state.commands(for: .selection([a, b, c])).map(\.name), [])
+    },
 ])

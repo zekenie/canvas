@@ -11,7 +11,8 @@ import Geometry
 public struct CanvasCard {
     /// What it is about, as its plugin knows it. Also the coalescing key of its undo step.
     public let id: AnyHashable
-    /// The shape it hangs from, if one: it closes when that shape leaves the board or is drawn as a skeleton.
+    /// The shape it hangs from, if one: it closes when that shape leaves the board or is drawn as a skeleton
+    /// (unless it `showsZoomedOut`).
     public let shape: ShapeID?
     /// The rect it is under, world units.
     public internal(set) var anchor: CGRect
@@ -26,6 +27,11 @@ public struct CanvasCard {
     /// The step keeps the action's name. Needs a `stepName`; a card shown outside an action is as
     /// any card.
     public let adoptsPress: Bool
+    /// Not about what a shape draws (the command bar, which acts on the selection): it shows and stays
+    /// at any zoom. False: refused, and closed `.skeleton`, while its shape is drawn as a skeleton (with
+    /// no shape, while the board is), since every other card shows what a shape holds, which a skeleton
+    /// shows none of.
+    public let showsZoomedOut: Bool
     /// What VoiceOver calls it ("Fields of Checkout"); the host names its box with it. Nil: "Card".
     public let accessibilityLabel: String?
     /// The size it wants, in view points, no larger than `room`. Asked each time it is laid out.
@@ -37,7 +43,7 @@ public struct CanvasCard {
 
     public init<ID: Hashable & Sendable>(id: ID, about shape: ShapeID? = nil, anchor: CGRect, view: NSView,
                                          firstResponder: NSResponder? = nil, stepName: String? = nil,
-                                         adoptsPress: Bool = false, accessibilityLabel: String? = nil,
+                                         adoptsPress: Bool = false, showsZoomedOut: Bool = false, accessibilityLabel: String? = nil,
                                          size: @escaping @MainActor (CGSize) -> CGSize,
                                          didClose: @escaping @MainActor (CanvasCardClosing) -> Void = { _ in }) {
         self.id = AnyHashable(id)
@@ -47,6 +53,7 @@ public struct CanvasCard {
         self.firstResponder = firstResponder
         self.stepName = stepName
         self.adoptsPress = adoptsPress
+        self.showsZoomedOut = showsZoomedOut
         self.accessibilityLabel = accessibilityLabel
         self.size = size
         self.didClose = didClose
@@ -81,9 +88,10 @@ extension CanvasEditor {
 
     /// Shows it, in place of any other (which hears `.replaced`, before this one shows), and the host is
     /// told once. False, showing
-    /// nothing and leaving any card showing as it is: its shape is not on the board shown, or is drawn
-    /// as a skeleton (`drawsSkeleton(of:)`); with no shape, while `drawsSkeletons`. A shape being
-    /// edited is drawn in full at any zoom, so a card on it shows.
+    /// nothing and leaving any card showing as it is: its shape is not on the board shown, or, for a
+    /// card that doesn't show zoomed out (`showsZoomedOut`), is drawn as a skeleton (`drawsSkeleton(of:)`);
+    /// with no shape, while `drawsSkeletons`. A shape being edited is drawn in full at any zoom, so a
+    /// card on it shows.
     ///
     /// With a `stepName` its commits are one undo step from now until it closes: commit with
     /// `transact(nil, coalescing: card.id)`, outside any action (inside a press or a group a commit is
@@ -95,8 +103,8 @@ extension CanvasEditor {
     @discardableResult
     public func showCard(_ card: CanvasCard) -> Bool {
         if let shape = card.shape {
-            guard document[shape] != nil, !drawsSkeleton(of: shape) else { return false }
-        } else if drawsSkeletons {
+            guard document[shape] != nil, card.showsZoomedOut || !drawsSkeleton(of: shape) else { return false }
+        } else if drawsSkeletons, !card.showsZoomedOut {
             return false
         }
         // The one it replaces is taken down without telling the host, which hears of the new one.
@@ -156,13 +164,13 @@ extension CanvasEditor {
     func pressIsOnCard(_ world: CGPoint) -> Bool { shownCard?.anchor.contains(world) == true }
 
     /// The camera, the zoom level or the view moved, or the card's anchor did: the card closes when
-    /// its shape is drawn as a skeleton, or its anchor is out of the view, as the caret list closes
+    /// its shape is drawn as a skeleton (but one that `showsZoomedOut`), or its anchor is out of the view, as the caret list closes
     /// when its anchor leaves the visible text. An empty viewport (a test that gave no size) closes
     /// nothing. The anchor is judged where the camera is headed (`cameraTarget`), as a reveal judges the shapes it brings
     /// into view: a card opened on a shape the camera is gliding to stays open through the glide.
     func cardFollowsCamera() {
         guard let card = shownCard else { return }
-        if card.shape.map(drawsSkeleton(of:)) ?? drawsSkeletons { return closeCard(.skeleton) }
+        if !card.showsZoomedOut, card.shape.map(drawsSkeleton(of:)) ?? drawsSkeletons { return closeCard(.skeleton) }
         let view = unobscuredViewport
         if !view.isEmpty, !view.intersects(cameraTarget.toView(card.anchor)) { closeCard(.leftView) }
     }

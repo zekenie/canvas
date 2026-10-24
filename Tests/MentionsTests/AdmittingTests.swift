@@ -447,4 +447,27 @@ private func frame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 120, he
             expectEqual(r.state.candidates(matching: query, in: AnyMentionable.self, for: r.owner, among: nil), r.candidates(query), "\"\(query)\"")
         }
     },
+
+    test("for several owners (the command bar's selection) nearness is from the middle of the box around them, and each is left out of Nearby; one owner is what it was") {
+        let h = try mentionHarness()
+        let ann = h.editor.add(Jot(CGRect(x: 0, y: 0, width: 100, height: 100), text: ""), titled: "Ann")
+        let bob = h.editor.add(Jot(CGRect(x: 1000, y: 0, width: 100, height: 100), text: ""), titled: "Bob")
+        // Their middle is at x 550; Ann's at 50.
+        let near = h.editor.add(Plate(CGRect(x: 200, y: 0, width: 100, height: 100)), titled: "Plate near Ann")
+        let middle = h.editor.add(Plate(CGRect(x: 500, y: 0, width: 100, height: 100)), titled: "Plate in the middle")
+        let far = h.editor.add(Plate(CGRect(x: 1300, y: 0, width: 100, height: 100)), titled: "Plate far off")
+        let state = h.editor.mentionState
+        expectEqual(state.candidates(matching: "", in: AnyMentionable.self, for: [ann, bob]).nearby.map(\.id), [middle, near, far],
+                    "the middle's nearest first, neither owner")
+        expectEqual(state.candidates(matching: "", in: AnyMentionable.self, for: ann).nearby.map(\.id), [near, middle, bob, far], "Ann's own, Bob among them")
+        expectEqual(state.candidates(matching: "plate", in: AnyMentionable.self, for: [ann, bob]).matches.first?.id, middle, "nearness ranks the matches too")
+        expectEqual(state.candidates(matching: "bob", in: AnyMentionable.self, for: [ann, bob]).matches.map(\.id), [bob],
+                    "an owner whose name doesn't hold the @query typed is a match as any shape is: the text isn't its own")
+        expectEqual(state.candidates(matching: "", in: AnyMentionable.self, for: []), state.candidates(matching: "", in: AnyMentionable.self, for: nil),
+                    "no owners: no shape's text, nothing near")
+        for query in ["", "plate", "an", "zzzzq"] {
+            expectEqual(state.candidates(matching: query, in: AnyMentionable.self, for: [ann]), state.candidates(matching: query, in: AnyMentionable.self, for: ann),
+                        "one owner: \"\(query)\"")
+        }
+    },
 ])

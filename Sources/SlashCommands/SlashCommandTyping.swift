@@ -4,9 +4,10 @@ import FuzzyMatching
 import TextEditing
 
 /// Slash commands typed in a text view: the list at a `/` on an empty line, choosing from it, and
-/// entering a command line. It belongs to one shape's text (`owner`) and asks `commands` what the
-/// shape offers, so the same text view code serves a note on the canvas, a card's description and a
-/// box in the panel. The host, an `EditingTextView` subclass that makes one, tells it what's typed
+/// entering a command line. It types for a target (`SlashTarget`): one shape's text (`.text(owner)`)
+/// or the shapes selected (the command bar's field), and asks `commands` what the target offers, so the
+/// same text view code serves a note on the canvas, a card's description, a box in the panel and the
+/// bar. The host, an `EditingTextView` subclass that makes one, tells it what's typed
 /// (`didType`) and where the text and the caret go (`didChange`), asks it first about each key
 /// (`takesKey`), and shows its list as its own (`caretListWindow` returns `window` while it's open),
 /// so the view's keys, and its closing as the keyboard or the window goes, are every caret list's.
@@ -59,22 +60,51 @@ public final class SlashCommandTyping {
     /// The window the open list shows in, while it's open.
     public private(set) var window: CaretListWindow?
 
+    /// What it types for: one shape's text, or the shapes selected.
+    public let target: SlashTarget
+    /// Called once a command's line is out of the text and before the command runs (a Return on a line,
+    /// a pick of a choice), with the command and the row picked: the command bar closes there, so the
+    /// command runs from the canvas, as from a key. Nothing of the view or this object is touched after it.
+    public var willRun: (@MainActor (_ command: OfferedSlashCommand, _ choice: SlashChoice?) -> Void)?
+
     private weak var view: EditingTextView?
     private weak var commands: SlashCommandState?
-    private let owner: ShapeID
     private let readArguments: (@MainActor (NSRange) -> SlashArguments)?
+    /// Whether what's typed can name a shape: without, the commands that take one are left out of the
+    /// lists, the marks and Return (a field that can't name a shape could never give them one).
+    private let takesShapes: Bool
     /// The substitutions the list turned off while it's open, to put back as they were.
     private var substitutions: CaretListSubstitutions?
     private var isWriting = false
 
+    /// For a line of one shape's text: `init(over:target:commands:arguments:)` with `.text(owner)`.
+    public convenience init(over view: EditingTextView, owner: ShapeID, commands: SlashCommandState,
+                            arguments: (@MainActor (NSRange) -> SlashArguments)? = nil) {
+        self.init(over: view, target: .text(owner), commands: commands, arguments: arguments)
+    }
+
     /// `arguments` reads what's typed in a range as runs (a mention text view's pills as shapes);
-    /// the default reads it as plain text.
-    public init(over view: EditingTextView, owner: ShapeID, commands: SlashCommandState,
-                arguments: (@MainActor (NSRange) -> SlashArguments)? = nil) {
+    /// the default reads it as plain text. `takesShapes` false leaves out the commands that take a
+    /// shape, for a field that can't name one.
+    public init(over view: EditingTextView, target: SlashTarget, commands: SlashCommandState,
+                arguments: (@MainActor (NSRange) -> SlashArguments)? = nil, takesShapes: Bool = true) {
         self.view = view
-        self.owner = owner
+        self.target = target
         self.commands = commands
         readArguments = arguments
+        self.takesShapes = takesShapes
+    }
+
+    /// What the target offers now that this field can give what it takes.
+    private func offered(by commands: SlashCommandState) -> [OfferedSlashCommand] {
+        let all = commands.commands(for: target)
+        return takesShapes ? all : all.filter { !$0.takesShape }
+    }
+
+    /// The command of a name the target offers now that this field can give what it takes.
+    private func command(named name: String, in commands: SlashCommandState) -> OfferedSlashCommand? {
+        guard let found = commands.command(named: name, for: target), takesShapes || !found.takesShape else { return nil }
+        return found
     }
 
     // MARK: Opening and closing
@@ -93,7 +123,7 @@ public final class SlashCommandTyping {
         guard selection.length == 0, selection.location > 0 else { return }
         let location = selection.location - 1
         guard SlashCommandPicker.opens(in: storage.string as NSString, at: location) else { return }
-        let offered = commands.commands(for: owner)
+        let offered = self.offered(by: commands)
         guard !offered.isEmpty else { return }
         open(at: location, offering: offered, over: view)
     }
@@ -154,7 +184,7 @@ public final class SlashCommandTyping {
         guard selection.length == 0, selection.location > 1,
               let line = SlashCommandLine(in: storage.string as NSString, caret: selection.location),
               line.arguments.length == 0,
-              let command = commands.command(named: line.name, for: owner), command.takesChoice else { return }
+              let command = command(named: line.name, in: commands), command.takesChoice else { return }
         openChoices(command, nameRange: line.nameRange, start: selection.location, over: view)
     }
 
@@ -218,7 +248,7 @@ public final class SlashCommandTyping {
         guard view.caretListWindow == nil else { return false }
         let selection = view.selectedRange()
         guard selection.length == 0, let line = SlashCommandLine(in: text, caret: selection.location),
-              let command = commands.command(named: line.name, for: owner) else { return false }
+              let command = command(named: line.name, in: commands) else { return false }
         if command.takesChoice { return runTyped(command, line: line, in: text) }
         let arguments = arguments(in: line.arguments)
         guard command.accepts(arguments) else { return false }
@@ -249,14 +279,15 @@ public final class SlashCommandTyping {
     /// choice. The command is asked of the shape again, as `run` does; nothing of the view or this
     /// object is touched after, since a pick may end this editing and take the view away.
     private func choose(_ choice: SlashChoice, of command: OfferedSlashCommand, line location: Int) -> Bool {
-        guard let commands, let current = commands.command(named: command.name, for: owner), current.takesChoice,
+        guard let commands, let current = self.command(named: command.name, in: commands), current.takesChoice,
               let storage = view?.textStorage, location < storage.length else { return false }
         let text = storage.string as NSString
         var start = 0, end = 0, contentsEnd = 0
         text.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
         close()
         guard write(NSRange(location: location, length: contentsEnd - location), with: "") else { return false }
-        commands.run(current, on: owner, choosing: choice)
+        willRun?(current, choice)
+        commands.run(current, choosing: choice)
         return true
     }
 
@@ -307,10 +338,11 @@ public final class SlashCommandTyping {
     /// offers, which doesn't take the command back); not found or not accepting, nothing is taken
     /// out.
     private func run(_ command: OfferedSlashCommand, with arguments: SlashArguments, removing range: NSRange) -> Bool {
-        guard let commands, let current = commands.command(named: command.name, for: owner), current.accepts(arguments) else { return false }
+        guard let commands, let current = self.command(named: command.name, in: commands), current.accepts(arguments) else { return false }
         close()
         guard write(range, with: "") else { return false }
-        commands.run(current, on: owner, with: arguments)
+        willRun?(current, nil)
+        commands.run(current, with: arguments)
         return true
     }
 
@@ -342,7 +374,7 @@ public final class SlashCommandTyping {
     public func admittedShapes(at location: Int) -> SlashShapeRule? {
         guard let storage = view?.textStorage, let commands,
               let line = SlashCommandLine(in: storage.string as NSString, caret: location),
-              let command = commands.command(named: line.name, for: owner) else { return nil }
+              let command = command(named: line.name, in: commands) else { return nil }
         return command.shapeRule
     }
 
@@ -352,7 +384,7 @@ public final class SlashCommandTyping {
     public func listsChoices(at location: Int) -> Bool {
         guard let storage = view?.textStorage, let commands,
               let line = SlashCommandLine(in: storage.string as NSString, caret: location),
-              let command = commands.command(named: line.name, for: owner) else { return false }
+              let command = command(named: line.name, in: commands) else { return false }
         return command.takesChoice
     }
 
@@ -382,7 +414,7 @@ public final class SlashCommandTyping {
         let selection = view.selectedRange()
         guard let commands, selection.length == 0,
               let line = SlashCommandLine(in: storage.string as NSString, caret: selection.location),
-              let command = commands.command(named: line.name, for: owner) else { return [] }
+              let command = command(named: line.name, in: commands) else { return [] }
         var found = [mark(line.nameRange, SlashCommandStyle.commandFill, over: view)]
         if command.takesChoice { return found }
         if line.arguments.length > 0, command.accepts(arguments(in: line.arguments)) {

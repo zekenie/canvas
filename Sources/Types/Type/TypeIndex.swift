@@ -130,6 +130,10 @@ public final class TypeIndex {
     /// How many times the colors a list's chain holds were worked out (debug builds only): once a list,
     /// until a chain or a type's color changes, however many shapes hold it.
     @ObservationIgnored public private(set) var chainColorsRead = 0
+    /// How many times the types a shape may be were listed (`admitted(to:replacing:)`, which `choices(for:replacing:)` asks;
+    /// debug builds only): `/is-a`'s rows for several shapes list them once for each distinct role and list, however many
+    /// shapes hold one.
+    @ObservationIgnored public private(set) var choicesAsked = 0
     #endif
 
     init(editor: CanvasEditor) {
@@ -369,8 +373,17 @@ public final class TypeIndex {
     /// untitled one last: what `/is-a`'s list shows. O(types) a time it is asked, which is when a
     /// list opens.
     public func choices(for owner: ShapeID, replacing: Set<ShapeID> = []) -> [(type: ShapeID, name: String?)] {
+        Self.sorted(admitted(to: owner, replacing: replacing).map { ($0, entries[$0]?.name) })
+    }
+
+    /// The types `owner` may be (`admits`, with what a pick replaces), in no order: what `choices(for:)` orders, for a list
+    /// that counts them over several shapes before it orders them once. O(types).
+    func admitted(to owner: ShapeID, replacing: Set<ShapeID> = []) -> [ShapeID] {
+        #if DEBUG
+        choicesAsked += 1
+        #endif
         let already = already(owner, replacing: replacing)
-        return Self.sorted(entries.keys.filter { admits($0, for: owner, already: already) }.map { ($0, entries[$0]?.name) })
+        return entries.keys.filter { admits($0, for: owner, already: already) }
     }
 
     /// The types a menu for `shapes` lists: every type some shape has or may be (`admits`, with what a pick replaces
@@ -384,8 +397,9 @@ public final class TypeIndex {
 
     /// Orders types by name, case aside, an untitled one last, the
     /// id the tie. Each name is lowercased once and compared as plain text: Foundation's collation and
-    /// folding cost several times what the rest of opening a list does.
-    private static func sorted(_ types: [(ShapeID, String?)]) -> [(type: ShapeID, name: String?)] {
+    /// folding cost several times what the rest of opening a list does. The one order every list of types
+    /// is in, `/is-a`'s for several shapes too (`TypeChoices.rows(for:in:)`, which counts before it orders).
+    static func sorted(_ types: [(ShapeID, String?)]) -> [(type: ShapeID, name: String?)] {
         let keyed = types.map { (type: $0.0, name: $0.1, key: $0.1?.lowercased(), id: $0.0.rawValue.uuidString) }
         return keyed.sorted { a, b in
             switch (a.key, b.key) {

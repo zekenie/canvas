@@ -34,7 +34,7 @@ In the guide, `docs/plugin-system.md`: [Describing a shape for VoiceOver](../../
 
 ## Announcements
 
-- `editor.announce(_:priority:)` (`AnnouncementPriority`: low, medium, high) says something to whoever uses VoiceOver, through `editorAnnounce`; debug builds keep every one in `editor.announcements`, which tests read. The zoom's label announces where the zoom settled through it (`ZoomIndicatorStyle.announcement`, "Zoom 50%"), the canvas "N selected" (`CanvasUIStyle.selected`) as several shapes become selected, and Selection's `RefusalShake` "Locked" or "N shapes locked" when a try is refused on read-only shapes, once while tries of them keep coming (a held key: [selection](selection.md)).
+- `editor.announce(_:priority:)` (`AnnouncementPriority`: low, medium, high) says something to whoever uses VoiceOver, through `editorAnnounce`; debug builds keep every one in `editor.announcements`, which tests read. The zoom's label announces where the zoom settled through it (`ZoomIndicatorStyle.announcement`, "Zoom 50%"), the canvas "N selected" (`CanvasUIStyle.selected`) as several shapes become selected, Selection's `RefusalShake` "Locked" or "N shapes locked" when a try is refused on read-only shapes, once while tries of them keep coming (a held key: [selection](selection.md)), and the command bar the step a command run from it makes ("Change Color", "Change Color, on 3 of 5 shapes" where it reached fewer than the bar was opened on: `SlashBarStyle.acted`, [slash commands](slash-commands.md)). The bar is a card, so a popover to VoiceOver, named "Command for Groceries" (one shape as VoiceOver calls it, else "5 shapes"), its field "Command".
 
 ## CanvasUI's elements
 

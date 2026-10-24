@@ -127,13 +127,16 @@ let ships = [
     "Arrows.ArrowsPlugin", "StickyNotes.StickyNotesPlugin", "Subboards.SubboardsPlugin", "Frames.FramesPlugin", "References.ReferencesPlugin",
     // After Validation: what's shown on shapes draws over its outline.
     "Validation.ValidationPlugin", "Adornments.AdornmentsPlugin", "DetailPanel.DetailPanelPlugin", "ContextMenus.ContextMenusPlugin",
-    // Slash commands: the list at a `/` in the text views Mentions hosts it in. Titles offers `/title`, Locking `/lock`.
-    "SlashCommands.SlashCommandsPlugin",
+    // Slash commands: the list at a `/` in the text views Mentions hosts it in, and the bar `/` opens under the
+    // selection (after Keyboard and Selection, whose points it fills). Titles offers `/title`, Locking `/lock`.
+    "SlashCommands.SlashCommandsPlugin", "SlashCommands.SlashBarPlugin",
     // The table of contents, and its list in the detail panel where the panel has no one shape to show.
     "TableOfContents.TableOfContentsPlugin", "TableOfContents.ContentsOverviewPlugin",
     "Titles.TitlesPlugin",
     // After Titles, whose names its pills show, and the table of contents, whose rows it names.
     "Mentions.MentionsPlugin",
+    // Mentions' text as the command bar's field, so its pills are shapes a command takes (after the bar and Mentions).
+    "Mentions.MentionSlashBarPlugin",
     // Getting around a file's boards (a subboard's): opening one, ⌘↑, the path. Then the board shown's
     // name over the table of contents, with the way up.
     "Boards.BoardsPlugin", "Boards.BoardContentsPlugin",
@@ -262,7 +265,7 @@ let package = Package(
         .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard", "Palette"]), // layer: platform
         .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Keyboard", "Selection", "TextEditing"]), // layer: platform
         .target(name: "ContextMenus", dependencies: ["Canvas", "Keyboard", "Selection"]),                 // layer: platform
-        .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "TextEditing"]), // layer: platform
+        .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "TextEditing"]), // layer: platform
         .target(name: "TableOfContents", dependencies: ["Canvas", "DetailPanel", "Selection", "TextEditing"]), // layer: platform
         .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Palette", "Selection"]),       // layer: platform
         .target(name: "Find", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: platform
@@ -346,7 +349,7 @@ let package = Package(
         .executableTarget(name: "PaletteTests", dependencies: ["Palette", "TestKit"], path: "Tests/PaletteTests"), // layer: test
         .executableTarget(name: "ColorsTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Colors", "ContextMenus", "DetailPanel", "Draw", "Geometry", "Keyboard", "Palette", "Queries", "QueryLanguage", "Selection", "SlashCommands", "TestKit", "TextEditing", "Topology", "Validation"], path: "Tests/ColorsTests"), // layer: test
         .executableTarget(name: "ContextMenusTests", dependencies: ["Canvas", "CanvasTesting", "ContextMenus", "Keyboard", "Selection", "TestKit"], path: "Tests/ContextMenusTests"), // layer: test
-        .executableTarget(name: "SlashCommandsTests", dependencies: ["Canvas", "CanvasTesting", "SlashCommands", "TestKit", "TextEditing"], path: "Tests/SlashCommandsTests"), // layer: test
+        .executableTarget(name: "SlashCommandsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "Keyboard", "Selection", "SlashCommands", "TestKit", "TextEditing"], path: "Tests/SlashCommandsTests"), // layer: test
         .executableTarget(name: "TableOfContentsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit"], path: "Tests/TableOfContentsTests"), // layer: test
         .executableTarget(name: "AdornmentsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Palette", "Selection", "TestKit"], path: "Tests/AdornmentsTests"), // layer: test
         .executableTarget(name: "ClipboardTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Clipboard", "ContextMenus", "Geometry", "Grouping", "Keyboard", "Selection", "TestKit"], path: "Tests/ClipboardTests"), // layer: test

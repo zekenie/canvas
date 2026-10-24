@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="370" viewBox="0 0 760 370" role="img">
+<title>A choice picked with Return</title>
+<defs>
+<pattern id="dots" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.1" fill="#D9D9D3"/></pattern>
+<filter id="shadow" x="-10%" y="-20%" width="120%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.16"/></filter>
+<filter id="soft" x="-10%" y="-20%" width="120%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000" flood-opacity="0.12"/></filter>
+<marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7A7A73"/></marker>
+</defs>
+<rect x="0" y="0" width="760" height="370" rx="10" fill="#F4F4F1" stroke="#E4E4DE" stroke-width="1" />
+<rect x="0" y="0" width="760" height="370" rx="10" fill="url(#dots)" stroke="none" stroke-width="1" />
+<text x="28" y="40" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" fill="#1F1F1E" font-weight="700" text-anchor="start">Pick a color, press Return</text>
+<rect x="40" y="80" width="230" height="120" rx="4" fill="#FDF1B6" stroke="#E3CF78" stroke-width="1" filter="url(#soft)"/>
+<text x="54" y="106" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" fill="#3B3523" font-weight="600" text-anchor="start">Groceries</text>
+<text x="54" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13.5" fill="#3B3523" font-weight="400" text-anchor="start">milk, eggs, coffee</text>
+<rect x="35" y="75" width="240" height="130" rx="10" fill="none" stroke="#2F6FEB" stroke-width="2" />
+<rect x="40" y="222" width="330" height="36" rx="8" fill="#FFFFFF" stroke="#E2E2DC" stroke-width="1" filter="url(#shadow)"/>
+<text x="54" y="245.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15" fill="#1F1F1E" font-weight="400" text-anchor="start">/color bl</text>
+<line x1="136.76999999999998" y1="231" x2="136.76999999999998" y2="249" stroke="#2F6FEB" stroke-width="2"/>
+<text x="356" y="245" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" fill="#66665F" font-weight="400" text-anchor="end">Groceries</text>
+<rect x="48" y="266" width="220" height="72" rx="8" fill="#FFFFFF" stroke="#E2E2DC" stroke-width="1" filter="url(#shadow)"/>
+<rect x="53" y="273" width="210" height="28" rx="5" fill="#DCE7FD" stroke="none" stroke-width="1" />
+<rect x="60" y="276" width="61.269999999999996" height="22" rx="11.0" fill="#2F6FEB" stroke="none" stroke-width="1" />
+<circle cx="73" cy="287.0" r="4.5" fill="#FFFFFF" fill-opacity="0.9"/>
+<text x="84" y="292.0" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13.5" fill="#FFFFFF" font-weight="600" text-anchor="start">Blue</text>
+<rect x="60" y="306" width="106.765" height="22" rx="11.0" fill="#1E4FB8" stroke="none" stroke-width="1" />
+<circle cx="73" cy="317.0" r="4.5" fill="#FFFFFF" fill-opacity="0.9"/>
+<text x="84" y="322.0" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13.5" fill="#FFFFFF" font-weight="600" text-anchor="start">Brand Blue</text>
+<rect x="470" y="80" width="230" height="120" rx="4" fill="#DCE8FC" stroke="#9DBCF3" stroke-width="1" filter="url(#soft)"/>
+<text x="484" y="106" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" fill="#3B3523" font-weight="600" text-anchor="start">Groceries</text>
+<text x="484" y="128" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13.5" fill="#3B3523" font-weight="400" text-anchor="start">milk, eggs, coffee</text>
+<rect x="465" y="75" width="240" height="130" rx="10" fill="none" stroke="#2F6FEB" stroke-width="2" />
+<path d="M392,140 L452,140" stroke="#9A9A92" stroke-width="2" marker-end="url(#head)"/>
+<text x="470" y="236" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" fill="#66665F" font-weight="400" text-anchor="start">After Return: the note is blue, the bar</text>
+<text x="470" y="254" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" fill="#66665F" font-weight="400" text-anchor="start">is gone, the note is still selected.</text>
+<text x="470" y="282" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" fill="#66665F" font-weight="400" text-anchor="start">Edit › Undo Change Color takes it back.</text>
+</svg>

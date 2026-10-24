@@ -164,4 +164,22 @@ import Topology
         try menu(h, on: s).choose("Move To", items[1])
         expect(h.file[BoardID(owner: first)][s] != nil, "the board of the first pocket")
     },
+
+    test("/move-to takes exactly the places the menu lists for the shapes selected, a block's: both refuse a corral too small for the box around them, a locked one, one that goes with them, and the one they are in") {
+        let s = ShapeID(), t = ShapeID(), near = ShapeID(), small = ShapeID(), locked = ShapeID(), holder = ShapeID(), p = ShapeID(), moving = ShapeID()
+        let h = try titledHarness(CanvasFile(root: board(box(s, 0, 0), box(t, 200, 0), titled(corral(near, at(0, 400, 600, 500)), "Near"),
+                                                         titled(corral(small, at(800, 400, 250, 500)), "Small"), titled(corral(locked, at(1200, 400, 600, 500)), "Locked"),
+                                                         titled(corral(holder, at(0, 1100, 800, 600)), "Holder"), box(moving, 100, 1200, in: holder),
+                                                         titled(pocket(p, 2000, 0), "Plans")),
+                                             children: [p: board()]))
+        h.freeze([locked])
+        let places: [(title: String, id: ShapeID)] = [("Near", near), ("Small", small), ("Locked", locked), ("Holder", holder), ("Plans", p)]
+        for selection in [[s, t], [s, moving], [t], [moving]] {
+            let listed = Set(moveItems(try menu(h, on: selection[0], selecting: selection)) ?? [])
+            let taken = Set(places.filter { h.admits("move-to", onSelection: selection, $0.id) }.map(\.title))
+            expectEqual(listed, taken, "the shapes \(selection.count) selected from \(String(describing: h.frame(of: selection[0])?.origin))")
+        }
+        expectEqual(Set(moveItems(try menu(h, on: s, selecting: [s, t])) ?? []), ["Near", "Holder", "Plans"], "not Small (250 across, the block 300), not Locked")
+        expectEqual(Set(moveItems(try menu(h, on: moving, selecting: [moving])) ?? []), ["Near", "Small", "Plans"], "one box fits Small; not Holder, which holds it, nor Locked")
+    },
 ])

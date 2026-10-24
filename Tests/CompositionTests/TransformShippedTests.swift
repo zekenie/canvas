@@ -296,6 +296,43 @@ import Validation
         expectEqual(h.file, before, "one step")
     },
 
+    test("/turn-into-subboard run for a frame and the frame inside it, selected, turns both in one step, the inner one first, as the menu's item does; a frame and a note list it for the frame alone, 1 of 2") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let g = Groceries(pasteboard)
+        let h = g.h
+        let state = try require(h.editor.slashCommands)
+        let before = h.file
+        let mixed = try require(state.command(named: "turn-into-subboard", for: .selection([g.frame, g.milk])))
+        expectEqual(mixed.shapes, [g.frame], "a note has nothing to turn into")
+        expectEqual(mixed.targetCount, 2)
+        expect(mixed.isPartial)
+
+        let target = SlashTarget.selection([g.frame, g.dairy])
+        let found = state.commands(for: target)
+        expectEqual(found.first?.name, "turn-into-subboard", "listed first, a command being placed where its plugin is")
+        let turn = try require(found.first)
+        expectEqual(turn.reach, .together, "handed both: one by one the outer frame would turn first, leaving the inner one on the subboard's board")
+        expectEqual(turn.shapes, [g.frame, g.dairy])
+        expect(!turn.isPartial)
+        expect(state.run(turn, with: SlashArguments([])))
+        expectEqual(h.editor.document.shapes.map(\.id), [g.frame, g.receipt, g.out])
+        expectEqual(h.file[BoardID(owner: g.frame)].shapes.map(\.id), [g.milk, g.eggs, g.dairy, g.between])
+        expectEqual(h.file[BoardID(owner: g.dairy)].shapes.map(\.id), [g.cheese])
+        expectEqual(h.file.record(g.frame)?.kind, Subboard.kind)
+        expectEqual(h.file.record(g.dairy)?.kind, Subboard.kind, "the frame inside is a subboard too")
+        expectEqual(h.file.record(g.dairy)?[TitleProperty.self], "Dairy")
+        expectEqual(h.file.record(g.dairy)?.box, CGRect(x: 130, y: 400, width: 240, height: 160), "at its own corner")
+        expectEqual(h.file.path(to: BoardID(owner: g.dairy)), [.root, BoardID(owner: g.frame), BoardID(owner: g.dairy)])
+        expectEqual(h.file.record(g.dairy)?.container, nil, "it isn't in the subboard it moved onto")
+        expectEqual(h.editor.undoHistory.undoName, "Turn into Subboard")
+        let after = h.file
+        h.editor.undo()
+        expectEqual(h.file, before, "one step")
+        h.editor.redo()
+        expectEqual(h.file, after)
+    },
+
     test("a frame on a subboard's board turns there, its own board one deeper in the file; Undo from the root shows the board it was made on and brings the frame back") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

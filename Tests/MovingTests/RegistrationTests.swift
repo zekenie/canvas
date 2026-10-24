@@ -43,6 +43,30 @@ import TestKit
         expect(!to.accepts(SlashArguments([])) && !near.accepts("Groceries"), "a shape, and nothing else")
     },
 
+    test("several shapes selected: each command acts on all of them together; a box and a link selected, each acts on the box alone, `1 of 2`, listed as it is for one") {
+        let h = try movingHarness()
+        let state = try require(h.editor.slashCommands)
+        let a = h.add(Box(at(0, 0))), b = h.add(Box(at(300, 0))), c = h.add(Disc(at(600, 0)))
+        let link = h.add(Link(from: a, to: b))
+        for name in ["move-to", "move-near"] {
+            let command = try require(state.command(named: name, for: .selection([a, b, c])), name)
+            expectEqual(command.reach, .together, name)
+            expectEqual(command.shapes, [a, b, c], name)
+            expect(!command.isPartial, name)
+            expect(command.takesShape, name)
+            let one = try require(state.command(named: name, for: .selection([a])), name)
+            expectEqual(one.argument, command.argument, name)
+            expectEqual(one.admittedKinds, command.admittedKinds, name)
+            expectEqual(one.stepName, "Move", name)
+            let mixed = try require(state.command(named: name, for: .selection([a, link])), name)
+            expectEqual(mixed.shapes, [a], name)
+            expectEqual(mixed.targetCount, 2, name)
+            expect(mixed.isPartial, name)
+        }
+        expectEqual(state.commands(for: .selection([link])).map(\.name), [], "a link alone is offered neither")
+        expectEqual(state.commands(for: .selection([a, b])).map(\.name), ["move-to", "move-near"], "two boxes: both, in that order")
+    },
+
     test("a frozen shape offers neither: its text can't be typed in") {
         let h = try movingHarness()
         let state = try require(h.editor.slashCommands)

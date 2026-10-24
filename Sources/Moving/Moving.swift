@@ -3,17 +3,21 @@ import CoreGraphics
 import SlashCommands
 import TableOfContents
 
-/// Moving, as a plugin: two slash commands that move the shape whose text they're typed in to another
-/// shape, anywhere in the file the app can show. `/move-to @Groceries` puts it in a frame, or onto a
-/// subboard's board; `/move-near @Checkout` puts it beside a shape, on the first of its four sides
-/// that's free, or, with none free, on the side that frees up nearest. Where it lands is worked out as
-/// `canvas draw` places a shape (DrawScript's solver, against the shapes of the board it lands on, filed
-/// in an `ObstacleGrid`), and it's moved and put down with the core's own tools, as draw's commit is:
-/// `translate`, `move(_:to:)` onto another board, then the in-or-out rule (`settle`). And the table of
-/// contents' drops that take shapes into a frame, onto a subboard's board, or out of frames
-/// (`ContentsMoves`), placed the same way, several at once as one block. A feature no kind opts into and
-/// nothing imports, as Jump To and Reordering are: the commands go on every kind a drag moves, the kinds
-/// whose shapes have a box (`forShapes(adopting: .box)`).
+/// Moving, as a plugin: two slash commands that move the shapes they're typed for (the shape whose text
+/// they're typed in, or the shapes selected) to another shape, anywhere in the file the app can show.
+/// `/move-to @Groceries` puts them in a frame, or onto a subboard's board; `/move-near @Checkout` puts
+/// them beside a shape, on the first of its four sides that's free, or, with none free, on the side that
+/// frees up nearest. Several move as one block, kept where they are to each other. Where they land is
+/// worked out as `canvas draw` places a shape (DrawScript's solver, against the shapes of the board they
+/// land on, filed in an `ObstacleGrid`), and they're moved and put down with the core's own tools, as
+/// draw's commit is: `translate`, `move(_:to:)` onto another board, then the in-or-out rule (`settle`).
+/// And the table of contents' drops that take shapes into a frame, onto a subboard's board, or out of
+/// frames (`ContentsMoves`), placed the same way, several at once as one block, and Move To ▸ in the
+/// selection's menu, by the same rule: `/move-to` takes a place while the drop of the shapes there is
+/// admitted (`Drop`), and runs that drop, so the command, the menu and the table of contents refuse and
+/// land alike. A feature no kind opts into and nothing imports, as Jump To and Reordering are: the
+/// commands go on every kind a drag moves, the kinds whose shapes have a box
+/// (`forShapes(adopting: .box)`).
 public struct MovingPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "moving" }
@@ -22,18 +26,18 @@ public struct MovingPlugin: ListedPlugin {
         registrar.forShapes(adopting: .box) { boxes in
             boxes.slashCommands {
                 // Asked only of the shapes that hold shapes or own boards (frames, subboards), so its rule
-                // may look further than move-near's.
-                SlashCommand("move-to", argument: "@frame or subboard", kinds: { $0.containingKinds.union($0.boardOwningKinds) },
-                             shapes: { target, owner, editor in Destination(of: owner, into: target, in: editor) != nil },
-                             step: MovingStyle.stepName) { id, arguments, editor in
+                // may look further than move-near's. Handed every shape it acts on, to move as one block.
+                SlashCommand.together("move-to", argument: "@frame or subboard", kinds: { $0.containingKinds.union($0.boardOwningKinds) },
+                                      shapes: { target, owners, editor in admitsInto(target, for: owners, in: editor) },
+                                      step: MovingStyle.stepName) { owners, arguments, editor in
                     guard let target = arguments.shapes.first else { return }
-                    Move(id, in: editor)?.into(target)
+                    Move(owners, in: editor)?.into(target)
                 }
                 // Asked of every shape the `@` picker ranks, as the person types.
-                SlashCommand("move-near", shapes: { target, owner, editor in admitsNear(target, for: owner, in: editor) },
-                             step: MovingStyle.stepName) { id, arguments, editor in
+                SlashCommand.together("move-near", shapes: { target, owners, editor in admitsNear(target, for: owners, in: editor) },
+                                      step: MovingStyle.stepName) { owners, arguments, editor in
                     guard let target = arguments.shapes.first else { return }
-                    Move(id, in: editor)?.near(target)
+                    Move(owners, in: editor)?.near(target)
                 }
             }
         }
@@ -59,65 +63,59 @@ enum MovingStyle {
 
 // MARK: What each command takes
 
-/// Where `/move-to` puts a shape.
-enum Destination: Equatable {
-    /// In a shape that holds shapes on its board (a frame), on that board.
-    case container(ShapeID, on: BoardID)
-    /// Onto the board a shape owns (a subboard's).
-    case board(BoardID)
-
-    /// The board the shape lands on.
-    var board: BoardID {
-        switch self {
-        case .container(_, on: let board), .board(let board): board
-        }
-    }
-}
-
-extension Destination {
-    /// Where `/move-to` puts `shape` (on the board shown) for `target`; nil for a target it doesn't take.
-    /// It takes a shape that holds shapes (a frame) or owns a board (a subboard), on any board of the file
-    /// the app can show (`editor.shape(inFile:)`), but:
-    /// - the shape itself, and what goes with it: what it holds, at any depth, and what's on a board it,
-    ///   or a shape it holds, owns, or on one under that (`goesWith`);
-    /// - one that's read-only (locked, in a locked frame, or on a board that takes no shapes: a locked
-    ///   subboard's, at any depth, `editor.isReadOnly(inFile:)`, the rule `move(_:to:)` refuses by): it
-    ///   takes nothing;
-    /// - where the shape is already: the frame it's directly in, the subboard whose board it's on;
-    /// - a frame too small to hold it (narrower or shorter than the frame it is laid out in).
-    /// What it's asked of is the kinds the command names (frames and subboards), so it may cost what a
-    /// target's depth in the file does.
-    @MainActor
-    init?(of shape: ShapeID, into target: ShapeID, in editor: CanvasEditor) {
-        let registry = editor.registry, file = editor.file
-        guard target != shape, let moving = editor.document[shape], let box = editor.shapeContext.frame(of: moving),
-              let found = editor.shape(inFile: target), !found.isOpaque, let board = file.board(containing: target),
-              !editor.isReadOnly(inFile: target) else { return nil }
-        // A subboard, as `canvas draw`'s `in` takes one: onto its board.
-        if registry.ownsShowableBoard(found) {
-            let owned = BoardID(owner: target)
-            guard owned != editor.board, !(takesAlong(moving, in: registry) && goesWith(target, onto: owned, shape, in: editor)) else { return nil }
-            self = .board(owned)
-            return
-        }
-        guard registry.isContainer(found), let frame = found.box, box.width <= frame.width, box.height <= frame.height,
-              editor.document.container(of: moving, containingKinds: registry.containingKinds) != target,
-              !(takesAlong(moving, in: registry) && goesWith(target, onto: board, shape, in: editor)) else { return nil }
-        self = .container(target, on: board)
-    }
-}
-
-/// Whether `/move-near` takes `target` for `shape`: any shape but the shape itself, and, for a shape that
-/// holds shapes or owns a board (rare: a note does neither), none that goes with it (`goesWith`). Asked
-/// of every shape the `@` picker ranks as the person types, so it costs next to nothing. A read-only
-/// target is fine (it doesn't change), and whether the target's board takes shapes is the move's to say
-/// (it refuses, and the board's owner shakes where it's shown).
+/// The place a shape stands for as a destination, as Move To ▸ names a place: the board it owns, for a
+/// shape that owns one (a subboard, as `canvas draw`'s `in` takes one), else inside it, on `board`, the
+/// board it's on, for a shape that holds shapes (a frame); in front of what's there. Nil for any other
+/// shape.
 @MainActor
-func admitsNear(_ target: ShapeID, for shape: ShapeID, in editor: CanvasEditor) -> Bool {
-    guard target != shape else { return false }
-    guard let moving = editor.document[shape], takesAlong(moving, in: editor.registry),
-          let board = editor.file.board(containing: target) else { return true }
-    return !goesWith(target, onto: board, shape, in: editor)
+func contentsPlace(of shape: AnyShapeRecord, on board: BoardID, in registry: Registry) -> ContentsPlace? {
+    if registry.ownsShowableBoard(shape) { return ContentsPlace(board: BoardID(owner: shape.id), container: nil, position: .front) }
+    guard registry.isContainer(shape) else { return nil }
+    return ContentsPlace(board: board, container: shape.id, position: .front)
+}
+
+/// Where `/move-to` puts shapes for `target`: the place `contentsPlace(of:on:in:)` makes of it, wherever
+/// the target is in the file the app can show (`editor.shape(inFile:)`): a frame on another board is a
+/// place on that board. Nil for a shape that is neither a frame nor a subboard, one kept aside, and one
+/// that is on no board of the file.
+@MainActor
+func movePlace(of target: ShapeID, in editor: CanvasEditor) -> ContentsPlace? {
+    guard let found = editor.shape(inFile: target), !found.isOpaque, let board = editor.file.board(containing: target) else { return nil }
+    return contentsPlace(of: found, on: board, in: editor.registry)
+}
+
+/// Whether `/move-to` takes `target` for `shapes`: the shape it names is a place (`movePlace(of:in:)`) and
+/// the shapes can be dropped there (`Drop`), the rule Move To ▸ lists its places by and the table of
+/// contents' drops are admitted by. So the three refuse alike: shapes that aren't all on the board shown
+/// (or have no box), a place that goes with them (the shape itself, what it holds at any depth, what's on a
+/// board it, or a shape it holds, owns), shapes or a place that's read-only (locked, in a locked frame, or
+/// on a board that takes no shapes: a locked subboard's, at any depth), shapes already in the place (the
+/// frame they're directly in, the subboard whose board they are on), a board the app can't show, and a frame
+/// too small for the box around the shapes coming in from elsewhere. It lays nothing out. What it's asked of
+/// is the kinds the command names (frames and subboards).
+@MainActor
+func admitsInto(_ target: ShapeID, for shapes: [ShapeID], in editor: CanvasEditor) -> Bool {
+    guard let place = movePlace(of: target, in: editor) else { return false }
+    return Drop(shapes, to: place, in: editor) != nil
+}
+
+/// Whether `/move-near` takes `target` for `shapes`: any shape but the shapes themselves, and, for a shape
+/// among them that holds shapes or owns a board (rare: a note does neither), none that goes with it
+/// (`goesWith`), at any depth. Asked of every shape the `@` picker ranks as the person types, so it costs
+/// next to nothing. A read-only target is fine (it doesn't change), and whether the target's board takes
+/// shapes is the move's to say (it refuses, and the board's owner shakes where it's shown).
+@MainActor
+func admitsNear(_ target: ShapeID, for shapes: [ShapeID], in editor: CanvasEditor) -> Bool {
+    guard !shapes.contains(target) else { return false }
+    let registry = editor.registry, kinds = registry.containingKinds
+    var moving: Set<ShapeID> = []
+    for shape in shapes {
+        guard let record = editor.document[shape], takesAlong(record, in: registry) else { continue }
+        moving.insert(shape)
+        if !kinds.isEmpty { moving.formUnion(editor.document.descendants(of: shape, containingKinds: kinds)) }
+    }
+    guard !moving.isEmpty, let board = editor.file.board(containing: target) else { return true }
+    return !goesWith([target], onto: board, moving: moving, in: editor)
 }
 
 /// Whether moving a shape takes other shapes with it: it holds shapes (a frame), or owns a board (a
@@ -125,18 +123,6 @@ func admitsNear(_ target: ShapeID, for shape: ShapeID, in editor: CanvasEditor) 
 @MainActor
 func takesAlong(_ shape: AnyShapeRecord, in registry: Registry) -> Bool {
     registry.isContainer(shape) || registry.ownsShowableBoard(shape)
-}
-
-/// Whether moving `shape` to `target`, onto `board`, would take either with it, so it's nowhere `shape`
-/// can go: `target` is the shape, or in it at any depth, or `board` is on the way down through a board
-/// the shape, or a shape in it, owns (`goesWith(_:onto:moving:in:)`). O(the board's depth and what the
-/// shape holds).
-@MainActor
-func goesWith(_ target: ShapeID, onto board: BoardID, _ shape: ShapeID, in editor: CanvasEditor) -> Bool {
-    let kinds = editor.registry.containingKinds
-    var moving: Set<ShapeID> = [shape]
-    if !kinds.isEmpty { moving.formUnion(editor.document.descendants(of: shape, containingKinds: kinds)) }
-    return goesWith([target], onto: board, moving: moving, in: editor)
 }
 
 /// Whether moving `moving` (shapes, and what they hold at any depth) to `targets` (a frame to go in, a

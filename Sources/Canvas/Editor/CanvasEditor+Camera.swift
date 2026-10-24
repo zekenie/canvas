@@ -61,11 +61,13 @@ extension CanvasEditor {
     }
 
     /// Any camera change (a scroll, a pinch, a zoom command, a hand drag, a test setting it) stops
-    /// a slide or an animation, through `camera`'s didSet, as does the next press.
+    /// a slide or an animation, through `camera`'s didSet, as does the next press. An animation's own
+    /// frame keeps its target: what `camera`'s didSet tells after this (a card following the camera)
+    /// reads where the camera is headed, and the frame schedules the next at once.
     func stopCameraMotion() {
         cameraMotion?.cancel()
         cameraMotion = nil
-        cameraAnimationTarget = nil
+        if !isAnimationFrame { cameraAnimationTarget = nil }
         updateZoomPercentage()
     }
 

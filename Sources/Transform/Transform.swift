@@ -9,9 +9,10 @@ import SlashCommands
 /// (`registrar.turnable(into: P.self, through: C.self) { source, transaction in … }`), and the two meet
 /// only in the channel, never in each other. A vertical can't import another, so Frames, which offers
 /// the container channel, doesn't know Subboards, which takes it. A shape that can turn has Turn into …
-/// in its context menu, and `/turn-into-…` for a line of its text (slash commands). Several selected
-/// turn in one undo step, innermost first, all or nothing: none does if any of them, or anything the
-/// turn would move, is read-only. The core never learns what turns into what: it lends only
+/// in its context menu, and `/turn-into-…` for a line of its text or for the shapes selected (slash
+/// commands). Several selected turn in one undo step, innermost first, all or nothing: none does if any
+/// of them, or anything the turn would move, is read-only, whether the menu's item or the command
+/// turns them. The core never learns what turns into what: it lends only
 /// `transaction.turn(_:into:)` and `transaction.move(_:toBoardOwnedBy:)`, which a target turns with.
 extension PluginID {
     public static let transform: PluginID = "transform"
@@ -186,7 +187,8 @@ extension PluginRegistrar {
     /// It brings Turn into `label` to the context menu of any shapes that can all turn into `P` (`label` is what
     /// `P`'s schema is titled, else its id, unless given), and `/turn-into-` followed by `P`'s id to the commands
     /// of the kinds that offer the channel, `P` apart (a capability of its own, "that can turn into" `P`'s id,
-    /// so the report says `/turn-into-subboard → every shape that can turn into subboard`). The undo step is
+    /// so the report says `/turn-into-subboard → every shape that can turn into subboard`), which turns every shape
+    /// it's handed, as the item does (it acts on all of them together, `SlashReach.together`). The undo step is
     /// named as the item is. The registry
     /// refuses a plugin list without `TransformPlugin()`, or without `ContextMenusPlugin()` or
     /// `SlashCommandsPlugin()`, which the item and the command belong to, and one where `P`'s id can't be typed
@@ -205,12 +207,15 @@ extension PluginRegistrar {
                 editor.transforms?.turn(ids, into: kind)
             }
         }
-        // On the kinds that offer the channel, but `P`: it has nothing to turn into.
+        // On the kinds that offer the channel, but `P`: it has nothing to turn into. Handed every shape it
+        // reaches at once (`together`), as the item is: `turn` takes them innermost first, all or nothing,
+        // in one step, which each shape in turn could not (an outer frame turned first would leave the
+        // inner one, now on the subboard's board, unturned).
         let turning = ShapeCapability("that can turn into \(kind)") { $0.kind != kind && $0.registry.offers($0.kind, C.self) }
         forShapes(adopting: turning) { turnable in
             turnable.slashCommands {
-                SlashCommand("turn-into-\(kind.rawValue)") { id, _, editor in
-                    editor.transforms?.turn([id], into: kind)
+                SlashCommand.together("turn-into-\(kind.rawValue)") { ids, _, editor in
+                    editor.transforms?.turn(ids, into: kind)
                 }
             }
         }

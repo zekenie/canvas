@@ -384,14 +384,25 @@ public final class MentionState {
         catalog.markRecent(recent, previous: previous)
     }
 
-    /// What the `@` picker lists for `query` in text of `scope`, on `owner` (the text's shape, which
-    /// may mention itself: it's left out of an empty query's Nearby, where it would always be
-    /// first, and of a typed query's matches while its name holds what's typed, as a note's does
-    /// when the `@` is in its first line; nearness is measured from it): every mentionable shape
-    /// the scope admits on any board of the file the editor can show, but those kept aside and
+    /// What the `@` picker lists for `query` in text of `scope` on `owner`, the text's shape (or none):
+    /// `candidates(matching:in:for:kinds:among:listingUnnamed:admitting:)` for it alone.
+    public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?,
+                                            kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
+                                            listingUnnamed: Bool = false,
+                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
+        candidates(matching: query, in: scope, for: owner.map { [$0] } ?? [], kinds: kinds, among: among, listingUnnamed: listingUnnamed,
+                   admitting: rule)
+    }
+
+    /// What the `@` picker lists for `query` in text of `scope`, for `owners`: the text's shape, which
+    /// may mention itself, or the shapes the command bar's text is typed for (the selection). Each is
+    /// left out of an empty query's Nearby, where it would always be first, and of a typed query's
+    /// matches while its name holds what's typed, as a note's does when the `@` is in its first line;
+    /// nearness is measured from the middle of the box around them, one owner's own middle. It lists
+    /// every mentionable shape the scope admits on any board of the file the editor can show, but those kept aside and
     /// those its kind gives no name (called by the "Untitled …" placeholder: a mention of one
     /// stays, but there's no point picking it), unless `listingUnnamed` (below). An empty query lists recent picks, then the shapes nearest the
-    /// owner on the board shown and, while there's room, the shapes whose boards it's inside, the
+    /// owners on the board shown and, while there's room, the shapes whose boards they're inside, the
     /// board shown's own first; any other, one ranked list of the best matches (`FuzzyMatcher`'s
     /// tiers, then `MentionRanking`'s adjustments, nearness on the board shown among them; ties to
     /// the shorter label, then the front-most shape, the board shown's before any other's).
@@ -432,7 +443,7 @@ public final class MentionState {
     /// the notes that fit a relationship row asks, since a note with nothing in it fits and is
     /// pickable; `@`, `/move-to` and the reference list do not, and nothing they cost moves. A shape
     /// handed in `among` is of the catalog, or an unnamed one.
-    public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?,
+    public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owners: [ShapeID],
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             listingUnnamed: Bool = false,
                                             admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
@@ -481,7 +492,8 @@ public final class MentionState {
         /// admits it, and the rule, if there is one.
         func listable(_ id: ShapeID) -> Bool { (given?.contains(id) ?? true) && admits(id) && (rule?(id) ?? true) }
         let shapes = editor.shapeContext
-        let origin = owner.flatMap { shapes.geometry(of: $0)?.bounds }.map { CGPoint(x: $0.midX, y: $0.midY) }
+        let around = owners.lazy.compactMap { shapes.geometry(of: $0)?.bounds }.reduce(nil as CGRect?) { $0?.union($1) ?? $1 }
+        let origin = around.map { CGPoint(x: $0.midX, y: $0.midY) }
         func distance(_ id: ShapeID) -> Double? {
             guard let origin, let bounds = shapes.geometry(of: id)?.bounds else { return nil }
             return Double(hypot(bounds.midX - origin.x, bounds.midY - origin.y))
@@ -492,7 +504,7 @@ public final class MentionState {
             let recentShown = Array(recent.lazy.filter { (self.catalog.contains($0) || (listingUnnamed && self.catalog.unnamed[$0] != nil)) && listable($0) }
                 .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
             var taken = Set(recentShown.map(\.id))
-            if let owner { taken.insert(owner) }
+            taken.formUnion(owners)
             // A command's kinds are few shapes, each somewhere it can go: every one, as many as a query lists.
             let room = given == nil ? MentionRanking.nearbyShown : MentionRanking.maxMatches
             var nearby = origin.map { nearest(to: $0, count: room, excluding: taken, members: members, admits: listable, distance: distance) } ?? []
@@ -516,8 +528,14 @@ public final class MentionState {
 
         // A shape named by its own text (a note's first line) holds the `@query` being typed in its
         // name, so it would match what's typed: it's left out then, listed once its name says more.
+        // (A name with no `@` holds no `@query`: looked at first, the command bar's owners being the shapes selected, however many.)
         let typed = "@" + query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let leavesOutOwner = owner.flatMap { catalog.appearance(of: $0) }.map { $0.label.range(of: typed, options: [.caseInsensitive, .diacriticInsensitive]) != nil } ?? false
+        let leftOut = Set(owners.filter { owner in
+            catalog.appearance(of: owner).map {
+                $0.label.utf8.contains(0x40) && $0.label.range(of: typed, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+            } ?? false
+        })
+        let leavesOut = !leftOut.isEmpty
 
         // Two linear passes over the catalog's keys, as every caret list matches (`rank`): every
         // tier but the typo's, then, if that found few, the typo's over the rest.
@@ -542,7 +560,7 @@ public final class MentionState {
                         return FuzzyMatcher.ranking(view, count: members?.count ?? entries.count, wantSpans: false, label: { index in
                             guard let slot = slot(index), !(skipped?(slot) ?? false) else { return nil }
                             let entry = entries[slot]
-                            guard !(leavesOutOwner && entry.id == owner), scopeAdmitted || admits(entry.id) else { return nil }
+                            guard !(leavesOut && leftOut.contains(entry.id)), scopeAdmitted || admits(entry.id) else { return nil }
                             // The rule is every shape's to pass.
                             if let rule, !rule(entry.id) { return nil }
                             return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
@@ -649,7 +667,7 @@ public final class MentionState {
         if matches.count < MentionRanking.maxMatches, !unnamedIds.isEmpty {
             var spans: [String: FuzzyMatch?] = [:]
             var fits = unnamedIds.filter { id in
-                guard !(leavesOutOwner && id == owner), listable(id), let label = catalog.unnamed[id]?.appearance.label else { return false }
+                guard !(leavesOut && leftOut.contains(id)), listable(id), let label = catalog.unnamed[id]?.appearance.label else { return false }
                 if spans[label] == nil { spans[label] = .some(FuzzyMatcher.match(q, in: FuzzyMatcher.Label(label))) }
                 return spans[label]! != nil
             }

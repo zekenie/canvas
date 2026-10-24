@@ -45,6 +45,56 @@ private let xFrame = at(400, 400)
         expectEqual(h.editor.shapeContext.frame(of: s), at(300, 580, 300, 100))
     },
 
+    test("three boxes selected, /move-near a disc: one block right of it, 80 away and centered on it, each box where it was to the others; one step, Move, that undo takes back exactly") {
+        let x = ShapeID(), a = ShapeID(), b = ShapeID(), c = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(box(a, 2000, 2000), box(b, 2200, 2000), box(c, 2000, 2200), AnyShapeRecord(ShapeRecord(id: x, Disc(xFrame))))))
+        let before = h.file, selection = [a, b, c]
+        expect(h.admits("move-near", onSelection: selection, x))
+        expect(h.run("move-near", onSelection: selection, with: x))
+        expectEqual(selection.map { h.frame(of: $0) }, [at(580, 300), at(780, 300), at(580, 500)], "the 300 across of them, centered on X's middle")
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+        expect(selection.allSatisfy { h.editor.isGliding($0) })
+        let after = h.file
+        h.editor.undo()
+        try expectFile(h, before, "all three where they were: one step")
+        h.editor.redo()
+        try expectFile(h, after, "and beside it again")
+    },
+
+    test("two boxes selected, /move-near a shape with all four sides taken: the block is put clear of what's there, still 200 apart") {
+        let x = ShapeID(), a = ShapeID(), b = ShapeID()
+        let others = [at(580, 380, 400, 340), at(400, 580), at(220, 400), at(400, 220)]
+        var records = [box(a, 2000, 2000), box(b, 2200, 2000, size: 100), AnyShapeRecord(ShapeRecord(id: x, Box(xFrame)))]
+        for other in others { records.append(AnyShapeRecord(ShapeRecord(Box(other)))) }
+        let h = try movingHarness(CanvasFile(root: CanvasDocument(shapes: records)))
+        expect(h.run("move-near", onSelection: [a, b], with: x))
+        let first = try require(h.frame(of: a)), second = try require(h.frame(of: b))
+        expectEqual(second.minX - first.minX, 200, "kept 200 apart")
+        expectEqual(second.minY - first.minY, 0)
+        let block = first.union(second)
+        for other in others { expect(!block.intersects(other), "\(block) is clear of \(other)") }
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+    },
+
+    test("two boxes selected, /move-near a shape in a corral they aren't in: the block lands in the corral, and is put in it") {
+        let k = ShapeID(), x = ShapeID(), a = ShapeID(), b = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(k, at(0, 0, 900, 600)), box(x, 100, 100, in: k), box(a, 2000, 0), box(b, 2200, 0))))
+        expect(h.run("move-near", onSelection: [a, b], with: x))
+        expectEqual([a, b].map { h.frame(of: $0) }, [at(280, 100), at(480, 100)], "right of X, 200 apart")
+        expectEqual([a, b].map { h.editor.holder(of: $0) }, [k, k])
+    },
+
+    test("a corral and a box selected, /move-near a box: one block, the corral taking what it holds along, each where it was to the others") {
+        let k = ShapeID(), a = ShapeID(), s = ShapeID(), x = ShapeID()
+        let h = try movingHarness(CanvasFile(root: board(corral(k, at(0, 0, 300, 200)), box(a, 40, 40, in: k), box(s, 400, 0), box(x, 2000, 0))))
+        expect(h.run("move-near", onSelection: [k, s], with: x))
+        // The block is 500 across and 200 down: right of X, 80 away, centered on X's middle (50) down.
+        expectEqual(h.frame(of: k), at(2180, -50, 300, 200))
+        expectEqual(h.frame(of: a), at(2220, -10), "carried by as much")
+        expectEqual(h.frame(of: s), at(2580, -50))
+        expectEqual(h.editor.holder(of: a), k)
+    },
+
     test("each side in turn, the first that's free: right, then below, then left, then above") {
         let right = at(580, 400), below = at(400, 580), left = at(220, 400), above = at(400, 220)
         expectEqual(try landing(among: []), right)

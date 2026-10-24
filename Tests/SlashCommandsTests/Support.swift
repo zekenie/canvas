@@ -130,6 +130,81 @@ struct FilledCommandPlugin: CanvasPlugin {
     }
 }
 
+/// What the target fixtures' commands did, in order.
+@MainActor final class Reached {
+    var runs: [String] = []
+    /// The shapes each run of `heap` and `tag` and each pick of `pick-all` was handed.
+    var handed: [[ShapeID]] = []
+    /// The shapes `pick-all`'s rows were made for, each time they were asked.
+    var rowsAskedFor: [[ShapeID]] = []
+}
+
+/// Commands that act on several shapes, beside `CardCommandsPlugin`'s:
+/// - `heap`, cards', together: handed every card it acts on, at once;
+/// - `nudge-each`, cards', a perform on each: run once a card, in one step;
+/// - `turn-on`, cards' own, an edit (2 points wider), beside the lamp's own `turn-on`: one name, two commands;
+/// - `pick-two`, cards' own and lamps' own, a choice together: one name that is two choice commands;
+/// - `pick-all`, cards', a choice together, its rows made for the cards it's handed;
+/// - `tag`, every box's (a scope's), together: what a mixed selection has in common;
+/// - `spread`, declared ("Spread Out", 5 points wider), whose rule needs a card 100 wide that can change,
+///   typed as `/spread` and as `/spread-try`, a try;
+/// - `thaw`, declared ("Thaw"), on every frozen shape, which it unfreezes.
+struct TargetCommandsPlugin: CanvasPlugin {
+    let log: Reached
+    var id: PluginID { "target-commands" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let log = log
+        registrar.slashCommands(Card.self) {
+            SlashCommand.together("heap") { ids, _, _ in
+                log.runs.append("heap")
+                log.handed.append(ids)
+            }
+            SlashCommand("nudge-each", reach: .each) { id, _, editor in
+                log.runs.append("nudge")
+                editor.transact { $0.update(id, as: Card.self) { $0.props.frame.origin.x += 1 } }
+            }
+            SlashCommand("turn-on") { card, _ in card.frame.size.width += 2 }
+            SlashCommand.together("pick-two", argument: "item", choices: { _, _ in [SlashChoice("x", title: "X")] }) { _, _, _ in }
+            SlashCommand.together("pick-all", argument: "count", choices: { owners, _ in
+                log.rowsAskedFor.append(owners)
+                return [SlashChoice("all", title: "All \(owners.count)", step: "Pick All")]
+            }) { owners, _, editor in
+                log.handed.append(owners)
+                editor.transact { transaction in
+                    for id in owners { transaction.update(id, as: Card.self) { $0.props.frame.size.width += 1 } }
+                }
+            }
+            SlashCommand("spread", command: "spread")
+            SlashCommand("spread-try", command: "spread", tries: true)
+        }
+        registrar.slashCommands(Lamp.self) {
+            SlashCommand.together("pick-two", argument: "item", choices: { _, _ in [SlashChoice("y", title: "Y")] }) { _, _, _ in }
+        }
+        registrar.forShapes(adopting: .box) { boxes in
+            boxes.slashCommands {
+                SlashCommand.together("tag") { ids, _, _ in
+                    log.runs.append("tag")
+                    log.handed.append(ids)
+                }
+            }
+        }
+        registrar.command("spread", title: "Spread Out", isEnabled: { subject in
+            subject.shapes.contains { !subject.editor.isReadOnly($0) && (subject.editor.document[$0]?.box?.width ?? 0) >= 100 }
+        }) { subject in
+            subject.editor.transact { transaction in
+                for id in subject.shapes { transaction.update(id, as: Card.self) { $0.props.frame.size.width += 5 } }
+            }
+        }
+        registrar.command("thaw", title: "Thaw", isEnabled: { subject in
+            subject.shapes.contains { subject.editor.document[$0]?[Frozen.self] == true }
+        }) { subject in subject.editor.freeze(subject.shapes, false) }
+        registrar.forShapes(holding: Frozen.self) { frozen in
+            frozen.slashCommands { SlashCommand("thaw", command: "thaw", when: { $0[Frozen.self] == true }) }
+        }
+    }
+}
+
 /// What a mention text view reads after a command's name, as a test says a person picked it: `runs`
 /// once anything is typed there (the pills of the line), nothing before. `SlashSession`'s `arguments`.
 @MainActor final class PickedShapes {
@@ -163,6 +238,15 @@ final class SlashTextView: EditingTextView {
         isRichText = false
         allowsUndo = true
         slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands, arguments: arguments)
+    }
+
+    /// A line typed for any target (the shapes selected, as the command bar's field types for them),
+    /// writing to no shape.
+    init(frame: CGRect, target: SlashTarget, commands: SlashCommandState, takesShapes: Bool = true) {
+        super.init(frame: frame)
+        isRichText = false
+        allowsUndo = true
+        slashCommands = SlashCommandTyping(over: self, target: target, commands: commands, takesShapes: takesShapes)
     }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {

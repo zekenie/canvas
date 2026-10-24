@@ -1,6 +1,7 @@
 import Adornments
 import Canvas
 import CanvasTesting
+import CoreGraphics
 import Keyboard
 import Selection
 import SlashCommands
@@ -8,7 +9,8 @@ import TestKit
 import Titles
 
 // `/title`, the slash command Titles offers: on the kinds that keep a title, one line of a shape's
-// text names it. Typing it is the shipped app's (CompositionTests).
+// text names it. It names one shape: for a selection of several it isn't listed. Typing it is the
+// shipped app's (CompositionTests).
 
 @MainActor let titleSlashTests = Suite("Titles and slash commands", [
     test("/title is offered on the kinds that keep a title: not on one with none, nor on one titled only by derivation") {
@@ -24,6 +26,43 @@ import Titles
         expectEqual(state.commands(for: box).map(\.name), [], "a box has no title to set")
         expectEqual(editor.title(card), "Hello")
         expectEqual(state.commands(for: card).map(\.name), [], "a card's title is derived from its text, and renamed there")
+    },
+
+    test("/title is one shape's: listed for a selection of one titled shape, and not for a selection of two, of plaques or of a plaque and a box") {
+        let editor = try titleEditor()
+        let state = try require(editor.slashCommands)
+        let lobby = editor.add(Plaque(plaqueFrame), named: "Lobby")
+        let hall = editor.add(Plaque(plaqueFrame.offsetBy(dx: 300, dy: 0)))
+        let box = editor.add(Box(plaqueFrame.offsetBy(dx: 600, dy: 0)))
+        let one = try require(state.command(named: "title", for: .selection([lobby])))
+        expectEqual(one.reach, .one, "a title tells a shape apart: several given one would be several paths alike")
+        expectEqual(one.shapes, [lobby])
+        expect(!one.isPartial)
+        expectEqual(state.commands(for: .selection([hall])).map(\.name), ["title"], "untitled, it names")
+        expectEqual(state.commands(for: .selection([lobby, hall])).map(\.name), [], "two plaques: not listed")
+        expect(state.command(named: "title", for: .selection([lobby, hall])) == nil)
+        expect(state.command(named: "title", for: .selection([hall, lobby])) == nil, "in either order")
+        expect(state.command(named: "title", for: .selection([lobby, box])) == nil, "a plaque and a box, which has no title to set")
+        expectEqual(state.commands(for: .selection([box])).map(\.name), [], "a box alone has nothing to name")
+        expectEqual(state.commands(for: lobby).map(\.name), ["title"], "the line of its own text is the one-shape target it always was")
+    },
+
+    test("run for a selection of one shape it names it in one step called Title; for two it doesn't run, and neither is named") {
+        let editor = try titleEditor()
+        let state = try require(editor.slashCommands)
+        let lobby = editor.add(Plaque(plaqueFrame), named: "Lobby")
+        let hall = editor.add(Plaque(plaqueFrame.offsetBy(dx: 300, dy: 0)))
+        let revision = editor.revision
+        expect(!state.run("title", for: .selection([lobby, hall]), with: "Foyer"), "not listed, so not found")
+        expectEqual(editor.revision, revision, "nothing committed")
+        expectEqual(editor.name(lobby), "Lobby")
+        expectEqual(editor.name(hall), nil)
+        expect(state.run("title", for: .selection([hall]), with: "Foyer"))
+        expectEqual(editor.name(hall), "Foyer")
+        expectEqual(editor.name(lobby), "Lobby", "the other is as it was")
+        expectEqual(editor.undoHistory.undoName, "Title")
+        editor.undo()
+        expectEqual(editor.name(hall), nil)
     },
 
     test("running it names the shape in one step called Title; undoing it puts the old name back, named or not") {

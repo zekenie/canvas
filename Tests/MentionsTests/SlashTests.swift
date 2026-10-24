@@ -10,14 +10,16 @@ import TextEditing
 // panel host `SlashCommandTyping` (SlashCommandsTests hold it whole over a text view of its own),
 // and a pill in a command line is a shape it's given. Fixture commands only.
 
-/// What the fixture commands that `perform` did.
+/// What the fixture commands that `perform` did, and the shapes `stack` and `shelve` were handed.
 @MainActor final class SlashLog {
     var runs: [String] = []
+    var owners: [[ShapeID]] = []
 }
 
 /// Commands for jots and briefs: `ping` takes nothing, `near` takes shapes (a pill in the line, any
 /// shape), `stack` takes one shape, a plate and no other (by its rule alone), and `shelve` one plate
-/// or token (by its kinds) but the one called "Grocery List" (by its rule).
+/// or token (by its kinds) but the one called "Grocery List" (by its rule). The two that take one shape
+/// act on every shape they're typed for together, so the command bar lists them for several jots.
 struct SlashFixturesPlugin: CanvasPlugin {
     let log: SlashLog
     var id: PluginID { "slash-fixtures" }
@@ -29,14 +31,16 @@ struct SlashFixturesPlugin: CanvasPlugin {
             SlashCommand("near", argument: "@shape", accepts: { !$0.shapes.isEmpty }) { _, arguments, _ in
                 log.runs.append("near \(arguments.shapes.map { $0 == idA ? "A" : $0 == idB ? "B" : "?" }.joined()) \(arguments.text)")
             }
-            SlashCommand("stack", shapes: { target, _, editor in editor.shape(inFile: target)?.kind == Plate.kind }) { _, arguments, _ in
+            SlashCommand.together("stack", shapes: { target, _, editor in editor.shape(inFile: target)?.kind == Plate.kind }) { owners, arguments, _ in
                 log.runs.append("stack \(arguments.shapes.map { $0 == idA ? "A" : $0 == idB ? "B" : "?" }.joined()) \(arguments.text)")
+                log.owners.append(owners)
             }
             SlashCommand("choose", argument: "one", choices: { _, _ in [SlashChoice("x", title: "Xylo")] }) { _, choice, _ in
                 log.runs.append("choose \(choice.id)")
             }
-            SlashCommand("shelve", kinds: { _ in [Plate.kind, Token.kind] }, shapes: { target, _, _ in target != idB }) { _, arguments, _ in
+            SlashCommand.together("shelve", kinds: { _ in [Plate.kind, Token.kind] }, shapes: { target, _, _ in target != idB }) { owners, arguments, _ in
                 log.runs.append("shelve \(arguments.shapes.map { $0 == idA ? "A" : $0 == idB ? "B" : $0 == idC ? "C" : "?" }.joined()) \(arguments.text)")
+                log.owners.append(owners)
             }
         }
         registrar.slashCommands(Brief.self) {
@@ -356,7 +360,7 @@ private let idE = ShapeID(UUID(uuidString: "EEEEEEEE-1111-4222-8333-444444444444
 
 /// What a picker's rows say, one string each: headers with a "#", the one row of an empty state with a
 /// "-", a shape by its label.
-@MainActor private func described(_ picker: MentionPicker?) -> [String] {
+@MainActor func described(_ picker: MentionPicker?) -> [String] {
     picker?.rows.map { row in
         switch row {
         case .header(let words): "# \(words)"

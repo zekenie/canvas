@@ -54,15 +54,8 @@ func movePlaces(for shapes: [ShapeID], in editor: CanvasEditor) -> [MovePlace] {
     let middle = boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }.center
     var near: [(distance: CGFloat, id: ShapeID, place: ContentsPlace)] = []
     for record in editor.document.shapes where !record.isOpaque {
-        let place: ContentsPlace
-        if registry.ownsShowableBoard(record) {
-            place = ContentsPlace(board: BoardID(owner: record.id), container: nil, position: .front)
-        } else if registry.isContainer(record) {
-            place = ContentsPlace(board: editor.board, container: record.id, position: .front)
-        } else {
-            continue
-        }
-        guard let frame = context.frame(of: record) else { continue }
+        // A subboard's board, else inside a frame: the place `/move-to` makes of a shape it's told.
+        guard let place = contentsPlace(of: record, on: editor.board, in: registry), let frame = context.frame(of: record) else { continue }
         near.append((hypot(frame.center.x - middle.x, frame.center.y - middle.y), record.id, place))
     }
     near.sort { $0.distance < $1.distance }

@@ -44,6 +44,12 @@ extension Budget {
     /// types the note may be, asked of the index once and sorted by name, then kept while the list is open: some 3.5 ms
     /// (3.1, 3.5, 3.6 in three runs alone, load average 6), about three times that.
     static let isAListOpen = 10.0
+    /// Opening `/is-a`'s list for 1,000 notes selected (`OfferedSlashCommand.choices()`, asked once when the list opens, never per
+    /// keystroke), in twenty distinct lists of two types over fifty: the notes grouped by role and list, the types asked of the
+    /// index once for each group (never one ask for each note and type), each type counted (950 of 1,000 for forty of them) and
+    /// the rows ordered by name. The thread's CPU, release: 1.8 ms (the first open 2.2) at a load average of 7, about three
+    /// times that, as the others were set (a debug build: 5.4 to 5.6 ms, and 2.1 for the 200 notes `./test.sh` runs).
+    static let isAListOpenSelection = 6.0
     /// Picking `New type “X”` from `/is-a`'s list on a plain note of a 10,000-shape file (the thread's CPU, release): the board
     /// read once for the landing (every shape an obstacle, as `/move-near` reads it), the note put down, the link made; held
     /// to a frame (7.1, 7.7, 7.1 ms after the first pick, 15 to 16 for the first, in three runs alone, load average 3).
@@ -92,6 +98,30 @@ extension Budget {
     note[TypeSchemaProperty.self] = SchemaText(schema)
     note[TitleProperty.self] = "Person"
     return AnyShapeRecord(note)
+}
+
+/// Fifty types (titled notes holding the starter schema, "Type 0" to "Type 49") and `count` notes, each of two of them: note n
+/// is of type n % 20 and type 20 + n % 20, so the notes come in twenty distinct lists (the last ten types are nobody's):
+/// the document, the notes, in order, and the types.
+@MainActor private func selectionBoard(notes count: Int) -> (document: CanvasDocument, notes: [ShapeID], types: [ShapeID]) {
+    var shapes: [AnyShapeRecord] = []
+    var types: [ShapeID] = [], notes: [ShapeID] = []
+    for index in 0..<50 {
+        var type = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(index % 25) * 260, y: CGFloat(index / 25) * 260, width: 200, height: 200),
+                                          text: MentionText(plain: "A type")))
+        type[TitleProperty.self] = "Type \(index)"
+        type[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
+        types.append(type.id)
+        shapes.append(AnyShapeRecord(type))
+    }
+    for index in 0..<count {
+        var note = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(index % 40) * 260, y: 700 + CGFloat(index / 40) * 260, width: 200, height: 200),
+                                          text: MentionText(plain: "Note \(index): something to do")))
+        note[IsAProperty.self] = [TypeLink(types[index % 20]), TypeLink(types[20 + index % 20])]
+        notes.append(note.id)
+        shapes.append(AnyShapeRecord(note))
+    }
+    return (CanvasDocument(shapes: shapes), notes, types)
 }
 
 /// The generated board's notes made types (every fiftieth), and instances (every sixth that isn't):
@@ -204,6 +234,33 @@ extension Budget {
             if holdsToBudgets {
                 expect(opening < Budget.isAListOpen, "opening /is-a's list over \(size) shapes took \(opening) ms")
             }
+        }
+    },
+
+    test("opening the /is-a list over 1,000 notes selected in twenty lists over fifty types costs what the lists are: the types asked once for each, the rows counted") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        // A debug run is small, as the others are.
+        let count = holdsToBudgets ? 1_000 : 200
+        let (document, notes, types) = selectionBoard(notes: count)
+        let editor = CanvasEditor(registry: try Registry(plugins: shippedPlugins(pasteboard)), document: document, scheduler: ManualScheduler())
+        let index = try require(editor.types)
+        let command = try require(editor.slashCommands?.command(named: "is-a", for: .selection(notes)))
+        expectEqual(command.shapes, notes)
+        let open = { _ = command.choices() }
+        let first = median(runs: 1, onThread: true, open)
+        let opening = median(runs: 21, onThread: true, open)
+        let rows = command.choices()
+        let held = "\(count - count / 20) of \(count)"
+        expect(rows.prefix(2).map(\.title) == ["Type", "Relationship Type"] && rows.dropFirst(2).allSatisfy { index.isType(ShapeID(UUID(uuidString: $0.id)!)) },
+               "Type, Relationship Type, then the types")
+        expectEqual(rows.count, 2 + types.count)
+        expectEqual(rows.filter { $0.detail == held }.count, 40, "forty types some of the notes are already, counted")
+        expectEqual(rows.filter { $0.detail == nil }.count, 2 + 10, "the other rows are for every note")
+        report(String(format: "%6d notes selected in 20 lists over %d types, the /is-a list: the first open %6.3f ms, then %6.3f ms (budget %.0f)",
+                      count, types.count, first, opening, Budget.isAListOpenSelection))
+        if holdsToBudgets {
+            expect(opening < Budget.isAListOpenSelection, "opening /is-a's list over \(count) notes selected took \(opening) ms")
         }
     },
 

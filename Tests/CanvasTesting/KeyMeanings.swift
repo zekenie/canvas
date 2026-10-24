@@ -87,6 +87,8 @@ public enum KeyMeanings {
                   reason: "the list completes what is typed, as a shell's and a code editor's do"),
         Exception(id: "note-picker-tab", keys: [.tab], place: "a note picker", means: "Tab never picks",
                   reason: "a pick draws an arrow, too much for a key that moves on"),
+        Exception(id: "command-bar-tab", keys: [.tab], place: "the command bar", means: "with nothing to complete, Tab moves nothing",
+                  reason: "the bar is one line for one command, modal as Jump To's palette, and Escape leaves it"),
         Exception(id: "text-option-tab", keys: [.optionTab, .optionBackTab], place: "text (a box of the panel, a row's value, the JSON editor)",
                   means: "⌥Tab types a tab, or indents in the JSON editor", reason: "Tab there moves on, so ⌥Tab is how a tab is typed"),
         Exception(id: "canvas-arrows", keys: [.up, .down, .left, .right], place: "the canvas",

@@ -1,8 +1,9 @@
 import Canvas
 
-/// A command a shape offers just now, as the list shows it and `SlashCommandState` runs it. It's
-/// found for one shape (`SlashCommandState.commands(for:)`), the one the line is on, and a command
-/// that takes a shape asks its rule about the shapes it's given with that shape and the editor.
+/// A command a target offers just now, as the list shows it and `SlashCommandState` runs it. It's
+/// found for a target (`SlashCommandState.commands(for:)`): one shape's text, the shape the line is on,
+/// or the shapes selected, of which it acts on those that offer it (`shapes`, its reach). A command that
+/// takes a shape asks its rule about the shapes it's given with those shapes and the editor.
 @MainActor
 public struct OfferedSlashCommand {
     /// As typed after the `/`: `set-title`.
@@ -13,10 +14,21 @@ public struct OfferedSlashCommand {
     /// `kinds:`), as the registry says: no shape of another kind is admitted, whatever the rule says.
     /// Nil for a command that takes no shape, or names no kinds (any kind).
     public let admittedKinds: Set<ShapeKind>?
-    let command: ErasedSlashCommand
-    /// The command's rule for which shape it takes, alone: bound to the shape it was found for and to
+    /// The shapes of the target it acts on, in target order: for a text's line, the shape.
+    public let shapes: [ShapeID]
+    /// How many shapes the target has to act on: a list says "3 of 5" where `shapes` is fewer.
+    public let targetCount: Int
+    /// How it acts on several shapes (`SlashReach`).
+    public let reach: SlashReach
+    /// What it runs, each on its own shapes: one command, but where two kinds' own commands share the
+    /// name in one target (a lamp's `turn-on` and a card's), one row runs each kind's on its shapes.
+    let parts: [Part]
+    /// The command, for one that is one: the first of its parts.
+    var command: ErasedSlashCommand { parts[0].command }
+    /// The command's rule for which shape it takes, alone: bound to the shapes it was found for and to
     /// the editor, held weakly, since the state holds its editor unowned and a command outlives the
-    /// call that found it (a list and a text view keep it). Nil for a command that takes no shape.
+    /// call that found it (a list and a text view keep it), and asked once a shape while the file
+    /// stands (`RuleAnswers`). Nil for a command that takes no shape.
     fileprivate let rule: (@MainActor (ShapeID) -> Bool)?
     /// The same with the kinds: a shape of a kind it names, and the rule says yes.
     fileprivate let admitsShape: (@MainActor (ShapeID) -> Bool)?
@@ -25,40 +37,58 @@ public struct OfferedSlashCommand {
     fileprivate let choiceRows: (@MainActor () -> [SlashChoice])?
     fileprivate let choiceOtherwise: (@MainActor (String) -> SlashChoice?)?
 
-    init(_ command: ErasedSlashCommand, owner: ShapeID, editor: CanvasEditor) {
-        self.command = command
+    /// One command, on the shapes of the target that offer it.
+    struct Part {
+        let command: ErasedSlashCommand
+        let shapes: [ShapeID]
+    }
+
+    /// Found for a target: `parts` (one, unless two kinds' own commands share the name; none of
+    /// several takes a shape or a choice) on their shapes, which are `shapes` in target order, and
+    /// `targetCount` the shapes the target has.
+    init(_ parts: [Part], shapes: [ShapeID], targetCount: Int, editor: CanvasEditor) {
+        precondition(!parts.isEmpty, "a command is offered on some shapes")
+        self.parts = parts
+        self.targetCount = targetCount
+        let command = parts[0].command
         name = command.name
         argument = command.argument
+        reach = command.reach
+        self.shapes = shapes
         declaredTitle = command.command.flatMap { editor.registry.title(of: $0) }
-        if let choices = command.choices {
-            choiceRows = { [weak editor] in editor.map { choices(owner, $0) } ?? [] }
+        if parts.count == 1, let choices = command.choices {
+            choiceRows = { [weak editor] in editor.map { choices(shapes, $0) } ?? [] }
             let otherwise = command.otherwise
-            choiceOtherwise = { [weak editor] typed in editor.flatMap { otherwise?(typed, owner, $0) } }
+            choiceOtherwise = { [weak editor] typed in editor.flatMap { otherwise?(typed, shapes, $0) } }
         } else {
             choiceRows = nil
             choiceOtherwise = nil
         }
-        let kinds = command.kinds(in: editor.registry)
+        let kinds = parts.count == 1 ? command.kinds(in: editor.registry) : nil
         admittedKinds = kinds
-        guard let shapes = command.shapes else {
-            rule = nil
+        guard parts.count == 1, let rule = command.shapes else {
+            self.rule = nil
             admitsShape = nil
             return
         }
+        let answers = RuleAnswers()
         let admits: @MainActor (ShapeID) -> Bool = { [weak editor] target in
             guard let editor else { return false }
-            return shapes(target, owner, editor)
+            return answers.answer(for: target, in: editor) { rule(target, shapes, editor) }
         }
-        rule = admits
+        self.rule = admits
         if let kinds {
             admitsShape = { [weak editor] target in
                 guard let editor, let kind = editor.shape(inFile: target)?.kind, kinds.contains(kind) else { return false }
-                return shapes(target, owner, editor)
+                return admits(target)
             }
         } else {
             admitsShape = admits
         }
     }
+
+    /// Whether the target has shapes it doesn't act on: a list says how many it does ("3 of 5").
+    public var isPartial: Bool { shapes.count < targetCount }
 
     /// The name in words, in title case as a macOS menu has it: every word capitalized but the
     /// articles, coordinating conjunctions and short prepositions (`minorWords`), which stay lowercase
@@ -90,18 +120,18 @@ public struct OfferedSlashCommand {
     /// be exactly one, which `admits(_:)` says yes to.
     public var takesShape: Bool { admitsShape != nil }
 
-    /// Whether the shape it takes may be `shape`, for the shape it was found for: of a kind it names,
+    /// Whether the shape it takes may be `shape`, for the shapes it was found for: of a kind it names,
     /// if it names any (`admittedKinds`: its kind is read from its record anywhere in the file, so a
     /// shape that isn't there is of none), and its rule says yes. False for a command that takes no
     /// shape.
     public func admits(_ shape: ShapeID) -> Bool { admitsShape?(shape) ?? false }
 
     /// Whether it takes one choice from a list (`SlashCommand`'s `choices:` form): it never runs
-    /// with `SlashArguments`, only with a pick (`SlashCommandState.run(_:on:choosing:)`).
+    /// with `SlashArguments`, only with a pick (`SlashCommandState.run(_:choosing:)`).
     public var takesChoice: Bool { choiceRows != nil }
 
-    /// The rows it lists now, in its order; none for a command that takes no choice. Asked each
-    /// time: a list asks once when it opens.
+    /// The rows it lists now, in its order, for the shapes it acts on; none for a command that takes no
+    /// choice. Asked each time: a list asks once when it opens.
     public func choices() -> [SlashChoice] { choiceRows?() ?? [] }
 
     /// The one row it offers for what was typed (trimmed), if it offers one: the list puts it last,
@@ -115,20 +145,47 @@ public struct OfferedSlashCommand {
         return SlashShapeRule(kinds: admittedKinds, rule: rule, admits: admitsShape)
     }
 
-    /// Whether it can run with what was typed after its name (`SlashCommand`'s `accepts`): for a
-    /// command that takes a shape, that's exactly one shape, which it admits, and nothing else.
+    /// Whether it can run with what was typed after its name (`SlashCommand`'s `accepts`, each part's):
+    /// for a command that takes a shape, that's exactly one shape, which it admits, and nothing else.
     public func accepts(_ arguments: SlashArguments) -> Bool {
-        guard command.accepts(arguments) else { return false }
+        guard parts.allSatisfy({ $0.command.accepts(arguments) }) else { return false }
         guard let admitsShape else { return true }
         guard case .shape(let target, _)? = arguments.runs.first else { return false }
         return admitsShape(target)
     }
 }
 
+/// What a command's rule said of each shape it was asked of, for the shapes it was found for, kept while
+/// the file, its layout and the board shown stand: a list asks the rule of the same shapes at every
+/// keystroke (Mentions' `@` picker ranks them again), and a rule may cost what the shapes it acts on are
+/// (`/move-to`'s asks whether a block of all of them can be dropped there).
+@MainActor
+private final class RuleAnswers {
+    private struct Stamp: Equatable {
+        let revision: Int
+        let layoutRevision: Int
+        let board: BoardID
+    }
+    private var stamp: Stamp?
+    private var answers: [ShapeID: Bool] = [:]
+
+    func answer(for shape: ShapeID, in editor: CanvasEditor, _ ask: () -> Bool) -> Bool {
+        let now = Stamp(revision: editor.revision, layoutRevision: editor.layoutRevision, board: editor.board)
+        if now != stamp {
+            answers = [:]
+            stamp = now
+        }
+        if let known = answers[shape] { return known }
+        let answer = ask()
+        answers[shape] = answer
+        return answer
+    }
+}
+
 /// Which shapes the command on a line takes, as a host that lists shapes asks it
 /// (`SlashCommandTyping.admittedShapes(at:)`; Mentions' `@` picker): the kinds it takes at most, and
-/// its rule, for the shape the line is on. A list that ranks only the shapes of `kinds` asks `rule`
-/// of each; anything else asks `admits(_:)`.
+/// its rule, for the shapes the command acts on. A list that ranks only the shapes of `kinds` asks
+/// `rule` of each; anything else asks `admits(_:)`.
 @MainActor
 public struct SlashShapeRule {
     /// The most kinds of shape the command takes, if it names any: a shape of another kind is never
@@ -152,79 +209,208 @@ public struct SlashShapeRule {
     public func admits(_ shape: ShapeID) -> Bool { admitsShape(shape) }
 }
 
-/// What slash commands know of an editor: which commands a shape offers, and running one. Per
-/// editor (so per window), and it keeps nothing per shape: each kind's commands are gathered once
-/// (the registry is frozen), and what a shape offers is asked of its record each time, so a command
-/// offered `when` a property holds follows it with no upkeep.
+/// What slash commands know of an editor: which commands a target offers, and running one. Per editor
+/// (so per window). Each kind's commands are gathered once (the registry is frozen), and what a shape
+/// offers is asked of its record each time, so a command offered `when` a property holds follows it
+/// with no upkeep; what the shapes selected offer is kept while the file and its layout stand, since the
+/// bar asks at every keystroke (`commands(for:)`).
 @MainActor
 public final class SlashCommandState {
     private unowned let editor: CanvasEditor
     private var candidates: [ShapeKind: [ErasedSlashCommand]] = [:]
+    /// What a selection target listed last, and the revisions it was found at.
+    private var kept: Kept?
+
+    private struct Kept {
+        let target: SlashTarget
+        let revision: Int
+        let layoutRevision: Int
+        let commands: [OfferedSlashCommand]
+    }
+
+    #if DEBUG
+    /// How many records the listing has read (debug builds), so tests can hold a selection's to being
+    /// read once while the file stands.
+    public private(set) var recordsRead = 0
+    #endif
 
     init(editor: CanvasEditor) {
         self.editor = editor
     }
 
-    /// What a shape offers now: its kind's own commands, then those of the scopes that reach its kind
-    /// (a kind's own taking the place of one of the same name, offered or not), each in plugin and
-    /// builder order, those whose `when` holds for the shape as it is. None for a shape that isn't on
-    /// the board shown, or is kept aside, or is read-only (its text can't be edited, and a command
-    /// would change it).
-    public func commands(for id: ShapeID) -> [OfferedSlashCommand] {
-        guard let record = editor.document[id], !record.isOpaque, !editor.isReadOnly(id) else { return [] }
-        return candidates(for: record.kind).filter { $0.isOffered(record) && offersCommand($0, on: id) }
-            .map { OfferedSlashCommand($0, owner: id, editor: editor) }
+    /// What a target offers now, in the order the first of its shapes lists them, then what only later
+    /// shapes offer, as they list it. A shape offers its kind's own commands, then those of the scopes
+    /// that reach its kind (a kind's own taking the place of one of the same name, offered or not), each
+    /// in plugin and builder order, those whose `when` holds for the shape as it is; a declared command
+    /// while its rule can act on the shapes that offer it (or by `when` alone, with `tries`). A command
+    /// is its name: the shapes that offer it are its reach (`OfferedSlashCommand.shapes`), and it's
+    /// listed when some do (any of them: the owner's call), a command on one shape (`SlashReach.one`)
+    /// only where the target has one. Two kinds' own commands of one name are one row, each run on its
+    /// own shapes, unless either takes a shape or a choice (two rules, two lists of rows: left out) or
+    /// they take different arguments.
+    ///
+    /// None for a shape that isn't on the board shown or is kept aside. A shape's text (`.text`) that is
+    /// read-only offers nothing (its text can't be edited, and a command would change it); in the
+    /// selection (`.selection`) a read-only shape is offered only the commands a plugin declared, whose
+    /// rule decides (Unlock acts on a locked shape; nothing else does). A selection's list is kept until
+    /// the file or its layout changes.
+    public func commands(for target: SlashTarget) -> [OfferedSlashCommand] {
+        if case .selection = target, let kept, kept.target == target, kept.revision == editor.revision,
+           kept.layoutRevision == editor.layoutRevision {
+            return kept.commands
+        }
+        let found = find(for: target)
+        if case .selection = target {
+            kept = Kept(target: target, revision: editor.revision, layoutRevision: editor.layoutRevision, commands: found)
+        }
+        return found
     }
 
-    /// For one typed for a command a plugin declared: a plugin claims it, and it can act on the shape
+    /// What a shape's text offers: `commands(for: .text(id))`.
+    public func commands(for id: ShapeID) -> [OfferedSlashCommand] { commands(for: .text(id)) }
+
+    private func find(for target: SlashTarget) -> [OfferedSlashCommand] {
+        let isText: Bool
+        if case .text = target { isText = true } else { isText = false }
+        // The shapes there to act on, each once, in target order, with what each offers by `when`.
+        var shapes: [ShapeID] = []
+        var seen = Set<ShapeID>()
+        // A name's commands, by the order names first come: each command with the shapes that offer it.
+        var order: [String] = []
+        var byName: [String: [(command: ErasedSlashCommand, shapes: [ShapeID])]] = [:]
+        for id in target.shapes where seen.insert(id).inserted {
+            guard let record = editor.document[id], !record.isOpaque else { continue }
+            #if DEBUG
+            recordsRead += 1
+            #endif
+            let readOnly = editor.isReadOnly(id)
+            if isText, readOnly { continue }
+            shapes.append(id)
+            for command in candidates(for: record.kind) where command.isOffered(record) {
+                // A read-only shape is reached only by a command a plugin declared, where its rule can act on
+                // the shape alone (Unlock on a locked one), a try's too: no row in the bar can only be refused.
+                if readOnly {
+                    guard let declared = command.command, editor.canPerform(declared, on: [id]) else { continue }
+                }
+                if byName[command.name] == nil { order.append(command.name) }
+                if let at = byName[command.name, default: []].firstIndex(where: { $0.command === command }) {
+                    byName[command.name]![at].shapes.append(id)
+                } else {
+                    byName[command.name, default: []].append((command, [id]))
+                }
+            }
+        }
+        let count = shapes.count
+        return order.compactMap { name in
+            var parts = byName[name] ?? []
+            if count > 1 { parts.removeAll { $0.command.reach == .one } }
+            parts.removeAll { !offersCommand($0.command, on: $0.shapes) }
+            guard let first = parts.first else { return nil }
+            var reached = first.shapes
+            if parts.count > 1 {
+                guard !parts.contains(where: { $0.command.takesShapeOrChoice || $0.command.argument != first.command.argument }) else { return nil }
+                // Each part's shapes are in target order; two parts never share a shape.
+                let offering = Set(parts.flatMap(\.shapes))
+                reached = shapes.filter(offering.contains)
+            }
+            return OfferedSlashCommand(parts.map { OfferedSlashCommand.Part(command: $0.command, shapes: $0.shapes) }, shapes: reached,
+                                       targetCount: count, editor: editor)
+        }
+    }
+
+    /// For one typed for a command a plugin declared: a plugin claims it, and it can act on the shapes
     /// (its rule), unless it's offered by its `when` alone (a try). Any other, yes.
-    private func offersCommand(_ command: ErasedSlashCommand, on id: ShapeID) -> Bool {
+    private func offersCommand(_ command: ErasedSlashCommand, on ids: [ShapeID]) -> Bool {
         guard let declared = command.command else { return true }
-        return command.tries ? editor.registry.claims(declared) : editor.canPerform(declared, on: [id])
+        return command.tries ? editor.registry.claims(declared) : editor.canPerform(declared, on: ids)
     }
 
-    /// The command of a name (folded to lowercase) that a shape offers now.
-    public func command(named name: String, for id: ShapeID) -> OfferedSlashCommand? {
+    /// The command of a name (folded to lowercase) that a target offers now.
+    public func command(named name: String, for target: SlashTarget) -> OfferedSlashCommand? {
         let name = name.lowercased()
-        return commands(for: id).first { $0.name == name }
+        return commands(for: target).first { $0.name == name }
     }
 
-    /// Runs a command on a shape with what was typed after its name: one undo step, named for the
-    /// command (`title`), whatever it commits. The command is the one `commands(for:)` or
-    /// `command(named:for:)` just gave, so `when` isn't asked again (a caller that took text out
-    /// first, as a text view takes the command's line, would find a command that reads the text
-    /// gone). False, doing nothing, for a shape that's gone or kept aside, and for arguments the
-    /// command doesn't accept.
+    /// The command of a name that a shape's text offers now.
+    public func command(named name: String, for id: ShapeID) -> OfferedSlashCommand? { command(named: name, for: .text(id)) }
+
+    /// Runs a command on the shapes it acts on with what was typed after its name: one undo step, named
+    /// for the command (`stepName`), whatever it commits, each of its parts on its own shapes. The command
+    /// is the one `commands(for:)` or `command(named:for:)` just gave, so `when` isn't asked again (a
+    /// caller that took text out first, as a text view takes the command's line, would find a command
+    /// that reads the text gone), and it runs on the shapes of it still there and not kept aside. False,
+    /// doing nothing, with none left, and for arguments the command doesn't accept.
+    @discardableResult
+    public func run(_ command: OfferedSlashCommand, with arguments: SlashArguments) -> Bool {
+        let parts = live(command)
+        guard !parts.isEmpty, command.accepts(arguments) else { return false }
+        editor.undoHistory.group(command.stepName) {
+            for part in parts { part.command.run(part.shapes, arguments, editor) }
+        }
+        return true
+    }
+
+    /// Runs a choice command with a pick on the shapes it acts on: one undo step, named for the row
+    /// (`SlashChoice.step`), else for the command. False, doing nothing, with none of its shapes left and
+    /// for a command that takes no choice.
+    @discardableResult
+    public func run(_ command: OfferedSlashCommand, choosing choice: SlashChoice) -> Bool {
+        let parts = live(command)
+        guard let part = parts.first, parts.count == 1, let runChoice = part.command.runChoice else { return false }
+        editor.undoHistory.group(choice.step ?? command.stepName) { runChoice(part.shapes, choice, editor) }
+        return true
+    }
+
+    /// Runs a command found for a shape's text on that shape (`run(_:with:)`): false, doing nothing, for
+    /// one found for other shapes.
     @discardableResult
     public func run(_ command: OfferedSlashCommand, on id: ShapeID, with arguments: SlashArguments) -> Bool {
-        guard let record = editor.document[id], !record.isOpaque, command.accepts(arguments) else { return false }
-        editor.undoHistory.group(command.stepName) { command.command.run(id, arguments, editor) }
-        return true
+        guard command.shapes == [id] else { return false }
+        return run(command, with: arguments)
     }
 
-    /// Runs a choice command with a pick: one undo step, named for the row (`SlashChoice.step`),
-    /// else for the command. False, doing nothing, for a shape that's gone or kept aside and for a
-    /// command that takes no choice.
+    /// Runs a pick of a command found for a shape's text on that shape (`run(_:choosing:)`): false,
+    /// doing nothing, for one found for other shapes.
     @discardableResult
     public func run(_ command: OfferedSlashCommand, on id: ShapeID, choosing choice: SlashChoice) -> Bool {
-        guard let record = editor.document[id], !record.isOpaque, let runChoice = command.command.runChoice else { return false }
-        editor.undoHistory.group(choice.step ?? command.stepName) { runChoice(id, choice, editor) }
-        return true
+        guard command.shapes == [id] else { return false }
+        return run(command, choosing: choice)
     }
 
-    /// The same, by name.
+    /// The same, by name: the command is resolved now, so false for one the target doesn't offer now
+    /// (`when` asked).
+    @discardableResult
+    public func run(_ name: String, for target: SlashTarget, with arguments: SlashArguments) -> Bool {
+        guard let command = command(named: name, for: target) else { return false }
+        return run(command, with: arguments)
+    }
+
+    /// The same, by name, with a pick.
+    @discardableResult
+    public func run(_ name: String, for target: SlashTarget, choosing choice: SlashChoice) -> Bool {
+        guard let command = command(named: name, for: target) else { return false }
+        return run(command, choosing: choice)
+    }
+
+    /// The same, by name, on a shape's text.
     @discardableResult
     public func run(_ name: String, on id: ShapeID, choosing choice: SlashChoice) -> Bool {
-        guard let command = command(named: name, for: id) else { return false }
-        return run(command, on: id, choosing: choice)
+        run(name, for: .text(id), choosing: choice)
     }
 
-    /// The same, by name: the command is resolved now, so false for one the shape doesn't offer
-    /// now (`when` asked).
+    /// The same, by name, on a shape's text.
     @discardableResult
     public func run(_ name: String, on id: ShapeID, with arguments: SlashArguments) -> Bool {
-        guard let command = command(named: name, for: id) else { return false }
-        return run(command, on: id, with: arguments)
+        run(name, for: .text(id), with: arguments)
+    }
+
+    /// A command's parts on the shapes of each still on the board shown and not kept aside; a part with
+    /// none left is gone.
+    private func live(_ command: OfferedSlashCommand) -> [OfferedSlashCommand.Part] {
+        command.parts.compactMap { part in
+            let shapes = part.shapes.filter { editor.document[$0].map { !$0.isOpaque } ?? false }
+            return shapes.isEmpty ? nil : OfferedSlashCommand.Part(command: part.command, shapes: shapes)
+        }
     }
 
     /// The kind's own commands, then those of the scopes that reach it, one of each name, each in
@@ -239,7 +425,10 @@ public final class SlashCommandState {
     }
 }
 
-extension SlashCommandState: EditorService {}
+extension SlashCommandState: EditorService {
+    /// Another board shown: the selection's list kept was the board left's.
+    public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) { kept = nil }
+}
 
 extension CanvasEditor {
     /// What this editor's shapes offer as slash commands; nil without `SlashCommandsPlugin`.

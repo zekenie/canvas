@@ -52,8 +52,8 @@ private let anchor = CGRect(x: 100, y: 100, width: 120, height: 22)
     }
 
     func card(_ id: String = "c", about shape: ShapeID? = nil, at rect: CGRect = anchor, step: String? = nil,
-              adoptsPress: Bool = false) -> CanvasCard {
-        probeCard(id, about: shape, anchor: rect, stepName: step, adoptsPress: adoptsPress, probe: probe, closings: log)
+              adoptsPress: Bool = false, zoomedOut: Bool = false) -> CanvasCard {
+        probeCard(id, about: shape, anchor: rect, stepName: step, adoptsPress: adoptsPress, showsZoomedOut: zoomedOut, probe: probe, closings: log)
     }
 
     /// Shows a card about `shape`, and forgets what the host was told and the history before it.
@@ -176,6 +176,58 @@ private let anchor = CGRect(x: 100, y: 100, width: 120, height: 22)
         editor.camera.setZoom(0.3, around: .zero)
         expectEqual(rig.log.closings.last, .skeleton, "a card with no shape, as the skeletons come")
     },
+    test("a card that shows zoomed out shows among skeletons, about no shape and about a shape drawn as one; a card that doesn't is refused there; a shape not on the board refuses either") {
+        let rig = try Rig()
+        let editor = rig.h.editor
+        editor.camera.setZoom(0.2, around: .zero)
+        expect(editor.drawsSkeletons)
+        expect(!editor.showCard(rig.card("plain", about: rig.box)), "about what a shape draws: refused")
+        expect(!editor.showCard(rig.card("plain")), "and with no shape")
+        expect(editor.showCard(rig.card("bar", zoomedOut: true)), "about no shape")
+        expectEqual(rig.name, "bar")
+        expect(editor.showCard(rig.card("bar on box", about: rig.box, zoomedOut: true)), "about a shape drawn as a skeleton")
+        expectEqual(rig.name, "bar on box")
+        expect(!editor.showCard(rig.card("gone", about: ShapeID(), zoomedOut: true)), "not on the board shown")
+        expectEqual(rig.name, "bar on box", "a refusal leaves the card showing as it is")
+    },
+    test("shown in full, a card that shows zoomed out stays as the zoom crosses the skeleton level and as skeletonZoom moves past it, where one that doesn't closes") {
+        let rig = try Rig()
+        let editor = rig.h.editor
+        expect(editor.showCard(rig.card("bar", about: rig.box, zoomedOut: true)))
+        editor.camera.setZoom(0.3, around: .zero)
+        editor.camera.setZoom(0.05, around: .zero)
+        editor.skeletonZoom = 2
+        expectEqual(rig.log.closings, [], "never .skeleton")
+        expectEqual(rig.name, "bar")
+        editor.skeletonZoom = 0.35
+        editor.camera.setZoom(1, around: .zero)
+        expect(editor.showCard(rig.card("none", zoomedOut: true)))
+        editor.camera.setZoom(0.1, around: .zero)
+        expectEqual(rig.name, "none", "with no shape either")
+        editor.camera.setZoom(1, around: .zero)
+        expect(editor.showCard(rig.card("plain", about: rig.box)))
+        editor.camera.setZoom(0.3, around: .zero)
+        expectEqual(rig.log.closings.last, .skeleton, "a card about what a shape draws closes as it did")
+    },
+    test("zoomed out, a card that shows there still closes as any card does: a press elsewhere, another board, an undo, its anchor out of the view") {
+        let cases: [(String, CanvasCardClosing, @MainActor (Rig) -> Void)] = [
+            ("a press", .pressedElsewhere, { $0.h.press(at: CGPoint(x: 700, y: 500)); $0.h.release() }),
+            ("a board shown", .board, { $0.h.enter($0.pocket) }),
+            ("undo", .undo, { $0.h.editor.undo() }),
+            ("its anchor out of the view", .leftView, { $0.h.editor.camera.pan(by: CGSize(width: -50000, height: 0)) }),
+        ]
+        for (going, reason, happen) in cases {
+            let rig = try Rig()
+            rig.nudge(nil, "Nudge")
+            rig.h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+            rig.h.editor.camera.setZoom(0.2, around: .zero)
+            expect(rig.h.editor.drawsSkeletons, going)
+            expect(rig.h.editor.showCard(rig.card("bar", about: rig.box, zoomedOut: true)), going)
+            happen(rig)
+            expectEqual(rig.log.closings, [reason], going)
+            expect(rig.h.editor.card == nil, going)
+        }
+    },
     test("a card closes as its shape is deleted, and the delete's step is left whole; its own commit that deletes it too") {
         let rig = try Rig()
         let editor = rig.h.editor
@@ -235,6 +287,26 @@ private let anchor = CGRect(x: 100, y: 100, width: 120, height: 22)
         expect(editor.card != nil, "off the view now, in it where the camera is headed")
         editor.moveCard(to: CGRect(x: 100, y: 100, width: 10, height: 10))
         expectEqual(rig.log.closings, [.leftView], "in the view now, out of it where the camera is headed")
+    },
+    test("through every frame of a glide a card is judged where the camera is headed: one on a shape the glide brings into view stays to the end, one it leaves behind closes") {
+        let rig = try Rig()
+        let editor = rig.h.editor
+        editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        let far = CGRect(x: 5100, y: 100, width: 10, height: 10)
+        var there = Camera()
+        there.origin = CGPoint(x: 5000, y: 0)
+        editor.animateCamera(to: there, duration: .milliseconds(200))
+        expect(editor.showCard(rig.card("far", at: far)))
+        rig.h.wait(100)
+        expect(editor.camera.origin.x > 0 && editor.camera.origin.x < 5000, "mid-glide")
+        expectEqual(rig.name, "far", "its frames judge the card where the camera is headed")
+        rig.h.wait(200)
+        expectEqual(editor.camera, there)
+        expectEqual(rig.name, "far", "and so does the last")
+        expectEqual(rig.log.closings, [])
+        editor.animateCamera(to: Camera(), duration: .milliseconds(200))
+        rig.h.wait(16)
+        expectEqual(rig.log.closings, [.leftView], "a glide away closes it as it begins")
     },
     test("a card stays: a press and a pan press on its anchor, a refused beginEditing, a commit, a hover popover") {
         let rig = try Rig()

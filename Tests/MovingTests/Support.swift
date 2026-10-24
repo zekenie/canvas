@@ -112,6 +112,17 @@ extension EditorHarness {
         editor.slashCommands?.command(named: name, for: id)?.admits(target) ?? false
     }
 
+    /// Runs a command for the shapes selected (the command bar's target) with one shape typed after its name.
+    @discardableResult
+    func run(_ name: String, onSelection ids: [ShapeID], with target: ShapeID) -> Bool {
+        editor.slashCommands?.run(name, for: .selection(ids), with: SlashArguments([.shape(target, label: "Target")])) ?? false
+    }
+
+    /// Whether the command the shapes selected offer by that name takes `target` (false if they offer none).
+    func admits(_ name: String, onSelection ids: [ShapeID], _ target: ShapeID) -> Bool {
+        editor.slashCommands?.command(named: name, for: .selection(ids))?.admits(target) ?? false
+    }
+
     /// Drags the rows of `ids` (selected first, when there are several, as the list drags every selected row)
     /// and drops them on `row`, at `zone`: whether the list took the drop.
     @discardableResult

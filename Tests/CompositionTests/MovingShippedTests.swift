@@ -8,6 +8,7 @@ import LanguageModels
 import Mentions
 import Selection
 import ShippedTesting
+import SlashCommands
 import StickyNotes
 import Subboards
 import TestKit
@@ -78,6 +79,48 @@ import TestKit
         expectEqual(e.frame(e.note)?.origin, CGPoint(x: 100, y: 100), "Undo Move")
         expectEqual(e.editor.document.container(of: e.note, containingKinds: e.editor.registry.containingKinds), nil)
         expectEqual(e.editor.undoHistory.undoName, "Typing", "the step before it is the typing")
+    },
+
+    test("/move-to for three notes selected puts them in the frame as one block, each where it was to the others, 40 in from the frame's top-left; one step, Undo Move, takes them all back") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let e = Errands(pasteboard)
+        let two = e.editor.add(StickyNote(frame: CGRect(x: 320, y: 100, width: 200, height: 200), text: "two"))
+        let three = e.editor.add(StickyNote(frame: CGRect(x: 100, y: 320, width: 200, height: 200), text: "three"))
+        let notes = [e.note, two, three]
+        let kinds = e.editor.registry.containingKinds
+        let state = try require(e.editor.slashCommands)
+        e.editor.selectedShapeIDs = notes
+        let command = try require(state.command(named: "move-to", for: .selection(e.editor.selectedShapeIDs)))
+        expectEqual(command.shapes, notes)
+        expect(!command.isPartial)
+        expect(command.admits(e.groceries) && command.admits(e.plans), "the frame and the subboard")
+        expect(!command.admits(e.milk), "a note is no place")
+        expect(state.run(command, with: SlashArguments([.shape(e.groceries, label: "Groceries")])))
+        expectEqual(notes.map { e.frame($0)?.origin }, [CGPoint(x: 640, y: 140), CGPoint(x: 860, y: 140), CGPoint(x: 640, y: 360)], "the block 40 in from the frame's top-left")
+        expectEqual(notes.map { e.editor.document.container(of: $0, containingKinds: kinds) }, [e.groceries, e.groceries, e.groceries])
+        expectEqual(e.editor.undoHistory.undoName, "Move")
+        e.editor.undo()
+        expectEqual(notes.map { e.frame($0)?.origin }, [CGPoint(x: 100, y: 100), CGPoint(x: 320, y: 100), CGPoint(x: 100, y: 320)], "all three, in one step")
+        expectEqual(notes.map { e.editor.document.container(of: $0, containingKinds: kinds) }, [nil, nil, nil])
+        expect(e.editor.undoHistory.undoName != "Move", "no Move left")
+    },
+
+    test("/move-near for two notes selected puts them as one block right of Milk, 80 away and centered on it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let e = Errands(pasteboard)
+        let two = e.editor.add(StickyNote(frame: CGRect(x: 320, y: 100, width: 200, height: 200), text: "two"))
+        let state = try require(e.editor.slashCommands)
+        e.editor.selectedShapeIDs = [e.note, two]
+        let command = try require(state.command(named: "move-near", for: .selection(e.editor.selectedShapeIDs)))
+        expect(!command.admits(e.note) && !command.admits(two), "not beside one of them")
+        expect(state.run(command, with: SlashArguments([.shape(e.milk, label: "Milk")])))
+        let milk = try require(e.frame(e.milk)), first = try require(e.frame(e.note)), second = try require(e.frame(two))
+        expectEqual(first.origin, CGPoint(x: milk.maxX + 80, y: milk.midY - 100), "the block's left edge 80 off, its 200 down centered on Milk")
+        expectEqual(second.minX - first.minX, 220, "kept where they were to each other")
+        expectEqual(second.minY, first.minY)
+        expectEqual(e.editor.undoHistory.undoName, "Move")
     },
 
     test("/move-near @Milk puts the note right of Milk, 80 away and centered on it") {
