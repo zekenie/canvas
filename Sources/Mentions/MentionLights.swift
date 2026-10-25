@@ -7,8 +7,8 @@ extension PluginID {
     public static let mentionLights: PluginID = "mention-lights"
 }
 
-/// Mentions' lights for Neighbors: hover a shape and what its text mentions is outlined in teal,
-/// what mentions it in lavender (`mention` edges, from the shape whose text holds a mention to the
+/// Mentions' lights for Neighbors: hover a shape with ⌃⌥ held and what its text mentions is outlined
+/// in teal, what mentions it in lavender (`mention` edges, from the shape whose text holds a mention to the
 /// shape it names); its panel lists each under the light's title, a shape that mentions it with its
 /// text around the mention under its name. A plugin value of its own, after Neighbors and Mentions,
 /// so a list without Neighbors leaves it out; after arrows' lights in the shipped list, so a shape
@@ -18,10 +18,11 @@ public struct MentionLightsPlugin: ListedPlugin {
     public var id: PluginID { .mentionLights }
 
     public func register(into registrar: inout PluginRegistrar) {
-        let mention = MentionEdge.id.rawValue
-        registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, query: { ":edge-from(\($0), \(mention))" })
-        registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, query: { ":edge-to(\($0), \(mention))" },
+        let mention = MentionEdge.id.rawValue, keys: Modifiers = [.control, .option]
+        registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, keys: keys, query: { ":edge-from(\($0), \(mention))" })
+        registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, query: { ":edge-to(\($0), \(mention))" },
                                 caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
+        registrar.keyHint("⌃⌥ Hover", "Show Mentions", while: .pointer)
     }
 }
 

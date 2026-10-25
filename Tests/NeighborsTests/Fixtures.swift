@@ -142,11 +142,23 @@ func testLights() -> [NeighborLight] {
     ]
 }
 
+/// The same lights shown by the keys the shipped ones are: what it has a wire to on a plain hover, what
+/// has a wire to it with ⌥, and its quotes both ways with ⌃⌥.
+func keyedLights() -> [NeighborLight] {
+    let keys: [Modifiers] = [[], .option, [.control, .option], [.control, .option]]
+    return zip(testLights(), keys).map { light, keys in
+        var light = light
+        light.keys = keys
+        return light
+    }
+}
+
 /// A plugin that gives Neighbors `lights`, in order, as the plugins that own the edges give theirs.
 func lightsPlugin(_ lights: [NeighborLight]) -> Contributor {
     Contributor(id: "lights") { registrar in
         for light in lights {
-            registrar.neighborLight(light.title, color: light.color, query: light.query, between: light.between, caption: light.caption)
+            registrar.neighborLight(light.title, color: light.color, keys: light.keys, query: light.query, between: light.between,
+                                    caption: light.caption)
         }
     }
 }

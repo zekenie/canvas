@@ -9,12 +9,14 @@ extension PluginID {
 /// Neighbors: hover a shape, on the canvas or by its row in the table of contents, and every shape
 /// connected to it is outlined in a color that says how, so in a dense graph what's connected shows at
 /// a glance, and select one and its panel lists them, by how (`NeighborDetailsPlugin`). A **light** is
-/// one color, a title and the question that finds its shapes (`NeighborLight`): the shapes it points
-/// to, the shapes that point to it, what it mentions, what mentions it. The questions
+/// one color, a title, the keys held while hovering that show it and the question that finds its
+/// shapes (`NeighborLight`): the shapes it points to (a plain hover), the shapes that point to it (⌥),
+/// what it mentions and what mentions it (⌃⌥). The questions
 /// are queries, asked of the query engine for the shape hovered, so what counts as a neighbor is the
 /// graph's and the lights' to say, never this module's: it knows no kind, edge type or concern, and
 /// the plugins that own the edges contribute the lights (`registrar.neighborLight`: arrows' are
-/// Arrows', mentions' are Mentions'). A shape in two lights has a ring for each; a shape on another
+/// Arrows', mentions' are Mentions', and each says its keys). A shape in two lights shown together
+/// has a ring for each; a shape on another
 /// board lights the card that holds it on the board shown. The core strokes the outlines
 /// (`Outlines.tinted`) and the minimap fills the same shapes, so connected shapes off screen show
 /// there too. A surface: what an edge's owner shows its edges on.
@@ -23,6 +25,11 @@ public struct NeighborLight: Sendable {
     public var title: String
     /// What the shapes it matches are outlined in.
     public var color: NSColor
+    /// The keys held while hovering that show it: none for a plain hover, `.option` for ⌥. Hovering
+    /// shows the lights whose keys are exactly those held of the keys some light names, so a key no
+    /// light names (⇧ for a click that adds to the selection) changes nothing. The panel lists every
+    /// light whatever is held.
+    public var keys: Modifiers
     /// The query that finds the shapes at the other end, given the selector that names the shape
     /// hovered or selected (`#`, then its id, as the query language writes one): what's outlined, and
     /// what the panel lists.
@@ -35,11 +42,12 @@ public struct NeighborLight: Sendable {
     /// drawn, so it reads what's kept, never a board.
     public var caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: ShapeID, _ neighbor: ShapeID) -> String?)?
 
-    public init(_ title: String, color: NSColor, query: @escaping @Sendable (String) -> String,
+    public init(_ title: String, color: NSColor, keys: Modifiers = [], query: @escaping @Sendable (String) -> String,
                 between: (@Sendable (String) -> String)? = nil,
                 caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: ShapeID, _ neighbor: ShapeID) -> String?)? = nil) {
         self.title = title
         self.color = color
+        self.keys = keys
         self.query = query
         self.between = between
         self.caption = caption
@@ -69,18 +77,20 @@ extension NeighborLights: ExtensionPoint {
 }
 
 extension PluginRegistrar {
-    /// A light: hovering a shape outlines the matches of `query`, and of `between`, in `color`, and
-    /// the shape's panel lists the matches of `query` under `title` (`NeighborDetailsPlugin`), each
-    /// with `caption`'s line under it if it gives one. Each query is given the selector that names
-    /// the shape (`#` and its id) and returns a query in the query language, written from the edge
-    /// types' ids, never as literals. Lights are in plugin order, and a plugin's in the order it
-    /// gives them.
+    /// A light: hovering a shape with `keys` held (none, a plain hover) outlines the matches of
+    /// `query`, and of `between`, in `color`, and the shape's panel lists the matches of `query` under
+    /// `title` (`NeighborDetailsPlugin`), each with `caption`'s line under it if it gives one. Each
+    /// query is given the selector that names the shape (`#` and its id) and returns a query in the
+    /// query language, written from the edge types' ids, never as literals. Lights are in plugin
+    /// order, and a plugin's in the order it gives them. A light shown with keys is said beside it
+    /// with `registrar.keyHint(…, while: .pointer)`, once for its keys, for the Keyboard Shortcuts
+    /// window.
     public mutating func neighborLight(
-        _ title: String, color: NSColor, query: @escaping @Sendable (String) -> String,
+        _ title: String, color: NSColor, keys: Modifiers = [], query: @escaping @Sendable (String) -> String,
         between: (@Sendable (String) -> String)? = nil,
         caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: ShapeID, _ neighbor: ShapeID) -> String?)? = nil
     ) {
-        contribute(NeighborLight(title, color: color, query: query, between: between, caption: caption), to: NeighborLights.self)
+        contribute(NeighborLight(title, color: color, keys: keys, query: query, between: between, caption: caption), to: NeighborLights.self)
     }
 }
 

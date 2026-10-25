@@ -21,10 +21,10 @@ import Titles
 import Types
 
 // Neighbors over the shipped plugins: hovering a note, or its row in the table of contents, outlines
-// what it points to (arrows out of it, what a reference stands for), what points to it, what it
-// mentions and what mentions it, each in its color, with a ring for each light a shape is in; the
-// arrows between are in their light's color; a note in a subboard lights the subboard's card; and a
-// reference's own arrows count with what it stands for.
+// what it points to (arrows out of it, what a reference stands for), with ⌥ held what points to it
+// (and what is of a type), and with ⌃⌥ what it mentions and what mentions it, each in its color, with a
+// ring for each light shown a shape is in; the arrows between are in their light's color; a note in a
+// subboard lights the subboard's card; and a reference's own arrows count with what it stands for.
 
 private let noteLink = NoteLink.id
 
@@ -192,6 +192,8 @@ private struct Kinds {
                                                      ":is-a(\(selector)[schema]):not([schema])", "[schema]:is-a(\(selector)[schema])"])
         // What mentions a shape has its text around the mention under it; nothing else has a line.
         expectEqual(lights.map { $0.caption != nil }, [false, false, false, true, false, false])
+        // A plain hover shows what it points to; ⌥ what points to it, as what is of a type does (its `is-a` runs to the type); ⌃⌥ its mentions.
+        expectEqual(lights.map(\.keys), [[], .option, [.control, .option], [.control, .option], .option, .option])
     },
     test("a list without Neighbors leaves the lights out, and one with a light and no Neighbors is refused") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -243,7 +245,7 @@ private struct Kinds {
         expectEqual(lights.subtypes, lights.instances, "a type built on it in the pink of what is of it: a shape is one or the other")
         expectEqual(Set(chosen.map(\.dark)).count, 5)
     },
-    test("hovering a note outlines what it points to, what points to it, what it mentions and what mentions it, and the arrows between, each in its color") {
+    test("hovering a note outlines what it points to; with ⌥ what points to it; with ⌃⌥ what it mentions and what mentions it; the arrows between with them, each in its color") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let graph = Graph()
@@ -252,11 +254,16 @@ private struct Kinds {
         expectEqual(h.lit, [])
         h.editor.hovered = graph.a
         h.settleLights()
-        // B is pointed to by A and points to A: its second light is a ring further out. G is on S's board: S is where it's drawn.
-        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac]),
-                            Lit(lights.pointedToBy, 0, [graph.d, graph.da, graph.ba]), Lit(lights.pointedToBy, 1, [graph.b]),
-                            Lit(lights.mentions, 0, [graph.f, graph.s]), Lit(lights.mentionedBy, 0, [graph.e])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac])])
         expectEqual(h.editor.outlines.faintShapes, [graph.a], "Selection's hover, on the shape itself")
+        // B is pointed to by A and points to A: with ⌥ it's in the one light shown, so its first ring.
+        h.hold(.option)
+        h.wait(0)
+        expectEqual(h.lit, [Lit(lights.pointedToBy, 0, [graph.d, graph.da, graph.ba, graph.b])])
+        // G is on S's board: S is where it's drawn.
+        h.hold([.control, .option])
+        h.wait(0)
+        expectEqual(h.lit, [Lit(lights.mentions, 0, [graph.f, graph.s]), Lit(lights.mentionedBy, 0, [graph.e])])
         h.editor.hovered = nil
         h.wait(0)
         expectEqual(h.lit, [])
@@ -264,14 +271,20 @@ private struct Kinds {
         h.editor.hovered = graph.e
         h.settleLights()
         expectEqual(h.lit, [Lit(lights.mentions, 0, [graph.a])])
+        h.hold([])
+        h.wait(0)
+        expectEqual(h.lit, [], "it points to nothing")
         // D has an arrow to A, and nothing else.
         h.editor.hovered = graph.d
         h.settleLights()
         expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.a, graph.da])])
         // The subboard S is connected to nothing: A mentions the note on its board, not the card.
-        h.editor.hovered = graph.s
-        h.settleLights()
-        expectEqual(h.lit, [])
+        for keys: Modifiers in [[], .option, [.control, .option]] {
+            h.hold(keys)
+            h.editor.hovered = graph.s
+            h.settleLights()
+            expectEqual(h.lit, [])
+        }
     },
     test("a lit arrow is covered in its light's color, as wide as its line and a point more, so its own line doesn't stripe it") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -279,6 +292,7 @@ private struct Kinds {
         let graph = Graph()
         let h = try shipped(graph.file, pasteboard)
         let lights = try Lights(h.editor.registry)
+        h.hold(.option)
         h.editor.hovered = graph.a
         h.settleLights()
         // D's arrow to A, along y = 500 between them (A's left edge is at 400): lit as what points to A, in its purple.
@@ -296,33 +310,44 @@ private struct Kinds {
         expect((480..<520).filter { y in let p = pixel(unlit, at: CGPoint(x: 300, y: CGFloat(y))); return p[0] < 100 && p[1] < 100 && p[2] < 100 }.count >= 3,
                "the arrow's own line, dark, when nothing's lit")
     },
-    test("hovering an arrow outlines the shape it ends at as what it points to, and the shape it starts at as what points to it") {
+    test("hovering an arrow outlines the shape it ends at as what it points to, and with ⌥ the shape it starts at as what points to it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let graph = Graph()
         let h = try shipped(graph.file, pasteboard)
         let lights = try Lights(h.editor.registry)
+        /// What the arrow hovered lights plainly, then with ⌥, then let go.
+        @MainActor func both() -> [[Lit]] {
+            let plain = h.lit
+            h.hold(.option)
+            h.wait(0)
+            defer {
+                h.hold([])
+                h.wait(0)
+            }
+            return [plain, h.lit]
+        }
         h.editor.hovered = graph.ab
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.b]), Lit(lights.pointedToBy, 0, [graph.a])])
+        expectEqual(both(), [[Lit(lights.pointsTo, 0, [graph.b])], [Lit(lights.pointedToBy, 0, [graph.a])]])
         // A note-link is an arrow too: its type is under `arrow`.
         h.editor.hovered = graph.ac
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.c]), Lit(lights.pointedToBy, 0, [graph.a])])
+        expectEqual(both(), [[Lit(lights.pointsTo, 0, [graph.c])], [Lit(lights.pointedToBy, 0, [graph.a])]])
         // The arrow back from B to A: the other way round.
         h.editor.hovered = graph.ba
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.a]), Lit(lights.pointedToBy, 0, [graph.b])])
+        expectEqual(both(), [[Lit(lights.pointsTo, 0, [graph.a])], [Lit(lights.pointedToBy, 0, [graph.b])]])
         // Re-aimed at D while it's hovered: it ends there now, and undone, back (its edge changed, which the change lists by its ends).
         let toD = ArrowTerminal.bound(ArrowBinding(shapeID: graph.d, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         h.editor.transact("Re-aim") { $0.update(graph.ba, as: Arrow.self) { $0.props.end = toD } }
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.d]), Lit(lights.pointedToBy, 0, [graph.b])])
+        expectEqual(both(), [[Lit(lights.pointsTo, 0, [graph.d])], [Lit(lights.pointedToBy, 0, [graph.b])]])
         h.editor.undo()
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.a]), Lit(lights.pointedToBy, 0, [graph.b])])
+        expectEqual(both(), [[Lit(lights.pointsTo, 0, [graph.a])], [Lit(lights.pointedToBy, 0, [graph.b])]])
     },
-    test("hovering a type outlines what is of it in pink, however far: a note, what is of a type built on it and the subboard whose board holds one, and apart from them the type built on it; an instance hovered lights no type") {
+    test("hovering a type with ⌥ outlines what is of it in pink, however far: a note, what is of a type built on it and the subboard whose board holds one, and apart from them the type built on it; an instance hovered lights no type") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let kinds = Kinds()
@@ -330,6 +355,9 @@ private struct Kinds {
         let lights = try Lights(h.editor.registry)
         h.editor.hovered = kinds.t
         h.settleLights()
+        expectEqual(h.lit, [], "a plain hover shows what it points to: nothing")
+        h.hold(.option)
+        h.wait(0)
         expectEqual(h.lit, [Lit(lights.instances, 0, [kinds.a, kinds.v, kinds.s]), Lit(lights.subtypes, 0, [kinds.u])])
         // A note given the type while it's hovered is lit, and with the undo, not.
         h.editor.addTypeLink(kinds.t, to: kinds.p)
@@ -356,13 +384,13 @@ private struct Kinds {
         let contents = try require(h.editor.tableOfContents)
         contents.hover(graph.a)
         h.settleLights()
-        expectEqual(h.lit.count, 5)
-        expectEqual(h.lit.first, Lit(lights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac]))
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [graph.b, graph.c, graph.ab, graph.ac])])
         contents.endHover(graph.a)
         h.wait(0)
         expectEqual(h.lit, [])
-        // G is a row under S's, on a board the canvas doesn't show: the shape is hovered elsewhere, A mentions it, and
-        // S is where it is, which Selection outlines faintly.
+        // G is a row under S's, on a board the canvas doesn't show: the shape is hovered elsewhere, A mentions it (⌃⌥),
+        // and S is where it is, which Selection outlines faintly. The keys reach it as they would with the list's keyboard.
+        h.editor.modifiersChangedInWindow(held: [.control, .option])
         contents.hover(graph.g)
         h.settleLights()
         expectEqual(h.editor.hovered, nil)
@@ -386,30 +414,39 @@ private struct Kinds {
         let h = try shipped(CanvasFile(root: CanvasDocument(shapes: [public_, note(x, 0, 1, "Checkout"), pill, arrow(x, r).copy(as: into)])), pasteboard)
         let lights = try Lights(h.editor.registry)
         // The pill's arrow into it is, to the graph, an arrow into the note it stands for.
+        h.hold(.option)
         h.editor.hovered = target
         h.settleLights()
         expectEqual(h.lit, [Lit(lights.pointedToBy, 0, [x, r, into])])
         // Checkout points to the note, as the graph reads it, and to the pill, as drawn.
+        h.hold([])
         h.editor.hovered = x
         h.settleLights()
         expectEqual(h.lit, [Lit(lights.pointsTo, 0, [target, r, into])])
         // The pill stands for the note, and the arrow is into it as drawn.
         h.editor.hovered = r
         h.settleLights()
-        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [target]), Lit(lights.pointedToBy, 0, [x, into])])
+        expectEqual(h.lit, [Lit(lights.pointsTo, 0, [target])])
+        h.hold(.option)
+        h.wait(0)
+        expectEqual(h.lit, [Lit(lights.pointedToBy, 0, [x, into])])
     },
-    test("what's outlined is drawn: a note's first ring green and its second purple, 4 and 8 points off its edge, in the app's own editor") {
+    test("what's outlined is drawn: a note's first ring teal and its second lavender, 4 and 8 points off its edge, in the app's own editor") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        let graph = Graph()
+        // A and B mention each other: with ⌃⌥ on A, B is in both lights shown, what A mentions and what mentions A.
+        let a = ShapeID(), b = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [note(a, 1, 1, MentionText([.mention(b, label: "B")])),
+                                                            note(b, 2, 1, MentionText([.mention(a, label: "A")]))]))
         // No harness (which draws outlines on the shapes' edges): the app's editor stands them off by 4.
         let scheduler = ManualScheduler()
-        let editor = CanvasEditor(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()), file: graph.file,
+        let editor = CanvasEditor(registry: try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel()), file: file,
                                   scheduler: scheduler)
         expectEqual(editor.outlineGap, 4, "what ships")
         let lights = try Lights(editor.registry)
         editor.camera = Camera(origin: CGPoint(x: -100, y: -100), zoom: 0.8)
-        editor.hovered = graph.a
+        editor.modifiersChangedInWindow(held: [.control, .option])
+        editor.hovered = a
         scheduler.advance(by: .zero)
         let neighbors = try require(editor.neighbors)
         spinRunLoop(until: { !neighbors.isAsking })
@@ -419,9 +456,9 @@ private struct Kinds {
         @MainActor func color(_ x: CGFloat) -> [Int] { pixel(drawn, at: CGPoint(x: right + x, y: middle)) }
         // The lights are drawn in the light appearance's values (`renderBitmap` is aqua), each line 2 points wide: 3 to 5 out and 7 to 9.
         @MainActor func ink(_ color: NSColor) -> [Int] { Array(swatch(color, in: .aqua).prefix(3)) }
-        let first = ink(lights.pointsTo), second = ink(lights.pointedToBy)
-        for x in [3.5, 4.5] { expectEqual(Array(color(x).prefix(3)), first, "ring 0, in the first light's green, \(x) out") }
-        for x in [7.5, 8.5] { expectEqual(Array(color(x).prefix(3)), second, "ring 1, in the second light's purple, \(x) out") }
+        let first = ink(lights.mentions), second = ink(lights.mentionedBy)
+        for x in [3.5, 4.5] { expectEqual(Array(color(x).prefix(3)), first, "ring 0, in the first light's teal, \(x) out") }
+        for x in [7.5, 8.5] { expectEqual(Array(color(x).prefix(3)), second, "ring 1, in the second light's lavender, \(x) out") }
         // Where the line isn't, the canvas is the canvas's: between the rings, and past the second.
         for x in [5.5, 6.5, 10] { expect(color(x)[0] > 230 && color(x)[1] > 230, "the canvas, \(x) out: \(color(x))") }
     },

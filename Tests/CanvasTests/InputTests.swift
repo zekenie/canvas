@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Geometry
+import Observation
 import TestKit
 
 final class ModifierLog: Tool {
@@ -134,6 +135,35 @@ extension DragLog: Session {
         h.wait(1)
         expectEqual(h.editor.effectiveModifiers, [])
         expectEqual(log?.seen, [.option, .option, []])
+    },
+    test("the keys held are observed and let go at once, heard from the canvas, the window and the pointer, and only the canvas's reach the tool") {
+        var log: ModifierLog?
+        let h = try EditorHarness(plugins: [Contributor(id: "log") {
+            $0.tool(ToolDescriptor(id: "log", label: "Log", systemImage: "list.bullet")) { _ in let t = ModifierLog(); log = t; return t }
+        }])
+        h.editor.setTool("log")
+        let held = Flag()
+        withObservationTracking { _ = h.editor.modifiersHeld } onChange: { held.set() }
+        h.hold(.option)
+        expect(held.isSet)
+        expectEqual(h.editor.modifiersHeld, .option)
+        let same = Flag()
+        withObservationTracking { _ = h.editor.modifiersHeld } onChange: { same.set() }
+        h.hold(.option)
+        expect(!same.isSet, "the same keys again: nothing is told")
+        h.hold([])
+        expectEqual(h.editor.modifiersHeld, [], "let go at once")
+        expectEqual(h.editor.effectiveModifiers, .option, "where a drag still counts it held")
+        // A change in the window, wherever the keyboard is: the editor holds the keys, and the tool hears nothing.
+        let seen = log?.seen
+        h.editor.modifiersChangedInWindow(held: [.control, .option])
+        expectEqual(h.editor.modifiersHeld, [.control, .option])
+        expectEqual(log?.seen, seen)
+        // A pointer event says what's held too.
+        h.editor.pointerMoved(PointerEvent(location: CGPoint(x: 10, y: 10), timestamp: h.time, modifiers: .shift, clickCount: 0))
+        expectEqual(h.editor.modifiersHeld, .shift)
+        h.editor.modifiersChangedInWindow(held: [])
+        expectEqual(h.editor.modifiersHeld, [])
     },
     test("the manual scheduler fires in deadline order, ties in the order scheduled, and honors cancellation") {
         let scheduler = ManualScheduler()

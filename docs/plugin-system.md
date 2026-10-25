@@ -10354,8 +10354,9 @@ drop notes' rows on a frame's, a subboard's and each other's.
 
 Neighbors ([`Sources/Neighbors`](../Sources/Neighbors)) shows what's connected to a shape at a glance,
 which in a dense graph is the point: hover a shape, on the canvas or by its row in the [table of
-contents](#the-table-of-contents), and every shape connected to it is outlined in a color that says
-how, and the arrows between are colored too. The minimap fills the same shapes in the same colors,
+contents](#the-table-of-contents), and what it points to is outlined; hold ⌥ and what points to it
+is, and hold ⌃⌥ and what it mentions and what mentions it are, each in a color that says how, and the
+arrows between are colored too. The minimap fills the same shapes in the same colors,
 so what's connected off screen shows there (the rest of it dims while anything is lit, and a shape
 in two lights shows both, one inside the other), and a connected shape on another board (inside a
 subboard) lights the card that holds it. Select a shape and its panel's Connections tab lists what's
@@ -10365,20 +10366,20 @@ and the one a list sets for a shape the canvas doesn't show), Topology (when a s
 the file (where a shape on another board is drawn), the core's [tinted outlines](#outlines), and, for
 the tab, [the detail panel](#the-detail-panel), [FuzzyMatching](#fuzzymatching) (its search) and the
 [table of contents](#the-table-of-contents) (what a listed shape with no title is called), and
-it knows no kind, edge type or concern: what counts as connected is a **light**, a title, a color
-and a query, which the plugin that owns the edges contributes to its point
+it knows no kind, edge type or concern: what counts as connected is a **light**, a title, a color,
+the keys held that show it and a query, which the plugin that owns the edges contributes to its point
 (`registrar.neighborLight`). Arrows' two are Arrows' own (`ArrowLightsPlugin`), mentions' two are
 Mentions' (`MentionLightsPlugin`) and the two for what is of a type are Types' (`TypeLightsPlugin`),
 each a plugin value of its own, so a list without Neighbors leaves them out.
 
-| Light | Color | What's outlined, for the shape hovered, and listed, for the shape selected |
-|---|---|---|
-| Points To | green | the shapes an arrow out of it ends at and the shape a reference stands for; for an arrow, the shape it ends at |
-| Pointed To By | purple | the shapes that have an arrow into it and the references that stand for it; for an arrow, the shape it starts at |
-| Mentions | teal | the shapes its text mentions |
-| Mentioned By | lavender | the shapes whose text mentions it |
-| Instances | pink | what is of it, however far, never a type: a note that is it, and what is of a type built on it; a relationship type's arrows |
-| Subtypes | pink | the types built on it, however far: a kind of it, and none of it |
+| Light | Color | Keys | What's outlined, for the shape hovered, and listed, for the shape selected |
+|---|---|---|---|
+| Points To | green | none | the shapes an arrow out of it ends at and the shape a reference stands for; for an arrow, the shape it ends at |
+| Pointed To By | purple | ⌥ | the shapes that have an arrow into it and the references that stand for it; for an arrow, the shape it starts at |
+| Mentions | teal | ⌃⌥ | the shapes its text mentions |
+| Mentioned By | lavender | ⌃⌥ | the shapes whose text mentions it |
+| Instances | pink | ⌥ | what is of it, however far, never a type: a note that is it, and what is of a type built on it; a relationship type's arrows |
+| Subtypes | pink | ⌥ | the types built on it, however far: a kind of it, and none of it |
 
 The arrows themselves, between a shape and those, are outlined with them and never listed (a light's
 `between`).
@@ -10396,10 +10397,11 @@ after, by the same rules; gold, the other hue the four leave, read as a yellow n
 canvas.
 
 ```swift
-// A light is a title, a color and a query, given `#id`, the shape hovered or listed, and the edge
-// types come from their plugins' ids, never written out. `between` finds what runs between the shape
-// and those (the arrows): outlined with them, never listed. `caption` is a line under a listed
-// shape's name, from the editor, the shape the list is of and the listed one.
+// A light is a title, a color, the keys held while hovering that show it (none: a plain hover) and a
+// query, given `#id`, the shape hovered or listed, and the edge types come from their plugins' ids,
+// never written out. `between` finds what runs between the shape and those (the arrows): outlined
+// with them, never listed. `caption` is a line under a listed shape's name, from the editor, the shape
+// the list is of and the listed one. A light shown with keys is said beside it as a key hint.
 
 // Arrows (ArrowLightsPlugin, id `arrow-lights`):
 let arrow = ArrowEdge.id.rawValue, standing = StandingEdge.id.rawValue
@@ -10408,22 +10410,27 @@ registrar.neighborLight(ArrowStyle.pointsTo, color: ArrowStyle.pointsToLight, qu
 }, between: {
     ":starts-at(\($0), \(arrow))"
 })
-registrar.neighborLight(ArrowStyle.pointedToBy, color: ArrowStyle.pointedToByLight, query: {
+registrar.neighborLight(ArrowStyle.pointedToBy, color: ArrowStyle.pointedToByLight, keys: .option, query: {
     ":edge-to(\($0), \(arrow)|\(standing)), :start-of(\($0), \(arrow))"
 }, between: {
     ":ends-at(\($0), \(arrow))"
 })
+registrar.keyHint("⌥ Hover", "Show What Points to It", while: .pointer)
 
 // Mentions (MentionLightsPlugin, id `mention-lights`):
-let mention = MentionEdge.id.rawValue
-registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, query: { ":edge-from(\($0), \(mention))" })
-registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, query: { ":edge-to(\($0), \(mention))" },
+let mention = MentionEdge.id.rawValue, keys: Modifiers = [.control, .option]
+registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, keys: keys, query: { ":edge-from(\($0), \(mention))" })
+registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, query: { ":edge-to(\($0), \(mention))" },
                         caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
+registrar.keyHint("⌃⌥ Hover", "Show Mentions", while: .pointer)
 
-// Types (TypeLightsPlugin, id `type-lights`):
+// Types (TypeLightsPlugin, id `type-lights`): what is of a type has an `is-a` edge to it, so ⌥, as what points to a shape.
 let isA = IsAEdge.id.rawValue, schema = TypeSchemaProperty.key.rawValue
-registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, query: { ":\(isA)(\($0)[\(schema)]):not([\(schema)])" })
-registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, query: { "[\(schema)]:\(isA)(\($0)[\(schema)])" })
+registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, keys: .option,
+                        query: { ":\(isA)(\($0)[\(schema)]):not([\(schema)])" })
+registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, keys: .option,
+                        query: { "[\(schema)]:\(isA)(\($0)[\(schema)])" })
+registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: .pointer)
 ```
 
 - **`NeighborsPlugin()`** (id `neighbors`, `PluginID.neighbors`; with `NeighborLight`, the titled,
@@ -10432,16 +10439,17 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   `registry.neighborLights`; and `NeighborState`, the service; the lists have their own, below)
   registers the service (`editor.neighbors`), which takes the lights from the registry,
   and `registrar.outlines { $0.neighbors?.outlines ?? Outlines() }`; the report's
-  line is `neighbors service NeighborState · outlines`, arrows' and mentions' faces'
-  `neighbor light · neighbor light`, and types' `neighbor light`. It's after the query plugins in the shipped
+  line is `neighbors service NeighborState · outlines`, and each face's
+  `neighbor light · neighbor light` and its key hint. It's after the query plugins in the shipped
   list, and the lights' plugins are after it, and the tab's after theirs. It lights nothing without `QueriesPlugin()` and
   `TopologyPlugin()` (a hover asks nothing then), has nothing to hover without `SelectionPlugin()`,
   and nothing to light without a light; none of them is refused, since it
   contributes to none of their points. A light in a list without Neighbors is refused, as any
   contribution whose point's owner isn't installed is.
-- **A light is a title, a color and a question.** `registrar.neighborLight(_:color:query:between:caption:)`
+- **A light is a title, a color, its keys and a question.** `registrar.neighborLight(_:color:keys:query:between:caption:)`
   contributes a `NeighborLight` to the `NeighborLights` point (owner `neighbors`): `title` is what the
-  panel heads the light's list with, and `query` is given the selector that names the shape hovered
+  panel heads the light's list with, `keys` the keys held while hovering that show it (none by
+  default, a plain hover; the panel lists every light whatever is held), and `query` is given the selector that names the shape hovered
   or listed (`#`, then its id, as the query language writes one) and returns the query whose matches
   are outlined in that color and listed. `between`, if given, is a query for what runs between the shape
   and those (the arrows): hovering outlines it with them (`NeighborLight.lit` is the two as one
@@ -10464,6 +10472,15 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   [the table of contents](#the-table-of-contents) sets it). Both are watched with Observation,
   re-armed after each change, and the look at a change is a turn of `editor.scheduler` later, never
   inside the `willSet` Observation tells it in.
+- **The keys** choose which lights show: those whose keys are exactly the ones held of the keys some
+  light names (`editor.modifiersHeld`, the core's: the keys held as the window last heard them,
+  whoever has the keyboard, and as each pointer event says, observed and let go at once), so a plain
+  hover shows Points To, ⌥ Pointed To By and what is of a type, ⌃⌥ Mentions and Mentioned By, and a
+  key no light names (⇧ for a click that adds to the selection, ⌘) changes nothing; ⌃ alone shows
+  none. The keys are watched with the subject, in the same tracking. Every light is still asked
+  once a hover, whatever is held, so a key pressed or let go only works out again what shows from
+  the answer there is: no query, and the switch is at once. A light owner says its keys beside its
+  lights with `registrar.keyHint(…, while: .pointer)`, so the Keyboard Shortcuts window lists them.
 - **Asking.** When the subject changes to a shape, any ask still running is let go of (the engine
   looks every 256 shapes, so it stops), and one batch asks the engine
   (`editor.queries.matches`, [Many at once](#many-at-once-edge-views-and-waiting)) for every light in
@@ -10506,10 +10523,11 @@ registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, q
   on; one on a board above, which no shape on the board shown holds, is left out. The subject is never
   lit, nor, where the subject isn't on the board shown (a row of another board), the card it's on:
   Selection outlines that card faintly, as a hover is, since that is where the subject is.
-- **Rings.** A shape in two lights has a ring for each, in light order: the first light it's in is
-  its first ring, the next light's the next, `TintedOutlines.ring`. A group is made for each light and
-  ring that has shapes (an arrow is in one light; a note that's both pointed to and pointing back is
-  in two, green first, then purple a ring further out), and the core, which knows no meaning, strokes
+- **Rings.** A shape in two lights shown together has a ring for each, in light order: the first
+  light it's in is its first ring, the next light's the next, `TintedOutlines.ring`; a light the keys
+  don't show takes no ring. A group is made for each light and ring that has shapes (an arrow is in
+  one light; with ⌃⌥ a note that both mentions the shape and is mentioned by it is in two, teal
+  first, then lavender a ring further out), and the core, which knows no meaning, strokes
   them as the outline says ([Outlines](#outlines)): under every other outline, so a selected shape's
   line shows over the tint. A ring is 4 view points further out than the one before (a line 2 wide
   and a gap 2), so their centers are 4, 8 and 12 off a note's edge, whole pixels at 1× and 2×.
@@ -14586,9 +14604,9 @@ group-queries        query word :grouped-with
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
 neighbors            service NeighborState · outlines
-arrow-lights         neighbor light · neighbor light
-mention-lights       neighbor light · neighbor light
-type-lights          neighbor light · neighbor light
+arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
+mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
+type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order

@@ -130,6 +130,7 @@ extension CanvasEditor {
     /// The keys held now (from the view's flagsChanged). A released key counts as held for
     /// `Style.modifierReleaseDelay` longer, so letting go of ⌥ and the mouse together keeps ⌥.
     @_spi(Host) public func modifiersChanged(held: Modifiers) {
+        hold(held)
         let released = heldModifiers.subtracting(held)
         heldModifiers = held
         if !released.isEmpty {
@@ -142,6 +143,16 @@ extension CanvasEditor {
             }
         }
         dispatchModifiers(held.union(recentlyReleased))
+    }
+
+    /// The keys held now, from a change anywhere in the canvas's window, which reaches the canvas's
+    /// own `flagsChanged` only while it's in the responder chain (not while a panel's field or the
+    /// table of contents has the keyboard), or none as the window stops being key: `modifiersHeld`
+    /// alone. The tool and a session hear only the canvas's own (`modifiersChanged(held:)`).
+    @_spi(Host) public func modifiersChangedInWindow(held: Modifiers) { hold(held) }
+
+    private func hold(_ held: Modifiers) {
+        if held != modifiersHeld { modifiersHeld = held }
     }
 
     /// A secondary click (a right-click, or a Control-click): the menu to open there, from the
@@ -224,6 +235,7 @@ extension CanvasEditor {
 
     private func sample(_ event: PointerEvent) -> Pointer {
         tracker.sample(event.location, at: event.timestamp)
+        hold(event.modifiers)
         return Pointer(view: event.location, world: camera.toWorld(event.location),
                        modifiers: event.modifiers.union(recentlyReleased), clickCount: event.clickCount)
     }

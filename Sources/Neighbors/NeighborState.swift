@@ -12,6 +12,11 @@ import Topology
 /// change of either asks again; it never writes the document, and keeps nothing a commit must
 /// follow but what it matched and where that is drawn.
 ///
+/// **The keys.** The lights shown are those whose keys are the ones held (`editor.modifiersHeld`) of
+/// the keys some light names: a plain hover shows the lights with none, ⌥ those with ⌥. The keys are
+/// watched with the hover, and every light is asked whatever is held, so a key pressed or let go
+/// only works out again what shows from the answer there is, asking nothing.
+///
 /// **Asking.** When the subject changes to a shape, any ask still running is let go of and the
 /// engine is asked once, in one batch, for each light's query in the edge view `.resolved` and,
 /// where some shape stands in for others, in `.literal` too: a reference's own arrows count, and so
@@ -34,17 +39,21 @@ import Topology
 /// board is outlined as the shape on the board shown that holds it (`file.shape(on:holding:)`: a
 /// subboard's card, at any depth), and one on a board above is left out. The subject is never lit,
 /// nor, where the subject isn't on the board shown, its own card, which Selection outlines faintly
-/// instead (it's where the subject is). A shape matched by several lights is in each, in a ring of
-/// its own for each: its first light's is the first ring, the next light's the next. A frame costs
+/// instead (it's where the subject is). A shape matched by several lights shown is in each, in a ring
+/// of its own for each: its first light's is the first ring, the next light's the next. A frame costs
 /// handing the core what's kept, and a redraw is asked for only when what's kept changed.
 @MainActor
 public final class NeighborState {
     private unowned let editor: CanvasEditor
     /// The lights, in order.
     private let lights: [NeighborLight]
+    /// Every key some light names: the keys that choose which lights show. The rest choose nothing.
+    private let choosing: Modifiers
 
     /// The shape hovered, as the last look found it, which what's lit is being asked for (or is).
     public private(set) var subject: ShapeID?
+    /// The keys held of `choosing`, as the last look found them: the lights with exactly these show.
+    private var keys: Modifiers = []
     /// What the lights matched for the shape before the subject, until the answer for it lands: every
     /// match, on whatever board, each light's in the engine's order.
     private var lit: Lit?
@@ -108,8 +117,9 @@ public final class NeighborState {
     init(editor: CanvasEditor, lights: [NeighborLight]) {
         self.editor = editor
         self.lights = lights
+        choosing = lights.reduce([]) { $0.union($1.keys) }
         following = editor.topology?.follow { [weak self] change in self?.edgesChanged(change) }
-        subject = watch()
+        (subject, keys) = watch()
     }
 
     /// Whether an answer is on its way, or a look at the hover is due: what a test waits out.
@@ -125,12 +135,12 @@ public final class NeighborState {
 
     // MARK: The subject
 
-    /// The shape hovered now, read so its next change is told: Observation tells once, so every look
-    /// arms the next.
-    private func watch() -> ShapeID? {
+    /// The shape hovered now, and the keys held that choose lights, read so the next change of either
+    /// is told: Observation tells once, so every look arms the next.
+    private func watch() -> (ShapeID?, Modifiers) {
         withObservationTracking {
             let onCanvas = editor.hovered, elsewhere = editor.hoveredElsewhere
-            return onCanvas ?? elsewhere
+            return (onCanvas ?? elsewhere, editor.modifiersHeld.intersection(choosing))
         } onChange: { [weak self] in
             // Told as it's about to change (in its `willSet`): looked at once it has, a turn later.
             MainActor.assumeIsolated { self?.hoverWillChange() }
@@ -146,10 +156,16 @@ public final class NeighborState {
         }
     }
 
-    /// The hover changed, or may have: a shape asks, and none lets go of what's lit.
+    /// The hover or the keys changed, or may have: a shape asks, and none lets go of what's lit; other
+    /// keys on the same shape show other lights of the answer there is.
     private func look() {
-        let next = watch()
-        guard next != subject else { return }
+        let (next, held) = watch()
+        let rekeyed = held != keys
+        keys = held
+        guard next != subject else {
+            if rekeyed, let lit { place(lit) }
+            return
+        }
         subject = next
         guard let next else { return stop() }
         ask(about: next)
@@ -229,11 +245,11 @@ public final class NeighborState {
 
     // MARK: What shows
 
-    /// Works out what the canvas outlines from what the lights matched, as the file is now: each
-    /// match where it's drawn (itself, on the board shown, else the shape on it that holds it: its
-    /// card, none for a shape on a board above), the subject and its card out of it, and each shape
-    /// in a ring of its own for each light it's in. O(what's lit), and a walk up the boards from each
-    /// board that isn't the one shown, once.
+    /// Works out what the canvas outlines from what the lights shown for the keys held matched, as the
+    /// file is now: each match where it's drawn (itself, on the board shown, else the shape on it that
+    /// holds it: its card, none for a shape on a board above), the subject and its card out of it, and
+    /// each shape in a ring of its own for each light it's in. O(what's lit), and a walk up the boards
+    /// from each board that isn't the one shown, once.
     private func place(_ lit: Lit) {
         #if DEBUG
         placed += 1
@@ -253,7 +269,7 @@ public final class NeighborState {
         var visits: [ShapeID: Visit] = [:]
         visits.reserveCapacity(lit.ids.reduce(0) { $0 + $1.count })
         var groups: [TintedOutlines] = []
-        for (light, ids) in lit.ids.enumerated() {
+        for (light, ids) in lit.ids.enumerated() where lights[light].keys == keys {
             var rings: [[ShapeID]] = []
             for id in ids {
                 guard let shape = drawn(id), shape != lit.subject, shape != card,

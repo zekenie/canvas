@@ -1,7 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import CanvasUI
+@_spi(Host) import CanvasUI
 import Geometry
 import TestKit
 
@@ -48,8 +48,44 @@ extension EditingProbeTool: Tool {
     return (h, canvas, card, log)
 }
 
+/// A modifier change in a window: the keys held now, ⌥ by default.
+@MainActor func flags(_ modifiers: NSEvent.ModifierFlags = .option, in window: NSWindow) throws -> NSEvent {
+    try require(NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: modifiers, timestamp: 1, windowNumber: window.windowNumber,
+                                 context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58))
+}
+
 // Where the pointer is over a view the canvas hosts, it isn't over the canvas.
 @MainActor let pointerTests = Suite("Pointer", [
+    test("the keys held anywhere in the canvas's window reach the editor, with a field holding the keyboard too; another window's don't, and none are held once it stops being key") {
+        let (h, canvas, _, _) = try cardCanvas()
+        let window = try require(canvas.window)
+        let container = NSView(frame: window.contentLayoutRect)
+        canvas.frame = container.bounds
+        let field = NSTextField(frame: CGRect(x: 10, y: 10, width: 120, height: 22))
+        container.addSubview(canvas)
+        container.addSubview(field)
+        window.contentView = container
+        window.makeFirstResponder(field)
+        expect(window.firstResponder !== canvas, "the field's editor has the keyboard: the canvas's own flagsChanged hears nothing")
+        // The window's monitor, as the app runs it.
+        NSApp.sendEvent(try flags([.control, .option], in: window))
+        expectEqual(h.editor.modifiersHeld, [.control, .option])
+        canvas.modifiersChangedInWindow(try flags([], in: window))
+        expectEqual(h.editor.modifiersHeld, [])
+        // Another window's change is that window's.
+        let other = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+        canvas.modifiersChangedInWindow(try flags(in: other))
+        expectEqual(h.editor.modifiersHeld, [])
+        // The canvas's own, and the window resigning key.
+        canvas.flagsChanged(with: try flags(in: window))
+        expectEqual(h.editor.modifiersHeld, .option)
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        expectEqual(h.editor.modifiersHeld, [])
+        // Gone from the window, the canvas watches nothing.
+        window.contentView = NSView()
+        NSApp.sendEvent(try flags(in: window))
+        expectEqual(h.editor.modifiersHeld, [])
+    },
     test("over the editing view the pointer is off the canvas: the tool hears it leave, once, and move again back on the canvas") {
         let (h, canvas, card, log) = try cardCanvas()
         expect(h.editor.beginEditing(card))

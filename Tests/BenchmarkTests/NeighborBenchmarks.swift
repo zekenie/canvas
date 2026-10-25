@@ -17,7 +17,7 @@ import Types
 // spends from the hover to the lights landing; and what the lights add to a frame, with all 10,000 in
 // view zoomed out to 10% (each one a skeleton, its outline a ring, selected too or not) and with every
 // one out of view, on the canvas and in the minimap. The neighbors are notes that mention the hub (the shipped lights'
-// purple), so what the engine finds is every one of them. `./build.sh bench` holds them; `./test.sh`
+// lavender, shown with ⌃⌥ held), so what the engine finds is every one of them. `./build.sh bench` holds them; `./test.sh`
 // runs them small, in debug, and only reports.
 
 extension Budget {
@@ -87,11 +87,13 @@ extension Budget {
 
 private let viewport = CGSize(width: 1200, height: 800)
 
-@MainActor func hubEditor(shapes count: Int, mentioning: Int, pasteboard: NSPasteboard) throws -> (h: EditorHarness, hub: ShapeID) {
+/// `held`: the keys held, as the hover's are (⌃⌥ shows what mentions the hub).
+@MainActor func hubEditor(shapes count: Int, mentioning: Int, held: Modifiers = [], pasteboard: NSPasteboard) throws -> (h: EditorHarness, hub: ShapeID) {
     let (document, hub) = hubBoard(shapes: count, mentioning: mentioning)
     let registry = try Registry(plugins: shippedPlugins(pasteboard))
     let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
     h.editor.viewportDidResize(to: viewport)
+    h.hold(held)
     return (h, hub)
 }
 
@@ -117,6 +119,7 @@ private enum Light: Int {
             let registry = try Registry(plugins: shippedPlugins(pasteboard))
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
+            h.hold(.option)                                // what is of a type is shown with ⌥
             let neighbors = try require(h.editor.neighbors)
             for (what, subject, lights) in [("a type with \(size - 1) instances", type, size - 1), ("one of its instances", instance, 0)] {
                 @MainActor func hover() throws -> (main: Double, offMain: Double) {
@@ -151,7 +154,7 @@ private enum Light: Int {
         defer { pasteboard.releaseGlobally() }
         for size in sizes {
             for (what, mentioning) in [("\(size - 1) neighbors", size - 1), ("10 neighbors", 10)] {
-                let (h, hub) = try hubEditor(shapes: size, mentioning: mentioning, pasteboard: pasteboard)
+                let (h, hub) = try hubEditor(shapes: size, mentioning: mentioning, held: [.control, .option], pasteboard: pasteboard)
                 let neighbors = try require(h.editor.neighbors)
                 @MainActor func hover() throws -> (main: Double, offMain: Double) {
                     let (_, main, offMain) = try cpu {
@@ -189,7 +192,7 @@ private enum Light: Int {
         defer { pasteboard.releaseGlobally() }
         let context = try bitmapContext(viewport)
         for size in sizes {
-            let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, pasteboard: pasteboard)
+            let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, held: [.control, .option], pasteboard: pasteboard)
             let neighbors = try require(h.editor.neighbors)
             let board = h.editor.shapeBounds
             @MainActor func place(_ zoom: CGFloat, atBoard: Bool) -> Camera {
@@ -236,7 +239,7 @@ private enum Light: Int {
         defer { pasteboard.releaseGlobally() }
         let context = try bitmapContext(viewport)
         for size in sizes {
-            let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, pasteboard: pasteboard)
+            let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, held: [.control, .option], pasteboard: pasteboard)
             let neighbors = try require(h.editor.neighbors)
             let board = h.editor.shapeBounds
             let camera = camera(centering: board, at: 0.1, in: viewport)
@@ -271,7 +274,7 @@ private enum Light: Int {
         defer { pasteboard.releaseGlobally() }
         let context = try bitmapContext(viewport)
         for size in sizes {
-            let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, pasteboard: pasteboard)
+            let (h, hub) = try hubEditor(shapes: size, mentioning: size - 1, held: [.control, .option], pasteboard: pasteboard)
             let neighbors = try require(h.editor.neighbors)
             let window = NSWindow(contentRect: CGRect(origin: .zero, size: viewport), styleMask: [.titled], backing: .buffered, defer: false)
             let canvas = CanvasView(editor: h.editor)

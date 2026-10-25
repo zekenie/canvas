@@ -7,7 +7,8 @@ extension PluginID {
     public static let typeLights: PluginID = "type-lights"
 }
 
-/// Types' lights for Neighbors: hover a type and what is of it is outlined in pink; its panel lists that in two
+/// Types' lights for Neighbors: hover a type with ⌥ held, as for what points to a shape (an instance's `is-a` edge
+/// runs to its type), and what is of it is outlined in pink; its panel lists that in two
 /// lists, Instances (the shapes that are of it however far, never a type, as `:is-a` finds them: myCar, a Toyota,
 /// is a Car) and Subtypes (the types built on it however far: Toyota, built on Car, is a kind of Car and no Car).
 /// One pink for both, since a shape is one or the other and both are what is of the type; the lists' titles tell
@@ -21,8 +22,11 @@ public struct TypeLightsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         let isA = IsAEdge.id.rawValue, schema = TypeSchemaProperty.key.rawValue
-        registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, query: { ":\(isA)(\($0)[\(schema)]):not([\(schema)])" })
-        registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, query: { "[\(schema)]:\(isA)(\($0)[\(schema)])" })
+        registrar.neighborLight(TypesStyle.instances, color: TypesStyle.instancesLight, keys: .option,
+                                query: { ":\(isA)(\($0)[\(schema)]):not([\(schema)])" })
+        registrar.neighborLight(TypesStyle.subtypes, color: TypesStyle.instancesLight, keys: .option,
+                                query: { "[\(schema)]:\(isA)(\($0)[\(schema)])" })
+        registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: .pointer)
     }
 }
 

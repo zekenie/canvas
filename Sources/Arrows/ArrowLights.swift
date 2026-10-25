@@ -7,8 +7,8 @@ extension PluginID {
     public static let arrowLights: PluginID = "arrow-lights"
 }
 
-/// Arrows' lights for Neighbors: hover a shape and what it points to is outlined in green, what
-/// points to it in purple, the arrows between with them; its panel lists each under the light's
+/// Arrows' lights for Neighbors: hover a shape and what it points to is outlined in green, and with
+/// ⌥ held what points to it in purple, the arrows between with them; its panel lists each under the light's
 /// title, the arrows left out. A plugin value of its own, after Neighbors, so a list without
 /// Neighbors leaves it out, and `ArrowPortsPlugin`, which declares the `arrow` edges its queries
 /// name: in a list without that one the engine refuses both, and nothing lights.
@@ -16,8 +16,8 @@ extension PluginID {
 /// - What it points to: the shapes an arrow out of it ends at, and what a reference stands for
 ///   (`arrow` and `stands-for`); for an arrow, the shape it ends at (`:end-of`). Between: the arrows
 ///   themselves (`:starts-at`).
-/// - What points to it: the shapes an arrow into it starts at, and the references that stand for it;
-///   for an arrow, the shape it starts at (`:start-of`). Between: those arrows (`:ends-at`).
+/// - What points to it (⌥): the shapes an arrow into it starts at, and the references that stand for
+///   it; for an arrow, the shape it starts at (`:start-of`). Between: those arrows (`:ends-at`).
 ///
 /// Neighbors asks each in the engine's resolved view of the edges and in the literal one, so a
 /// reference's own arrows count, and so does what it stands for: an arrow into a reference is, to the
@@ -33,11 +33,12 @@ public struct ArrowLightsPlugin: ListedPlugin {
         }, between: {
             ":starts-at(\($0), \(arrow))"
         })
-        registrar.neighborLight(ArrowStyle.pointedToBy, color: ArrowStyle.pointedToByLight, query: {
+        registrar.neighborLight(ArrowStyle.pointedToBy, color: ArrowStyle.pointedToByLight, keys: .option, query: {
             ":edge-to(\($0), \(arrow)|\(standing)), :start-of(\($0), \(arrow))"
         }, between: {
             ":ends-at(\($0), \(arrow))"
         })
+        registrar.keyHint("⌥ Hover", "Show What Points to It", while: .pointer)
     }
 }
 

@@ -19,6 +19,11 @@ import Types
         expect(lights.allSatisfy { $0.between == nil && $0.caption == nil })
         expectEqual(lights[0].color, lights[1].color, "a shape is one or the other: one pink")
     },
+    test("both are shown with ⌥ held, as what points to a shape is (what is of a type has an is-a edge to it), which the Keyboard Shortcuts window says") {
+        let registry = try Registry(plugins: [NeighborsPlugin(), TypeLightsPlugin()])
+        expectEqual(registry.neighborLights.map(\.keys), [.option, .option])
+        expectEqual(registry.keyboardHelp, [KeyboardHelpRow(keys: ["⌥ Hover a Type"], title: "Show Its Instances and Subtypes", place: .pointer)])
+    },
     test("TypeLightsPlugin needs Neighbors, whose lights it adds to") {
         expectThrows(RegistryError.ownerNotInstalled(point: "NeighborLights", owner: .neighbors, contributor: .typeLights)) {
             _ = try Registry(plugins: [TypeLightsPlugin()])

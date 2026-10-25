@@ -19,6 +19,11 @@ import TestKit
         expect(lights.allSatisfy { $0.between == nil }, "no shape runs between")
         expect(lights[0].caption == nil, "what it mentions gets no line under its name")
     },
+    test("both are shown with ⌃⌥ held, which the Keyboard Shortcuts window says once") {
+        let registry = try Registry(plugins: [NeighborsPlugin(), MentionLightsPlugin()])
+        expectEqual(registry.neighborLights.map(\.keys), [[.control, .option], [.control, .option]])
+        expectEqual(registry.keyboardHelp, [KeyboardHelpRow(keys: ["⌃⌥ Hover"], title: "Show Mentions", place: .pointer)])
+    },
     test("what mentions a shape is listed under the mentioner's text around its mention, the names as they show now") {
         let h = try mentionHarness([NeighborsPlugin(), MentionLightsPlugin()])
         let target = h.editor.add(Plate(CGRect(x: 400, y: 0, width: 120, height: 80)), titled: "Groceries")

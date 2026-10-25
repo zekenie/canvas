@@ -25,6 +25,9 @@ public final class CanvasView: NSView {
     /// Watches for presses anywhere in the window while a card shows, which the card closes on
     /// (`pressBeganInWindow`).
     private var cardPressMonitor: Any?
+    /// Watches for the keys held changing anywhere in the window, while the canvas is in one
+    /// (`modifiersChangedInWindow`).
+    private var modifierMonitor: Any?
     /// The minimap, in the bottom-left corner, over everything else; nil while the host doesn't show
     /// it (and hidden, though there, while the board is empty).
     public private(set) var minimap: MinimapView?
@@ -154,6 +157,8 @@ public final class CanvasView: NSView {
             NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.removeObserver(self, name: NSMenu.didBeginTrackingNotification, object: nil)
             stopWatchingPresses()
+            stopWatchingModifiers()
+            editor.modifiersChangedInWindow(held: [])
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -164,14 +169,42 @@ public final class CanvasView: NSView {
             NotificationCenter.default.addObserver(self, selector: #selector(windowDidResignKey(_:)), name: NSWindow.didResignKeyNotification, object: window)
             NotificationCenter.default.addObserver(self, selector: #selector(menuDidBeginTracking(_:)), name: NSMenu.didBeginTrackingNotification, object: nil)
             Self.watchCommandKeyUps()
+            watchModifiers()
             if cardHost != nil { watchPresses() }
         }
         window?.makeFirstResponder(self)
     }
 
     /// The window stopped being key: no key's release will reach the canvas, so every key held is
-    /// let go (Space's pan).
-    @objc private func windowDidResignKey(_ notification: Notification) { editor.keysReleased() }
+    /// let go (Space's pan), and none is held as far as the editor can tell (`modifiersHeld`).
+    @objc private func windowDidResignKey(_ notification: Notification) {
+        editor.keysReleased()
+        editor.modifiersChangedInWindow(held: [])
+    }
+
+    /// The keys held changed somewhere in the window (the monitor's): the editor hears it wherever the
+    /// keyboard is, a panel's field or the table of contents too, which the canvas's own
+    /// `flagsChanged` doesn't (`modifiersHeld`: ⌥ while a row is hovered). Another window's is not this
+    /// canvas's.
+    @_spi(Host) public func modifiersChangedInWindow(_ event: NSEvent) {
+        guard event.type == .flagsChanged, let window, event.window === window else { return }
+        editor.modifiersChangedInWindow(held: Modifiers(event.modifierFlags))
+    }
+
+    private func watchModifiers() {
+        guard modifierMonitor == nil, window != nil else { return }
+        modifierMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            MainActor.assumeIsolated { self?.modifiersChangedInWindow(event) }
+            return event
+        }
+    }
+
+    /// As `stopWatchingPresses`: a view is released only by leaving its window, which ends this.
+    private func stopWatchingModifiers() {
+        guard let monitor = modifierMonitor else { return }
+        NSEvent.removeMonitor(monitor)
+        modifierMonitor = nil
+    }
 
     /// A menu began tracking (the canvas's context menu, the path's "…", the menu bar): its loop
     /// takes the keys, a key's release too, while the window stays key and the canvas keeps the

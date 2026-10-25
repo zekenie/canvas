@@ -1411,6 +1411,12 @@ public final class CanvasEditor {
     public var pointerVelocity: CGPoint { tracker.velocity }
     /// Held now, plus any released within `Style.modifierReleaseDelay`.
     public var effectiveModifiers: Modifiers { liveModifiers().union(recentlyReleased) }
+    /// The keys held, as the host last heard them: a change anywhere in the canvas's window, whatever
+    /// has the keyboard, and every pointer event the canvas hears. Observed, and set only when it
+    /// changes, so what shows something while a key is held follows the key with no pointer move
+    /// (Neighbors' lights). A key let go is let go at once, unlike `effectiveModifiers`; none while the
+    /// window isn't key.
+    public internal(set) var modifiersHeld: Modifiers = []
 
     // MARK: Editing
 
