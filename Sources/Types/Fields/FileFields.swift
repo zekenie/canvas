@@ -1,6 +1,7 @@
 import Canvas
 import CanvasRPC
 import Foundation
+import Titles
 
 /// What the file's types say of the members a note's values can hold, by key at each depth: the union over
 /// every type of its own fields, a group's members, another type's fields' and a list's items'. What a query
@@ -311,6 +312,95 @@ extension FileFields {
             if word.hasSuffix("s"), word.count > 3 { found.insert(String(word.dropLast())) }
         }
         return found
+    }
+}
+
+// MARK: Which notes are of each type, for `--ask`
+
+/// The most shapes a line names; past them `and N more`.
+private let shapesPerLine = 20
+/// The most the whole block holds, in characters.
+private let instancesLimit = 4_000
+
+extension FileFields {
+    /// What a translator of English into queries is told of which shapes are of which type, so a note of no type is told
+    /// apart from one that is: a line for each titled type that is no relationship type and has a shape of it, however
+    /// far (`allInstances`, the shapes `:is-a` finds), its title, a colon, then the titles of its shapes in quotes as the
+    /// language writes a title, by title, 20 at most, then `and N more` for the rest, the untitled among them; the types
+    /// in `text(for:)`'s order (those that share a word with `question` first, then by how many shapes are one, then by
+    /// title). Then `Of no type:` and the titled shapes of the kinds that can be of a type (`isTypeable`) that are of none
+    /// and are no type, on every board the app can show, those that share a word with `question` first, then in the
+    /// boards' order, 20 at most and `and N more`. A relationship type's shapes are arrows, which no title names. At most
+    /// 4,000 characters, whole lines. Empty when no titled type is a plain type. Read afresh at each question, since a
+    /// shape given a type, or renamed, moves no stamp: one walk of the file's shapes. A title, never a note's text or values.
+    public func instancesText(for question: String) -> String {
+        guard let editor, let index = editor.types else { return "" }
+        let relationships = editor.relationships?.graph
+        let plain = lines.filter { relationships?.isRelationshipType($0.id) != true }
+        guard !plain.isEmpty else { return "" }
+        let registry = editor.registry
+        let asked = Self.words(in: question)
+        func named(_ title: String) -> Bool { !asked.isDisjoint(with: Self.words(in: title)) }
+        typealias Ranked = (line: TypeLine, named: Bool, shapes: Set<ShapeID>)
+        let ranked: [Ranked] = plain.compactMap { line in
+            let shapes = index.allInstances(of: line.id)
+            return shapes.isEmpty ? nil : (line, asked.contains { line.words.contains($0) }, shapes)
+        }.sorted { a, b in
+            if a.named != b.named { return a.named }
+            if a.shapes.count != b.shapes.count { return a.shapes.count > b.shapes.count }
+            return a.line.title < b.line.title
+        }
+        var lines: [String] = []
+        for type in ranked {
+            let titles = type.shapes.compactMap { editor.shape(inFile: $0).flatMap { registry.title(of: $0) } }
+                .filter { !$0.isEmpty }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            lines.append(Self.line(type.line.title, titles: titles, count: type.shapes.count))
+        }
+        // The titled shapes of no type, the question's first.
+        // Of every type that is no relationship type, an untitled one's too, which has no line of its own.
+        let typed = index.types.filter { relationships?.isRelationshipType($0) != true }
+            .reduce(into: Set<ShapeID>()) { $0.formUnion(index.allInstances(of: $1)) }
+        var first: [String] = [], rest: [String] = []
+        for board in editor.showableBoards {
+            for record in editor.contents(of: board).shapes where registry.isTypeable(record.kind) && !record.isOpaque
+                && !typed.contains(record.id) && record[TypeSchemaProperty.self] == nil {
+                guard let title = registry.title(of: record), !title.isEmpty else { continue }
+                if named(title) { first.append(title) } else { rest.append(title) }
+            }
+        }
+        if !first.isEmpty || !rest.isEmpty {
+            lines.append(Self.line("Of no type", titles: first + rest, count: first.count + rest.count))
+        }
+        var kept: [String] = [], size = 0
+        for line in lines {
+            guard size + line.count + 1 <= instancesLimit else { break }
+            kept.append(line)
+            size += line.count + 1
+        }
+        return kept.joined(separator: "\n")
+    }
+
+    /// `Name: "A", "B", and 3 more`: the first 20 titles of `count` shapes, the rest counted.
+    private static func line(_ name: String, titles: [String], count: Int) -> String {
+        var line = name + ": " + titles.prefix(shapesPerLine).map(quoted).joined(separator: ", ")
+        let more = count - min(titles.count, shapesPerLine)
+        if more > 0 { line += (titles.isEmpty ? "" : ", ") + "and \(more) more" }
+        return line
+    }
+
+    /// A title in double quotes, its quotes, backslashes and line breaks escaped, as the query language writes one
+    /// (QueryLanguage's printer, which Types doesn't import).
+    private static func quoted(_ title: String) -> String {
+        var out = "\""
+        for character in title {
+            switch character {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            default: out.append(character)
+            }
+        }
+        return out + "\""
     }
 }
 

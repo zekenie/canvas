@@ -4,6 +4,7 @@ import Arrows
 import CanvasTesting
 import CoreGraphics
 import Frames
+import LanguageModels
 import Locking
 import Mentions
 import References
@@ -19,7 +20,8 @@ import Titles
 // one for each wireframe of its plan (`docs/plans/slash-on-selection/wireframes`): `/` on a selected note, `/color`'s
 // choices and the note after the pick, a mixed selection's counted rows, a frame's list and a locked note's, `/move-to @`
 // naming a frame for three notes, a note's own `/` while it is edited, and the bar over a selection at the window's
-// bottom and among skeletons zoomed out.
+// bottom and among skeletons zoomed out; then `/` with nothing selected, the bar at the top for every shape, and
+// `/query`: its list, the bar waiting for the model, what it finds selected, and No matches.
 
 private let barStage = CGSize(width: 560, height: 460)
 private let lowStage = CGSize(width: 560, height: 360)
@@ -115,4 +117,89 @@ extension GalleryStage {
         _ = try stage.openBar(on: Array(notes.prefix(3)))
         return .image(stage.render(at: .zero, zoom: 0.3))
     },
+    GalleryState("Bar8-nothing-selected", answers: "8", "`/` with nothing selected: the bar at the top of the canvas, in the middle, for every shape on the board, `All shapes` at its right, `query` last", size: barStage) { stage in
+        _ = stage.shoppingNotes()
+        return .image(try stage.pictureWithBarList(try stage.openBar(on: [])))
+    },
+    GalleryState("Bar9-query-typed", answers: "9", "`/query the shopping` typed, before Return: the line marked as a command it would run, nothing asked yet", size: barStage) { stage in
+        _ = stage.shoppingNotes()
+        _ = try stage.openBar(on: [], typing: "query the shopping")
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Bar9-query-asking", answers: "9", "`/query the shopping` and Return: the bar waits for the model, the line kept, a spinner where `All shapes` was", size: barStage) { stage in
+        _ = stage.shoppingNotes()
+        stage.model.holdsAnswers = true
+        stage.model.queue(#":contains("buy")"#)
+        _ = try stage.openBar(on: [], typing: "query the shopping")
+        stage.window.pressReturn()
+        stage.window.settle()
+        _ = try require(stage.editor.slashBar?.isWaiting == true ? true : nil, "the bar waits")
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Bar9-query-found", answers: "9", "the answer: the two notes its query found selected, the bar gone", size: barStage) { stage in
+        let notes = stage.shoppingNotes()
+        stage.model.queue(#":contains("buy")"#)
+        _ = try stage.openBar(on: [], typing: "query the shopping")
+        stage.window.pressReturn()
+        spinRunLoop(until: { stage.editor.slashBar?.isOpen != true })
+        _ = try require(stage.editor.selectedShapeIDs == Array(notes.prefix(2)) ? true : nil, "the shopping selected")
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Bar9-query-edited", answers: "9", "typing while it asks: the wait stops, the spinner goes and `All shapes` is back; Return asks again with the new words", size: barStage) { stage in
+        _ = stage.shoppingNotes()
+        stage.model.holdsAnswers = true
+        stage.model.queue(#":contains("buy")"#)
+        _ = try stage.openBar(on: [], typing: "query the shopping")
+        stage.window.pressReturn()
+        stage.window.type(" list")
+        stage.window.settle()
+        _ = try require(stage.editor.slashBar?.isWaiting == false ? true : nil, "the wait stopped")
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Bar9-query-failed", answers: "9", "the model's call failed: its words where `All shapes` was, the line still there", size: barStage) { stage in
+        _ = stage.shoppingNotes()
+        stage.model.queue(.noKey)
+        _ = try stage.openBar(on: [], typing: "query the shopping")
+        stage.window.pressReturn()
+        spinRunLoop(until: { stage.editor.slashBar?.failure != nil })
+        _ = try require(stage.editor.slashBar?.failure == "No API key" ? true : nil, "No API key")
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Bar10-query-selection-asking", answers: "10", "two notes selected, `/query the milk one` and Return: the bar under them waits, `2 shapes` a spinner", size: barStage) { stage in
+        let notes = stage.shoppingNotes()
+        stage.model.holdsAnswers = true
+        stage.model.queue(#":contains("milk")"#)
+        _ = try stage.openBar(on: Array(notes.prefix(2)), typing: "query the milk one")
+        stage.window.pressReturn()
+        stage.window.settle()
+        _ = try require(stage.editor.slashBar?.isWaiting == true ? true : nil, "the bar waits")
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Bar10-query-narrowed", answers: "10", "the answer: of the two, the one it found stays selected", size: barStage) { stage in
+        let notes = stage.shoppingNotes()
+        stage.model.queue(#":contains("milk")"#)
+        _ = try stage.openBar(on: Array(notes.prefix(2)), typing: "query the milk one")
+        stage.window.pressReturn()
+        spinRunLoop(until: { stage.editor.slashBar?.isOpen != true })
+        _ = try require(stage.editor.selectedShapeIDs == [notes[0]] ? true : nil, "narrowed to Buy milk")
+        return .image(stage.render(at: .zero))
+    },
+    GalleryState("Bar9-query-no-matches", answers: "9", "a question its query finds nothing for: `No matches` where `All shapes` was, the line still there to change", size: barStage) { stage in
+        _ = stage.shoppingNotes()
+        stage.model.queue(#":contains("zebra")"#)
+        _ = try stage.openBar(on: [], typing: "query anything about zebras")
+        stage.window.pressReturn()
+        spinRunLoop(until: { stage.editor.slashBar?.failure != nil })
+        _ = try require(stage.editor.slashBar?.failure == "No matches" ? true : nil, "No matches")
+        return .image(stage.render(at: .zero))
+    },
 ]
+
+extension GalleryStage {
+    /// Three notes in a row: Buy milk, Buy eggs, Call Sam.
+    fileprivate func shoppingNotes() -> [ShapeID] {
+        ["Buy milk", "Buy eggs", "Call Sam"].enumerated().map { index, text in
+            editor.barNote(text, at: CGPoint(x: 30 + CGFloat(index) * 175, y: 150), width: 160, height: 120)
+        }
+    }
+}

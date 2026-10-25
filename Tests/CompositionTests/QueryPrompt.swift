@@ -52,6 +52,7 @@ enum QueryPrompt {
         #":edge-to("Auth", arrow)"#, #":edge-from("API gateway", note-link|mention)"#, #":edge-to("Payments", only arrow)"#,
         #":edge-from("API gateway", arrow)"#, #":edge-from("Warehouse")"#, #"sticky-note:mentions("Checkout")"#, #":mentioned-by("Checkout")"#, #"sticky-note:is-a("Person")"#,
         "sticky-note[schema]", #":is-a("Person")"#, #"sticky-note:is-a("Employee card")"#, #":edge-from("Ann", is-a)"#,
+        #":contains("volunteer"):connected-to(:contains("bake sale"))"#,
         ":incomplete", #":is-a("Person"):incomplete"#, "arrow:misfit",
         // The relationship types a type has, and the types at their far ends (the story has none: both answer nothing).
         #"sticky-note[relationship]:connected-to("Order", arrow)"#,

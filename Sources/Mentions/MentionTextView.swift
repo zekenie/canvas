@@ -608,8 +608,14 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         guard let mentions, style != nil, isEditable else { return }
         slashCommands?.close()
         let shapes = slashCommands?.admittedShapes(at: location)
-        // Listed for the shapes its commands type for (the owner, or the bar's selection), else the owner.
-        let owners = slashCommands?.target.shapes ?? owner.map { [$0] } ?? []
+        // Listed for the shapes its commands type for (the owner, or the bar's selection), else the owner. For
+        // every shape on the board (the bar with nothing selected) for none: near all of them is near nothing.
+        let owners: [ShapeID]
+        switch slashCommands?.target {
+        case .everything?: owners = []
+        case let target?: owners = target.shapes
+        case nil: owners = owner.map { [$0] } ?? []
+        }
         let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owners: owners,
                                    kinds: shapes?.kinds, admitting: shapes?.rule)
         self.picker = picker

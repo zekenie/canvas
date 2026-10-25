@@ -89,10 +89,10 @@ private let area = CGRect(x: 100, y: 100, width: 100, height: 60)
         expectEqual(rig.editor.undoHistory.undoName, nil, "opening it is no step")
     },
 
-    test("/ passes with nothing selected, a selection that offers nothing, or while a shape is edited, and opens where a German keyboard's ⇧7 types it") {
+    test("/ passes on an empty board with nothing selected, a selection that offers nothing, or while a shape is edited, and opens where a German keyboard's ⇧7 types it") {
         let rig = try BarRig(targets: false)
         rig.slash()
-        expect(!rig.isOpen, "nothing selected")
+        expect(!rig.isOpen, "nothing selected, and nothing on the board")
         let disc = rig.h.add(Disc(area))
         rig.editor.selection = disc
         rig.slash()
@@ -119,6 +119,134 @@ private let area = CGRect(x: 100, y: 100, width: 100, height: 60)
         expect(rig.editor.cameraTarget.toWorld(view).contains(try require(rig.editor.shapeContext.bounds(of: [card]))), "where the camera is headed")
         rig.h.wait(400)
         expect(rig.isOpen, "and it stays through the glide: closed \(String(describing: rig.bar?.lastClosing))")
+    },
+
+    test("/ with nothing selected opens it for every shape on the board, as if Select All had: at the top of the canvas's clear part, the camera where it was, saying All shapes; a command runs on them all in one step") {
+        let rig = try BarRig(targets: false)
+        let a = rig.card(), b = rig.card(area.offsetBy(dx: 200, dy: 100))
+        let disc = rig.h.add(Disc(area.offsetBy(dx: 0, dy: 300)))
+        let camera = rig.editor.cameraTarget
+        rig.slash()
+        expect(rig.isOpen)
+        expectEqual(rig.bar?.target, .everything([a, b, disc]), "every shape on the board, in document order")
+        expectEqual(rig.editor.selectedShapeIDs, [], "nothing is selected")
+        expectEqual(rig.bar?.label, "All shapes")
+        expectEqual(rig.editor.card?.accessibilityLabel, "Command for all shapes")
+        expectEqual(rig.editor.cameraTarget, camera, "nothing brought into view")
+        let frame = try require(rig.canvas.cardFrame), view = rig.editor.unobscuredViewport
+        expectEqual(frame.size, CGSize(width: 280, height: 28))
+        expectEqual(frame.midX, view.midX, "in the middle")
+        expectEqual(frame.minY, view.minY + 12, "at the top")
+        expectEqual(rig.rows, ["grow (2 of 3)", "width (points · 2 of 3)"], "what a selection of all three lists, counted: the disc offers nothing")
+        rig.window.type("gro")
+        rig.window.pressReturn()
+        expect(!rig.isOpen)
+        expectEqual([rig.width(a), rig.width(b)], [110, 110])
+        expectEqual(rig.editor.undoHistory.undoName, "Grow")
+        expectEqual(rig.editor.selectedShapeIDs, [], "still nothing selected")
+        rig.h.scheduler.advance(by: .zero)
+        expectEqual(rig.editor.announcements.last, "Grow, on 2 of 3 shapes")
+    },
+
+    test("a command that answers later keeps the bar open while it waits, its line in the field and a spinner in the label's place, VoiceOver told it waits; done, it closes") {
+        let log = AskLog()
+        let rig = try BarRig(targets: false, more: [AskPlugin(log: log)])
+        let a = rig.card(), b = rig.card(area.offsetBy(dx: 200, dy: 0))
+        rig.editor.selection = a
+        rig.slash()
+        expect(!rig.listed.contains("ask"), "not on one shape")
+        rig.window.pressEscape()
+        rig.window.pressEscape()
+        rig.window.makeFirstResponder(rig.canvas)
+        rig.editor.selectedShapeIDs = [a, b]
+        rig.slash()
+        expectEqual(rig.listed.last, "ask", "after what the shapes offer")
+        rig.window.type("ask the red ones")
+        rig.window.pressReturn()
+        expect(rig.isOpen, "it waits")
+        expect(rig.bar?.isWaiting == true)
+        expectEqual(rig.field?.string, "/ask the red ones", "the line kept")
+        expectEqual(log.asked.first?.target, .selection([a, b]))
+        expectEqual(log.asked.first?.arguments.text, "the red ones")
+        expectEqual(rig.editor.announcements.last, "Asking")
+        expectEqual(rig.editor.undoHistory.undoName, nil, "starting it is no step")
+        expect(spinRunLoop(until: { log.waitingCount == 1 }))
+        log.answer(.done)
+        expect(spinRunLoop(until: { !rig.isOpen }), "done: it closes")
+        expect(rig.canvasHasKeyboard)
+        expectEqual(rig.editor.selectedShapeIDs, [a, b])
+    },
+
+    test("failed, the bar says why in the label's place and VoiceOver hears it, the line still the person's; an edit says again what it acts on, and Return asks again") {
+        let log = AskLog()
+        let rig = try BarRig(targets: false, more: [AskPlugin(log: log)])
+        let a = rig.card(), b = rig.card(area.offsetBy(dx: 200, dy: 0))
+        rig.editor.selectedShapeIDs = [a, b]
+        rig.slash()
+        rig.window.type("ask the red ones")
+        rig.window.pressReturn()
+        expect(spinRunLoop(until: { log.waitingCount == 1 }))
+        log.answer(.failed("No luck"))
+        expect(spinRunLoop(until: { rig.bar?.isWaiting == false }))
+        expect(rig.isOpen)
+        expectEqual(rig.bar?.failure, "No luck")
+        expectEqual(rig.bar?.label, "No luck")
+        expectEqual(rig.editor.announcements.last, "No luck")
+        expectEqual(rig.field?.string, "/ask the red ones")
+        expect(rig.window.firstResponder === rig.field, "the field keeps the keyboard")
+        rig.window.type("!")
+        expectEqual(rig.bar?.failure, nil, "an edit")
+        expectEqual(rig.bar?.label, "2 shapes")
+        rig.window.pressReturn()
+        expect(rig.bar?.isWaiting == true, "asked again")
+        expectEqual(log.asked.count, 2)
+        expectEqual(log.asked.last?.arguments.text, "the red ones!")
+    },
+
+    test("the editor going (its file closed) stops what the bar waits for, and nothing it waits for keeps the editor alive") {
+        let log = AskLog()
+        weak var gone: CanvasEditor?
+        autoreleasepool {
+            guard let rig = try? BarRig(targets: false, more: [AskPlugin(log: log)]) else { return }
+            gone = rig.editor
+            let a = rig.card(), b = rig.card(area.offsetBy(dx: 200, dy: 0))
+            rig.editor.selectedShapeIDs = [a, b]
+            rig.slash()
+            rig.window.type("ask x")
+            rig.window.pressReturn()
+            _ = spinRunLoop(until: { log.waitingCount == 1 })
+            rig.window.contentView = nil
+        }
+        expect(spinRunLoop(until: { gone == nil }), "the editor goes with its window")
+        expect(spinRunLoop(until: { log.cancelled == 1 }), "and its bar stops the command")
+    },
+
+    test("what it waits for stops as it goes: Escape closes it, the selection changing closes it, and an edit stops it and keeps it open") {
+        let log = AskLog()
+        let rig = try BarRig(targets: false, more: [AskPlugin(log: log)])
+        let a = rig.card(), b = rig.card(area.offsetBy(dx: 200, dy: 0)), c = rig.card(area.offsetBy(dx: 400, dy: 0))
+        @MainActor func ask() {
+            rig.window.makeFirstResponder(rig.canvas)
+            rig.editor.selectedShapeIDs = [a, b]
+            rig.slash()
+            rig.window.type("ask x")
+            rig.window.pressReturn()
+            _ = spinRunLoop(until: { log.waitingCount == 1 })
+        }
+        ask()
+        rig.window.pressEscape()
+        expect(!rig.isOpen, "Escape, with no list open, closes it")
+        expect(spinRunLoop(until: { log.cancelled == 1 }), "and stops the command")
+        ask()
+        rig.editor.selectedShapeIDs = [b, c]
+        expect(!rig.isOpen, "the selection changed")
+        expect(spinRunLoop(until: { log.cancelled == 2 }))
+        ask()
+        rig.window.press("\u{7f}", code: 51)
+        expect(rig.isOpen, "an edit keeps it")
+        expect(rig.bar?.isWaiting == false)
+        expect(spinRunLoop(until: { log.cancelled == 3 }), "and stops what it waited for")
+        expectEqual(rig.bar?.label, "2 shapes")
     },
 
     // MARK: The list

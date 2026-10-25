@@ -199,6 +199,9 @@ let ships = [
     "Queries.QueriesPlugin", "QueryTranslation.QueryTranslationPlugin", "Titles.TitleQueriesPlugin", "Boards.BoardQueriesPlugin", "Mentions.MentionQueriesPlugin", "Validation.ValidationQueriesPlugin", "Types.TypeQueriesPlugin", "Colors.ColorQueriesPlugin", "Grouping.GroupQueriesPlugin",
     "Queries.SelectionQueriesPlugin",
     "QueryCommands.QueryCommandsPlugin",
+    // `/query`: a question typed in the command bar, and the shapes it finds selected. After the bar, whose point it
+    // fills, and the translator it asks.
+    "QueryTranslation.QuerySlashPlugin",
     // Hover a shape, on the canvas or by its row in the table of contents, and what it connects to is outlined by how: after the
     // query plugins, whose engine it asks, and Selection and the table of contents, whose hovers it follows. Then the lights,
     // from the plugins that own the edges, in the order a shape's rings go: arrows' (points to, pointed to by), then
@@ -311,7 +314,7 @@ let package = Package(
         .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: platform
         .target(name: "Queries", dependencies: ["Canvas", "CanvasRPC", "FuzzyMatching", "QueryLanguage", "Selection", "Topology"]), // layer: platform
         .target(name: "Draw", dependencies: ["Adornments", "Canvas", "CanvasRPC", "DrawScript", "FuzzyMatching", "Geometry", "Queries", "QueryLanguage", "Topology"]), // layer: platform
-        .target(name: "QueryTranslation", dependencies: ["Canvas", "LanguageModels", "Queries", "QueryLanguage"]), // layer: platform
+        .target(name: "QueryTranslation", dependencies: ["Canvas", "LanguageModels", "Queries", "QueryLanguage", "Selection", "SlashCommands"]), // layer: platform
         // Neighbors: an engine an edge's owner shows its edges on. Hovering a shape, on the canvas or by its row in the table of contents
         // (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a color for each
         // way, through the core's tinted outlines, and a shape's panel lists them by the same ways, then what it's inside and what it holds
@@ -385,7 +388,7 @@ let package = Package(
         .executableTarget(name: "MentionQueriesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "ContextMenus", "DetailPanel", "Keyboard", "Mentions", "Queries", "QueryLanguage", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology"], path: "Tests/MentionQueriesTests"), // layer: test of Mentions
         .executableTarget(name: "ValidationQueriesTests", dependencies: ["Canvas", "CanvasTesting", "Queries", "QueryLanguage", "TestKit", "Topology", "Validation"], path: "Tests/ValidationQueriesTests"), // layer: test of Validation
         .executableTarget(name: "SelectionQueriesTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "Queries", "QueryLanguage", "Selection", "TestKit", "Topology"], path: "Tests/SelectionQueriesTests"), // layer: test of Queries
-        .executableTarget(name: "QueryTranslationTests", dependencies: ["Canvas", "CanvasTesting", "LanguageModels", "Queries", "QueryLanguage", "QueryTranslation", "TestKit", "Topology"], path: "Tests/QueryTranslationTests"), // layer: test
+        .executableTarget(name: "QueryTranslationTests", dependencies: ["Canvas", "CanvasTesting", "Keyboard", "LanguageModels", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "SlashCommands", "TestKit", "Topology"], path: "Tests/QueryTranslationTests"), // layer: test
         .executableTarget(name: "QueryCommandsTests", dependencies: ["Automation", "Canvas", "CanvasRPC", "CanvasTesting", "LanguageModels", "Queries", "QueryCommands", "QueryLanguage", "QueryTranslation", "TestKit", "Topology"], path: "Tests/QueryCommandsTests"), // layer: test
         .executableTarget(name: "AutomationTests", dependencies: ["Automation", "Canvas", "CanvasRPC", "CanvasTesting", "Draw", "DrawScript", "Geometry", "Queries", "TestKit", "Topology"], path: "Tests/AutomationTests"), // layer: test
         .executableTarget(name: "TitleNamesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "Draw", "Keyboard", "Selection", "SlashCommands", "TestKit", "Titles"], path: "Tests/TitleNamesTests"), // layer: test of Titles

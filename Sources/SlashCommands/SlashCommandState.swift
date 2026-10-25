@@ -2,8 +2,10 @@ import Canvas
 
 /// A command a target offers just now, as the list shows it and `SlashCommandState` runs it. It's
 /// found for a target (`SlashCommandState.commands(for:)`): one shape's text, the shape the line is on,
-/// or the shapes selected, of which it acts on those that offer it (`shapes`, its reach). A command that
-/// takes a shape asks its rule about the shapes it's given with those shapes and the editor.
+/// or the command bar's shapes (those selected, or every shape on the board with none), of which it acts
+/// on those that offer it (`shapes`, its reach). A command that takes a shape asks its rule about the
+/// shapes it's given with those shapes and the editor; one about the bar's target as a whole answers later
+/// (`answersLater`), on every shape of it.
 @MainActor
 public struct OfferedSlashCommand {
     /// As typed after the `/`: `set-title`.
@@ -36,6 +38,12 @@ public struct OfferedSlashCommand {
     /// other forms.
     fileprivate let choiceRows: (@MainActor () -> [SlashChoice])?
     fileprivate let choiceOtherwise: (@MainActor (String) -> SlashChoice?)?
+    /// For a command about the target as a whole (`SelectionSlashCommand`): the task it starts with what
+    /// was typed, bound to the target and the editor (held weakly, as `rule` is; nil once it's gone). Nil
+    /// for a shape's command.
+    fileprivate let answering: (@MainActor (SlashArguments) -> Task<SlashAnswer, Never>?)?
+    /// What VoiceOver hears while the bar waits for a command that answers later ("Asking"), if it says.
+    public let waiting: String?
 
     /// One command, on the shapes of the target that offer it.
     struct Part {
@@ -46,7 +54,7 @@ public struct OfferedSlashCommand {
     /// Found for a target: `parts` (one, unless two kinds' own commands share the name; none of
     /// several takes a shape or a choice) on their shapes, which are `shapes` in target order, and
     /// `targetCount` the shapes the target has.
-    init(_ parts: [Part], shapes: [ShapeID], targetCount: Int, editor: CanvasEditor) {
+    init(_ parts: [Part], shapes: [ShapeID], targetCount: Int, target: SlashTarget, editor: CanvasEditor) {
         precondition(!parts.isEmpty, "a command is offered on some shapes")
         self.parts = parts
         self.targetCount = targetCount
@@ -56,6 +64,12 @@ public struct OfferedSlashCommand {
         reach = command.reach
         self.shapes = shapes
         declaredTitle = command.command.flatMap { editor.registry.title(of: $0) }
+        waiting = command.waiting
+        if let answer = command.answer {
+            answering = { [weak editor] arguments in editor.map { answer(target, arguments, $0) } }
+        } else {
+            answering = nil
+        }
         if parts.count == 1, let choices = command.choices {
             choiceRows = { [weak editor] in editor.map { choices(shapes, $0) } ?? [] }
             let otherwise = command.otherwise
@@ -138,6 +152,10 @@ public struct OfferedSlashCommand {
     /// unless a row is titled so.
     public func choice(otherwise typed: String) -> SlashChoice? { choiceOtherwise?(typed) }
 
+    /// Whether it answers later (`SelectionSlashCommand`): it is never run as the others are, but started,
+    /// and the command bar waits for its answer (`SlashCommandState.answer(_:with:)`).
+    public var answersLater: Bool { answering != nil }
+
     /// What a text view that lists shapes asks, for the line it's on: the kinds and the rule of the
     /// command it's a line of, if it takes a shape.
     var shapeRule: SlashShapeRule? {
@@ -218,7 +236,9 @@ public struct SlashShapeRule {
 public final class SlashCommandState {
     private unowned let editor: CanvasEditor
     private var candidates: [ShapeKind: [ErasedSlashCommand]] = [:]
-    /// What a selection target listed last, and the revisions it was found at.
+    /// The commands about the command bar's target as a whole, in plugin order, gathered once.
+    private lazy var aboutTargets: [ErasedSlashCommand] = editor.registry.contributions(to: SelectionSlashCommands.self).map(\.value.command)
+    /// What the command bar's target listed last, and the revisions it was found at.
     private var kept: Kept?
 
     private struct Kept {
@@ -251,16 +271,18 @@ public final class SlashCommandState {
     ///
     /// None for a shape that isn't on the board shown or is kept aside. A shape's text (`.text`) that is
     /// read-only offers nothing (its text can't be edited, and a command would change it); in the
-    /// selection (`.selection`) a read-only shape is offered only the commands a plugin declared, whose
-    /// rule decides (Unlock acts on a locked shape; nothing else does). A selection's list is kept until
-    /// the file or its layout changes.
+    /// command bar (`.selection`, `.everything`) a read-only shape is offered only the commands a plugin
+    /// declared, whose rule decides (Unlock acts on a locked shape; nothing else does). After them, in the
+    /// bar alone, come the commands about its target as a whole (`SelectionSlashCommand`) whose rule says
+    /// the target offers them, each on every shape of it there to act on. The bar's list is kept until the
+    /// file or its layout changes.
     public func commands(for target: SlashTarget) -> [OfferedSlashCommand] {
-        if case .selection = target, let kept, kept.target == target, kept.revision == editor.revision,
+        if !target.isText, let kept, kept.target == target, kept.revision == editor.revision,
            kept.layoutRevision == editor.layoutRevision {
             return kept.commands
         }
         let found = find(for: target)
-        if case .selection = target {
+        if !target.isText {
             kept = Kept(target: target, revision: editor.revision, layoutRevision: editor.layoutRevision, commands: found)
         }
         return found
@@ -270,8 +292,7 @@ public final class SlashCommandState {
     public func commands(for id: ShapeID) -> [OfferedSlashCommand] { commands(for: .text(id)) }
 
     private func find(for target: SlashTarget) -> [OfferedSlashCommand] {
-        let isText: Bool
-        if case .text = target { isText = true } else { isText = false }
+        let isText = target.isText
         // The shapes there to act on, each once, in target order, with what each offers by `when`.
         var shapes: [ShapeID] = []
         var seen = Set<ShapeID>()
@@ -301,7 +322,7 @@ public final class SlashCommandState {
             }
         }
         let count = shapes.count
-        return order.compactMap { name in
+        let offered: [OfferedSlashCommand] = order.compactMap { name in
             var parts = byName[name] ?? []
             if count > 1 { parts.removeAll { $0.command.reach == .one } }
             parts.removeAll { !offersCommand($0.command, on: $0.shapes) }
@@ -314,7 +335,14 @@ public final class SlashCommandState {
                 reached = shapes.filter(offering.contains)
             }
             return OfferedSlashCommand(parts.map { OfferedSlashCommand.Part(command: $0.command, shapes: $0.shapes) }, shapes: reached,
-                                       targetCount: count, editor: editor)
+                                       targetCount: count, target: target, editor: editor)
+        }
+        guard !isText else { return offered }
+        // The commands about the bar's target as a whole, on all of it there to act on, read-only shapes too.
+        return offered + aboutTargets.compactMap { command in
+            guard let isOffered = command.isOfferedFor, isOffered(target, editor) else { return nil }
+            return OfferedSlashCommand([OfferedSlashCommand.Part(command: command, shapes: shapes)], shapes: shapes, targetCount: count,
+                                       target: target, editor: editor)
         }
     }
 
@@ -339,15 +367,25 @@ public final class SlashCommandState {
     /// is the one `commands(for:)` or `command(named:for:)` just gave, so `when` isn't asked again (a
     /// caller that took text out first, as a text view takes the command's line, would find a command
     /// that reads the text gone), and it runs on the shapes of it still there and not kept aside. False,
-    /// doing nothing, with none left, and for arguments the command doesn't accept.
+    /// doing nothing, with none left, for arguments the command doesn't accept, and for a command that
+    /// answers later, which is started (`answer(_:with:)`), not run.
     @discardableResult
     public func run(_ command: OfferedSlashCommand, with arguments: SlashArguments) -> Bool {
         let parts = live(command)
-        guard !parts.isEmpty, command.accepts(arguments) else { return false }
+        guard !command.answersLater, !parts.isEmpty, command.accepts(arguments) else { return false }
         editor.undoHistory.group(command.stepName) {
             for part in parts { part.command.run(part.shapes, arguments, editor) }
         }
         return true
+    }
+
+    /// Starts a command that answers later (`SelectionSlashCommand`) with what was typed after its name:
+    /// the task whose answer the command bar waits for, which the caller cancels when it stops waiting. It
+    /// is started as it was found, for the target it was found for, `when` not asked again. Nil, starting
+    /// nothing, for any other command, for arguments it doesn't accept, and once the editor is gone.
+    public func answer(_ command: OfferedSlashCommand, with arguments: SlashArguments) -> Task<SlashAnswer, Never>? {
+        guard let answering = command.answering, command.accepts(arguments) else { return nil }
+        return answering(arguments)
     }
 
     /// Runs a choice command with a pick on the shapes it acts on: one undo step, named for the row
@@ -383,6 +421,12 @@ public final class SlashCommandState {
     public func run(_ name: String, for target: SlashTarget, with arguments: SlashArguments) -> Bool {
         guard let command = command(named: name, for: target) else { return false }
         return run(command, with: arguments)
+    }
+
+    /// `answer(_:with:)` by name, resolved now: nil for a command the target doesn't offer now.
+    public func answer(_ name: String, for target: SlashTarget, with arguments: SlashArguments) -> Task<SlashAnswer, Never>? {
+        guard let command = command(named: name, for: target) else { return nil }
+        return answer(command, with: arguments)
     }
 
     /// The same, by name, with a pick.

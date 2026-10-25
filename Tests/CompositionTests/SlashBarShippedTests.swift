@@ -31,8 +31,8 @@ import Types
     let window: NSWindow
     let canvas: CanvasView
 
-    init() {
-        editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+    init(model: ScriptedLanguageModel = ScriptedLanguageModel()) {
+        editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: model)
         (window, canvas) = windowed(editor)
         window.makeFirstResponder(canvas)
     }
@@ -64,6 +64,35 @@ import Types
 }
 
 @MainActor let slashBarShippedTests = Suite("The command bar, as shipped", [
+    test("/query: with nothing selected / opens for every note, query last; Return asks the model and selects what its query finds, the bar gone; on those two it narrows them; on one it isn't offered") {
+        let model = ScriptedLanguageModel()
+        let s = ShippedBar(model: model)
+        let milk = s.note(100, 100, "Buy milk"), eggs = s.note(400, 100, "Buy eggs")
+        _ = s.note(700, 100, "Call Sam")
+        s.slash()
+        expect(s.bar?.isOpen == true, "nothing selected: every note")
+        expectEqual(s.bar?.label, "All shapes")
+        expectEqual(s.listed, ["lock", "public", "is-a", "color", "move-to", "move-near", "query"], "what three notes offer, then /query")
+        model.queue(#":contains("buy")"#)
+        s.window.type("query the shopping")
+        s.window.pressReturn()
+        expect(s.bar?.isWaiting == true, "it waits for the model")
+        expect(spinRunLoop(until: { s.bar?.isOpen != true }), "and closes once it has selected")
+        expectEqual(s.editor.selectedShapeIDs, [milk, eggs])
+        expectEqual(s.editor.announcements.last, "2 shapes selected")
+        expect(message(of: model.requests.last).contains("Nothing is selected."), "asked as --ask asks")
+        s.slash()
+        model.queue(#":contains("milk")"#)
+        s.window.type("query the milk one")
+        s.window.pressReturn()
+        expect(spinRunLoop(until: { s.bar?.isOpen != true }))
+        expectEqual(s.editor.selectedShapeIDs, [milk], "narrowed")
+        expect(message(of: model.requests.last).contains("The question picks out some of the selected shapes"))
+        s.slash()
+        expect(!s.listed.contains("query"), "one note: no /query")
+        expectEqual(s.editor.undoHistory.undoName, nil, "selecting is no step")
+    },
+
     test("a note selected: / lists what the bar can run on it, col and Return open the colors, bl and Return color it blue in one step, the bar gone and the canvas with the keyboard") {
         let s = ShippedBar()
         let note = s.note(100, 100, "Groceries")
@@ -262,3 +291,6 @@ import Types
         s.editor.endEditing()
     },
 ])
+
+/// A request's one user message.
+private func message(of request: ModelRequest?) -> String { request?.messages.first?.text ?? "" }

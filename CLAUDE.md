@@ -82,7 +82,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, the keyboard (walking the list with the panel holding it, Show All Shapes, what VoiceOver hears, the outline's keys), dragging rows.
 - [adornments](.claude/rules/adornments.md): pills, chips and tabs on shapes: placing them, their places (the tab on the top edge, shown at every zoom, giving way across shapes), drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items (an item can run a command, and show its key), right-clicks and Control-clicks, the selection's menu.
-- [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text, and in the command bar `/` opens under the selection.
+- [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text, and in the command bar `/` opens under the selection (or for every shape on the board, with none); commands about the bar's target as a whole, which it waits for (`/query`).
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
 
 **Platform**, horizontals that are shape traits (what a shape has)

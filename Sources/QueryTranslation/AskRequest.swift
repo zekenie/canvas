@@ -34,10 +34,11 @@ public struct AskStyle: Sendable, Equatable {
     /// a decline (a cyber or frontier-LLM one is answered by Sonnet 5; any other still comes back
     /// a refusal, `declined`).
     public static let sonnet = AskStyle(model: "claude-sonnet-5-5", maxTokens: 2_048, effort: "low", fallbacks: .default)
-    /// Claude Haiku 5.5: no temperature (it refuses any but its default), the room Sonnet 5.5 gets,
-    /// `high` effort (it thinks, and at `low` it missed the bar), and no fallbacks (the service has
-    /// none for it: a decline stays one).
-    public static let haiku55 = AskStyle(model: "claude-haiku-5-5", maxTokens: 2_048, effort: "high")
+    /// Claude Haiku 5.5: no temperature (it refuses any but its default), twice the room Sonnet 5.5 gets
+    /// (its thinking is in it, and a question that crosses two relationships ran past 2,048 tokens and was
+    /// cut off), `high` effort (it thinks, and at `low` it missed the bar), and no fallbacks (the service
+    /// has none for it: a decline stays one).
+    public static let haiku55 = AskStyle(model: "claude-haiku-5-5", maxTokens: 4_096, effort: "high")
     /// What ships: the model the evaluations picked, the cheaper that clears the bar. Round 4
     /// (`scripts/query-prompts/README.md`, ten rounds of 192 runs each) put Haiku 5.5 at 1,907 of
     /// 1,920 after repair (99.3%), nine of ten rounds clearing the bar, against Sonnet 5.5's 1,920 of
@@ -80,16 +81,18 @@ public enum AskRequest {
     ///
     /// `selection` says whether the selected shapes are named in `<board>`: not for a query that is
     /// stored and run later (`TranslationContext.reference`), where whatever is selected is the pill
-    /// being typed into.
+    /// being typed into. `narrowing` says the question picks out some of them and only those are kept
+    /// (`TranslationContext.selection`, `/query` on a selection).
     ///
     /// `facts` are the blocks plugins add (`QueryAskFacts`), each under its tag after the titles, in order; one with
     /// no text, or a tag the request uses itself, is left out.
     public static func request(question: String, vocabulary: String, where place: QueryWhere, titles: [QueryTitle], system: String,
-                               style: AskStyle, selection: Bool = true, facts: [(tag: String, text: String)] = []) -> ModelRequest {
+                               style: AskStyle, selection: Bool = true, narrowing: Bool = false,
+                               facts: [(tag: String, text: String)] = []) -> ModelRequest {
         let message = ([
             block(.question, question),
             block(.vocabulary, vocabulary),
-            block(.board, board(place, selection: selection)),
+            block(.board, board(place, selection: selection, narrowing: narrowing)),
             block(.titles, listed(titles)),
         ] + facts.filter { Tag(rawValue: $0.tag) == nil }.map { block($0.tag, $0.text) }).compactMap { $0 }.joined(separator: "\n\n")
         return ModelRequest(system: system, messages: [.user(message)], maxTokens: style.maxTokens, temperature: style.temperature,
@@ -130,8 +133,9 @@ public enum AskRequest {
     }
 
     /// Where the person is: the board shown, by the path of names to it ("the top board" at the top),
-    /// and what's selected: a titled shape by its title and kind, an untitled one by its kind and id.
-    static func board(_ place: QueryWhere, selection: Bool = true) -> String {
+    /// and what's selected: a titled shape by its title and kind, an untitled one by its kind and id; and,
+    /// `narrowing`, that the question picks out some of what's selected and only those are kept.
+    static func board(_ place: QueryWhere, selection: Bool = true, narrowing: Bool = false) -> String {
         let board = place.path.isEmpty ? "the top board" : "the board inside \(place.path.joined(separator: " › "))"
         guard selection else { return "The person is looking at \(board)." }
         guard !place.selected.isEmpty else { return "The person is looking at \(board). Nothing is selected." }
@@ -139,7 +143,9 @@ public enum AskRequest {
             shape.title.map { "\(quoted($0)) (\(shape.kind.rawValue))" } ?? "an untitled \(shape.kind.rawValue), #\(shape.id)"
         }
         if place.selectedCount > place.selected.count { named.append("and \(place.selectedCount - place.selected.count) more") }
-        return "The person is looking at \(board). Selected: \(named.joined(separator: ", "))."
+        let asks = narrowing ? " The question picks out some of the selected shapes, and only those of them the query matches are kept: "
+            + "write it for the selected shapes the question means." : ""
+        return "The person is looking at \(board). Selected: \(named.joined(separator: ", ")).\(asks)"
     }
 
     /// A title a line, as a query writes it, its kind, and the boards it's inside from the top.

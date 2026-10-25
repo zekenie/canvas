@@ -28,7 +28,7 @@ import TestKit
         _ = try answered(["query", "--ask", "  Which chores are in the pantry?\n"], on: h)
         let request = try require(model.lastRequest)
         expectEqual(request.system, systemPrompt)
-        expectEqual(request.maxTokens, 2_048)
+        expectEqual(request.maxTokens, 4_096)
         expectEqual(request.temperature, nil)
         expectEqual(request.model, "claude-haiku-5-5", "the shipped style's model, not the editor's")
         expectEqual(request.effort, "high")
@@ -149,7 +149,7 @@ import TestKit
         expectEqual(AskStyle.shipped, AskStyle.haiku55, "the model the evaluations picked")
         expectEqual(AskStyle.haiku, AskStyle(model: nil, temperature: 0, maxTokens: 400, effort: nil, fallbacks: nil))
         expectEqual(AskStyle.sonnet, AskStyle(model: "claude-sonnet-5-5", temperature: nil, maxTokens: 2_048, effort: "low", fallbacks: .default))
-        expectEqual(AskStyle.haiku55, AskStyle(model: "claude-haiku-5-5", temperature: nil, maxTokens: 2_048, effort: "high", fallbacks: nil),
+        expectEqual(AskStyle.haiku55, AskStyle(model: "claude-haiku-5-5", temperature: nil, maxTokens: 4_096, effort: "high", fallbacks: nil),
                     "Haiku 5.5 refuses a temperature, and has no fallback to ask for")
         expectEqual(AskStyle.named("claude-haiku-5-5"), .haiku55)
         expectEqual(AskStyle.named("claude-sonnet-5-5"), .sonnet)
@@ -171,7 +171,7 @@ import TestKit
         for request in model.requests {
             expectEqual(request.model, "claude-haiku-5-5")
             expectEqual(request.temperature, nil)
-            expectEqual(request.maxTokens, 2_048)
+            expectEqual(request.maxTokens, 4_096)
             expectEqual(request.effort, "high")
             expectEqual(request.fallbacks, nil)
         }

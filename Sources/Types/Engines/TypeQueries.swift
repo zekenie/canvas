@@ -20,7 +20,8 @@ import Topology
 /// has. Nothing is said while any note lists a type that is gone, whose fields are unknown (`FileFields`).
 ///
 /// `--ask` is told the file's types and their fields under `<fields>` (`FileFields.text(for:)`, bounded, a line a
-/// type: keys and kinds, never a note's values).
+/// type: keys and kinds, never a note's values), and which shapes are of each under `<instances>`
+/// (`FileFields.instancesText(for:)`: their titles, a line a type), so a note of no type is told apart from one that is.
 ///
 /// What each reads (`QueryReads`): the relation and the text format the file. The relation is answered from
 /// a fact of the file (`TypeFacts`, `TypeIndex.graph`, a value the index keeps by each commit, so taking it
@@ -58,6 +59,8 @@ public struct TypeQueriesPlugin: ListedPlugin {
                                    matches: { shape, facts in facts.isMisfit(shape) ? .yes : .no })
         // What `--ask` is told of the file's types: a line each, their fields' keys and kinds, never a value.
         registrar.queryAskFact(tag: "fields") { editor, question in editor.fileFields?.text(for: question) ?? "" }
+        // And which shapes are of each, by title, so a note of no type is told apart from one that is.
+        registrar.queryAskFact(tag: "instances") { editor, question in editor.fileFields?.instancesText(for: question) ?? "" }
         // A path into a note's values names a field no type has: a warning, and the query still answers.
         registrar.queryPathCheck(attribute: FieldValuesProperty.key.rawValue) { members, editor in
             editor.fileFields?.unknown(members).map { QueryPathUnknown(index: $0.index, known: $0.known) }

@@ -180,11 +180,12 @@ import Validation
         board-queries        query board names
         mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
         validation-queries   query word :invalid · query word :warned · query word :incomplete
-        type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · query path fieldValues
+        type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · query path fieldValues
         color-queries        query text text/x-canvas-color
         group-queries        query word :grouped-with
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
+        query-slash          /query → the command bar's target
         neighbors            service NeighborState · outlines
         arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
         mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions

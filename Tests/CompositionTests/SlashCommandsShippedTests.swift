@@ -44,8 +44,9 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         expectEqual(listed([reference]), ["lock", "move-to", "move-near"])
         expectEqual(listed([locked]), ["unlock"], "a locked note only what can act on it")
         let mixed = state.commands(for: .selection([note, frame, arrow])).map { "\($0.name) \($0.shapes.count) of \($0.targetCount)" }
-        expectEqual(mixed, ["lock 3 of 3", "public 2 of 3", "is-a 2 of 3", "color 3 of 3", "move-to 2 of 3", "move-near 2 of 3", "turn-into-subboard 1 of 3"],
-                    "the first shape's order, then what only later shapes offer; title, one shape's, left out")
+        expectEqual(mixed, ["lock 3 of 3", "public 2 of 3", "is-a 2 of 3", "color 3 of 3", "move-to 2 of 3", "move-near 2 of 3", "turn-into-subboard 1 of 3",
+                            "query 3 of 3"],
+                    "the first shape's order, then what only later shapes offer; title, one shape's, left out; /query, about them all, last")
     },
 
     test("/lock typed on a new line of a note and entered locks it: editing ends, the line is gone from its text, Undo is Undo Lock, and the step before is the typing") {

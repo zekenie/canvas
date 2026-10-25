@@ -88,3 +88,22 @@ r07	fields	which relationship types does Order have?	-	Placed by	types	sticky-no
 r08	fields	who has the most friends?	-	UNANSWERABLE	unanswerable	-
 r09	fields	who does Ann Lee mention?	-	none	mentions	:mentioned-by("Ann Lee")
 r10	fields	what can an order be related to?	-	Person	types	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))
+c01	school	all teachers who have students who have a blue pet beta fish	-	Ms. Frizzle	types	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))
+c02	school	which teachers have a student with a beta fish?	-	Ms. Frizzle, Mr. Keating	types	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at([fieldValues.species="beta fish"]))))
+c03	school	students with a blue pet	-	Wanda, Neil, Zoe	types	:start-of(arrow:is-a("Has pet"):ends-at([fieldValues.color="blue" i]))
+c04	school	who are Ms. Frizzle's students?	-	Arnold, Wanda, Carlos, Ralphie	types	:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))
+c05	school	which pets belong to Carlos?	-	Finn	types	:end-of(arrow:is-a("Has pet"):starts-at("Carlos"))
+c06	school	who teaches Carlos?	-	Ms. Frizzle, Mr. Keating	types	:start-of(arrow:is-a("Teaches"):ends-at("Carlos"))
+c07	school	students in grade 3	-	Arnold, Wanda, Ralphie	types	:is-a("Student")[fieldValues.grade=3]
+c08	school	science teachers	-	Ms. Frizzle	types	:is-a("Teacher")[fieldValues.subject="science"]
+c09	school	students who don't have a pet	-	Ralphie	types	:is-a("Student"):not(:start-of(arrow:is-a("Has pet")))
+c10	school	teachers of students with a dog	-	Mr. Keating	types	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at([fieldValues.species="dog"]))))
+c11	school	pets of Ms. Frizzle's students	-	Liz, Bubbles, Finn	types	:end-of(arrow:is-a("Has pet"):starts-at(:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))))
+c12	school	which students have no teacher?	-	Zoe	types	:is-a("Student"):not(:end-of(arrow:is-a("Teaches")))
+c13	school	all the beta fish	-	Bubbles, Finn, Sky	types	:is-a("Pet")[fieldValues.species="beta fish"]
+c14	school	which kids at after school have an axolotl?	-	Sam	direction	"After school" sticky-note:edge-to(:contains("axolotl"))
+c15	school	which coaches have kids with an axolotl?	-	Coach Lee	direction	:contains("Coach"):edge-to(:edge-to(:contains("axolotl")))
+c16	school	the ones with a beta fish	/query, Arnold, Wanda, Carlos	Wanda, Carlos	types	:selected:start-of(arrow:is-a("Has pet"):ends-at([fieldValues.species="beta fish"]))
+c17	school	teachers with more than 3 students	-	UNANSWERABLE	unanswerable	-
+c18	school	all teachers who have students who have a blue pet beta fish	/query	Ms. Frizzle	types	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))
+c19	school	which kids at after school have an axolotl?	/query	Sam	direction	"After school" sticky-note:edge-to(:contains("axolotl"))

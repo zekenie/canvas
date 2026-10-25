@@ -150,4 +150,27 @@ private func offering(_ name: String, id: PluginID) -> Contributor {
         expectEqual(try Registry(plugins: [SlashCommandsPlugin()]).report.split(separator: "\n").last.map(String.init),
                     "slash-commands  service SlashCommandState · key hint / at a Line\'s Start Run a Command")
     },
+
+    test("a command about the command bar's target: its line in the report, its name claimed once, never a shape's command's, and typed as one") {
+        let r = try registry([AskPlugin(log: AskLog())])
+        let line = try require(r.report.split(separator: "\n").map(String.init).first { $0.hasPrefix("ask-commands") })
+        expect(line.hasSuffix("/ask → the command bar's target"), line)
+        expectEqual(r.contributions(to: SelectionSlashCommands.self).count, 1)
+        let again = Contributor(id: "again") { r in
+            r.selectionSlashCommand(SelectionSlashCommand("ask") { _, _, _ in Task { .done } })
+        }
+        expectThrows(RegistryError.conflict(point: "SelectionSlashCommands", key: "/ask", plugins: ["ask-commands", "again"])) {
+            _ = try registry([AskPlugin(log: AskLog()), again])
+        }
+        let shapes = Contributor(id: "shapes") { r in r.slashCommands(Box.self) { SlashCommand("ask") { _, _ in } } }
+        expectThrows(RegistryError.invalid(point: "SelectionSlashCommands",
+                                           reason: "ask-commands offers /ask for the command bar's target, which a shape's command is called too")) {
+            _ = try registry([AskPlugin(log: AskLog()), shapes])
+        }
+        let bad = Contributor(id: "bad") { r in r.selectionSlashCommand(SelectionSlashCommand("Ask Me") { _, _, _ in Task { .done } }) }
+        expectThrows(RegistryError.invalid(point: "SelectionSlashCommands", reason: "bad offers /Ask Me, which can't be typed as a command's name: "
+                                           + "lowercase letters and digits, words joined by hyphens")) {
+            _ = try registry([bad])
+        }
+    },
 ])

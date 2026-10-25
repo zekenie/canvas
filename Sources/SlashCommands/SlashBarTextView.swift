@@ -87,14 +87,30 @@ public final class SlashBarTextView: EditingTextView {
 }
 
 /// What the bar shows: the field at its left, and at its right what it acts on, quieter ("Groceries",
-/// "5 shapes").
+/// "5 shapes", "All shapes"); while it waits for a command that answers later a spinner in the label's place,
+/// and when one fails, why ("No matches").
 @MainActor
 final class SlashBarView: NSView {
     let field: NSView
     let acting: NSTextField
+    private let spinner = NSProgressIndicator()
+    /// What it acts on, as it says when it says nothing else.
+    private let actingText: String
+    private(set) var state: State = .acting
+
+    /// What the label's place shows.
+    enum State: Equatable {
+        /// What it acts on.
+        case acting
+        /// A spinner: a command that answers later hasn't yet.
+        case waiting
+        /// Why the command that answered didn't do what it was asked.
+        case failed(String)
+    }
 
     init(field: NSView, acting label: String) {
         self.field = field
+        actingText = label
         acting = NSTextField(labelWithString: label)
         super.init(frame: CGRect(x: 0, y: 0, width: SlashBarStyle.width, height: SlashBarStyle.height))
         acting.font = SlashBarStyle.labelFont
@@ -102,8 +118,14 @@ final class SlashBarView: NSView {
         acting.alignment = .right
         acting.lineBreakMode = .byTruncatingHead
         acting.setAccessibilityElement(false)
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isIndeterminate = true
+        spinner.isDisplayedWhenStopped = false
+        spinner.setAccessibilityElement(false)
         addSubview(field)
         addSubview(acting)
+        addSubview(spinner)
         layoutParts()
     }
 
@@ -112,21 +134,53 @@ final class SlashBarView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// Shows what the label's place says now.
+    func show(_ state: State) {
+        self.state = state
+        switch state {
+        case .acting:
+            spinner.stopAnimation(nil)
+            acting.isHidden = false
+            acting.stringValue = actingText
+            acting.lineBreakMode = .byTruncatingHead
+            acting.toolTip = nil
+        case .waiting:
+            acting.isHidden = true
+            spinner.startAnimation(nil)
+        case .failed(let message):
+            spinner.stopAnimation(nil)
+            acting.isHidden = false
+            acting.stringValue = message
+            acting.lineBreakMode = .byTruncatingTail
+            acting.toolTip = message
+        }
+        layoutParts()
+    }
+
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
         layoutParts()
     }
 
-    /// The field takes what the label leaves, the label at most `labelShare` of the bar.
+    /// The field takes what the label (or the spinner) leaves, the label at most `labelShare` of the bar,
+    /// a failure's words `failureShare`.
     private func layoutParts() {
         let inset = SlashBarStyle.inset
         let room = max(0, bounds.width - inset * 3)
-        // The cell's size, its padding with it: the intrinsic width leaves that out, and the label would cut its head off.
-        let wanted = ceil(acting.cell?.cellSize.width ?? acting.intrinsicContentSize.width)
-        let labelWidth = min(wanted, room * SlashBarStyle.labelShare)
-        let labelHeight = ceil(acting.intrinsicContentSize.height)
-        acting.frame = CGRect(x: bounds.width - inset - labelWidth, y: ((bounds.height - labelHeight) / 2).rounded(),
-                              width: labelWidth, height: labelHeight)
-        field.frame = CGRect(x: inset, y: 0, width: max(0, room - labelWidth), height: bounds.height)
+        let side: CGFloat
+        if state == .waiting {
+            let size = spinner.fittingSize
+            side = min(size.width, room)
+            spinner.frame = CGRect(x: bounds.width - inset - side, y: ((bounds.height - size.height) / 2).rounded(), width: side, height: size.height)
+        } else {
+            // The cell's size, its padding with it: the intrinsic width leaves that out, and the label would cut its head off.
+            let wanted = ceil(acting.cell?.cellSize.width ?? acting.intrinsicContentSize.width)
+            let share = state == .acting ? SlashBarStyle.labelShare : SlashBarStyle.failureShare
+            side = min(wanted, room * share)
+            let labelHeight = ceil(acting.intrinsicContentSize.height)
+            acting.frame = CGRect(x: bounds.width - inset - side, y: ((bounds.height - labelHeight) / 2).rounded(),
+                                  width: side, height: labelHeight)
+        }
+        field.frame = CGRect(x: inset, y: 0, width: max(0, room - side), height: bounds.height)
     }
 }

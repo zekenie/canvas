@@ -105,6 +105,10 @@ public enum TranslationContext: Sendable {
     /// A person asking, whose query is run at once (`--ask`): it may use what the person has selected
     /// and the board they're looking at.
     case person
+    /// A person asking which of the shapes they have selected the question picks out, whose query's answer is
+    /// kept to those (the command bar's `/query` on a selection): as `.person`, and what the model is told of
+    /// where the person is says so.
+    case selection
     /// A query that is stored and run later without the person (a reference's): the selection is left
     /// out of what the model is told, every word that reads the editor is left out of the vocabulary,
     /// one rule line says so, and the query must read only the file.
@@ -270,7 +274,7 @@ public final class QueryTranslator {
         async throws(QueryTranslationError) -> Talk<Checked> {
         let place: QueryWhere, titles: [QueryTitle]
         do throws(QueryError) {
-            place = try await queries.whereThePersonIs(selectedLimit: context == .person ? AskStyle.selected : 0)
+            place = try await queries.whereThePersonIs(selectedLimit: context == .reference ? 0 : AskStyle.selected)
             titles = try await queries.titles(for: question, limit: AskStyle.titles)
         } catch {
             throw bounds.timedOut ? .tooSlow : .refused(error)
@@ -279,7 +283,7 @@ public final class QueryTranslator {
         let prompt = reference && !referenceRule.isEmpty ? system + "\n" + referenceRule : system
         let vocabulary = reference ? queries.vocabulary.textForStoredQueries : queries.vocabulary.text
         var request = AskRequest.request(question: question, vocabulary: vocabulary, where: place, titles: titles, system: prompt, style: style,
-                                         selection: !reference, facts: facts)
+                                         selection: !reference, narrowing: context == .selection, facts: facts)
         var tokens = (input: 0, output: 0), answers: [String] = []
         var repaired: String?
         for attempt in 1...2 {

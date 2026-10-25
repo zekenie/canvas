@@ -46,6 +46,10 @@ import TextEditing
 ///   runs the first row whose title is what was typed; none, a new line. Only the name of such a
 ///   line is marked, never what follows it.
 ///
+/// - A command that answers later (one about the command bar's target as a whole,
+///   `OfferedSlashCommand.answersLater`) isn't run: Return on its line, as on any command line, leaves the
+///   line as typed and hands the command to the host (`willAnswer`), which starts it and waits.
+///
 /// It writes the text only through the view, as a person's edit (undoable, heard by the host), its
 /// list closed first, and ignores its own callbacks while it does. The command runs after the text
 /// is written, so a command that makes the shape read-only has its line gone already. Running is the
@@ -66,6 +70,13 @@ public final class SlashCommandTyping {
     /// a pick of a choice), with the command and the row picked: the command bar closes there, so the
     /// command runs from the canvas, as from a key. Nothing of the view or this object is touched after it.
     public var willRun: (@MainActor (_ command: OfferedSlashCommand, _ choice: SlashChoice?) -> Void)?
+    /// Called in place of running a command that answers later (`OfferedSlashCommand.answersLater`), with
+    /// what was typed after its name: its line stays in the text as typed, and the host starts it and waits
+    /// for its answer (the command bar does). With none, such a command's line is text, and Return is as ever.
+    public var willAnswer: (@MainActor (_ command: OfferedSlashCommand, _ arguments: SlashArguments) -> Void)?
+    /// Called after each change to the text that isn't this object's own writing: what a host waiting on a
+    /// line's answer stops at (the line changed).
+    public var didEdit: (@MainActor () -> Void)?
 
     private weak var view: EditingTextView?
     private weak var commands: SlashCommandState?
@@ -135,6 +146,7 @@ public final class SlashCommandTyping {
         read(isEdit: isEdit)
         readChoices(isEdit: isEdit)
         showCommand()
+        if isEdit { didEdit?() }
     }
 
     /// Closes the list, if it's open: its `/` stays as typed, and nothing opens until another is
@@ -336,9 +348,15 @@ public final class SlashCommandTyping {
     /// Takes the line out of the text and runs the command. The command is asked of the shape now
     /// and run as found, once the line is gone (what the text removed may change what a shape
     /// offers, which doesn't take the command back); not found or not accepting, nothing is taken
-    /// out.
+    /// out. One that answers later is handed to the host instead (`willAnswer`), its line left as typed.
     private func run(_ command: OfferedSlashCommand, with arguments: SlashArguments, removing range: NSRange) -> Bool {
         guard let commands, let current = self.command(named: command.name, in: commands), current.accepts(arguments) else { return false }
+        if current.answersLater {
+            guard let willAnswer else { return false }
+            close()
+            willAnswer(current, arguments)
+            return true
+        }
         close()
         guard write(range, with: "") else { return false }
         willRun?(current, nil)

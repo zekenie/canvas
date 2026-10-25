@@ -30,6 +30,8 @@ public struct MentionSlashBarPlugin: ListedPlugin {
             SlashBarField.setUp(view)
             guard let typing = view.hostSlashCommands(for: target) else { return nil }
             typing.willRun = events.willRun
+            typing.willAnswer = events.willAnswer
+            typing.didEdit = events.edited
             view.onExit = events.escape
             view.onLeave = events.left
             view.onEmptied = events.emptied

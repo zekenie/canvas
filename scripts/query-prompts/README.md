@@ -13,13 +13,21 @@ whatever its form.
 
 - `cases.tsv` is the cases: 51 on the story file (`QueryStory.swift`, the file every query example
   runs on), 19 on the eval board (`QueryEvalBoard.swift`, 59 shapes on six boards, with
-  look-alike titles, plain arrows, and a note mentioned from two boards away) and 19 on the fields
+  look-alike titles, plain arrows, and a note mentioned from two boards away), 19 on the fields
   board (`QueryFieldsBoard.swift`: two types, two relationship types (Placed by, Friendship) and six notes
-  with field values, a mention, the relationships between them and one that is a misfit). Its ten
+  with field values, a mention, the relationships between them and one that is a misfit) and 19 on the
+  school board (`QuerySchoolBoard.swift`: Teacher, Student and Pet, the relationship types Teaches and Has pet
+  between their notes, and a subboard of plain notes and arrows). The fields board's ten
   relationship cases are r01 to r10 (who is Ann Lee friends with, which orders she placed, who placed an
   order, which friendships began before 2020, which orders have no customer, which relationships don't fit,
   which relationship types Order has, who has the most friends, a mention that is not a relationship, and
   what an order can be related to); f05 and f06 ask the same of Placed by that they once asked of a field.
+  The school board's c01 to c19 ask across both relationships to a field at the far end (c01 is the owner's
+  "all teachers who have students who have a blue pet beta fish"), of plain notes about animals no Pet's
+  species names (c14, c15, c19: words and arrows, not a type's field), and through `/query`: a case whose
+  selection column starts `/query` is asked as the command bar's `/query` asks it, from its board and its
+  selection, and scored by what it leaves selected (c16 narrows three students, "the ones with a beta fish";
+  c18 and c19 ask with nothing selected).
 - `results.tsv` gets a row per run of a round, when you ask for one (`QUERY_EVAL_OUT`).
 - `copy_prompt.py` copies the prompt (`Shipped/ask-prompt.txt`) into the canvas skill's `query-prompt.md` after the
   prompt changes (the "Query prompt" suite holds the two equal).
@@ -79,7 +87,7 @@ The numbers from the round that decides go in the commit message that settles it
 
 ## Which model ships
 
-Haiku 5.5 (`claude-haiku-5-5`: no temperature, 2,048 tokens, effort `high`, no fallback: the
+Haiku 5.5 (`claude-haiku-5-5`: no temperature, 4,096 tokens, effort `high`, no fallback: the
 service has none for it), named on every `--ask` request; the editor's own model stays Haiku 4.5,
 which answers only a request that names none. It clears the bar over ten rounds, though not every round (Sonnet
 5.5 clears all ten). Round 4 (ten rounds of 192 runs each, a Sonnet round and a Haiku round started
@@ -100,6 +108,18 @@ subboard is Refund policy directly in?" (s20, 3) and s21 (1). The round that mis
 `results.tsv`, one round each): `low` 175 of 192 (91%) after repair, 167 first try, missed the bar
 ("direction" 79%, and the steering case "delete the locked notes" written as a query); `medium`
 184 (96%), met it by a run; `high` 189 (98%).
+
+The round with the school board (`slash-query-1`, 2026-10-25, Haiku 5.5 at `high`, 324 runs): 320 (98.8%)
+first try and after repair, the bar met, every category 100% but "direction", 38 of 42 (90%): e13 ("types
+linked to Customer", 2 of 3, written as the relationship types a type has; it missed 1 of 3 in
+`relationships-2` too) and one run each of c14 and c19. Before it, the school cases alone found three things
+the model didn't know or wasn't told, each fixed and asked again: in a file with types it took every note
+for some type's (c15 "UNANSWERABLE: no coach type", c14 plain notes put in Student), so the request tells it
+which shapes are of each type and which titled notes are of none (`<instances>`) and the prompt says a note
+of no type is found by its words and arrows (c14, c15 and c19 from 1 of 9 to 7 of 9); "the ones with a beta
+fish" on a selection ignored the selection (c16 0 of 3), so `/query` on a selection says that only what the
+question picks out of the selected is kept (3 of 3); and c01's thinking ran past 2,048 tokens once and was cut
+off, so the room is 4,096.
 
 Earlier, round 2 (`r2-haiku` and `r2-sonnet` in `results.tsv`, after the language and prompt
 changes round 1 prompted), 192 runs each, when Sonnet 5.5 was the only model that cleared the bar:

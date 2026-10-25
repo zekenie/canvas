@@ -328,6 +328,12 @@ final class ErasedSlashCommand {
     /// its `when` alone (a try).
     let command: CanvasCommand?
     let tries: Bool
+    /// For a command about the command bar's target as a whole (`SelectionSlashCommand`): which targets
+    /// offer it, what it starts (a task the bar waits for) and what VoiceOver hears meanwhile; nil and nil
+    /// for a shape's command.
+    let isOfferedFor: (@MainActor (SlashTarget, CanvasEditor) -> Bool)?
+    let answer: (@MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Task<SlashAnswer, Never>)?
+    let waiting: String?
 
     /// `read` gets the command's value from a record; `write` runs an edit on one shape's live
     /// value, in a transaction.
@@ -346,6 +352,9 @@ final class ErasedSlashCommand {
         tries = command.tries
         choices = command.choices
         otherwise = command.otherwise
+        isOfferedFor = nil
+        answer = nil
+        waiting = nil
         switch command.action {
         case .edit(let edit):
             run = { ids, arguments, editor in
@@ -361,6 +370,28 @@ final class ErasedSlashCommand {
             run = { _, _, _ in }
             runChoice = choose
         }
+    }
+
+    /// A command about the command bar's target as a whole: on every shape of it at once (`.together`),
+    /// whatever each shape is, running nothing itself (the bar asks it for its task, `answer`).
+    init(_ command: SelectionSlashCommand) {
+        name = command.name
+        argument = command.argument
+        reach = .together
+        isOffered = { _ in true }
+        accepts = command.accepts
+        shapes = nil
+        kindsOf = nil
+        step = nil
+        self.command = nil
+        tries = false
+        choices = nil
+        otherwise = nil
+        run = { _, _, _ in }
+        runChoice = nil
+        isOfferedFor = command.isOffered
+        answer = command.answer
+        waiting = command.waiting
     }
 
     /// Whether it takes a shape or a choice: what a row merged from two kinds' own commands of one name

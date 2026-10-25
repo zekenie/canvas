@@ -272,7 +272,7 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expectEqual(QueryPrompt.system, prompt)
         expectEqual(ShippedText.named("no-such-text"), nil, "a name the folder has no file of")
     },
-    test("the request built by the shipped list carries <fields> after <titles>, the file's types and their fields, and none for a file with no types") {
+    test("the request built by the shipped list carries <fields> after <titles> and <instances> last, the file's types, their fields and which shapes are of each, and neither for a file with no types") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let model = ScriptedLanguageModel(answers: ["sticky-note", "sticky-note"])
@@ -284,7 +284,13 @@ private func groups(of pattern: String, in text: String) -> [String]? {
             let text = try require(request.messages.first?.text)
             let titles = try require(text.range(of: "</titles>\n\n<fields>\n"), "after the titles: " + text)
             let end = try require(text.range(of: "\n</fields>"))
-            expect(end.lowerBound > titles.upperBound && text.hasSuffix("</fields>"), "and last")
+            expect(end.lowerBound > titles.upperBound, "the fields after the titles")
+            let instances = try require(text.range(of: "</fields>\n\n<instances>\n"), "the instances after the fields: " + text)
+            expect(text.hasSuffix("</instances>"), "and last")
+            // Ann is an Employee card, and so a Person too, by title; the types with no shape of them have no line; and the
+            // titled notes of no type last, in the boards' order (the untitled ones aren't named).
+            expectEqual(text[instances.upperBound...].split(separator: "\n").dropLast().map(String.init),
+                        [#"Employee card: "Ann""#, #"Person: "Ann""#, #"Of no type: "API gateway", "Auth", "Ledger", "Checkout", "Refund policy""#])
             let fields = String(text[titles.upperBound..<end.lowerBound]).split(separator: "\n").map(String.init)
             for line in ["Person: name (text)", "Employee card builds on Person: desk (text), started (date), teams (list) {name (text)}"] {
                 expect(fields.contains(line), "the story's \(line): \(fields)")
@@ -302,7 +308,8 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         let file = CanvasFile(root: CanvasDocument(shapes: whole.root.shapes.filter { !untyped.contains($0.id) }), children: whole.children)
         let plain = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
         _ = try awaitResult { try await plain.editor.queryTranslator?.translate("notes") }
-        expect(try require(bare.requests.first?.messages.first?.text).contains("<fields>") == false, "no types, no block")
+        let bareText = try require(bare.requests.first?.messages.first?.text)
+        expect(!bareText.contains("<fields>") && !bareText.contains("<instances>"), "no types, no blocks")
     },
     test("a stored query's request carries the rule line and a vocabulary without the words that read the editor, and a person's carries neither") {
         let pasteboard = NSPasteboard.withUniqueName()

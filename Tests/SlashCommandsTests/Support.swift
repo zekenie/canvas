@@ -385,3 +385,66 @@ final class SlashSession {
         }
     }
 }
+
+/// What `AskPlugin`'s command was started with, the answers a test hands it, and how many of its tasks were
+/// cancelled before they answered.
+@MainActor final class AskLog {
+    /// Each start: the target and what was typed after the name.
+    var asked: [(target: SlashTarget, arguments: SlashArguments)] = []
+    /// How many started tasks were cancelled before a test answered them.
+    var cancelled = 0
+    private var waiting: [Int: CheckedContinuation<SlashAnswer, Never>] = [:]
+    private var stopped: Set<Int> = []
+    private var started = 0
+
+    /// How many tasks wait for an answer.
+    var waitingCount: Int { waiting.count }
+
+    /// Answers the task started first of those that wait.
+    func answer(_ answer: SlashAnswer) {
+        guard let first = waiting.keys.min(), let continuation = waiting.removeValue(forKey: first) else { return }
+        continuation.resume(returning: answer)
+    }
+
+    /// A task that waits for `answer(_:)`, or for its cancellation, which answers it done.
+    func task() -> Task<SlashAnswer, Never> {
+        started += 1
+        let id = started
+        return Task { @MainActor [weak self] in
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    guard let self, !self.stopped.contains(id) else { return continuation.resume(returning: .done) }
+                    self.waiting[id] = continuation
+                }
+            } onCancel: {
+                MainActor.assumeIsolated { self?.stop(id) }
+            }
+        }
+    }
+
+    private func stop(_ id: Int) {
+        stopped.insert(id)
+        guard let continuation = waiting.removeValue(forKey: id) else { return }
+        cancelled += 1
+        continuation.resume(returning: .done)
+    }
+}
+
+/// A command about the command bar's target as a whole: `ask`, which takes words, says `Asking` while it waits,
+/// and is offered on several shapes or on every shape on the board, never on one; its task waits for the answer a
+/// test hands it (`AskLog`).
+struct AskPlugin: CanvasPlugin {
+    let log: AskLog
+    var id: PluginID { "ask-commands" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let log = log
+        registrar.selectionSlashCommand(SelectionSlashCommand("ask", argument: "words", waiting: "Asking", when: { target, _ in
+            if case .selection(let ids) = target { return ids.count > 1 }
+            return true
+        }) { target, arguments, _ in
+            log.asked.append((target, arguments))
+            return log.task()
+        })
+    }
+}

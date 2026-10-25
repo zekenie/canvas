@@ -6,6 +6,7 @@ import Queries
 import QueryTranslation
 import Selection
 import ShippedTesting
+import SlashCommands
 import TestKit
 
 // `--ask` against the real model (QUERY_LIVE=1 only: test.sh never sets it, and nothing else here
@@ -27,6 +28,7 @@ struct QueryEvalCase: Sendable {
         case story
         case evalBoard = "eval-board"
         case fields
+        case school
     }
 
     /// What a right answer is.
@@ -49,6 +51,9 @@ struct QueryEvalCase: Sendable {
     let board: String?
     /// What's selected there, by title or id.
     let selected: [String]
+    /// Whether it's asked as the command bar's `/query` asks it (`/query` in the selection column): on what's selected,
+    /// or with nothing selected the whole file, and scored by what it leaves selected.
+    let asksAsSlash: Bool
     let expected: Expected
     let category: String
     /// A query that answers it, which the cases' check runs; nil for none (`-`).
@@ -68,7 +73,7 @@ func queryEvalCases() throws -> [QueryEvalCase] {
     return try lines.dropFirst().filter { !$0.isEmpty }.map { line in
         let cells = line.components(separatedBy: "\t")
         _ = try require(cells.count == 7 ? true : nil, "seven columns: \(line)")
-        let file = try require(QueryEvalCase.File(rawValue: cells[1]), "a file, story or eval-board: \(line)")
+        let file = try require(QueryEvalCase.File(rawValue: cells[1]), "a file, story, eval-board, fields or school: \(line)")
         let selection = QueryEvalCase.names(cells[3])
         let board = selection.first { $0.hasPrefix("in ") }.map { String($0.dropFirst(3)) }
         let expected: QueryEvalCase.Expected = switch cells[4] {
@@ -77,7 +82,8 @@ func queryEvalCases() throws -> [QueryEvalCase] {
         case "none": .shapes([])
         default: .shapes(QueryEvalCase.names(cells[4]))
         }
-        return QueryEvalCase(id: cells[0], file: file, question: cells[2], board: board, selected: selection.filter { !$0.hasPrefix("in ") },
+        return QueryEvalCase(id: cells[0], file: file, question: cells[2], board: board,
+                             selected: selection.filter { !$0.hasPrefix("in ") && $0 != "/query" }, asksAsSlash: selection.contains("/query"),
                              expected: expected, category: cells[5], reference: cells[6] == "-" ? nil : cells[6])
     }
 }
@@ -97,6 +103,7 @@ func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboa
     case .story: QueryStory.file(in: registry)
     case .evalBoard: QueryEvalBoard.file(in: registry)
     case .fields: QueryFieldsBoard.file(in: registry)
+    case .school: QuerySchoolBoard.file(in: registry)
     }
     let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
     editor.viewportDidResize(to: QueryStory.viewport)
@@ -193,7 +200,32 @@ private func failedForTheAPI(_ call: Result<ModelResponse, LanguageModelError>) 
 private let apiRetries = 4
 private let apiRetryWait: Duration = .seconds(2)
 
-/// Asks a case's question `runs` times on its file, as `--ask` does, and scores each answer.
+/// What `/query` came to, when it was no selection: the bar's words for it.
+struct QuerySlashFailure: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
+}
+
+/// Asks a case's question as the command bar's `/query` asks it, from the board and the selection the case opens on
+/// (put back first, since a run before may have changed them), and answers what it leaves selected: none for "No
+/// matches", and its other failures thrown.
+@MainActor
+func askAsSlash(_ evalCase: QueryEvalCase, editor: CanvasEditor, board: BoardID, selected: [ShapeID]) async throws -> [ShapeID] {
+    if editor.board != board { _ = editor.showBoard(board) }
+    editor.selectedShapeIDs = selected
+    let bar = try require(editor.slashBar), commands = try require(editor.slashCommands)
+    let task = try require(commands.answer("query", for: bar.target(for: selected), with: SlashArguments(evalCase.question)),
+                           "\(evalCase.id): /query isn't offered for what's selected")
+    switch await task.value {
+    case .done: return editor.selectedShapeIDs
+    case .failed(let message):
+        if message == "No matches" { return [] }
+        throw QuerySlashFailure(message: message)
+    }
+}
+
+/// Asks a case's question `runs` times on its file, as `--ask` does (or, for a case asked as `/query`, as the command
+/// bar does), and scores each answer.
 @MainActor
 func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, style: AskStyle) async -> [QueryEvalRun] {
     let pasteboard = NSPasteboard.withUniqueName()
@@ -220,16 +252,22 @@ func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, style: AskStyle) async -
         }
     }
     var done: [QueryEvalRun] = []
+    // Where the case opened, for a `/query` run to start from each time.
+    let board = opened.editor.board, selected = opened.editor.selectedShapeIDs
     for run in 1...max(runs, 1) {
         var retries = 0
-        var before: Int, elapsed: Duration, outcome: Result<AskOutcome, any Error>
+        var before: Int, elapsed: Duration, outcome: Result<[ShapeID], any Error>
         repeat {
             if retries > 0 { try? await Task.sleep(for: apiRetryWait * (1 << (retries - 1))) }
             before = recorder.calls.count
             let start = ContinuousClock.now
             do {
-                let translator = try require(opened.editor.queryTranslator)
-                outcome = .success(try await translator.ask(evalCase.question, limit: QueryBudget.maxRows, properties: .none))
+                if evalCase.asksAsSlash {
+                    outcome = .success(try await askAsSlash(evalCase, editor: opened.editor, board: board, selected: selected))
+                } else {
+                    let translator = try require(opened.editor.queryTranslator)
+                    outcome = .success(try await translator.ask(evalCase.question, limit: QueryBudget.maxRows, properties: .none).result.rows.map(\.id))
+                }
             } catch {
                 outcome = .failure(error)
             }
@@ -256,14 +294,14 @@ func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, style: AskStyle) async -
         /// What the command did, when that isn't what was wanted.
         var said: String {
             switch outcome {
-            case .success(let asked): "matched \(names.describe(asked.result.rows.map(\.id)))"
+            case .success(let matched): "matched \(names.describe(matched))"
             case .failure(let error): "\(error)"
             }
         }
         let passed: Bool, note: String
         switch evalCase.expected {
         case .shapes:
-            passed = (try? outcome.get()).map { Set($0.result.rows.map(\.id)) == expected } ?? false
+            passed = (try? outcome.get()).map { Set($0) == expected } ?? false
             note = passed ? "" : said
         case .unanswerable:
             passed = unanswerable

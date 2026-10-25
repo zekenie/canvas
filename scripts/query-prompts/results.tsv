@@ -1877,3 +1877,327 @@ relationships-2	r09	claude-haiku-5-5	3	1	0	1	:mentioned-by("Ann Lee")		1345	6125
 relationships-2	r10	claude-haiku-5-5	1	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		1653	6122	279
 relationships-2	r10	claude-haiku-5-5	2	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		1304	6122	213
 relationships-2	r10	claude-haiku-5-5	3	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		1327	6122	226
+slash-query-1	s01	claude-haiku-5-5	1	1	0	1	sticky-note		837	6589	7
+slash-query-1	s01	claude-haiku-5-5	2	1	0	1	sticky-note		615	6589	7
+slash-query-1	s01	claude-haiku-5-5	3	1	0	1	sticky-note		521	6589	7
+slash-query-1	s02	claude-haiku-5-5	1	1	0	1	[locked]		1044	6590	83
+slash-query-1	s02	claude-haiku-5-5	2	1	0	1	*[locked]		3634	6590	184
+slash-query-1	s02	claude-haiku-5-5	3	1	0	1	[locked]		1222	6590	156
+slash-query-1	s03	claude-haiku-5-5	1	1	0	1	sticky-note[locked=false]		950	6591	76
+slash-query-1	s03	claude-haiku-5-5	2	1	0	1	sticky-note[locked=false]		788	6591	75
+slash-query-1	s03	claude-haiku-5-5	3	1	0	1	sticky-note[locked=false]		1309	6591	70
+slash-query-1	s04	claude-haiku-5-5	1	1	0	1	sticky-note[title=""]		820	6590	60
+slash-query-1	s04	claude-haiku-5-5	2	1	0	1	sticky-note[title=""]		937	6590	66
+slash-query-1	s04	claude-haiku-5-5	3	1	0	1	sticky-note[title=""]		780	6590	53
+slash-query-1	s05	claude-haiku-5-5	1	1	0	1	arrow[channel=""]		1074	6590	84
+slash-query-1	s05	claude-haiku-5-5	2	1	0	1	arrow[channel=""]		969	6590	91
+slash-query-1	s05	claude-haiku-5-5	3	1	0	1	arrow[channel=""]		1048	6590	92
+slash-query-1	s06	claude-haiku-5-5	1	1	0	1	arrow[channel=note-link]		1315	6592	186
+slash-query-1	s06	claude-haiku-5-5	2	1	0	1	arrow[channel=note-link]		1828	6592	218
+slash-query-1	s06	claude-haiku-5-5	3	1	0	1	arrow[channel=note-link]		1283	6592	158
+slash-query-1	s07	claude-haiku-5-5	1	1	0	1	sticky-note"Checkout"		971	6590	127
+slash-query-1	s07	claude-haiku-5-5	2	1	0	1	sticky-note"Checkout"		1044	6590	120
+slash-query-1	s07	claude-haiku-5-5	3	1	0	1	sticky-note"Checkout"		1123	6590	163
+slash-query-1	s08	claude-haiku-5-5	1	1	0	1	[title^="API"]		1922	6595	140
+slash-query-1	s08	claude-haiku-5-5	2	1	0	1	[title^="API"]		989	6595	84
+slash-query-1	s08	claude-haiku-5-5	3	1	0	1	[title^="API"]		1043	6595	121
+slash-query-1	s09	claude-haiku-5-5	1	1	0	1	"Order"[schema]		1521	6590	224
+slash-query-1	s09	claude-haiku-5-5	2	1	0	1	sticky-note"Order"[schema]		1752	6590	272
+slash-query-1	s09	claude-haiku-5-5	3	1	0	1	sticky-note"Order"[schema]		2481	6590	315
+slash-query-1	s10	claude-haiku-5-5	1	1	0	1	sticky-note"Checkout"		1980	6591	272
+slash-query-1	s10	claude-haiku-5-5	2	1	0	1	sticky-note"Checkout"		1700	6591	276
+slash-query-1	s10	claude-haiku-5-5	3	1	0	1	sticky-note"Checkout"		1714	6591	213
+slash-query-1	s11	claude-haiku-5-5	1	1	0	1	sticky-note:mentioned-by("API gateway") ⏎  ⏎ Wait — the rule is: "which notes mention Checkout?" → sticky-note:mentions("Checkout"). So "notes that mention API gateway" → sticky-note:mentions("API gateway"). ⏎  ⏎ sticky-note:mentions("API gateway")		1051	6594	103
+slash-query-1	s11	claude-haiku-5-5	2	1	0	1	sticky-note:mentioned-by("API gateway")		906	6594	20
+slash-query-1	s11	claude-haiku-5-5	3	1	0	1	sticky-note:mentioned-by("API gateway") ⏎  ⏎ Wait — the query must match notes that mention API gateway. The pseudo-class :mentions(S) means "its text mentions a shape S matches," so notes that mention API gateway are sticky-note:mentions("API gateway"). ⏎  ⏎ sticky-note:mentions("API gateway")		1048	6594	109
+slash-query-1	s12	claude-haiku-5-5	1	1	0	1	sticky-note:contains("TODO")		1400	6593	200
+slash-query-1	s12	claude-haiku-5-5	2	1	0	1	sticky-note:contains("TODO")		1185	6593	164
+slash-query-1	s12	claude-haiku-5-5	3	1	0	1	sticky-note:contains("TODO")		1917	6593	303
+slash-query-1	s13	claude-haiku-5-5	1	1	0	1	:mentions("Checkout")		1171	6594	135
+slash-query-1	s13	claude-haiku-5-5	2	1	0	1	:mentions("Checkout")		1126	6594	146
+slash-query-1	s13	claude-haiku-5-5	3	1	0	1	:mentions("Checkout")		1035	6594	125
+slash-query-1	s14	claude-haiku-5-5	1	1	0	1	sticky-note:dangling		884	6593	96
+slash-query-1	s14	claude-haiku-5-5	2	1	0	1	sticky-note:dangling		1093	6593	93
+slash-query-1	s14	claude-haiku-5-5	3	1	0	1	sticky-note:dangling		980	6593	98
+slash-query-1	s15	claude-haiku-5-5	1	1	0	1	sticky-note:not(:mentions(*))		905	6593	81
+slash-query-1	s15	claude-haiku-5-5	2	1	0	1	sticky-note:not(:mentions(*))		776	6593	65
+slash-query-1	s15	claude-haiku-5-5	3	1	0	1	sticky-note:not(:mentions(*))		745	6593	59
+slash-query-1	s16	claude-haiku-5-5	1	1	0	1	"Payments" > *		864	6594	64
+slash-query-1	s16	claude-haiku-5-5	2	1	0	1	"Payments" > *		791	6594	67
+slash-query-1	s16	claude-haiku-5-5	3	1	0	1	"Payments" > *		1161	6594	121
+slash-query-1	s17	claude-haiku-5-5	1	1	0	1	"Payments" *		877	6592	78
+slash-query-1	s17	claude-haiku-5-5	2	1	0	1	"Payments" *		1105	6592	113
+slash-query-1	s17	claude-haiku-5-5	3	1	0	1	"Payments" *		1022	6592	104
+slash-query-1	s18	claude-haiku-5-5	1	1	0	1	"Refund policy":inside("Payments")		845	6597	75
+slash-query-1	s18	claude-haiku-5-5	2	1	0	1	"Refund policy":inside("Payments")		819	6597	63
+slash-query-1	s18	claude-haiku-5-5	3	1	0	1	"Refund policy":inside("Payments")		917	6597	74
+slash-query-1	s19	claude-haiku-5-5	1	1	0	1	"Checkout":inside("Refunds")		3092	6597	181
+slash-query-1	s19	claude-haiku-5-5	2	1	0	1	"Checkout":inside("Refunds")		1503	6597	165
+slash-query-1	s19	claude-haiku-5-5	3	1	0	1	"Checkout":inside("Refunds")		1301	6597	198
+slash-query-1	s20	claude-haiku-5-5	1	1	0	1	subboard:has(> "Refund policy")		1740	6599	251
+slash-query-1	s20	claude-haiku-5-5	2	1	0	1	subboard:has(> "Refund policy")		2314	6599	377
+slash-query-1	s20	claude-haiku-5-5	3	1	0	1	subboard:has(> "Refund policy")		2223	6599	433
+slash-query-1	s21	claude-haiku-5-5	1	1	0	1	"Payments":has("Refund policy")		1090	6601	106
+slash-query-1	s21	claude-haiku-5-5	2	1	0	1	"Payments":has("Refund policy")		1276	6601	145
+slash-query-1	s21	claude-haiku-5-5	3	1	0	1	"Payments":has("Refund policy")		1055	6601	124
+slash-query-1	s22	claude-haiku-5-5	1	1	0	1	sticky-note:top-level		1052	6591	122
+slash-query-1	s22	claude-haiku-5-5	2	1	0	1	sticky-note:top-level		785	6591	95
+slash-query-1	s22	claude-haiku-5-5	3	1	0	1	sticky-note:current-board		3145	6591	553
+slash-query-1	s23	claude-haiku-5-5	1	1	0	1	:current-board		1080	6587	115
+slash-query-1	s23	claude-haiku-5-5	2	1	0	1	:current-board		956	6587	84
+slash-query-1	s23	claude-haiku-5-5	3	1	0	1	:current-board		986	6587	67
+slash-query-1	s24	claude-haiku-5-5	1	1	0	1	:edge-from("API gateway", arrow)		867	6594	106
+slash-query-1	s24	claude-haiku-5-5	2	1	0	1	:edge-from("API gateway", arrow)		1104	6594	124
+slash-query-1	s24	claude-haiku-5-5	3	1	0	1	:edge-from("API gateway", arrow)		1134	6594	110
+slash-query-1	s25	claude-haiku-5-5	1	1	0	1	:edge-to("Auth", arrow)		1327	6592	92
+slash-query-1	s25	claude-haiku-5-5	2	1	0	1	:edge-to("Auth", arrow)		1099	6592	92
+slash-query-1	s25	claude-haiku-5-5	3	1	0	1	:edge-to("Auth", arrow)		834	6592	91
+slash-query-1	s26	claude-haiku-5-5	1	1	0	1	:edge-to("Payments")		1751	6592	245
+slash-query-1	s26	claude-haiku-5-5	2	1	0	1	:edge-to("Payments", arrow)		1481	6592	203
+slash-query-1	s26	claude-haiku-5-5	3	1	0	1	:edge-to("Payments", arrow)		1255	6592	150
+slash-query-1	s27	claude-haiku-5-5	1	1	0	1	:connected-to("Checkout")		1183	6595	73
+slash-query-1	s27	claude-haiku-5-5	2	1	0	1	:connected-to("Checkout")		772	6595	63
+slash-query-1	s27	claude-haiku-5-5	3	1	0	1	:connected-to("Checkout")		2184	6595	93
+slash-query-1	s28	claude-haiku-5-5	1	1	0	1	sticky-note:mentioned-by("Checkout")		1190	6596	166
+slash-query-1	s28	claude-haiku-5-5	2	1	0	1	sticky-note:mentioned-by("Checkout")		1103	6596	161
+slash-query-1	s28	claude-haiku-5-5	3	1	0	1	sticky-note:mentioned-by("Checkout")		1375	6596	244
+slash-query-1	s29	claude-haiku-5-5	1	1	0	1	"Checkout":mentioned-by("API gateway")		1269	6600	111
+slash-query-1	s29	claude-haiku-5-5	2	1	0	1	"Checkout":mentioned-by("API gateway")		927	6600	111
+slash-query-1	s29	claude-haiku-5-5	3	1	0	1	"Checkout":mentioned-by("API gateway")		898	6600	113
+slash-query-1	s30	claude-haiku-5-5	1	1	0	1	arrow:starts-at("Warehouse")		1096	6596	120
+slash-query-1	s30	claude-haiku-5-5	2	1	0	1	arrow:starts-at("Warehouse")		1284	6596	112
+slash-query-1	s30	claude-haiku-5-5	3	1	0	1	arrow:starts-at("Warehouse")		1067	6596	106
+slash-query-1	s31	claude-haiku-5-5	1	1	0	1	arrow:between("Auth", "API gateway")		742	6598	18
+slash-query-1	s31	claude-haiku-5-5	2	1	0	1	arrow:between("Auth", "API gateway")		819	6598	18
+slash-query-1	s31	claude-haiku-5-5	3	1	0	1	arrow:between("Auth", "API gateway")		774	6598	18
+slash-query-1	s32	claude-haiku-5-5	1	1	0	1	:downstream-of("Checkout")		1000	6595	92
+slash-query-1	s32	claude-haiku-5-5	2	1	0	1	:downstream-of("Checkout")		941	6595	92
+slash-query-1	s32	claude-haiku-5-5	3	1	0	1	:downstream-of("Checkout")		1099	6595	130
+slash-query-1	s33	claude-haiku-5-5	1	1	0	1	:upstream-of("Auth")		974	6597	115
+slash-query-1	s33	claude-haiku-5-5	2	1	0	1	:upstream-of("Auth")		1310	6597	176
+slash-query-1	s33	claude-haiku-5-5	3	1	0	1	:upstream-of("Auth")		1738	6597	259
+slash-query-1	s34	claude-haiku-5-5	1	1	0	1	:component-of("Warehouse")		1446	6598	112
+slash-query-1	s34	claude-haiku-5-5	2	1	0	1	:component-of("Warehouse")		1056	6598	108
+slash-query-1	s34	claude-haiku-5-5	3	1	0	1	:component-of("Warehouse")		1299	6598	126
+slash-query-1	s35	claude-haiku-5-5	1	1	0	1	sticky-note:selected		1046	6589	59
+slash-query-1	s35	claude-haiku-5-5	2	1	0	1	sticky-note:selected		710	6589	59
+slash-query-1	s35	claude-haiku-5-5	3	1	0	1	sticky-note:selected		839	6589	73
+slash-query-1	s36	claude-haiku-5-5	1	1	0	1	:invalid		870	6591	62
+slash-query-1	s36	claude-haiku-5-5	2	1	0	1	:invalid		1484	6591	29
+slash-query-1	s36	claude-haiku-5-5	3	1	0	1	:invalid		792	6591	52
+slash-query-1	s37	claude-haiku-5-5	1	1	0	1	:invalid, :warned		2424	6591	436
+slash-query-1	s37	claude-haiku-5-5	2	1	0	1	:invalid, :warned		3178	6591	415
+slash-query-1	s37	claude-haiku-5-5	3	1	0	1	:invalid, :warned		1690	6591	278
+slash-query-1	s38	claude-haiku-5-5	1	1	0	1	"Payments" sticky-note[locked]		2113	6594	72
+slash-query-1	s38	claude-haiku-5-5	2	1	0	1	"Payments" sticky-note[locked]		1246	6594	115
+slash-query-1	s38	claude-haiku-5-5	3	1	0	1	"Payments" sticky-note[locked]		958	6594	84
+slash-query-1	s39	claude-haiku-5-5	1	1	0	1	"Payments" sticky-note:contains("gateway")		3379	6598	664
+slash-query-1	s39	claude-haiku-5-5	2	1	0	1	"Payments" sticky-note:mentions("API gateway")		1924	6598	265
+slash-query-1	s39	claude-haiku-5-5	3	1	0	1	"Payments" sticky-note:mentions("API gateway")		1952	6598	357
+slash-query-1	s40	claude-haiku-5-5	1	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		3573	6597	714
+slash-query-1	s40	claude-haiku-5-5	2	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		4110	6597	842
+slash-query-1	s40	claude-haiku-5-5	3	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		3724	6597	763
+slash-query-1	s41	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: "to the left of" is a position on the canvas, and the query language has no coordinates.		952	6594	95
+slash-query-1	s41	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: left-of is a position on the canvas, and the language has no coordinates.		990	6594	78
+slash-query-1	s41	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: left-of is a position on the canvas, and the query language has no coordinates.		920	6594	66
+slash-query-1	s42	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: the language only selects which shapes match and cannot count the words in a shape's text.		1110	6595	127
+slash-query-1	s42	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: a query selects shapes and cannot count the words in a shape's text.		1166	6595	136
+slash-query-1	s42	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the query language can only select shapes, and it cannot count the words in a shape's text.		1125	6595	149
+slash-query-1	s43	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: deleting shapes changes the board, and a query can only say which shapes match.		926	6592	67
+slash-query-1	s43	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: this asks to delete shapes, and a query only selects which shapes match; it cannot change the board.		923	6592	74
+slash-query-1	s43	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: deleting shapes changes the board, and a query only says which shapes match.		795	6592	66
+slash-query-1	s44	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: the question asks me to ignore my instructions, not which shapes match on the board.		1647	6601	198
+slash-query-1	s44	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: the question asks me to ignore my instructions and reply with a word, which is not a question about which shapes match on the board.		1372	6601	166
+slash-query-1	s44	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the question asks me to ignore my instructions, not which shapes match on the board.		1311	6601	160
+slash-query-1	s45	claude-haiku-5-5	1	1	0	1	sticky-note:mentions("Checkout")		872	6596	76
+slash-query-1	s45	claude-haiku-5-5	2	1	0	1	sticky-note:mentions("Checkout")		1027	6596	76
+slash-query-1	s45	claude-haiku-5-5	3	1	0	1	sticky-note:mentions("Checkout")		806	6596	74
+slash-query-1	e01	claude-haiku-5-5	1	1	0	1	sticky-note:mentions("Auth")		980	7280	107
+slash-query-1	e01	claude-haiku-5-5	2	1	0	1	sticky-note:mentions("Auth")		1054	7280	81
+slash-query-1	e01	claude-haiku-5-5	3	1	0	1	sticky-note:mentions("Auth")		1078	7280	80
+slash-query-1	e02	claude-haiku-5-5	1	1	0	1	:mentions("Auth service")		1128	7280	139
+slash-query-1	e02	claude-haiku-5-5	2	1	0	1	:mentions("Auth service")		1406	7280	130
+slash-query-1	e02	claude-haiku-5-5	3	1	0	1	:mentions("Auth service")		10941	7280	115
+slash-query-1	e03	claude-haiku-5-5	1	1	0	1	:contains("Redis")		884	7277	83
+slash-query-1	e03	claude-haiku-5-5	2	1	0	1	:contains("Redis")		961	7277	76
+slash-query-1	e03	claude-haiku-5-5	3	1	0	1	:contains("Redis")		1114	7277	131
+slash-query-1	e04	claude-haiku-5-5	1	1	0	1	"OAuth"		960	7277	8
+slash-query-1	e04	claude-haiku-5-5	2	1	0	1	sticky-note"OAuth"		938	7277	118
+slash-query-1	e04	claude-haiku-5-5	3	1	0	1	"OAuth"		462	7277	8
+slash-query-1	e05	claude-haiku-5-5	1	1	0	1	sticky-note"Auth"		1139	7275	166
+slash-query-1	e05	claude-haiku-5-5	2	1	0	1	sticky-note"Auth"		898	7275	102
+slash-query-1	e05	claude-haiku-5-5	3	1	0	1	sticky-note"Auth"		1000	7275	93
+slash-query-1	e06	claude-haiku-5-5	1	1	0	1	sticky-note[title*="auth" i]		1305	7279	183
+slash-query-1	e06	claude-haiku-5-5	2	1	0	1	sticky-note[title*="auth" i]		1104	7279	131
+slash-query-1	e06	claude-haiku-5-5	3	1	0	1	sticky-note"Auth service", sticky-note"Auth proxy", sticky-note"Auth", sticky-note"OAuth"		6294	7279	1294
+slash-query-1	e07	claude-haiku-5-5	1	1	0	1	"Identity" sticky-note		926	7278	71
+slash-query-1	e07	claude-haiku-5-5	2	1	0	1	"Identity" sticky-note		837	7278	77
+slash-query-1	e07	claude-haiku-5-5	3	1	0	1	"Identity" sticky-note		937	7278	82
+slash-query-1	e08	claude-haiku-5-5	1	1	0	1	"Password reset":inside("Identity")		1001	7282	90
+slash-query-1	e08	claude-haiku-5-5	2	1	0	1	"Password reset":inside("Identity")		1059	7282	116
+slash-query-1	e08	claude-haiku-5-5	3	1	0	1	"Password reset":inside("Identity")		1127	7282	98
+slash-query-1	e09	claude-haiku-5-5	1	1	0	1	"Billing" > "Tax"		1492	7284	171
+slash-query-1	e09	claude-haiku-5-5	2	1	0	1	"Billing" > "Tax"		1371	7284	202
+slash-query-1	e09	claude-haiku-5-5	3	1	0	1	"Billing" > "Tax"		36997	7284	147
+slash-query-1	e10	claude-haiku-5-5	1	1	0	1	subboard:inside("Billing")		1097	7282	143
+slash-query-1	e10	claude-haiku-5-5	2	1	0	1	"Billing" subboard		2303	7282	175
+slash-query-1	e10	claude-haiku-5-5	3	1	0	1	"Billing" subboard		1624	7282	251
+slash-query-1	e11	claude-haiku-5-5	1	1	0	1	:current-board		959	7281	97
+slash-query-1	e11	claude-haiku-5-5	2	1	0	1	:current-board		1283	7281	144
+slash-query-1	e11	claude-haiku-5-5	3	1	0	1	:current-board		1124	7281	109
+slash-query-1	e12	claude-haiku-5-5	1	1	0	1	:edge-from("Kubernetes")		1973	7282	268
+slash-query-1	e12	claude-haiku-5-5	2	1	0	1	:edge-from("Kubernetes", arrow)		1965	7282	252
+slash-query-1	e12	claude-haiku-5-5	3	1	0	1	:edge-from("Kubernetes")		1446	7282	214
+slash-query-1	e13	claude-haiku-5-5	1	0	0	0	sticky-note[relationship]:connected-to("Customer", arrow)		2687	7278	525
+slash-query-1	e13	claude-haiku-5-5	2	1	0	1	sticky-note[schema]:connected-to("Customer", arrow)		4984	7278	985
+slash-query-1	e13	claude-haiku-5-5	3	0	0	0	sticky-note[relationship]:connected-to("Customer", arrow)		3329	7278	662
+slash-query-1	e14	claude-haiku-5-5	1	1	0	1	arrow:between("Payments API", "Stripe")		1181	7285	164
+slash-query-1	e14	claude-haiku-5-5	2	1	0	1	arrow:between("Payments API", "Stripe")		831	7285	103
+slash-query-1	e14	claude-haiku-5-5	3	1	0	1	arrow:between("Payments API", "Stripe")		1301	7285	152
+slash-query-1	e15	claude-haiku-5-5	1	1	0	1	:downstream-of("Frontend")		922	7281	76
+slash-query-1	e15	claude-haiku-5-5	2	1	0	1	:downstream-of("Frontend")		1050	7281	123
+slash-query-1	e15	claude-haiku-5-5	3	1	0	1	:downstream-of("Frontend")		1129	7281	101
+slash-query-1	e16	claude-haiku-5-5	1	1	0	1	sticky-note[locked]		674	7275	54
+slash-query-1	e16	claude-haiku-5-5	2	1	0	1	sticky-note[locked]		887	7275	54
+slash-query-1	e16	claude-haiku-5-5	3	1	0	1	sticky-note[locked]		988	7275	54
+slash-query-1	e17	claude-haiku-5-5	1	1	0	1	"Infra" arrow[channel=""]		1112	7280	160
+slash-query-1	e17	claude-haiku-5-5	2	1	0	1	"Infra" arrow[channel=""]		1098	7280	140
+slash-query-1	e17	claude-haiku-5-5	3	1	0	1	"Infra" arrow[channel=""]		1235	7280	157
+slash-query-1	e18	claude-haiku-5-5	1	1	0	1	:warned		753	7278	5
+slash-query-1	e18	claude-haiku-5-5	2	1	0	1	:warned		965	7278	5
+slash-query-1	e18	claude-haiku-5-5	3	1	0	1	:warned		704	7278	5
+slash-query-1	e19	claude-haiku-5-5	1	1	0	1	:edge-from(:selected, arrow)		2314	7293	185
+slash-query-1	e19	claude-haiku-5-5	2	1	0	1	:edge-from(:selected, arrow)		1007	7293	115
+slash-query-1	e19	claude-haiku-5-5	3	1	0	1	:edge-from(:selected, arrow)		1360	7293	177
+slash-query-1	s46	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Person")		1281	6592	192
+slash-query-1	s46	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Person")		1289	6592	167
+slash-query-1	s46	claude-haiku-5-5	3	1	0	1	:is-a("Person")		1465	6592	139
+slash-query-1	s47	claude-haiku-5-5	1	1	0	1	:edge-from("Ann", is-a)		2063	6591	291
+slash-query-1	s47	claude-haiku-5-5	2	1	0	1	:edge-from("Ann", is-a)		1582	6591	198
+slash-query-1	s47	claude-haiku-5-5	3	1	0	1	:edge-from("Ann", is-a)		1412	6591	182
+slash-query-1	s48	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Employee card")		811	6592	83
+slash-query-1	s48	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Employee card")		1867	6592	119
+slash-query-1	s48	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Employee card")		857	6592	117
+slash-query-1	s49	claude-haiku-5-5	1	1	0	1	"Ann":is-a("Person")		1668	6593	108
+slash-query-1	s49	claude-haiku-5-5	2	1	0	1	"Ann":is-a("Person")		1237	6593	136
+slash-query-1	s49	claude-haiku-5-5	3	1	0	1	"Ann":is-a("Person")		1937	6593	155
+slash-query-1	s50	claude-haiku-5-5	1	1	0	1	sticky-note[text*="person" i]		1532	6592	199
+slash-query-1	s50	claude-haiku-5-5	2	1	0	1	sticky-note[text*="person" i]		1377	6592	179
+slash-query-1	s50	claude-haiku-5-5	3	1	0	1	sticky-note[text*="person" i]		1433	6592	193
+slash-query-1	s51	claude-haiku-5-5	1	1	0	1	sticky-note[schema]		891	6591	88
+slash-query-1	s51	claude-haiku-5-5	2	1	0	1	sticky-note[schema]		917	6591	91
+slash-query-1	s51	claude-haiku-5-5	3	1	0	1	sticky-note[schema]		826	6591	75
+slash-query-1	f01	claude-haiku-5-5	1	1	0	1	:is-a("Order"):incomplete		1127	6641	130
+slash-query-1	f01	claude-haiku-5-5	2	1	0	1	:is-a("Order"):incomplete		1247	6641	124
+slash-query-1	f01	claude-haiku-5-5	3	1	0	1	:is-a("Order"):incomplete		1127	6641	157
+slash-query-1	f02	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order"):invalid		1142	6644	131
+slash-query-1	f02	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order"):invalid		1252	6644	138
+slash-query-1	f02	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order"):invalid		1228	6644	190
+slash-query-1	f03	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order")[fieldValues.lineItems.product="Mug" i]		2232	6642	396
+slash-query-1	f03	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order")[fieldValues.lineItems.product="Mug"]		1741	6642	279
+slash-query-1	f03	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order")[fieldValues.lineItems.product="Mug" i]		1632	6642	274
+slash-query-1	f04	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order")[fieldValues.due<"2026-11-01"]		1050	6642	149
+slash-query-1	f04	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order")[fieldValues.due<"2026-11-01"]		1054	6642	151
+slash-query-1	f04	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order")[fieldValues.due<"2026-11-01"]		1168	6642	176
+slash-query-1	f05	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2683	6643	546
+slash-query-1	f05	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		1996	6643	404
+slash-query-1	f05	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2988	6643	639
+slash-query-1	f06	claude-haiku-5-5	1	1	0	1	:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Bo Park"))		2402	6642	485
+slash-query-1	f06	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Bo Park"))		2943	6642	649
+slash-query-1	f06	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Bo Park"))		2735	6642	615
+slash-query-1	f07	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Person")[fieldValues.dob<"2000-01-01"]		1993	6640	109
+slash-query-1	f07	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Person")[fieldValues.dob<"2000-01-01"]		922	6640	108
+slash-query-1	f07	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Person")[fieldValues.dob<"2000-01-01"]		1968	6640	136
+slash-query-1	f08	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: Orders have no priority field; the Order type has number, customer, status, due, total, lineItems, gift and giftNote.		1269	6643	174
+slash-query-1	f08	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: Order has no priority field; its fields are number, customer, status, due, total, lineItems, gift and giftNote.		1169	6643	192
+slash-query-1	f08	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: Orders have no priority field. The fields are number, customer, status, due, total, lineItems, gift and giftNote.		1219	6643	198
+slash-query-1	f09	claude-haiku-5-5	1	1	0	1	sticky-note:mentions("Ann Lee")		909	6646	103
+slash-query-1	f09	claude-haiku-5-5	2	1	0	1	sticky-note:mentions("Ann Lee")		841	6646	84
+slash-query-1	f09	claude-haiku-5-5	3	1	0	1	sticky-note:mentions("Ann Lee")		799	6646	78
+slash-query-1	r01	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Friendship"):starts-at("Ann Lee")), :start-of(arrow:is-a("Friendship"):ends-at("Ann Lee"))		2531	6646	500
+slash-query-1	r01	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Friendship"):starts-at("Ann Lee")), :start-of(arrow:is-a("Friendship"):ends-at("Ann Lee"))		2936	6646	559
+slash-query-1	r01	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Friendship"):starts-at("Ann Lee")), :start-of(arrow:is-a("Friendship"):ends-at("Ann Lee"))		3069	6646	604
+slash-query-1	r02	claude-haiku-5-5	1	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2285	6646	440
+slash-query-1	r02	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2574	6646	462
+slash-query-1	r02	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2729	6646	526
+slash-query-1	r03	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Placed by"):starts-at("Order 12"))		1310	6642	187
+slash-query-1	r03	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Placed by"):starts-at("Order 12"))		10974	6642	171
+slash-query-1	r03	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Placed by"):starts-at("Order 12"))		1195	6642	176
+slash-query-1	r04	claude-haiku-5-5	1	1	0	1	arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]		1264	6644	187
+slash-query-1	r04	claude-haiku-5-5	2	1	0	1	arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]		1022	6644	124
+slash-query-1	r04	claude-haiku-5-5	3	1	0	1	arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]		1354	6644	204
+slash-query-1	r05	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))		2345	6642	453
+slash-query-1	r05	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))		5049	6642	1043
+slash-query-1	r05	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))		3956	6642	717
+slash-query-1	r06	claude-haiku-5-5	1	1	0	1	arrow:misfit		983	6645	110
+slash-query-1	r06	claude-haiku-5-5	2	1	0	1	arrow:misfit		925	6645	77
+slash-query-1	r06	claude-haiku-5-5	3	1	0	1	arrow:misfit		1027	6645	84
+slash-query-1	r07	claude-haiku-5-5	1	1	0	1	sticky-note[relationship]:connected-to("Order", arrow)		1533	6644	233
+slash-query-1	r07	claude-haiku-5-5	2	1	0	1	sticky-note[relationship]:connected-to("Order", arrow)		1228	6644	179
+slash-query-1	r07	claude-haiku-5-5	3	1	0	1	sticky-note[relationship]:connected-to("Order", arrow)		1335	6644	190
+slash-query-1	r08	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: the query language can select shapes by their links but can't count them or rank them to find the most.		1702	6641	185
+slash-query-1	r08	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: the query language can select friends but can't count them or pick the one with the most.		1535	6641	162
+slash-query-1	r08	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the query language can't count friendships per person or rank them to find the most.		1744	6641	178
+slash-query-1	r09	claude-haiku-5-5	1	1	0	1	:mentioned-by("Ann Lee")		1188	6645	115
+slash-query-1	r09	claude-haiku-5-5	2	1	0	1	:mentioned-by("Ann Lee")		1306	6645	129
+slash-query-1	r09	claude-haiku-5-5	3	1	0	1	:mentioned-by("Ann Lee")		1108	6645	167
+slash-query-1	r10	claude-haiku-5-5	1	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		2356	6642	452
+slash-query-1	r10	claude-haiku-5-5	2	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		1934	6642	368
+slash-query-1	r10	claude-haiku-5-5	3	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		2151	6642	404
+slash-query-1	c01	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		11567	6971	2750
+slash-query-1	c01	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue"]))))		7752	6971	1750
+slash-query-1	c01	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		5138	6971	1306
+slash-query-1	c02	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))))		5751	6967	1321
+slash-query-1	c02	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))))		4601	6967	1059
+slash-query-1	c02	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))))		5215	6967	1282
+slash-query-1	c03	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.color="blue" i]))		4942	6960	1061
+slash-query-1	c03	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.color="blue" i]))		3938	6960	758
+slash-query-1	c03	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.color="blue" i], arrow)		4423	6960	788
+slash-query-1	c04	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))		2516	6967	240
+slash-query-1	c04	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))		2262	6967	322
+slash-query-1	c04	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))		1592	6967	257
+slash-query-1	c05	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at("Carlos"))		2150	6964	389
+slash-query-1	c05	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at("Carlos"))		1815	6964	277
+slash-query-1	c05	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at("Carlos"))		1946	6964	348
+slash-query-1	c06	claude-haiku-5-5	1	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at("Carlos"))		2102	6962	397
+slash-query-1	c06	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at("Carlos"))		1788	6962	335
+slash-query-1	c06	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at("Carlos"))		2259	6962	393
+slash-query-1	c07	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Student")[fieldValues.grade=3]		1418	6959	175
+slash-query-1	c07	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Student")[fieldValues.grade=3]		1127	6959	146
+slash-query-1	c07	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Student")[fieldValues.grade=3]		1816	6959	318
+slash-query-1	c08	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher")[fieldValues.subject="science"]		986	6957	119
+slash-query-1	c08	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Teacher")[fieldValues.subject="science"]		1258	6957	197
+slash-query-1	c08	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Teacher")[fieldValues.subject="science"]		1528	6957	276
+slash-query-1	c09	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Student"):not(:start-of(arrow:is-a("Has pet")))		3095	6961	611
+slash-query-1	c09	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Student"):not(:start-of(arrow:is-a("Has pet")))		2957	6961	632
+slash-query-1	c09	claude-haiku-5-5	3	1	0	1	:is-a("Student"):not(:start-of(arrow:is-a("Has pet")))		3540	6961	747
+slash-query-1	c10	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="dog"]))))		6930	6962	1705
+slash-query-1	c10	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="dog"]))))		4505	6962	1050
+slash-query-1	c10	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="dog"]))))		4101	6962	939
+slash-query-1	c11	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at(:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))))		2571	6967	537
+slash-query-1	c11	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at(:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))))		2608	6967	539
+slash-query-1	c11	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at(:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))))		2952	6967	595
+slash-query-1	c12	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Student"):not(:end-of(arrow:is-a("Teaches")))		2603	6961	487
+slash-query-1	c12	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Student"):not(:end-of(arrow:is-a("Teaches")))		2765	6961	540
+slash-query-1	c12	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Student"):not(:end-of(arrow:is-a("Teaches")))		4102	6961	954
+slash-query-1	c13	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Pet")[fieldValues.species="beta fish"]		1677	6959	232
+slash-query-1	c13	claude-haiku-5-5	2	1	0	1	:is-a("Pet")[fieldValues.species="beta fish"]		1493	6959	203
+slash-query-1	c13	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Pet")[fieldValues.species="beta fish"]		2406	6959	286
+slash-query-1	c14	claude-haiku-5-5	1	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		5147	6966	1021
+slash-query-1	c14	claude-haiku-5-5	2	0	0	0	"After school" sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="axolotl"]))		8701	6966	1839
+slash-query-1	c14	claude-haiku-5-5	3	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		5200	6966	1002
+slash-query-1	c15	claude-haiku-5-5	1	1	0	1	:contains("coach"):connected-to(:connected-to(:contains("axolotl")))		9487	6967	2026
+slash-query-1	c15	claude-haiku-5-5	2	1	0	1	sticky-note:contains("coach"):connected-to(:connected-to(:contains("axolotl")))		3686	6967	731
+slash-query-1	c15	claude-haiku-5-5	3	1	0	1	:contains("coach"):connected-to(:connected-to(:contains("axolotl")))		4900	6967	1042
+slash-query-1	c16	claude-haiku-5-5	1	1	0	1	:selected:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))		4332	7037	858
+slash-query-1	c16	claude-haiku-5-5	2	1	0	1	:selected:start-of(arrow:is-a("Has pet"):ends-at(:is-a("Pet")[fieldValues.species="beta fish"]))		3731	7037	838
+slash-query-1	c16	claude-haiku-5-5	3	1	0	1	:selected:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))		3347	7037	724
+slash-query-1	c17	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: the query language can't count a teacher's student relationships, so "more than 3" has no expression.		1458	6963	225
+slash-query-1	c17	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: the query language can't count a teacher's students, so "more than 3" has no expression.		1570	6963	230
+slash-query-1	c17	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the language has no way to count a teacher's Teaches arrows, so "more than 3" can't be tested.		1662	6963	247
+slash-query-1	c18	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		7413	6971	1674
+slash-query-1	c18	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		7575	6971	1665
+slash-query-1	c18	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue"]))))		7213	6971	1670
+slash-query-1	c19	claude-haiku-5-5	1	1	0	1	"After school" > sticky-note:connected-to(:contains("axolotl"))		5772	6966	1149
+slash-query-1	c19	claude-haiku-5-5	2	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		5606	6966	1089
+slash-query-1	c19	claude-haiku-5-5	3	0	0	0	"After school" sticky-note:contains("axolotl")		7051	6966	1472

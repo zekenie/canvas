@@ -477,7 +477,7 @@ Opting in goes in one of four directions:
   Boards' `BoardQueriesPlugin` boards' names, Mentions' `MentionQueriesPlugin` `:mentions`,
   `:mentioned-by` and mention text as it reads, Validation's `ValidationQueriesPlugin` `:invalid`,
   `:warned` and `:incomplete`, Types' `TypeQueriesPlugin` `:is-a`, `:misfit`, a path into a note's values and
-  the `<fields>` block `--ask` is told, and, Selection being below Queries, Queries' own `SelectionQueriesPlugin`
+  the `<fields>` and `<instances>` blocks `--ask` is told, and, Selection being below Queries, Queries' own `SelectionQueriesPlugin`
   `:selected`. Queries has never heard of titles, boards, mentions, validity or types, so QueriesTests
   fill its points with words of their own, and a list without a horizontal leaves its words out.
 - **A horizontal fills the engine's points.** [`canvas draw`](#draw)'s engine (Draw) takes what
@@ -7338,7 +7338,8 @@ mention: a command's arguments are runs of text and shapes, and a pill is a shap
 text view that reads the line says so. And `/` on the canvas, with shapes selected, opens the
 [command bar](#the-command-bar) under them, where a command is typed for them all and run on them
 with Return: `/color blue` on two notes colors both, and frames, subboards and references, which have
-no text to type in, take commands too. Titles' `/title`, Locking's `/lock` and `/unlock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship.
+no text to type in, take commands too; with nothing selected it opens for every shape on the board, as
+if Select All had selected them. Titles' `/title`, Locking's `/lock` and `/unlock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship, and in the bar QueryTranslation's `/query`, a [command about the selection](#commands-about-the-selection-selectionslashcommand) that selects what a question in English finds.
 
 ```swift
 // In LockingPlugin.register, in its one scope:
@@ -7468,8 +7469,9 @@ registrar.shape(LampDefinition()) { lamp in
 ### On several shapes
 
 A command line is typed for a target (`SlashTarget`): `.text(owner)`, a line of one shape's text,
-the target every text view types for, or `.selection(ids)`, the shapes selected, which the command
-bar types for. So each command says how it acts on several shapes, its reach (`SlashReach`), where
+the target every text view types for, `.selection(ids)`, the shapes selected, which the command
+bar types for, or `.everything(ids)`, the bar with nothing selected: every shape on the board shown as
+Select All would select them, which the shapes' commands treat as a selection of them all. So each command says how it acts on several shapes, its reach (`SlashReach`), where
 it's registered, and nothing becomes plural without its author saying so:
 
 | Form | Reach | On several shapes |
@@ -7766,7 +7768,9 @@ override func keyDown(with event: NSEvent) {                                    
 ### The command bar
 
 `/` on the canvas, with shapes selected and nothing being edited, opens the command bar: a one-line
-field just under the selection, holding a `/` and the list a `/` opens in a note. Return runs the
+field just under the selection, holding a `/` and the list a `/` opens in a note. With nothing
+selected it opens at the top of the canvas for every shape on the board (`SlashTarget.everything`),
+saying "All shapes": `/color red` then colors them all in one step. Return runs the
 command on the selection, the bar goes, and the selection stays. Typing in a note is unchanged: its
 text view has the keyboard, so the canvas never sees the key, and the bar's command runs `.whenIdle`.
 The bar is `SlashBarPlugin` (a plugin value of SlashCommands' own beside `SlashCommandsPlugin()`, so a
@@ -7790,7 +7794,8 @@ registrar.selectionChanged { editor, _, _ in editor.slashBar?.close() }         
   there's no room below; 280 × 28 at every zoom. At its right, quieter, what it acts on: one shape as
   VoiceOver calls it (its title, else its kind), or "5 shapes". An offscreen selection is brought
   into view first, as a nudge brings it. A commit that moves what it acts on (a drag elsewhere, an
-  agent's draw) moves it along.
+  agent's draw) moves it along. Opened with nothing selected it moves no camera: it hangs in the middle
+  of the top of the canvas's clear part, says "All shapes", and stays there.
 
   ![Near the window's bottom the bar goes over the selection; zoomed out it keeps its size](plans/slash-on-selection/wireframes/7-where-the-bar-goes.svg)
 
@@ -7807,7 +7812,8 @@ registrar.selectionChanged { editor, _, _ in editor.slashBar?.close() }         
   | Key | In the bar |
   |---|---|
   | `/` on the canvas, a selection that offers something | opens it, the selection brought into view first |
-  | `/` with nothing selected, a selection that offers nothing, a shape being edited | as ever: it passes, or it's the text's |
+  | `/` with nothing selected, a board whose shapes offer something | opens it for every shape, at the top |
+  | `/` on an empty board, a selection that offers nothing, a shape being edited | as ever: it passes, or it's the text's |
   | typing | narrows the list: the names, then a choice's rows |
   | ↑ ↓, ⌃P ⌃N, Page Up, Page Down | the list's |
   | Tab | completes the highlighted row; with nothing to complete, nothing (modal, as Jump To's palette) |
@@ -7839,6 +7845,8 @@ registrar.selectionChanged { editor, _, _ in editor.slashBar?.close() }         
       SlashBarField.setUp(view)                                       // one line, as the bar's own field is
       guard let typing = view.hostSlashCommands(for: target) else { return nil }
       typing.willRun = events.willRun                                 // the bar closes before a command runs
+      typing.willAnswer = events.willAnswer                           // or waits for one that answers later
+      typing.didEdit = events.edited
       view.onExit = events.escape
       view.onLeave = events.left
       view.onEmptied = events.emptied
@@ -7862,6 +7870,40 @@ registrar.selectionChanged { editor, _, _ in editor.slashBar?.close() }         
 SlashCommandsTests' `slashBarTests` hold it over fixtures in an unshown window, MentionsTests'
 `slashBarFieldTests` Mentions' field over Mentions' fixtures, and CompositionTests'
 `slashBarShippedTests` on the shipped list, `/move-to` and `/move-near` on a selection among it.
+
+### Commands about the selection: `SelectionSlashCommand`
+
+Some commands are about the bar's target as a whole, not about each of its shapes: `/query <question>`
+selects what an English question finds among them. One isn't contributed per kind, since no shape
+offers it: it's a `SelectionSlashCommand`, registered once, with a rule over the target, and it takes
+time, so it answers later, a task the bar waits for.
+
+```swift
+// QuerySlashPlugin.register (QueryTranslation):
+registrar.selectionSlashCommand(SelectionSlashCommand("query", argument: "question", waiting: "Asking",
+                                                      when: { target, editor in QuerySlash.offers(target, in: editor) }) { target, arguments, editor in
+    QuerySlash.answer(target, arguments, in: editor)    // a Task<SlashAnswer, Never>: .done, or .failed("No matches")
+})
+```
+
+- **Offered** for the bar's targets alone (never a text's line), when its `when` says (`/query`: several
+  shapes, or every shape; never one), listed after what the shapes offer, on every shape of the target,
+  a read-only one too, never partial (`OfferedSlashCommand.answersLater`).
+- **Never run**: `SlashCommandState.answer(_:with:)` starts it, handing back its task; `run` refuses it.
+  The typing hands it to the host in place of running it (`willAnswer`), its line left in the field.
+- **The bar waits**: the line stays, a spinner takes the label's place, VoiceOver hears `waiting`
+  ("Asking"). Done, the bar closes (if what the command did, a selection changed, hasn't closed it);
+  failed, the label's place says why ("No matches", "No API key") and VoiceOver hears it, the field still
+  the person's, Return asking again. An edit of the line stops the wait; so does every way the bar
+  closes (Escape, the selection changing, another board), the task cancelled, and the editor going.
+- **The task** holds nothing that keeps the editor alive: what it needs is taken at once (`/query`'s,
+  the translator and the engine, which hold the editor weakly) and the editor weakly, so a file closed
+  while it waits goes.
+
+`/query` itself ([Queries](#queries)) translates the words as `--ask` does (on a selection, told only what
+it picks out of the selection is kept, since it narrows a selection), finds every match, and selects
+them with `goTo`: those on the board shown, else those on the first board that has some, shown as
+following a mention shows it. VoiceOver hears how many, and how many more are on other boards.
 
 ### Testing slash commands
 
@@ -11877,8 +11919,11 @@ closed file's editor alive, and the caller that goes with the editor cancels the
    a line for each titled type of the file with its fields' keys and kinds (`FileFields.text(for:)`,
    at most 8,000 characters, left out when no type is titled; a relationship type's line also says
    `relates A to B` and the names typed on its ends' arrows with their Needed and Only one:
-   `Employment relates Person to Company: role (text); rows: Person "jobs" (only one)`). Nothing
-   else leaves the machine: never a shape's text or values.
+   `Employment relates Person to Company: role (text); rows: Person "jobs" (only one)`), then
+   `<instances>`, which shapes are of each type by title and the titled notes of none
+   (`FileFields.instancesText(for:)`: `Pet: "Bubbles", "Finn", and 4 more`, then `Of no type: "Coach
+   Lee", "Sam"`), without which the model took every note for some type's. Nothing else leaves the
+   machine: never a shape's text or values.
 3. **The answer** is read (`AskAnswer.parse`): trimmed and unwrapped (`ModelAnswer.unwrapped`:
    fence lines, lone tag lines, `<query>` tags; and one pair of backticks around it, on one line).
    A first word `UNANSWERABLE`, in any case, is `unanswerable`, with the reason after it; a refusal
@@ -11918,7 +11963,9 @@ first word, “`:selected`” can’t be used here., `QueryError.cantBeUsed`, wh
 answers, draft and warning and `canvas draw`'s check say too), in `.person` `check`; and `checkNames`
 (a title or id the file doesn't have). So a wrong title is repaired, never returned, and nothing is
 evaluated: the batch that follows the stored query is its first evaluation. `TranslationContext` is
-`.person` (`--ask`'s: the selection in `<board>`, every word in `<vocabulary>`) or `.reference`: the
+`.person` (`--ask`'s: the selection in `<board>`, every word in `<vocabulary>`), `.selection` (the
+command bar's `/query` on a selection: `.person`'s request, and `<board>` adds that the question picks
+out some of the selected shapes and only those the query matches are kept), or `.reference`: the
 selection is left out of `<board>` (it is the pill being typed into), every word that reads the
 editor (`QueryVocabulary.textForStoredQueries`, from each word's `readsEditor`) is left out of
 `<vocabulary>`, and one line, `referenceRule` (the product's `Shipped/ask-rule.txt`, which the
@@ -11935,7 +11982,8 @@ there for `.reference` and not for `.person`.
   temperature (it refuses any but its default), 2,048 tokens, effort `low`, and the service's
   fallback (`.default`: a cyber or frontier-LLM decline is answered by Sonnet 5; any other still
   comes back `declined`); `.haiku55` is Claude Haiku 5.5 (`claude-haiku-5-5`) with no temperature
-  (it refuses any but its default), 2,048 tokens, effort `high` and no fallback (the service has
+  (it refuses any but its default), 4,096 tokens (its thinking is in them: a question across two
+  relationships ran past 2,048 and was cut off), effort `high` and no fallback (the service has
   none for it: a decline stays `declined`). What ships is `AskStyle.shipped`: `.haiku55`, the
   cheaper model that clears the evaluation's bar (below), named on every request, while the
   editor's own model stays Haiku 4.5, which answers only a request that names none. `QueryTranslationPlugin(prompt:referenceRule:style:)` takes another,
@@ -14603,11 +14651,12 @@ title-queries        query names
 board-queries        query board names
 mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
 validation-queries   query word :invalid · query word :warned · query word :incomplete
-type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · query path fieldValues
+type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · query path fieldValues
 color-queries        query text text/x-canvas-color
 group-queries        query word :grouped-with
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
+query-slash          /query → the command bar's target
 neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
 mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
