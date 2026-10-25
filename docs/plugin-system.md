@@ -14617,6 +14617,10 @@ moving               /move-to /move-near → every shape with a box · CanvasCon
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order
 ```
 
+The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as
+what its plugin declares or fills, finding the point a line is for by the words the point's `summary` starts with, and
+warns of a line it can't place.
+
 A horizontal's opt-in shows as what it contributes: `note.title()` is the opt-in to the property
 titles declares (`property title → sticky-note`), a `ShapeTitles` entry and a `ContentsTitles`
 entry (the title naming the row); the `ShapeDetails` entry after them is the note's header, where

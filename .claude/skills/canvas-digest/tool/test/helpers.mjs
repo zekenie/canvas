@@ -31,6 +31,12 @@ export function estimateMeasure(model, opts) {
     const lines = (it.text || '').split('\n').reduce((s, l) => s + Math.max(1, Math.ceil(l.length / perLine)), 0);
     let h = Math.max(200, 40 + lines * 22), w = it.w;
     const n = it.node;
+    if (n && n.schema && n.relationship) {
+      // a relationship type is drawn as a pill: its name, and how many fields it has after a dot (`fills · 1`), as `canvas measure` answers
+      const fields = Object.keys((n.schema && n.schema.properties) || {}).length;
+      shapes.push({ line, title: it.title, kind: 'sticky-note', size: [Math.round(28 + 7 * it.title.length + (fields ? 16 : 0)), 24], above: 0 });
+      continue;
+    }
     if (n && (n.schema || n.is.length)) {
       // a type, or a note of one: as wide as it is drawn (rows never widen a note), a row for each field, and one for each end
       // its types have (the app's rows, roughly)

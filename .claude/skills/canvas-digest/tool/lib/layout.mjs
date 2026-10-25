@@ -71,6 +71,7 @@ export class Layouter {
     this.rootCid = 'b:' + board;
     this.out = model.edges.filter((e) => model.node(e.from).board === board);
     this.sameBoard = this.out.filter((e) => !e.cross);
+    this.arcs = arcsOf(model, this.out);   // a relationship type drawn as one arc through its pill: its two types (straighten)
     this.leaves = [...model.nodes.values()].filter((n) => n.board === board && n.kind !== 'frame');
     this.frameTitles = [...model.nodes.values()].filter((n) => n.board === board && n.kind === 'frame').map((n) => n.key);   // keys (a title, unless more than one node has it)
     this.findSpines(this.opts.spines !== false);
@@ -497,7 +498,39 @@ export class Layouter {
         this.cache.set(key, r);
       }
     }
-    this.settle(cid, items, r, edges, res, info);
+    this.settle(cid, items, this.straighten(items, r, edges, shape, isFrame), edges, res, info);
+  }
+
+  /**
+   * A container's layout with each relationship type the app draws as one arc (`arcs`) put where the app's Straighten puts one: its pill's middle
+   * at the middle of the line between its two types' middles, and whatever it then overlaps pushed off it (pushApart: what is pushed pushes in
+   * turn), so the arc through the three runs straight, or nearly. Laid out as any note, the pill can land beside one of its types and not between
+   * them, and the circle through the three is then a loop as big as the board. One whose types aren't both children of the container is left.
+   */
+  straighten(items, r, edges, shape, isFrame) {
+    const at = new Map(items.map((it, i) => [it.id, i]));
+    const moves = [];
+    for (const it of items) {
+      const pair = this.arcs.get(it.id);
+      if (pair && at.has(pair[0]) && at.has(pair[1])) moves.push([at.get(it.id), at.get(pair[0]), at.get(pair[1])]);
+    }
+    if (!moves.length) return r;
+    const pos = r.pos.map((p) => ({ x: p.x, y: p.y }));
+    const middle = (i) => {
+      const it = items[i];
+      return { x: pos[i].x + (it.nx || 0) + (it.nw != null ? it.nw : it.w) / 2, y: pos[i].y + (it.ny || 0) + (it.nh != null ? it.nh : it.h) / 2 };
+    };
+    const active = items.map(() => false);
+    for (const [p, a, b] of moves) {
+      const A = middle(a), B = middle(b);
+      pos[p] = { x: (A.x + B.x) / 2 - items[p].w / 2, y: (A.y + B.y) / 2 - items[p].h / 2 };
+      active[p] = true;
+    }
+    const gx = isFrame ? this.k.tightGap : PACK_GAP, gy = isFrame ? 64 : PACK_GAP;
+    let placed = pushApart(items, pos, gx, gy, active).map((q) => ({ x: Math.round(q.x), y: Math.round(q.y) }));
+    if (overlapping(items, placed)) placed = removeOverlaps(items, placed, gx, gy);
+    const n = normalize(items, placed);
+    return Object.assign({}, r, { pos: n.pos, w: n.w, h: n.h, parts: ownCostParts(items, n.pos, edges, FILL_WEIGHT, shape) });
   }
 
   /**
@@ -589,7 +622,7 @@ export class Layouter {
     }
     for (const [k, v] of best.sub) res.set(k, v);
     for (const [k, v] of best.subInfo) info.set(k, v);
-    this.settle(cid, best.items, best.r, edges, res, info);
+    this.settle(cid, best.items, this.straighten(best.items, best.r, edges, shape, cid[0] === 'f'), edges, res, info);
   }
 
   /**
@@ -679,6 +712,27 @@ export class Layouter {
     this.stats.elkMs += dt; { const k = 'phase_' + (this.phase || '-'); this.stats[k] = (this.stats[k] || 0) + dt; const c = 'n' + k; this.stats[c] = (this.stats[c] || 0) + 1; } { const sz = 'size_' + algo + '_' + Math.min(40, 5 * Math.ceil(items.length / 5)); this.stats[sz] = (this.stats[sz] || 0) + dt; const sc = 'n' + sz; this.stats[sc] = (this.stats[sc] || 0) + 1; } this.stats['elkMs_' + algo] = (this.stats['elkMs_' + algo] || 0) + dt;
     return Object.assign({}, r);
   }
+}
+
+/**
+ * The relationship types the app draws as one arc through their pill: those with one end on each side, at two different types (the app draws
+ * the halves of any other on the bends they store). Returns relationship type key -> [its from type, its to type].
+ */
+export function arcsOf(model, edges) {
+  const from = new Map(), to = new Map();
+  for (const e of edges) {
+    if (!e.end) continue;
+    const toEnd = !!model.node(e.from).relationship, rel = toEnd ? e.from : e.to;
+    const side = toEnd ? to : from;
+    if (!side.has(rel)) side.set(rel, []);
+    side.get(rel).push(toEnd ? e.to : e.from);
+  }
+  const out = new Map();
+  for (const [rel, f] of from) {
+    const t = to.get(rel) || [];
+    if (f.length === 1 && t.length === 1 && f[0] !== t[0]) out.set(rel, [f[0], t[0]]);
+  }
+  return out;
 }
 
 /** Whether any two boxes at these places overlap. */

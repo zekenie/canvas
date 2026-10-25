@@ -1872,6 +1872,71 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(said.lines.some(function (l) { return /^  warning: .*line 4: created "worker \(x\)"/.test(l); }), said.lines.join('\n'));
   });
 
+  await test('a relationship type the app draws as one arc through its pill is planned between its two types, where Straighten puts it, so the arc never loops', async function () {
+    // where the app draws one arc (one end on each side, at two different types), the circle through the two types' middles and the pill's: the pill's
+    // middle must lie between theirs (along the line from one to the other, and near it), or the arc is a loop round the board
+    var between = function (d, r, what) {
+      var m = model.buildModel(d), arcs = layoutm.arcsOf(m, m.edges), seen = 0;
+      arcs.forEach(function (pair, rel) {
+        var b = r.plan.boards.find(function (x) { return x.shapes.some(function (s) { return (s.key || s.id || s.title) === rel; }); });
+        var at = function (k) { var s = b.shapes.find(function (x) { return (x.key || x.id || x.title) === k; }); return { x: s.x + s.w / 2, y: s.y + s.h / 2, s: s }; };
+        var A = at(pair[0]), P = at(rel), B = at(pair[1]);
+        if (A.s.in !== P.s.in || B.s.in !== P.s.in) return;   // only one whose types are in its container is placed
+        var dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy);
+        var t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / (len * len), off = Math.abs((P.x - A.x) * dy - (P.y - A.y) * dx) / len;
+        assert(t > 0.1 && t < 0.9 && off < 0.25 * len, what + ': ' + rel + ' is not between ' + pair[0] + ' and ' + pair[1] + ' (along ' + t.toFixed(2) + ', off the line ' + Math.round(off) + ' of ' + Math.round(len) + ')');
+        seen++;
+      });
+      return seen;
+    };
+    // a board's bands, the last its types (the band this repository's lens draws at the bottom of its root): laid out as a band is, wide and short,
+    // the pills of fills and holds came out beside one of their types, and each drew a loop through the bands above
+    var types = [{ title: 'Plugin', in: 'Types', text: 'A plugin', schema: { type: 'object', properties: { id: { type: 'string' } } } },
+      { title: 'Extension point', in: 'Types', text: 'A point', schema: { type: 'object', properties: { keyed: { type: 'boolean' } } } },
+      { title: 'Kind', in: 'Types', text: 'A kind', schema: { type: 'object', properties: { props: { type: 'string' } } } },
+      { title: 'Property', in: 'Types', text: 'A property', schema: { type: 'object', properties: { type: { type: 'string' } } } },
+      { title: 'declares', in: 'Types', text: 'declares', relationship: true, schema: { type: 'object' } },
+      { title: 'fills', in: 'Types', text: 'fills', relationship: true, schema: { type: 'object', properties: { adds: { type: 'array', items: { type: 'string' } } } } },
+      { title: 'holds', in: 'Types', text: 'holds', relationship: true, schema: { type: 'object', properties: { by: { type: 'string' } } } }];
+    var band = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map(function (t) { return note(t, 'Band'); });
+    var d = digest([{ title: 'Band', kind: 'frame', rank: 0 }, { title: 'Types', kind: 'frame', rank: 1 }].concat(band, types),
+      [{ from: 'A', to: 'B' }, { from: 'C', to: 'D' }, { from: 'E', to: 'F' }, { from: 'G', to: 'H' },
+        { from: 'Plugin', to: 'declares', text: 'declares' }, { from: 'declares', to: 'Extension point', text: 'declared by' }, { from: 'declares', to: 'Kind', text: 'declared by' },
+        { from: 'declares', to: 'Property', text: 'declared by' }, { from: 'Plugin', to: 'fills', text: 'fills' }, { from: 'fills', to: 'Extension point', text: 'filled by' },
+        { from: 'Kind', to: 'holds', text: 'holds' }, { from: 'holds', to: 'Property', text: 'held by' }], { policy: { ranks: 'rows' } });
+    var m = model.buildModel(d), arcs = layoutm.arcsOf(m, m.edges);
+    eq([...arcs.keys()].sort(), ['fills', 'holds'], 'fills and holds are one arc each; declares, with three ends on a side, draws its halves as they are');
+    eq(arcs.get('holds'), ['Kind', 'Property'], 'its from type, then its to type');
+    var r = await planOf(d, { view: { w: 1322, h: 893 } });
+    checkPlan(r.plan);
+    eq(between(d, r, 'the bands'), 2, 'both are placed');
+    // types given ranks of their own (rows, each in title order) are placed between their types too
+    var rankedTypes = JSON.parse(JSON.stringify(d));
+    rankedTypes.nodes.forEach(function (n) { if (n.in === 'Types') n.rank = n.relationship ? 1 : 0; });
+    var rr = await planOf(rankedTypes, { view: { w: 1322, h: 893 } });
+    checkPlan(rr.plan);
+    eq(between(rankedTypes, rr, 'ranked types'), 2, 'both are placed in a ranked frame');
+    // and a pill alone between two types with room sits on the line between them, at its middle
+    var two = digest([{ title: 'Model', kind: 'frame' }].concat([types[0], types[1], types[5]].map(function (n) { return Object.assign({}, n, { in: 'Model' }); })),
+      [{ from: 'Plugin', to: 'fills', text: 'fills' }, { from: 'fills', to: 'Extension point', text: 'filled by' }]);
+    var r2 = await planOf(two, {});
+    var s = {}; r2.plan.boards[0].shapes.forEach(function (x) { s[x.title] = x; });
+    var mid = function (x) { return [x.x + x.w / 2, x.y + x.h / 2]; };
+    var a = mid(s.Plugin), p = mid(s.fills), b = mid(s['Extension point']);
+    assert(Math.abs(p[0] - (a[0] + b[0]) / 2) <= 1 && Math.abs(p[1] - (a[1] + b[1]) / 2) <= 1, 'the pill\'s middle is the middle of the line: ' + JSON.stringify([a, p, b]));
+    // two relationship types between one pair (the typed fixture's writes and reads), each its own arc, pushed apart about the middle; and types three boards round
+    var typed = fixture('typed'), inherit = fixture('inherit');
+    var rt = await planOf(typed, {}), ri = await planOf(inherit, {});
+    checkPlan(rt.plan); checkPlan(ri.plan);
+    eq(between(typed, rt, 'typed'), 2, 'writes and reads');
+    assert(between(inherit, ri, 'inherit') >= 1, 'inherit has one at least');
+    // a type related to itself has no arc
+    var self = digest([types[0], Object.assign({}, types[5], { title: 'uses' })].map(function (n) { return Object.assign({}, n, { in: undefined }); }),
+      [{ from: 'Plugin', to: 'uses', text: 'uses' }, { from: 'uses', to: 'Plugin', text: 'used by' }]);
+    var ms = model.buildModel(self);
+    eq(layoutm.arcsOf(ms, ms.edges).size, 0, 'a type related to itself is drawn on the bends its halves keep');
+  });
+
   await test('a typed digest\'s output is byte-identical for the same input, and in another order of nodes and edges; the commands refuse a digest whose types are wrong', async function () {
     var d = fixture('typed'), s0 = sizesOf(d);
     var a = await planm.planDigest(d, s0, {}, elk), b = await planm.planDigest(JSON.parse(JSON.stringify(d)), JSON.parse(JSON.stringify(s0)), {}, elk);
@@ -2103,12 +2168,14 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
 
   // A digest whose titles are all unique and that has no ids is planned as it always was: these are hashes of the plan (plan.json as the command writes it) and every run script, and of
   // the measure script, made by the tool before titles could repeat. A change that moves one of them changes what every such digest draws.
+  // typed's plan moved once since, on purpose: its relationship types, measured as the pills the app draws them as, are placed between their types
+  // (Layouter.straighten), where a loop could be drawn through the board before.
   var BEFORE = {
     acme: { measure: 'e4361993fab53091', plain: '4818114a0562a6a0', into: 'eec1be7dd1b726af', off: 'ff326373166a5edd' },
     tree: { measure: '40ed6d82fa465b48', plain: '4e4f9318e37ad87a', into: '8088356cf5f24bfa', off: '59e3b4b617ea5b24' },
     flat60: { measure: '7c4dee7ad79e5484', plain: '3270065918184a6b', into: 'ac1d551cbed31902', off: '9ba4c3a2529d9ed8' },
     spine: { measure: 'd234c5cd4b697c43', plain: '316c603b4d4da869', into: 'e6b19ae418e25626', off: '3a33b1ecac22cf9a' },
-    typed: { measure: '4e994c90b737431e', plain: '8b97482abccc8f10', into: 'b95032b6abf4e3d8', off: 'a40d90f5d7df3e9b' },
+    typed: { measure: '4e994c90b737431e', plain: 'a06a8fac65ae69a2', into: 'bd6f0020fde56632', off: '8bd40cab1636e061' },
   };
   var hashOf = function (text) {
     var a = 0x811c9dc5, b = 0x01000193;
