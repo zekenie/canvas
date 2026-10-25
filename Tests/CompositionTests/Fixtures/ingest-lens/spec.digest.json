@@ -10,7 +10,7 @@
    "title": "App",
    "kind": "subboard",
    "in": "Apps",
-   "text": "App: apps\nDraws the screens \\@[x]\n\nImports @[Core]\n2 files, 60 lines"
+   "text": "App: apps\nDraws the screens \\@[x]\n\n2 files, 60 lines"
   },
   {
    "title": "Foundations",
@@ -21,7 +21,7 @@
    "title": "Core",
    "kind": "subboard",
    "in": "Foundations",
-   "text": "Core: foundations\nKeeps the models\n\nImports no module of its own\nImported by @[App]\n2 files, 90 lines\nIts folders are subboards here."
+   "text": "Core: foundations\nKeeps the models\n\n2 files, 90 lines\nIts folders are subboards here."
   },
   {
    "title": "Core/Hidden",

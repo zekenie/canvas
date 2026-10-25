@@ -28,7 +28,7 @@ the run. A board of over NOTES_MOST file notes draws a folder's files as one not
 A title is given out once in the container that holds the shape, as a folder's files are told apart by the folder they are in: a
 file's note is its file name, and so is another's in another frame or on another board, which the digest tells apart by an `id` it
 gives each (the title, then the containers: `index.ts  in Web layer > web > src`; lenskit.builder's `finish`). A module's card and a
-folder's keep their names, the digest's alone, since a card's description mentions cards (`@[Title]` names a shape by its title
+folder's keep their names, the digest's alone, since a folder card's description mentions cards (`@[Title]` names a shape by its title
 alone); a band, a frame, a file's note give way to them."""
 import collections, os
 
@@ -120,10 +120,6 @@ class _Build:
         self.module_files = collections.defaultdict(int)         # a module's number of files
         for k in self.FILES:
             self.module_files[k[0]] += 1
-        self.importers = collections.defaultdict(list)           # a module's importers, in the scan's order
-        for x in self.PROD:
-            for dep in self.MODS[x]['deps']:
-                self.importers[dep].append(x)
         self.leaving = collections.defaultdict(collections.Counter)    # a folder board: the boards of its module its files use
         for a, b, _ in self.USES:
             if a[0] == b[0] and a in self.FILES and b in self.FILES:
@@ -157,8 +153,10 @@ class _Build:
     # ---- what a note says ------------------------------------------------------------------------------------
 
     def about_text(self, board, title=lambda b: b):
-        """What a board is, for its card's description: what it is, and the boards it uses, each mentioned by the title its card was given
-        (`title`: a board to its card's title, which is the board's name unless another shape had it)."""
+        """What a board is, for its card's description: what it is and how big, and for a folder's board the boards it uses, each mentioned
+        by the title its card was given (`title`: a board to its card's title, which is the board's name unless another shape had it). A
+        module's imports aren't mentioned: they are the arrows between the cards, and a mention of each would crowd the card's mentions,
+        which a hover shows (⌃⌥), with what its arrows already show."""
         spec, FILES, MODS, PROD = self.spec, self.FILES, self.MODS, self.PROD
         m, folder = self.BOARDS[board]
         if folder:
@@ -169,11 +167,8 @@ class _Build:
                 'Uses ' + ' '.join(mention(title(u)) for u in sorted(uses)) if uses else 'Uses nothing else of its module')
             return t + f"\n{len(files)} files, {n:,} lines"
         mod = MODS[board]
-        t = f"{as_text(board)}: {as_text(spec.LAYER_PHRASE[board])}\n{as_text(spec.PURPOSES.get(board, ''))}\n\n"
-        t += ('Imports ' + ' '.join(mention(title(d)) for d in mod['deps'])) if mod['deps'] else 'Imports no module of its own'
-        users = self.importers.get(board, [])
-        if users:
-            t += '\nImported by ' + (' '.join(mention(title(u)) for u in users) if len(users) <= 12 else f'{len(users)} modules')
+        purpose = spec.PURPOSES.get(board, '')
+        t = f"{as_text(board)}: {as_text(spec.LAYER_PHRASE[board])}\n" + (f"{as_text(purpose)}\n" if purpose else '')
         t += f"\n{self.module_files[board]} files, {mod['lines']:,} lines"
         if board in spec.FOLDER_BOARDS:
             t += '\nIts folders are subboards here.'
@@ -217,7 +212,7 @@ class _Build:
             if notes > NOTES_MOST:
                 d.warn(f"{notes:,} file notes are left, since no folder with two files is left to collapse")
 
-        # the titles that are the digest's alone, since a card's description mentions cards and `@[Title]` names a shape by its title
+        # the titles that are the digest's alone, since a folder card's description mentions cards and `@[Title]` names a shape by its title
         # alone: a module's card keeps its name, then a folder's card, and a band gives way to either (a frame or a file, below, to
         # any card)
         card_title = {m: d.claim(f"the module {m}", m, alone=True) for m in PROD}

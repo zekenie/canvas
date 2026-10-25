@@ -10,13 +10,13 @@
    "title": "app",
    "kind": "subboard",
    "in": "Level 2",
-   "text": "app: level 2\nAbout \\@[nothing] here.\n\nImports @[[locale\\]] @[Level 1] @[\u2026age-name-very-long-package-name-very-long-package-name-very-long-package-name-x] @[C] @[back\\\\slash]\n1 files, 10 lines"
+   "text": "app: level 2\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
   },
   {
    "title": "Big",
    "kind": "subboard",
    "in": "Level 2",
-   "text": "Big: level 2\nAbout \\@[nothing] here.\n\nImports @[Big/x]\n63 files, 630 lines\nIts folders are subboards here."
+   "text": "Big: level 2\nAbout \\@[nothing] here.\n\n63 files, 630 lines\nIts folders are subboards here."
   },
   {
    "title": "Level 1 (layer)",
@@ -27,37 +27,37 @@
    "title": "[locale]",
    "kind": "subboard",
    "in": "Level 1 (layer)",
-   "text": "[locale]: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+   "text": "[locale]: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
   },
   {
    "title": "Level 1",
    "kind": "subboard",
    "in": "Level 1 (layer)",
-   "text": "Level 1: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+   "text": "Level 1: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
   },
   {
    "title": "\u2026age-name-very-long-package-name-very-long-package-name-very-long-package-name-x",
    "kind": "subboard",
    "in": "Level 1 (layer)",
-   "text": "@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+   "text": "@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
   },
   {
    "title": "C",
    "kind": "subboard",
    "in": "Level 1 (layer)",
-   "text": "C: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n4 files, 40 lines"
+   "text": "C: level 1\nAbout \\@[nothing] here.\n\n4 files, 40 lines"
   },
   {
    "title": "back\\slash",
    "kind": "subboard",
    "in": "Level 1 (layer)",
-   "text": "back\\slash: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[app]\n1 files, 10 lines"
+   "text": "back\\slash: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
   },
   {
    "title": "Big/x",
    "kind": "subboard",
    "in": "Level 1 (layer)",
-   "text": "Big/x: level 1\nAbout \\@[nothing] here.\n\nImports no module of its own\nImported by @[Big]\n1 files, 10 lines"
+   "text": "Big/x: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
   },
   {
    "title": "Big/Utils",

@@ -142,8 +142,8 @@ private func driverCalls(_ log: URL) -> [String] {
 /// What the default lens makes of a scan: the digest it writes, and what it says on standard error (its `lens:` lines).
 /// `ingest-lens/<name>.digest.json` and `.said`, first the old `to_digest.py`'s, recorded when lenskit replaced it, and recorded again
 /// from the default lens when the first board's About note went (its summary of the whole, and the 74 characters a card's title kept
-/// for `About <card>`). Never edited by hand: the lens has since given titles out per container, and the test below holds the digest to
-/// differing from them only by that.
+/// for `About <card>`), then with a module card's `Imports` and `Imported by` lines taken out by a script when the lens stopped writing them.
+/// Never edited by hand: the lens has since given titles out per container, and the test below holds the digest to differing from them only by that.
 private func lensFixture(_ name: String, _ kind: String) -> URL {
     URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/CompositionTests/Fixtures/ingest-lens/\(name).\(kind)")
 }
@@ -265,8 +265,8 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expect(drawn.output.contains("verify ok"), drawn.output)
         let editor = board.editor
         let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        // a module called what a band is keeps its name and the band gives way (a card's title is the digest's alone: the descriptions of the
-        // cards beside it mention it by that title, which would name a band called so as well); a name over a title's longest keeps its end
+        // a module called what a band is keeps its name and the band gives way (a card's title is the digest's alone: its folders' cards'
+        // descriptions mention it by that title, which would name a band called so as well); a name over a title's longest keeps its end
         expect(titles.isSuperset(of: ["[locale]", "Level 1", "Level 1 (layer)", #"back\slash"#]), "\(titles.sorted())")
         expect(titles.contains { $0.hasPrefix("…") && $0.hasSuffix("very-long-package-name-x") && $0.utf16.count == 80 }, "a card's title is as long as any: \(titles.sorted())")
         expect(!titles.contains(long), "the long name itself is nobody's title")
@@ -299,9 +299,13 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         let rows = try JSON(text: found.output)["rows"]?.arrayValue ?? []
         expectEqual(rows.map { ($0["inside"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " > ") }.sorted(),
                     ["Level 1 (layer) > C > C/", "Level 1 (layer) > C > a > c (C)", "Level 1 (layer) > C > b"], "main.swift, three times, by where each is: \(found.output)")
-        // app's description mentions what it imports, each by its card's title: a ] and a \\ in one are written so the mention names its shape
+        // a description mentions a card by its title (a folder's, its module and the folders it uses): a ] and a \\ in one are written so the
+        // mention names its shape. app's description mentions nothing: what it imports are its arrows
+        let mentioned = try run(URL(fileURLWithPath: python), ["-s", "-B", "-c", "import sys; sys.path.insert(0, sys.argv[1]); from lenskit.text import mention; print(mention('[locale]'), mention(sys.argv[2]))",
+                                                                ingestSkill().path, #"back\slash"#], timeout: 60)
+        expectEqual(mentioned.output, #"@[[locale\]] @[back\\slash]"# + "\n", mentioned.error)
         let app = nodes.first { $0["title"] == "app" }?["text"]?.stringValue ?? ""
-        expect(app.contains(#"@[[locale\]]"#) && app.contains(#"@[back\\slash]"#), app)
+        expect(app.hasSuffix(#"About \@[nothing] here."# + "\n\n1 files, 10 lines"), "its purpose (a @[ in it written as text) and its size: \(app)")
         expect(digest["text"] == nil, "and the digest has no text of its own: no board has a note of what it is")
 
         // a module big enough for its folders to have boards, two of them the same but for their case: the digest passes check
@@ -470,8 +474,8 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         // and a subboard, and "a text names a shape by its title alone"
         let mentioners = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "100", #"subboard:mentions(subboard"Level 1")"#])
         expectEqual(mentioners.status, 0, mentioners.error)
-        expectEqual(try (JSON(text: mentioners.output)["rows"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }.sorted(), ["Level 1/a", "Level 1/b", "Top"],
-                    "the card is what the two folders and Top mention: \(mentioners.output)")
+        expectEqual(try (JSON(text: mentioners.output)["rows"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }.sorted(), ["Level 1/a", "Level 1/b"],
+                    "the card is what the two folders mention, and not Top, whose import of it is an arrow: \(mentioners.output)")
     },
 
     test("Swift's index is kept from run to run: a module is type-checked again only when its sources or the interfaces it reads changed, and its uses are read from a store a module") {
