@@ -127,32 +127,39 @@ if [[ ${1:-} == agents ]]; then
     exit 0
 fi
 
-# Which layers each layer may depend on (Package.swift's header says the same in prose). Four rungs,
+# Which layers each layer may depend on (Package.swift's header says the same in prose). Three rungs,
 # each importing its own and those below it: core, platform (what every shape gets, whatever its
-# kind), product (the verticals, which nothing imports: no layer but test lists it) and app; the
+# kind) and product (the verticals, which nothing imports: no layer but test lists it); the
 # no-cycle check holds which way an edge between two modules of one rung goes. Tests and their
 # support say what kind of target a line is, not where it sits.
 typeset -A MAY_USE=(
     core        "core"
     platform    "core platform"
     product     "core platform"
-    app         "core app"
     testsupport "core testsupport"
-    test        "core platform product app testsupport"
+    test        "core platform product testsupport"
 )
-# The layers whose targets are executables; the app layer holds both (the window, CanvasUI, is a
-# library), and every other is libraries.
+# The core's private modules (`// layer: core private`): the window and the programs, which only
+# another private module and tests may import. They are the core's own, below every plugin, and no
+# plugin reaches them.
+PRIVATE_LAYER=core
+# A module's layer as its line writes it: `core private` for one of those.
+layer_tag() { print -rn -- "$LAYER[$1]${PRIVATE[$1]:+ private}" }
+# The layers whose targets are executables; the core holds both (the programs are its private
+# modules), and every other is libraries.
 typeset -A EXECUTABLE_LAYER=(test 1)
-typeset -A MIXED_LAYER=(app 1)
+typeset -A MIXED_LAYER=(core 1)
 # The layers whose targets may be the product, or the tests of it: a line that ends `+ shipped`,
-# which links every module the list of what ships names (Package.swift's table, read below).
-typeset -A SHIPPING_LAYER=(app 1 test 1 testsupport 1)
+# which links every module the list of what ships names (Package.swift's table, read below). A
+# private module may too: the app and its extension are.
+typeset -A SHIPPING_LAYER=(test 1 testsupport 1)
 # The layers a listed plugin's module is in.
 typeset -A PLUGIN_LAYER=(platform 1 product 1)
 # Four modules named, for rules that hold of them alone: the app (what `./build.sh` builds); the
 # wire, what the app and its command line say to each other, which imports nothing; the command
 # line, which imports only the wire, so `canvas` builds without the app; and the window, the one
-# module but the core, test support and tests that may import the editor's host API (@_spi(Host)).
+# private module that may import the editor's host API (@_spi(Host)), as the core's others, test
+# support and tests may.
 APP_MODULE=InfiniteCanvas
 WIRE_MODULE=CanvasRPC
 CLI_MODULE=CanvasCLI
@@ -188,7 +195,7 @@ MANIFEST_READ=$(stat -f '%Fm %z %N' -- Package.swift)
 
 # --- 1. Read the manifest's target table --------------------------------------------------------
 typeset -a NAMES
-typeset -A DEPS KIND DIR LAYER PATH_ARG SUBJECT
+typeset -A DEPS KIND DIR LAYER PATH_ARG SUBJECT PRIVATE
 # A target's dependencies as its line writes them (LITERAL), and whether it ends `+ shipped`
 # (SHIPS): its DEPS are then those and every module the list names.
 typeset -A LITERAL SHIPS
@@ -204,7 +211,7 @@ typeset -A PARTS PART_USES PART_AT
 integer in_parts=0 parts_read=0
 PARTS_OPEN='let parts: KeyValuePairs<String, [String]> = ['
 PARTS_ROW_RE='^[[:space:]]*"([A-Za-z][A-Za-z0-9]*)/([A-Za-z][A-Za-z0-9]*)": \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\],[[:space:]]*$'
-TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\]( \+ shipped)?(, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)( of ([A-Za-z][A-Za-z0-9]*))?[[:space:]]*$'
+TARGET_RE='^[[:space:]]*\.(target|executableTarget)\(name: "([A-Za-z][A-Za-z0-9]*)", dependencies: \[(("[A-Za-z][A-Za-z0-9]*"(, "[A-Za-z][A-Za-z0-9]*")*)?)\]( \+ shipped)?(, path: "([^"]+)")?\),[[:space:]]*// layer: ([a-z]+)( private)?( of ([A-Za-z][A-Za-z0-9]*))?[[:space:]]*$'
 SHIPS_ROW_RE='^[[:space:]]*("[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*",[[:space:]]*)+$'
 while IFS= read -r line || [[ -n $line ]]; do
     lineno+=1
@@ -250,9 +257,12 @@ while IFS= read -r line || [[ -n $line ]]; do
         PATH_ARG[$name]=$match[8]
         DIR[$name]=${match[8]:-Sources/$name}
         LAYER[$name]=$match[9]
-        [[ -n $match[11] ]] && SUBJECT[$name]=$match[11]
+        [[ -n $match[10] ]] && PRIVATE[$name]=1
+        [[ -n $match[12] ]] && SUBJECT[$name]=$match[12]
         DEPS[$name]=$LITERAL[$name]
         (( ${+MAY_USE[$LAYER[$name]]} )) || die "Package.swift:$lineno: unknown layer '$LAYER[$name]' (layers: ${(k)MAY_USE})"
+        (( ! ${+PRIVATE[$name]} )) || [[ $LAYER[$name] == $PRIVATE_LAYER ]] ||
+            die "Package.swift:$lineno: $name is $LAYER[$name] private, but only the core has private modules"
     elif [[ $line =~ '\.[A-Za-z]+\([[:space:]]*name:' || $line == *[Tt]arget\(* ]]; then
         die "Package.swift:$lineno: this target doesn't match the one-line form at the top of the file:\n    $line"
     elif [[ $line == *'ships = '* ]]; then
@@ -276,7 +286,7 @@ for plugin in $SHIPPED_PLUGINS; do
 done
 for name in $NAMES; do
     (( ${+SHIPS[$name]} )) || continue
-    (( ${+SHIPPING_LAYER[$LAYER[$name]]} )) || die "$name ($LAYER[$name]) can't say + shipped: only the app, its extension, and the tests of what ships and their support are made of the list"
+    (( ${+SHIPPING_LAYER[$LAYER[$name]]} || ${+PRIVATE[$name]} )) || die "$name ($LAYER[$name]) can't say + shipped: only the app, its extension, and the tests of what ships and their support are made of the list"
     for dep in ${=LITERAL[$name]}; do
         (( ${SHIPPED_MODULES[(Ie)$dep]} )) && die "$name lists $dep, which + shipped already links: leave it out of the line"
     done
@@ -311,6 +321,8 @@ for name in $NAMES; do
         [[ $KIND[$name] == executableTarget ]] || die "$name: layer $layer must be an .executableTarget"
     elif (( ! ${+MIXED_LAYER[$layer]} )); then
         [[ $KIND[$name] == target ]] || die "$name: layer $layer must be a .target"
+    elif [[ $KIND[$name] == executableTarget ]]; then
+        (( ${+PRIVATE[$name]} )) || die "$name: an executable on the $layer is private (// layer: $layer private): nothing imports a program"
     fi
     # What its line writes: the modules + shipped adds are the list's, checked where it's read.
     typeset -a deps=(${=LITERAL[$name]})
@@ -322,17 +334,19 @@ for name in $NAMES; do
         [[ $KIND[$dep] == target ]] || die "$name depends on $dep, an executable"
         (( ${${(A)=MAY_USE[$layer]}[(Ie)$LAYER[$dep]]} )) ||
             die "$name ($layer) may not depend on $dep ($LAYER[$dep]); $layer may use: $MAY_USE[$layer]"
+        (( ! ${+PRIVATE[$dep]} || ${+PRIVATE[$name]} )) || [[ $layer == test ]] ||
+            die "$name ($layer) may not depend on $dep: it is private to the core, so only the core's other private modules and tests import it"
     done
 done
 for dir in {Sources,Examples,Tests}/*(/N); do
     [[ ${DIR[${dir:t}]:-} == $dir ]] || die "$dir isn't a target in Package.swift"
 done
 for file in {Sources,Examples,Tests}/*.swift(N); do die "$file isn't in any target's directory"; done
-# The modules the rules below name, each where it must be: the app and the command line executables
-# of the app layer, the window a library of it, the wire a library of the core.
-for name layer kind in $APP_MODULE app executableTarget $CLI_MODULE app executableTarget $WINDOW_MODULE app target $WIRE_MODULE core target; do
+# The modules the rules below name, each where it must be: the app and the command line private
+# executables of the core, the window a private library of it, the wire a library of the core.
+for name layer kind in $APP_MODULE 'core private' executableTarget $CLI_MODULE 'core private' executableTarget $WINDOW_MODULE 'core private' target $WIRE_MODULE core target; do
     (( ${+DEPS[$name]} )) || die "Package.swift has no $name, which build.sh names (APP_MODULE, CLI_MODULE, WINDOW_MODULE, WIRE_MODULE)"
-    [[ $LAYER[$name] == $layer && $KIND[$name] == $kind ]] || die "$name is a $LAYER[$name] $KIND[$name]; build.sh takes it for a $layer $kind"
+    [[ $(layer_tag $name) == $layer && $KIND[$name] == $kind ]] || die "$name is a $(layer_tag $name) $KIND[$name]; build.sh takes it for a $layer $kind"
 done
 # The wire imports nothing and the command line only the wire, so `canvas` builds without the app.
 [[ -z $LITERAL[$WIRE_MODULE] ]] || die "$WIRE_MODULE depends on ${LITERAL[$WIRE_MODULE]// /, }: the wire imports nothing, so the command line builds without the app"
@@ -409,7 +423,7 @@ done
 typeset -A VISIBLE
 for name in $ORDER; do
     VISIBLE[$name]=$CLOSURE[$name]
-    (( ${+SHIPS[$name]} )) && [[ $LAYER[$name] == app ]] || continue
+    (( ${+SHIPS[$name]} && ${+PRIVATE[$name]} )) || continue
     typeset -aU acc=()
     for dep in ${=LITERAL[$name]}; do acc+=($dep ${=CLOSURE[$dep]}); done
     VISIBLE[$name]="${acc[*]}"
@@ -430,26 +444,26 @@ done
 SHIPPED_TEXTS+=($SHIPPED_LIST)
 # The executables that are the product: those whose lines end + shipped.
 is_product() { [[ $KIND[$1] != target ]] && (( ${+SHIPS[$1]} )) }
-# The executables the app carries: those whose lines say `// layer: app of <the app>`. An app
-# extension runs on its own, started by macOS, so it is bundled apart from the app (staged below).
-carried() { [[ $LAYER[$1] == app ]] && (( ${+SUBJECT[$1]} )) }
+# The executables the app carries: those whose lines say `// layer: core private of <the app>`. An
+# app extension runs on its own, started by macOS, so it is bundled apart from the app (staged below).
+carried() { (( ${+PRIVATE[$1]} && ${+SUBJECT[$1]} )) }
 
 # A test target named after a module (<M>Tests) tests M on its own: it may use M, what M uses,
 # and testsupport modules and the window, so that (say) SelectionTests can't lean on a shape kind. One named
 # after a plugin of M rather than M (TitleQueriesTests, of Titles) says so, `// layer: test
-# of M`, and is held the same way. An app that says `// layer: app of A` is an extension that A
-# carries (A is an app with no `of` of its own, as only the app carries one). It need not depend on
-# A, since an executable can't depend on one.
+# of M`, and is held the same way. A private executable that says `// layer: core private of A` is
+# an extension that A carries, and A is the app, the one that carries one. It need not depend on A,
+# since an executable can't depend on one.
 for name in $NAMES; do
     if (( ${+SUBJECT[$name]} )); then
         subject=$SUBJECT[$name]
-        if [[ $LAYER[$name] == app ]]; then
+        if (( ${+PRIVATE[$name]} )) && [[ $KIND[$name] == executableTarget ]]; then
             [[ -n ${DEPS[$subject]+1} ]] || die "$name is carried by $subject, which isn't a module here"
-            [[ $LAYER[$subject] == app ]] && (( ! ${+SUBJECT[$subject]} )) ||
-                die "$name is carried by $subject ($LAYER[$subject]${SUBJECT[$subject]:+ of $SUBJECT[$subject]}), but only the app carries an extension: an app with no 'of' of its own"
+            [[ $subject == $APP_MODULE ]] ||
+                die "$name is carried by $subject, but only the app ($APP_MODULE) carries an extension"
             continue
         fi
-        [[ $LAYER[$name] == test ]] || die "$name ($LAYER[$name]) can't say 'of': only a test says what it tests (// layer: test of <module>), and only an extension what carries it (// layer: app of <the app>)"
+        [[ $LAYER[$name] == test ]] || die "$name ($(layer_tag $name)) can't say 'of': only a test says what it tests (// layer: test of <module>), and only an extension what carries it (// layer: core private of <the app>)"
         [[ -n ${DEPS[$subject]+1} ]] || die "$name tests $subject, which isn't a module here"
         [[ $LAYER[$subject] != test* ]] || die "$name tests $subject, a $LAYER[$subject] target: a test is of a module"
         [[ -n ${DEPS[${name%Tests}]+1} ]] && die "$name is named after ${name%Tests}, so it tests that: drop 'of $subject'"
@@ -660,8 +674,8 @@ audit_sources() {
             if (( ${${(A)=LITERAL[$name]}[(Ie)$imported]} )); then
                 continue
             elif (( ${+SHIPS[$name]} && ${SHIPPED_MODULES[(Ie)$imported]} )); then
-                [[ $LAYER[$name] == app ]] &&
-                    problems+="$(import_site $name $imported)$name imports $imported, a module of what ships: the $LAYER[$name] names no plugin (what it takes of one comes through the registry)"
+                (( ${+PRIVATE[$name]} )) &&
+                    problems+="$(import_site $name $imported)$name imports $imported, a module of what ships: a private module of the core names no plugin (what it takes of one comes through the registry)"
             else
                 problems+="$(import_site $name $imported)$name imports $imported, but Package.swift doesn't list it as a dependency of $name"
             fi
@@ -773,13 +787,13 @@ audit_sources() {
     for hit in ${(f)"$(matching '@_spi[[:space:]]*\(')"}; do
         user=${${hit#*/}%%/*}
         if [[ $hit =~ '@_spi[[:space:]]*\([[:space:]]*Product[[:space:]]*\)' ]]; then
-            [[ $LAYER[$user] == core || $user == $APP_MODULE ]] || carried $user ||
+            { [[ $LAYER[$user] == core ]] && (( ! ${+PRIVATE[$user]} )) } || [[ $user == $APP_MODULE ]] || carried $user ||
                 problems+="$hit  <- only the app and its extension load what ships whole (@_spi(Product)); hand over your own plugins for the ones that reach outside the process: ShippedList.plugins(supplying:)"
             # What loads the list is made of it: without + shipped it would link no plugin and carry no list.
             [[ $user != $APP_MODULE ]] && ! carried $user || (( ${+SHIPS[$user]} )) ||
                 problems+="$hit  <- $user loads what ships, so its line in Package.swift ends + shipped"
         else
-            [[ $LAYER[$user] == (core|testsupport|test) || $user == $WINDOW_MODULE ]] ||
+            [[ $LAYER[$user] == (testsupport|test) || $user == $WINDOW_MODULE ]] || { [[ $LAYER[$user] == core ]] && (( ! ${+PRIVATE[$user]} )) } ||
                 problems+="$hit  <- only the window ($WINDOW_MODULE), testsupport and test modules may import SPI (the core's host API)"
         fi
     done
@@ -803,7 +817,7 @@ graph)
     for name in $ORDER; do
         typeset -a users=()
         for other in $ORDER; do (( ${${(A)=LITERAL[$other]}[(Ie)$name]} )) && users+=$other; done
-        print "${(r:12:)LAYER[$name]} ${(r:17:)name} -> ${${LITERAL[$name]:-(nothing)}// /, }${SHIPS[$name]:+ + shipped}    <- ${${(j:, :)users}:-(nothing)}"
+        print "${(r:12:)$(layer_tag $name)} ${(r:17:)name} -> ${${LITERAL[$name]:-(nothing)}// /, }${SHIPS[$name]:+ + shipped}    <- ${${(j:, :)users}:-(nothing)}"
     done
     print "\nshipped (${#SHIPPED_PLUGINS} plugins, in order): ${(j:, :)SHIPPED_PLUGINS}"
     for module in $PARTED; do
@@ -814,7 +828,7 @@ graph)
 dot)
     print "digraph modules {\n  rankdir=BT; node [shape=box];"
     for name in $ORDER; do
-        print "  \"$name\" [label=\"$name\\\\n$LAYER[$name]${SHIPS[$name]:+\\\\n+ shipped}\"];"
+        print "  \"$name\" [label=\"$name\\\\n$(layer_tag $name)${SHIPS[$name]:+\\\\n+ shipped}\"];"
         for dep in ${=LITERAL[$name]}; do print "  \"$name\" -> \"$dep\";"; done
     done
     print "}"; exit 0 ;;

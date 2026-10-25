@@ -74,7 +74,7 @@ def shipped_modules(code):
 
 def parse_package(repo):
     """Every target in Package.swift: name, deps (targets and products, by name), path, kind, and its layer tag,
-    a `// layer: <name>` comment after it, as this repo writes (`<layer> of X` reads as <layer>). A target written twice
+    a `// layer: <name>` comment after it, as this repo writes (its first word: `<layer> private of X` reads as <layer>). A target written twice
     (in #if branches) is read once; dependencies that aren't a literal list are left out, and said.
 
     `deps` is what a target's line writes: what its design depends on, and what the board draws its arrows from.
@@ -110,10 +110,7 @@ def parse_package(repo):
         path = re.search(r'path:\s*"([^"]+)"', args)
         eol = text.find('\n', end)
         tag = re.match(r'\s*,?\s*//\s*layer:\s*(.+?)\s*$', text[end:eol if eol >= 0 else len(text)])
-        layer = tag.group(1) if tag else None
-        of = re.match(r'(\w+) of \w+', layer) if layer else None
-        if of:
-            layer = of.group(1)
+        layer = tag.group(1).split()[0] if tag else None
         kind = m.group(1)
         out.append(dict(name=name.group(1), deps=deps, links=deps + [m for m in shipped if ships and m not in deps], kind=kind, layer=layer,
                         path=path.group(1) if path else ('Tests/' if kind == 'testTarget' else 'Sources/') + name.group(1),

@@ -449,10 +449,11 @@ holds three more groups, which are not interfaces a kind plugs into but are stil
   owners'. The engines that answer a draw and a query are engines, not these, since every plugin may
   run them.
 
-Below the platform is the **core**, the canvas and plain libraries, which knows no plugin; above the
-product is the **app**, the window, the app and the command line, which take their plugins from the
-list of what ships and never import one. Those are the four rungs [the module graph](#the-module-graph)
-checks: a module imports only from its own rung or those below it, and nothing imports a product.
+Below the platform is the **core**, the canvas and plain libraries, which knows no plugin. The
+window, the app and the command line are the core's private modules: no plugin imports them, and
+they take their plugins from the list of what ships and never import one. Those are the three rungs
+[the module graph](#the-module-graph) checks: a module imports only from its own rung or those below
+it, nothing imports a product, and only the core's private modules and tests import a private one.
 
 Opting in goes in one of four directions:
 
@@ -530,19 +531,21 @@ Each target is one line, with its layer:
 .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents"]), // layer: platform
 ```
 
-Modules sit on four rungs; each imports only from its own rung or those below it:
+Modules sit on three rungs; each imports only from its own rung or those below it:
 
 | Rung | What it is | May depend on | Modules |
 |---|---|---|---|
-| app | The window, the app and the command line: what the person runs, which takes its plugins from the list of what ships | core, app | CanvasUI (the window: the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server), InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`), CanvasQuickLook (`// layer: app of InfiniteCanvas`: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk), packaged into the app's bundle; `+ shipped`, as the app is) and CanvasCLI (`canvas`: it knows the wire, never the app) |
 | product | The verticals, shapes that hold something of their own; nothing imports one, so no kind knows another | core, platform | Arrows, StickyNotes, Subboards, Frames |
 | platform | What every shape gets, whatever its kind; its modules build on one another, grouped under headings nothing checks | core, platform | Horizontals in the window: Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Find. Horizontals that are shape traits: Topology, Validation, Titles, Locking, Connections, Mentions, Publishing, Boards, Transform, Colors, Types, References. Things you do: Clipboard, Snapping, JumpTo, Moving, Reordering. Engines: LanguageModels, ProseMaps, Queries, Draw, QueryTranslation, Neighbors. What agents speak: Automation, QueryCommands |
 | core | The canvas and plain libraries, which know no plugin | core | Geometry, Canvas (the core, which holds [what a window puts around its canvas](#host-slots), said by plugins and placed by the window, and so names SwiftUI's views and the wire's types for the commands the app's server runs), CanvasRPC (the wire: what the app and its [command line](#the-command-line) say to each other), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on), FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) and Palette ([the color math](#palette): the roles one color is drawn in on the light canvas and the dark, and the one test for a dark appearance) |
+| core private | The window, the app and the command line: the core's own, which no plugin may import; only another private module and a test may | core | CanvasUI (the window: the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server), InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`), CanvasQuickLook (`// layer: core private of InfiniteCanvas`: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk), packaged into the app's bundle; `+ shipped`, as the app is) and CanvasCLI (`canvas`: it knows the wire, never the app) |
 | testsupport, test | What the tests stand on and the tests themselves, which see more of the graph than a plugin does; their tags say what kind of target a line is, not where it sits | (see Package.swift) | TestKit, CanvasTesting, ShippedTesting (the tests' way to the product's plugins), `*Tests` |
 
-The four rungs replaced twelve layers (wire, foundation, ui, surface, concern, feature, language,
+The rungs replaced twelve layers (wire, foundation, ui, surface, concern, feature, language,
 vertical, app and cli, and the tests' two): too many to hold in mind, each layer's purpose and how
-it differed from the next. Four rules those layers held are kept by naming their modules, below.
+it differed from the next. There were four, with the window and the programs on an app rung of
+their own; that rung imported only the core and was imported by nothing, so it became the core's
+private modules. Four rules those layers held are kept by naming their modules, below.
 What the others held, conventions hold now: a horizontal in the window importing no shape trait, an
 engine knowing no meaning a horizontal owns, nothing importing a thing you do, and only what agents
 speak importing the wire (it is core, so any plugin may).
@@ -553,8 +556,10 @@ What `./build.sh audit` enforces:
   platform modules this is what holds the direction: the module that owns a meaning imports what it
   builds on and what shows it, and once one edge is drawn the other can't be.
 - **Rungs.** A module imports only from its own rung or those below it: the core knows no plugin,
-  no plugin imports the window, and nothing but a test imports a product, so a product never knows
-  another. A word in a language is given by the module that owns its meaning, as a plugin value of
+  and nothing but a test imports a product, so a product never knows another.
+- **Private modules.** A core line that says `private` (`// layer: core private`) is imported only
+  by the core's other private modules and by tests, so no plugin imports the window. An executable
+  on the core is private, since nothing imports a program. A word in a language is given by the module that owns its meaning, as a plugin value of
   its own, through the engine's points; when the owner sits below the engine, the engine's module
   gives it (Titles, Boards, Mentions and Validation give queries their words, and Queries gives the
   selection's; Titles, Connections, Validation and Mentions give draw theirs). The app imports no
@@ -568,10 +573,10 @@ What `./build.sh audit` enforces:
 - **A test of a module tests it alone.** `<M>Tests`, or a test target that says it tests a plugin
   of M (`// layer: test of M`, as Titles' TitleQueriesTests does), may use only M, what M uses,
   and the test-support modules and the window, so a plugin's tests can't lean on a shipped kind.
-- **An `of` names the target's subject.** A test says what it tests, an app what carries it
-  (`// layer: app of InfiniteCanvas`, as CanvasQuickLook's line does). A test must depend on its
-  subject; an app need not, since an executable can't depend on one, and must be of the app itself,
-  never of an app that is of another.
+- **An `of` names the target's subject.** A test says what it tests, an extension what carries it
+  (`// layer: core private of InfiniteCanvas`, as CanvasQuickLook's line does). A test must depend
+  on its subject; an extension need not, since an executable can't depend on one, and must be of
+  the app itself, never of an extension that is of another.
 - **Imports match the manifest, both ways.** The compiler lists each module's imports. An import
   that isn't a declared dependency fails, and so does a declared dependency that's never imported.
   `@_exported`, `@_implementationOnly` and `@testable` are banned, since each hides an edge, and
@@ -623,7 +628,7 @@ app is compiled by `./test.sh`, even before anything depends on it.
 
 Ask in this order, and the first yes is the rung:
 
-1. Is it an executable, or the window? Then app (or test).
+1. Is it an executable, or the window? Then core private (or test).
 2. Does it know no plugin? Then core.
 3. Is it a shape that holds something of its own, which no other plugin need build on? Then product.
 4. Otherwise, platform: what every shape gets, whatever its kind. Under which heading: an interface

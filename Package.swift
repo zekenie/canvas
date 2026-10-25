@@ -11,7 +11,7 @@ import PackageDescription
 //     .executableTarget(name: "X", dependencies: ["A"] + shipped),          // layer: <layer>
 // Modules live in Sources/X or Examples/X; test and testsupport modules in Tests/X.
 //
-// Layers: four rungs, each importing only from its own rung and those below it, and two kinds of test
+// Layers: three rungs, each importing only from its own rung and those below it, and two kinds of test
 // target, which say what a line is, not where it sits (the audit holds the tests marked *):
 //     core         -> core                               the canvas and plain libraries: the core
 //                                                        (Canvas, which holds the host slots, what the
@@ -22,6 +22,18 @@ import PackageDescription
 //                                                        say to each other, whose JSON is the core's
 //                                                        JSON value too), and pure libraries
 //                                                        beneath them (DrawScript); * knows no plugin
+//     core private -> core                               the core's own modules, which no plugin may
+//                                                        import: * only another private module and a
+//                                                        test may. The window (CanvasUI), the command
+//                                                        line (`canvas`), and the product's
+//                                                        executables, the one place the shipped list
+//                                                        is composed: the app, and what it carries
+//                                                        (`of` the app: an extension macOS runs on its
+//                                                        own, packaged into the app's bundle, as Quick
+//                                                        Look's preview and thumbnail of a board file
+//                                                        are); * names no plugin: its plugins are the
+//                                                        list's, made by name (`+ shipped`). * An
+//                                                        executable on the core is private
 //     platform     -> core, platform                     what every shape gets, whatever its kind:
 //                                                        horizontals (the interfaces verticals plug
 //                                                        into, something a shape shows up on in the
@@ -33,17 +45,6 @@ import PackageDescription
 //                                                        and label, a frame's region, a subboard's
 //                                                        board); * declares a ShapeKind, and nothing
 //                                                        imports it: products never know each other
-//     app          -> core, app                          the window around the canvas (CanvasUI), so
-//                                                        no plugin reaches the window and the window
-//                                                        reaches no plugin; the command line
-//                                                        (`canvas`); and the product's executables,
-//                                                        the one place the shipped list is composed:
-//                                                        the app, and what it carries (`of` the app:
-//                                                        an extension macOS runs on its own, packaged
-//                                                        into the app's bundle, as Quick Look's
-//                                                        preview and thumbnail of a board file are);
-//                                                        * names no plugin: its plugins are the
-//                                                        list's, made by name (`+ shipped`)
 //     testsupport  -> core, testsupport                  and, for the one that is the tests' way to the
 //                                                        product's plugins (`+ shipped`), what ships
 //     test         -> anything but an executable or a test; a test named <M>Tests may use only M, M's
@@ -76,9 +77,11 @@ import PackageDescription
 //   - the list names something that isn't a public struct of that module that can be made with no
 //     arguments (a ListedPlugin), names a plugin twice, or isn't in the form its comment says;
 //   - the app or its extension imports a module the list names;
-//   - a line says `of` where its layer doesn't allow it: any layer but test and app, a test of a
-//     module it doesn't depend on, an app of anything but the app itself (an app needn't depend on
-//     its subject);
+//   - a module that is neither private nor a test imports a private one, `private` is on a layer
+//     but the core, or an executable on the core isn't private;
+//   - a line says `of` where its layer doesn't allow it: any line but a test and a private
+//     executable, a test of a module it doesn't depend on, an extension carried by anything but the
+//     app itself (an extension needn't depend on the app);
 //   - SwiftPM, evaluating this file, sees other targets or dependencies than the one-line table
 //     (so code below the targets can't change the graph);
 //   - a module's imports, as the compiler parses them, aren't exactly its dependencies here;
@@ -258,6 +261,11 @@ let package = Package(
         .target(name: "Palette", dependencies: []),                                           // layer: core
         .target(name: "Canvas", dependencies: ["CanvasRPC", "Geometry", "Palette"]),          // layer: core
         .target(name: "CanvasRPC", dependencies: []),                                         // layer: core
+        // Private to the core: the window and the programs. No plugin may import them.
+        .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "FuzzyMatching", "Geometry", "Palette"]), // layer: core private
+        .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI"] + shipped),               // layer: core private
+        .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas"] + shipped),                          // layer: core private of InfiniteCanvas
+        .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: core private
 
         // PLATFORM: what every shape gets, whatever its kind.
         // Horizontals, in the window: the interfaces verticals plug into that a shape shows up on.
@@ -322,12 +330,6 @@ let package = Package(
         .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Draw", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform"]), // layer: product
         .target(name: "Frames", dependencies: ["Canvas", "Colors", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform"]), // layer: product
-
-        // APP: the window, the executables and the command line.
-        .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "FuzzyMatching", "Geometry", "Palette"]), // layer: app
-        .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI"] + shipped),               // layer: app
-        .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas"] + shipped),                          // layer: app of InfiniteCanvas
-        .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: app
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "CanvasRPC", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport

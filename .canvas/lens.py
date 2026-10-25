@@ -1,6 +1,6 @@
 """Infinite Canvas drawn as its module graph: the default lens, with the root laid out as Package.swift lays the graph out.
 
-The root holds the graph's four rungs as bands stacked top to bottom (app, product, platform, core). The platform band holds
+The root holds the graph's three rungs as bands stacked top to bottom (product, platform, core). The platform band holds
 a frame for each group Package.swift heads its platform modules with, and the core band is one row. Every module's board is
 the default lens's: its files as notes in frames by folder, and which file uses which as an arrow or a pill.
 
@@ -14,11 +14,12 @@ import re
 
 from lenskit import default
 
-# Rule "rungs-stacked-in-order": the root's bands are the module graph's rungs, top to bottom app, product, platform,
-# core: a rung imports only from those below it. Why: "the layers should be stacked atop each other in order" (the owner,
-# round 1); the default lens orders bands by how deep their imports go, which for this graph is platform, product, app,
-# core. That the bands run as rows is the `ranks` setting in .canvas/ingest.json.
-RUNGS = ("app", "product", "platform", "core")
+# Rule "rungs-stacked-in-order": the root's bands are the module graph's rungs, top to bottom product, platform, core:
+# a rung imports only from those below it (the window and the programs are the core's private modules, so core's). Why:
+# "the layers should be stacked atop each other in order" (the owner, round 1); the default lens orders bands by how deep
+# their imports go, which for this graph puts platform above product. That the bands run as rows is the `ranks` setting
+# in .canvas/ingest.json.
+RUNGS = ("product", "platform", "core")
 
 # Rule "platform-in-groups": the platform band holds a frame for each group Package.swift heads its platform modules with,
 # titled as below. Why: platform is the biggest band (33 cards in one frame) and "would benefit from frames inside it"
