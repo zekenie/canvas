@@ -1,8 +1,9 @@
 """Infinite Canvas drawn as its module graph, with its plugin system in types.
 
 The root holds the graph's three rungs as bands stacked top to bottom (product, platform, core). The platform band holds
-a frame for each group Package.swift heads its platform modules with, and the core band is one row. Every module's board is
-the default lens's: its files as notes in frames by folder, and which file uses which as an arrow or a pill.
+a frame for each group Package.swift heads its platform modules with, and the core band is two rows, its libraries above its
+private modules. Every module's board is the default lens's: its files as notes in frames by folder, and which file uses which
+as an arrow or a pill.
 
 The plugin system is drawn in types, the guide's nouns (docs/plugin-system.md): every plugin, extension point, kind and added
 property is a note of its type, in the type's color, in a frame on the board that holds the note of the file it is declared
@@ -16,6 +17,8 @@ What its conventions don't read:
   of PLATFORM_GROUPS's. A platform module under no such heading stays loose in the platform band, and is warned.
 - A module's rung is its `// layer:` tag, as the scanner reads it. A module whose tag is none of RUNGS goes where the
   default lens puts a module the bands leave out (its tag's band, else "Other modules" at the bottom), and is warned.
+- A core module is private when its target's line in Package.swift tags it so (`// layer: core private`). A tag on a line
+  of its own is not read, and its module goes in the libraries' row.
 - A thing is found by how this code declares one: a plugin by its line in `let ships` and its type's `var id`, an extension
   point by a conformance to `ExtensionPoint` or `KeyedExtensionPoint`, a kind by its props' `static let kind`, a property by
   a conformance to `ShapeProperty` and its `static let key`. One declared another way (through a typealias, a macro, a
@@ -54,12 +57,14 @@ PLATFORM_GROUPS = (
     ("For agents", "For agents"),
 )
 
-# Rule "core-in-a-row": the core band's cards lie in one row, left to right by title. Why: "the core layer should be more
+# Rule "core-in-rows": the core band's cards lie in two rows, each left to right by title: its libraries, then below them its
+# private modules (the window and the programs, whose `// layer:` tag says `private`). Why: "the core layer should be more
 # horizontal" (the owner, round 2): laid out by its few arrows, core came out a block of three by three in the middle of a
-# band as wide as platform's. Only core: the other bands' cards are the layout's to arrange, in a line or not ("abandoning
-# the linear nature of the sub-boards, they could have other configurations", the owner, round 3, who took back round 2's
-# frame for each card).
-IN_A_ROW = ("core",)
+# band as wide as platform's. Then the private modules joined the core (7696847f), and in one row of twelve their arrows to
+# the libraries ran along it, through the cards between: "private on bottom makes a lot more sense visually" (the owner,
+# round 5). Only core: the other bands' cards are the layout's to arrange, in a line or not ("abandoning the linear nature
+# of the sub-boards, they could have other configurations", the owner, round 3, who took back round 2's frame for each card).
+IN_ROWS = ("core",)
 
 # Rule "plugin-system-in-types": the plugin system's things are notes of four types, Plugin, Extension point, Kind and
 # Property (the guide's nouns, a kind's definition among its values, and the added properties kinds opt into), and how
@@ -145,10 +150,22 @@ def schema(color, properties):
 PACKAGE = "Package.swift"
 HEADING = re.compile(r"^\s*//\s*([^:]+):")
 TARGET = re.compile(r'^\s*\.(?:executableTarget|target)\(name:\s*"([^"]+)"')
+PRIVATE = re.compile(r"//\s*layer:\s*\w+\s+private\b")
 
 
 def band_title(rung):
     return f"{rung[0].upper()}{rung[1:]} layer"
+
+
+def private_modules(package):
+    """The targets whose `// layer:` tag marks them private (`core private`, `core private of InfiniteCanvas`), which the
+    scanner, reading a tag's first word, doesn't say."""
+    out = set()
+    for line in package.splitlines():
+        target = TARGET.match(line)
+        if target and PRIVATE.search(line):
+            out.add(target.group(1))
+    return out
 
 
 def headings(package):
@@ -698,12 +715,13 @@ def digest(scan, repo):
             else:
                 d.warn(f"{m} is under no heading of {PACKAGE} that names a group: it stays loose in {into['title']}")
 
-    # core-in-a-row
-    for rung in IN_A_ROW:
+    # core-in-rows
+    private = private_modules(repo.read(PACKAGE))
+    for rung in IN_ROWS:
         if band.get(rung):
             for node in nodes:
                 if node.get('in') is band[rung]:
-                    node['rank'] = 0
+                    node['rank'] = 1 if module_at.get(node.get('source')) in private else 0
 
     plugin_system(d, scan, repo, len(bands))
     return d.finish()
