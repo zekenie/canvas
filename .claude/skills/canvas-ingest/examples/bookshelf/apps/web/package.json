@@ -1,0 +1,8 @@
+{
+  "name": "@bookshelf/web",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "dependencies": {
+    "@bookshelf/shared": "1.0.0"
+  }
+}

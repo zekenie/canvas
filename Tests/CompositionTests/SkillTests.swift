@@ -521,7 +521,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         let listed = try ingestHelpOptions()
         expect(listed.isSuperset(of: ["--commit", "--new-file", "--board", "--scan", "--where"]), "ingest --help lists its options: \(listed.sorted())")
         let pages = try ingestSkillPages()
-        expect(pages.count >= 4, "SKILL.md, the references and the example's README: \(pages)")
+        expect(pages.count >= 5, "SKILL.md, the references and the examples' READMEs: \(pages)")
         var named = Set<String>()
         for page in pages {
             let text = try String(contentsOfFile: page, encoding: .utf8)
@@ -544,10 +544,11 @@ let ingestSkillFolder = ".claude/skills/canvas-ingest"
     return dashedWords(in: help.error)
 }
 
-/// canvas-ingest's pages: SKILL.md, its references, and the example's README.
+/// canvas-ingest's pages: SKILL.md, its references, and each example's README.
 func ingestSkillPages() throws -> [String] {
     let references = try FileManager.default.contentsOfDirectory(atPath: "\(ingestSkillFolder)/reference").filter { $0.hasSuffix(".md") }.sorted()
-    return ["\(ingestSkillFolder)/SKILL.md"] + references.map { "\(ingestSkillFolder)/reference/\($0)" } + ["\(ingestSkillFolder)/examples/orders/README.md"]
+    let examples = try FileManager.default.contentsOfDirectory(atPath: "\(ingestSkillFolder)/examples").filter { !$0.hasPrefix(".") && (try? FileManager.default.contentsOfDirectory(atPath: "\(ingestSkillFolder)/examples/\($0)")) != nil }.sorted()
+    return ["\(ingestSkillFolder)/SKILL.md"] + references.map { "\(ingestSkillFolder)/reference/\($0)" } + examples.map { "\(ingestSkillFolder)/examples/\($0)/README.md" }
 }
 
 /// Every `--word` in a text.

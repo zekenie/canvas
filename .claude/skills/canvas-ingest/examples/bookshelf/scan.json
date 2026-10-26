@@ -1,0 +1,1090 @@
+{
+ "language": "typescript",
+ "name": "bookshelf",
+ "modules": [
+  {
+   "name": "@bookshelf/api",
+   "path": "apps/api/src",
+   "deps": [
+    "@bookshelf/shared"
+   ],
+   "test": false,
+   "layer": null,
+   "files": [
+    "db/books.ts",
+    "db/client.ts",
+    "db/loans.ts",
+    "db/members.ts",
+    "index.ts",
+    "router.ts",
+    "routes/books.ts",
+    "routes/loans.ts",
+    "routes/members.ts"
+   ],
+   "lines": 155,
+   "doc": "The bookshelf's API: the routes the web app calls, on one HTTP server.",
+   "folders": {
+    "db": null,
+    "routes": null
+   }
+  },
+  {
+   "name": "@bookshelf/shared",
+   "path": "packages/shared/src",
+   "deps": [],
+   "test": false,
+   "layer": null,
+   "files": [
+    "book.ts",
+    "dates.ts",
+    "index.ts",
+    "loan.ts",
+    "member.ts"
+   ],
+   "lines": 61,
+   "doc": "What the API and the web app share: a book, a member, a loan, and the days a loan keeps.",
+   "folders": {}
+  },
+  {
+   "name": "@bookshelf/web",
+   "path": "apps/web/src",
+   "deps": [
+    "@bookshelf/shared"
+   ],
+   "test": false,
+   "layer": null,
+   "files": [
+    "api.ts",
+    "index.ts",
+    "pages/borrow.ts",
+    "pages/catalog.ts",
+    "pages/member.ts",
+    "view.ts"
+   ],
+   "lines": 105,
+   "doc": "The bookshelf's web app: the catalog, a member's page, and borrowing, each drawn into the page's body.",
+   "folders": {
+    "pages": null
+   }
+  }
+ ],
+ "files": [
+  {
+   "module": "@bookshelf/api",
+   "rel": "db/books.ts",
+   "path": "apps/api/src/db/books.ts",
+   "lines": 16,
+   "doc": "The books table: the shelf as the database keeps it.",
+   "api": true,
+   "decls": [
+    {
+     "name": "allBooks",
+     "kind": "function",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "findBook",
+     "kind": "function",
+     "visibility": "public",
+     "line": 10
+    },
+    {
+     "name": "insertBook",
+     "kind": "function",
+     "visibility": "public",
+     "line": 14
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "db/client.ts",
+   "path": "apps/api/src/db/client.ts",
+   "lines": 11,
+   "doc": "The database connection the API shares, and `query`, which every table's functions go through.",
+   "api": true,
+   "decls": [
+    {
+     "name": "pool",
+     "kind": "value",
+     "visibility": "private",
+     "line": 5
+    },
+    {
+     "name": "query",
+     "kind": "function",
+     "visibility": "public",
+     "line": 8
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "db/loans.ts",
+   "path": "apps/api/src/db/loans.ts",
+   "lines": 22,
+   "doc": "The loans table: who has which book out, and until when.",
+   "api": true,
+   "decls": [
+    {
+     "name": "loansOf",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    },
+    {
+     "name": "insertLoan",
+     "kind": "function",
+     "visibility": "public",
+     "line": 14
+    },
+    {
+     "name": "closeLoan",
+     "kind": "function",
+     "visibility": "public",
+     "line": 20
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "db/members.ts",
+   "path": "apps/api/src/db/members.ts",
+   "lines": 13,
+   "doc": "The members table.",
+   "api": true,
+   "decls": [
+    {
+     "name": "findMember",
+     "kind": "function",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "insertMember",
+     "kind": "function",
+     "visibility": "public",
+     "line": 10
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "index.ts",
+   "path": "apps/api/src/index.ts",
+   "lines": 14,
+   "doc": "The bookshelf's API: the routes the web app calls, on one HTTP server.",
+   "api": false,
+   "decls": [
+    {
+     "name": "router",
+     "kind": "value",
+     "visibility": "private",
+     "line": 9
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "router.ts",
+   "path": "apps/api/src/router.ts",
+   "lines": 36,
+   "doc": "A small router: a handler for each method and path, and the one that answers a request.",
+   "api": true,
+   "decls": [
+    {
+     "name": "Handler",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "Router",
+     "kind": "type",
+     "visibility": "public",
+     "line": 8
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "routes/books.ts",
+   "path": "apps/api/src/routes/books.ts",
+   "lines": 16,
+   "doc": "The catalog's routes: the shelf, one book, and a book added.",
+   "api": true,
+   "decls": [
+    {
+     "name": "booksRoutes",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "routes/loans.ts",
+   "path": "apps/api/src/routes/loans.ts",
+   "lines": 16,
+   "doc": "Lending: a member borrows a book, and brings it back.",
+   "api": true,
+   "decls": [
+    {
+     "name": "loansRoutes",
+     "kind": "function",
+     "visibility": "public",
+     "line": 8
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/api",
+   "rel": "routes/members.ts",
+   "path": "apps/api/src/routes/members.ts",
+   "lines": 11,
+   "doc": "Members: one signed up, and one looked up with the books they have out.",
+   "api": true,
+   "decls": [
+    {
+     "name": "membersRoutes",
+     "kind": "function",
+     "visibility": "public",
+     "line": 8
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/web",
+   "rel": "api.ts",
+   "path": "apps/web/src/api.ts",
+   "lines": 25,
+   "doc": "The web app's calls to the API, one for each route it uses.",
+   "api": true,
+   "decls": [
+    {
+     "name": "call",
+     "kind": "function",
+     "visibility": "private",
+     "line": 5
+    },
+    {
+     "name": "getBooks",
+     "kind": "function",
+     "visibility": "public",
+     "line": 11
+    },
+    {
+     "name": "getMember",
+     "kind": "function",
+     "visibility": "public",
+     "line": 15
+    },
+    {
+     "name": "borrow",
+     "kind": "function",
+     "visibility": "public",
+     "line": 19
+    },
+    {
+     "name": "giveBack",
+     "kind": "function",
+     "visibility": "public",
+     "line": 23
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/web",
+   "rel": "index.ts",
+   "path": "apps/web/src/index.ts",
+   "lines": 15,
+   "doc": "The bookshelf's web app: the catalog, a member's page, and borrowing, each drawn into the page's body.",
+   "api": false,
+   "decls": [
+    {
+     "name": "show",
+     "kind": "function",
+     "visibility": "private",
+     "line": 8
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/web",
+   "rel": "pages/borrow.ts",
+   "path": "apps/web/src/pages/borrow.ts",
+   "lines": 14,
+   "doc": "Borrowing: a book lent to a member, by its ISBN and the member's id.",
+   "api": true,
+   "decls": [
+    {
+     "name": "borrowPage",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/web",
+   "rel": "pages/catalog.ts",
+   "path": "apps/web/src/pages/catalog.ts",
+   "lines": 13,
+   "doc": "The catalog: every book on the shelf, by title.",
+   "api": true,
+   "decls": [
+    {
+     "name": "line",
+     "kind": "function",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "catalogPage",
+     "kind": "function",
+     "visibility": "public",
+     "line": 11
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/web",
+   "rel": "pages/member.ts",
+   "path": "apps/web/src/pages/member.ts",
+   "lines": 16,
+   "doc": "A member's page: the books they have out, and which are late.",
+   "api": true,
+   "decls": [
+    {
+     "name": "line",
+     "kind": "function",
+     "visibility": "private",
+     "line": 7
+    },
+    {
+     "name": "memberPage",
+     "kind": "function",
+     "visibility": "public",
+     "line": 11
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/web",
+   "rel": "view.ts",
+   "path": "apps/web/src/view.ts",
+   "lines": 22,
+   "doc": "The few pieces every page is drawn with: a heading, a list, a button.",
+   "api": true,
+   "decls": [
+    {
+     "name": "heading",
+     "kind": "function",
+     "visibility": "public",
+     "line": 3
+    },
+    {
+     "name": "list",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    },
+    {
+     "name": "button",
+     "kind": "function",
+     "visibility": "public",
+     "line": 13
+    },
+    {
+     "name": "page",
+     "kind": "function",
+     "visibility": "public",
+     "line": 18
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/shared",
+   "rel": "book.ts",
+   "path": "packages/shared/src/book.ts",
+   "lines": 17,
+   "doc": "A book on the shelf: its ISBN, title and author.",
+   "api": true,
+   "decls": [
+    {
+     "name": "Isbn",
+     "kind": "type",
+     "visibility": "public",
+     "line": 4
+    },
+    {
+     "name": "Book",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    },
+    {
+     "name": "isValidIsbn",
+     "kind": "function",
+     "visibility": "public",
+     "line": 13
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/shared",
+   "rel": "dates.ts",
+   "path": "packages/shared/src/dates.ts",
+   "lines": 18,
+   "doc": "Days as the shelf keeps them, YYYY-MM-DD, and how long a loan lasts.",
+   "api": true,
+   "decls": [
+    {
+     "name": "LOAN_DAYS",
+     "kind": "value",
+     "visibility": "public",
+     "line": 4
+    },
+    {
+     "name": "dueDate",
+     "kind": "function",
+     "visibility": "public",
+     "line": 7
+    },
+    {
+     "name": "isOverdue",
+     "kind": "function",
+     "visibility": "public",
+     "line": 12
+    },
+    {
+     "name": "day",
+     "kind": "function",
+     "visibility": "private",
+     "line": 16
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/shared",
+   "rel": "index.ts",
+   "path": "packages/shared/src/index.ts",
+   "lines": 6,
+   "doc": "What the API and the web app share: a book, a member, a loan, and the days a loan keeps.",
+   "api": false,
+   "decls": []
+  },
+  {
+   "module": "@bookshelf/shared",
+   "rel": "loan.ts",
+   "path": "packages/shared/src/loan.ts",
+   "lines": 10,
+   "doc": "A loan: a book a member has out, and the day it is due back.",
+   "api": true,
+   "decls": [
+    {
+     "name": "Loan",
+     "kind": "type",
+     "visibility": "public",
+     "line": 5
+    }
+   ]
+  },
+  {
+   "module": "@bookshelf/shared",
+   "rel": "member.ts",
+   "path": "packages/shared/src/member.ts",
+   "lines": 10,
+   "doc": "A member of the library: who may borrow, and how many books at once.",
+   "api": true,
+   "decls": [
+    {
+     "name": "MAX_LOANS",
+     "kind": "value",
+     "visibility": "public",
+     "line": 4
+    },
+    {
+     "name": "Member",
+     "kind": "type",
+     "visibility": "public",
+     "line": 6
+    }
+   ]
+  }
+ ],
+ "uses": [
+  {
+   "from": [
+    "@bookshelf/api",
+    "db/books.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/client.ts"
+   ],
+   "names": [
+    "query"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "db/books.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "book.ts"
+   ],
+   "names": [
+    "Book"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "db/loans.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/client.ts"
+   ],
+   "names": [
+    "query"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "db/loans.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "loan.ts"
+   ],
+   "names": [
+    "Loan"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "db/members.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/client.ts"
+   ],
+   "names": [
+    "query"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "db/members.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "member.ts"
+   ],
+   "names": [
+    "Member"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "router.ts"
+   ],
+   "names": [
+    "Router"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "routes/books.ts"
+   ],
+   "names": [
+    "booksRoutes"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "routes/loans.ts"
+   ],
+   "names": [
+    "loansRoutes"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "routes/members.ts"
+   ],
+   "names": [
+    "membersRoutes"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/books.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/books.ts"
+   ],
+   "names": [
+    "allBooks",
+    "findBook",
+    "insertBook"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/books.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "router.ts"
+   ],
+   "names": [
+    "Router"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/books.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "book.ts"
+   ],
+   "names": [
+    "Book",
+    "isValidIsbn"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/loans.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/books.ts"
+   ],
+   "names": [
+    "findBook"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/loans.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/loans.ts"
+   ],
+   "names": [
+    "closeLoan",
+    "insertLoan",
+    "loansOf"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/loans.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "router.ts"
+   ],
+   "names": [
+    "Router"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/loans.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "dates.ts"
+   ],
+   "names": [
+    "dueDate"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/loans.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "member.ts"
+   ],
+   "names": [
+    "MAX_LOANS"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/members.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/loans.ts"
+   ],
+   "names": [
+    "loansOf"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/members.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "db/members.ts"
+   ],
+   "names": [
+    "findMember",
+    "insertMember"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/members.ts"
+   ],
+   "to": [
+    "@bookshelf/api",
+    "router.ts"
+   ],
+   "names": [
+    "Router"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/api",
+    "routes/members.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "member.ts"
+   ],
+   "names": [
+    "Member"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "api.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "book.ts"
+   ],
+   "names": [
+    "Book"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "api.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "loan.ts"
+   ],
+   "names": [
+    "Loan"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "api.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "member.ts"
+   ],
+   "names": [
+    "Member"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "pages/borrow.ts"
+   ],
+   "names": [
+    "borrowPage"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "pages/catalog.ts"
+   ],
+   "names": [
+    "catalogPage"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "pages/member.ts"
+   ],
+   "names": [
+    "memberPage"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/borrow.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "api.ts"
+   ],
+   "names": [
+    "borrow"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/borrow.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "view.ts"
+   ],
+   "names": [
+    "button",
+    "page"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/borrow.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "book.ts"
+   ],
+   "names": [
+    "isValidIsbn"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/catalog.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "api.ts"
+   ],
+   "names": [
+    "getBooks"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/catalog.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "view.ts"
+   ],
+   "names": [
+    "list",
+    "page"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/catalog.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "book.ts"
+   ],
+   "names": [
+    "Book"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/member.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "api.ts"
+   ],
+   "names": [
+    "getMember",
+    "giveBack"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/member.ts"
+   ],
+   "to": [
+    "@bookshelf/web",
+    "view.ts"
+   ],
+   "names": [
+    "button",
+    "list",
+    "page"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/member.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "dates.ts"
+   ],
+   "names": [
+    "isOverdue"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/web",
+    "pages/member.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "loan.ts"
+   ],
+   "names": [
+    "Loan"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/shared",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "book.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/shared",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "dates.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/shared",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "loan.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/shared",
+    "index.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "member.ts"
+   ],
+   "names": [
+    "*"
+   ]
+  },
+  {
+   "from": [
+    "@bookshelf/shared",
+    "loan.ts"
+   ],
+   "to": [
+    "@bookshelf/shared",
+    "book.ts"
+   ],
+   "names": [
+    "Isbn"
+   ]
+  }
+ ]
+}

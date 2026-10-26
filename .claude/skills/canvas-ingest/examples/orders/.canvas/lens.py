@@ -1,9 +1,10 @@
-"""The shop's lens: its services as boards, and the Temporal workflows and activities, the Lambdas and the Postgres tables as
-types, so "which workflows write orders?" is a canvas query.
+"""The shop's lens: its services as boards, and the Temporal workflows and activities, the Lambdas, the Postgres tables and
+the services' files as types, so "which workflows write orders?" and "which file is the checkout in?" are canvas queries.
 
 Everything is found by convention, through the scan and `repo` (the code at the commit drawn): workflows and activities by
-their folders and `proxyActivities`, Lambdas by serverless.yml, tables by the migrations, and which table a function reads or
-writes by the SQL in its body and in the functions it calls, followed through the scan's uses.
+their folders and `proxyActivities`, Lambdas by serverless.yml, tables by the migrations, which table a function reads or
+writes by the SQL in its body and in the functions it calls, followed through the scan's uses, and a service's files by the
+scan.
 
 The conventions are the limits of this lens (the README lists them): what it does not read it passes over, and says so as a
 `lens:` warning where it can tell, and nowhere where it cannot (a private helper that holds the SQL, an ORM).
@@ -12,8 +13,8 @@ The rules are the team's decisions, each named, with its reason and the round it
 reason has changed; a new request is a new rule. Python 3.9: no `match`, no `X | Y` types."""
 import re
 
-from lenskit import Digest, sql, yaml
-from lenskit.text import as_text
+from lenskit import Digest, default, sql, yaml
+from lenskit.text import as_text, file_text
 
 # ---- the rules -----------------------------------------------------------------------------------------------------------
 
@@ -58,6 +59,17 @@ TOUCH = re.compile(r"\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM|FROM|JOIN)\s+\"?([A-Z
 NOT_A_TABLE = re.compile(r"\bEXTRACT\s*\([^)]*\)|\bFOR\s+(?:NO\s+KEY\s+)?(?:UPDATE|SHARE)\b(?:\s+OF\s+[\w.\", ]+)?|\bIS\s+(?:NOT\s+)?DISTINCT\s+FROM\b", re.I)
 CTE = re.compile(r"(?:\bWITH\s+(?:RECURSIVE\s+)?|,\s*)\"?([A-Za-z_]\w*)\"?\s*(?:\([^)]*\)\s*)?AS\s*(?:NOT\s+)?(?:MATERIALIZED\s*)?\(", re.I)
 
+# Rule "files-are-typed": every file of a service the scan has is a note of the type File, with its path and how long it is,
+# in a frame of its own last on its service's board, titled by its name (the shortest end of its path where two in the frame
+# share one: `workflows/index.ts`). A package's files are not drawn, as its module isn't (services-are-folders). Why: the
+# team asks of its files too (which file a workflow is in, which files have grown long), and a note that is a File answers
+# in a query (round 1: setup's usual recommendation, which the team took).
+FILES_FRAME = "Files"
+
+# Rule "things-in-their-files": a workflow, an activity and a Lambda's handler are each declared in a file, an arrow of the
+# relationship type `declared in` to the file's note, where a string once named it. Why: a path in a field answers no query
+# and leaves the files a frame apart; the arrow joins what runs to where its code is (round 1).
+
 # Rule "every-activity-is-run": an activity's "run by" row is Needed, so one no workflow runs is :incomplete. Why: the
 # team wants activities left behind by a refactor found (round 1).
 RUN_BY_NEEDED = True
@@ -68,9 +80,9 @@ RUN_BY_NEEDED = True
 ROOT_FRAMES = ("Services", "Database", "Types")
 SERVICES_FRAME, TABLES_FRAME, TYPES_FRAME = ROOT_FRAMES
 
-# Rule "workflows-on-top": a service's board has a frame each for its workflows, activities and Lambdas, top to bottom.
-# Why: a service is read from what starts work down to what does it (round 1).
-SERVICE_FRAMES = ("Workflows", "Activities", "Lambdas")
+# Rule "workflows-on-top": a service's board has a frame each for its workflows, activities and Lambdas, top to bottom, and
+# its files below them (files-are-typed). Why: a service is read from what starts work down to what does it (round 1).
+SERVICE_FRAMES = ("Workflows", "Activities", "Lambdas", FILES_FRAME)
 
 # Rule "names-per-container": a title is given out once in the container that holds the shape, so two services may each have a
 # workflow called `syncWorkflow`, and every service's board a frame `Workflows`. The digest tells such nodes apart by an id that
@@ -91,27 +103,31 @@ RUNS_DIRECT = True
 STRING_FIELD = {"type": "string"}
 LIST_OF_STRINGS = {"type": "array", "items": {"type": "string"}}
 TYPES = {
-    "Workflow": ("A Temporal workflow: its name, the file it is in and its task queue.",
-                 {"name": STRING_FIELD, "file": STRING_FIELD, "taskQueue": STRING_FIELD}),
-    "Activity": ("A Temporal activity: its name and the file it is in.", {"name": STRING_FIELD, "file": STRING_FIELD}),
+    "Workflow": ("A Temporal workflow: its name and its task queue.", {"name": STRING_FIELD, "taskQueue": STRING_FIELD}),
+    "Activity": ("A Temporal activity: its name.", {"name": STRING_FIELD}),
     "Lambda": ("An AWS Lambda: its name in serverless.yml, its handler and what invokes it.",
                {"name": STRING_FIELD, "handler": STRING_FIELD, "events": LIST_OF_STRINGS}),
     "Table": ("A Postgres table: its name, its columns as the migrations leave them, and the migrations that made it.",
               {"name": STRING_FIELD, "columns": LIST_OF_STRINGS, "migrations": LIST_OF_STRINGS}),
+    "File": ("A file of a service's code: its path and how many lines it has.", {"path": STRING_FIELD, "lines": {"type": "integer"}}),
 }
 RELATIONSHIPS = {
     "runs": ("A workflow runs an activity, at a step of its own.", {"step": {"type": "integer"}}),
     "reads": ("An activity or a Lambda reads a table, through these functions.", {"via": LIST_OF_STRINGS}),
     "writes": ("An activity or a Lambda writes a table, through these functions.", {"via": LIST_OF_STRINGS}),
+    "declared in": ("A workflow, an activity or a Lambda's handler is declared in a file.", {}),
 }
 # Each end: (from, to, the row it gives the notes at its far side, its rule)
+ONE_FILE = {"onlyOne": True}
 ENDS = [("Workflow", "runs", "runs", None), ("runs", "Activity", "run by", {"needed": True} if RUN_BY_NEEDED else None),
         ("Activity", "reads", "reads", None), ("Lambda", "reads", "reads", None), ("reads", "Table", "read by", None),
-        ("Activity", "writes", "writes", None), ("Lambda", "writes", "writes", None), ("writes", "Table", "written by", None)]
+        ("Activity", "writes", "writes", None), ("Lambda", "writes", "writes", None), ("writes", "Table", "written by", None),
+        ("Workflow", "declared in", "declared in", ONE_FILE), ("Activity", "declared in", "declared in", ONE_FILE),
+        ("Lambda", "declared in", "declared in", ONE_FILE), ("declared in", "File", "declares", None)]
 
 
 def schema(properties):
-    return {"type": "object", "properties": properties, "required": ["name"] if "name" in properties else []}
+    return {"type": "object", "properties": properties, "required": [k for k in ("name", "path") if k in properties]}
 
 
 # ---- reading the code ---------------------------------------------------------------------------------------------------
@@ -329,26 +345,35 @@ def digest(scan, repo):
     for a, b, row, rule in ENDS:
         d.edge(type_note[a], type_note[b], text=row, **({"endRule": rule} if rule else {}))
 
-    # a service's board: its workflows, activities and Lambdas, each a note of its type in a frame of its own
+    # a service's board: its workflows, activities and Lambdas, each a note of its type in a frame of its own, and its files
     note_of = {}                                # (service, "workflows" | "activities" | "lambdas", name): its note
+    file_note = {}                              # a file's path: its note
     for m in services:
         f = found[m]
-        held = {"Workflows": f["workflows"], "Activities": f["activities"], "Lambdas": f["lambdas"]}
+        held = {"Workflows": f["workflows"], "Activities": f["activities"], "Lambdas": f["lambdas"], FILES_FRAME: module_files[m]}
         frame = {}
         for rank, name in enumerate(n for n in SERVICE_FRAMES if held[n]):
             frame[name] = d.frame(d.claim(f"the frame {name} of {m}", name, within=card[m]), card[m], rank=rank)
         for p, n, line in f["workflows"]:
             note_of[(m, "workflows", n)] = d.note(d.claim(f"the workflow {n} of {m}", n, within=frame["Workflows"]), frame["Workflows"],
                                                   as_text(code.doc(p, line)), source={"path": p, "line": line},
-                                                  **typed("Workflow", type_title, {"name": n, "file": p, "taskQueue": f["queue"]}))
+                                                  **typed("Workflow", type_title, {"name": n, "taskQueue": f["queue"]}))
         for p, n, line in f["activities"]:
             note_of[(m, "activities", n)] = d.note(d.claim(f"the activity {n} of {m}", n, within=frame["Activities"]), frame["Activities"],
                                                    as_text(code.doc(p, line)), source={"path": p, "line": line},
-                                                   **typed("Activity", type_title, {"name": n, "file": p}))
+                                                   **typed("Activity", type_title, {"name": n}))
         for p, export, line, name, handler, said in f["lambdas"]:
             note_of[(m, "lambdas", name)] = d.note(d.claim(f"the Lambda {name} of {m}", name, within=frame["Lambdas"]), frame["Lambdas"],
                                                    as_text(code.doc(p, line)), source={"path": p, "line": line},
                                                    **typed("Lambda", type_title, {"name": name, "handler": handler, "events": said}))
+        # files-are-typed: a file's note says its doc and what it declares, and holds its path and length as values
+        files = {(code.by_path[p]["module"], code.by_path[p]["rel"]): code.by_path[p] for p in module_files[m]}
+        titles = default.file_titles(files)
+        for key, file in files.items():
+            p = file["path"]
+            file_note[p] = d.note(d.claim(f"the file {p}", titles[key], within=frame[FILES_FRAME]), frame[FILES_FRAME],
+                                  as_text(file_text(file, scan.language, length=False)) or None, source=p,
+                                  **typed("File", type_title, {"path": p, "lines": file["lines"]}))
 
     # the relationships: a workflow runs the activities it calls, in the order it first calls them; an activity or a Lambda
     # reads and writes the tables its SQL, and its callees', touch
@@ -391,6 +416,12 @@ def digest(scan, repo):
             for how, touched in (("reads", reads), ("writes", writes)):
                 for t, via in touched.items():
                     d.edge(note, table_note[t], **{"is": type_title[how], "fieldValues": {"via": via}})
+        # things-in-their-files
+        declared = [(note_of[(m, "workflows", n)], p) for p, n, _ in f["workflows"]]
+        declared += [(note_of[(m, "activities", n)], p) for p, n, _ in f["activities"]]
+        declared += [(note_of[(m, "lambdas", name)], p) for p, _, _, name, _, _ in f["lambdas"]]
+        for note, p in declared:
+            d.edge(note, file_note[p], **{"is": type_title["declared in"]})
     return d.finish()
 
 

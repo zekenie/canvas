@@ -8,7 +8,9 @@ A small TypeScript monorepo, set up for `ingest` as a team sets theirs up: its s
 - `services/billing`: two Lambdas, declared in `serverless.yml`, their handlers in `src/handlers/`.
 - `db/migrations/`: the tables, `customers`, `orders`, `payments` and `refunds`, and a column added to `orders` later.
 
-The lens draws the root with the services as cards, a frame of the tables (Database) and a frame of the types. Each service's board has a frame of its workflows, then its activities, then its Lambdas. The types are Workflow, Activity, Lambda and Table, and the relationship types `runs` (a workflow runs an activity), `reads` and `writes` (an activity or a Lambda reads or writes a table). Each decision is a named rule at the top of the lens, with its reason. A name two services share (a `syncWorkflow` in each, or the frame `Workflows`) is the bare name in both: a title need be unique only in the container that holds it, and the digest tells the two apart by an id.
+The lens draws the root with the services as cards, a frame of the tables (Database) and a frame of the types. Each service's board has a frame of its workflows, then its activities, then its Lambdas, then its files. The types are Workflow, Activity, Lambda, Table and File, and the relationship types `runs` (a workflow runs an activity), `reads` and `writes` (an activity or a Lambda reads or writes a table) and `declared in` (a workflow, an activity or a Lambda's handler is in a file). Each decision is a named rule at the top of the lens, with its reason. A name two services share (a `syncWorkflow` in each, or the frame `Workflows`) is the bare name in both: a title need be unique only in the container that holds it, and the digest tells the two apart by an id.
+
+For a repository whose picture is its modules and files, without things of its own like these, start from [the bookshelf example](../bookshelf/README.md) instead.
 
 `scan.json` is the scan, written by hand for this example in the scan format (`reference/scan.md`): what scip-typescript and `scanners/scip_read.py` would make of the code. On a real repository `ingest` makes the scan itself, with the `scip` command in the settings. The example has no `package-lock.json`, so its `prepare` (`npm ci`) would fail as it is; a real repository has one.
 
@@ -80,6 +82,34 @@ How many arrows say who reads a table:
 arrow:is-a("reads")
 ```
 
+The services' files:
+
+```query
+/* count: 11 */
+:is-a("File")
+```
+
+The file the checkout is in:
+
+```query
+/* matches: "checkout.ts" */
+:end-of(arrow:is-a("declared in"):starts-at("checkoutWorkflow"))
+```
+
+What one file declares:
+
+```query
+/* matches: "createOrder", "markPaid", "markRefunded", "loadOrder" */
+:start-of(arrow:is-a("declared in"):ends-at("orders.ts"))
+```
+
+The files over 20 lines:
+
+```query
+/* matches: "orders.ts", "payments.ts", "checkout.ts" */
+:is-a("File")[fieldValues.lines>20]
+```
+
 ## What the lens does not read
 
 The lens finds things by this repository's conventions. What it does not read it passes over, and says so as a `lens:` warning where it can tell; where it cannot, the board is quietly missing the arrow. A lens for another repository starts from these and changes the ones that don't hold.
@@ -90,4 +120,5 @@ The lens finds things by this repository's conventions. What it does not read it
 - **Lambdas are the `functions` of a `serverless.yml`**, written in the file itself and read by lenskit's YAML reader. `functions: ${file(./functions.yml)}`, a file that is no mapping, anchors and tags are warned and left out; CDK and SAM are not read.
 - **Reads and writes follow exported functions.** The tables a function touches are those named by SQL in its own strings (a string counts only with a `SELECT`, `INSERT`, `UPDATE` or `DELETE` in it) and in the exported functions it calls, in its file or in a file the scan says it uses. A private helper that holds the SQL, a query builder, an ORM, or a class-based data layer gives no reads or writes, and says nothing. A table no migration makes is warned.
 - **Tables are what `db/migrations/*.sql` leave**, read by lenskit's SQL reader ([its limits](../../reference/lens.md#reading-sql-migrations)); a schema kept anywhere else is not read.
+- **Files are a service's files the scan has.** A package's files are not drawn, as the package isn't; nor are `serverless.yml` and the migrations, which no project takes in (a Lambda's note says its handler, and a table's its migrations). Which file uses which is not drawn: the board's lines are what runs, reads and writes.
 - A doc is the first sentence of the JSDoc over a declaration.

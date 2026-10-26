@@ -2,7 +2,7 @@
 
 A lens is the repository's own picture of its code: `.canvas/lens.py`, a function `digest(scan, repo)` that returns the digest canvas-digest draws ([its format](../../canvas-digest/reference/graph.md)). `ingest` reads it from the folder you run in, never from the commit drawn, so an edit counts at once, committed or not. It runs it twice, isolated, and refuses it when the two digests differ ([Determinism](#determinism-and-the-runner)). Without a lens, `ingest` draws with the default lens.
 
-A lens imports `lenskit`, which is in the skill's folder (`ingest` puts it on the path), and anything in the folder beside `lens.py`. [The orders example](../examples/orders/.canvas/lens.py) is a whole lens built on it.
+A lens imports `lenskit`, which is in the skill's folder (`ingest` puts it on the path), and anything in the folder beside `lens.py`. [The bookshelf example](../examples/bookshelf/.canvas/lens.py) and [the orders example](../examples/orders/.canvas/lens.py) are whole lenses built on it.
 
 ## Contents
 
@@ -15,6 +15,7 @@ A lens imports `lenskit`, which is in the skill's folder (`ingest` puts it on th
 - [Reading YAML](#reading-yaml)
 - [Reading SQL migrations](#reading-sql-migrations)
 - [Types in a digest](#types-in-a-digest)
+- [Files as a type](#files-as-a-type)
 - [Named rules](#named-rules)
 - [What a lens's conventions miss](#what-a-lenss-conventions-miss)
 - [Determinism and the runner](#determinism-and-the-runner)
@@ -32,7 +33,9 @@ A lens imports `lenskit`, which is in the skill's folder (`ingest` puts it on th
       return default.digest(scan, repo, bands=[("Apps", ["web", "api"]), ("Libraries", ["core"])])
   ```
 
-- **A lens of its own**, built with `lenskit.Digest`. For a repository whose picture is its things: services, workflows, Lambdas, tables. Find each by the repository's convention through `repo` and the scan, make the kinds types, and connect them with relationships. The orders example is one.
+  Its files are plain notes. Usually they are notes of the type File: `default.build` with the same arguments, and its file notes typed before it is finished ([Files as a type](#files-as-a-type)). The bookshelf example is one.
+
+- **A lens of its own**, built with `lenskit.Digest`. For a repository whose picture is its things: services, workflows, Lambdas, tables, and usually the files they are declared in. Find each by the repository's convention through `repo` and the scan, make the kinds types, and connect them with relationships. The orders example is one.
 
 ## The scan
 
@@ -111,7 +114,7 @@ A digest's limits are canvas-digest's: titles at most 80 characters and unique i
 
 - `as_text(s)`: text shown as written. `@[` starts a mention in `canvas draw`, so wrap every text the code gave you (a doc, a name) in it.
 - `mention(title)`: a mention of the shape with that title, `@[title]`, escaped as draw reads one.
-- `file_text(file, language)`: a file's note as the default lens writes it: its doc, what it declares, its length. `declares(file, most=60)`: what it declares, in a few words. `words(language)`: the words those use (TypeScript says `exports`, Swift `public`). `names(xs, cap=10)`: a list cut to `cap`, with `+N`.
+- `file_text(file, language, length=True)`: a file's note as the default lens writes it: its doc, what it declares, its length (`length=False` leaves the length out, for a File that holds it as a value: [Files as a type](#files-as-a-type)). `declares(file, most=60)`: what it declares, in a few words. `words(language)`: the words those use (TypeScript says `exports`, Swift `public`). `names(xs, cap=10)`: a list cut to `cap`, with `+N`.
 
 ## The default lens and its arguments
 
@@ -216,6 +219,48 @@ d.edge("createOrder", "orders", **{"is": "writes", "fieldValues": {"via": ["inse
 - Title the types as people say them, and keep the titles of the things queries name (tables, workflows) as the code says them: claim those first. Claim a type's title with `type=True`: it is given out once among the digest's types, in whichever frame each is, and a note that is no type may have it too (a table called `Table`). `finish()` refuses two types of one title, since `is` names a type by its title.
 
 Then: `canvas query ':is-a("Table")'` lists the tables, `arrow:is-a("writes")` the writes, `:start-of(arrow:is-a("writes"):ends-at("orders"))` who writes orders, and `:start-of(arrow:is-a("runs"):ends-at(:start-of(arrow:is-a("writes"):ends-at("orders"))))` the workflows that run them ([the canvas skill's query reference](../../canvas/reference/query.md)).
+
+## Files as a type
+
+Most repositories draw their files as notes of a type File, and setup recommends it ([SKILL.md](../SKILL.md), round one): `:is-a("File")` lists them, a file's panel shows it as one, and its values answer queries (`:is-a("File")[fieldValues.lines>500]`, `:is-a("File")[fieldValues.path^="src/api/"]`). The default lens draws files as plain notes; a lens types them.
+
+**Few fields.** Each is a row on every file's note, so each makes every note taller. `path` and `lines` are the usual two, and the note's words are its doc and what it declares, `file_text(f, language, length=False)`, which leaves out the length the note now holds as a value. Leave File no color of its own (no `$color`), so files stay the notes' yellow and the types that have one stand out.
+
+**On the default lens**, type its file notes before it is finished. A file's note has its path as its `source`; a folder the default lens draws as one note (past 4,000 files) has the folder's, which is no file's, and stays plain. The whole of it, as [the bookshelf example](../examples/bookshelf/.canvas/lens.py) has it:
+
+```python
+from lenskit import default
+from lenskit.text import as_text, file_text
+
+FILE = {"type": "object", "properties": {"path": {"type": "string"}, "lines": {"type": "integer"}}, "required": ["path"]}
+BANDS = [("Apps", ["web", "api"]), ("Libraries", ["core"])]
+
+def digest(scan, repo):
+    d = default.build(scan, repo, bands=BANDS)
+    below = 1 + max(n.get("rank", -1) for n in d.nodes if n.get("kind") == "frame" and "in" not in n)   # under every band, an "Other modules" too
+    types = d.frame(d.claim("the frame of the types", "Types"), rank=below)
+    file_type = d.note(d.claim("the type File", "File", within=types, type=True), types,
+                       "A file of the code: its path and how many lines it has.", schema=FILE)
+    by_path = {f["path"]: f for f in scan.files.values()}
+    for node in d.nodes:
+        source = node.get("source")
+        f = by_path.get(source) if node.get("kind") == "sticky-note" and isinstance(source, str) else None
+        if f is not None:
+            node["text"] = as_text(file_text(f, scan.language, length=False)) or None
+            node["is"] = file_type["title"]
+            node["fieldValues"] = {"path": f["path"], "lines": f["lines"]}
+    return d.finish()
+```
+
+**In a lens of its own**, make a File note for each file it draws, in a frame of their own on the thing's board, titled as the default lens titles them (`default.file_titles` of the frame's files: a file's name, else the shortest end of its path that tells it apart there), and join each thing to the file it is declared in with a relationship type, `declared in`, its end at each kind of thing Only one. Without that line a board holds two pictures, the things and the files, that nothing joins. [The orders example](../examples/orders/.canvas/lens.py) does it (its rules "files-are-typed" and "things-in-their-files").
+
+**Which file uses which** stays the default lens's plain arrows: a relationship type for it would give every file's note two rows more, and say nothing the arrow doesn't. Ask for them as arrows (`:start-of(arrow:ends-at("client.ts"))`).
+
+**When not to recommend it.** Where the code says the files aren't what the team reads:
+
+- a repository past 4,000 files, where the default lens draws folders as one note each: `:is-a("File")` would quietly miss every file in them, so leave the files plain;
+- a repository whose things each fill a file of their own name (a Lambda a handler file): a File beside each would say each thing twice, so give the thing a `path` instead;
+- a repository of configuration or data (infrastructure modules, a schema's migrations), read by what it declares, not by the files that hold it.
 
 ## Named rules
 

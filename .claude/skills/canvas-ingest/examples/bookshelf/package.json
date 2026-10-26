@@ -1,0 +1,11 @@
+{
+  "name": "bookshelf",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "build": "tsc --build packages/shared apps/api apps/web"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5"
+  }
+}

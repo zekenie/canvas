@@ -26,8 +26,15 @@ It needs `canvas`, the canvas skill's command, and the app running. Its Python i
 ## Setting a repository up: round one
 
 1. **Survey the repository.** Read it; don't build it. Find the languages, the package manager and its workspaces (`package.json`'s `workspaces`, `pnpm-workspace.yaml`, the lockfile), the frameworks, and the repository's own conventions for what matters: Temporal workflows and activities (`proxyActivities`, `workflows/` and `activities/` folders, `Worker.create` and its `taskQueue`), Lambdas (`serverless.yml`'s `functions`, CDK's `NodejsFunction`, SAM's `template.yaml`), tables (SQL migrations' `CREATE TABLE`, `schema.prisma`, TypeORM's `@Entity`), HTTP controllers, queues and jobs, and what a service is (a folder under `services/` or `apps/`, a deployable package).
-2. **List the main things**, each with how it is found, a count and evidence: "Temporal workflows: 14, the exported functions of `services/*/src/workflows/*.ts` (`checkoutWorkflow` in `services/orders/src/workflows/checkout.ts`, …)". Say what is unclear: two conventions for one kind, files that fit none.
-3. **Confirm them with the user.** Ask only what changes the picture, one question at a time: whether a kind matters, which convention is the real one, what counts as a service. Decide the rest yourself, and say what you decided.
+2. **Recommend a picture**, each part with its reason in the code (how it is found, a count, an example):
+   - **the things**: "Temporal workflows: 14, the exported functions of `services/*/src/workflows/*.ts` (`checkoutWorkflow` in `services/orders/src/workflows/checkout.ts`, …)";
+   - **which kinds get types**: those a question is asked about (tables, workflows);
+   - **files**: usually notes of the type File, with their path and length, on their package's board, each thing joined to the file it is declared in, so a question about files is a query. Recommend otherwise only where the code says so ([lens.md](reference/lens.md#files-as-a-type));
+   - **which relationships matter**: those a question follows (`runs`, `reads`, `writes`);
+   - **what to leave out**: generated code, vendored packages, what no one reads.
+
+   Say what is unclear: two conventions for one kind, files that fit none.
+3. **Ask only where the code leaves a real choice open**, one question at a time: which of two conventions is the real one, whether a kind matters to the team, what counts as a service. Decide the rest yourself, and say what you decided and why.
 4. **Write `.canvas/ingest.json`:**
 
    ```json
@@ -44,7 +51,7 @@ It needs `canvas`, the canvas skill's command, and the app running. Its Python i
    - `window`: the room every board is laid out for, set once from the window in front: `canvas boards` gives the board in front's `view`, `[width, height]`; write that. With it, every run lays out alike, whatever window is open then.
 
    [reference/scan.md](reference/scan.md) has every key and option. Leave the file uncommitted: it is read from the working tree.
-5. **Write `.canvas/lens.py`**, a function `digest(scan, repo)` that returns the digest. For a repository whose picture is its modules, call the default lens with arguments (`lenskit.default.digest(scan, repo, bands=[...])`): it bands modules by their imports, so modules that don't import each other (samples, independent services) come out as one band. For one whose picture is its things, write a lens of its own with `lenskit.Digest`: a type for each kind the user confirmed (Workflow, Lambda, Table), a note of it for each thing with its values, relationship types for how they connect (`runs`, `reads`, `writes`), all found by the conventions you listed, through `repo` and the scan. Start from the worked example, [examples/orders](examples/orders/README.md), and its [lens](examples/orders/.canvas/lens.py). Write each decision as a named rule ([Later rounds](#later-rounds-art-direction)). [reference/lens.md](reference/lens.md) has lenskit, types and the rules. Leave it uncommitted as well; say in the lens's docstring what its conventions don't read ([lens.md](reference/lens.md#what-a-lenss-conventions-miss)).
+5. **Write `.canvas/lens.py`**, a function `digest(scan, repo)` that returns the digest. For a repository whose picture is its modules and files, build on the default lens with arguments (`lenskit.default.build(scan, repo, bands=[...])`) and type its files: start from [examples/bookshelf](examples/bookshelf/README.md) and its [lens](examples/bookshelf/.canvas/lens.py). The default lens bands modules by their imports, so modules that don't import each other (samples, independent services) come out as one band. For one whose picture is its things, write a lens of its own with `lenskit.Digest`: a type for each kind in the picture (Workflow, Lambda, Table, File), a note of it for each thing with its values, relationship types for how they connect (`runs`, `reads`, `writes`, `declared in`), all found by the conventions you listed, through `repo` and the scan: start from [examples/orders](examples/orders/README.md) and its [lens](examples/orders/.canvas/lens.py). Write each decision of the picture as a named rule ([Later rounds](#later-rounds-art-direction)). [reference/lens.md](reference/lens.md) has lenskit, types and the rules. Leave it uncommitted as well; say in the lens's docstring what its conventions don't read ([lens.md](reference/lens.md#what-a-lenss-conventions-miss)).
 6. **Draw HEAD**: `"$SKILL/ingest"` with an empty board in front, or `"$SKILL/ingest" --new-file ~/Boards/shop.canvasboard`. The first run of a repository installs and indexes, which can take minutes. A later run on the same code reuses its scan, whatever `.canvas/` holds.
 7. **Read the run before the user looks.** What `ingest` printed:
    - `scan:` lines, what the index left out: source files no project takes in, and packages it couldn't connect (fix the settings, and draw again);
@@ -55,11 +62,11 @@ It needs `canvas`, the canvas skill's command, and the app running. Its Python i
    - `verify ok`.
 
    For more, the run's folder: `"$SKILL/ingest" --where` prints the cache, and the newest folder in its `runs/` has `digest.json` (what the lens made) and `out/plan.json` (each board's shapes). Fix the obvious in the lens (split a crowded frame, add a missed kind, shorten a title) and draw again: it draws in place of its own last drawing.
-8. **Show it.** Tell the user what is on the root and on each board, the counts, what was made public and why, and the types, with two queries they can ask (`:is-a("Workflow")`, `:start-of(arrow:is-a("writes"):ends-at("orders"))`). Say what the lens left out. Then ask what to change.
+8. **Show it.** Tell the user what is on the root and on each board, the counts, what was made public and why, and the types, with queries they can ask (`:is-a("Workflow")`, `:start-of(arrow:is-a("writes"):ends-at("orders"))`, `:is-a("File")[fieldValues.lines>500]`). Say what the lens left out. Then ask what to change.
 
 ## Later rounds: art direction
 
-1. **Take the request** ("workflows on top", "one frame of tables per service", "too crowded").
+1. **Take the request** ("workflows on top", "one frame of tables per service", "too crowded"). A lens that draws files as plain notes, or leaves them out with no rule saying why, predates files as a type: recommend them as round one would, and write a yes as a named rule.
 2. **When the user points at shapes**, read what they selected:
 
    ```bash
@@ -107,6 +114,7 @@ It runs on Python 3.9: no `match`, no `X | Y` types, no `tomllib`, nothing insta
 
 - [reference/scan.md](reference/scan.md): every option and setting, the cache and its checkout, the scanners, the scan's format, and the default lens's digest.
 - [reference/lens.md](reference/lens.md): writing a lens: lenskit, types in a digest, named rules, determinism, Python 3.9, a short lens.
-- [examples/orders](examples/orders/README.md): a TypeScript monorepo with Temporal, Lambdas and Postgres, its settings, its lens and the queries it answers.
+- [examples/bookshelf](examples/bookshelf/README.md): the usual setup, a TypeScript monorepo drawn as its packages and files, every file a File: its settings, its lens and the queries it answers.
+- [examples/orders](examples/orders/README.md): a TypeScript monorepo with Temporal, Lambdas and Postgres drawn as its own things and their files: its settings, its lens and the queries it answers.
 - canvas-digest's [graph.md](../canvas-digest/reference/graph.md): the digest's format, and its [Types](../canvas-digest/reference/graph.md#types).
 - The canvas skill's [query reference](../canvas/reference/query.md) and [relationships](../canvas/reference/relationships.md): asking the drawn board.

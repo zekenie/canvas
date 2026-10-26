@@ -34,8 +34,9 @@ def names(xs, cap=10):
     return ', '.join(xs[:cap]) + (f' +{len(xs) - cap}' if len(xs) > cap else '')
 
 
-def file_text(f, language):
-    """A file's note: its doc, what it declares and how long it is. `f` is a file of the scan."""
+def file_text(f, language, length=True):
+    """A file's note: its doc, what it declares and how long it is. `f` is a file of the scan. `length=False` leaves the
+    length out, for a note that holds it as a value (a note of the type File, with its `lines`)."""
     W = words(language)
     parts = []
     if f['doc']:
@@ -52,8 +53,10 @@ def file_text(f, language):
     if priv and not pub and not rest: lines.append(f"{W['private']} " + names(priv))
     if funcs: lines.append(f"{W['function']} " + names(funcs, 6))
     if exts: lines.append(f"{W['extension']} " + names(exts, 6))
-    lines.append(f"{f['lines']} lines")
-    parts.append('\n'.join(lines))
+    if length:
+        lines.append(f"{f['lines']} lines")
+    if lines:
+        parts.append('\n'.join(lines))
     return '\n\n'.join(parts)
 
 

@@ -1,16 +1,16 @@
-"""Infinite Canvas drawn as its module graph, with its plugin system in types.
+"""Infinite Canvas drawn as its module graph and its files, with its plugin system in types.
 
 The root holds the graph's three rungs as bands stacked top to bottom (product, platform, core). The platform band holds
 a frame for each group Package.swift heads its platform modules with, and the core band is two rows, its libraries above its
 private modules. Every module's board is the default lens's: its files as notes in frames by folder, and which file uses which
-as an arrow or a pill.
+as an arrow or a pill. Every file's note is a note of the type File, its path and length its values.
 
 The plugin system is drawn in types, the guide's nouns (docs/plugin-system.md): every plugin, extension point, kind and added
 property is a note of its type, in the type's color, in a frame on the board that holds the note of the file it is declared
-in. A plugin declares the extension points it owns, the kinds it defines and the properties it adds, and fills extension
-points; a kind holds properties: each an arrow of its relationship type, in that type's color. The types are a frame at the
-bottom of the root. Which plugin declares, fills and holds what is read from the registry's report in the guide, which
-ShippedTests holds to the registry as it is; what each thing is, from the Swift declarations.
+in, with an arrow to that file's note. A plugin declares the extension points it owns, the kinds it defines and the properties
+it adds, and fills extension points; a kind holds properties: each an arrow of its relationship type, in that type's color.
+The types are a frame at the bottom of the root. Which plugin declares, fills and holds what is read from the registry's
+report in the guide, which ShippedTests holds to the registry as it is; what each thing is, from the Swift declarations.
 
 What its conventions don't read:
 - A platform module's group is the last heading comment above its line in Package.swift (`// Engines: ...`) that is one
@@ -30,11 +30,13 @@ What its conventions don't read:
   `summary` (an interpolation in it matching anything), the core's words for its own points in Registry.swift, else its
   name. A line no point's words fit, or two points' fit as well, is warned and drawn nowhere.
 - A thing in a file the scan doesn't draw (a test module's) is warned and left out.
+- A folder the default lens draws as one note (past 4,000 files) is no file: it stays a plain note, and a thing declared in
+  one of its files has no arrow to its file.
 """
 import re
 
 from lenskit import default
-from lenskit.text import as_text
+from lenskit.text import as_text, file_text
 
 # ---- the rules -----------------------------------------------------------------------------------------------------------
 
@@ -75,6 +77,17 @@ IN_ROWS = ("core",)
 # Rule "a-color-a-type": each type and relationship type has a color of its own, written in its schema (`$color`), which its
 # notes and its arrows are drawn in. Why: "types (with colors)" (the owner, round 4); which color is which is the lens's
 # pick, each kind of thing apart from the yellow of a file's note. The colors are TYPES' and RELATIONSHIPS' second members.
+# File has none (files-are-typed): its notes keep the yellow the others stand apart from.
+
+# Rule "files-are-typed": every file's note is a note of the type File, its path and how many lines it has its values, and
+# its words its doc and what it declares (the length said once, as a value). A folder the default lens draws as one note is
+# no file and stays plain. Why: "I'd like files to usually be typed as File, so queries and the Types tab treat them as
+# files" (the owner, round 5).
+
+# Rule "things-in-their-files": each plugin, extension point, kind and property is declared in the file its declaration is
+# in: an arrow of the relationship type `declared in` from its note to that file's note, on the board both are on. Why: a
+# module's frame of things had no line to its files, so it read as an island beside them (round 5: the Arrows board, where
+# ArrowsPlugin has no line to ArrowDefinition.swift, which declares it).
 
 # Rule "the-report-says-who-adds-what": which plugin declares, fills and holds what is read from the registry's report,
 # the block of docs/plugin-system.md that ShippedTests holds to the registry as it is, never worked out from which file
@@ -99,11 +112,11 @@ HOLDING = "PropertyOptIns"
 # Rule "things-where-they-are-declared": a thing's note is in a frame, THINGS_FRAME, on the board that holds the note of the
 # file it is declared in: a plugin's type, a point's type, a kind's props, a property's type; the core, which is no type, is
 # where its registry is (CORE_AT). A relationship to a thing on another board is a pill there, as a use of its file is. The
-# types are a frame at the bottom of the root (TYPES_FRAME: the module Types has the title "Types"). Why: a module's board
-# shows what the module adds to the registry, and the 210 things and their 400 arrows on one board of their own wouldn't
-# read (round 4's plan).
+# types, File's among them since round 5, are a frame at the bottom of the root (TYPES_FRAME: the module Types has the title
+# "Types"). Why: a module's board shows what the module adds to the registry, and the 210 things and their 400 arrows on one
+# board of their own wouldn't read (round 4's plan).
 THINGS_FRAME = "Plugin system"
-TYPES_FRAME = "Plugin system types"
+TYPES_FRAME = "Code types"
 CORE_AT = "Sources/Canvas/Plugins/Registry.swift"
 
 # The longest a thing's note says of its doc comment, in characters: its first sentence, cut at a word past this.
@@ -124,11 +137,13 @@ TYPES = {
              "green", {"props": STRING, "definition": STRING, "version": {"type": "integer"}, "capabilities": STRINGS}),
     "Property": ("An added property: a value the shapes of a kind hold once a plugin opts the kind in. Its type is the Swift type "
                  "that declares it.", "purple", {"type": STRING}),
+    "File": ("A file of the code: its path and how many lines it has.", None, {"path": STRING, "lines": {"type": "integer"}}),
 }
 RELATIONSHIPS = {
     "declares": ("A plugin declares an extension point it owns, a kind it defines, or a property it adds.", "indigo", {}),
     "fills": ("A plugin fills an extension point: what it adds there, as the registry's report says it.", "teal", {"adds": STRINGS}),
     "holds": ("A kind holds an added property, opted in by a plugin: its id.", "pink", {"by": STRING}),
+    "declared in": ("A plugin, an extension point, a kind or a property is declared in a file.", "gray", {}),
 }
 # Each end: (from, to, the row it gives the notes at its far side, its rule)
 ENDS = [("Plugin", "declares", "declares", None),
@@ -138,11 +153,16 @@ ENDS = [("Plugin", "declares", "declares", None),
         ("Plugin", "fills", "fills", None),
         ("fills", "Extension point", "filled by", None),
         ("Kind", "holds", "holds", None),
-        ("holds", "Property", "held by", None)]
+        ("holds", "Property", "held by", None),
+        ("Plugin", "declared in", "declared in", {"onlyOne": True}),
+        ("Extension point", "declared in", "declared in", {"onlyOne": True}),
+        ("Kind", "declared in", "declared in", {"onlyOne": True}),
+        ("Property", "declared in", "declared in", {"onlyOne": True}),
+        ("declared in", "File", "defines", None)]
 
 
 def schema(color, properties):
-    return {"type": "object", "properties": {"$color": {"const": color}, **properties}}
+    return {"type": "object", "properties": {**({"$color": {"const": color}} if color else {}), **properties}}
 
 
 # ---- the root ----------------------------------------------------------------------------------------------------------------
@@ -723,27 +743,40 @@ def digest(scan, repo):
                 if node.get('in') is band[rung]:
                     node['rank'] = 1 if module_at.get(node.get('source')) in private else 0
 
-    plugin_system(d, scan, repo, len(bands))
+    # the types first, in a frame below the bands: `is` names a type by its title, so each is unique among the types. Without
+    # a registry report there is no plugin system to draw, and File is the one type.
+    system = System(scan, repo, d.warn)
+    below = 1 + max(n.get('rank', -1) for n in nodes if n.get('kind') == 'frame' and 'in' not in n)   # under every band, an "Other modules" too
+    types = d.frame(d.claim("the frame of the types", TYPES_FRAME), rank=below)
+    made = list(TYPES) + list(RELATIONSHIPS) if system.report else ["File"]
+    type_title = {t: d.claim(f"the type {t}", t, within=types, type=True) for t in made}
+    type_note = {}
+    for t in made:
+        words, color, properties = TYPES.get(t) or RELATIONSHIPS[t]
+        type_note[t] = d.note(type_title[t], types, words, schema=schema(color, properties), **({"relationship": True} if t in RELATIONSHIPS else {}))
+    for a, b, row, rule in ENDS:
+        if a in type_note and b in type_note:
+            d.edge(type_note[a], type_note[b], text=row, **({"endRule": rule} if rule else {}))
+
+    # files-are-typed: a file's note has its path as its source; a folder drawn as one note has the folder's, which is no file's
+    by_path = {f["path"]: f for f in scan.files.values()}
+    for node in nodes:
+        source = node.get('source')
+        f = by_path.get(source) if node.get('kind') == 'sticky-note' and isinstance(source, str) else None
+        if f is not None:
+            node['text'] = as_text(file_text(f, scan.language, length=False)) or None
+            node['is'] = type_title["File"]
+            node['fieldValues'] = {"path": f["path"], "lines": f["lines"]}
+
+    if system.report:
+        plugin_system(d, system, type_title)
     return d.finish()
 
 
-def plugin_system(d, scan, repo, below):
-    """The plugin system in types: the types in a frame on the root, ranked `below` the bands, and each thing's note in a
-    frame of the board its file is on, with the arrows of what declares, fills and holds what (plugin-system-in-types)."""
-    system = System(scan, repo, d.warn)
-    if not system.report:
-        return
-
-    # the types first: `is` names a type by its title, so each is unique among the types
-    types = d.frame(d.claim("the frame of the types", TYPES_FRAME), rank=below)
-    title = {t: d.claim(f"the type {t}", t, within=types, type=True) for t in list(TYPES) + list(RELATIONSHIPS)}
-    type_note = {}
-    for t, (words, color, properties) in TYPES.items():
-        type_note[t] = d.note(title[t], types, words, schema=schema(color, properties))
-    for t, (words, color, properties) in RELATIONSHIPS.items():
-        type_note[t] = d.note(title[t], types, words, schema=schema(color, properties), relationship=True)
-    for a, b, row, rule in ENDS:
-        d.edge(type_note[a], type_note[b], text=row, **({"endRule": rule} if rule else {}))
+def plugin_system(d, system, title):
+    """The plugin system in types: each thing's note in a frame of the board its file is on, with the arrows of what declares,
+    fills and holds what (plugin-system-in-types), and of the file each is declared in (things-in-their-files). `title` is the
+    types' titles."""
 
     # the board each thing's file is on: the card its file's note is in, however deep in frames
     note_at = {n['source']: n for n in d.nodes if n.get('kind') == 'sticky-note' and isinstance(n.get('source'), str)}
@@ -800,3 +833,8 @@ def plugin_system(d, scan, repo, below):
     for kind, key, pid in system.holds:
         if drawn(("kind", kind), ("property", key)):
             d.edge(note[("kind", kind)], note[("property", key)], **{"is": title["holds"], "fieldValues": {"by": pid}})
+    # things-in-their-files: each thing to its file's note, when that note is a File (not a folder drawn as one note)
+    for key, n in note.items():
+        file_note = note_at.get(n["source"]["path"]) if n is not None else None
+        if file_note is not None and file_note.get('is') == title["File"]:
+            d.edge(n, file_note, **{"is": title["declared in"]})

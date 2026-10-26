@@ -73,8 +73,10 @@ private func files(under folder: URL) -> [String] {
         expect(!all.contains { path in
             path.split(separator: "/").contains { $0.hasPrefix(".") && !(path.hasPrefix("canvas-ingest/examples/") && $0 == ".canvas") }
         }, "no dotfiles: \(all.filter { $0.contains("/.") })")
-        expect(all.contains("canvas-ingest/examples/orders/.canvas/lens.py") && all.contains("canvas-ingest/examples/orders/.canvas/ingest.json"),
-               "but the example repository's settings and lens, which a repository keeps in .canvas")
+        for example in ["bookshelf", "orders"] {
+            expect(all.contains("canvas-ingest/examples/\(example)/.canvas/lens.py") && all.contains("canvas-ingest/examples/\(example)/.canvas/ingest.json"),
+                   "but each example repository's settings and lens, which a repository keeps in .canvas: \(example)")
+        }
         expect(!all.contains { $0.hasSuffix(".pyc") || $0.contains("__pycache__") }, "no Python caches")
 
         let build = try require(read(agents.appendingPathComponent("build-id"))).trimmingCharacters(in: .whitespacesAndNewlines)

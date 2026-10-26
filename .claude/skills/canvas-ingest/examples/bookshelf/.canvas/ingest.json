@@ -1,0 +1,6 @@
+{
+  "scanner": "scip",
+  "scip": "npx --yes @sourcegraph/scip-typescript@0.4.0 index packages/shared apps/api apps/web --output {index}",
+  "prepare": "npm ci --ignore-scripts",
+  "window": [1440, 900]
+}
