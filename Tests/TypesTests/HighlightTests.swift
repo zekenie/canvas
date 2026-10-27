@@ -58,9 +58,9 @@ final class HighlightBench {
         }
     }
 
-    /// A key saved in Settings, as its notification says, heard.
+    /// A sign-in in Settings, as its notification says, heard.
     func keySaved() {
-        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)
+        NotificationCenter.default.post(name: .languageModelSignInDidChange, object: nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
     }
 
@@ -263,7 +263,7 @@ final class RedrawCounter: CanvasEditorDelegate {
     },
     test("a pair that failed, or whose answer can't be read, isn't asked about again, but once a key is saved in Settings") {
         let b = try HighlightBench()
-        b.answer = .failure(.noKey)
+        b.answer = .failure(.notSignedIn)
         let id = b.add(jiraSchema, words: jiraPrompt)
         b.frame()
         b.settle()

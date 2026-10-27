@@ -131,8 +131,8 @@ public struct SchemaCodeEditor: View {
 
 /// Where the sync is, under the JSON: updating, with a spinner (the side being written, the JSON or
 /// the shape's words, is dimmed and read-only), or why it failed (the warning's tone: red is the
-/// schema's own errors), with what can be done: Retry, or for want of a key Open Settings… (saving
-/// one there tries again by itself); nothing for a schema too long to rewrite.
+/// schema's own errors), with what can be done: Retry, or for want of a sign-in Open Settings…
+/// (signing in there tries again by itself); nothing for a schema too long to rewrite.
 struct TypeSyncLine: View {
     let status: TypeSyncStatus
     weak var sync: TypeSync<TypeSchemaProperty>?
@@ -153,7 +153,7 @@ struct TypeSyncLine: View {
         let id = id
         switch remedy {
         case .retry: return [DetailStatusAction(TypePanelText.retry) { [weak sync] in sync?.retry(id) }]
-        case .key: return [DetailStatusAction(TypePanelText.openSettings) { AnthropicSettingsView.showSettings() }]
+        case .signIn: return [DetailStatusAction(TypePanelText.openSettings) { AnthropicSettingsView.showSettings() }]
         case .editByHand: return []
         }
     }

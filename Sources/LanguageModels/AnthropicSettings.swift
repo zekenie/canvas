@@ -1,18 +1,18 @@
 import AppKit
 import Foundation
 import Observation
-import SwiftUI
 
 extension Notification.Name {
-    /// Posted on the main thread when the API key is saved, replaced or removed in Settings
-    /// (`AnthropicKeySettings`): what failed for want of a key may go now, so a plugin that said so
-    /// can try again by itself.
-    public static let languageModelKeyDidChange = Notification.Name("LanguageModels.keyDidChange")
+    /// Posted on the main thread when the sign-in changes in Settings: the API key saved, replaced
+    /// or removed (`AnthropicKeySettings`), the way chosen (`SignInSettings`), or Claude Code signed
+    /// in (`ClaudeCodeSettings`). What failed for want of a sign-in may go now, so a plugin that said
+    /// so can try again by itself.
+    public static let languageModelSignInDidChange = Notification.Name("LanguageModels.signInDidChange")
 }
 
 /// What the Settings window's Anthropic key does, apart from its view (so tests drive it
 /// headlessly): save the key typed, remove the saved one, and test it with a tiny real call. Saving
-/// and removing post `languageModelKeyDidChange`. Its status speaks only of a test and of what
+/// and removing post `languageModelSignInDidChange`. Its status speaks only of a test and of what
 /// failed: the field's prompt says whether a key is saved.
 @MainActor
 @Observable
@@ -94,7 +94,7 @@ public final class AnthropicKeySettings {
             status = .failed("Couldn’t save", detail: error.localizedDescription)
         }
         hasKey = keys.hasKey
-        if status == .saved { NotificationCenter.default.post(name: .languageModelKeyDidChange, object: self) }
+        if status == .saved { NotificationCenter.default.post(name: .languageModelSignInDidChange, object: self) }
     }
 
     /// Removes the saved key; nothing while a test runs (`canRemove`).
@@ -107,7 +107,7 @@ public final class AnthropicKeySettings {
             status = .failed("Couldn’t remove", detail: error.localizedDescription)
         }
         hasKey = keys.hasKey
-        if status == .removed { NotificationCenter.default.post(name: .languageModelKeyDidChange, object: self) }
+        if status == .removed { NotificationCenter.default.post(name: .languageModelSignInDidChange, object: self) }
     }
 
     /// Saves what's typed, if anything, then asks the model something tiny with the saved key. A
@@ -159,112 +159,5 @@ public final class AnthropicKeySettings {
     public var statusHelp: String? {
         guard case let .failed(message, detail) = status else { return statusText }
         return detail ?? message
-    }
-}
-
-/// The Settings window's metrics. Points.
-@MainActor
-enum SettingsStyle {
-    /// What the key's pane is called in the Settings window.
-    static let anthropicPane = "Anthropic"
-    static let width: CGFloat = 480
-    /// Between the buttons.
-    static let buttonSpacing: CGFloat = 8
-    /// The least room between the buttons and the status.
-    static let statusGap: CGFloat = 12
-    /// Between the status's symbol (or spinner) and its text.
-    static let smallSpacing: CGFloat = 6
-    /// The status's symbol or spinner: one width, so its text starts in one place.
-    static let statusIconWidth: CGFloat = 16
-}
-
-/// The Settings window's content: the Anthropic API key (a secure field, Save, Remove, Test), and
-/// where to get one. Where it's kept is the field's tooltip. The app hosts it (Infinite Canvas ›
-/// Settings…, ⌘,), afresh each time the window opens.
-public struct AnthropicSettingsView: View {
-    @State private var settings: AnthropicKeySettings
-    @FocusState private var keyFieldFocused: Bool
-
-    /// The key in `keys`, tested with `model` (by default, Claude Haiku reading `keys`).
-    public init(keys: AnthropicKeyStore = .standard, model: (any LanguageModel)? = nil) {
-        _settings = State(initialValue: AnthropicKeySettings(keys: keys, model: model))
-    }
-
-    /// Where keys are made.
-    public static let consoleURL = URL(string: "https://console.anthropic.com/settings/keys")!
-
-    /// The action that opens the app's Settings window, which the app answers (Infinite Canvas ›
-    /// Settings…, ⌘,; CanvasUI's `BoardMenus.showSettings` is the same selector). A plugin that
-    /// needs a key sends it up the responder chain with `showSettings()`.
-    public static let showSettingsAction = NSSelectorFromString("showSettings:")
-
-    /// Opens Settings, where the key is saved: `showSettingsAction`, sent up the responder chain.
-    /// False if nothing answered it (no app around, as in tests).
-    @discardableResult
-    public static func showSettings() -> Bool {
-        NSApplication.shared.sendAction(showSettingsAction, to: nil, from: nil)
-    }
-
-    /// The field's tooltip: where the key is kept (the path, never anything read from the file).
-    static func storageHelp(_ keys: AnthropicKeyStore) -> String {
-        "Saved in \((keys.url.path as NSString).abbreviatingWithTildeInPath)"
-    }
-
-    public var body: some View {
-        @Bindable var settings = settings
-        Form {
-            Section {
-                SecureField("Anthropic API key", text: $settings.draft, prompt: Text(settings.hasKey ? "Saved" : "sk-ant-…"))
-                    .onSubmit { settings.save() }
-                    .focused($keyFieldFocused)
-                    .help(Self.storageHelp(settings.keys))
-                HStack(spacing: SettingsStyle.buttonSpacing) {
-                    Button("Save") { settings.save() }
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!settings.canSave)
-                    Button("Remove") { settings.remove() }
-                        .disabled(!settings.canRemove)
-                    Spacer(minLength: SettingsStyle.statusGap)
-                    statusLine
-                    Button("Test") { settings.test() }
-                        .disabled(!settings.canTest)
-                        .help("Send a test request")
-                }
-            } footer: {
-                Link("Get a key", destination: Self.consoleURL)
-                    .font(.caption)
-            }
-        }
-        .formStyle(.grouped)
-        .onAppear { keyFieldFocused = true }
-        .frame(width: SettingsStyle.width)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// A test's progress or outcome, or a failure: its symbol (only the symbol takes the tone, as
-    /// the detail panel's status lines do), then its text, on one line.
-    @ViewBuilder private var statusLine: some View {
-        if let text = settings.statusText {
-            HStack(spacing: SettingsStyle.smallSpacing) {
-                Group {
-                    switch settings.status {
-                    case .testing: ProgressView().controlSize(.small)
-                    case .works: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    // The warning's tone, as the detail panel shows the same failures: red is kept
-                    // for what's wrong in what someone made (a schema's errors).
-                    default: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    }
-                }
-                .frame(width: SettingsStyle.statusIconWidth)
-                Text(text)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(.secondary)
-            }
-            .font(.callout)
-            .help(settings.statusHelp ?? text)
-            .accessibilityElement(children: .combine)
-            .accessibilityHint(settings.statusHelp.flatMap { $0 == text ? nil : $0 } ?? "")
-        }
     }
 }

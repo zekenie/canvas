@@ -101,16 +101,16 @@ private let noFieldsSchema = #"{"type": "object"}"#
         spinRunLoop(until: { b.status(id) == .idle })
         expectEqual(try spot(b, id), .rows)
     },
-    test("`No API key` and Settings for a missing key, and a key saved reads again") {
+    test("`Not signed in` and Settings when not signed in, and a sign-in reads again") {
         let b = try SyncBench(more: [RowSlipsPlugin()])
         let id = placeSlip(b)
         typeSlipWords(b, id, "a pet in my household")
-        b.model.queue(.noKey)
+        b.model.queue(.notSignedIn)
         b.sync.commit(id)
         spinRunLoop(until: { !b.isUpdating(id) })
-        expectEqual(try spot(b, id), .failed("No API key", action: .settings))
+        expectEqual(try spot(b, id), .failed("Not signed in", action: .settings))
         b.model.queue(petSchema)
-        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)
+        NotificationCenter.default.post(name: .languageModelSignInDidChange, object: nil)
         spinRunLoop(until: { b.model.requests.count == 2 && b.status(id) == .idle })
         expectEqual(try spot(b, id), .rows)
     },
@@ -209,16 +209,16 @@ private let noFieldsSchema = #"{"type": "object"}"#
         expectEqual(try extentHeight(b, id), rowsHeight(3))
         fits("read")
     },
-    test("under a type's rows: `No API key` and Settings… for words read with no key, and nothing for words the model failed to write") {
+    test("under a type's rows: `Not signed in` and Settings… for words read while not signed in, and nothing for words the model failed to write") {
         let b = try SyncBench(more: [RowSlipsPlugin()])
         let book = try require(b.editor.rowBook)
         let id = b.editor.addSlipType(pet, words: "a pet in my household", title: "Pet")
         typeSlipWords(b, id, "a pet in my home, and its vet")
-        b.model.queue(.noKey)
+        b.model.queue(.notSignedIn)
         b.sync.commit(id)
         spinRunLoop(until: { !b.isUpdating(id) })
         expectEqual(try spot(b, id), .rows)
-        expectEqual(book.foot(of: id), .failed("No API key", action: .settings))
+        expectEqual(book.foot(of: id), .failed("Not signed in", action: .settings))
         expect(book.actionRect(of: id) != nil, "Settings… is there to click")
 
         // The schema edited and the words not written from it: the rows say what the schema says, so nothing is said under them.

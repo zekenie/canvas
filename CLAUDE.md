@@ -39,7 +39,7 @@ Read [testing](.claude/rules/testing.md) before writing a test, and the Testing 
 
 - Never touch the user's pasteboard: give the plugin a private one ([clipboard](.claude/rules/clipboard.md)).
 - Never use the app's socket: a test listens on its own (`temporarySocketPath()`, TestKit) ([command line](.claude/rules/command-line.md)).
-- Never reach the network: only the two live tests do, when asked, and every other test that builds the shipped list passes `model: ScriptedLanguageModel()` (ShippedTesting's `ShippedPlugins`; the list itself won't load for a test without a model and a pasteboard of its own: [language models](.claude/rules/language-models.md), [build](.claude/rules/build.md)).
+- Never reach the network or run the person's Claude Code: only the two live tests do, when asked, and every other test that builds the shipped list passes `model: ScriptedLanguageModel()` (ShippedTesting's `ShippedPlugins`; the list itself won't load for a test without a model and a pasteboard of its own: [language models](.claude/rules/language-models.md), [build](.claude/rules/build.md)).
 - Close the `BoardDocument`s the test edits ([testing](.claude/rules/testing.md)).
 
 Screen capture isn't permitted here: tests draw into bitmaps, and what a drawing change costs on screen is seen only in the app on screen ([testing](.claude/rules/testing.md)).
@@ -109,7 +109,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - Reordering (`Examples/`) has no file of its own: it is in [context menus](.claude/rules/context-menus.md).
 
 **Platform**, engines (what any plugin may run or ask)
-- [language models](.claude/rules/language-models.md): the model plugins ask, the Anthropic key and Settings, `--ask`'s model.
+- [language models](.claude/rules/language-models.md): the model plugins ask, its two ways of signing in to Claude (the person's Claude Code, in the app's own folder, and an Anthropic API key) and Settings, `--ask`'s model.
 - [prose maps](.claude/rules/prose-maps.md): which words of a text say which part of a lower-level text (a type's highlights): targets, maps, asking the model, the request.
 - [placing](.claude/rules/placing.md): where a box of shapes lands, beside a shape, in a frame or anywhere, placed as `canvas draw` places one: `Surroundings`, `Landing`; Moving's solver, for any plugin that puts shapes down.
 - [neighbors](.claude/rules/neighbors.md): hovering a shape, on the canvas or in the table of contents, outlines what it points to, with ⌥ what points to it and with ⌃⌥ its mentions, in a color for each way, and its panel's Connections tab lists them all by the same ways (the lights, each a title, a color, its keys and a query, contributed by the plugin that owns the edges); the keys held, the subject, asking and asking again, where a match is drawn, rings, the core's tinted outlines it hands, and the lists (folding, searching, their rows).

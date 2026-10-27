@@ -54,7 +54,7 @@ public struct FieldFillFailure: Equatable, Sendable {
 ///   takes nothing. Edits to the words while a call is out wait, and fill once it lands.
 /// - The words each shape was filled from go back and forth with undo (`UndoParticipant`): undoing a fill leaves the
 ///   words ahead of the values, and nothing reads them again until the person edits them.
-/// - A failure leaves the values as they are and says why; Retry, or the next edit, tries again, and a key saved in
+/// - A failure leaves the values as they are and says why; Retry, or the next edit, tries again, and a sign-in in
 ///   Settings does for a shape that failed for want of one. A cancelled call says nothing. The file closing cancels
 ///   every call out and every wait (`FillShapes`).
 @MainActor
@@ -93,7 +93,7 @@ public final class FieldFill {
         words = Dictionary(uniqueKeysWithValues: registry.kinds.compactMap { kind in
             registry.isTypeable(kind) ? registry.typeWords(of: kind).map { (kind, $0) } : nil
         })
-        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: nil, queue: .main) { [weak self] _ in
+        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.keyDidChange() }
         }
     }
@@ -177,10 +177,10 @@ public final class FieldFill {
         }
     }
 
-    /// A key was saved or removed in Settings: the shapes that failed for want of one try again.
+    /// The sign-in changed in Settings: the shapes that failed for want of one try again.
     private func keyDidChange() {
         let waiting = statuses.compactMap { id, status -> ShapeID? in
-            guard case let .failed(failure) = status, failure.remedy == .key else { return nil }
+            guard case let .failed(failure) = status, failure.remedy == .signIn else { return nil }
             return id
         }
         for id in waiting { fill(id) }
@@ -243,8 +243,8 @@ public final class FieldFill {
         case let .success(answer): response = answer
         case .failure(.cancelled): return .idle
         case let .failure(error):
-            let needsKey = error == .noKey || error == .unauthorized
-            return .failed(FieldFillFailure(error.message, remedy: needsKey ? .key : .retry))
+            let needsSignIn = error == .notSignedIn || error == .unauthorized
+            return .failed(FieldFillFailure(error.message, remedy: needsSignIn ? .signIn : .retry))
         }
         // Locked, made a type or turned off while it was out: nothing is written, nothing is refused (no shake), and
         // what the words were last filled from stays, so the next edit's fill reads this one's too.

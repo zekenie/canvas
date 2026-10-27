@@ -77,7 +77,7 @@ public struct ReferenceQueryContent: Equatable {
 }
 
 /// A status line of the Query section: what it says, how (a warning, or neutral with a spinner), and
-/// what it offers (Retry, Open Settings… for a missing key, or Make Public for what it found that
+/// what it offers (Retry, Open Settings… for a missing sign-in, or Make Public for what it found that
 /// isn't).
 public struct ReferenceStatusLine: Equatable {
     public enum Action: Equatable {

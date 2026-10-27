@@ -139,7 +139,7 @@ import TestKit
     },
     test("a pair that failed, or whose answer can't be read, isn't asked about again, but once a key is saved; one cancelled is, when it's next read") {
         let b = try MapBench()
-        b.answer = .failure(.noKey)
+        b.answer = .failure(.notSignedIn)
         let id = b.box()
         for _ in 0..<2 {
             _ = b.read(id)

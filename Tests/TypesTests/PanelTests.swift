@@ -304,13 +304,13 @@ final class SettingsCatcher: NSObject, NSApplicationDelegate {
         expect(full.height < panelScroll.frame.height, "never taller than the panel shows (\(full.height) of \(panelScroll.frame.height)), so its top and bottom can both be in view")
         expect(full.height < layout.usedRect(for: container).height, "past that it scrolls")
     },
-    test("with no key, the status says so, and Open Settings… (its one button) asks the app for Settings; a key saved there tries again") {
+    test("not signed in, the status says so, and Open Settings… (its one button) asks the app for Settings; a sign-in there tries again") {
         let panel = try TypePanelWindow()
         let id = panel.show(blankType())
-        panel.model.queue(.noKey)
+        panel.model.queue(.notSignedIn)
         panel.typeWords(id, "a pet")
         panel.window.spin { panel.buttons.count == 1 }
-        expectEqual(panel.editor.typeSync?.status(of: id), .failed(TypeSyncFailure(writing: .schema, "No API key", remedy: .key)))
+        expectEqual(panel.editor.typeSync?.status(of: id), .failed(TypeSyncFailure(writing: .schema, "Not signed in", remedy: .signIn)))
         panel.render("no-key")
         // The responder chain ends at the app's delegate: stand in for it.
         let catcher = SettingsCatcher(), delegate = NSApplication.shared.delegate
@@ -319,7 +319,7 @@ final class SettingsCatcher: NSObject, NSApplicationDelegate {
         panel.buttons[0].performClick(nil)       // Open Settings…
         expectEqual(catcher.shown, 1)
         panel.model.queue(petSchema)
-        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)       // what Settings' Save says
+        NotificationCenter.default.post(name: .languageModelSignInDidChange, object: nil)       // what Settings' Save says
         panel.window.spin { panel.editor.schema(id) != TypeSchemaProperty.starter }
         expectEqual(panel.model.requests.count, 2)
         panel.window.spin { panel.buttons.isEmpty }

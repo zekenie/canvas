@@ -108,8 +108,8 @@ let rowStates: [GalleryState] = [
         stage.editor.selection = nil
         return canvas(stage)
     },
-    GalleryState("Flow1-p2-no-key", answers: "Flow1 p2", "no API key: `No API key` and `Settings…`", size: CGSize(width: 440, height: 340)) { stage in
-        stage.model.queue(.noKey)
+    GalleryState("Flow1-p2-no-key", answers: "Flow1 p2", "not signed in: `Not signed in` and `Settings…`", size: CGSize(width: 440, height: 340)) { stage in
+        stage.model.queue(.notSignedIn)
         let id = stage.editor.rowsNote("A pet in my household", at: CGPoint(x: 100, y: 70))
         beginRead(stage, id)
         settle(stage, id)
@@ -248,9 +248,9 @@ let rowStates: [GalleryState] = [
         failRead(stage, id, .overloaded)
         return canvas(stage)
     },
-    GalleryState("rows-read-no-key", "its words edited with no API key: the rows stay, and under them `No API key` and `Settings…`", size: CGSize(width: 440, height: 340)) { stage in
+    GalleryState("rows-read-no-key", "its words edited while not signed in: the rows stay, and under them `Not signed in` and `Settings…`", size: CGSize(width: 440, height: 340)) { stage in
         let id = stage.editor.put(personThree, at: CGPoint(x: 80, y: 60))
-        failRead(stage, id, .noKey)
+        failRead(stage, id, .notSignedIn)
         return canvas(stage)
     },
     GalleryState("rows-read-too-long", "a sixty-field type too long for the model to write, its words edited: eight rows, `+52 more ›`, then `Schema too long to rewrite`, with no button", size: CGSize(width: 440, height: 440)) { stage in

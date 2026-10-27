@@ -37,9 +37,8 @@ public enum ReferenceStatus: Equatable, Sendable {
 public enum ReferenceFailure: Equatable, Sendable {
     /// The query ran past the engine's deadline.
     case tooSlow
-    /// There is no API key to ask the model with, or the one there was refused: Settings is where
-    /// that's mended.
-    case noKey
+    /// Not signed in to Claude, or the sign-in was refused: Settings is where that's mended.
+    case notSignedIn
     case keyRejected
     /// The model failed in a way asking again may mend, in its own words ("Rate limited", "Can’t
     /// reach Anthropic", "Timed out").
@@ -53,7 +52,7 @@ public enum ReferenceFailure: Equatable, Sendable {
     @MainActor public var message: String {
         switch self {
         case .tooSlow: ReferenceStyle.tooSlow
-        case .noKey: ReferenceStyle.noKey
+        case .notSignedIn: ReferenceStyle.notSignedIn
         case .keyRejected: ReferenceStyle.keyRejected
         case .model(let message): message
         case .noQuery: ReferenceStyle.noQuery
@@ -62,7 +61,7 @@ public enum ReferenceFailure: Equatable, Sendable {
     }
 
     /// What a person can do about it: Settings where a key is missing, else ask again.
-    public var action: ReferenceStatusLine.Action { self == .noKey || self == .keyRejected ? .openSettings : .retry }
+    public var action: ReferenceStatusLine.Action { self == .notSignedIn || self == .keyRejected ? .openSettings : .retry }
 }
 
 /// What ReferenceState keeps for each dynamic reference (one whose record holds a query), on any

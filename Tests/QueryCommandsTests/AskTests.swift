@@ -71,10 +71,10 @@ import TestKit
         expectEqual(second.data?["line"], nil)
     },
     test("each of the model's answers and failures as the command line reports it") {
-        let keyHint = "Save an Anthropic API key in Infinite Canvas › Settings… (⌘,), or write the query yourself: the canvas skill's query-prompt.md."
+        let keyHint = "Sign in to Claude in Infinite Canvas › Settings… (⌘,), or write the query yourself: the canvas skill's query-prompt.md."
         let transient = "Try again in a moment, or write the query yourself."
         let cases: [(Result<ModelResponse, LanguageModelError>, reason: String, message: String, hint: String?, isTransient: Bool?)] = [
-            (.failure(.noKey), "no_key", "No API key", keyHint, nil),
+            (.failure(.notSignedIn), "not_signed_in", "Not signed in", keyHint, nil),
             (.failure(.unauthorized), "key_rejected", "API key rejected", keyHint, nil),
             (.failure(.rateLimited), "model_failed", "Rate limited", transient, true),
             (.failure(.overloaded), "model_failed", "Anthropic overloaded", transient, true),

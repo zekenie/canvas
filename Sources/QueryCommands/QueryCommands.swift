@@ -37,7 +37,7 @@ public struct QueryCommandsPlugin: ListedPlugin {
                 (#<id>), by attribute ([<attribute>=<value>]), by what's inside what and by what connects to what. It's \
                 answered about every board of the file, and lists the shapes that match in file order (each with its \
                 id, kind, title, board and attributes) and how many there are. It changes nothing. With --ask, the app \
-                has Claude write the query from a question (with the key saved in Settings), runs it, and says what it \
+                has Claude write the query from a question (signed in to Claude in Settings), runs it, and says what it \
                 wrote. The language is taught by the canvas skill's reference/query.md, and its query-prompt.md is what \
                 the app tells Claude; `\(canvas) query-vocabulary` lists what this app's queries can name. Queries hold \
                 characters shells mangle: pass them on standard input (`\(canvas) query - <<'EOF'`).
@@ -128,9 +128,9 @@ extension AutomationError {
             self.init(error.message, reason: error.reason,
                       hint: "Write the query yourself: \(yourself) is the guidance the app gives Claude.")
         case .model(let failure, _):
-            if failure == .noKey || failure == .unauthorized {
+            if failure == .notSignedIn || failure == .unauthorized {
                 self.init(error.message, reason: error.reason,
-                          hint: "Save an Anthropic API key in Infinite Canvas › Settings… (⌘,), or write the query yourself: \(yourself).")
+                          hint: "Sign in to Claude in Infinite Canvas › Settings… (⌘,), or write the query yourself: \(yourself).")
             } else {
                 self.init(error.message, reason: error.reason,
                           hint: failure.isTransient ? "Try again in a moment, or write the query yourself." : "Write the query yourself.",

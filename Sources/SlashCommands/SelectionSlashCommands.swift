@@ -4,7 +4,7 @@ import Canvas
 public enum SlashAnswer: Sendable, Equatable {
     /// Done: the bar closes, if what the command did hasn't closed it already (a selection changed).
     case done
-    /// Not done, and why, in a few words ("No matches", "No API key"): the bar says it, its line still in
+    /// Not done, and why, in a few words ("No matches", "Not signed in"): the bar says it, its line still in
     /// its field to change and run again.
     case failed(String)
 }

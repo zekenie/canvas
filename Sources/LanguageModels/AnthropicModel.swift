@@ -36,7 +36,7 @@ public struct AnthropicModel: LanguageModel {
 
     public func respond(to request: ModelRequest) async throws(LanguageModelError) -> ModelResponse {
         if Task.isCancelled { throw .cancelled }
-        guard let key = keys.read() else { throw .noKey }
+        guard let key = keys.read() else { throw .notSignedIn }
         let urlRequest = self.urlRequest(for: request, key: key)
         let data: Data, response: URLResponse
         do {

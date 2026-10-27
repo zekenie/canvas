@@ -27,9 +27,9 @@ public struct TypeSyncFailure: Equatable, Sendable {
     public enum Remedy: Equatable, Sendable {
         /// Retry: the next try may go (the service was busy, the answer was unusable).
         case retry
-        /// Open Settings…, for a key none is saved or one refused: saving a key there tries again
-        /// by itself, so there's no Retry.
-        case key
+        /// Open Settings…, for a sign-in: none, or one refused (a key or Claude Code's). Signing in
+        /// there tries again by itself, so there's no Retry.
+        case signIn
         /// Nothing to try again: asked again, the model would answer the same. The schema is too
         /// long for the model to write whole, so the person edits it by hand (and the words follow);
         /// or Claude declined, as it would again, so the person rewords what they wrote, and that
@@ -167,7 +167,7 @@ struct TypeSyncSides: Equatable, Sendable {
 ///   mention, each type called as it is now, else as its mention holds. A mention of a shape that
 ///   isn't a type is words.
 /// - A failure leaves both sides as they are and says why; Retry (or the next commit) tries again,
-///   and a key saved in Settings (`Notification.Name.languageModelKeyDidChange`) does for a shape
+///   and a sign-in in Settings (`Notification.Name.languageModelSignInDidChange`) does for a shape
 ///   that failed for want of one. A cancelled call says nothing. `NO_CHANGE` writes nothing. A
 ///   schema is written as the model wrote it (never laid out again: its order is the person's); the
 ///   words through the kind's `TypeWords`, so the shape fits them as typing fits it.
@@ -219,7 +219,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         let registry = editor.registry
         kinds = Set(registry.kinds.filter { registry.properties(for: $0).contains(Schema.key) && registry.typeWords(of: $0) != nil })
         seeEveryShape(in: editor.file)
-        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: nil, queue: .main) { [weak self] _ in
+        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.keyDidChange() }
         }
     }
@@ -348,10 +348,10 @@ public final class TypeSync<Schema: SyncedSchema> {
         if shape.call == nil { start(id) }
     }
 
-    /// A key was saved or removed in Settings: the shapes that failed for want of one try again.
+    /// The sign-in changed in Settings: the shapes that failed for want of one try again.
     private func keyDidChange() {
         let waiting = statuses.compactMap { id, status -> ShapeID? in
-            guard case let .failed(failure) = status, failure.remedy == .key else { return nil }
+            guard case let .failed(failure) = status, failure.remedy == .signIn else { return nil }
             return id
         }
         for id in waiting { sync(id) }
@@ -484,8 +484,8 @@ public final class TypeSync<Schema: SyncedSchema> {
         case let .success(answer): response = answer
         case .failure(.cancelled): return .idle
         case let .failure(error):
-            let needsKey = error == .noKey || error == .unauthorized
-            return .failed(TypeSyncFailure(writing: call.writes, error.message, remedy: needsKey ? .key : .retry))
+            let needsSignIn = error == .notSignedIn || error == .unauthorized
+            return .failed(TypeSyncFailure(writing: call.writes, error.message, remedy: needsSignIn ? .signIn : .retry))
         }
         // Locked while it was out (or put in a frame that's locked, or its frame locked): nothing is
         // written, nothing is refused (no shake), and the pair stays as it was, so what the person

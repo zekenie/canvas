@@ -14,7 +14,7 @@ import Topology
 // the panel shows (the query, its status, its matches) and the document never has until the editing
 // step writes it; a call that outlives editing lands as its own step, "Interpret". Every keystroke
 // starts over; undo, redo, a file opened and a locked reference ask nothing and write nothing; a
-// failure says what to do; a key saved in Settings asks again what wanted one.
+// failure says what to do; a sign-in in Settings asks again what wanted one.
 
 /// The shipped Reference over boxes (two public ones far below, "Plan B" and "Cellar") and a translator
 /// whose model is `model`, the words that read the editor (`:picked`) and a freezing plugin.
@@ -199,14 +199,14 @@ import Topology
 
     test("no key, and unanswerable: the status line says so, with Open Settings… or Retry; the pill says failed") {
         let model = ScriptedLanguageModel()
-        model.queue(.noKey)
+        model.queue(.notSignedIn)
         let h = try interpretHarness(model)
         let field = try typeAndRest(h, model)
         defer { field.close() }
         spin({ if case .failed? = h.status(field.id) { true } else { false } }())
-        expectEqual(h.status(field.id), .failed(.noKey))
-        expectEqual(try content(h, field.id).status, ReferenceStatusLine(text: "No API key", isWarning: true, isBusy: false, action: .openSettings))
-        expectEqual(h.state(of: field.id), .failed(text: "blocked work", .noKey))
+        expectEqual(h.status(field.id), .failed(.notSignedIn))
+        expectEqual(try content(h, field.id).status, ReferenceStatusLine(text: "Not signed in", isWarning: true, isBusy: false, action: .openSettings))
+        expectEqual(h.state(of: field.id), .failed(text: "blocked work", .notSignedIn))
         expectEqual(try header(h, field.id).subtitle, nil)
 
         let other = ScriptedLanguageModel(answers: ["UNANSWERABLE: where shapes sit"])
@@ -385,15 +385,15 @@ import Topology
         expectEqual(model.requests.count, 2)
     },
 
-    test("a key saved in Settings asks again the words that failed for want of one") {
+    test("a sign-in in Settings asks again the words that failed for want of one") {
         let model = ScriptedLanguageModel()
-        model.queue(.noKey)
+        model.queue(.notSignedIn)
         model.queue("box")
         let h = try interpretHarness(model)
         let id = h.addReference(words: "blocked work")
         try require(h.editor.references).interpret(id)
-        spin({ if case .failed(.noKey)? = h.status(id) { true } else { false } }())
-        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)
+        spin({ if case .failed(.notSignedIn)? = h.status(id) { true } else { false } }())
+        NotificationCenter.default.post(name: .languageModelSignInDidChange, object: nil)
         spin(h.reference(id)?.query != nil)
         expectEqual(h.reference(id)?.query, "box")
         expectEqual(model.requests.count, 2)
@@ -406,7 +406,7 @@ import Topology
         let limited = there.addReference(words: "blocked work")
         try require(there.editor.references).interpret(limited)
         spin({ if case .failed? = there.status(limited) { true } else { false } }())
-        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)
+        NotificationCenter.default.post(name: .languageModelSignInDidChange, object: nil)
         breathe()
         expectEqual(rate.requests.count, 1)
     },

@@ -322,16 +322,16 @@ final class FillBench {
         expectEqual(b.values(note), nil)
         expectEqual(log.refusals, [], "nothing tried, so nothing refused")
     },
-    test("failures say why and what can be done: a key, Retry, nothing for Claude declining; a key saved asks again") {
+    test("failures say why and what can be done: Settings, Retry, nothing for Claude declining; a sign-in asks again") {
         let b = try FillBench()
         let note = b.editor.addInstance(of: [b.addFeature()])
         b.typeWords(note, "purpose is to sort the mail")
-        b.model.queue(LanguageModelError.noKey)
+        b.model.queue(LanguageModelError.notSignedIn)
         b.endEditing(note)
         spinRunLoop(until: { b.fill.status(of: note) != .filling && b.model.requests.count == 1 })
-        expectEqual(b.fill.status(of: note), .failed(FieldFillFailure(LanguageModelError.noKey.message, remedy: .key)))
+        expectEqual(b.fill.status(of: note), .failed(FieldFillFailure(LanguageModelError.notSignedIn.message, remedy: .signIn)))
         b.model.queue("I'm not sure what you mean.")
-        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)
+        NotificationCenter.default.post(name: .languageModelSignInDidChange, object: nil)
         spinRunLoop(until: { b.model.requests.count == 2 && b.fill.status(of: note) != .filling })
         expectEqual(b.fill.status(of: note), .failed(FieldFillFailure(LanguageModelError.malformedResponse.message, remedy: .retry)))
         b.model.queue(ModelResponse(text: "", stopReason: .refusal))

@@ -69,18 +69,25 @@ import TestKit
         language-models  service LanguageModelState
         """)
     },
-    test("the Anthropic model brings the Settings pane that keeps its key; a model that needs none brings no pane") {
-        try withTemporaryStore { keys in
-            let registry = try Registry(plugins: [LanguageModelsPlugin(model: AnthropicModel(keys: keys))])
-            expectEqual(registry.settingsPanes.map(\.title), ["Anthropic"])
-            expect(registry.report.hasSuffix("service LanguageModelState · settings pane Anthropic"), registry.report)
+    test("the signed-in model brings the Settings pane where it signs in; a model that needs none brings no pane") {
+        try withTemporaryAccount { account, _ in
+            let registry = try Registry(plugins: [LanguageModelsPlugin(model: SignedInModel(account: account))])
+            expectEqual(registry.settingsPanes.map(\.title), ["Claude"])
+            expect(registry.report.hasSuffix("service LanguageModelState · settings pane Claude"), registry.report)
         }
         expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: ScriptedLanguageModel())]).settingsPanes.count, 0)
+        try withTemporaryStore { keys in
+            expectEqual(try Registry(plugins: [LanguageModelsPlugin(model: AnthropicModel(keys: keys))]).settingsPanes.count, 0,
+                        "a model with a key alone signs in to nothing")
+        }
     },
-    test("the app's model is Claude Haiku 4.5, with the app's key") {
-        let model = AnthropicModel()
+    test("the app's model is Claude Haiku 4.5, asked the way the app's account signs in") {
+        let model = SignedInModel()
         expectEqual(model.model, "claude-haiku-4-5")
-        expectEqual(model.keys, .standard)
+        expectEqual(model.withKey.keys, .standard)
+        expectEqual(model.account.methodURL, AnthropicAccount.standard.methodURL)
+        expectEqual(model.throughClaudeCode.model, "claude-haiku-4-5")
+        expectEqual(model.throughClaudeCode.claudeCode.configDirectory, ClaudeCode.standardConfigDirectory)
     },
 ])
 
@@ -120,7 +127,7 @@ import TestKit
         try withTemporaryStore { keys in
             let settings = AnthropicKeySettings(keys: keys, model: ScriptedLanguageModel())
             let heard = Heard()
-            let observer = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: settings, queue: nil) { _ in
+            let observer = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: settings, queue: nil) { _ in
                 MainActor.assumeIsolated { heard.statuses.append(settings.status) }
             }
             defer { NotificationCenter.default.removeObserver(observer) }
@@ -130,7 +137,7 @@ import TestKit
             expectEqual(heard.statuses, [.saved, .removed], "after the file changed, so a call made then reads it")
             // A directory where the key's folder should be: the save fails, and nothing is said.
             let blocked = AnthropicKeySettings(keys: AnthropicKeyStore(url: URL(fileURLWithPath: "/dev/null/key")), model: ScriptedLanguageModel())
-            let blockedObserver = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: blocked, queue: nil) { _ in
+            let blockedObserver = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: blocked, queue: nil) { _ in
                 MainActor.assumeIsolated { heard.statuses.append(blocked.status) }
             }
             defer { NotificationCenter.default.removeObserver(blockedObserver) }
@@ -268,10 +275,10 @@ import TestKit
             let settings = AnthropicKeySettings(keys: keys, model: model)
             expect(settings.hasKey && settings.canRemove)
             try keys.remove()           // by hand, or by another window
-            model.queue(.noKey)         // as the app's model finds it: it reads the file at every call
+            model.queue(.notSignedIn)         // as the app's model finds it: it reads the file at every call
             settings.test()
             spinRunLoop(until: { settings.status != .testing })
-            expectEqual(settings.statusText, "No API key")
+            expectEqual(settings.statusText, "Not signed in")
             expect(!settings.hasKey, "the field's prompt is back to sk-ant-…, not Saved")
             expect(!settings.canRemove && !settings.canTest)
         }

@@ -90,26 +90,28 @@ import Validation
         expectEqual(registry.windowSubtitle(for: editor), nil, "the root is the window's title's to name")
         expect(editor.showBoard(nest.sBoard))
         expectEqual(registry.windowSubtitle(for: editor), "Plans", "Boards' name for the board shown")
-        expectEqual(registry.settingsPanes.count, 0, "a scripted model needs no key")
-        // The app's model brings the key's pane (made only when Settings opens: nothing reads the key here).
-        expectEqual(try Registry(plugins: [LanguageModelsPlugin()]).settingsPanes.map(\.title), ["Anthropic"])
+        expectEqual(registry.settingsPanes.count, 0, "a scripted model signs in to nothing")
+        // The app's model brings the sign-in's pane (made only when Settings opens: nothing reads the key or runs claude here).
+        expectEqual(try Registry(plugins: [LanguageModelsPlugin()]).settingsPanes.map(\.title), ["Claude"])
     },
     test("and what the app takes besides is the plugins' too: every plugin's command for its server") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "capture", "kinds", "measure", "query", "query-vocabulary"])
     },
-    test("a plugin that needs the key asks for Settings with the action the app's menu item sends") {
+    test("a plugin that can't ask for want of a sign-in asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
     },
-    test("the editor's language model is the one passed: the app's is Claude Haiku with the key from Settings") {
+    test("the editor's language model is the one passed: the app's is Claude Haiku, asked the way Settings signs in") {
         let model = ScriptedLanguageModel()
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: model)
         expect(editor.languageModel as? ScriptedLanguageModel === model)
-        // Made from nothing, as the app's list makes it (never asked here: nothing reads the key or reaches the network).
+        // Made from nothing, as the app's list makes it (never asked here: nothing reads the key, runs claude or reaches the network).
         let app = CanvasEditor(registry: try Registry(plugins: [LanguageModelsPlugin()]), document: CanvasDocument(), scheduler: ManualScheduler())
-        let shipped = try require(app.languageModel as? AnthropicModel)
+        let shipped = try require(app.languageModel as? SignedInModel)
         expectEqual(shipped.model, AnthropicModel.haiku)
-        expectEqual(shipped.keys, .standard)
+        expectEqual(shipped.withKey.keys, .standard)
+        expectEqual(shipped.account.methodURL, AnthropicAccount.standard.methodURL)
+        expectEqual(shipped.throughClaudeCode.claudeCode.configDirectory, ClaudeCode.standardConfigDirectory)
     },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """

@@ -56,6 +56,9 @@ QUERY_LIVE=1 QUERY_MODEL=claude-haiku-5-5 QUERY_EFFORT=medium QUERY_EVAL_OUT=hai
 - `QUERY_CASES`: a comma-separated list of case ids to run instead of all of them.
 - `QUERY_JOBS`: how many cases are asked at once (default 4). Each case's runs go one after another.
 - `QUERY_EVAL_OUT=<round>`: appends a row per run to `results.tsv`, `<round>` in its first column.
+- `QUERY_VIA=claude-code`: asks through Claude Code (`claude -p`, on your Claude plan) as the app does
+  when Settings signs in that way, in the app's own folder, so sign in there first (Settings › Claude ›
+  Sign In…); without it, with the key.
 
 The key is the one Settings saves (Infinite Canvas › Settings…, ⌘,),
 `~/Library/Application Support/InfiniteCanvas/anthropic-api-key`. Nothing prints or writes it.

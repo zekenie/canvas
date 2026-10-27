@@ -77,7 +77,7 @@ let referenceRule = "The query is stored and run later."
     },
     test("each failure, by reason and message") {
         let cases: [(Result<ModelResponse, LanguageModelError>, QueryTranslationError, reason: String, message: String)] = [
-            (.failure(.noKey), .model(.noKey, timedOut: false), "no_key", "No API key"),
+            (.failure(.notSignedIn), .model(.notSignedIn, timedOut: false), "not_signed_in", "Not signed in"),
             (.failure(.unauthorized), .model(.unauthorized, timedOut: false), "key_rejected", "API key rejected"),
             (.failure(.rateLimited), .model(.rateLimited, timedOut: false), "model_failed", "Rate limited"),
             (.failure(.cancelled), .cancelled, "cancelled", "The command was cancelled."),

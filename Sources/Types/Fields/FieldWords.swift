@@ -6,7 +6,7 @@ public enum FieldWords {
     public static func add(_ name: String) -> String { "add \(name)" }
     /// The rows' spot of a type with no fields.
     public static let noFields = "No fields"
-    public static let noKey = "No API key"
+    public static let notSignedIn = "Not signed in"
     public static let settings = "Settings…"
     public static let retry = "Retry"
     public static let other = "Other"

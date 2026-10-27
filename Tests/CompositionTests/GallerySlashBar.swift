@@ -158,11 +158,11 @@ extension GalleryStage {
     },
     GalleryState("Bar9-query-failed", answers: "9", "the model's call failed: its words where `All shapes` was, the line still there", size: barStage) { stage in
         _ = stage.shoppingNotes()
-        stage.model.queue(.noKey)
+        stage.model.queue(.notSignedIn)
         _ = try stage.openBar(on: [], typing: "query the shopping")
         stage.window.pressReturn()
         spinRunLoop(until: { stage.editor.slashBar?.failure != nil })
-        _ = try require(stage.editor.slashBar?.failure == "No API key" ? true : nil, "No API key")
+        _ = try require(stage.editor.slashBar?.failure == "Not signed in" ? true : nil, "Not signed in")
         return .image(stage.render(at: .zero))
     },
     GalleryState("Bar10-query-selection-asking", answers: "10", "two notes selected, `/query the milk one` and Return: the bar under them waits, `2 shapes` a spinner", size: barStage) { stage in

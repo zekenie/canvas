@@ -224,7 +224,7 @@ extension ReferenceState {
         switch error {
         case .cancelled: nil
         case .noQueries, .noModel: .unavailable
-        case .model(.noKey, _): .failed(.noKey)
+        case .model(.notSignedIn, _): .failed(.notSignedIn)
         case .model(.unauthorized, _): .failed(.keyRejected)
         case .model(let error, _): .failed(.model(error.message))
         case .declined, .unanswerable: .failed(.noQuery)
@@ -369,10 +369,10 @@ extension ReferenceState {
         }
     }
 
-    /// A key was saved or removed in Settings: the words that failed for want of one try again.
+    /// The sign-in changed in Settings: the words that failed for want of one try again.
     func keyDidChange() {
         let waiting = interpretations.compactMap { id, entry -> ShapeID? in
-            if case .failed(.failed(let failure)) = entry.stage, failure == .noKey || failure == .keyRejected { return id }
+            if case .failed(.failed(let failure)) = entry.stage, failure == .notSignedIn || failure == .keyRejected { return id }
             return nil
         }
         for id in waiting { retryInterpretation(id) }

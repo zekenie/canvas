@@ -467,18 +467,18 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.model.requests.count, 1)
         expectEqual(b.status(id), failed)
     },
-    test("a type that failed for want of a key tries again once one is saved in Settings; one that failed otherwise waits for Retry") {
+    test("a type that failed for want of a sign-in tries again once signed in; one that failed otherwise waits for Retry") {
         let b = try SyncBench()
         let id = b.place(), other = b.place()
         b.typeWords(id, "a pet in my household")
         b.typeWords(other, "a book")
-        b.model.queue(.noKey)
+        b.model.queue(.notSignedIn)
         b.sync.commit(id)
         spinRunLoop(until: { !b.isUpdating(id) })
         b.model.queue(.overloaded)
         b.sync.commit(other)
         spinRunLoop(until: { !b.isUpdating(other) })
-        expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .schema, LanguageModelError.noKey.message, remedy: .key)))
+        expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .schema, LanguageModelError.notSignedIn.message, remedy: .signIn)))
         let directory = FileManager.default.temporaryDirectory.appending(path: "schema-sync-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AnthropicKeySettings(keys: AnthropicKeyStore(url: directory.appending(path: "key")), model: ScriptedLanguageModel())
@@ -577,17 +577,17 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.model.requests[1], b.model.requests[0])
         expectEqual(b.schema(id), pet)
     },
-    test("with no key saved, or one refused, the failure says so, and its remedy is Settings") {
+    test("not signed in, or the sign-in refused, the failure says so, and its remedy is Settings") {
         let b = try SyncBench()
         let id = b.place()
         b.typeWords(id, "a pet in my household")
-        for error in [LanguageModelError.noKey, .unauthorized] {
+        for error in [LanguageModelError.notSignedIn, .unauthorized] {
             b.model.queue(error)
             b.sync.commit(id)
             spinRunLoop(until: { !b.isUpdating(id) })
-            expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .schema, error.message, remedy: .key)))
+            expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .schema, error.message, remedy: .signIn)))
         }
-        expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .schema, "API key rejected", remedy: .key)))
+        expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .schema, "API key rejected", remedy: .signIn)))
     },
     test("a cancelled call says nothing, changes nothing, and the edit still syncs on the next commit") {
         let b = try SyncBench()
@@ -889,18 +889,18 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         expectEqual(b.model.lastRequest?.system, SchemaPrompts.system(.toSchema))
         expect(b.message(1)?.contains("<prompt>\n{name, age} for each guest\n</prompt>") == true, b.message(1) ?? "")
     },
-    test("JSON words with no key: the schema is the JSON and the rows show, the status asks for a key, and one saved asks again") {
+    test("JSON words while not signed in: the schema is the JSON and the rows show, the status asks for a sign-in, and one asks again") {
         let b = try SyncBench()
         let id = b.place()
         let typed = #"{"type": "object", "properties": {"email": {"type": "string"}}}"#
         b.typeWords(id, typed)
-        b.model.queue(.noKey)
+        b.model.queue(.notSignedIn)
         b.sync.commit(id)
         spinRunLoop(until: { b.model.requests.count == 1 && !b.isUpdating(id) })
         expectEqual(b.model.requests.first?.system, SchemaPrompts.system(.toPrompt), "only the words were asked for")
         expectEqual(b.schema(id), typed)
         expectEqual(b.words(id)?.stored, typed, "the JSON stays as the words")
-        expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .words, LanguageModelError.noKey.message, remedy: .key)))
+        expectEqual(b.status(id), .failed(TypeSyncFailure(writing: .words, LanguageModelError.notSignedIn.message, remedy: .signIn)))
         let directory = FileManager.default.temporaryDirectory.appending(path: "schema-sync-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = AnthropicKeySettings(keys: AnthropicKeyStore(url: directory.appending(path: "key")), model: ScriptedLanguageModel())

@@ -458,7 +458,7 @@ public final class RowBook {
     private static func spot(_ failure: TypeSyncFailure) -> RowSpot {
         let action: RowSpot.Action? = switch failure.remedy {
         case .retry: .retry
-        case .key: .settings
+        case .signIn: .settings
         case .editByHand: nil
         }
         return .failed(failure.message, action: action)

@@ -176,7 +176,7 @@ func message(_ request: ModelRequest) -> String { request.messages.first?.text ?
 
     test("each failure is `ask`'s: no key, unanswerable, declined, cut off") {
         let cases: [(Result<ModelResponse, LanguageModelError>, QueryTranslationError)] = [
-            (.failure(.noKey), .model(.noKey, timedOut: false)),
+            (.failure(.notSignedIn), .model(.notSignedIn, timedOut: false)),
             (.failure(.unauthorized), .model(.unauthorized, timedOut: false)),
             (.failure(.rateLimited), .model(.rateLimited, timedOut: false)),
             (.success(ModelResponse(text: "UNANSWERABLE: where shapes sit")), .unanswerable("where shapes sit")),

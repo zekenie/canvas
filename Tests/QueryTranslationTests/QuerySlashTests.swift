@@ -111,8 +111,8 @@ import Topology
         rig.editor.selectedShapeIDs = [rig.pantry, rig.cellar]
         expectEqual(try rig.ask("the attic", on: .selection([rig.pantry, rig.cellar])), .failed("No matches"))
         expectEqual(rig.editor.selectedShapeIDs, [rig.pantry, rig.cellar])
-        model.queue(.noKey)
-        expectEqual(try rig.ask("the attic", on: rig.everything), .failed("No API key"))
+        model.queue(.notSignedIn)
+        expectEqual(try rig.ask("the attic", on: rig.everything), .failed("Not signed in"))
         model.queue("UNANSWERABLE: where shapes sit on the canvas")
         expectEqual(try rig.ask("the chore on the left", on: rig.everything), .failed("A query can't ask that: where shapes sit on the canvas."))
         expectEqual(rig.editor.selectedShapeIDs, [rig.pantry, rig.cellar], "nothing selected by a failure")

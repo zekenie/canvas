@@ -104,9 +104,9 @@ final class MapBench {
     /// Waits for every call to land.
     func settle() { spinRunLoop(until: { self.maps.callsOut == 0 && self.maps.callsWaiting == 0 }) }
 
-    /// A key saved in Settings, as its notification says, heard.
+    /// A sign-in in Settings, as its notification says, heard.
     func keySaved() {
-        NotificationCenter.default.post(name: .languageModelKeyDidChange, object: nil)
+        NotificationCenter.default.post(name: .languageModelSignInDidChange, object: nil)
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
     }
 }

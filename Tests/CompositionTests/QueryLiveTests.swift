@@ -142,14 +142,15 @@ struct QueryCaseNames {
     }
 }
 
-/// The model the evaluation asks, `AnthropicModel`, and what it answered each time it was asked.
+/// The model the evaluation asks (`AnthropicModel`, or `ClaudeCodeModel` with `QUERY_VIA=claude-code`),
+/// and what it answered each time it was asked.
 @MainActor
 final class RecordingModel: LanguageModel {
-    let model: AnthropicModel
+    let model: any LanguageModel
     /// Each call's answer, or its failure, in order.
     private(set) var calls: [Result<ModelResponse, LanguageModelError>] = []
 
-    init(_ model: AnthropicModel) { self.model = model }
+    init(_ model: any LanguageModel) { self.model = model }
 
     func respond(to request: ModelRequest) async throws(LanguageModelError) -> ModelResponse {
         do throws(LanguageModelError) {
@@ -230,7 +231,10 @@ func askAsSlash(_ evalCase: QueryEvalCase, editor: CanvasEditor, board: BoardID,
 func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, style: AskStyle) async -> [QueryEvalRun] {
     let pasteboard = NSPasteboard.withUniqueName()
     defer { pasteboard.releaseGlobally() }
-    let recorder = RecordingModel(AnthropicModel())
+    // QUERY_VIA=claude-code asks through the person's Claude Code, signed in in the app's folder, as
+    // the app does when Settings signs in that way; else with the key Settings saves.
+    let viaClaudeCode = ProcessInfo.processInfo.environment["QUERY_VIA"] == "claude-code"
+    let recorder = RecordingModel(viaClaudeCode ? ClaudeCodeModel() : AnthropicModel())
     /// A failed run that asked nothing: the case's own fault.
     func broken(_ note: String) -> [QueryEvalRun] {
         [QueryEvalRun(caseID: evalCase.id, category: evalCase.category, run: 1, answers: [], passed: false, repaired: false,
@@ -383,7 +387,9 @@ private func tally(_ runs: [QueryEvalRun]) -> String {
     test("with QUERY_LIVE=1: each case asked as --ask asks it, scored by the shapes its answer matches") {
         let environment = ProcessInfo.processInfo.environment
         guard environment["QUERY_LIVE"] == "1" else { return }
-        guard AnthropicKeyStore.standard.hasKey else { return expect(false, "no key: save one in Infinite Canvas › Settings…") }
+        guard environment["QUERY_VIA"] == "claude-code" || AnthropicKeyStore.standard.hasKey else {
+            return expect(false, "no key: save one in Infinite Canvas › Settings…, or ask through Claude Code (QUERY_VIA=claude-code)")
+        }
         let runs = max(Int(environment["QUERY_RUNS"] ?? "") ?? 3, 1)
         let jobs = max(Int(environment["QUERY_JOBS"] ?? "") ?? 4, 1)
         // The model --ask ships with, unless QUERY_MODEL names another.

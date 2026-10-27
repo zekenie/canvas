@@ -2,7 +2,8 @@ import Foundation
 
 // A language model, as the app's plugins see it: a request (a system prompt and a conversation) in,
 // a response (text) out, or an error with a short message a person can read. Nothing here knows
-// which model answers, or what a plugin asks it for; `AnthropicModel` is the app's, and
+// which model answers, or what a plugin asks it for; `SignedInModel` is the app's (Claude with an
+// API key, `AnthropicModel`, or through the person's Claude Code, `ClaudeCodeModel`), and
 // `ScriptedLanguageModel` answers tests.
 
 /// One turn of a conversation: what the user said, or what the model answered.
@@ -104,10 +105,11 @@ public struct ModelResponse: Equatable, Sendable {
 
 /// Why a model didn't answer. `message` names it in a few words a person reads beside what can be
 /// done about it (a status line with Retry or Open Settings…, Settings' Test); none of them ever
-/// holds the key.
+/// holds a key or a token.
 public enum LanguageModelError: Error, Equatable, Sendable {
-    /// No API key is saved (Settings…).
-    case noKey
+    /// Not signed in (Settings…): no way chosen, no key saved, or Claude Code not found, signed out
+    /// or its sign-in refused.
+    case notSignedIn
     /// The key was refused (401): wrong, revoked or disabled.
     case unauthorized
     /// Too many requests just now (429).
@@ -119,10 +121,12 @@ public enum LanguageModelError: Error, Equatable, Sendable {
     /// The service couldn't be reached (offline, no route), with the system's description, which
     /// `message` leaves out.
     case network(String)
-    /// No answer came in the time allowed (`AnthropicModel`'s, which grows with `maxTokens`).
+    /// No answer came in the time allowed (the model's, which grows with `maxTokens`).
     case timedOut
     /// An answer came back that isn't one.
     case malformedResponse
+    /// Claude Code failed in a way none of the others says, in its own words (possibly empty).
+    case claudeCode(String)
     /// The task asking was cancelled.
     case cancelled
 
@@ -132,7 +136,7 @@ public enum LanguageModelError: Error, Equatable, Sendable {
     /// (a credit balance too low), or its status when it sent none.
     public var message: String {
         switch self {
-        case .noKey: "No API key"
+        case .notSignedIn: "Not signed in"
         case .unauthorized: "API key rejected"
         case .rateLimited: "Rate limited"
         case .overloaded: "Anthropic overloaded"
@@ -141,6 +145,7 @@ public enum LanguageModelError: Error, Equatable, Sendable {
         case .network: "Can’t reach Anthropic"
         case .timedOut: "Timed out"
         case .malformedResponse: "Unusable answer"
+        case let .claudeCode(words): Self.firstSentence(of: words) ?? "Claude Code failed"
         case .cancelled: "Cancelled"
         }
     }
@@ -161,7 +166,7 @@ public enum LanguageModelError: Error, Equatable, Sendable {
         switch self {
         case .rateLimited, .overloaded, .network, .timedOut: true
         case let .server(status, _): status >= 500
-        case .noKey, .unauthorized, .malformedResponse, .cancelled: false
+        case .notSignedIn, .unauthorized, .malformedResponse, .claudeCode, .cancelled: false
         }
     }
 }

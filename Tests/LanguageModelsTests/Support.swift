@@ -124,3 +124,145 @@ func errorBody(_ type: String, _ message: String) -> String {
 private func json(_ string: String) -> String {
     String(decoding: try! JSONEncoder().encode(string), as: UTF8.self)
 }
+
+/// A stand-in for `claude`: a script in a temporary directory that writes down how it was run (its
+/// arguments, environment and standard input, for each of `-p`, `auth status`, `auth login` and
+/// `auth logout`) and answers what the test said for that command, or never answers (`hang`), until
+/// it's stopped. Nothing it does reaches the network or the person's own Claude Code.
+struct FakeClaude {
+    /// One of the commands it answers, named for the files it keeps.
+    enum Command: String {
+        case print, authStatus = "auth-status", authLogin = "auth-login", authLogout = "auth-logout"
+    }
+
+    let directory: URL
+    var executable: URL { directory.appending(path: "claude", directoryHint: .notDirectory) }
+    /// The app's Claude Code folder, as the tests' `ClaudeCode` names it.
+    var configDirectory: URL { directory.deletingLastPathComponent().appending(path: "claude-code", directoryHint: .isDirectory) }
+    var claudeCode: ClaudeCode { ClaudeCode(executable: executable, configDirectory: configDirectory) }
+
+    init(in directory: URL) throws {
+        self.directory = directory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = #"""
+        #!/bin/sh
+        dir="$(dirname "$0")"
+        key=print
+        [ "$1" = auth ] && key="auth-$2"
+        echo $$ >> "$dir/started-$key"
+        : > "$dir/args-$key"
+        for a in "$@"; do printf '%s\n' "$a" >> "$dir/args-$key"; done
+        env > "$dir/env-$key"
+        cat > "$dir/stdin-$key"
+        [ -f "$dir/hang-$key" ] && echo $$ > "$dir/pid-$key" && exec sleep 30
+        if [ -f "$dir/hold-$key" ]; then sleep 30 & echo $! >> "$dir/held-$key"; fi
+        [ -f "$dir/out-$key" ] && cat "$dir/out-$key"
+        [ -f "$dir/err-$key" ] && cat "$dir/err-$key" >&2
+        exit "$(cat "$dir/status-$key" 2>/dev/null || echo 0)"
+        """#
+        try script.write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    }
+
+    /// Answers `command` with `stdout` and `stderr`, ending with `status`.
+    func answer(_ command: Command, stdout: String, stderr: String = "", status: Int32 = 0) throws {
+        try stdout.write(to: file("out", command), atomically: true, encoding: .utf8)
+        try stderr.write(to: file("err", command), atomically: true, encoding: .utf8)
+        try String(status).write(to: file("status", command), atomically: true, encoding: .utf8)
+    }
+
+    /// Never answers `command`: it waits until it's stopped.
+    func hang(_ command: Command) throws {
+        try "".write(to: file("hang", command), atomically: true, encoding: .utf8)
+    }
+
+    /// Answers `command`, then leaves a program of its own running that holds its output open.
+    func holdOutput(_ command: Command) throws {
+        try "".write(to: file("hold", command), atomically: true, encoding: .utf8)
+    }
+
+    /// Whether `command` was run.
+    func ran(_ command: Command) -> Bool { FileManager.default.fileExists(atPath: file("args", command).path) }
+
+    /// The arguments `command` was last run with.
+    func arguments(_ command: Command) -> [String]? {
+        (try? String(contentsOf: file("args", command), encoding: .utf8)).map { $0.split(separator: "\n", omittingEmptySubsequences: false).dropLast().map(String.init) }
+    }
+
+    /// The environment `command` was last run with.
+    func environment(_ command: Command) -> [String: String] {
+        let text = (try? String(contentsOf: file("env", command), encoding: .utf8)) ?? ""
+        return Dictionary(text.split(separator: "\n").compactMap { line in
+            line.firstIndex(of: "=").map { (String(line[..<$0]), String(line[line.index(after: $0)...])) }
+        }, uniquingKeysWith: { $1 })
+    }
+
+    /// How many times `command` has been started.
+    func started(_ command: Command) -> Int {
+        ((try? String(contentsOf: file("started", command), encoding: .utf8)) ?? "").split(separator: "\n").count
+    }
+
+    /// Whether the process `command` last started is still running.
+    func isRunning(_ command: Command) -> Bool {
+        let last = ((try? String(contentsOf: file("started", command), encoding: .utf8)) ?? "").split(separator: "\n").last
+        return last.flatMap { pid_t($0) }.map { kill($0, 0) == 0 } ?? false
+    }
+
+    /// Ends the processes of `command` still waiting, as a test cleans up after one it left running.
+    func endAll(_ command: Command) {
+        for name in ["started", "held"] {
+            for pid in ((try? String(contentsOf: file(name, command), encoding: .utf8)) ?? "").split(separator: "\n").compactMap({ pid_t($0) }) {
+                kill(pid, SIGTERM)
+            }
+        }
+    }
+
+    /// The process of `command` waiting (`hang`), which keeps its id as it waits.
+    func pid(_ command: Command) -> pid_t? {
+        (try? String(contentsOf: file("pid", command), encoding: .utf8)).flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    /// What `command` was last given on its standard input.
+    func input(_ command: Command) -> String? { try? String(contentsOf: file("stdin", command), encoding: .utf8) }
+
+    private func file(_ name: String, _ command: Command) -> URL {
+        directory.appending(path: "\(name)-\(command.rawValue)", directoryHint: .notDirectory)
+    }
+}
+
+/// What `claude -p --output-format json` prints for an answer, in the fields the model reads.
+func claudeResult(_ text: String, stopReason: String = "end_turn", isError: Bool = false, status: Int? = nil) -> String {
+    """
+    {"type":"result","subtype":"success","is_error":\(isError),"result":\(json(text)),"stop_reason":"\(stopReason)",\
+    "api_error_status":\(status.map(String.init) ?? "null"),"duration_ms":812,\
+    "usage":{"input_tokens":9,"cache_creation_input_tokens":0,"cache_read_input_tokens":40,"output_tokens":2}}
+    """
+}
+
+/// An account in a new temporary directory: its way and key there, and a stand-in `claude` with
+/// its folder; removed after.
+@MainActor
+func withTemporaryAccount(_ body: (AnthropicAccount, FakeClaude) throws -> Void) throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "LanguageModelsTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let claude = try FakeClaude(in: directory.appending(path: "bin", directoryHint: .isDirectory))
+    let support = directory.appending(path: "InfiniteCanvas", directoryHint: .isDirectory)
+    let account = AnthropicAccount(methodURL: support.appending(path: "sign-in", directoryHint: .notDirectory),
+                                   keys: AnthropicKeyStore(url: support.appending(path: "anthropic-api-key", directoryHint: .notDirectory)),
+                                   claudeCode: claude.claudeCode)
+    try body(account, claude)
+}
+
+/// What `claude auth status` prints, signed in or out (as recorded: `ClaudeCodeRecordings`).
+func claudeStatus(signedIn: Bool) -> String {
+    signedIn ? ClaudeCodeRecordings.signedIn : ClaudeCodeRecordings.signedOut
+}
+
+/// Turns the main run loop until `done`, for as long as a run of the stand-in `claude` may take on
+/// a machine running every test at once (each is a shell starting a few programs), then fails the
+/// test if it isn't.
+@MainActor
+@discardableResult
+func runsFor(_ done: () -> Bool, file: StaticString = #fileID, line: UInt = #line) -> Bool {
+    spinRunLoop(until: done, timeout: 10, file: file, line: line)
+}

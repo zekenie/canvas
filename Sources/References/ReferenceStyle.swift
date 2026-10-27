@@ -258,7 +258,7 @@ enum ReferenceStyle {
     static let interpret = "Interpret"
     static let interpretSymbol = "sparkles"
     static let interpretStep = "Interpret"
-    static let noKey = "No API key"
+    static let notSignedIn = "Not signed in"
     static let keyRejected = "Key rejected"
     static let noQuery = "No query for these words"
     static let unusable = "Unusable answer"

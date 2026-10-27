@@ -3477,7 +3477,7 @@ plugins ([What ships](#what-ships)).
 | Views over the canvas (`HostOverlays`, a list in plugin order, a later one over an earlier) | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }` | `registry.hostOverlays`, `registry.hostCoveredTop(on:)` | Boards' path (`.top`, covering its pill's height off the root), Jump To's palette |
 | The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(isRequested:onDismiss:) { editor, onExit in … }` | `registry.hostInspector` | the detail panel |
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
-| Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Anthropic") { … }` | `registry.settingsPanes` | the Anthropic key's, when the model is Anthropic's |
+| Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
 | The key a menu item shows for a command (`MenuKeys`, at most one) | `registrar.menuKeys { command, registry in … }`: a `MenuKey`, a menu's key equivalent and modifiers | `registry.menuKey(of:)`, read by the menu bar's items and a context menu's that run a command; none without one | Keyboard: the first key that runs the command (Delete as Backspace's character) |
 | The Keyboard Shortcuts window's rows (`KeyboardHelp`, at most one) and key hints (`KeyHints`, any number) | `registrar.keyboardHelp { registry in … }`; `registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)` | `registry.keyboardHelp`: the one list's rows, then the hints, each row once | Keyboard: every key it registers; the hints of each plugin that reads a key no shortcut has |
@@ -7893,7 +7893,7 @@ registrar.selectionSlashCommand(SelectionSlashCommand("query", argument: "questi
   The typing hands it to the host in place of running it (`willAnswer`), its line left in the field.
 - **The bar waits**: the line stays, a spinner takes the label's place, VoiceOver hears `waiting`
   ("Asking"). Done, the bar closes (if what the command did, a selection changed, hasn't closed it);
-  failed, the label's place says why ("No matches", "No API key") and VoiceOver hears it, the field still
+  failed, the label's place says why ("No matches", "Not signed in") and VoiceOver hears it, the field still
   the person's, Return asking again. An edit of the line stops the wait; so does every way the bar
   closes (Escape, the selection changing, another board), the task cancelled, and the editor going.
 - **The task** holds nothing that keeps the editor alive: what it needs is taken at once (`/query`'s,
@@ -10857,11 +10857,11 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   goes with its editor and cancels what it has out, the model's call, the draft's request, the batch and every
   timer, as an `isolated deinit`; the editor goes while a call is out because `QueryTranslator` holds it only
   weakly across the call). A failure
-  is said quietly (the pill dashed with a warning, "Interpreting" solid with its words dimmed): "No API key"
+  is said quietly (the pill dashed with a warning, "Interpreting" solid with its words dimmed): "Not signed in"
   or "Key rejected" with "Open Settings…" (`AnthropicSettingsView.showSettings()`, as a type's sync's),
   "Rate limited", "Can’t reach Anthropic", "Timed out" or any other of the model's own with "Retry", "No
   query for these words" (declined or unanswerable) with "Retry", "Unusable answer" (a repair that still
-  refused); a key saved in Settings (`languageModelKeyDidChange`) asks again what failed for want of one.
+  refused); a sign-in in Settings (`languageModelSignInDidChange`) asks again what failed for want of one.
 - **Ports.** A reference has ports on every channel on its left and right, but what a person drags
   from and what ends on it is what it stands for ([Ports at a stand-in](#ports-at-a-stand-in)): a drag
   from a note ends on a pill that stands for a note and not on one that stands for a frame, and
@@ -11945,10 +11945,10 @@ closed file's editor alive, and the caller that goes with the editor cancels the
 
 When the deadline comes, what it stops says why: a model's call, `model_failed` ("Timed out",
 transient); a query's run or the request's assembly, `too_slow`. The rest of `--ask`'s reasons:
-`no_model` (no `LanguageModelsPlugin`), `no_key` and `key_rejected`, `model_failed` (the model's
+`no_model` (no `LanguageModelsPlugin`), `not_signed_in` and `key_rejected`, `model_failed` (the model's
 own message, `details.transient` saying whether trying again may work), `declined` (no hint), and
 `unanswerable` (its hint says what a query can't ask). Every other reason's hint (`no_model`,
-`no_key`, `key_rejected`, `model_failed`, `too_slow`, `unusable_answer`) ends in writing the query
+`not_signed_in`, `key_rejected`, `model_failed`, `too_slow`, `unusable_answer`) ends in writing the query
 yourself, which always works.
 
 **`translate`: the same pipeline, for a query stored to be run later.** `translator.translate(words,
@@ -12547,7 +12547,7 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   far, and the instances the same commit added laid out again (`editor.shapesDidChangeLayout`): no commit, no
   step. A rename moves no size and only redraws. The sync's status or wait changing has a type's note laid out
   again: one with no rows shows another spot, and one with rows gains or loses a row at their foot, where a read
-  that failed says why (`RowBook.foot(of:)`: the reason and `Retry`, `No API key` and `Settings…`, `Schema too
+  that failed says why (`RowBook.foot(of:)`: the reason and `Retry`, `Not signed in` and `Settings…`, `Schema too
   long to rewrite`; the rows above it are the last good ones, and while a read is out they stay with no bars). A
   layout asked mid-transaction (a draw, a paste, a type and its instance written
   together) resolves over the shapes as the transaction leaves them.
@@ -12827,52 +12827,72 @@ let request = ModelRequest(system: "Answer with JSON only.", messages: [.user(pr
 do throws(LanguageModelError) {
     let response = try await model.respond(to: request)     // response.text, .stopReason
 } catch {
-    status = error.message                                   // "No API key"
+    status = error.message                                   // "Not signed in"
 }
 ```
 
 - **The protocol.** `LanguageModel` is one async call: a `ModelRequest` (a system prompt, the
   conversation as `ModelMessage`s, `maxTokens`, `temperature`, `stopSequences`, and `model` and
   `effort`, below) in, a `ModelResponse` (its text, `stopReason`, token counts) out, or a
-  `LanguageModelError` (no key,
-  unauthorized, rate limited, overloaded, another status with the service's message, the network, a
-  malformed answer, no answer in time, cancelled), each with a short `message` for a person and
-  `isTransient` for whether trying again later may work. A message names what went wrong in a
-  fragment, never what to do about it, which the button beside it says: "No API key", "API key
-  rejected", "Rate limited", "Anthropic overloaded", "Anthropic error 500", "Can’t reach
-  Anthropic", "Timed out", "Unusable answer"; a request the service refused (a 4xx) is its message's
-  first sentence ("Your credit balance is too low to access the Anthropic API"), with the key taken
-  out, were it ever in it. Cancelling the task asking throws `.cancelled`.
-- **The app's model.** `AnthropicModel` calls Anthropic's Messages API from the app, with
-  URLSession (no SDK, no streaming, no retries), Claude Haiku 4.5 by default, or the model a
-  request names (`ModelRequest.model`, by its id: for a plugin whose task another model does
-  better). It sends what a request says and leaves out what's nil: `temperature` (Sonnet 5.5 and Haiku
-  5.5 refuse any but their default), `effort` (sent as `output_config.effort`; Haiku 4.5 refuses a request
-  that says one), and `fallbacks` (`ModelFallbacks.default`: the service answers a decline with the
-  model it recommends for the decline's category, sent as `"fallbacks": "default"` with the header
+  `LanguageModelError` (not signed in, a key refused, rate limited, overloaded, another status with
+  the service's message, the network, a malformed answer, no answer in time, Claude Code's own
+  failure, cancelled), each with a short `message` for a person and `isTransient` for whether trying
+  again later may work. A message names what went wrong in a fragment, never what to do about it,
+  which the button beside it says: "Not signed in", "API key rejected", "Rate limited", "Anthropic
+  overloaded", "Anthropic error 500", "Can’t reach Anthropic", "Timed out", "Unusable answer"; a
+  request the service refused (a 4xx) is its message's first sentence ("Your credit balance is too
+  low to access the Anthropic API"), with the key taken out, were it ever in it, and Claude Code's
+  own failure is its first sentence too. Cancelling the task asking throws `.cancelled`.
+- **The app's model.** `SignedInModel` asks Claude the way the person signed in, read at every call
+  from its `AnthropicAccount` (the way chosen, kept beside the key; with none chosen, a saved key is
+  the API key's way and Claude Code's is the rest): with an API key (`AnthropicModel`) or through
+  their own Claude Code (`ClaudeCodeModel`). A sign-in in Settings (a key saved or removed, a way
+  chosen, Claude Code signed in or out) posts `Notification.Name.languageModelSignInDidChange`, so a
+  plugin whose call failed for want of one can try again by itself.
+- **With a key.** `AnthropicModel` calls Anthropic's Messages API from the app, with URLSession (no
+  SDK, no streaming, no retries), Claude Haiku 4.5 by default, or the model a request names
+  (`ModelRequest.model`, by its id: for a plugin whose task another model does better). It sends
+  what a request says and leaves out what's nil: `temperature` (Sonnet 5.5 and Haiku 5.5 refuse any
+  but their default), `effort` (sent as `output_config.effort`; Haiku 4.5 refuses a request that
+  says one), and `fallbacks` (`ModelFallbacks.default`: the service answers a decline with the model
+  it recommends for the decline's category, sent as `"fallbacks": "default"` with the header
   `anthropic-beta: server-side-fallback-2026-07-01`, neither unless asked; an answer another model
-  gave reads as any other, the block that marks the switch not being text). Nothing streams, so the answer comes whole, all at once: it waits a minute, and
-  a second more for every 100 tokens
-  the request may write (`timeout(for:)`: 16,000 wait 220 s; Haiku writes some 150 a second), and
+  gave reads as any other, the block that marks the switch not being text). Nothing streams, so the
+  answer comes whole, all at once: it waits a minute, and a second more for every 100 tokens the
+  request may write (`timeout(for:)`: 16,000 wait 220 s; Haiku writes some 150 a second), and
   throws `.timedOut` past that. It reads the key at every call, so a key saved in Settings works at
-  once; Save and Remove in Settings post `Notification.Name.languageModelKeyDidChange`, so a plugin
-  whose call failed for want of a key can try again by itself.
-- **The key.** `AnthropicKeyStore.standard` is
+  once. The key is `AnthropicKeyStore.standard`,
   `~/Library/Application Support/InfiniteCanvas/anthropic-api-key`: the key and nothing else, mode
   0600, written whole and renamed into place; a missing file is no key. Not the Keychain: the app
-  isn't signed, so each build would be a new app to it. Infinite Canvas › Settings… (⌘,) shows
-  `AnthropicSettingsView` (a secure field, "Anthropic API key", whose prompt says whether one is
-  saved and whose tooltip says where; Save, Remove, and Test, a five-token call; a status only for
-  a test and for what failed, a symbol in its tone then the words, as the panel's status lines are,
-  a failure in the warning's tone, as the panel shows the same failures; and a link, "Get a key"),
-  which the plugin gives as a pane of the Settings window ([the host's slot](#host-slots) for
-  panes, `registrar.settingsPane`) when the model it was handed is the Anthropic one, over that
-  model's key store, so the pane and the model read one key and a list given another model (a
-  test's) has no pane; the app's `SettingsWindow(registry:)` (CanvasUI) hosts the panes: made
-  afresh each time the window opens, and sized before it goes in, so the window opens where it was
-  left. A test that can't save the key typed stops there, a test's outcome reads again whether a
-  key is saved (its file may have gone meanwhile), and Remove waits for a test to finish. A plugin that finds no key offers to
-  open it: `AnthropicSettingsView.showSettings()` sends `showSettings:` up the responder chain,
+  isn't signed, so each build would be a new app to it.
+- **Through Claude Code.** `ClaudeCodeModel` asks through the person's own `claude`, on their
+  Claude plan, the app never touching a token: each call is one `claude -p --output-format json`
+  run with the request's model, effort and system prompt, no tools, MCP servers, skills or saved
+  session, the conversation on standard input, in an empty directory outside the home, at most four
+  at once. Every run is in the app's own folder (`CLAUDE_CONFIG_DIR`,
+  `~/Library/Application Support/InfiniteCanvas/claude-code`), where the app signs in through
+  Anthropic's page (`claude auth login`), with Claude Code's updates off, so the person's own Claude
+  Code setup (their sign-in, settings, hooks, CLAUDE.md, memory, plugins, history) is never read or
+  written, and any run may be stopped partway. What `claude -p` can't say (`temperature`,
+  `stopSequences`, `fallbacks`) is left out; an answer past `maxTokens`, which Claude Code fails, is
+  an answer cut off, as a key's would be.
+- **Settings.** Infinite Canvas › Settings… (⌘,) shows the sign-in's pane, Claude
+  (`AnthropicSettingsView`): "Sign in with" Claude Code or API key, then that way's rows. Claude
+  Code's: whom the app is signed in as ("ann@example.com · Max"), Sign In… (the browser opens
+  Anthropic's page), Cancel while it waits, Sign Out and Test once signed in, and "Install Claude
+  Code" when there's none; Claude Code is asked only while its way is chosen. The key's: a secure
+  field, "Anthropic API key", whose prompt says whether one is saved and whose tooltip says where;
+  Save, Remove, and Test, a five-token call; a status only for a test and for what failed, a symbol
+  in its tone then the words, as the panel's status lines are, a failure in the warning's tone, as
+  the panel shows the same failures; and a link, "Get a key". The plugin gives the pane
+  ([the host's slot](#host-slots) for panes, `registrar.settingsPane`) when the model it was handed
+  is the signed-in one, over that model's account, so the pane and the model read one way, one key
+  and one Claude Code, and a list given another model (a test's) has no pane; the app's
+  `SettingsWindow(registry:)` (CanvasUI) hosts the panes: made afresh each time the window opens,
+  and sized before it goes in, so the window opens where it was left. A test that can't save the
+  key typed stops there, a test's outcome reads again whether a key is saved (its file may have gone
+  meanwhile), and Remove waits for a test to finish. A plugin that finds no sign-in offers to open
+  Settings: `AnthropicSettingsView.showSettings()` sends `showSettings:` up the responder chain,
   which the app's delegate answers (the same selector as `BoardMenus.showSettings`).
 - **Reading an answer**: `ModelAnswer.unwrapped(_:tag:)` takes off what a model sometimes wraps its
   answer in, though its prompt asks for neither (fence lines, a line of a tag alone, the answer's own
@@ -12886,10 +12906,11 @@ do throws(LanguageModelError) {
   a type's sync asks Haiku 5.5 too (`SchemaPrompts.model`), the editor's own model, Haiku 4.5, answering only a request that names none. Its prompt is
   measured against the live model by CompositionTests' "Query prompt, live" (`QUERY_LIVE=1`;
   `scripts/query-prompts`), which asks every case on the shipped list with `AnthropicModel` and the
-  key Settings saves.
-- **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network,
-  but for the two live evaluations, TypesTests' (`SCHEMA_LIVE=1`) and `--ask`'s (`QUERY_LIVE=1`),
-  which `./test.sh` never sets.
+  key Settings saves, or through Claude Code in the app's folder with `QUERY_VIA=claude-code`.
+- **Tests** pass a `ScriptedLanguageModel` ([Testing plugins](#testing-plugins)), never the network
+  or the person's Claude Code, but for the two live evaluations, TypesTests' (`SCHEMA_LIVE=1`) and
+  `--ask`'s (`QUERY_LIVE=1`), which `./test.sh` never sets; LanguageModelsTests stand a script in
+  for `claude`, and read what Claude Code really printed from recordings.
 
 ## Prose maps
 

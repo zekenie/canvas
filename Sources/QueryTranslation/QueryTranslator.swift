@@ -68,13 +68,13 @@ public enum QueryTranslationError: Error, Sendable, Equatable {
     /// The engine refused something no second try mends (a closed file, no Topology).
     case refused(QueryError)
 
-    /// `no_queries`, `no_model`, `no_key`, `key_rejected`, `model_failed`, `declined`, `unanswerable`,
+    /// `no_queries`, `no_model`, `not_signed_in`, `key_rejected`, `model_failed`, `declined`, `unanswerable`,
     /// `unusable_answer`, `too_slow`, `cancelled`, or the engine's own.
     public var reason: String {
         switch self {
         case .noQueries: "no_queries"
         case .noModel: "no_model"
-        case .model(let error, _): error == .noKey ? "no_key" : error == .unauthorized ? "key_rejected" : "model_failed"
+        case .model(let error, _): error == .notSignedIn ? "not_signed_in" : error == .unauthorized ? "key_rejected" : "model_failed"
         case .declined: "declined"
         case .unanswerable: "unanswerable"
         case .unusable: "unusable_answer"
@@ -84,7 +84,7 @@ public enum QueryTranslationError: Error, Sendable, Equatable {
         }
     }
 
-    /// What to say: the model's own words for its failures ("No API key", "Rate limited").
+    /// What to say: the model's own words for its failures ("Not signed in", "Rate limited").
     public var message: String {
         switch self {
         case .noQueries: "This app can't answer queries."

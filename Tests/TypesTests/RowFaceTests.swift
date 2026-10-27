@@ -229,10 +229,10 @@ private struct Bench {
         // No key: Settings….
         let keyless = t.editor.addSlipType(TypeSchemaProperty.starter, at: CGPoint(x: 440, y: 40))
         t.typeWords(keyless, "a pet in my household")
-        t.b.model.queue(.noKey)
+        t.b.model.queue(.notSignedIn)
         t.b.sync.commit(keyless)
         spinRunLoop(until: { !t.b.isUpdating(keyless) })
-        expectEqual(t.book.spot(of: keyless), .failed("No API key", action: .settings))
+        expectEqual(t.book.spot(of: keyless), .failed("Not signed in", action: .settings))
         let catcher = SettingsCatcher(), delegate = NSApplication.shared.delegate
         NSApplication.shared.delegate = catcher
         defer { NSApplication.shared.delegate = delegate }

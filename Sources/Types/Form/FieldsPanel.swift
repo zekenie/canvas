@@ -155,7 +155,7 @@ struct FieldsList: View {
 }
 
 /// Where a shape's fill is, at the foot of its Fields: filling, with a spinner, or why it failed, with what can be done:
-/// Retry, or for want of a key Open Settings… (saving one tries again by itself); nothing for Claude declining, as it
+/// Retry, or for want of a sign-in Open Settings… (signing in tries again by itself); nothing for Claude declining, as it
 /// would again. Nothing while there's nothing to say.
 struct FillLine: View {
     let status: FieldFillStatus
@@ -177,7 +177,7 @@ struct FillLine: View {
         let id = id
         switch remedy {
         case .retry: return [DetailStatusAction(TypePanelText.retry) { [weak fill] in fill?.retry(id) }]
-        case .key: return [DetailStatusAction(TypePanelText.openSettings) { AnthropicSettingsView.showSettings() }]
+        case .signIn: return [DetailStatusAction(TypePanelText.openSettings) { AnthropicSettingsView.showSettings() }]
         case .editByHand: return []
         }
     }

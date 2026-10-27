@@ -99,7 +99,7 @@ public final class ProseMapService {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: nil, queue: .main) { [weak self] _ in
+        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.keyDidChange() }
         }
     }

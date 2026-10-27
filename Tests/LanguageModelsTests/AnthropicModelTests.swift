@@ -92,7 +92,7 @@ import TestKit
     test("reads the key at every call: one saved after the model was made is the one sent") {
         try withTemporaryStore { keys in
             let model = AnthropicModel(keys: keys, session: StubProtocol.session(answering: .http(status: 200, body: reply("OK"))))
-            expectEqual(try outcome(of: model), .failure(.noKey))
+            expectEqual(try outcome(of: model), .failure(.notSignedIn))
             try keys.write("sk-ant-later")
             expectEqual(try outcome(of: model), .success(ModelResponse(text: "OK", inputTokens: 12, outputTokens: 3)))
             expectEqual(StubProtocol.received.last?.request.value(forHTTPHeaderField: "x-api-key"), "sk-ant-later")
@@ -101,7 +101,7 @@ import TestKit
     test("without a key, nothing is sent") {
         try withTemporaryStore { keys in
             let model = AnthropicModel(keys: keys, session: StubProtocol.session(answering: .http(status: 200, body: reply("OK"))))
-            expectEqual(try outcome(of: model), .failure(.noKey))
+            expectEqual(try outcome(of: model), .failure(.notSignedIn))
             expect(StubProtocol.received.isEmpty)
         }
     },
@@ -220,7 +220,7 @@ import TestKit
         }
     },
     test("every error has a short message for a person, a fragment that names what went wrong, and says which may pass") {
-        let all: [LanguageModelError] = [.noKey, .unauthorized, .rateLimited, .overloaded, .server(status: 500, message: "Boom"),
+        let all: [LanguageModelError] = [.notSignedIn, .unauthorized, .rateLimited, .overloaded, .server(status: 500, message: "Boom"),
                                          .server(status: 400, message: ""), .network("The Internet connection appears to be offline."),
                                          .timedOut, .malformedResponse, .cancelled]
         for error in all {
@@ -228,7 +228,7 @@ import TestKit
             expect(!error.message.hasSuffix(".") && !error.message.contains("Settings") && !error.message.contains("'"), error.message)
             expectEqual(error.localizedDescription, error.message)
         }
-        expectEqual(all.map(\.message), ["No API key", "API key rejected", "Rate limited", "Anthropic overloaded", "Anthropic error 500",
+        expectEqual(all.map(\.message), ["Not signed in", "API key rejected", "Rate limited", "Anthropic overloaded", "Anthropic error 500",
                                          "Anthropic error 400", "Can’t reach Anthropic", "Timed out", "Unusable answer", "Cancelled"])
         expectEqual(all.filter(\.isTransient), [.rateLimited, .overloaded, .server(status: 500, message: "Boom"),
                                                 .network("The Internet connection appears to be offline."), .timedOut])

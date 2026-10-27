@@ -112,8 +112,8 @@ public final class ReferenceState {
         settling = editor.topology?.keepsSettling { [weak self] in self?.isFinding ?? false }
         following = editor.topology?.follow { [weak self] change in self?.edgesChanged(change) }
         rebuildDynamic()
-        // A key saved in Settings tries again the words that failed for want of one.
-        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelKeyDidChange, object: nil, queue: .main) { [weak self] _ in
+        // A sign-in in Settings tries again the words that failed for want of one.
+        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.keyDidChange() }
         }
     }

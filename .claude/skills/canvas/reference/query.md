@@ -768,7 +768,7 @@ What leaves the machine: the question, what the app's queries can name (`query-v
 
 Use it to pass on the person's own question. When you know what to ask, write the query yourself: you see a refusal and fix it in one step. [../query-prompt.md](../query-prompt.md) is what the app tells Claude, word for word, with how to give yourself what it's given; its direction procedure for edge words is the one above.
 
-Its refusals, besides a query's: `no_model` (the app has no language model), `no_key` (no key saved) and `key_rejected`, `model_failed` (Claude couldn't be reached, or didn't answer; the error's `transient` says whether trying again may work), `declined`, `unanswerable` (no query can say it: where shapes sit, how they look, sums; the message says why), and `unusable_answer` (Claude's query was refused twice, or refused once after 40 seconds, or its answer wasn't a query; the error's `query` is what it wrote last). Each hint says what to do, and writing the query yourself always works.
+Its refusals, besides a query's: `no_model` (the app has no language model), `not_signed_in` (the app isn't signed in to Claude) and `key_rejected`, `model_failed` (Claude couldn't be reached, or didn't answer; the error's `transient` says whether trying again may work), `declined`, `unanswerable` (no query can say it: where shapes sit, how they look, sums; the message says why), and `unusable_answer` (Claude's query was refused twice, or refused once after 40 seconds, or its answer wasn't a query; the error's `query` is what it wrote last). Each hint says what to do, and writing the query yourself always works.
 
 ## Errors
 
