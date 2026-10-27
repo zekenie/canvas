@@ -230,25 +230,38 @@ extension CanvasEditor {
 /// Every shape drawn as a skeleton's cover, above the shapes, back to front. Nothing when shapes
 /// are drawn in full; a shape too small on screen is passed over by its kept bounds alone, so a board
 /// of thousands zoomed out far costs a look at each shape in view. A shape drawn away from where it
-/// is (a shake) has its cover there.
+/// is (a shake) has its cover there. The shapes waiting to be placed (`editor.placeLater`) have theirs
+/// as they're drawn, faint, where they'd land.
 struct TitleCoverOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
 
     func draw(in context: OverlayContext) {
         guard context.drawsSkeletons else { return }
-        let editor = context.editor, cg = context.cg, scale = 1 / context.zoom
+        let editor = context.editor
         let reach = context.worldDrawingReach
         let visible = context.visibleRect.insetBy(dx: -reach, dy: -reach)
         for record in editor.paintOrder(in: visible) where context.drawsSkeleton(of: record.id) {
             guard let found = TitleCoverStyle.cover(of: record, in: context.shapes, editor: editor) else { continue }
-            let offset = context.worldDrawingOffset(of: record.id)
-            cg.saveGState()
-            cg.translateBy(x: found.bounds.minX + offset.x, y: found.bounds.minY + offset.y)
-            // From here in view points, y down, from the shape's top-left corner.
-            cg.scaleBy(x: scale, y: scale)
-            found.layout.halo.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
-            found.layout.string.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
-            cg.restoreGState()
+            draw(found, offset: context.worldDrawingOffset(of: record.id), in: context)
         }
+        guard !context.pendingShapes.isEmpty else { return }
+        context.drawingPending {
+            for record in context.pendingShapes {
+                guard let found = TitleCoverStyle.cover(of: record, in: context.pendingContext, editor: editor) else { continue }
+                draw(found, offset: .zero, in: context)
+            }
+        }
+    }
+
+    /// One cover, on its shape's bounds moved by `offset` (world units).
+    private func draw(_ found: (layout: TitleCoverStyle.Layout, bounds: CGRect), offset: CGPoint, in context: OverlayContext) {
+        let cg = context.cg, scale = 1 / context.zoom
+        cg.saveGState()
+        cg.translateBy(x: found.bounds.minX + offset.x, y: found.bounds.minY + offset.y)
+        // From here in view points, y down, from the shape's top-left corner.
+        cg.scaleBy(x: scale, y: scale)
+        found.layout.halo.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
+        found.layout.string.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
+        cg.restoreGState()
     }
 }

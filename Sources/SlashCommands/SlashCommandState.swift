@@ -42,6 +42,9 @@ public struct OfferedSlashCommand {
     /// was typed, bound to the target and the editor (held weakly, as `rule` is; nil once it's gone). Nil
     /// for a shape's command.
     fileprivate let answering: (@MainActor (SlashArguments) -> Task<SlashAnswer, Never>?)?
+    /// For a command about the target as a whole that runs at once (`SelectionSlashCommand.atOnce`): it run
+    /// with what was typed, bound as `answering` is. Nil for any other command.
+    fileprivate let acting: (@MainActor (SlashArguments) -> Void)?
     /// What VoiceOver hears while the bar waits for a command that answers later ("Asking"), if it says.
     public let waiting: String?
 
@@ -69,6 +72,11 @@ public struct OfferedSlashCommand {
             answering = { [weak editor] arguments in editor.map { answer(target, arguments, $0) } }
         } else {
             answering = nil
+        }
+        if let run = command.runAbout {
+            acting = { [weak editor] arguments in editor.map { run(target, arguments, $0) } }
+        } else {
+            acting = nil
         }
         if parts.count == 1, let choices = command.choices {
             choiceRows = { [weak editor] in editor.map { choices(shapes, $0) } ?? [] }
@@ -368,9 +376,16 @@ public final class SlashCommandState {
     /// caller that took text out first, as a text view takes the command's line, would find a command
     /// that reads the text gone), and it runs on the shapes of it still there and not kept aside. False,
     /// doing nothing, with none left, for arguments the command doesn't accept, and for a command that
-    /// answers later, which is started (`answer(_:with:)`), not run.
+    /// answers later, which is started (`answer(_:with:)`), not run. One about the target as a whole that
+    /// runs at once (`SelectionSlashCommand.atOnce`) runs with the target it was found for, shapes or none
+    /// (an empty board's).
     @discardableResult
     public func run(_ command: OfferedSlashCommand, with arguments: SlashArguments) -> Bool {
+        if let acting = command.acting {
+            guard command.accepts(arguments) else { return false }
+            editor.undoHistory.group(command.stepName) { acting(arguments) }
+            return true
+        }
         let parts = live(command)
         guard !command.answersLater, !parts.isEmpty, command.accepts(arguments) else { return false }
         editor.undoHistory.group(command.stepName) {

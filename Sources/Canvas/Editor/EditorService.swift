@@ -29,9 +29,10 @@ public protocol EditorService: AnyObject {
     /// Do here what asks what the commit affected, reads around the file or tells the window. Nothing
     /// may transact here either. By default nothing.
     func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor)
-    /// A place tool (or any `editor.place`) just put this shape down, and the default tool is
-    /// current again. Called before the shape starts following the pointer or being edited.
-    func didPlace(_ id: ShapeID, in editor: CanvasEditor)
+    /// A place tool (or any `editor.place`) just put these shapes down (one, but for shapes placed
+    /// together: `editor.placeLater`), and the default tool is current again. Called before they start
+    /// following the pointer or being edited.
+    func didPlace(_ ids: [ShapeID], in editor: CanvasEditor)
     /// Something tried to change these shapes and didn't, since they're read-only
     /// (`registrar.readOnlyShapes`): a transaction, once it's done (with every shape it refused, and
     /// after its commit of the rest, if any); a drag, once it gets going (past the drag threshold);
@@ -80,7 +81,7 @@ extension EditorService {
     public func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {}
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {}
     public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {}
-    public func didPlace(_ id: ShapeID, in editor: CanvasEditor) {}
+    public func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) {}
     public func didRefuseChanges(to ids: Set<ShapeID>, in editor: CanvasEditor) {}
     public func boardWillChange(from old: BoardID, to new: BoardID, in editor: CanvasEditor) {}
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {}

@@ -597,5 +597,24 @@ struct AdornmentOverlay: CanvasOverlay {
                                     turned: slot.isTurned, in: cg)
             }
         }
+        // The shapes waiting to be placed (`editor.placeLater`) show theirs as they're drawn, faint, where they'd
+        // land: laid out afresh each frame and kept for none (they're on no board), never hovered or pressed.
+        // Zoomed out they show none, as a skeleton shows none.
+        guard !skeletons, !context.pendingShapes.isEmpty else { return }
+        context.drawingPending {
+            for record in context.pendingShapes {
+                guard let laidOut = state.laidOut(record, keeping: false),
+                      let anchored = AdornmentState.anchored(of: record.id, in: context.pendingContext, zoom: context.zoom) else { continue }
+                let anchor = anchored.rect
+                state.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: nil, into: &slots)
+                for index in slots.indices {
+                    guard let slot = slots[index] else { continue }
+                    let (label, face) = laidOut.look(of: index, in: slot)
+                    let from = slot.lead == nil ? slot.corner(in: anchor) : slot.worldRect(in: anchor, scale: scale).origin
+                    AdornmentStyle.draw(label, in: laidOut.shown[index].id.placement, face: face, in: slot.frame, from: from, scale: slot.unit(scale),
+                                        look: .normal, isDark: isDark, turned: slot.isTurned, in: cg)
+                }
+            }
+        }
     }
 }

@@ -108,6 +108,37 @@ private let area = CGRect(x: 100, y: 100, width: 100, height: 60)
         expectEqual(rig.field?.string, "/")
     },
 
+    test("a command about the target that runs at once opens the bar on an empty board, which says it acts on nothing; Return closes the bar and runs it with the target and what was typed, one step named for it") {
+        let log = NowLog()
+        let rig = try BarRig(targets: false, more: [NowPlugin(log: log)])
+        rig.slash()
+        expect(rig.isOpen, "an empty board offers stamp")
+        expectEqual(rig.bar?.target, .everything([]))
+        expectEqual(rig.bar?.label, "", "nothing to act on: no All shapes")
+        expectEqual(rig.editor.card?.accessibilityLabel, "Command")
+        expectEqual(rig.rows, ["stamp (words)"])
+        rig.window.type("stamp a, b")
+        rig.window.pressReturn()
+        expect(!rig.isOpen)
+        expect(rig.canvasHasKeyboard)
+        expectEqual(log.ran.count, 1)
+        expectEqual(log.ran.first?.target, .everything([]))
+        expectEqual(log.ran.first?.arguments.text, "a, b")
+        expectEqual(log.ran.first?.barOpen, false, "the bar closed first")
+        expectEqual(rig.editor.undoHistory.undoName, "Stamp")
+        let card = rig.card()
+        rig.editor.selection = card
+        rig.slash()
+        expect(!rig.listed.contains("stamp"), "its rule: nothing selected only")
+        rig.window.pressEscape()
+        rig.window.pressEscape()
+        rig.window.makeFirstResponder(rig.canvas)
+        rig.editor.selectedShapeIDs = []
+        rig.slash()
+        expectEqual(rig.listed.last, "stamp", "after what the shapes offer")
+        expectEqual(rig.bar?.label, "All shapes")
+    },
+
     test("an offscreen selection is brought into view first, and the bar opens under it") {
         let rig = try BarRig(targets: false)
         let card = rig.card(CGRect(x: 4000, y: 3000, width: 100, height: 60))

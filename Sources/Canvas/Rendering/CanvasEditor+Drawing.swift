@@ -45,8 +45,9 @@ extension CanvasEditor {
         let deviceScale = context.userSpaceToDeviceSpaceTransform
         let ink = SkeletonInk(fill: Style.skeleton.cgColor, text: Style.skeletonText.cgColor,
                               pixel: 1 / max(hypot(deviceScale.a, deviceScale.b), .leastNormalMagnitude))
-        for record in paintOrder(in: drawn) {
-            guard let definition = registry.definition(for: record.kind) else { continue }
+        /// A shape as the frame draws it: its skeleton zoomed out (but the one being edited), else its render.
+        func drawShape(_ record: AnyShapeRecord, in shapes: ShapeContext) {
+            guard let definition = registry.definition(for: record.kind) else { return }
             drawIsolated(context) {
                 if !offsets.isEmpty, let offset = offsets[record.id] {
                     context.translateBy(x: offset.x / zoom, y: offset.y / zoom)
@@ -64,6 +65,7 @@ extension CanvasEditor {
                 }
             }
         }
+        for record in paintOrder(in: drawn) { drawShape(record, in: shapes) }
         previews.endFrame()
         if previews.isPending, nextPreviewFrame == nil {
             nextPreviewFrame = scheduler.schedule(after: .zero) { [weak self] in
@@ -74,8 +76,18 @@ extension CanvasEditor {
         let outlines = self.outlines
         let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines)
         drawOutlines(outlines, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
+        // The shapes waiting to be placed (`placeLater`), faint, over the board's and its outlines, under what
+        // overlays draw (which decorate them too): a context over them alone, so each has its geometry, laid out
+        // as shapes of the file where they'd land.
+        let pending = pendingShapes
+        let pendingContext = pending.isEmpty ? shapes : shapes.layingOut(with: pending).over(CanvasDocument(shapes: pending))
+        if !pending.isEmpty {
+            Self.drawingPending(in: context) {
+                for record in pending { drawShape(record, in: pendingContext) }
+            }
+        }
         let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world, drawsSkeletons: skeletons,
-                                            tintedRings: tinted)
+                                            tintedRings: tinted, pendingShapes: pending, pendingContext: pendingContext)
         for overlay in registry.overlays where overlay.space == .world {
             drawIsolated(context) { overlay.draw(in: overlayContext) }
         }
@@ -231,6 +243,17 @@ extension CanvasEditor {
     /// along above its anchor. Null when nothing moved; infinite when the editor no longer knows (too
     /// long ago, or a mark that isn't current), or a shape that could be anywhere changed.
     @_spi(Host) public func damage(since mark: DamageMark) -> CGRect { shapeIndex.damage(since: mark, in: shapeContext) }
+
+    /// Draws as shapes waiting to be placed are drawn: at `Style.pendingOpacity`, as one layer, so
+    /// what overlaps within it (a shape and its shadow) isn't darkened twice.
+    static func drawingPending(in context: CGContext, _ draw: () -> Void) {
+        context.saveGState()
+        context.setAlpha(Style.pendingOpacity)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        draw()
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
 
     /// A fresh graphics state and an empty path (the current path isn't part of the graphics
     /// state), so nothing one plugin leaves behind reaches the next.

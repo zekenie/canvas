@@ -86,7 +86,20 @@ public struct OverlayContext {
     public let drawsSkeletons: Bool
     /// The frame's tinted outlines, if it has any: what `tintedOutset(of:)` reads.
     let tintedRings: TintedRings?
+    /// The shapes waiting to be placed (`editor.placeLater`), where this frame draws them (faint, over the
+    /// board's shapes): an overlay that decorates shapes from what they hold (a title's pill) decorates
+    /// these too, in `drawingPending`, laid out in `pendingContext`. Empty while none wait.
+    public let pendingShapes: [AnyShapeRecord]
+    /// A context that lays out `pendingShapes` where they're drawn, as shapes of the file (their geometry,
+    /// by id); the frame's own (`shapes`) while none wait.
+    public let pendingContext: ShapeContext
     public var zoom: CGFloat { shapes.zoom }
+
+    /// Draws as the shapes waiting to be placed are drawn: faint (the core's opacity for them), as one
+    /// layer. What an overlay draws for `pendingShapes` goes in here.
+    public func drawingPending(_ draw: () -> Void) {
+        CanvasEditor.drawingPending(in: cg, draw)
+    }
 
     /// Whether this frame draws the shape as a skeleton: `drawsSkeletons`, but for the shape being
     /// edited.

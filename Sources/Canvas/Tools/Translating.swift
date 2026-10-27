@@ -233,28 +233,29 @@ extension TranslatingSession: Session {
     }
 }
 
-/// A shape just placed (`editor.place`), while the press that placed it lasts: it follows the pointer
-/// as a `TranslatingSession` moves it (snapping, ⇧ keeping it to an axis), whatever its placement,
-/// and on the release it settles (`Transaction.settle`: into the container holding most of it, or
-/// out, nudged across an edge, gliding there; a container placed takes in what it lands on), and an
-/// editing placement's shape is edited (a click's at once, as far as anyone can tell), where it is,
-/// with no glide. A read-only container (a locked frame) takes nothing: placed into one, the shape is
-/// taken away, as Escape takes it, and services hear the container refused (it shakes). Escape takes
-/// the shape away again and puts back what the undo participants kept before the press (what was
-/// selected, which placing replaced), so the press comes to nothing, where a drag's Escape puts what
-/// it moved back. Only that: what others committed during the press stays.
+/// A shape just placed (`editor.place`), or shapes placed together (`editor.placeLater`), while the press
+/// that placed them lasts: they follow the pointer as a `TranslatingSession` moves them (snapping, ⇧
+/// keeping them to an axis), whatever the placement, and on the release they settle
+/// (`Transaction.settle`: into the container holding most of them, or out, nudged across an edge, gliding
+/// there; a container placed takes in what it lands on), and an editing placement's one shape is edited
+/// (a click's at once, as far as anyone can tell), where it is, with no glide. A read-only container (a
+/// locked frame) takes nothing: placed into one, they're taken away, as Escape takes them, and services
+/// hear the container refused (it shakes). Escape takes them away again and puts back what the undo
+/// participants kept before the press (what was selected, which placing replaced), so the press comes to
+/// nothing, where a drag's Escape puts what it moved back. Only that: what others committed during the
+/// press stays.
 @MainActor
 final class PlacingSession {
-    private let id: ShapeID
+    private let ids: [ShapeID]
     private let move: TranslatingSession
     private let edits: Bool
     private let before: [ObjectIdentifier: any Sendable]
 
-    init(_ id: ShapeID, from point: CGPoint, edits: Bool, restoring before: [ObjectIdentifier: any Sendable], in editor: CanvasEditor) {
-        self.id = id
-        self.edits = edits
+    init(_ ids: [ShapeID], from point: CGPoint, edits: Bool, restoring before: [ObjectIdentifier: any Sendable], in editor: CanvasEditor) {
+        self.ids = ids
+        self.edits = edits && ids.count == 1
         self.before = before
-        move = TranslatingSession(ids: [id], from: point, in: editor)
+        move = TranslatingSession(ids: ids, from: point, in: editor)
     }
 }
 
@@ -265,16 +266,16 @@ extension PlacingSession: Session {
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         move.clearHint(in: editor)
-        let id = id
-        let settlement = editor.registry.containingKinds.isEmpty ? Settlement.settled(nudges: [:]) : editor.transact { $0.settle([id]) }
+        let ids = ids
+        let settlement = editor.registry.containingKinds.isEmpty ? Settlement.settled(nudges: [:]) : editor.transact { $0.settle(ids) }
         switch settlement {
         case .refused:
             takeAway(in: editor)
         case .settled(var nudges):
             // Its editing view is laid out where it is.
-            if edits { nudges[id] = nil }
+            if edits, let id = ids.first { nudges[id] = nil }
             editor.glide(nudges)
-            if edits { editor.beginEditing(id) }
+            if edits, let id = ids.first { editor.beginEditing(id) }
         }
     }
 
@@ -288,10 +289,10 @@ extension PlacingSession: Session {
 
     func draw(in context: OverlayContext) { move.draw(in: context) }
 
-    /// The shape gone, and what the participants kept before the press back: the press comes to
+    /// The shapes gone, and what the participants kept before the press back: the press comes to
     /// nothing.
     private func takeAway(in editor: CanvasEditor) {
-        editor.transact { $0.delete([id]) }
+        editor.transact { $0.delete(Set(ids)) }
         editor.undoHistory.restore(before)
     }
 }

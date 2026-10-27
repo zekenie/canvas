@@ -18,6 +18,7 @@ extension CanvasEditor {
     public func undo() {
         guard canUndo else { return }
         closeCard(.undo)
+        letWaitingShapesGo()
         endEditing(discarding: false)
         undoHistory.close()
         guard showBoard(ofStep: { $0.undoBoard }), let step = undoHistory.popUndo() else { return }
@@ -30,6 +31,7 @@ extension CanvasEditor {
     public func redo() {
         guard canRedo else { return }
         closeCard(.undo)
+        letWaitingShapesGo()
         endEditing(discarding: false)
         undoHistory.close()
         guard showBoard(ofStep: { $0.redoBoard }), let step = undoHistory.popRedo() else { return }

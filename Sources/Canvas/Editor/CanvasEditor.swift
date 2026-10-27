@@ -244,6 +244,8 @@ public final class CanvasEditor {
     @ObservationIgnored public let undoHistory = UndoHistory()
 
     @ObservationIgnored private var tools: [ToolID: any Tool] = [:]
+    /// The shapes waiting to be placed, while their tool is current (`placeLater`).
+    @ObservationIgnored var pendingPlacement: PendingPlacement?
     @ObservationIgnored private let serviceRegistrations: [ObjectIdentifier: ServiceRegistration]
     /// Each service, by its type: its place in `serviceOrder`.
     @ObservationIgnored private var services: [ObjectIdentifier: Int] = [:]
@@ -407,6 +409,7 @@ public final class CanvasEditor {
         // Services first, so tools can look them up; each resolves the services it asks for.
         for registration in registry.services { _ = resolveService(registration.type) }
         for (id, make) in registry.toolFactories { tools[id] = make(self) }
+        tools[.pendingPlacement] = PendingPlacementTool()
         undoHistory.editor = self
         undoHistory.participants = serviceOrder.compactMap { $0 as? any UndoParticipant }
         toldDrawsSkeletons = drawsSkeletons
@@ -726,9 +729,12 @@ public final class CanvasEditor {
     }
 
     /// Whether `setTool` takes a tool: any, but one that places shapes (a kind's tool,
-    /// `ShapeRegistrar.tool`) on a board that can't change (`isBoardReadOnly`), so the toolbar dims
-    /// those there, and their keys do nothing. Observed through `isBoardReadOnly`.
-    public func isToolEnabled(_ id: ToolID) -> Bool { !isBoardReadOnly || !registry.placingTools.contains(id) }
+    /// `ShapeRegistrar.tool`, or the core's for shapes waiting to be placed, `placeLater`) on a board that
+    /// can't change (`isBoardReadOnly`), so the toolbar dims those there, and their keys do nothing.
+    /// Observed through `isBoardReadOnly`.
+    public func isToolEnabled(_ id: ToolID) -> Bool {
+        !isBoardReadOnly || !(registry.placingTools.contains(id) || id == .pendingPlacement)
+    }
 
     /// Works out again whether the board shown can't change, and where its path turns read-only, as a
     /// switch or a commit leaves the file (`isBoardReadOnly`, `readOnlyStart`), setting each only if it
@@ -1252,6 +1258,8 @@ public final class CanvasEditor {
         guard id != currentToolID, tools[id] != nil else { return }
         let old = currentToolID
         currentToolID = id
+        // The shapes waiting to be placed go with their tool.
+        if old == .pendingPlacement { pendingPlacement = nil }
         hintedShapeID = nil
         for service in serviceOrder { service.toolDidChange(from: old, to: id, in: self) }
         setNeedsDisplay()
@@ -1284,9 +1292,12 @@ public final class CanvasEditor {
     /// unless the tool is locked, and an editing placement's shape edited. False, and nothing done, when the
     /// current tool places nothing, a press is under way, a shape is being edited, or the view has no size and
     /// the pointer isn't over it.
+    /// With shapes waiting to be placed (`placeLater`), it puts them where they're drawn, as `putPending` does.
     @discardableResult
     public func placeAtKeyboard() -> Bool {
-        guard session == nil, editingShapeID == nil, let placement = registry.placement(forTool: currentToolID) else { return false }
+        guard session == nil, editingShapeID == nil else { return false }
+        if currentToolID == .pendingPlacement { return putPending() }
+        guard let placement = registry.placement(forTool: currentToolID) else { return false }
         let view = unobscuredViewport
         guard isPointerOverCanvas || !view.isEmpty else { return false }
         place(placement, at: isPointerOverCanvas ? pointerWorldLocation : camera.toWorld(CGPoint(x: view.midX, y: view.midY)))
@@ -1332,9 +1343,96 @@ public final class CanvasEditor {
         }
         guard let nudges = placed else { return nil }
         if !isToolLocked { setTool(registry.defaultTool) }
-        for service in serviceOrder { service.didPlace(shape.id, in: self) }
+        for service in serviceOrder { service.didPlace([shape.id], in: self) }
         glide(nudges)
         return shape.id
+    }
+
+    /// Shows shapes about to be placed together (`PendingPlacement`), on the core's own tool for them
+    /// (`ToolID.pendingPlacement`, which no toolbar lists): drawn faint where they'd be put down (the
+    /// pointer while it's over the canvas, else their bounds in the middle of the view's clear part), each
+    /// where the placement arranges it for the keys held (`modifiersHeld`), so a key held (⌥) may lay them
+    /// out another way. A press puts them down there and they follow the pointer while it lasts, settling
+    /// on the release, as `place(_:at:)` puts one; Return puts them where they're drawn, settled at once
+    /// (`placeAtKeyboard`); either way in one step named by the placement, the default tool back whatever
+    /// the tool lock (they're put down once), and services hear `didPlace` with every one (Selection
+    /// selects them all). Escape, another tool, another board, editing a shape, an undo or a redo, a card
+    /// shown or the board becoming read-only lets them go, nothing placed. False, showing nothing, for no records, a press under way,
+    /// or a board that can't change (`isToolEnabled`).
+    @discardableResult
+    public func placeLater(_ placement: PendingPlacement) -> Bool {
+        guard !placement.records.isEmpty, session == nil, isToolEnabled(.pendingPlacement) else { return false }
+        endEditing()
+        pendingPlacement = placement
+        switchTool(to: .pendingPlacement)
+        setNeedsDisplay()
+        return true
+    }
+
+    /// Whether shapes wait to be placed (`placeLater`).
+    public var isPlacingLater: Bool { pendingPlacement != nil }
+
+    /// Shapes waiting to be placed go, their tool left for the default one: as a shape is edited, an undo or
+    /// a redo changes the board under them, or a card shows (the command bar, a row's card).
+    func letWaitingShapesGo() {
+        if currentToolID == .pendingPlacement { switchTool(to: registry.defaultTool) }
+    }
+
+    /// The shapes waiting to be placed (`placeLater`), their boxes where they'd be put down now, for the
+    /// keys held: what a frame draws faint, and the overlays decorate (`OverlayContext.pendingShapes`).
+    /// None while none wait, and with the pointer off the canvas and no view to put them in the middle of.
+    public var pendingShapes: [AnyShapeRecord] {
+        guard let pendingPlacement, let point = pendingPoint(of: pendingPlacement) else { return [] }
+        return pendingPlacement.records(at: point, for: modifiersHeld)
+    }
+
+    /// Where waiting shapes would be put down now: the pointer while it's over the canvas, else the point
+    /// that puts their bounds in the middle of the view's clear part (where Return puts them); nil for
+    /// neither.
+    private func pendingPoint(of placement: PendingPlacement) -> CGPoint? {
+        if isPointerOverCanvas { return pointerWorldLocation }
+        let view = unobscuredViewport
+        guard !view.isEmpty else { return nil }
+        let middle = camera.toWorld(CGPoint(x: view.midX, y: view.midY)), bounds = placement.bounds(for: modifiersHeld)
+        guard !bounds.isNull else { return middle }
+        return CGPoint(x: middle.x - bounds.midX, y: middle.y - bounds.midY)
+    }
+
+    /// Puts the waiting shapes down (`placeLater`), arranged for the keys held: at `press` (world units),
+    /// following the pointer while the press lasts, or with none where they're drawn, settled at once (a
+    /// refusal there leaves nothing placed and them waiting, the container shaking). False, doing nothing,
+    /// with none waiting, nowhere to put them, or the board read-only (its owner heard refused).
+    @discardableResult
+    func putPending(pressedAt press: CGPoint? = nil) -> Bool {
+        guard let placement = pendingPlacement, let point = press ?? pendingPoint(of: placement) else { return false }
+        guard !isBoardReadOnly else {
+            if let owner = board.owner { refuseChanges(to: [owner]) }
+            return false
+        }
+        let records = placement.records(at: point, for: modifiersHeld), ids = records.map(\.id)
+        let follows = press != nil && undoHistory.isPressHeld && session == nil
+        let before = follows ? undoHistory.snapshots() : [:]
+        var nudges: [ShapeID: CGPoint] = [:]
+        if follows || registry.containingKinds.isEmpty {
+            transact(placement.stepName) { transaction in
+                for record in records { transaction.insert(record) }
+            }
+        } else {
+            guard let landed = transactWhole(placement.stepName, { transaction in
+                for record in records { transaction.insert(record) }
+                return transaction.settle(ids)
+            }) else { return false }
+            nudges = landed.nudges
+        }
+        // Put down once: the default tool back whatever the lock, and the waiting shapes with their tool.
+        setTool(registry.defaultTool)
+        for service in serviceOrder { service.didPlace(ids, in: self) }
+        if let press, follows {
+            session = PlacingSession(ids, from: press, edits: false, restoring: before, in: self)
+            return true
+        }
+        glide(nudges)
+        return true
     }
 
     /// `record`, `placement`'s, put down; following the pointer from `point` (world units, the press)
@@ -1362,10 +1460,10 @@ public final class CanvasEditor {
             nudges = landed.nudges
         }
         if !isToolLocked { setTool(registry.defaultTool) }
-        for service in serviceOrder { service.didPlace(record.id, in: self) }
+        for service in serviceOrder { service.didPlace([record.id], in: self) }
         let edits = placement.completion == .edit
         if let point, session == nil {
-            session = PlacingSession(record.id, from: point, edits: edits, restoring: before, in: self)
+            session = PlacingSession([record.id], from: point, edits: edits, restoring: before, in: self)
             return
         }
         // Its editing view is laid out where it is.
@@ -1434,6 +1532,7 @@ public final class CanvasEditor {
             refuseChanges(to: [id])
             return false
         }
+        letWaitingShapesGo()
         editingStartPoint = point
         editingStartClickCount = point == nil ? 1 : clickCount
         editingShapeID = id

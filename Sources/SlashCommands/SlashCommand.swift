@@ -329,11 +329,12 @@ final class ErasedSlashCommand {
     let command: CanvasCommand?
     let tries: Bool
     /// For a command about the command bar's target as a whole (`SelectionSlashCommand`): which targets
-    /// offer it, what it starts (a task the bar waits for) and what VoiceOver hears meanwhile; nil and nil
-    /// for a shape's command.
+    /// offer it, what it starts (a task the bar waits for) and what VoiceOver hears meanwhile, or what it
+    /// runs at once; nil for a shape's command.
     let isOfferedFor: (@MainActor (SlashTarget, CanvasEditor) -> Bool)?
     let answer: (@MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Task<SlashAnswer, Never>)?
     let waiting: String?
+    let runAbout: (@MainActor (SlashTarget, SlashArguments, CanvasEditor) -> Void)?
 
     /// `read` gets the command's value from a record; `write` runs an edit on one shape's live
     /// value, in a transaction.
@@ -355,6 +356,7 @@ final class ErasedSlashCommand {
         isOfferedFor = nil
         answer = nil
         waiting = nil
+        runAbout = nil
         switch command.action {
         case .edit(let edit):
             run = { ids, arguments, editor in
@@ -373,7 +375,8 @@ final class ErasedSlashCommand {
     }
 
     /// A command about the command bar's target as a whole: on every shape of it at once (`.together`),
-    /// whatever each shape is, running nothing itself (the bar asks it for its task, `answer`).
+    /// whatever each shape is, running nothing on them itself (the bar asks it for its task, `answer`, or
+    /// runs it with the target, `runAbout`).
     init(_ command: SelectionSlashCommand) {
         name = command.name
         argument = command.argument
@@ -390,8 +393,15 @@ final class ErasedSlashCommand {
         run = { _, _, _ in }
         runChoice = nil
         isOfferedFor = command.isOffered
-        answer = command.answer
         waiting = command.waiting
+        switch command.action {
+        case .answer(let answer):
+            self.answer = answer
+            runAbout = nil
+        case .run(let run):
+            answer = nil
+            runAbout = run
+        }
     }
 
     /// Whether it takes a shape or a choice: what a row merged from two kinds' own commands of one name

@@ -58,7 +58,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [plugins and kinds](.claude/rules/plugins-and-kinds.md): plugin values and the frozen registry; kinds, their definitions and capabilities; translating and placing sessions.
 - [properties and schemas](.claude/rules/properties-and-schemas.md): property lists (`SchemaDefined`), kinds' JSON Schemas, `KindSchema`, added properties and the rules that keep two of a shape's values in step as it's written (`keepsInStep`), file values (what a plugin keeps on the file as a whole).
 - [shape references](.claude/rules/shape-references.md): values that bind or name other shapes, and what deletes, copies, cuts and draws do to them.
-- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, cards, commands and zoom, keys, the hand, the translation adjuster, service hooks and the order services hear a change in, edge scrolling.
+- [editor](.claude/rules/editor.md): what `CanvasEditor` lends every plugin: layout inputs and laid-out frames, outlines and their standoff, read-only shapes, drawing offsets, the glide, skeleton levels, cards, commands and zoom, keys, the hand, shapes placed later (drawn faint on the pointer until a click), the translation adjuster, service hooks and the order services hear a change in, edge scrolling.
 - [editing](.claude/rules/editing.md): editing in place (`Editable`, the editing view, `EditContext`), and an editor's text held to its shape's render.
 - [undo](.claude/rules/undo.md): steps, groups and coalescing, `DocumentDelta`, one history across boards.
 - [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, and showing a board.
@@ -82,7 +82,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [table of contents](.claude/rules/table-of-contents.md): rows, marks, nesting, what's listed (front to back), its heading, hover, another board's outline, the keyboard (walking the list with the panel holding it, Show All Shapes, what VoiceOver hears, the outline's keys), dragging rows.
 - [adornments](.claude/rules/adornments.md): pills, chips and tabs on shapes: placing them, their places (the tab on the top edge, shown at every zoom, giving way across shapes), drawing and pointing.
 - [context menus](.claude/rules/context-menus.md): a shape's items, the canvas's items (an item can run a command, and show its key), right-clicks and Control-clicks, the selection's menu.
-- [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text, and in the command bar `/` opens under the selection (or for every shape on the board, with none); commands about the bar's target as a whole, which it waits for (`/query`).
+- [slash commands](.claude/rules/slash-commands.md): commands typed on a line of a shape's text, and in the command bar `/` opens under the selection (or for every shape on the board, with none); commands about the bar's target as a whole, which it waits for (`/query`) or runs at once (`/bulk-create`, notes placed together where the next click is).
 - [find](.claude/rules/find.md): ⌘F: the `FindableTexts` point and its contributors, the index, the search off the main actor, scope and order, the highlights, the panel in the detail panel's place.
 
 **Platform**, horizontals that are shape traits (what a shape has)

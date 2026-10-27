@@ -448,3 +448,27 @@ struct AskPlugin: CanvasPlugin {
         })
     }
 }
+
+/// What `NowPlugin`'s command ran with, and whether the bar was still open as it ran.
+@MainActor final class NowLog {
+    var ran: [(target: SlashTarget, arguments: SlashArguments, barOpen: Bool)] = []
+}
+
+/// `stamp`, a command about the bar's target that runs at once (`SelectionSlashCommand.atOnce`): offered
+/// with nothing selected, on an empty board too, never for a selection; it takes words and puts a disc down
+/// each run, so it commits.
+struct NowPlugin: CanvasPlugin {
+    let log: NowLog
+    var id: PluginID { "now-commands" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let log = log
+        registrar.selectionSlashCommand(.atOnce("stamp", argument: "words", when: { target, _ in
+            if case .everything = target { return true }
+            return false
+        }) { target, arguments, editor in
+            log.ran.append((target, arguments, editor.slashBar?.isOpen == true))
+            editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(Disc(CGRect(x: 0, y: 0, width: 10, height: 10))))) }
+        })
+    }
+}

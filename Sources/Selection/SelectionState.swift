@@ -473,8 +473,8 @@ extension SelectionState: EditorService {
     /// as editing ends.
     func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) { clearPartFocus() }
 
-    /// A placed shape is the only one selected.
-    func didPlace(_ id: ShapeID, in editor: CanvasEditor) { select([id]) }
+    /// What was placed is all that's selected.
+    func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) { select(ids) }
 
     /// Shapes are drawn as skeletons now, or in full again, so their faces and adornments went or
     /// came (a note's pills, a lock chip): a focused part that went lets the focus go, and under a

@@ -7,6 +7,7 @@ import Mentions
 import Observation
 import Palette
 import Selection
+import SlashCommands
 import TextEditing
 import Titles
 import Types
@@ -102,6 +103,10 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.noteAccessibility()                           // VoiceOver reads its words as its value
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
+        // `/bulk-create A, B, C` in the command bar with nothing selected: a note titled with each, waiting on the
+        // pointer to be put down together, in a column, or in a row while ⌥ is held (a click, or Selection's ⌥↩).
+        registrar.selectionSlashCommand(BulkCreate.command)
+        registrar.keyHint("⌥ Click or ⌥↩", BulkCreateStyle.inRow, while: .pointer)
     }
 }
 

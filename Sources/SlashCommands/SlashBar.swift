@@ -421,10 +421,10 @@ enum SlashBarStyle {
     /// What it acts on with nothing selected: every shape on the board.
     static let everything = "All shapes"
 
-    /// What it acts on, at its right: every shape on the board, one shape as VoiceOver calls it (its title,
-    /// else its kind), or how many.
+    /// What it acts on, at its right: every shape on the board (nothing on an empty board, where it acts on
+    /// none), one shape as VoiceOver calls it (its title, else its kind), or how many.
     static func label(for target: SlashTarget, in editor: CanvasEditor) -> String {
-        if case .everything = target { return everything }
+        if case .everything(let ids) = target { return ids.isEmpty ? "" : everything }
         let shapes = target.shapes
         if shapes.count == 1, let one = editor.accessibleDescription(of: shapes[0]) { return one.name }
         return Self.shapes(shapes.count)
@@ -432,9 +432,10 @@ enum SlashBarStyle {
 
     static func shapes(_ count: Int) -> String { "\(count) shapes" }
 
-    /// What VoiceOver calls the bar: "Command for Groceries", "Command for 5 shapes", "Command for all shapes".
+    /// What VoiceOver calls the bar: "Command for Groceries", "Command for 5 shapes", "Command for all shapes";
+    /// "Command" on an empty board.
     static func accessibilityLabel(for target: SlashTarget, label: String) -> String {
-        if case .everything = target { return "Command for \(everything.lowercased())" }
+        if case .everything(let ids) = target { return ids.isEmpty ? fieldLabel : "Command for \(everything.lowercased())" }
         return "Command for \(label)"
     }
 

@@ -395,8 +395,8 @@ final class LoggingService {
 extension LoggingService: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) { log.events.append("tool \(old) → \(new)") }
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) { log.events.append("document") }
-    func didPlace(_ id: ShapeID, in editor: CanvasEditor) {
-        log.events.append("placed \(id) in \(editor.currentToolID), editing \(editor.editingShapeID.map(\.description) ?? "nil"), "
+    func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) {
+        log.events.append("placed \(ids.map(\.description).joined(separator: ", ")) in \(editor.currentToolID), editing \(editor.editingShapeID.map(\.description) ?? "nil"), "
                           + "session \(editor.session == nil ? "none" : "running")")
     }
 }

@@ -107,6 +107,7 @@ extension CanvasEditor {
         } else if drawsSkeletons, !card.showsZoomedOut {
             return false
         }
+        letWaitingShapesGo()
         // The one it replaces is taken down without telling the host, which hears of the new one.
         if let old = shownCard {
             shownCard = nil

@@ -37,6 +37,9 @@ public enum Style {
     /// How far past the view, in world units, a shape is still drawn: a shadow (6 units of blur)
     /// of one just out of view shows at the edge.
     static let drawingPad: CGFloat = 40
+    /// Shapes waiting to be placed (`editor.placeLater`) are drawn at this opacity, the overlays'
+    /// decorations of them too (`OverlayContext.drawingPending`): there, but not yet put down.
+    static let pendingOpacity: CGFloat = 0.45
 
     // Skeletons: shapes as they show zoomed out (`CustomSkeleton`).
     /// Below this zoom a frame draws shapes as skeletons (`CanvasEditor.skeletonZoom`): a note's

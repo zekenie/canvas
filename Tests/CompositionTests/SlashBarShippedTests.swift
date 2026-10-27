@@ -72,7 +72,8 @@ import Types
         s.slash()
         expect(s.bar?.isOpen == true, "nothing selected: every note")
         expectEqual(s.bar?.label, "All shapes")
-        expectEqual(s.listed, ["lock", "public", "is-a", "color", "move-to", "move-near", "query"], "what three notes offer, then /query")
+        expectEqual(s.listed, ["lock", "public", "is-a", "color", "move-to", "move-near", "bulk-create", "query"],
+                    "what three notes offer, then the commands about every shape: /bulk-create, /query")
         model.queue(#":contains("buy")"#)
         s.window.type("query the shopping")
         s.window.pressReturn()

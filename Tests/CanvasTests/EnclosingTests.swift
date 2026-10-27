@@ -16,7 +16,7 @@ import TestKit
 }
 
 extension PlacedLog: EditorService {
-    func didPlace(_ id: ShapeID, in editor: CanvasEditor) { placed.append(id) }
+    func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) { placed += ids }
 }
 
 /// Bound to two shapes, as an arrow is, and hanging `sag` below the line between their middles: an

@@ -258,6 +258,9 @@ public struct SelectionPlugin: ListedPlugin {
         // edit it (`placeAtKeyboard`), as a click with the tool does.
         registrar.shortcut(.return, openSelection) { $0.returnKey() }
         registrar.shortcut(.enter, openSelection) { $0.returnKey() }
+        // With ⌥ held they do the same, ⌥ being what a placement lays its shapes out by (`placeLater`: ⌥↩ puts
+        // shapes waiting to be placed down as ⌥ shows them).
+        registrar.shortcut(KeyChord(KeyChord.return.key, .option), openSelection) { $0.returnKey() }
         registrar.pressFocused { $0.pressFocusedPart() }
         registrar.command(.zoomToSelection, title: "Zoom to Selection", in: ViewMenu.Zoom.self, shortcut: KeyChord("2", .shift),
                           isEnabled: { !$0.shapes.isEmpty && !$0.editor.unobscuredViewport.isEmpty }) { $0.editor.reveal($0.shapes) }

@@ -76,6 +76,9 @@ public struct ToolID: Hashable, Sendable, ExpressibleByStringLiteral, CustomStri
     public init(placing kind: ShapeKind) { rawValue = kind.rawValue }
     public var description: String { rawValue }
     public static let hand: ToolID = "hand"
+    /// The core's own tool for shapes about to be placed (`editor.placeLater`): never in the toolbar, it
+    /// is current only while they wait for a press.
+    public static let pendingPlacement: ToolID = "pending-placement"
 }
 
 /// Something to do, by name: a command a plugin declares once with `registrar.command`, saying what

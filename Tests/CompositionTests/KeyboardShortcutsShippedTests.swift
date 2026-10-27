@@ -49,7 +49,7 @@ import TestKit
         expectEqual(row("Edit", "Delete"), ["⌫", "⌦"], "Delete's keys with its item, which has none of its own")
         expectEqual(row("Edit", "Undo"), ["⌘Z"])
         expectEqual(row("Edit", "Find Previous"), ["⇧⌘G"], "a submenu's items in its menu")
-        expectEqual(row("Go", "Open Selection"), ["⌘↓", "↩", "⌤"], "Return and Enter open the selection too")
+        expectEqual(row("Go", "Open Selection"), ["⌘↓", "↩", "⌤", "⌥↩"], "Return and Enter open the selection too, and Return with ⌥ (what waiting shapes are laid out by)")
         expectEqual(row("View", "Zoom to Fit"), ["⇧1"])
         expectEqual(row("View", "Zoom In"), ["⌘=", "="], "the menu's key and the plain one, held to repeat")
         expectEqual(row("View", "Zoom Out"), ["⌘-", "-"])
