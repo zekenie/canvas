@@ -1,3 +1,5 @@
+import Canvas
+import CanvasRPC
 import CanvasTesting
 import Foundation
 import Queries
@@ -161,6 +163,75 @@ import Topology
         spinRunLoop(until: { unasked.done })
         expect(unasked.result != nil, "no wait: 7.999 s is in time")
         source.cancel()
+    },
+    test("the deadline follows the file: 8 s up to 10,000 shapes and 50 µs more for each past that, from the last slice answered; a request may cap it in all, and canvas's refusal comes before it stops waiting") {
+        expectEqual(QueryBudget.deadline(forShapes: 0), .seconds(8))
+        expectEqual(QueryBudget.deadline(forShapes: QueryBudget.deadlineFrom), .seconds(8), "up to 10,000 shapes it's what it was")
+        expectEqual(QueryBudget.deadline(forShapes: 110_000), .seconds(13))
+        expectEqual(QueryBudget.deadline(forShapes: 1_010_000), .seconds(58))
+        expectEqual(QueryBudget.commandDeadline, .seconds(8))
+        expect(QueryBudget.commandDeadline < .seconds(RPC.defaultWait), "refused two seconds before `canvas` stops waiting")
+        expectEqual(QueryBudget.deadline, QueryBudget.commandDeadline)
+
+        // A file of 30,000 shapes has 9 s. The query asks `:slow` of the three Alphas, each a slice of its own (it costs
+        // more than a slice's 2 ms), and the first moves the clock on: the slices after it are not asked once the deadline's passed.
+        let slow = SlowWord()
+        slow.cost = { _ in .milliseconds(3) }
+        let shapes = (1...3).map { chore(id($0), caption: "Alpha") } + (0..<29_997).map { _ in chore(ShapeID()) }
+        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: CanvasFile(root: CanvasDocument(shapes: shapes)))
+        let queries = try require(h.editor.queries)
+        @MainActor func ask(taking ran: Int, deadline: Duration? = nil) throws -> Outcome {
+            slow.calls = 0
+            slow.onAsk = { _ in if slow.calls == 1 { h.wait(ran) } }
+            let outcome = try start(QueryRequest(#"chore"Alpha":slow"#, deadline: deadline), on: h)
+            spinRunLoop(until: { outcome.done })
+            spinRunLoop(until: { queries.liveSnapshots == 0 })
+            return outcome
+        }
+        expectEqual(try ask(taking: 8_999).result?.count, 3, "8.999 s of 9: in time, where 8 s would have refused it")
+        let late = try ask(taking: 9_000)
+        expectEqual(late.error?.reason, .tooSlow)
+        expectEqual(late.error?.message, "The query took more than 9 seconds.", "the file's, said as it is")
+        expectEqual(slow.calls, 1, "and stopped")
+        // The command line asks for 8: its client waits 10, and the refusal must arrive before that, over a file of any size.
+        let command = QueryBudget.commandDeadline
+        expectEqual(try ask(taking: 7_999, deadline: command).result?.count, 3)
+        let capped = try ask(taking: 8_000, deadline: command)
+        expectEqual(capped.error?.reason, .tooSlow)
+        expectEqual(capped.error?.message, "The query took more than 8 seconds.")
+        // A cap past the file's own deadline changes nothing: it's the time in all, and the file's is the time without a sign of life.
+        expectEqual(try ask(taking: 9_000, deadline: .seconds(60)).error?.reason, .tooSlow)
+        expectEqual(try ask(taking: 8_999, deadline: .seconds(60)).result?.count, 3)
+        expectEqual(h.scheduler.pendingCount, 0, "no deadline left")
+        expectEqual(queries.liveSnapshots, 0)
+    },
+    test("the deadline is a time without a sign of life: slices the main actor answers keep a query going however long it takes in all, and a cap on the total stops it") {
+        // Six chores, each asked in a slice of its own, each moving the clock on 5 s: 30 s in all, and never 8 s between one slice's end and the next's.
+        let slow = SlowWord()
+        slow.cost = { _ in .milliseconds(3) }
+        let h = try EditorHarness(plugins: queryPlugins(more: [slowPlugin(slow)]), file: manyChores(6))
+        let queries = try require(h.editor.queries)
+        slow.onAsk = { _ in h.wait(5_000) }
+        let steady = try start(QueryRequest("chore:slow"), on: h)
+        spinRunLoop(until: { steady.done })
+        expectEqual(steady.result?.count, 6, "\(String(describing: steady.error))")
+        expectEqual(slow.calls, 6)
+        // The same, held to 20 s in all: four slices, and the fifth isn't asked.
+        slow.calls = 0
+        let capped = try start(QueryRequest("chore:slow", deadline: .seconds(20)), on: h)
+        spinRunLoop(until: { capped.done })
+        expectEqual(capped.error?.reason, .tooSlow)
+        expectEqual(capped.error?.message, "The query took more than 20 seconds.")
+        expectEqual(slow.calls, 4)
+        // A slice that takes 8 s with no answer before it ends is refused as it was: nothing to show for the time.
+        slow.calls = 0
+        slow.onAsk = { _ in h.wait(slow.calls == 3 ? 8_000 : 1_000) }
+        let stalled = try start(QueryRequest("chore:slow"), on: h)
+        spinRunLoop(until: { stalled.done })
+        expectEqual(stalled.error?.message, "The query took more than 8 seconds.")
+        expectEqual(slow.calls, 3)
+        expectEqual(h.scheduler.pendingCount, 0, "nothing left armed")
+        expectEqual(queries.liveSnapshots, 0)
     },
     test("canvas query's wait is two seconds, and a warning says what it's about") {
         expectEqual(QueryBudget.settleWait, .seconds(2))

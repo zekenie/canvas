@@ -73,7 +73,7 @@ EOF
 
 - **The query**: `-` reads it from standard input. Queries are full of `"`, `*`, `>`, `[`, `!` and `#`, which shells mangle, so always pass one through a heredoc with a quoted delimiter (`<<'EOF'`). A query may run over several lines (a new line is a space) and hold comments, `/* … */`.
 - **`--board <board>`** names the file by the id `canvas boards` gives it, by its path, or by its name. Without it the query goes to the file in front. A query reads the whole file, every board of it, wherever its window is.
-- **`--limit <n>`** lists at most so many rows, 100 unless it says, up to 10000. `count` is always of every shape that matches.
+- **`--limit <n>`** lists at most so many rows, 100 unless it says; there is no most. `count` is always of every shape that matches.
 - **`--count`** lists no rows: only how many match.
 - **`--brief`** lists each row without its attributes.
 - **`--fields <attribute>`** lists only the attributes it names, whole (never cut). Give it again for another: `--fields text --fields locked`. It can't go with `--brief`, and an attribute no kind has is refused (`unknown_attribute`).
@@ -808,7 +808,7 @@ The messages are examples. The wording can differ, but the reason doesn't.
 | `no_queries` | Nothing in this app answers queries. | Nothing: `canvas query` can't work here. |
 | `too_slow` | The query took more than 8 seconds (`--ask`: 55). | Start from a kind, a title or an id, or give the transitive words a type. |
 | `board_closed` | The file was closed while the query ran. | Open it, and ask again. |
-| `invalid_params` | The options don't go together (`--brief` with `--fields`), no query and no `--ask`, or `--limit` out of 1 to 10000. | `canvas help query`. |
+| `invalid_params` | The options don't go together (`--brief` with `--fields`), no query and no `--ask`, or `--limit` under 1. | `canvas help query`. |
 | `no_board`, `ambiguous_board`, `unknown_board` | No file is open, several are and none is in front, or `--board` names none. | `canvas boards`, and `--board <id>`. |
 | `usage` | The command line is wrong (exit 2). | `canvas help query`. |
 | `not_running`, `unreachable`, `protocol_mismatch`, `timed_out` | The app wasn't reached, or didn't answer in time (exit 3). When `canvas` stops waiting, the app stops the query too. | As for `draw` ([language.md](language.md#errors)). A query changes nothing, so after `timed_out` ask again, with a longer `--timeout`. |

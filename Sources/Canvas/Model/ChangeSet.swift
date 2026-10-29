@@ -124,17 +124,10 @@ public struct ChangeSet: Equatable, Sendable {
         added.isEmpty && removed.isEmpty && changed == moved && elsewhere.isEmpty && boardsReached.isEmpty && !replacedDocument
     }
 
-    /// From one document to another, compared record by record (`replaceDocument`).
+    /// From one document to another, compared record by record (`replaceDocument`): the chunks of shapes the two
+    /// share are passed over, so one made from the other by a few changes costs those.
     init(from old: CanvasDocument, to new: CanvasDocument) {
-        for record in new.shapes {
-            if let before = old[record.id] {
-                if before != record { changed.insert(record.id) }
-            } else {
-                added.insert(record.id)
-            }
-        }
-        for record in old.shapes where new[record.id] == nil { removed.insert(record.id) }
-        reordered = old.shapes.map(\.id) != new.shapes.map(\.id)
+        (added, changed, removed, reordered) = new.shapes.differences(from: old.shapes)
         replacedDocument = true
         priors = Priors(boards: [old])
     }

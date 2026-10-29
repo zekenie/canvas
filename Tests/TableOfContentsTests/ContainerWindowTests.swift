@@ -114,7 +114,7 @@ extension ContentsWindow {
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
         expectEqual(w.rows, 25)
     },
-    test("a commit that brings rows in under two containers replaces the rows, with no reentrant update, the containers still open") {
+    test("a commit that brings rows in under two containers brings them in there, with no reentrant update, the containers still open") {
         let editor = try corralEditor(scheduler: TaskScheduler())
         _ = widgets(20, in: editor)
         let nest = NestedCorrals(in: editor)            // in front, so at the top: a row out of view opens only once it's in view

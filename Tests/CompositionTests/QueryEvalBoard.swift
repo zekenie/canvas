@@ -265,7 +265,7 @@ enum QueryEvalBoard {
         expectEqual(h.file.children.count, 5, "Identity's, Legacy auth's, Billing's, Invoices' and Infra's boards")
         let queries = try require(h.editor.queries)
         @MainActor func ids(_ query: String) throws -> [ShapeID] {
-            try awaitResult { try await queries.run(QueryRequest(query, limit: QueryBudget.maxRows, properties: .none)) }.rows.map(\.id)
+            try awaitResult { try await queries.run(QueryRequest(query, limit: QueryRequest.every, properties: .none)) }.rows.map(\.id)
         }
         let all = try ids("*")
         expectEqual(all.count, 59)

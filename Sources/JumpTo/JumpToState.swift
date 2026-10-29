@@ -84,7 +84,7 @@ public final class JumpToState {
         var boards: [BoardID]
         var board = 0
         var index = 0
-        var shapes: [AnyShapeRecord]?
+        var shapes: ShapeStack?
         /// The shapes a commit read again since `shapes` was taken: read as they are now, not as they were.
         var touched: Set<ShapeID> = []
     }

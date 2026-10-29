@@ -33,7 +33,7 @@ import Topology
         expectEqual(limit.value, .integer)
         expectEqual(limit.defaultValue, 100)
         expectEqual(spec.params["properties"]?["limit"]?["minimum"], 1)
-        expectEqual(spec.params["properties"]?["limit"]?["maximum"], 10_000)
+        expectEqual(spec.params["properties"]?["limit"]?["maximum"], nil, "a query has no most rows")
         expectEqual(arguments["fields"]?.value, .list(.text(choices: nil)))
         expectEqual(arguments["fields"]?.valueName, "attribute")
         expectEqual(arguments["count"]?.value, .flag)
@@ -161,6 +161,42 @@ import Topology
 
         let refusedLimit = try refused(["query", "--limit", "0", "chore"], on: h)
         expectEqual(refusedLimit.reason, "invalid_params")
+    },
+    test("--limit has no most: a number past 10,000 lists that many rows, and the warning offers ten times the number") {
+        let many = 10_005
+        let h = try shelfHarness(file: CanvasFile(root: CanvasDocument(shapes: (0..<many).map { _ in chore(ShapeID()) })))
+        let all = try answered(["query", "--brief", "--limit", "20000", "chore"], on: h)
+        expectEqual(all["count"], .number(Double(many)))
+        expectEqual(all["rows"]?.arrayValue?.count, many, "every row, none cut at 10,000")
+        expectEqual(all["warnings"], nil, "nothing is left unlisted")
+        let some = try answered(["query", "--brief", "--limit", "10002", "chore"], on: h)
+        expectEqual(some["rows"]?.arrayValue?.count, 10_002)
+        expectEqual(some["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue },
+                    ["10002 of 10005 listed. --limit 100020 lists more; --count only counts."])
+        expectEqual(try answered(["query", "--brief", "chore"], on: h)["rows"]?.arrayValue?.count, 100, "the default is still 100")
+    },
+    test("canvas query is refused too_slow at 8 s over a file of any size, before canvas stops waiting at 10; the engine itself gives a larger file longer") {
+        let desk = Desk()
+        let shapes = (1...3).map { chore(id($0), caption: "Alpha") } + (0..<19_997).map { _ in chore(ShapeID()) }
+        let h = try shelfHarness(commandPlugins(desk: desk), file: CanvasFile(root: CanvasDocument(shapes: shapes)))
+        let queries = try require(h.editor.queries)
+        expectEqual(QueryBudget.deadline(forShapes: 20_000), .milliseconds(8_500))
+        // The three Alphas are asked `:slow`, each costing more than a slice's 2 ms, so each is a slice of its own;
+        // the first moves the clock on 8 s, and the slices after it are not asked.
+        desk.onSlow = {
+            if desk.slowCalls == 1 { h.wait(8_000) }
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            while clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start < 3_000_000 {}
+        }
+        let error = try refused(["query", #"chore"Alpha":slow"#], on: h)
+        expectEqual(error.reason, "too_slow")
+        expectEqual(error.message, "The query took more than 8 seconds.")
+        expectEqual(desk.slowCalls, 1)
+        spinRunLoop(until: { queries.liveSnapshots == 0 })
+        expectEqual(h.scheduler.pendingCount, 0)
+        desk.slowCalls = 0
+        let direct = try awaitResult { try await queries.run(QueryRequest(#"chore"Alpha":slow"#)) }
+        expectEqual(direct.count, 3, "asked of the engine alone, 8 s of 8.5 is in time")
     },
     test("the query as the language writes it, and its warnings") {
         let h = try shelfHarness()

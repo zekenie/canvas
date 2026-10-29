@@ -62,7 +62,7 @@ func record<P: ShapeProps>(_ n: Int, _ props: P) -> AnyShapeRecord { AnyShapeRec
 @MainActor func matched(_ text: String, on h: EditorHarness, file: StaticString = #fileID, line: UInt = #line) throws -> [ShapeID] {
     let queries = try require(h.editor.queries, file: file, line: line)
     return try awaitResult(file: file, line: line) {
-        try await queries.run(QueryRequest(text, limit: QueryBudget.maxRows, properties: .none))
+        try await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: .none))
     }.rows.map(\.id)
 }
 

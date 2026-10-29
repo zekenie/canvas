@@ -112,8 +112,8 @@ public final class CanvasEditor {
     /// file for a view that is drawn again by something else it observes (Mentions' quote of a
     /// mentioner's text, in a row its list draws again as each answer lands), so the view redraws as
     /// that says rather than on every commit. What it reads is for the call: a copy of the
-    /// file kept until the next commit would make that commit copy the file's tables, whatever it
-    /// changed.
+    /// file kept until the next commit would make that commit copy the tables it writes (the shapes of a
+    /// board and which board each is on in pieces, the file's other tables whole), whatever it changed.
     public func withoutObservingDocument<T>(_ body: () throws -> T) rethrows -> T {
         unobservedReads += 1
         defer { unobservedReads -= 1 }
@@ -310,6 +310,8 @@ public final class CanvasEditor {
     @ObservationIgnored let dotGrid = DotGrid()
     /// The shapes' shadows (`RenderContext.fillWithShadow`), left out where their fills hide them.
     @ObservationIgnored let shapeShadows = ShapeShadows()
+    /// The lists of shapes outlined, as sets, kept from frame to frame (`strokeOutlines`).
+    @ObservationIgnored let outlineMembers = OutlineMembers()
     /// Below this zoom the canvas draws shapes as skeletons (`drawsSkeletons`, `CustomSkeleton`):
     /// 35% (`Style.skeletonZoom`) unless the host says otherwise. 0 draws every shape in full at
     /// every zoom (a test held to pictures drawn before skeletons were). Setting it redraws, and
@@ -1604,11 +1606,16 @@ public final class CanvasEditor {
     /// `paintOrder(in:)`'s shapes, back to front, each with its kept extent (world units): the one rule for what
     /// may show in a rect, for what reads the extents too (VoiceOver's shapes in view, ranked by their middles).
     func forEachShape(in rect: CGRect, _ body: (AnyShapeRecord, CGRect) -> Void) {
-        let list = shapeIndex.paintList(in: shapeContext), shapes = document.shapes, only = drawnShapes
-        for (position, extent) in list.extents.enumerated() where extent.touches(rect) {
+        let context = shapeContext
+        // The shapes whose extent meets the rect, found in the cells it covers (`ShapeIndex.positions`), not by going
+        // through every shape.
+        let positions = shapeIndex.positions(touching: rect, in: context)
+        guard !positions.isEmpty else { return }
+        let list = shapeIndex.paintList(in: context), shapes = document.shapes, only = drawnShapes
+        for position in positions {
             let record = shapes[list.order[position]]
             if let only, !only.contains(record.id) { continue }
-            body(record, extent)
+            body(record, list.extents[position])
         }
     }
 
@@ -1624,9 +1631,11 @@ public final class CanvasEditor {
     /// point are asked (see `ShapeDefinition.hitMargin`).
     public func shape(at point: CGPoint, where include: (AnyShapeRecord) -> Bool = { _ in true }) -> ShapeID? {
         let context = shapeContext
-        let list = shapeIndex.paintList(in: context), shapes = document.shapes, zoom = camera.zoom
-        for position in list.order.indices.reversed()
-        where ShapeIndex.mayHit(point, extent: list.extents[position], margin: list.hitMargins[position], zoom: zoom) {
+        // Front to back, those near enough to be asked (`ShapeIndex.mayHit`), found in the cells round the point.
+        let positions = shapeIndex.positions(mayHit: point, zoom: camera.zoom, in: context)
+        guard !positions.isEmpty else { return nil }
+        let list = shapeIndex.paintList(in: context), shapes = document.shapes
+        for position in positions {
             let record = shapes[list.order[position]]
             if include(record), registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
                 return record.id

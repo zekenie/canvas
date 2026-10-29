@@ -73,9 +73,9 @@ extension CanvasEditor {
                 self?.setNeedsDisplay()
             }
         }
-        let outlines = self.outlines
-        let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines)
-        drawOutlines(outlines, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
+        let (outlines, hint) = outlinesAndHint
+        let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
+        drawOutlines(outlines, hint: hint, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
         // The shapes waiting to be placed (`placeLater`), faint, over the board's and its outlines, under what
         // overlays draw (which decorate them too): a context over them alone, so each has its geometry, laid out
         // as shapes of the file where they'd land.
@@ -127,6 +127,23 @@ extension CanvasEditor {
         get { shapeShadows.alwaysDrawn }
         set { shapeShadows.alwaysDrawn = newValue }
     }
+
+    /// Whether finding the shapes in a rect (`paintOrder(in:)`) and under a point (`shape(at:where:)`) goes through every
+    /// shape's extent instead of the cells that cover them, and outlining a long list of shapes goes through each of the list
+    /// instead of the shapes in view (debug builds): the control a test of the grid and the outlines compares against.
+    /// The board shown now; another board shown has its own.
+    @_spi(Host) public var scansEveryShape: Bool {
+        get { shapeIndex.scansEveryExtent }
+        set { shapeIndex.scansEveryExtent = newValue }
+    }
+
+    /// How many grids over the paint list's extents the board shown has made, and how many times its paint list was
+    /// built (debug builds): a commit that adds shapes at the top of the stack makes neither again.
+    @_spi(Host) public var spatialGridsMade: Int { shapeIndex.gridsMade }
+    @_spi(Host) public var paintListsBuilt: Int { shapeIndex.paintListsBuilt }
+
+    /// How many sets of the shapes in a list outlined have been made (debug builds): one for a list, kept while it is the same.
+    @_spi(Host) public var outlineSetsMade: Int { outlineMembers.made }
     #endif
 
     // MARK: Drawing a shape away from where it is
@@ -182,6 +199,14 @@ extension CanvasEditor {
     /// plugin with full outlines names, else none (the accent). A picture of the board marks the same
     /// shapes.
     @_spi(Host) public var outlines: Outlines {
+        var (outlines, hint) = outlinesAndHint
+        if let hint { outlines.shapes.append(hint) }
+        return outlines
+    }
+
+    /// `outlines` less the hint, which is not appended to `shapes`: a selection of every shape would be copied to add it.
+    /// The faint shapes leave out the hint too, as they do the shapes.
+    private var outlinesAndHint: (outlines: Outlines, hint: ShapeID?) {
         var outlines = Outlines()
         if session?.hidesOutlines != true {
             // The color the full outlines are named in, while every plugin with some names the same.
@@ -199,26 +224,32 @@ extension CanvasEditor {
             }
             outlines.color = named ?? nil
         }
-        if let hintedShapeID { outlines.shapes.append(hintedShapeID) }
-        if !outlines.faintShapes.isEmpty, !outlines.shapes.isEmpty {
-            outlines.faintShapes = Self.faint(outlines.faintShapes, leavingOut: outlines.shapes)
+        let hint = hintedShapeID
+        if !outlines.faintShapes.isEmpty, !outlines.shapes.isEmpty || hint != nil {
+            outlines.faintShapes = Self.faint(outlines.faintShapes, leavingOut: outlines.shapes, and: hint)
         }
-        return outlines
+        return (outlines, hint)
     }
 
-    /// The faint outlines less those outlined in full, with no set of all of those (⌘A's is every
+    /// The faint outlines less those outlined in full (and the hint, which is), with no set of all of those (⌘A's is every
     /// shape): each of a few (a hover) is looked for among them, which compares ids, cheaper than
     /// hashing them; more, in one pass over them.
-    private static func faint(_ faint: [ShapeID], leavingOut full: [ShapeID]) -> [ShapeID] {
-        guard faint.count > 8 else { return faint.filter { !full.contains($0) } }
+    private static func faint(_ faint: [ShapeID], leavingOut full: [ShapeID], and hint: ShapeID?) -> [ShapeID] {
+        guard faint.count > 8 else { return faint.filter { $0 != hint && !full.contains($0) } }
         var unfound = Set(faint)
         let count = unfound.count
+        if let hint { unfound.remove(hint) }
         for id in full {
             unfound.remove(id)
             if unfound.isEmpty { return [] }
         }
         return unfound.count == count ? faint : faint.filter(unfound.contains)
     }
+
+    /// Whether any shape's geometry, as the editor keeps it, was worked out from the camera (its kind's geometry read the
+    /// camera or the zoom): if none was, a pan or a zoom changes no shape's geometry, so what a plugin keeps that is worked
+    /// out from geometries (the selection's bounds) is still right after one.
+    public var geometriesReadCamera: Bool { shapeIndex.readsCamera }
 
     /// The bounds of every shape on the board, in world units: what a picture of all of it shows.
     /// Shapes that could be anywhere (no outline, and no box) and shapes kept aside don't count;
@@ -274,10 +305,11 @@ extension CanvasEditor {
     /// are the shape the groups are about, and are stronger beside them.
     /// Only what meets `area` (world units, what the shapes were drawn for, and in full grown by what
     /// an outline stands off by) is asked for its path and stroked: a shape outlined out of view costs
-    /// a look at its kept extent, however it's outlined. `skeletonPixel` is how big a pixel is (world units)
+    /// nothing, however it's outlined, when many shapes are and few are in view (`strokeOutlines`), else a
+    /// look at its kept extent. `skeletonPixel` is how big a pixel is (world units)
     /// while shapes are drawn as skeletons, nil while they aren't.
-    private func drawOutlines(_ outlines: Outlines, tinted: TintedRings?, in context: CGContext, shapes: ShapeContext, around area: CGRect,
-                              skeletonPixel: CGFloat?) {
+    private func drawOutlines(_ outlines: Outlines, hint: ShapeID?, tinted: TintedRings?, in context: CGContext, shapes: ShapeContext,
+                              around area: CGRect, skeletonPixel: CGFloat?) {
         for group in outlines.tinted {
             let outset = CGFloat(max(group.ring, 0)) * Style.tintedRingPitch
             strokeOutlines(of: group.shapes, rects: [], in: group.color, width: Style.tintedIndicatorWidth, outset: outset, around: area,
@@ -286,9 +318,12 @@ extension CanvasEditor {
         let faint = outlines.tinted.isEmpty ? Style.faintIndicatorOpacity : Style.tintedFaintIndicatorOpacity
         strokeOutlines(of: outlines.faintShapes, rects: [], in: Style.accent.withAlphaComponent(faint),
                        width: Style.faintIndicatorWidth, around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
-        strokeOutlines(of: outlines.shapes, rects: outlines.rects, in: outlines.color ?? Style.accent, width: Style.indicatorWidth,
+        strokeOutlines(of: outlines.shapes, plus: hint, rects: outlines.rects, in: outlines.color ?? Style.accent, width: Style.indicatorWidth,
                        around: area, skeletonPixel: skeletonPixel, context: context, shapes: shapes)
     }
+
+    /// How many shapes a list may have to be looked up one by one whatever is in view.
+    private static let outlinesLookedUp = 32
 
     /// `width` and `outset` are in view points; `outset` is how much further out than the others a
     /// tinted ring stands (zero for every other outline): a closed shape's outline, drawn in full,
@@ -323,9 +358,14 @@ extension CanvasEditor {
     /// rects) isn't stroked but filled as a ring, the rect grown by half the line less the rect
     /// shrunk by as much: what the stroke paints, but that its corners are square. Nothing here
     /// makes an array per shape.
-    private func strokeOutlines(of ids: [ShapeID], rects: [CGRect], in color: NSColor, width: CGFloat, outset: CGFloat = 0, around area: CGRect,
-                                skeletonPixel: CGFloat?, context: CGContext, shapes: ShapeContext, tinted: TintedRings? = nil) {
-        guard !ids.isEmpty || !rects.isEmpty else { return }
+    ///
+    /// `extra` is one shape more than `ids` has (the hint). A few shapes, or a list most of whose shapes are in
+    /// view, are each looked up for their kept extent; a longer list with few in view (⌘A on a board of thousands)
+    /// costs the shapes in view, each asked whether it is in the list (`outlineMembers`, a set kept while the list is the
+    /// same), so a shape out of view costs nothing, selected or not.
+    private func strokeOutlines(of ids: [ShapeID], plus extra: ShapeID? = nil, rects: [CGRect], in color: NSColor, width: CGFloat, outset: CGFloat = 0,
+                                around area: CGRect, skeletonPixel: CGFloat?, context: CGContext, shapes: ShapeContext, tinted: TintedRings? = nil) {
+        guard !ids.isEmpty || extra != nil || !rects.isEmpty else { return }
         let zoom = camera.zoom, line = width / zoom
         // How far a ring stands out past the others', in world units: its ring on a skeleton's frame
         // is grown by it, and it's part of what a closed shape's outline drawn in full stands off its
@@ -343,8 +383,8 @@ extension CanvasEditor {
         let strokes = CGMutablePath(), rings = CGMutablePath()
         // What covers a line drawn as wide as its kind says, for each width.
         var covers: [CGFloat: CGMutablePath] = [:]
-        for id in ids {
-            guard shapeIndex.extent(of: id, in: shapes)?.touches(area) == true, let entry = shapeIndex.entry(for: id, in: shapes) else { continue }
+        /// Adds the outline of a shape whose extent meets the area.
+        func outline(_ id: ShapeID, _ entry: ShapeIndex.Entry) {
             let offset = drawingOffsets[id].map { CGPoint(x: $0.x / zoom, y: $0.y / zoom) } ?? .zero
             let shift = CGAffineTransform(translationX: offset.x, y: offset.y)
             let lifted = lifts && tinted?.isOutlinedInFull(id) == true
@@ -359,12 +399,12 @@ extension CanvasEditor {
                         strokes.move(to: geometry.outline[0], transform: shift)
                         strokes.addLine(to: geometry.outline[geometry.outline.count - 1], transform: shift)
                     }
-                    continue
+                    return
                 }
                 if !skeletonOutlines.isEmpty, let record = shapes.storedDocument[id],
                    let own = skeletonOutlines[record.kind]?.erasedSkeletonIndicatorPath(of: record, in: shapes) {
                     strokes.addPath(own, transform: shift)
-                    continue
+                    return
                 }
                 if let geometry, let bounds {
                     // A ring past the first is on the frame, grown, whatever the outline: there's no
@@ -375,7 +415,7 @@ extension CanvasEditor {
                         strokes.addLines(between: geometry.outline, transform: shift)
                         if geometry.isClosed { strokes.closeSubpath() }
                     }
-                    continue
+                    return
                 }
             }
             if let record = shapes.storedDocument[id],
@@ -389,6 +429,30 @@ extension CanvasEditor {
                 } else {
                     addOutline(of: indicator, geometry: entry.geometry, standingOff: shapeGap, to: strokes, transform: shift)
                 }
+            }
+        }
+        // Few shapes, or most of a long list in view: each looked up for its extent. A long list with few in view: the shapes
+        // in view, each asked whether it is in the list.
+        var inView: [Int]?
+        if ids.count > Self.outlinesLookedUp, !shapeIndex.scansEveryExtent {
+            let found = shapeIndex.positions(touching: area, in: shapes)
+            if found.count * 2 < ids.count { inView = found }
+        }
+        if let inView {
+            let members = outlineMembers.members(of: ids)
+            let list = shapeIndex.paintList(in: shapes), all = shapes.storedDocument.shapes
+            for position in inView {
+                let id = all[list.order[position]].id
+                guard members.contains(id) || id == extra, let entry = shapeIndex.entry(for: id, in: shapes) else { continue }
+                outline(id, entry)
+            }
+        } else {
+            for id in ids {
+                guard shapeIndex.extent(of: id, in: shapes)?.touches(area) == true, let entry = shapeIndex.entry(for: id, in: shapes) else { continue }
+                outline(id, entry)
+            }
+            if let extra, shapeIndex.extent(of: extra, in: shapes)?.touches(area) == true, let entry = shapeIndex.entry(for: extra, in: shapes) {
+                outline(extra, entry)
             }
         }
         for rect in rects where rect.touches(area) {

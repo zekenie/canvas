@@ -34,7 +34,7 @@ import Validation
 
 @MainActor private func incompleteIDs(_ editor: CanvasEditor) throws -> Set<ShapeID> {
     let queries = try require(editor.queries)
-    return Set(try awaitResult { try await queries.run(QueryRequest(":incomplete", limit: QueryBudget.maxRows)) }.rows.map(\.id))
+    return Set(try awaitResult { try await queries.run(QueryRequest(":incomplete", limit: QueryRequest.every)) }.rows.map(\.id))
 }
 
 @MainActor let relationRulesDragShippedTests = Suite("Rules of an end, on the shipped list, with real arrows and a real press", [

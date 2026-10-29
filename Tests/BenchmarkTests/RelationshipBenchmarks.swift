@@ -167,7 +167,7 @@ extension BenchDrag: Session {
 /// (its ends) and 2,500 per 10,000 shapes arrows between two instances that are of a relationship type.
 /// Without `marking`, the ten are plain types and the file holds no relationship type at all.
 @MainActor private func relatedBoard(shapes size: Int, relationships: Bool, marking: Bool = true) -> (document: CanvasDocument, relationshipTypes: [ShapeID], count: Int) {
-    var shapes = generatedBoard(shapes: size).shapes
+    var shapes = Array(generatedBoard(shapes: size).shapes)
     let wanted = size / 4
     var plain: [ShapeID] = [], marked: [ShapeID] = [], instances: [ShapeID] = []
     var at = 0

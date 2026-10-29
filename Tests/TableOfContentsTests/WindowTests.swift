@@ -100,7 +100,7 @@ final class ContentsWindow {
         expectEqual(editor.selectedShapeIDs, [b], "Show All keeps the selection")
         expect(w.window.firstResponder === w.table, "the rows are new, the list isn't: it keeps the keyboard")
     },
-    test("a commit that brings rows in at several places at once replaces the rows: AppKit logs no reentrant update, the list keeps the keyboard") {
+    test("a commit that brings rows in at several places at once brings each in where it goes: AppKit logs no reentrant update, the list keeps the keyboard") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
         let ids = widgets(30, in: editor)
         let w = ContentsWindow(editor)
@@ -132,7 +132,7 @@ final class ContentsWindow {
     test("on a list of more than 200 rows, a commit that brings rows in at several places logs no reentrant update") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
         let ids = widgets(250, in: editor)
-        let w = ContentsWindow(editor)          // AppKit logs one first showing 200 rows or more, whatever the list does
+        let w = ContentsWindow(editor)
         w.window.spin { w.rows == 250 }
         w.window.settle()
         let log = standardError {
@@ -144,25 +144,32 @@ final class ContentsWindow {
             w.window.spin { w.rows == 251 }
             w.window.settle()
         }
-        // Rows brought in around those kept, AppKit logs one here too: replacing them is what it takes.
+        // Rows all of one height: AppKit measures none as they come in around those kept.
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
     },
-    test("rows replaced after a commit let go of no hover but one the pointer on them set: a shape hovered on the canvas stays hovered") {
+    test("rows moved or replaced let go of no hover but one the pointer on them set: a shape hovered on the canvas stays hovered") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
         let ids = widgets(30, in: editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 30 }
         w.window.settle()
-        editor.hovered = ids[5]                 // the pointer on its shape, on the canvas
-        let before = editor.contents.rowsRedrawn
+        editor.hovered = ids[25]                // the pointer on its shape, on the canvas; its row in view
         editor.transact { transaction in
             transaction.insert(ShapeRecord(Pin("early", on: ids[1])))
             transaction.insert(ShapeRecord(Pin("late", on: ids[25])))
             transaction.insert(ShapeRecord(Widget(name: "New")))
         }
-        w.window.spin { w.rows == 31 && editor.contents.rowsRedrawn >= before + 31 }
+        w.window.spin { w.rows == 31 }
         w.window.settle()
-        expectEqual(editor.hovered, ids[5])
+        expectEqual(editor.hovered, ids[25], "rows brought in around it")
+        editor.transact { $0.move(ids[25], above: ids[29]) }        // its row out, and in again above ids[29]'s
+        w.window.settle()
+        w.window.settle()
+        expectEqual(editor.hovered, ids[25], "its row moved")
+        editor.selectedShapeIDs = [ids[25], ids[24]]                // other rows listed, the list's whole
+        w.window.spin { w.rows == 2 }
+        w.window.settle()
+        expectEqual(editor.hovered, ids[25], "the rows replaced")
     },
     test("a commit that brings rows in at one place, or only changes rows, keeps the rows it has") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
@@ -187,8 +194,31 @@ final class ContentsWindow {
             }
         }
         expect(two < 10, "two rows in a run at the end: \(two) of 33 rows redrawn")
-        let renamed = redrawn { editor.transact { $0.update(ids[3], as: Widget.self) { $0.props.name = "Renamed" } } }
+        let renamed = redrawn { editor.transact { $0.update(ids[25], as: Widget.self) { $0.props.name = "Renamed" } } }
         expect(renamed < 10, "a row changed: \(renamed) of 33 rows redrawn")
+    },
+    test("a long list makes views for the rows in view alone, first shown, replaced and walked to its end") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let ids = widgets(5000, in: editor)
+        let contents = editor.contents
+        let before = contents.rowsRedrawn
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == ids.count }
+        w.window.settle()
+        let outline = try require(w.outline)
+        let inView = outline.rows(in: outline.visibleRect).length - 1         // less the header
+        let shown = contents.rowsRedrawn - before
+        expect(shown >= inView && shown < 4 * inView, "first shown: \(shown) rows drawn of \(ids.count), \(inView) in view")
+        let replacing = contents.rowsRedrawn
+        editor.selectedShapeIDs = Array(ids.prefix(2500))           // another scope: its rows shown whole
+        w.window.spin { w.rows == 2500 }
+        w.window.settle()
+        let replaced = contents.rowsRedrawn - replacing
+        expect(replaced >= inView && replaced < 4 * inView, "replaced: \(replaced) rows drawn of 2500")
+        let selecting = contents.rowsRedrawn
+        editor.contents.select([ids[0]])                            // the last row, selected: none drawn but where it shows
+        w.window.spin { w.table?.selectedRow == 2500 }
+        expect(contents.rowsRedrawn - selecting < inView, "\(contents.rowsRedrawn - selecting) rows drawn for a selection out of view")
     },
     test("the list shows the selection as selected rows") {
         let editor = try contentsEditor(scheduler: TaskScheduler())

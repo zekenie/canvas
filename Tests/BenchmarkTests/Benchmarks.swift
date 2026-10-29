@@ -55,12 +55,14 @@ import Validation
 // 100% to 10% and back, a frame at each zoom (in full just above 35%, a frame of the
 // generated board takes more than 16 ms). New frame budgets time the main thread's CPU
 // (`median(runs:onThread:)`), never the wall clock.
+// `BENCH_SIZES=10000,100000` runs them at those sizes instead, reporting only, and `BENCH_SUITE=n` runs
+// the nth suite of main.swift's list alone; at any two sizes, Scaling.swift holds what grows with the board.
 #if DEBUG
-let sizes = [300]
+let sizes: BenchSizes = [300]
 let holdsToBudgets = false
 #else
-let sizes = [1_000, 10_000]
-let holdsToBudgets = true
+let sizes = BenchSizes(ProcessInfo.processInfo.environment["BENCH_SIZES"].map { $0.split(separator: ",").compactMap { Int($0) } } ?? [1_000, 10_000])
+let holdsToBudgets = ProcessInfo.processInfo.environment["BENCH_SIZES"] == nil
 #endif
 
 /// Milliseconds.
@@ -315,7 +317,7 @@ enum Budget {
         let levels = owner.id == owners.last?.id ? depth : 1
         for level in 0..<levels {
             let share = level == levels - 1 ? count - count / levels * level : count / levels
-            var shapes = generatedBoard(shapes: share).shapes
+            var shapes = Array(generatedBoard(shapes: share).shapes)
             if level < levels - 1 {
                 let next = card(0)
                 shapes.append(AnyShapeRecord(next))
@@ -374,7 +376,11 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
     editor.draw(in: context, bounds: CGRect(origin: .zero, size: size), dirtyRect: CGRect(origin: .zero, size: size))
 }
 
-@MainActor func report(_ line: String) { print("  \(line)") }
+/// Prints a line, and keeps it with the size the loop over `sizes` is at, for Scaling.swift.
+@MainActor func report(_ line: String) {
+    print("  \(line)")
+    Scaling.lines.append((Scaling.currentSize, line))
+}
 
 /// Draws a view as its window would, into `context` (sized to it, y down).
 @MainActor func display(_ view: NSView, into context: CGContext) {

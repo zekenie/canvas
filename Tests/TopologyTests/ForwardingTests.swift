@@ -593,7 +593,7 @@ struct Seeded: RandomNumberGenerator {
         case 66..<76:
             let boards = [.root] + questioned(h).compactMap { h.editor.shape(inFile: $0) }.filter { $0.kind == Pocket.kind }
                 .map { BoardID(owner: $0.id) }.filter(h.editor.canShow)
-            guard let board = pick(boards.filter { $0 != h.editor.board }), let rewired = pick(h.file[board].shapes) else { return "nothing" }
+            guard let board = pick(boards.filter { $0 != h.editor.board }), let rewired = pick(Array(h.file[board].shapes)) else { return "nothing" }
             h.editor.transact(on: board, "Elsewhere") { rewire(rewired.id, in: &$0) }
             return "a commit on another board"
         case 76..<80:

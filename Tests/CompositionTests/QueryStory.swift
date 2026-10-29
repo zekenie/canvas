@@ -205,7 +205,7 @@ enum QueryStory {
         expectEqual(h.file.root.shapes.count, 13)
         expectEqual(h.file.children.count, 2, "Payments' board and Refunds'")
         let queries = try require(h.editor.queries)
-        let all = try awaitResult { try await queries.run(QueryRequest("*", limit: QueryBudget.maxRows, properties: .none)) }
+        let all = try awaitResult { try await queries.run(QueryRequest("*", limit: QueryRequest.every, properties: .none)) }
         expectEqual(all.count, 17)
         expectEqual(all.rows.map(\.id), QueryStory.fileOrder)
 
@@ -234,7 +234,7 @@ enum QueryStory {
         expectEqual(board.editor.selectedShapeIDs, [QueryStory.auth])
         expect(!board.isDocumentEdited)
         let opened = try require(board.editor.queries)
-        let listed = try awaitResult { try await opened.run(QueryRequest("*", limit: QueryBudget.maxRows, properties: .none)) }
+        let listed = try awaitResult { try await opened.run(QueryRequest("*", limit: QueryRequest.every, properties: .none)) }
         expectEqual(listed.rows.map(\.id), QueryStory.fileOrder)
 
         // And as `canvas`, as built, asks the app for it.

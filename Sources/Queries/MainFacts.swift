@@ -44,6 +44,8 @@ final class MainFacts {
     private(set) var total: UInt64 = 0
     private(set) var longest: UInt64 = 0
     private(set) var costliest: UInt64 = 0
+    /// Told when a slice has been answered (the main actor, so the query is alive).
+    var onSlice: (@MainActor () -> Void)?
     /// How many derived names and verdicts were asked.
     private(set) var titlesAsked = 0
     private(set) var verdictsAsked = 0
@@ -140,6 +142,7 @@ final class MainFacts {
         slices += 1
         total += spent
         longest = max(longest, spent)
+        onSlice?()
         return (answers, done)
     }
 }

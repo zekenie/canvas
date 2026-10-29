@@ -6,9 +6,9 @@ import SwiftUI
 import TableOfContents
 import TestKit
 
-// Dragging rows through the list itself, in an unshown window: the table asks each dragged row what it
-// carries (`pasteboardWriterForItem`, which begins the drag), and AppKit hands a drag over a row to that
-// row's own drop target, SwiftUI's, which a test reaches as AppKit does, with a drag of its own making.
+// Dragging rows through the list itself, in an unshown window: the outline asks each dragged row what it
+// carries (`pasteboardWriterForItem`, which begins the drag), and AppKit hands a drag over the rows to the
+// outline, which a test reaches as AppKit does, with a drag of its own making, at a point on a row.
 
 /// A drag over the list, as AppKit describes one to the view under it: what it carries, where it is.
 final class RowDrag: NSObject, NSDraggingInfo {
@@ -59,19 +59,18 @@ extension ContentsWindow {
     }
 
     /// A drag of the rows at `rows` (the header is 0), as their writers begin one, at `fraction` of the way
-    /// down the row at `row`: what that row's own drop target hears, and the drag.
+    /// down the row at `row`: what the view AppKit hands it to hears (the outline, registered for what a row
+    /// carries), and the drag.
     func drag(rows: [Int], over row: Int, at fraction: CGFloat) throws -> (target: NSView, drag: RowDrag) {
         let outline = try require(outline, "no outline")
         let pasteboard = NSPasteboard.withUniqueName()          // the caller releases it (`drag.pasteboard`)
         pasteboard.clearContents()
         pasteboard.writeObjects(try rows.map { try require(writer(ofRow: $0), "row \($0) doesn't drag") })
-        // SwiftUI's drop target in that row's cell: the view there registered for every type.
-        let target = try require(outline.descendants.first { view in
-            view.registeredDraggedTypes.contains(.init("public.item")) && outline.row(for: view) == row
-        }, "row \(row) has no drop target")
-        let bounds = target.bounds
-        let y = target.isFlipped ? bounds.minY + bounds.height * fraction : bounds.maxY - bounds.height * fraction
-        return (target, RowDrag(pasteboard: pasteboard, source: outline, location: target.convert(CGPoint(x: bounds.midX, y: y), to: nil), window: window))
+        let carried = try require(pasteboard.types?.first, "nothing carried")
+        let target = try require(outline.registeredDraggedTypes.contains(carried) ? outline : nil, "the outline takes no rows")
+        let bounds = outline.rect(ofRow: row)
+        let y = outline.isFlipped ? bounds.minY + bounds.height * fraction : bounds.maxY - bounds.height * fraction
+        return (target, RowDrag(pasteboard: pasteboard, source: outline, location: outline.convert(CGPoint(x: bounds.midX, y: y), to: nil), window: window))
     }
 }
 

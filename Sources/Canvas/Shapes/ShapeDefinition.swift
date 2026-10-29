@@ -137,6 +137,15 @@ public struct ShapeContext {
         return geometry.bounds
     }
 
+    /// The shapes a world point may hit, front-most first, in the document's order (which a shape painted by anchor, an
+    /// arrow, doesn't keep: `CanvasEditor.shape(at:where:)` goes by the paint order): those whose extent, grown by their
+    /// hit margin, holds it, so a few whatever the board holds, in the editor's context; every shape in another
+    /// (a transaction's, a plain one). For code that asks `hitTest(_:shape:)` of each and wants the front-most to say yes.
+    public func shapes(mayHit point: CGPoint) -> [AnyShapeRecord] {
+        guard let index = currentIndex else { return storedDocument.shapes.reversed() }
+        return index.documentIndices(mayHit: point, zoom: storedCamera.zoom, in: self).map { storedDocument.shapes[$0] }
+    }
+
     /// Whether a world point hits the shape, by its definition's own test.
     public func hitTest(_ point: CGPoint, shape id: ShapeID) -> Bool {
         if let index = currentIndex {

@@ -195,7 +195,7 @@ enum QuerySchoolBoard {
         let h = try QuerySchoolBoard.harness(pasteboard: pasteboard)
         let queries = try require(h.editor.queries)
         @MainActor func ids(_ query: String) throws -> Set<ShapeID> {
-            Set(try awaitResult { try await queries.run(QueryRequest(query, limit: QueryBudget.maxRows, properties: .none)) }.rows.map(\.id))
+            Set(try awaitResult { try await queries.run(QueryRequest(query, limit: QueryRequest.every, properties: .none)) }.rows.map(\.id))
         }
         typealias S = QuerySchoolBoard
         expectEqual(try ids("sticky-note[relationship]"), [S.teaches, S.hasPet])

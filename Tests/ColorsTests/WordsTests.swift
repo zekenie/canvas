@@ -119,7 +119,7 @@ private struct Unexpected: Error {}
 @MainActor private func colorAnswer(_ text: String, on h: EditorHarness, file: StaticString = #fileID, line: UInt = #line) throws -> QueryResult {
     let queries = try require(h.editor.queries, file: file, line: line)
     return try awaitResult(file: file, line: line) {
-        try await queries.run(QueryRequest(text, limit: QueryBudget.maxRows, properties: .all))
+        try await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: .all))
     }
 }
 

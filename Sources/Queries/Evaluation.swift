@@ -225,10 +225,8 @@ final class Evaluation {
         try await listProblems(on: &rows, words: plan.uses.pseudoClasses)
         var warnings: [QueryWarning] = []
         if !countOnly, found.count > rows.count {
-            let more = min(QueryBudget.maxRows, limit * 10)
-            warnings.append(QueryWarning(.limited, rows.count < more
-                ? "\(rows.count) of \(found.count) listed. --limit \(more) lists more; --count only counts."
-                : "\(rows.count) of \(found.count) listed; --count only counts."))
+            let more = limit > Int.max / 10 ? Int.max : limit * 10
+            warnings.append(QueryWarning(.limited, "\(rows.count) of \(found.count) listed. --limit \(more) lists more; --count only counts."))
         }
         if let editing = snapshot.editing, read.contains(editing) || rows.contains(where: { $0.id == editing }) {
             try await readNames([editing])

@@ -206,6 +206,33 @@ extension ViewSquareDefinition: ShapeDefinition {
         expectEqual(h.editor.selectionBounds, CGRect(x: 10, y: 20, width: 340, height: 230), "the same shapes again")
         #endif
     },
+    test("a pan or a zoom works the selection's bounds out again only while some geometry on the board reads the camera") {
+        #if DEBUG
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), viewSquaresPlugin()])
+        let a = h.add(Box(CGRect(x: 10, y: 20, width: 100, height: 50)))
+        let b = h.add(Box(CGRect(x: 300, y: 200, width: 50, height: 50)))
+        h.editor.selectedShapeIDs = [a, b]
+        let box = CGRect(x: 10, y: 20, width: 340, height: 230)
+        expectEqual(h.editor.selectionBounds, box)
+        expect(!h.editor.geometriesReadCamera, "no geometry reads the camera")
+        let worked = h.editor.selectionBoundsWorkedOut
+        h.editor.camera = Camera(origin: CGPoint(x: 40, y: 10), zoom: 2)
+        expectEqual(h.editor.selectionBounds, box)
+        h.editor.camera = Camera(zoom: 0.1)
+        _ = renderBitmap(h.editor, size: CGSize(width: 600, height: 400))
+        expectEqual(h.editor.selectionBounds, box)
+        expectEqual(h.editor.selectionBoundsWorkedOut, worked, "a pan and a zoom: kept")
+        // A shape elsewhere on the board whose geometry reads the camera: the bounds are kept by the camera again.
+        h.add(ViewSquare(at: CGPoint(x: 900, y: 900)))
+        _ = h.editor.paintOrder()
+        expect(h.editor.geometriesReadCamera, "a geometry reads the camera")
+        expectEqual(h.editor.selectionBounds, box)
+        let worked2 = h.editor.selectionBoundsWorkedOut
+        h.editor.camera = Camera(zoom: 1)
+        expectEqual(h.editor.selectionBounds, box)
+        expectEqual(h.editor.selectionBoundsWorkedOut, worked2 + 1, "a zoom works them out again")
+        #endif
+    },
     test("the selection's bounds follow a drag of the selection, its undo and redo, and a deletion of one of it and its undo") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))

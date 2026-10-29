@@ -154,9 +154,9 @@ extension Transaction {
                     sizes[member] = box.size
                 }
             }
-            for record in document.shapes where record.id != id {
-                guard let box = context.frame(of: record), ContainerRule.overlap(box, edge) > 0,
-                      document.container(of: record, containingKinds: kinds) == level, !holds(record) else { continue }
+            document.shapes.forEach { record in
+                guard record.id != id, let box = context.frame(of: record), ContainerRule.overlap(box, edge) > 0,
+                      document.container(of: record, containingKinds: kinds) == level, !holds(record) else { return }
                 judged.append(record.id)
                 sizes[record.id] = box.size
             }
@@ -194,7 +194,9 @@ extension Transaction {
     /// The containers on this board that could take something, but `excluded`: back to front.
     private func containerIDs(excluding excluded: Set<ShapeID>) -> [ShapeID] {
         let kinds = registry.containingKinds
-        return document.shapes.lazy.filter { kinds.contains($0.kind) && !$0.isOpaque && !excluded.contains($0.id) }.map(\.id)
+        var found: [ShapeID] = []
+        document.shapes.forEach { if kinds.contains($0.kind) && !$0.isOpaque && !excluded.contains($0.id) { found.append($0.id) } }
+        return found
     }
 
     /// The rule over `boxes` among `sites`, the containers on the board as they are.

@@ -259,7 +259,7 @@ struct Invocation {
 /// command's.
 struct Options {
     /// How long `canvas` waits for an answer when neither `--timeout` nor the params given say.
-    static let defaultTimeout: TimeInterval = 10
+    static let defaultTimeout: TimeInterval = RPC.defaultWait
 
     var socket: String?
     var format: OutputFormat?

@@ -273,7 +273,7 @@ public final class DetailListHandle {
 }
 
 /// A list of rows in the panel that is one stop of Tab: ↑ ↓ Home End Page Up and Page Down move its
-/// highlight (built on `List(selection:)`, as the table of contents is), Return and Space run the
+/// highlight (built on `List(selection:)`), Return and Space run the
 /// highlighted row's `activate`, ← and → fold the head the highlight is on (← on a row goes up to its
 /// head), and a click on a row highlights it and runs it. Tab goes on out of it, ⇧Tab back, Escape out of
 /// the panel. `onHighlight` hears the highlighted row (nil for none) while the list has the keyboard,

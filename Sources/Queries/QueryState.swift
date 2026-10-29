@@ -13,9 +13,11 @@ import Topology
 /// asking one at a time (`MainFacts`). Queries on one editor run at once: each takes up the file as
 /// soon as it's asked and is answered alongside the others, over a snapshot of its own, and their
 /// slices take their places in the main queue among each other's and the run loop's sources. A query
-/// stops when its caller's task is cancelled (`cancelled`) or when `QueryBudget.deadline` has passed
-/// since it was asked (a scheduled action on `editor.scheduler` cancels it: `too_slow`), each
-/// stopping that query alone; and every query on an editor stops when it goes (`board_closed`).
+/// stops when its caller's task is cancelled (`cancelled`) or when its deadline has passed since it
+/// was asked or last had a slice answered (`QueryBudget.deadline(forShapes:)`, longer for a larger
+/// file), or the time its request allows in all (`QueryRequest.deadline`): scheduled actions on
+/// `editor.scheduler` cancel it (`too_slow`), each stopping that query alone; and every query on an
+/// editor stops when it goes (`board_closed`).
 ///
 /// It keeps nothing per shape or per board, and hears no commit: a commit costs it nothing, ever,
 /// and no snapshot outlives its query. Snapshots share the file's tables and Topology's until a
@@ -143,12 +145,12 @@ public final class QueryState {
         let checked = threadCPU() - start
         // The deadline runs from here, so a wait for answers is time the query has spent: the
         // evaluation gets what's left, and a slow one is refused `too_slow` inside `canvas`'s 10 s.
-        let clock = try startClock()
-        defer { clock.deadline.cancel() }
+        let clock = try startClock(cappedAt: request.deadline)
+        defer { clock.stop() }
         // Before the file is taken up, so a query that waits holds no snapshot.
         let settling = request.settle != nil && plan.readsEdges
-        if let settle = request.settle, settling { await waitForSettled(min(settle, QueryBudget.deadline)) }
-        let limit = min(max(request.limit, 1), QueryBudget.maxRows)
+        if let settle = request.settle, settling { await waitForSettled(min(settle, clock.allowed)) }
+        let limit = max(request.limit, 1)
         let countOnly = request.countOnly, properties = request.properties
         // Rows that list attributes read text through every format; else only those the query tests.
         let lists = !countOnly && properties != .none
@@ -296,24 +298,14 @@ public final class QueryState {
 
     // MARK: Running one
 
-    /// A query's deadline: `QueryBudget.deadline` armed on the editor's scheduler, and the run it
-    /// cancels (`too_slow`).
-    private struct QueryClock {
-        let run: QueryRun
-        let deadline: ScheduledTask
-    }
-
-    /// Starts a query's clock. Nothing here holds the editor across a wait: a closed file's editor
-    /// goes as it closes.
-    private func startClock() throws(QueryError) -> QueryClock {
-        guard let scheduler = editor?.scheduler else { throw .boardClosed }
-        guard editor?.topology != nil else { throw .noTopology }
-        let run = QueryRun()
-        let deadline = scheduler.schedule(after: QueryBudget.deadline) {
-            run.timedOut = true
-            run.cancel?()
-        }
-        return QueryClock(run: run, deadline: deadline)
+    /// Starts a query's clock (`QueryRun`): the file's allowance, for its shapes in every board as the
+    /// query is run, and `cap`, the most it may take in all, if the caller has someone waiting. Nothing
+    /// here holds the editor across a wait: a closed file's editor goes as it closes.
+    private func startClock(cappedAt cap: Duration? = nil) throws(QueryError) -> QueryRun {
+        guard let editor else { throw .boardClosed }
+        guard editor.topology != nil else { throw .noTopology }
+        let shapes = editor.withoutObservingDocument { editor.file.shapeCount }
+        return QueryRun(scheduler: editor.scheduler, allowed: QueryBudget.deadline(forShapes: shapes), cap: cap)
     }
 
     /// Takes up the file as soon as it's asked, and runs `work` over it off the main actor, bounded by
@@ -324,16 +316,17 @@ public final class QueryState {
     /// up, whether answers are still arriving (`pending`: how many stand-ins are asked and
     /// unanswered, nil if none are).
     private func perform<Answer: Sendable>(words: Set<String>, formats: Set<String>, edges: [EdgeView] = [.resolved], settling: Bool = false,
-                                           clock started: QueryClock? = nil,
+                                           clock started: QueryRun? = nil,
                                            _ work: @escaping @Sendable (Evaluation) async throws(QueryError) -> Answer)
         async throws(QueryError) -> (answer: Answer, timings: QueryTimings, pending: Int?) {
-        let clock: QueryClock
-        if let started { clock = started } else { clock = try startClock() }
-        let run = clock.run
-        defer { clock.deadline.cancel() }
-        guard !run.timedOut else { throw .tooSlow }
+        let run: QueryRun
+        if let started { run = started } else { run = try startClock() }
+        defer { run.stop() }
+        guard !run.timedOut else { throw .tooSlow(after: run.expired) }
         guard !Task.isCancelled else { throw .cancelledQuery }
         let (handover, facts, captured, pending) = try takeUp(words: words, formats: formats, edges: edges, settling: settling)
+        // A slice the main actor answers is a sign the query is alive: its time to the deadline starts over.
+        facts.onSlice = { [run] in run.answered() }
         let vocabulary = vocabulary
         let task = Task.detached(priority: Task.currentPriority) {
             await Evaluation.perform(handover, vocabulary: vocabulary, facts: facts, work)
@@ -359,7 +352,7 @@ public final class QueryState {
                                    longestSlice: .cpu(facts.longest), costliestRecord: .cpu(facts.costliest))
         switch performed.outcome {
         case .success(let answer): return (answer, timings, pending)
-        case .failure(let error): throw error.reason == .cancelled && run.timedOut ? .tooSlow : error
+        case .failure(let error): throw error.reason == .cancelled && run.timedOut ? .tooSlow(after: run.expired) : error
         }
     }
 
@@ -421,11 +414,62 @@ struct BatchedQuery: Sendable {
     let request: QueryMatchRequest
 }
 
-/// One query in flight: whether its deadline has passed, and how to cancel its evaluation.
+/// One query in flight, and its clock. A query is refused `too_slow` (its evaluation cancelled) when
+/// `allowed` passes with nothing to show for it: it neither finished nor had the main actor answer a
+/// slice it asked for (`answered()`, which starts that time again), or, if the caller has someone
+/// waiting, when `cap` has passed in all. So a query that is only slow because the main actor is
+/// busy, between the frames of a drag, is not refused while the main actor serves it; one that runs
+/// on without a sign of life, or whose main actor is gone, is. Both are actions scheduled on the
+/// editor's scheduler (tests advance a `ManualScheduler`).
 @MainActor
 private final class QueryRun {
-    var timedOut = false
+    /// How long it may go without a slice answered (`QueryBudget.deadline(forShapes:)`).
+    let allowed: Duration
+    /// The most it may take in all, if the caller has someone waiting (`QueryRequest.deadline`).
+    private let cap: Duration?
+    /// The time that ran out, once one has: what the refusal says.
+    private(set) var expired: Duration
+    private(set) var timedOut = false
     var cancel: (@Sendable () -> Void)?
+    private let scheduler: any Scheduler
+    private var stall: ScheduledTask?
+    private var total: ScheduledTask?
+
+    init(scheduler: any Scheduler, allowed: Duration, cap: Duration?) {
+        self.scheduler = scheduler
+        self.allowed = allowed
+        self.cap = cap
+        expired = allowed
+        arm()
+        if let cap = self.cap { total = scheduler.schedule(after: cap) { [weak self] in self?.expire(after: cap) } }
+    }
+
+    /// The main actor answered a slice: the time to the deadline starts over.
+    func answered() {
+        guard !timedOut else { return }
+        arm()
+    }
+
+    private func arm() {
+        stall?.cancel()
+        let allowed = allowed
+        stall = scheduler.schedule(after: allowed) { [weak self] in self?.expire(after: allowed) }
+    }
+
+    private func expire(after time: Duration) {
+        guard !timedOut else { return }
+        timedOut = true
+        expired = time
+        cancel?()
+    }
+
+    /// The query is over: nothing is left armed.
+    func stop() {
+        stall?.cancel()
+        total?.cancel()
+        stall = nil
+        total = nil
+    }
 }
 
 extension QueryState: EditorService {}

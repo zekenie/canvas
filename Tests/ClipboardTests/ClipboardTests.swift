@@ -284,7 +284,7 @@ import TestKit
         let registry = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin(), ClipboardPlugin(pasteboard: pasteboard),
                                               FixturesPlugin(), KindsPlugin()])
         let json = #"{ "format" : 1, "schema" : {}, "shapes" : [ { "id" : "\#(comet)", "index" : "a0", "kind" : "comet", "props" : {} } ] }"#
-        var shapes = try BoardCodec(registry: registry).decode(Data(json.utf8)).document.shapes
+        var shapes = Array(try BoardCodec(registry: registry).decode(Data(json.utf8)).document.shapes)
         let tether = AnyShapeRecord(ShapeRecord(Tether(to: comet)))
         let box = AnyShapeRecord(ShapeRecord(Box(slot(1))))
         shapes += [tether, box]

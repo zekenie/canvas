@@ -22,7 +22,7 @@ import Validation
 
 @MainActor private func incomplete(_ editor: CanvasEditor) throws -> QueryResult {
     let queries = try require(editor.queries)
-    return try awaitResult { try await queries.run(QueryRequest(":incomplete", limit: QueryBudget.maxRows)) }
+    return try awaitResult { try await queries.run(QueryRequest(":incomplete", limit: QueryRequest.every)) }
 }
 
 @MainActor private func issues(of id: ShapeID, in editor: CanvasEditor) -> [ValidationIssue] {

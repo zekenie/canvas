@@ -189,7 +189,7 @@ enum QueryFieldsBoard {
         let h = try QueryFieldsBoard.harness(pasteboard: pasteboard)
         let queries = try require(h.editor.queries)
         @MainActor func ids(_ query: String) throws -> [ShapeID] {
-            try awaitResult { try await queries.run(QueryRequest(query, limit: QueryBudget.maxRows, properties: .none)) }.rows.map(\.id)
+            try awaitResult { try await queries.run(QueryRequest(query, limit: QueryRequest.every, properties: .none)) }.rows.map(\.id)
         }
         expectEqual(try ids("*"), QueryFieldsBoard.fileOrder)
         expectEqual(try ids("sticky-note[schema]"), [QueryFieldsBoard.person, QueryFieldsBoard.order, QueryFieldsBoard.placedBy, QueryFieldsBoard.friendship])

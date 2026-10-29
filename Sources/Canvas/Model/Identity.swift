@@ -44,6 +44,19 @@ public struct ShapeID: Hashable, Sendable, CustomStringConvertible {
     public var description: String { rawValue.uuidString }
 }
 
+extension ShapeID {
+    /// The id's two words folded into one that spreads evenly whatever the ids are (random ones, or
+    /// the runs of numbers a test makes): what picks the shard an id's entry is kept in (`ShapeMap`),
+    /// without the cost of hashing it.
+    var spread: Int {
+        var word = (high &* 0x9E37_79B9_7F4A_7C15) ^ low
+        word ^= word >> 32
+        word = word &* 0xD6E8_FEB8_6659_FD93
+        word ^= word >> 32
+        return Int(truncatingIfNeeded: word)
+    }
+}
+
 /// As the UUID's string, wherever an id is written: in a board, and in props that name a shape.
 extension ShapeID: Codable {
     public init(from decoder: any Decoder) throws {

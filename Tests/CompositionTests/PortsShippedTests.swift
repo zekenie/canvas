@@ -289,7 +289,7 @@ extension EditorHarness {
         expectEqual(loaded.document, h.editor.document)
         // Opened, the arrow keeps to its channel: its end, dragged onto the frame, binds to nothing;
         // onto a note, to the note; onto a subboard, which takes every channel, to the subboard.
-        let opened = shipped(loaded.document.shapes, pasteboard)
+        let opened = shipped(Array(loaded.document.shapes), pasteboard)
         expectEqual(try channel(of: arrow, in: opened.editor), noteLink)
         opened.click(at: CGPoint(x: 400, y: 200))
         expectEqual(opened.editor.selection, arrow)

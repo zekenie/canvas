@@ -25,7 +25,7 @@ public final class RPCClient {
 
     /// Sends a request and waits up to `timeout` seconds for its response: the result, or the
     /// app's error as `ClientError.remote`.
-    public func call(_ method: String, params: JSON? = nil, timeout: TimeInterval = 10) throws(ClientError) -> JSON {
+    public func call(_ method: String, params: JSON? = nil, timeout: TimeInterval = RPC.defaultWait) throws(ClientError) -> JSON {
         let id = RequestID.number(nextID)
         nextID += 1
         guard var data = try? JSON.encoder().encode(RPCRequest(id: id, method: method, params: params)) else {
@@ -67,7 +67,7 @@ public final class RPCClient {
     }
 
     /// What `describe` says: the app, its protocol, and its commands.
-    public func describe(timeout: TimeInterval = 10) throws(ClientError) -> AppDescription {
+    public func describe(timeout: TimeInterval = RPC.defaultWait) throws(ClientError) -> AppDescription {
         let json = try call(RPC.describeMethod, timeout: timeout)
         guard let description = try? json.decode(AppDescription.self) else {
             throw .malformedResponse(String(json.compactText.prefix(200)))

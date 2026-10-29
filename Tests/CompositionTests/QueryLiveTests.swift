@@ -108,7 +108,7 @@ func openQueryCase(_ evalCase: QueryEvalCase, model: any LanguageModel, pasteboa
     let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
     editor.viewportDidResize(to: QueryStory.viewport)
     let queries = try require(editor.queries)
-    let names = QueryCaseNames(rows: try await queries.run(QueryRequest("*", limit: QueryBudget.maxRows, properties: .none)).rows)
+    let names = QueryCaseNames(rows: try await queries.run(QueryRequest("*", limit: QueryRequest.every, properties: .none)).rows)
     if let board = evalCase.board {
         let owner = try require(names.ids(board).first, "\(evalCase.id): no subboard \(board)")
         _ = try require(editor.showBoard(BoardID(owner: owner)) ? true : nil, "\(evalCase.id): \(board)'s board is shown")
@@ -270,7 +270,7 @@ func runQueryCase(_ evalCase: QueryEvalCase, runs: Int, style: AskStyle) async -
                     outcome = .success(try await askAsSlash(evalCase, editor: opened.editor, board: board, selected: selected))
                 } else {
                     let translator = try require(opened.editor.queryTranslator)
-                    outcome = .success(try await translator.ask(evalCase.question, limit: QueryBudget.maxRows, properties: .none).result.rows.map(\.id))
+                    outcome = .success(try await translator.ask(evalCase.question, limit: QueryRequest.every, properties: .none).result.rows.map(\.id))
                 }
             } catch {
                 outcome = .failure(error)
@@ -378,7 +378,7 @@ private func tally(_ runs: [QueryEvalRun]) -> String {
             let expected = try listed.flatMap { try names.ids($0) }
             let reference = try require(evalCase.reference, "\(evalCase.id): a reference query")
             let queries = try require(editor.queries)
-            let found = try awaitResult { try await queries.run(QueryRequest(reference, limit: QueryBudget.maxRows, properties: .none)) }
+            let found = try awaitResult { try await queries.run(QueryRequest(reference, limit: QueryRequest.every, properties: .none)) }
             expectEqual(Set(found.rows.map(\.id)), Set(expected),
                         "\(evalCase.id) \(reference): found \(names.describe(found.rows.map(\.id))), expected \(names.describe(expected))")
         }

@@ -1,7 +1,6 @@
 import AppKit
 import Canvas
 import Selection
-import SwiftUI
 import UniformTypeIdentifiers
 
 // Dragging rows: a row is a drag of its shape (the selection's, when it's selected: the list drags
@@ -31,9 +30,14 @@ public struct ContentsDropTarget: Hashable, Sendable {
 }
 
 extension UTType {
-    /// What a row's drag carries: its shape's id, seen only by this app (an item provider's
-    /// `.ownProcess`), so dropping one in another app does nothing. The app declares it.
+    /// What a row's drag carries: its shape's id, which only this app's lists take (the list drags
+    /// within the app alone), so dropping one in another app does nothing. The app declares it.
     static let contentsRows = UTType(exportedAs: "com.example.InfiniteCanvas.contents-rows", conformingTo: .data)
+}
+
+extension NSPasteboard.PasteboardType {
+    /// The pasteboard's name for a row's drag (`UTType.contentsRows`), which the list's outline takes.
+    static let contentsRows = NSPasteboard.PasteboardType(UTType.contentsRows.identifier)
 }
 
 /// The drag under way from a table of contents, any window's: the editor whose list it began in,
@@ -84,20 +88,13 @@ extension ContentsState {
         return current.shapes
     }
 
-    /// What the row's drag carries, as it begins; nil for a row that doesn't drag (its row isn't
-    /// dragged, whatever's selected). As plain data too, the type each row's drop target is registered
-    /// for (SwiftUI's), so AppKit hands it the drag whether or not the system has read the app's
-    /// declaration of the private type; the target takes only a drag with the private type.
-    func dragItem(from id: ShapeID) -> NSItemProvider? {
+    /// What the row's drag carries, as the list's outline asks for each dragged row, which begins the
+    /// drag; nil for a row that doesn't drag (its row isn't dragged, whatever's selected).
+    func pasteboardWriter(from id: ShapeID) -> NSPasteboardItem? {
         guard beginDrag(from: id) else { return nil }
-        let provider = NSItemProvider()
-        for type in [UTType.contentsRows, .data] {
-            provider.registerDataRepresentation(forTypeIdentifier: type.identifier, visibility: .ownProcess) { done in
-                done(Data(id.description.utf8), nil)
-                return nil
-            }
-        }
-        return provider
+        let item = NSPasteboardItem()
+        item.setString(id.description, forType: .contentsRows)
+        return item
     }
 
     /// Whether a shape's row drags: a box, not kept aside, that can change (not locked, nor in a locked
@@ -280,65 +277,4 @@ extension ContentsState {
     /// Only a key: one key path per shape, under which Observation keeps the observers of each row's
     /// line and ring apart.
     private subscript(dropZone id: ShapeID) -> Bool { pointedDrop?.row == id }
-}
-
-/// A drop on a row, SwiftUI's own target for each row's view, to which AppKit hands a drag of rows
-/// over it: where on the row's height the drag is, for the state to point at (`dragMoved(over:at:)`)
-/// and drop on (`drop(onRow:at:)`). Only a drag of rows from this list (`dragShapes`).
-struct ContentsRowDrop: DropDelegate {
-    let entry: ContentsEntry
-    let state: ContentsState
-    let height: CGFloat
-
-    private func fraction(_ info: DropInfo) -> CGFloat? {
-        height > 0 ? info.location.y / height : nil
-    }
-
-    func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.contentsRows]) && state.dragShapes != nil
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        let target = fraction(info).flatMap { state.dragMoved(over: entry, at: $0) }
-        return DropProposal(operation: target == nil ? .forbidden : .move)
-    }
-
-    func dropExited(info: DropInfo) {
-        state.dragLeft(entry)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let fraction = fraction(info) else {
-            state.dragLeft(entry)
-            return false
-        }
-        return state.drop(onRow: entry, at: fraction)
-    }
-}
-
-/// A drop's line above or below a row, from a ring at its leading end, in the accent color, as a
-/// Mac list's.
-struct ContentsDropLine: View {
-    var body: some View {
-        HStack(spacing: 0) {
-            Circle()
-                .strokeBorder(Color.accentColor, lineWidth: ContentsStyle.dropLineWidth)
-                .frame(width: ContentsStyle.dropLineDot, height: ContentsStyle.dropLineDot)
-            Rectangle()
-                .fill(Color.accentColor)
-                .frame(height: ContentsStyle.dropLineWidth)
-        }
-        .frame(height: ContentsStyle.dropLineDot)
-        .allowsHitTesting(false)
-    }
-}
-
-/// A drop on a row: its highlight's shape, ringed in the accent color, faintly tinted.
-struct ContentsDropHighlight: View {
-    var body: some View {
-        RoundedRectangle(cornerRadius: ContentsStyle.highlightRadius, style: .continuous)
-            .fill(Color.accentColor.opacity(ContentsStyle.dropTintOpacity))
-            .strokeBorder(Color.accentColor, lineWidth: ContentsStyle.dropRingWidth)
-            .padding(.horizontal, ContentsStyle.highlightInset)
-    }
 }

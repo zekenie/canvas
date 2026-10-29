@@ -4518,10 +4518,11 @@ data-canvas has it: with nothing selected the detail panel shows it for the whol
 several, just them, under their header; with one, that shape's details instead. It's a horizontal
 ([`Sources/TableOfContents`](../Sources/TableOfContents)) with data-canvas's contract (its TOC
 card providers): each kind says how its shapes appear, and which shapes are listed and under what.
-It doesn't look like data-canvas's, though: it's a Mac source list, a SwiftUI `List` with the
-system's rows, selection, disclosure triangles and keyboard. Its rows run front to back, as a layers
-list's do, and dragging them restacks shapes, or moves them into a frame or onto a subboard's board
-([Dragging rows](#dragging-rows)).
+It doesn't look like data-canvas's, though: it's a Mac source list, AppKit's outline with the
+system's rows, selection, disclosure triangles and keyboard, making views for the rows in view alone,
+so a board of 100,000 shapes lists at once ([The list](#the-list)). Its rows run front to back, as a
+layers list's do, and dragging them restacks shapes, or moves them into a frame or onto a subboard's
+board ([Dragging rows](#dragging-rows)).
 
 ```
 ┌─ the panel, with nothing selected ──┐  front to back: the top row is the shape in front
@@ -4574,7 +4575,8 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   the list and in a crumb's menu. The list owns everything around it: row
   height, indentation, disclosure triangles, selection, the header. Any view works, but
   `ContentsLabel` is what keeps rows from different plugins alike; use it unless a row really needs
-  something else.
+  something else. It's made for a row in view, as the row comes into view, and again when the row
+  is made again: a row out of view costs no view.
 - **A row reads only its shape**, as `when`, `nestedUnder` and `contentsTitle` do, unless it names,
   with `affected`, the shapes whose rows a commit may change ([below](#rows-read-from-more-than-their-shape)). The table of
   contents keeps each shape's row, and where it's listed, from one commit to the next, and redoes
@@ -4598,25 +4600,25 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   the top. Rows nest as deep as their shapes do (a frame in a frame, what that holds under it); a
   loop keeps the later shape at the top. Arrows nest under the shape they start from, as
   data-canvas's edges do under their start node, whatever frame that's in.
-- **Each level opens and closes on its own**, its own disclosure triangle (`ContentsTree`: a
-  `DisclosureGroup` a row, whose rows are trees of their own). A container's row starts expanded
+- **Each level opens and closes on its own**, its own disclosure triangle (the outline's: a row of
+  it a level of its own). A container's row starts expanded
   (`entry.startsExpanded`): what it holds is on the board shown, inside it on the canvas, as a
   folder's contents show in a sidebar. Every other row starts collapsed: the arrows under a note,
   a subboard's board (read only once it's opened, below). A row keeps what the person turns it to
   (`ContentsState.isExpanded(_:)` and `setExpanded(_:_:)`, by shape, for the editor's life): Show
-  All, the rows replaced, another board shown and back leave it as it was. Each row observes only
-  its own disclosure, so turning one redraws that row and its rows alone.
+  All, the rows replaced, another board shown and back leave it as it was. A turn made anywhere but
+  the outline (a drag springing a row open, below) reaches the list showing the row, which opens it.
 - **A board under its owner.** A shape that owns a board (a `BoardOwning` kind's, a subboard)
   opens onto that board's rows: the rows its [outline](#another-boards-outline) lists, each as its
   kind draws it and nested alike, then the rows nested under the shape on its own board. Nothing
   opts in: owning a board is what a kind declares to the core, and its board is what it holds. A
   board with no shapes has nothing to open, so its owner's row has no disclosure triangle (one
   whose shapes are all unlisted, kept aside, has one that opens onto nothing). The rows are read
-  only once the row is expanded: SwiftUI's outline asks every row on every update for the
-  collection of its nested rows, but for what's in it only once it's expanded, so the list hands
-  it a lazy one (`BoardRows`), and a collapsed subboard costs its own row, however much its board
-  holds; once open, they follow its board as it changes, though it isn't shown (what a type's
-  sync writes there). They're of shapes on another board, so they have
+  only once the row is expanded (the outline asks for a row's nested rows only once it's open), so
+  a collapsed subboard costs its own row, however much its board holds; once open, they follow its
+  board as it changes, though it isn't shown (what a type's sync writes there: each update asks
+  `outlineRows(of:)`, which says by a version whether they were made again, and goes over them by
+  shape only then). They're of shapes on another board, so they have
   no marks (Validation checks the board shown), selecting one goes there (below), and the pointer
   on one hovers nothing: the canvas doesn't show it. Headless, `entry.nestedBoard` is the board,
   whether or not it has shapes, and `outline(of:)` its rows.
@@ -4733,10 +4735,9 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
 ```
 
 - **A mark is part of its row**, made with it, and made again with it when a commit changes the
-  shape. So a commit still costs the rows it changed, and SwiftUI redraws only those. Reading
-  marks in the row's view instead would cost the whole board: the list makes every row's view
-  whenever it redraws, and a row view that read the document would be asked for again after
-  every commit.
+  shape. So a commit still costs the rows it changed, and the list redraws only those, where
+  they're in view. Reading marks in the row's view instead would cost every row in view on every
+  commit: a row view that read the document would have to be asked for again after each one.
 - **`affected`** is for a mark read from more than its shape. Given each commit's change set, it
   names the shapes the commit doesn't change whose marks it may. Their marks are read again on
   the next read, and a row is replaced (and redrawn) only if its marks changed, so a shape many
@@ -4776,9 +4777,9 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   has them (Keynote's, Figma's), so a row dragged up comes forward ([Dragging rows](#dragging-rows)).
   data-canvas's z-ordered outline went back to front, and so did this one until its rows could be
   dragged; the owner chose front to back then. `entries` keeps document order, as the core keeps
-  shapes (back to front), and the list shows each level the other way round (`ListedRows`, a
-  board's rows open under its owner's in `BoardRows`, a crumb's menu in `OutlineRows.lines`), so
-  what's listed is still made and kept by what changed. Selecting a shape doesn't restack it, so
+  shapes (back to front), and the list shows each level the other way round (its rows, a board's
+  rows open under its owner's, and a crumb's menu's, `OutlineRows.lines`), so what's listed is
+  still made and kept by what changed. Selecting a shape doesn't restack it, so
   rows move only when shapes are restacked (Bring to Front, or a row dragged).
 - **A shape the board keeps aside has no row**, whatever its kind (one that isn't installed isn't
   listed by its kind's name), since nothing on the canvas sees it
@@ -4787,21 +4788,14 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   on the canvas and only they are listed, under their header ("2 Shapes") and "Selection"; select
   nothing and the whole board is, under "Board"; select one and the panel shows its details. Show
   All lists the board again without deselecting.
-- **A change of what's listed replaces the rows**, so the new scope's come in as one run under the
-  header, not around the rows both scopes list (each open or closed as it was). Rows coming
-  in at several places at once, the last row among them, make AppKit measure the last row from
-  inside measuring the others (a table whose rows size themselves, as a SwiftUI `List`'s do,
-  measures new rows a run at a time and resizes itself after each) and log "a reentrant operation
-  in its NSTableView delegate", which it says will become an assert. So a commit that brings rows
-  in at more than one place replaces the rows too (a `canvas draw` that adds a shape and connects
-  two shapes far apart in the list; deleting a note that two arrows start from, as their rows come
-  out from under it), while one that brings them in at one place (an arrow drawn, a paste) keeps
-  the rows it has. It does so in a list of any length: a list of 250 rows logs it too, rows brought
-  in around those kept, and not when they're replaced. AppKit still logs it when a list first
-  shows 200 rows or more (it measures 200 at a time). Replaced rows come in open or closed as they
-  were, a container's open (as one run all the same), and a row that goes lets go only of a hover
-  the pointer on it set (`ContentsState.endHover`), never one the canvas set, so the shape under the
-  pointer stays outlined.
+- **A change of what's listed replaces the rows**, so the new scope's come in whole under the
+  header, not around the rows both scopes list (each open or closed as it was). A commit's rows
+  come in, go and move where they are, however many places they're at (a `canvas draw` that adds a
+  shape and connects two shapes far apart in the list; deleting a note that two arrows start from,
+  as their rows come out from under it): the list's rows are all of one height, so AppKit measures
+  none and never logs "a reentrant operation in its NSTableView delegate" ([The list](#the-list)).
+  A row that goes lets go only of a hover the pointer on it set (`ContentsState.endHover`), never
+  one the canvas set, so the shape under the pointer stays outlined.
 - **Selecting rows** (a click, ⌘- and ⇧-clicks, the arrow keys) selects their shapes and brings
   them into view: centered, zoomed to fit with 100 points of margin but no closer than 120%, over
   200 ms (data-canvas's click-to-zoom, and tldraw's zoomToBounds): Selection's `editor.reveal`,
@@ -4838,8 +4832,8 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   board's rows, and its listing of every row, are kept for the boards shown last (a `BoardStash`),
   and taken back on the way back to one that hasn't changed since, so going back makes no row. A
   scope pinned by selecting rows or Show All was the board left's, and goes. Another board's rows
-  replace this one's in one run, whatever's listed on either (the list's id is the board, the scope
-  and how many times a commit has brought rows in at several places, `ContentsListID`).
+  replace this one's whole, whatever's listed on either: each listing is a new one to the list
+  (`ContentsListing.serial`).
 - **The heading.** The header says "Board" over the whole board. A plugin that knows what a board
   is called can name it instead (the `ContentsHeadings` point, at most one: a second is a
   conflict): `registrar.contentsHeading { editor in … }` returns a `ContentsHeading`, or nil for
@@ -4886,8 +4880,39 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   badge through `entry.label`, its marks through `entry.marks`, the board its shape owns through
   `entry.nestedBoard` (its rows, `outline(of:)`, are under it in the list), and whether it starts
   expanded through `entry.startsExpanded`; `open(_:)` is a row's primary action. In debug builds,
-  `rowsRedrawn` counts how often the list has asked a row for its view, and `rowsMade` how many rows
-  it has made. Dragging rows has its own (below).
+  `rowsRedrawn` counts how often the list has drawn a row anew (in view: one out of view has no
+  view), and `rowsMade` how many rows it has made. Dragging rows has its own (below).
+
+### The list
+
+What the panel shows is `ContentsList`, an `NSOutlineView` in source-list style, whose controller
+(`ContentsListController`) reads the state's rows as the outline asks for them, so what it costs is
+the rows in view and a pass over the top-level rows, whatever's listed: its own share of showing
+100,000 rows, the first time or on going back to a board, is some 100 ms (`./build.sh bench`'s
+inspector benchmark; the state's rows, and Validation's marks on them, made the first time a board
+shows, cost more).
+
+- **Rows of one height**, the system's sidebar size (System Settings' sidebar icon size), so AppKit
+  lays the list out with no measuring, and never measures a row from inside measuring another (what
+  made a self-sizing list log a reentrant update). A row's cell hosts its view in SwiftUI
+  (`ContentsRowView`: the kind's row and its marks), reused as rows scroll into view; its symbol in a
+  column, the text white on a selected row of a list with the keyboard, as a source list's.
+- **The header** is the outline's first row, a group row ("Board", or "Selection" with Show All),
+  which tests read so.
+- **Kept up row by row.** The view's body reads `entries` and hands the list which listing it is
+  (`ContentsListing.serial`), how often it changed, the editor's revision and the selection. A new
+  listing (another scope, another board, one listed afresh) is shown whole. The one shown is
+  followed as its own updates changed it (`ContentsListingChanges`, which a listing gathers until
+  the list takes them): the rows that left their place taken out, those that came in put in where
+  their stacking keys say, open as they were, the triangles of rows whose nested rows came or went,
+  and the rows made again redrawn where they're in view. So a commit costs the list the rows it
+  changed, as it costs the state.
+- **The keyboard is AppKit's**, the list's keys first: the outline hands each key to the list before
+  it handles it (Tab and ⇧Tab as ↓ and ↑, Return, Delete, Escape, ⌘↑ and ⌘↩), and the rest (↑ ↓ → ←,
+  ⇧ with them) are the outline's own.
+- **Hover and drops are drawn by each row's view**, the hover's tint and a drop's ring in the selection
+  highlight's place and a drop's line along its edge, each row in view observing its own shape's
+  hover and drop alone.
 
 ### Dragging rows
 
@@ -4917,25 +4942,24 @@ like any other, so a shape moves off a subboard's board, onto it, and across.
   selected row that shows then.
   A shape that can't move doesn't: one with no box (an arrow, whose place in the stack doesn't say
   where it's drawn), one read-only (locked, or in a locked frame), one kept aside. Pressing a row and
-  dragging doesn't select it (the table selects on the release of a click), so the panel doesn't turn
-  to the shape's details under a drag. Each row is a drag source of its own (`.itemProvider`, which
-  the list's table asks for what each dragged row carries: `dragItem`, which begins the drag,
-  `beginDrag(from:)`) carrying a private type (`com.example.InfiniteCanvas.contents-rows`, conforming
-  to `public.data`, which the app declares, `.ownProcess`), so a drop in another app does nothing, and
-  a list takes a drop only of a drag it began (`dragShapes`): the drag under way is kept by the editor
-  whose list it began in, as AppKit doesn't tell the list how a drag ended.
-- **Where it points.** Each row is a drop target of its own (`.onDrop(of:delegate:)`, SwiftUI's
-  per-row target, to which AppKit hands a drag over the row), told where on the row's height the drag
-  is (`target(onRow:at:)`): on a frame's or a subboard's row its top and bottom quarters are above and
+  dragging doesn't select it (the outline selects on the release of a click), so the panel doesn't turn
+  to the shape's details under a drag. The outline asks for what each dragged row carries
+  (`pasteboardWriter(from:)`, which begins the drag, `beginDrag(from:)`): a private type
+  (`com.example.InfiniteCanvas.contents-rows`, conforming to `public.data`, which the app declares),
+  dragged within the app alone, so a drop in another app does nothing, and a list takes a drop only of
+  a drag it began (`dragShapes`): the drag under way is kept by the editor whose list it began in, as
+  AppKit doesn't tell the list how a drag ended.
+- **Where it points.** The outline takes the drag as a whole and tells the list which row the pointer is
+  on and where on the row's height (`target(onRow:at:)`): on a frame's or a subboard's row its top and bottom quarters are above and
   below it, its middle on it; on any other row, halves. Below an open frame's or subboard's row is
   above the first row it opens onto, so on it (in front of what it holds); below the open row of a
   shape that takes nothing (a note open onto its arrows), nowhere. A drag that can drop there shows a
   line above or below the row, from a ring at its start, or a ring around the row, in the accent
   color, and nothing where it can't (`dragMoved(over:at:)`, `dragLeft(_:)`, observed per row:
   `dropZone(for:)`). Resting on a closed row that opens onto rows (a subboard's) opens it after 700 ms,
-  as Finder's folders spring open. Not SwiftUI's own reordering, `onMove` and `onInsert`: an outline
-  of them turns every drop on a row into an insertion after it, so a frame's row could never take
-  one.
+  as Finder's folders spring open. Not the outline's own drop targeting (on an item, or between its
+  children) nor its highlight, which it's told to leave off: it turns a drop on a row into an
+  insertion beside it, so a frame's row could never take one.
 - **A drop's place** (`ContentsPlace`): on a frame's row, in the frame, in front of what it holds; on
   a subboard's, on its board, in front of what it holds; above or below a row, beside its shape where
   it is, in its container or on its board directly, in front of it (and of what it holds) or behind
@@ -4960,10 +4984,9 @@ like any other, so a shape moves off a subboard's board, onto it, and across.
   ```
 - **Headless**, `dragged(from:)`, `beginDrag(from:)` and `dragShapes` are the drag;
   `target(onRow:at:)`, `admits(_:)`, `drop(on:)` (and `dragMoved(over:at:)`, `dragLeft(_:)`,
-  `drop(onRow:at:)`, as the rows' targets call them) the drop; `dropZone(for:)` what a row shows. In
-  a window the list's table hands out each dragged row's writer
-  (`outlineView(_:pasteboardWriterForItem:)`), and a row's own drop target, the view in its cell
-  registered for every type, takes a drag as AppKit hands it one (TableOfContentsTests'
+  `drop(onRow:at:)`, as the outline's drop calls them) the drop; `dropZone(for:)` what a row shows. In
+  a window the outline hands out each dragged row's writer (`outlineView(_:pasteboardWriterForItem:)`),
+  and takes a drag at a point of a row as AppKit hands it one (TableOfContentsTests'
   `DragWindowTests`).
 
 ### Another board's outline
@@ -8836,7 +8859,8 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
 `run(QueryRequest(text, limit:, countOnly:, properties:, edges:, settle:))` (the last two are
 [below](#many-at-once-edge-views-and-waiting)) answers a `QueryResult`: `query` (the
 plan's `canonical`), `count` (every shape that matches, listed or not), `rows` (the first `limit`,
-`QueryBudget.rows` (100) unless it says, at most `maxRows` (10,000), in file order; none with
+`QueryBudget.rows` (100) unless it says, at least 1 and at most any number (`QueryRequest.every`),
+in file order; none with
 `countOnly`), `warnings` (`limited`, `editing`, `no_title_match`, `pending`; `QueryWarning.Reason` is open,
 and the command line adds `repaired`), `shown` and `shownPath` (the board the window showed as it
 took up the file, `:current-board`'s, and the boards from the root down to it: where it ran, which
@@ -8915,9 +8939,14 @@ others, a snapshot of its own for each, with no line to wait in. Each asks the m
 slice at a time, so several queries' slices alternate on the main queue, with the run loop's sources
 between one job and the next. A query stops when its caller's task is cancelled (`cancelled`: the
 evaluation looks every `QueryBudget.cancellationStride` (256) shapes and before each slice, and
-`canvas` hanging up cancels the command's task) or when `QueryBudget.deadline` (8 s, before
-`canvas`'s 10 s wait runs out) has passed since it was asked, running or waiting for answers to
-settle (`too_slow`: a scheduled action on `editor.scheduler`, armed before the settle wait so the
+`canvas` hanging up cancels the command's task) or when its deadline has passed since it was asked or
+the main actor last answered a slice it asked for, running or waiting for answers to settle
+(`QueryBudget.deadline(forShapes:)`: 8 s for a file of up to 10,000 shapes, 50 µs more for each shape
+past that, so 12.5 s at 100,000, a time without a sign of life and not a total, so a query the main
+actor serves between the frames of a drag is not refused however long it takes; a request may cap the
+total too, `QueryRequest.deadline`, and `canvas query` does, for `QueryBudget.commandDeadline`, 8 s,
+two seconds under the `RPC.defaultWait` `canvas` waits, whatever the file; `too_slow`, its message
+saying the seconds: a scheduled action on `editor.scheduler`, armed before the settle wait so the
 wait counts against it, cancels it, and is cancelled if the query ends first, so tests reach it by
 advancing a `ManualScheduler`), either stopping that query alone, since each has its own task, its
 own deadline and its own slices. Every query on an editor stops when the editor goes
@@ -9004,7 +9033,7 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   wait, before it takes up the file, while `topology.isSettling` (answers a stand-in asked for are
   still arriving), at most that long (`QueryBudget.settleWait`, 2 s, what `canvas query` passes,
   `--ask`'s query too). The wait holds no snapshot, and no other query waits for it; a plan with no
-  edge word never waits. It counts against `QueryBudget.deadline` (armed before the wait, so the
+  edge word never waits. It counts against the query's deadline (armed before the wait, so the
   evaluation has what's left), which keeps a slow query inside `canvas`'s 10 s: it's refused
   `too_slow`, with its hint, not left to the client's timeout. If the time passes with answers
   still arriving the query runs anyway and adds `QueryWarning.pending(n)` (reason `pending`; `n` the
@@ -10561,11 +10590,11 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
 - **Asking.** When the subject changes to a shape, any ask still running is let go of (the engine
   looks every 256 shapes, so it stops), and one batch asks the engine
   (`editor.queries.matches`, [Many at once](#many-at-once-edge-views-and-waiting)) for every light in
-  the view `.resolved` and, where some shape stands in for others, `.literal` too, ids only, up to
-  `QueryBudget.maxRows`: one capture, run alongside whatever else is asking the engine, and each text
-  checked once. Each light keeps the union of its views. The answer lands a frame or so later, and
-  only for the shape asked about (every change of the subject lets go of the ask); a request the
-  engine refuses (a shape gone since) lights nothing, and the others still do. From one shape to the
+  the view `.resolved` and, where some shape stands in for others, `.literal` too, ids only, every
+  match (`QueryMatchRequest.every`): one capture, run alongside whatever else is asking the engine,
+  and each text checked once. Each light keeps the union of its views. The answer lands a frame or
+  so later, and only for the shape asked about (every change of the subject lets go of the ask); a
+  request the engine refuses (a shape gone since) lights nothing, and the others still do. From one shape to the
   next, the lights of the first stay until the second's land; when the subject goes, they go at
   once. Without the engine, or Topology, or any light, nothing is asked and nothing is lit.
 - **Asking again.** `topology.follow` tells it when a change to the edges touches the subject or a
@@ -10620,11 +10649,13 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   where a shape stands in; some 0.02 ms each) and takes up the file in one turn, O(1); the answer is
   off the main actor (some 10 ms for a shape with 10,000 neighbors); the landing joins the views,
   keeps the set of what matched and places each match, O(what's lit and the boards it's on), a hash
-  lookup or two each (some 0.8 ms for 10,000). It keeps nothing a commit must follow but what it
-  matched and where that is drawn. A frame costs handing the core what's kept; the core strokes only
-  what's in view, and looks at the rest's kept extents (10,000 lit in view at 10% add some 7 ms to
-  a frame, as ⌘A's rings do; all out of view, some 0.35 ms), and the minimap fills them (some 4 ms
-  for 10,000). `./build.sh bench` holds them.
+  lookup or two each (some 0.8 ms for 10,000, and 12 for 100,000: every match is lit, none is cut).
+  It keeps nothing a commit must follow but what it matched and where that is drawn. A frame costs
+  handing the core what's kept; the core strokes only what's in view, and looks at the rest's kept
+  extents (10,000 lit in view at 10% add some 7 ms to a frame, as ⌘A's rings do; all out of view,
+  some 0.35 ms), and the minimap fills them (some 4 ms for 10,000); what's lit grows these as it
+  grows (99,999 lit: some 24 ms in view, 15 out of view, 60 in the minimap, reported and not held).
+  `./build.sh bench` holds them at 10,000.
 - **The lists.** `NeighborList` (`editor.neighborList`, a service `NeighborDetailsPlugin` registers)
   holds what's connected to the shape a panel shows, in lists: one for each light, in the lights'
   order, each its light's `query` (not `between`: the arrows aren't listed), then two it gives itself
@@ -10641,8 +10672,9 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   title, board and what it's inside, as the engine names them, so Neighbors imports no Titles), all at
   once, each in `.resolved` and, where some shape stands in, `.literal` too, the views' rows merged a
   shape once, as the hover's are; the subject is never listed. A request the engine refuses (a note
-  asked what it holds) is an empty list. No list is cut: an open one has every row, up to
-  `QueryBudget.maxRows`. The answer lands whole, and until it does the shape before's stays.
+  asked what it holds) is an empty list. No list is cut: an open one has every row, however many;
+  the rows are made and compared with the lists shown off the main actor. The answer lands whole,
+  and until it does the shape before's stays.
 - **Asking again** after any commit that did more than move shapes (a name, an edge, a container
   joined or left), once commits have stopped for 100 ms (`NeighborStyle.settle`, on `editor.scheduler`:
   a resize's every event is a commit, so they're one ask), and at once for a change no commit made (a
@@ -11878,7 +11910,7 @@ knows no shipped kind: its help writes `<kind>` and `<title>`, and `--ask`'s pro
 - **Params** (`QueryParams`): `query`, positional, read from standard input as `-` (`x-stdin`: a
   query is full of what shells mangle, so a heredoc with a quoted delimiter); `--ask <question>`
   instead (up to 2,000 characters, `-` too; given, `canvas` waits up to 60 s, its `x-timeout`);
-  `--limit` (1 to 10,000; 100 unless it says, and `count` is always of all);
+  `--limit` (1 or more, no most; 100 unless it says, and `count` is always of all);
   `--count` (no rows); and `--brief` (rows without their attributes) or `--fields <attribute>`,
   given again for each (only those, whole). Exactly one of a query and `--ask`, and not `--brief`
   with `--fields`, else `invalid_params`. `--fields` naming an attribute a shape hasn't leaves it out
@@ -12393,7 +12425,9 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   JSON Schema's meta-schema refuses (`MetaSchema` through the core's `SchemaValidator`, in its own
   sentences, a `type` said once, by the rule above) are warnings, 20 at most. `SchemaReadings` keeps
   a reading per shape and text, read again only when the text changes, and what's shown of a text
-  that isn't a JSON object (its highlights) is its last one that was.
+  that isn't a JSON object (its highlights) is its last one that was. It keeps one for every type of
+  every file open (the most kept follows their indexes, a quarter more, never fewer than 4,096), the
+  one used longest ago going first when it must, in O(1).
 - **The panel** (`TypeDetailsPlugin`): the Schema tab ([The full showcase](#the-full-showcase-a-types-schema-tab)),
   its JSON a `SchemaCodeEditor`, completed as VS Code completes a JSON Schema
   (`TypeCompletions.completions(in:at:types:extra:)`, [Completing the JSON](#completing-the-json)).
@@ -13232,7 +13266,14 @@ nothing, and the view chooses, as it always has. A note too short for its text a
 
 - **The document is a value.** `CanvasDocument` holds every shape, back to front, in the order of
   their stacking keys: each record carries its own (`stackingKey`, a fractional index as in
-  tldraw), so moving a shape in the stack changes that shape alone. The only way to change it is
+  tldraw), so moving a shape in the stack changes that shape alone. `document.shapes` is a
+  `ShapeStack`, a random-access collection with `Int` positions like an array's (the bottom shape
+  first), and a copy of a document costs nothing and shares what neither copy changes: the records
+  are held in chunks of 128, and where each shape is in a table kept the same way, so a commit that
+  changes a few shapes copies a few chunks and not the board, and the board as it was before a
+  commit (`ChangeSet.before`, an undo step) costs the chunks the commit wrote. Look a shape up with
+  `document[id]` and `document.index(of: id)` (constant time); walk the stack with `for`, `map` or
+  `filter` as you would an array; `Array(document.shapes)` makes the copy an array is. The only way to change it is
   `editor.transact { tx in ... }`: `insert` (on top), `update` (typed with `as:`; it can't change a
   shape's id, key or container), `bringToFront` and `sendToBack` (of a shape or a list),
   `bringForward` and `sendBackward` (of a list; a list keeps its order), `move(_:above:)`,
@@ -13307,7 +13348,11 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   shape's own props and the document's order. `editor.shape(at:)` asks a shape's `hitTest` only
   about points within its extent grown by its `hitMargin`, and `editor.paintOrder(in:)` is the
   paint order of just the shapes that may show in a world rect: what drawing goes through, and
-  overlays too, with `context.visibleRect`. Code that runs per frame doesn't go through every
+  overlays too, with `context.visibleRect`. Both find those shapes in a grid over the extents that
+  the editor keeps with the paint order, so they cost the cells a rect or a point reaches and what
+  is found there, whatever the board holds (`context.shapes(mayHit:)` is the same search for code
+  that asks `hitTest(_:shape:)` of each shape a point may hit, front-most in the document first, as
+  Arrows' `Connectables` does). Code that runs per frame doesn't go through every
   shape; `./build.sh bench` holds a hover and a drag at 10,000 shapes to a frame (16 ms), with the
   minimap drawn too, and a frame zoomed out to fit the board (at 10,000, as far as the 10% zoom
   goes), where they're [skeletons](#skeletons), and the table of contents' rows after a commit to a
@@ -14421,8 +14466,19 @@ step the save didn't see, which marks the board edited again: a long typing sess
 an autosave, as TextEdit's does. A periodic autosave that comes during a press (a drag), or while
 a key is held whose repeats are one step (an arrow key's nudges), gives way
 (`CocoaError.userCancelled`, which NSDocument doesn't show) and runs once the press, or the key, is
-let go;
-`BoardDocument.snapshot(implicitlyCancellable:)` is what a save writes.
+let go.
+
+**A save is written off the main thread.** The file is a value: as NSDocument takes the change count a
+save will mark saved (`changeCountToken(for:)`, some turns of the run loop after the save was asked
+for, so the file and the count are taken in one go and nothing in between is lost), `BoardDocument`
+closes the step and takes `editor.file`, O(1), and whether the save gives way. NSDocument then asks
+for the bytes (`data(ofType:)`) on another thread, `canAsynchronouslyWrite`, holding the main thread
+until the writing thread has what it needs: it takes the file, lets the main thread go
+(`unblockUserInteraction`) and only then encodes it (`BoardCodec`, which reads nothing of the main
+actor) and writes it, so a board of 100,000 shapes holds the main thread for a snapshot and not for
+the 1.3 to 2.6 s the encoding takes. What is changed meanwhile is not in the file and leaves the board
+edited; the first commit after the snapshot copies the tables it changes, once. Asked for its bytes
+on the main thread (a test, a caller that wants the board as it is) a board encodes there.
 
 **A kind versions its own props.** Its migrations sit beside `static let kind`, and their count
 is the version boards record. The sticky note's steps drop a `checklist` member it kept, hand its
@@ -15695,14 +15751,7 @@ Each of these adds to the design without changing what plugins are written again
   frames down lists the note at the top); dragging rows to restack their shapes, or into a frame;
   per-kind zoom targets (data-canvas's `getZoomConfig`);
   a double-click on a row opening its shape in the app's panel, which shows the picked shape's
-  panel in the list's place before the second click; arrow rows that name the shapes they join; and rows all of one height, which AppKit
-  never measures from inside a measurement, so it would stop logging its reentrancy warning
-  ([What's listed](#whats-listed-and-selecting)): a list of our own, since a SwiftUI `List`'s rows
-  size themselves. The same would make a switch of board cheap with the panel showing the list:
-  today every row is replaced (its id is the board's), some 120 ms going into or out of a board of
-  1,000 shapes and a second at 10,000 (40 s or more the first time 10,000 show), where
-  `./build.sh bench` reports a 50 ms target it doesn't hold, and the budgets for entering a board
-  leave the list out.
+  panel in the list's place before the second click; and arrow rows that name the shapes they join.
 - **More of validation**: listing just the shapes with issues in the table of contents (a filter
   beside Show All), and going to the next one from anywhere (Xcode's ⌘'), for a board too big to
   look down for dots; an issue in the Issues tab going to the row it's about, which the panel would

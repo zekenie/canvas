@@ -25,9 +25,9 @@ struct Connectables {
     /// The front-most shape under `point` that arrows can bind to (in document order, as before:
     /// arrows are skipped, so they never change which shape is in front), of those `accepts` lets
     /// the end bind to: it looks through the rest, to the shapes behind (tldraw's canBind filter).
-    /// Asked only of the shapes the point hits.
+    /// Asked only of the shapes the point may hit (`ShapeContext.shapes(mayHit:)`), a few however many the board holds.
     func shape(at point: CGPoint, accepting accepts: ((AnyShapeRecord) -> Bool)? = nil) -> ConnectableShape? {
-        for record in shapes.document.shapes.reversed() where record.kind != Arrow.kind && shapes.hitTest(point, shape: record.id) {
+        for record in shapes.shapes(mayHit: point) where record.kind != Arrow.kind && shapes.hitTest(point, shape: record.id) {
             guard accepts?(record) ?? true else { continue }
             if let shape = self[record.id] { return shape }
         }

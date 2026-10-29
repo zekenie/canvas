@@ -45,7 +45,7 @@ private func tile(_ label: String, _ x: CGFloat, in groups: [String] = [], id: S
 /// The labels of the tiles a query matches, in the order it lists them.
 @MainActor private func labels(_ text: String, on h: EditorHarness) throws -> [String] {
     let queries = try require(h.editor.queries)
-    let rows = try awaitResult { try await queries.run(QueryRequest(text, limit: QueryBudget.maxRows, properties: .none)) }.rows
+    let rows = try awaitResult { try await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: .none)) }.rows
     return rows.compactMap { row in h.editor.file.record(row.id).flatMap { ($0.props as? Tile)?.label } }
 }
 

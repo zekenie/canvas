@@ -21,7 +21,7 @@ import Validation
 /// The shapes a query matches, as a set.
 @MainActor func queried(_ text: String, on editor: CanvasEditor, properties: QueryRequest.Properties = .none) throws -> QueryResult {
     let queries = try require(editor.queries)
-    return try awaitResult { try await queries.run(QueryRequest(text, limit: QueryBudget.maxRows, properties: properties)) }
+    return try awaitResult { try await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: properties)) }
 }
 
 @MainActor private struct World {

@@ -27,7 +27,7 @@ extension Budget {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         for size in sizes {
-            var shapes = generatedBoard(shapes: size).shapes
+            var shapes = Array(generatedBoard(shapes: size).shapes)
             var type: ShapeID?, instances: [ShapeID] = []
             var noteIndex = 0
             for index in shapes.indices where shapes[index].kind == StickyNote.kind && shapes[index][TypeSchemaProperty.self] == nil && shapes[index][LockedProperty.self] != true {

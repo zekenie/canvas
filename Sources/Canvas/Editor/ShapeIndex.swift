@@ -3,7 +3,9 @@ import Geometry
 
 /// What an editor works out from its document and keeps from one frame to the next, so that a
 /// frame costs what's in view and what changed, not what's on the board: each shape's geometry
-/// and extent, and the paint order. Each commit's change set says what to work out again.
+/// and extent, and the paint order, with a grid over the extents (`SpatialGrid`) that finds the
+/// shapes near a rect or a point without going through every one. Each commit's change set says
+/// what to work out again.
 ///
 /// A shape's geometry is kept until the shape changes, or a shape its definition looked up while
 /// working it out does. Definitions look shapes up through their `ShapeContext` (`shape(_:)`,
@@ -45,6 +47,13 @@ final class ShapeIndex {
         var hitMargins: [HitMargin]
         /// Each anchored shape's anchor, as `order` has it.
         var anchors: [ShapeID: ShapeID?]
+        /// How many shapes at the end of `order` are anchored with no plain shape to be above (the anchor is missing, or
+        /// anchored itself), which go on top.
+        var topCount: Int
+        /// The index in the document of the last plain shape in `order`, which closes the shapes that have an anchor:
+        /// whatever is anchored to it comes after it, so a shape added to the document with that anchor goes at the end,
+        /// if none go on top. -1 with no plain shape.
+        var lastPlain: Int
     }
 
     /// Bumped by every commit and camera change; a context made before then goes without the index.
@@ -61,6 +70,11 @@ final class ShapeIndex {
     /// One per geometry being worked out, innermost last.
     private var frames: [Reads] = []
     private var paintList: PaintList?
+    /// Which cells each extent in `paintList` covers, made when a search first needs it and kept up with the extents
+    /// from then on; nil while there is none, with a short list or after the list was built again.
+    private var grid: SpatialGrid?
+    /// The greatest hit margin any kind of the registry has, in each measure (`greatestMargin(in:)`).
+    private var kindsGreatestMargin: HitMargin?
     /// Shapes whose extent in `paintList` is out of date.
     private var staleExtents: Set<ShapeID> = []
     /// The union of `paintList`'s extents, but the null and infinite ones; nil when it has to be
@@ -171,24 +185,166 @@ final class ShapeIndex {
 
     /// Up to date: rebuilt if the stack changed, with the extents of whatever else changed redone.
     func paintList(in context: ShapeContext) -> PaintList {
-        guard paintList != nil else {
-            let list = buildPaintList(in: context)
-            paintList = list
-            return list
-        }
-        if !staleExtents.isEmpty {
-            let stale = staleExtents
-            staleExtents = []
-            for id in stale {
-                guard let index = context.storedDocument.index(of: id) else { continue }
-                let extent = entry(for: id, in: context)?.extent ?? .null
-                let position = paintList!.positions[index]
-                keepBounds(from: paintList!.extents[position], to: extent)
-                paintList!.extents[position] = extent
-            }
-        }
+        refresh(in: context)
         return paintList!
     }
+
+    /// Builds the paint list if there is none, and works out again the extents of what changed, filing each in the
+    /// grid, if there is one, where it now is. So many that filing each costs more than filing them all: the grid is let
+    /// go, made again when a search needs it.
+    private func refresh(in context: ShapeContext) {
+        guard paintList != nil else {
+            paintList = buildPaintList(in: context)
+            grid = nil
+            return
+        }
+        guard !staleExtents.isEmpty else { return }
+        let stale = staleExtents
+        staleExtents = []
+        let filing = grid != nil && stale.count <= max(64, paintList!.extents.count / 8)
+        for id in stale {
+            guard let index = context.storedDocument.index(of: id) else { continue }
+            let extent = entry(for: id, in: context)?.extent ?? .null
+            let position = paintList!.positions[index]
+            let old = paintList!.extents[position]
+            keepBounds(from: old, to: extent)
+            paintList!.extents[position] = extent
+            if filing { grid?.update(position, from: old, to: extent) }
+        }
+        if !filing { grid = nil }
+    }
+
+    // MARK: Searching the paint list
+
+    /// How many shapes a list is short enough to go through every one of, without a grid.
+    static let indexedFrom = 64
+    /// How many found at once are put in order by sorting them, and not by marking each in a bitmap of the list.
+    static let sortedUpTo = 96
+
+    /// The paint positions of the shapes whose extent touches `rect`, in paint order: exactly those `CGRect.touches` finds
+    /// by going through every extent, found in the cells `rect` covers when it covers few enough, so it costs the cells and
+    /// what's in them.
+    func positions(touching rect: CGRect, in context: ShapeContext) -> [Int] {
+        refresh(in: context)
+        let count = paintList!.extents.count
+        if let grid = currentGrid(), let block = grid.block(of: rect, most: Swift.max(count / 4, 16)) {
+            var found: [Int32] = []
+            let complete = paintList!.extents.withUnsafeBufferPointer { extents in
+                grid.gather(block, touching: rect, extents: extents, into: &found, most: count / 4)
+            }
+            if complete { return Self.inOrder(found, listCount: count) }
+        }
+        var positions: [Int] = []
+        for (position, extent) in paintList!.extents.enumerated() where extent.touches(rect) { positions.append(position) }
+        return positions
+    }
+
+    /// The paint positions of the shapes a point may hit (`mayHit`, by their own margins), front to back.
+    func positions(mayHit point: CGPoint, zoom: CGFloat, in context: ShapeContext) -> [Int] {
+        refresh(in: context)
+        let count = paintList!.extents.count
+        if let grid = currentGrid() {
+            let margin = greatestMargin(in: context.registry), reach = margin.world + (margin.view + 1) / zoom
+            // A cell more all round than the farthest reach, against rounding.
+            let around = CGRect(x: point.x - reach, y: point.y - reach, width: reach * 2, height: reach * 2)
+            if let block = grid.block(of: around, margin: 1, most: Swift.max(count / 4, 16)) {
+                var found: [Int32] = []
+                let complete = paintList!.extents.withUnsafeBufferPointer { extents in
+                    grid.gather(block, touching: nil, extents: extents, into: &found, most: count / 4)
+                }
+                if complete {
+                    found.sort(by: >)
+                    var positions: [Int] = []
+                    var previous: Int32 = -1
+                    for position in found where position != previous {
+                        previous = position
+                        let place = Int(position)
+                        if Self.mayHit(point, extent: paintList!.extents[place], margin: paintList!.hitMargins[place], zoom: zoom) { positions.append(place) }
+                    }
+                    return positions
+                }
+            }
+        }
+        var positions: [Int] = []
+        for position in paintList!.extents.indices.reversed()
+        where Self.mayHit(point, extent: paintList!.extents[position], margin: paintList!.hitMargins[position], zoom: zoom) {
+            positions.append(position)
+        }
+        return positions
+    }
+
+    /// How far past its extent a shape can be hit, at the most: the greatest of the hit margins the registry's kinds declare, in
+    /// each of the two measures, so a search for a point reaches as far as the shape that reaches farthest, found or not.
+    private func greatestMargin(in registry: Registry) -> HitMargin {
+        if let kindsGreatestMargin { return kindsGreatestMargin }
+        var greatest = HitMargin()
+        for kind in registry.kinds {
+            if let margin = registry.definition(for: kind)?.hitMargin { greatest = greatest.greatest(with: margin) }
+        }
+        kindsGreatestMargin = greatest
+        return greatest
+    }
+
+    /// The indices in the document of the shapes a point may hit, the front-most first in the document's order (that is,
+    /// the highest index first): the same shapes `positions(mayHit:zoom:in:)` finds.
+    func documentIndices(mayHit point: CGPoint, zoom: CGFloat, in context: ShapeContext) -> [Int] {
+        let positions = positions(mayHit: point, zoom: zoom, in: context)
+        var indices = positions.map { paintList!.order[$0] }
+        indices.sort(by: >)
+        return indices
+    }
+
+    /// The grid over the paint list's extents, made now if there is none (or the one there is has fallen behind the board);
+    /// nil for a list too short to need one.
+    private func currentGrid() -> SpatialGrid? {
+        guard let extents = paintList?.extents, extents.count >= Self.indexedFrom, !scansEveryExtent else { return nil }
+        if let grid, !grid.isStale { return grid.wide.count <= extents.count / 8 ? grid : nil }
+        let made = SpatialGrid(extents: extents)
+        grid = made
+        #if DEBUG
+        gridsMade += 1
+        #endif
+        // Most shapes on the short list every search reads: going through every extent is no dearer.
+        return made.wide.count <= extents.count / 8 ? made : nil
+    }
+
+    /// Positions found in cells, some more than once, in paint order, each once.
+    private static func inOrder(_ found: [Int32], listCount count: Int) -> [Int] {
+        guard found.count > sortedUpTo else {
+            var sorted = found
+            sorted.sort()
+            var positions: [Int] = []
+            positions.reserveCapacity(sorted.count)
+            var previous: Int32 = -1
+            for position in sorted where position != previous {
+                previous = position
+                positions.append(Int(position))
+            }
+            return positions
+        }
+        // Many: marked in a bitmap of the list, whose words are read in order.
+        var bits = [UInt64](repeating: 0, count: (count + 63) >> 6)
+        for position in found { bits[Int(position) >> 6] |= 1 << UInt64(position & 63) }
+        var positions: [Int] = []
+        positions.reserveCapacity(found.count)
+        for (word, marked) in bits.enumerated() where marked != 0 {
+            var marked = marked
+            while marked != 0 {
+                positions.append(word << 6 + marked.trailingZeroBitCount)
+                marked &= marked - 1
+            }
+        }
+        return positions
+    }
+
+    /// Whether searches go through every extent instead of looking in cells: what tests compare them against.
+    var scansEveryExtent = false
+
+    #if DEBUG
+    /// How many grids and paint lists have been made (debug builds), for tests of when they are.
+    private(set) var gridsMade = 0
+    private(set) var paintListsBuilt = 0
+    #endif
 
     // MARK: Bounds
 
@@ -279,7 +435,11 @@ final class ShapeIndex {
         }
         staleExtents = []
         knownBounds = nil
-        return PaintList(order: order, positions: positions, extents: extents, hitMargins: hitMargins, anchors: anchors)
+        #if DEBUG
+        paintListsBuilt += 1
+        #endif
+        return PaintList(order: order, positions: positions, extents: extents, hitMargins: hitMargins, anchors: anchors,
+                         topCount: top.count, lastPlain: plain.last ?? -1)
     }
 
     // MARK: Keeping up
@@ -290,11 +450,56 @@ final class ShapeIndex {
         generation += 1
         let (touched, before) = forget(changes.shapeIDs.union(documentReaders))
         noteDamage(before: before, ids: touched)
-        guard let list = paintList else { return }
-        if changes.reordered || anchorsMoved(changes.changed, from: list, in: document, registry: registry) {
+        // No copy of the list is held while it's added to: its arrays would be copied, whole, to be changed.
+        guard paintList != nil else { return }
+        if anchorsMoved(changes.changed, in: document, registry: registry)
+            || changes.reordered && !appendAdded(changes, in: document, registry: registry) {
             paintList = nil
+            grid = nil
             staleExtents = []
         }
+    }
+
+    /// Puts the shapes a commit added at the end of the paint list, if that's where they belong and nothing else in
+    /// the order changed, instead of building the list again: the commit added shapes at the top of the stack, none
+    /// went, and none that stayed moved in it. Each is a plain shape, which goes last when no anchored shape is on top, or
+    /// anchored to the last plain shape, just above everything else anchored to it, which is last too. Their extents are
+    /// worked out when next asked for (they are stale), as any shape's the commit touched. False, with the list as it was,
+    /// when it has to be built again: shapes came in elsewhere in the stack, shapes went, an undo or a redo or a shape from
+    /// another board brought them (anything might refer to a shape it brings back: an arrow bound to it is painted above it
+    /// then), or one is anchored to a shape that is not the last plain one, or something is on top.
+    private func appendAdded(_ changes: ChangeSet, in document: CanvasDocument, registry: Registry) -> Bool {
+        guard !changes.added.isEmpty, changes.removed.isEmpty, !changes.replacedDocument, !changes.restoredStep,
+              changes.priors.holdsRecords, let old = paintList?.order.count, document.shapes.count == old + changes.added.count,
+              paintList?.topCount == 0 else { return false }
+        for id in changes.changed {
+            guard let now = document[id], let before = changes.before(id), before.stackingKey == now.stackingKey else { return false }
+        }
+        var lastPlain = paintList!.lastPlain
+        var anchors: [ShapeID: ShapeID] = [:]
+        for index in old..<document.shapes.count {
+            let record = document.shapes[index]
+            guard changes.added.contains(record.id), changes.before(record.id) == nil else { return false }
+            if let anchored = registry.definition(for: record.kind) as? any PaintOrderAnchored {
+                guard let anchor = anchored.erasedPaintAnchor(of: record, in: document), document.index(of: anchor) == lastPlain else { return false }
+                anchors[record.id] = anchor
+            } else {
+                lastPlain = index
+            }
+        }
+        for index in old..<document.shapes.count {
+            let record = document.shapes[index]
+            let margin = registry.definition(for: record.kind)?.hitMargin ?? HitMargin()
+            paintList!.positions.append(paintList!.order.count)
+            paintList!.order.append(index)
+            // Not known yet: it's stale, and is worked out and filed when next asked.
+            paintList!.extents.append(.null)
+            paintList!.hitMargins.append(margin)
+            if let anchor = anchors[record.id] { paintList!.anchors[record.id] = .some(anchor) }
+            grid?.addPosition()
+        }
+        paintList!.lastPlain = lastPlain
+        return true
     }
 
     /// Shapes whose geometry reads something no commit changed (`editor.shapesDidChangeLayout`): the
@@ -307,6 +512,9 @@ final class ShapeIndex {
         let (touched, before) = forget(known)
         noteDamage(before: before, ids: touched)
     }
+
+    /// Whether any geometry kept was worked out from the camera, which a pan or a zoom then works out again.
+    var readsCamera: Bool { !cameraReaders.isEmpty }
 
     func cameraDidChange() {
         generation += 1
@@ -361,10 +569,11 @@ final class ShapeIndex {
     /// Whether a changed shape's anchor isn't the one the paint order has. (An anchor follows from
     /// the shape's own props and the order of the document, so only a shape that changed, in a
     /// stack that didn't, needs asking.)
-    private func anchorsMoved(_ changed: Set<ShapeID>, from list: PaintList, in document: CanvasDocument, registry: Registry) -> Bool {
+    private func anchorsMoved(_ changed: Set<ShapeID>, in document: CanvasDocument, registry: Registry) -> Bool {
         changed.contains { id in
             guard let record = document[id], let anchored = registry.definition(for: record.kind) as? any PaintOrderAnchored else { return false }
-            return list.anchors[id] != .some(anchored.erasedPaintAnchor(of: record, in: document))
+            let recorded = paintList!.anchors[id]
+            return recorded != .some(anchored.erasedPaintAnchor(of: record, in: document))
         }
     }
 
@@ -398,4 +607,9 @@ final class ShapeIndex {
 @_spi(Host) public struct DamageMark: Equatable, Sendable {
     let index: Int
     let generation: Int
+}
+
+extension HitMargin {
+    /// The greater of the two in each measure.
+    func greatest(with other: HitMargin) -> HitMargin { HitMargin(world: Swift.max(world, other.world), view: Swift.max(view, other.view)) }
 }

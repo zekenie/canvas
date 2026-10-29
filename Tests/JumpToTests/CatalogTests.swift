@@ -151,7 +151,7 @@ private let storyTitled = 12
         let h = try storyHarness()
         h.openJumpTo()
         expectEqual(h.jump.catalogCount, storyTitled)
-        var shapes = h.editor.document.shapes
+        var shapes = Array(h.editor.document.shapes)
         shapes[1] = shape(2, Pocket(frame(400, 100, 200, 150)), titled: "Sigma")
         h.editor.replaceDocument(with: CanvasDocument(shapes: shapes))
         expectEqual(h.listing("sigma"), ["2"])

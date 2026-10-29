@@ -112,7 +112,7 @@ struct StoryQuery {
 @MainActor func storyAnswer(_ query: String, on queries: QueryState, properties: QueryRequest.Properties = .none) throws -> Result<QueryResult, QueryError> {
     try awaitResult { () async -> Result<QueryResult, QueryError> in
         do throws(QueryError) {
-            return .success(try await queries.run(QueryRequest(query, limit: QueryBudget.maxRows, properties: properties)))
+            return .success(try await queries.run(QueryRequest(query, limit: QueryRequest.every, properties: properties)))
         } catch {
             return .failure(error)
         }

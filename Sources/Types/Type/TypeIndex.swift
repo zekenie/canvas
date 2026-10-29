@@ -92,7 +92,11 @@ public final class TypeIndex {
     }
 
     @ObservationIgnored weak var editor: CanvasEditor?
-    @ObservationIgnored private var entries: [ShapeID: Entry] = [:]
+    /// Every type of the file, on every board. How many there are is what the readings of their schemas follow
+    /// (`SchemaReadings.expect`), so a file with a great many is not read again and again.
+    @ObservationIgnored private var entries: [ShapeID: Entry] = [:] {
+        didSet { SchemaReadings.expect(types: entries.count, from: ObjectIdentifier(self)) }
+    }
     @ObservationIgnored private var revisions = 0
     /// The kinds that can be types: every other shape is passed over at once.
     @ObservationIgnored private let kinds: Set<ShapeKind>
@@ -145,6 +149,11 @@ public final class TypeIndex {
         readEveryShape(in: editor)
         // The book of colors (what a type's own color is drawn in), made first: asked for as the index is.
         editor.colors?.onChange { [weak self] in self?.fileColorsDidChange() }
+    }
+
+    /// The file is closed and the editor gone: its types no longer count for the readings kept.
+    isolated deinit {
+        SchemaReadings.expect(types: 0, from: ObjectIdentifier(self))
     }
 
     /// Whether the shape is a type: it holds a schema.
@@ -559,7 +568,7 @@ public final class TypeIndex {
     private func readEveryShape(in editor: CanvasEditor) {
         let registry = editor.registry, file = editor.file, topology = editor.topology
         var heard = Heard()
-        func read(_ shapes: [AnyShapeRecord]) {
+        func read(_ shapes: some Sequence<AnyShapeRecord>) {
             for record in shapes {
                 if kinds.contains(record.kind) { self.read(record, registry: registry, heard: &heard) }
                 if let topology, typeableKinds.contains(record.kind) { readLinks(of: record.id, in: topology) }

@@ -18,15 +18,15 @@ import TestKit
 extension Budget {
     /// The main actor's time from a shape's lists being asked for to their landing, every list open,
     /// on a shape with 1,000 or 10,000 neighbors: six queries read and resolved, the turns that take
-    /// up the file, and the landing of every row (none is cut, so it grows with the neighbors; the
-    /// rows themselves are made off the main actor, some 4 and 50 ms). The thread's CPU time;
-    /// release, some 0.5 ms at 1,000 and 1.7 at 10,000.
+    /// up the file, and the landing (none is cut; the rows themselves are made, joined and compared with
+    /// the lists shown off the main actor, some 4 and 50 ms, so the landing costs the same with 100,000).
+    /// The thread's CPU time; release, some 0.4 ms at 1,000 and 0.8 at 10,000 (1.5 at 100,000).
     static let neighborList = SizedBudget(thousand: 1.5, tenThousand: 5)
     /// The same with ten neighbors, on a board of 1,000 or 10,000 shapes: what matches, never the
     /// board (some 0.35 ms).
     static let neighborListFew = 1.0
-    /// The same with every list folded, so each is only counted (one batch of ids, no row made;
-    /// some 0.3 and 0.85 ms).
+    /// The same with every list folded, so each is only counted (one batch, no row made and no id asked
+    /// for with one view; some 0.3 and 0.5 ms).
     static let neighborListFolded = SizedBudget(thousand: 1, tenThousand: 3)
     /// A keystroke in the search field over a list of 1,000 or 10,000 rows, once their names are
     /// read: every name folded and matched, the matches ranked (some 0.8 and 7.8 ms: within a frame).

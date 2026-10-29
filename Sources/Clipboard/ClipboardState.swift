@@ -266,7 +266,7 @@ final class ClipboardState {
     /// Returns the selected copies.
     @discardableResult
     private func place(_ file: CanvasFile, isCut: Bool, named name: String, at point: CGPoint?, offsetBy fixed: CGPoint?) -> [ShapeID] {
-        let shapes = file.root.shapes
+        let shapes = Array(file.root.shapes)
         guard !shapes.isEmpty else { return [] }
         editor.endEditing()
         let target = editor.file, kinds = editor.registry.containingKinds
@@ -337,7 +337,7 @@ final class ClipboardState {
             let owner = owners[next]
             next += 1
             guard let board = file.children[owner] else { continue }
-            let carried = carry(board.shapes, renaming: { ids[$0]! }, naming: { ids[$0] },
+            let carried = carry(Array(board.shapes), renaming: { ids[$0]! }, naming: { ids[$0] },
                                 in: ShapeContext(document: board, registry: editor.registry))
             let groups = copiedGroups(of: carried, renaming: ids)
             boards[ids[owner]!] = CanvasDocument(shapes: carried.map { pasted($0, as: ids[$0.id]!, renaming: ids, groups: groups) })

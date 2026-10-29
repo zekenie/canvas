@@ -426,7 +426,7 @@ func offeredQueries(in hint: String?) -> [String] {
 // MARK: Answering queries
 
 /// A query's answer on `h`'s editor (every row by default), the main run loop turned while it runs.
-@MainActor func answer(_ text: String, on h: EditorHarness, limit: Int = QueryBudget.maxRows, countOnly: Bool = false,
+@MainActor func answer(_ text: String, on h: EditorHarness, limit: Int = QueryRequest.every, countOnly: Bool = false,
                        properties: QueryRequest.Properties = .all, file: StaticString = #fileID, line: UInt = #line) throws -> QueryResult {
     let queries = try require(h.editor.queries, file: file, line: line)
     return try awaitResult(file: file, line: line) {

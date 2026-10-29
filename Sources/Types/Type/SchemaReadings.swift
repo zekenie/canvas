@@ -9,8 +9,13 @@ import Validation
 /// duplicated in Finder and opened beside its original has the same shapes, whose texts may differ
 /// once one is edited, and each window's are kept beside the other's rather than taking their place
 /// as each is read. Typing adds a reading, and the shape's used longest ago goes. The readings of
-/// shapes that went, or were read again from disk, are dropped (`forget`, which the sync calls), and
-/// past `capacity` those used longest ago. The shape itself shows its words, and reads none.
+/// shapes that went, or were read again from disk, are dropped (`forget`, which the sync calls).
+/// The readings of every shape of every file open are kept, with room for the texts typed and the
+/// copies (`capacity` follows what the open files' indexes say they hold: `expect`, never fewer than
+/// `minimumCapacity`), so opening a file of 10,000 types reads each once; past `capacity` the one used
+/// longest ago goes, one at a time (`oldest`: the readings are a list in the order they were used,
+/// each use moving one to the front in a step or two, so the cost of a lookup or of letting one go
+/// is the same however many are kept). The shape itself shows its words, and reads none.
 ///
 /// While a schema's text isn't a JSON object (a keystroke in the middle of a member breaks it), what
 /// its highlights follow stays its last one that was (`shown`), so typing doesn't take them away;
@@ -22,14 +27,22 @@ final class SchemaReadings {
     /// compares at once (the same storage), another with the same text once, and is kept after.
     private(set) var text: String
     let document: SchemaDocument
+    /// The shape whose schema it is: the key its readings are kept under.
+    private let id: ShapeID
     /// While `document` isn't a JSON object, the shape's last reading that was, this session.
     private var showing: SchemaReadings?
     private(set) lazy var issues: [ValidationIssue] = SchemaReadings.issues(of: document)
-    /// When it was last asked for, counted in lookups.
+    /// When it was last asked for, counted in lookups: which of one shape's readings went longest ago.
     private var used = 0
+    /// Its place in the order readings were used (`newest` to `oldest`), while it has one: the one
+    /// used just before it, and just after. `older` holds the next, so the chain from `newest` holds
+    /// every reading in it; `newer` only points back, and is set only while this one is in the chain.
+    private var older: SchemaReadings?
+    private unowned(unsafe) var newer: SchemaReadings?
 
-    private init(_ text: String, after previous: SchemaReadings?) {
+    private init(_ text: String, for id: ShapeID, after previous: SchemaReadings?) {
         self.text = text
+        self.id = id
         document = SchemaDocument(text)
         if !document.isObject, let previous { follow(previous) }
         #if DEBUG
@@ -62,14 +75,39 @@ final class SchemaReadings {
     /// How many readings `kept` holds, every shape's.
     private static var count = 0
     private static var lookups = 0
-    /// At most this many readings are kept: past it, the quarter used longest ago goes.
-    static let capacity = 4096
+    /// The readings in the order they were used: the one used last, and the one used longest ago.
+    private static var newest: SchemaReadings?
+    private static var oldest: SchemaReadings?
     /// At most this many a shape: the same shape in up to three copies of its file open beside it
     /// read nothing again; one typed into keeps the texts it had last.
     static let versionsPerShape = 4
+    /// The fewest readings kept: room for the types of a file of a few thousand, and for the readings of
+    /// types that aren't in any file (a card being made).
+    static var minimumCapacity = 4096
+    /// How many types each open file's index holds, by index (`expect`), and in all: what `capacity`
+    /// follows.
+    private static var expectations: [ObjectIdentifier: Int] = [:]
+    private static var expected = 0
     #if DEBUG
     static var made = 0
+    static var keptCount: Int { count }
     #endif
+
+    /// At most this many readings are kept: a reading for every type of every file open and a quarter
+    /// more for the texts typed and the copies (a file duplicated in Finder and opened beside its
+    /// original is two indexes of the same ids, and its types are counted twice), and no fewer than
+    /// `minimumCapacity`. A fixed number would have a file with more types than it read again and
+    /// again, each time the sync or a panel asked, as every one it kept was gone by the time it came
+    /// round to it.
+    static var capacity: Int { max(minimumCapacity, expected + expected / 4) }
+
+    /// A file's index says how many types it holds now (`count`, 0 when it goes): the readings kept
+    /// follow the files open. Let go of past the new `capacity`, the ones used longest ago.
+    static func expect(types count: Int, from index: ObjectIdentifier) {
+        let before = (count == 0 ? expectations.removeValue(forKey: index) : expectations.updateValue(count, forKey: index)) ?? 0
+        expected += count - before
+        if count < before { trim() }
+    }
 
     /// The reading of a type's schema; nil for a shape that isn't one.
     static func reading(of shape: AnyShapeRecord) -> SchemaReadings? {
@@ -79,7 +117,8 @@ final class SchemaReadings {
     /// The reading of `text`, the schema of the shape `id`: the one kept for the shape with this
     /// text, else read now and kept with them, in place of the shape's used longest ago once it
     /// has `versionsPerShape`. While the text isn't a JSON object, it shows what the shape's reading
-    /// used last showed (`shown`), whether it's read now or the shape went back to it.
+    /// used last showed (`shown`), whether it's read now or the shape went back to it. Either way it
+    /// is the one used last now.
     static func reading(of text: String, for id: ShapeID) -> SchemaReadings {
         lookups += 1
         let versions = kept[id] ?? []
@@ -87,35 +126,62 @@ final class SchemaReadings {
             if !found.document.isObject, let last = versions.max(by: { $0.used < $1.used }), last !== found { found.follow(last) }
             found.text = text
             found.used = lookups
+            makeNewest(found)
             return found
         }
-        let reading = SchemaReadings(text, after: versions.max { $0.used < $1.used })
+        let reading = SchemaReadings(text, for: id, after: versions.max { $0.used < $1.used })
         reading.used = lookups
         if versions.count < versionsPerShape {
             kept[id, default: []].append(reading)
             count += 1
-        } else if let oldest = versions.indices.min(by: { versions[$0].used < versions[$1].used }) {
-            kept[id]?[oldest] = reading
+        } else if let replaced = versions.indices.min(by: { versions[$0].used < versions[$1].used }) {
+            unlink(versions[replaced])
+            kept[id]?[replaced] = reading
         }
-        if count > capacity { dropOldest() }
+        makeNewest(reading)
+        trim()
         return reading
     }
 
-    /// Drops the quarter of `capacity` used longest ago, whatever shapes they're of.
-    private static func dropOldest() {
-        let all = kept.values.flatMap { $0 }.sorted { $0.used < $1.used }
-        let dropped = Set(all.prefix(capacity / 4).map(ObjectIdentifier.init))
-        kept = kept.compactMapValues { versions in
-            let left = versions.filter { !dropped.contains(ObjectIdentifier($0)) }
-            return left.isEmpty ? nil : left
+    /// Puts a reading first in the order of use (in it already, or new).
+    private static func makeNewest(_ reading: SchemaReadings) {
+        guard newest !== reading else { return }
+        unlink(reading)
+        reading.older = newest
+        newest?.newer = reading
+        newest = reading
+        if oldest == nil { oldest = reading }
+    }
+
+    /// Takes a reading out of the order of use, if it's in it.
+    private static func unlink(_ reading: SchemaReadings) {
+        let newer = reading.newer, older = reading.older
+        guard newer != nil || older != nil || newest === reading else { return }
+        if let newer { newer.older = older } else { newest = older }
+        if let older { older.newer = newer } else { oldest = newer }
+        reading.newer = nil
+        reading.older = nil
+    }
+
+    /// Lets go of the reading used longest ago, until no more than `capacity` are kept.
+    private static func trim() {
+        let capacity = capacity
+        while count > capacity, let last = oldest {
+            unlink(last)
+            if let index = kept[last.id]?.firstIndex(where: { $0 === last }) {
+                kept[last.id]?.remove(at: index)
+                if kept[last.id]?.isEmpty == true { kept[last.id] = nil }
+                count -= 1
+            }
         }
-        count = all.count - dropped.count
     }
 
     /// Drops the readings of a shape that went, or was read again from disk, or is no longer a type,
     /// and the last one it showed.
     static func forget(_ id: ShapeID) {
-        count -= kept.removeValue(forKey: id)?.count ?? 0
+        guard let readings = kept.removeValue(forKey: id) else { return }
+        for reading in readings { unlink(reading) }
+        count -= readings.count
     }
 
     /// Validation's rules, about the text itself: a text that isn't JSON is an error at its line

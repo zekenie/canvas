@@ -26,8 +26,10 @@ public struct CanvasFile: Equatable, Sendable {
     /// The values plugins keep on the file as a whole (`FileProperty`): those that differ from their
     /// defaults, and those the app can't use, kept as they were.
     var fileValues = FileValues()
-    /// Which board each shape is on.
-    private var locations: [ShapeID: BoardID] = [:]
+    /// Which board each shape is on: a table a copy of the file shares with the file until one writes to
+    /// it, and then copies a piece of (`ShapeMap`), so a commit that adds or removes shapes costs what
+    /// it adds or removes, whatever the file holds.
+    private var locations = ShapeMap<BoardID>()
     /// Each board's revision: the stamp it got when its shapes last changed.
     private var revisions: [BoardID: Int] = [:]
     /// The next stamp, for whichever board changes next: one counter for the whole file, so a
@@ -38,6 +40,7 @@ public struct CanvasFile: Equatable, Sendable {
     public init(root: CanvasDocument = CanvasDocument(), children: [ShapeID: CanvasDocument] = [:]) {
         self.root = root
         self.children = children.filter { !$0.value.shapes.isEmpty }
+        locations = ShapeMap(expecting: boards.reduce(0) { $0 + self[$1].shapes.count })
         for board in boards {
             for record in self[board].shapes {
                 precondition(locations.updateValue(board, forKey: record.id) == nil, "two shapes in the file share the id \(record.id)")

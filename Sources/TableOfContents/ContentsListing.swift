@@ -3,11 +3,14 @@ import Canvas
 /// What the table of contents lists for one scope: the rows, nested, as `entries` hands them to
 /// the list, and where each one is. Kept from one read to the next and brought up to date by
 /// placing again only the rows of the shapes that changed, with the rows named under a shape that
-/// came or went, so a commit costs what it changed rather than what's on the board.
+/// came or went, so a commit costs what it changed rather than what's on the board. What each update
+/// changed is noted for the list that shows it (`changes`), which follows it row by row.
 @MainActor
 struct ContentsListing {
     /// The shapes it may list; nil for every shape.
     let scope: Set<ShapeID>?
+    /// Which listing this is: each one listed from scratch is a new one, which a list shows whole.
+    let serial: Int
     /// The top-level rows, back to front, each with the rows nested under it. The rows at every
     /// level are in their shapes' stacking-key order, which is how a row is found again.
     private(set) var entries: [ContentsEntry] = []
@@ -18,10 +21,16 @@ struct ContentsListing {
     private var namers: [ShapeID: Set<ShapeID>] = [:]
     /// The shapes changed since it was last brought up to date.
     var pending: Set<ShapeID> = []
-    /// Whether the last update brought rows in at more than one place: under two rows (or a row
-    /// and the top level), or at two places among one row's rows. A row that comes in under one
-    /// that comes in with it comes in with it. The list replaces its rows then, as for a new scope.
-    private(set) var isScattered = false
+    /// What the updates since the list showing it last took them changed (`takeChanges(by:)`), noted
+    /// only once a list follows it (headless, or with no list shown, nothing is).
+    private(set) var changes = ContentsListingChanges()
+    /// How many updates have changed it: a list that shows it reads again when this does.
+    private(set) var version = 0
+    /// The list that took its changes last: another that takes them can't follow from there, and
+    /// shows it whole.
+    private var taker: ObjectIdentifier?
+    /// How many listings have been made, for each one's `serial`.
+    private static var made = 0
     /// Whether a loop keeps a row at the top though the shape it names is listed. Which row of a
     /// loop stays at the top follows from the order of the whole loop, so while there's one, any
     /// row that comes, goes or moves lists every row again. (No shipped kind makes a loop.)
@@ -52,6 +61,8 @@ struct ContentsListing {
     /// Lists the rows of `shapes` (back to front, each in `scope`) whose kinds list them.
     init(scope: Set<ShapeID>?, shapes: [ShapeID], row: (ShapeID) -> ShapeRow?) {
         self.scope = scope
+        Self.made += 1
+        serial = Self.made
         // By position in `order` from here on, which is quicker than by id.
         var order: [ShapeRow] = []
         var position: [ShapeID: Int] = [:]
@@ -90,6 +101,36 @@ struct ContentsListing {
     /// The shape whose row the shape's row is nested under here; nil at the top, or not listed.
     func parent(of id: ShapeID) -> ShapeID? { nodes[id]?.parent }
 
+    /// The shape's row as listed; nil for a shape not listed.
+    func row(of id: ShapeID) -> ShapeRow? { nodes[id]?.row }
+
+    /// The shape's row as listed, with the rows nested under it; nil for a shape not listed. O(its
+    /// depth) searches of the rows at each level.
+    func entry(of id: ShapeID) -> ContentsEntry? {
+        guard nodes[id] != nil else { return nil }
+        let keys = path(to: id)
+        let level = Self.rows(entries, under: keys.dropLast())
+        return level[level.slot(for: keys[keys.count - 1])]
+    }
+
+    /// The rows nested under the shape's row (nil: the top-level rows), back to front; none for a
+    /// shape not listed.
+    func children(of parent: ShapeID?) -> [ContentsEntry] {
+        guard let parent else { return entries }
+        guard nodes[parent] != nil else { return [] }
+        return Self.rows(entries, under: path(to: parent)[...])
+    }
+
+    /// What the updates since `taker` last took them changed, for it to follow, and nothing kept for
+    /// the next; nil when another list took them since (or none ever did), which shows it whole.
+    mutating func takeChanges(by taker: ObjectIdentifier) -> ContentsListingChanges? {
+        defer {
+            changes = ContentsListingChanges()
+            self.taker = taker
+        }
+        return self.taker == taker ? changes : nil
+    }
+
     // MARK: Keeping up
 
     /// Brings it up to date with the shapes changed since (`pending`): their rows are made again,
@@ -97,11 +138,12 @@ struct ContentsListing {
     /// placed again with the rows under it. False when listing every row again is the better way:
     /// the caller does that instead.
     mutating func update(row: (ShapeID) -> ShapeRow?) -> Bool {
-        isScattered = false
         guard !pending.isEmpty else { return true }
         let changed = pending
         pending = []
         guard let plan = plan(for: changed, row: row) else { return false }
+        if !plan.detaching.isEmpty || !plan.attaching.isEmpty || !plan.replacing.isEmpty { version += 1 }
+        let noting = taker != nil
         var moving: [ShapeID: ContentsEntry] = [:]
         for id in plan.detaching {
             let keys = path(to: id)
@@ -110,6 +152,10 @@ struct ContentsListing {
             }
             let node = nodes.removeValue(forKey: id)!
             forget(id, namedUnder: node.row.parent)
+            if noting {
+                changes.moved.insert(id)
+                if let parent = node.parent { changes.parents.insert(parent) }
+            }
         }
         for (made, parent) in plan.attaching {
             var entry = moving.removeValue(forKey: made.id) ?? ContentsEntry(row: made, children: nil)
@@ -118,15 +164,11 @@ struct ContentsListing {
             if let named = made.parent { namers[named, default: []].insert(made.id) }
             let keys = parent.map { path(to: $0) } ?? []
             Self.modify(&entries, under: keys[...]) { rows in rows.insert(entry, at: rows.slot(for: made.key)) }
+            if noting {
+                changes.moved.insert(made.id)
+                if let parent { changes.parents.insert(parent) }
+            }
         }
-        // Where they came in, by the row they came in under (nil: the top level).
-        let attached = Set(plan.attaching.map(\.row.id))
-        var places: [ShapeID?: [Int]] = [:]
-        for (made, parent) in plan.attaching where !(parent.map(attached.contains) ?? false) {
-            let keys = parent.map { path(to: $0) } ?? []
-            places[parent, default: []].append(Self.rows(entries, under: keys[...]).slot(for: made.key))
-        }
-        isScattered = places.count > 1 || places.values.contains { slots in slots.max()! - slots.min()! + 1 != slots.count }
         for made in plan.replacing {
             let id = made.id
             let old = nodes[id]!.row
@@ -137,6 +179,7 @@ struct ContentsListing {
             }
             let keys = path(to: id)
             Self.modify(&entries, under: keys.dropLast()) { rows in rows[rows.slot(for: made.key)].row = made }
+            if noting { changes.replaced.insert(id) }
         }
         return true
     }
@@ -231,6 +274,17 @@ struct ContentsListing {
         modify(&children, under: path.dropFirst(), body)
         rows[i].children = children.isEmpty ? nil : children
     }
+}
+
+/// What a listing's updates changed, for the list that shows it to follow (`ContentsListing.takeChanges`):
+/// the rows that came, went or moved (each read again where it is now), the rows whose nested rows
+/// changed, and the rows made again where they are. Gathered over updates until the list takes them.
+struct ContentsListingChanges {
+    var moved: Set<ShapeID> = []
+    var parents: Set<ShapeID> = []
+    var replaced: Set<ShapeID> = []
+
+    var isEmpty: Bool { moved.isEmpty && parents.isEmpty && replaced.isEmpty }
 }
 
 extension [ContentsEntry] {

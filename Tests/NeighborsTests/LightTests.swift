@@ -43,6 +43,21 @@ struct Nest {
 }
 
 @MainActor let lightTests = Suite("Neighbors: what a hover lights", [
+    test("a hover lights every neighbor, however many: none is cut at 10,000") {
+        let hub = ShapeID()
+        let many = 10_500
+        let spokes = (0..<many).map { _ in ShapeID() }
+        let shapes = [box(hub, at: CGPoint(x: 0, y: 0))] + spokes.enumerated().flatMap { index, spoke in
+            [box(spoke, at: CGPoint(x: 200 + CGFloat(index % 100) * 120, y: CGFloat(index / 100) * 120)), link(ShapeID(), hub, spoke)]
+        }
+        let h = try neighborHarness(CanvasFile(root: CanvasDocument(shapes: shapes)))
+        h.editor.hovered = hub
+        h.settle()
+        let lit = h.lit
+        expectEqual(lit.count, 1, "one light matches: what the hub has a wire to")
+        expectEqual(lit.first?.shapes.count, 2 * many, "every one of them and the wires to them")
+        expect(lit.first?.shapes.isSuperset(of: spokes) == true)
+    },
     test("a hover lights what each light matches, in its color: what it points to and the arrows out, what points to it, what it quotes, what quotes it") {
         let star = Star()
         let h = try neighborHarness(star.file())

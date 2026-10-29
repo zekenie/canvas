@@ -141,6 +141,14 @@ public struct TypesPlugin: ListedPlugin {
     /// How many times a type's schema has been read (parsed) in this process, debug builds only:
     /// tests hold what reads a type to reading only the types whose text changed.
     public static var schemasRead: Int { SchemaReadings.made }
+    /// How many readings are kept now, and the most that are (debug builds only): the open files' types
+    /// with room to spare, no fewer than the minimum, which a test may set to a few to see readings go.
+    public static var schemaReadingsKept: Int { SchemaReadings.keptCount }
+    public static var schemaReadingsCapacity: Int { SchemaReadings.capacity }
+    public static var schemaReadingsMinimum: Int {
+        get { SchemaReadings.minimumCapacity }
+        set { SchemaReadings.minimumCapacity = newValue }
+    }
     #endif
 }
 

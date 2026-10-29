@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import SwiftUI
 
@@ -745,6 +746,31 @@ enum ContentsStyle {
     static let backTab = "\u{19}"
     static let headerSpacing: CGFloat = 4
     static let upWidth: CGFloat = 16
+    /// The header's text, as a sidebar's section header's, and how far in from the row's edges it is.
+    static let headerFont = Font.system(size: 11, weight: .semibold)
+    static let headerInset: CGFloat = 8
+    /// The list's rows (`ContentsCell`): a symbol's column and from it to the title, as a source
+    /// list's; the text's size at each of the sidebar's row sizes (System Settings' sidebar icon
+    /// size), and that size as SwiftUI names it (a stand-in's arrow and a path's names scale with it).
+    static let rowIconWidth: CGFloat = 20
+    static let rowIconSpacing: CGFloat = 6
+    static func rowFontSize(_ rows: NSTableView.RowSizeStyle) -> CGFloat {
+        switch rows {
+        case .small: 11
+        case .large: 15
+        default: 13
+        }
+    }
+    static func sidebarRowSize(_ rows: NSTableView.RowSizeStyle) -> SidebarRowSize {
+        switch rows {
+        case .small: .small
+        case .large: .large
+        default: .medium
+        }
+    }
+    /// Up to how many shapes selected the list finds each one's row; past that, it goes down the rows
+    /// once.
+    static let selectedRowLookups = 64
     /// The up button's: an arrow that turns up, a way out as Finder's enclosing folder is, not a disclosure.
     static let upSymbol = "arrow.turn.left.up"
     /// A mark's dot, a mark's symbol, and the square around either that its tooltip answers in.

@@ -12,6 +12,10 @@ public enum RPC {
     public static let protocolVersion = 2
     /// What the command line is called: in help, and in the examples commands give.
     public static let commandName = "canvas"
+    /// How long `canvas` waits for the app to answer, in seconds, when neither `--timeout` nor a param it
+    /// was given (`x-timeout`) says. What a command's own deadline stays under: a query asked on its behalf
+    /// is refused before this runs out (`QueryBudget.commandDeadline`), not given up on.
+    public static let defaultWait: TimeInterval = 10
     /// The method that describes the app and every command it runs (`AppDescription`). Not a
     /// command: `canvas` asks it before running any.
     public static let describeMethod = "describe"

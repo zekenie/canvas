@@ -166,13 +166,15 @@ extension ContentsWindow {
         expectEqual(editor.hovered, nest.d)
         expectEqual(editor.hoveredElsewhere, nil)
     },
-    test("a hover redraws the rows it leaves and reaches, not every row") {
+    test("a hover redraws the rows it leaves and reaches, not every row; a row out of view, none") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
-        let ids = widgets(150, in: editor)          // under 200: AppKit logs a reentrant update first showing more
+        let ids = widgets(1000, in: editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == ids.count }
         w.window.settle()
         let contents = editor.contents
+        /// The shape of the list's row `n` (1, the first under the header): front to back, the last added first.
+        let row = { (n: Int) in ids[ids.count - n] }
         /// How many rows the list redraws for `change`: once one has, and a few more turns of the run
         /// loop have passed.
         @MainActor func redrawn(_ change: () -> Void) -> Int {
@@ -182,14 +184,18 @@ extension ContentsWindow {
             w.window.settle()
             return contents.rowsRedrawn - before
         }
+        // The list makes views for the rows in view alone: row 15 is in view, ids[0]'s, the last, isn't.
+        expect(try w.rect(ofRow: 15).maxY <= w.hosting.bounds.height && w.rect(ofRow: ids.count).minY > w.hosting.bounds.height)
         let changes: [(String, Int, @MainActor () -> Void)] = [
-            ("the pointer onto a row", 1, { contents.hover(ids[3]) }),
-            ("onto the next row", 2, { contents.hover(ids[4]) }),
-            ("onto a shape on the canvas", 2, { editor.hovered = ids[5] }),
-            ("onto a shape whose row is far down the list", 2, { editor.hovered = ids[140] }),
-            ("selecting the hovered shape, which takes its row's tint", 1, { contents.select([ids[140]]) }),
-            ("the pointer from the selected shape's row onto another", 2, { contents.hover(ids[6]) }),
-            ("the pointer off the list", 1, { contents.endHover(ids[6]) }),
+            ("the pointer onto a row", 1, { contents.hover(row(4)) }),
+            ("onto the next row", 2, { contents.hover(row(5)) }),
+            ("onto a shape on the canvas", 2, { editor.hovered = row(6) }),
+            ("onto a shape whose row is further down the list", 2, { editor.hovered = row(15) }),
+            ("onto a shape whose row is out of view: the row it leaves alone", 1, { editor.hovered = ids[0] }),
+            ("back onto one in view", 1, { editor.hovered = row(15) }),
+            ("selecting the hovered shape, which takes its row's tint", 1, { contents.select([row(15)]) }),
+            ("the pointer from the selected shape's row onto another", 2, { contents.hover(row(7)) }),
+            ("the pointer off the list", 1, { contents.endHover(row(7)) }),
         ]
         for (what, most, change) in changes {
             let rows = redrawn(change)

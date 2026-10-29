@@ -26,7 +26,7 @@ let queryPromptEnd = "<!-- QueryPrompt.system: end -->"
 @MainActor
 private func answer(_ query: String, in queries: QueryState) throws -> Result<QueryResult, QueryError> {
     do {
-        return .success(try awaitResult { try await queries.run(QueryRequest(query, limit: QueryBudget.maxRows, properties: .none)) })
+        return .success(try awaitResult { try await queries.run(QueryRequest(query, limit: QueryRequest.every, properties: .none)) })
     } catch let error as QueryError {
         return .failure(error)
     }

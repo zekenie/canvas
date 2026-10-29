@@ -191,7 +191,7 @@ public struct Transaction {
     /// (and nothing of what it deleted), and a value set for a shape (`editor.setLayoutInput`) is read
     /// for one it hasn't changed. A shape it didn't touch reads the size the editor has kept for it; one
     /// with none kept is laid out against this transaction's file. The context is a snapshot: read it, use it, and let it go before the
-    /// next change, or that change copies what it holds.
+    /// next change, or that change copies the chunk of shapes it writes and the list of chunks (`ShapeStack`).
     public var shapes: ShapeContext {
         guard let layout else { return ShapeContext(document: document, registry: registry, camera: camera) }
         let here = self
@@ -541,16 +541,23 @@ public struct Transaction {
     }
 
     /// Paints the shapes above every other, keeping their order among themselves, each with what it
-    /// holds just above it. A shape that is on top already, or read-only, stays.
+    /// holds just above it. A shape that is on top already, or read-only, stays. Each is brought to
+    /// the front in turn, as `bringToFront(_:)` brings one, over a replay of the stack, which is
+    /// changed once at the end (`StackReplay`).
     public mutating func bringToFront(_ ids: [ShapeID]) {
-        for id in backToFront(ids) { bringToFront(id) }
+        var replay = StackReplay(document.shapes)
+        for id in backToFront(ids) { bringToFront(id, in: &replay) }
+        finish(replay)
     }
 
     /// Paints the shapes below every other, keeping their order among themselves, each with what it
     /// holds just above it; one in a container, just above its container. A shape that is there
-    /// already, or read-only, stays.
+    /// already, or read-only, stays. Each is sent to the back in turn, as `sendToBack(_:)` sends one,
+    /// over a replay of the stack.
     public mutating func sendToBack(_ ids: [ShapeID]) {
-        for id in backToFront(ids).reversed() { sendToBack(id) }
+        var replay = StackReplay(document.shapes)
+        for id in backToFront(ids).reversed() { sendToBack(id, in: &replay) }
+        finish(replay)
     }
 
     /// tldraw's Bring Forward: each shape moves just past the nearest shape above it that overlaps
@@ -572,23 +579,209 @@ public struct Transaction {
         ids.sorted { (document.index(of: $0) ?? 0) < (document.index(of: $1) ?? 0) }
     }
 
+    /// Each shape steps in turn, the topmost first going forward and the lowest going back, over a
+    /// replay of the stack (`StackReplay`), changed once at the end.
     private mutating func step(_ ids: [ShapeID], forward: Bool) {
-        let moving = Set(ids)
-        func bounds(_ id: ShapeID) -> CGRect? { shapes.geometry(of: id)?.bounds }
         let ordered = backToFront(ids)
-        for id in forward ? ordered.reversed() : ordered {
-            guard let index = document.index(of: id), let mine = bounds(id) else { continue }
-            let all = document.shapes
-            let passing = forward ? Array(all[(index + 1)...]) : all[..<index].reversed()
-            // What a container holds goes with it, so it's never the shape it steps past.
-            let held = Set(document.descendants(of: id, containingKinds: registry.containingKinds))
-            let next = passing.first { other in
-                !moving.contains(other.id) && !held.contains(other.id) && !(registry.definition(for: other.kind) is any PaintOrderAnchored)
-                    && bounds(other.id).map { $0.intersects(mine) } == true
+        var replay = StackReplay(document.shapes)
+        do {
+            var search = StepSearch(stack: replay.stack, context: shapes, registry: registry, moving: Set(ids), forward: forward)
+            for id in forward ? ordered.reversed() : ordered {
+                guard let place = replay.place(of: id) else { continue }
+                let mine = search.bounds(place)
+                guard !mine.isNull else { continue }
+                // What a container holds goes with it, so it's never the shape it steps past.
+                let held = Set(document.descendants(of: id, containingKinds: registry.containingKinds))
+                guard let next = search.nearest(to: place, overlapping: mine, holding: held, in: replay) else { continue }
+                if forward { move(id, above: replay.id(at: next), in: &replay) } else { move(id, below: replay.id(at: next), in: &replay) }
             }
-            guard let next else { continue }
-            if forward { move(id, above: next.id) } else { move(id, below: next.id) }
         }
+        finish(replay)
+    }
+
+    /// What a step of several shapes looks up, by place in the stack it began with: each shape's bounds and whether it
+    /// may be passed, each found once (restacking changes no shape's geometry), and, once a walk up or down the stack from
+    /// a shape has gone `walked` shapes without finding one, a grid of the bounds of every shape that may be passed, which
+    /// every shape after looks in: a few shapes stepped cost the shapes near them in the stack, and a board's worth the
+    /// board, never the board for each.
+    @MainActor private struct StepSearch {
+        /// How far a walk goes before the grid is made. Debug builds' (the tests') is short, so a few shapes stepped
+        /// meet the grid.
+        #if DEBUG
+        static let walked = 3
+        #else
+        static let walked = 256
+        #endif
+
+        let stack: ShapeStack, context: ShapeContext, registry: Registry, moving: Set<ShapeID>, forward: Bool
+        private var known: [Int: CGRect] = [:], anchored: [ShapeKind: Bool] = [:]
+        private var extents: [CGRect] = [], grid: SpatialGrid?
+
+        init(stack: ShapeStack, context: ShapeContext, registry: Registry, moving: Set<ShapeID>, forward: Bool) {
+            self.stack = stack
+            self.context = context
+            self.registry = registry
+            self.moving = moving
+            self.forward = forward
+        }
+
+        private mutating func makeGrid() {
+            extents = [CGRect](repeating: .null, count: stack.count)
+            for place in stack.indices where mayPass(stack[place]) { extents[place] = bounds(place) }
+            grid = SpatialGrid(extents: extents)
+        }
+
+        mutating func bounds(_ place: Int) -> CGRect {
+            if let kept = known[place] { return kept }
+            let found = context.geometry(of: stack[place].id)?.bounds ?? .null
+            known[place] = found
+            return found
+        }
+
+        /// Whether a shape may be passed at all: not one moving too, nor one painted by anchor (an arrow).
+        private mutating func mayPass(_ record: AnyShapeRecord) -> Bool {
+            guard !moving.contains(record.id) else { return false }
+            if let kept = anchored[record.kind] { return !kept }
+            let isAnchored = registry.definition(for: record.kind) is any PaintOrderAnchored
+            anchored[record.kind] = isAnchored
+            return !isAnchored
+        }
+
+        private mutating func passes(_ other: Int, overlapping mine: CGRect, holding held: Set<ShapeID>) -> Bool {
+            let record = stack[other]
+            return mayPass(record) && !held.contains(record.id) && bounds(other).intersects(mine)
+        }
+
+        /// The nearest shape above the one at `place` (below, going back) as the replay has them that it may pass and
+        /// overlaps: the first going up (down) the replay from it, or, past `walked` shapes, of those the grid finds where
+        /// it is.
+        mutating func nearest(to place: Int, overlapping mine: CGRect, holding held: Set<ShapeID>, in replay: StackReplay) -> Int? {
+            if grid == nil {
+                var next = forward ? replay.above(place) : replay.below(place), steps = 0
+                while let other = next, steps < Self.walked {
+                    if passes(other, overlapping: mine, holding: held) { return other }
+                    next = forward ? replay.above(other) : replay.below(other)
+                    steps += 1
+                }
+                guard next != nil else { return nil }
+                makeGrid()
+            }
+            if let grid, let block = grid.block(of: mine, most: 1024) {
+                var found: [Int32] = []
+                if grid.gather(block, touching: nil, extents: extents, into: &found, most: 4096) {
+                    var best: Int?
+                    for position in found {
+                        let other = Int(position)
+                        guard forward ? replay.isBelow(place, other) : replay.isBelow(other, place),
+                              passes(other, overlapping: mine, holding: held) else { continue }
+                        if let kept = best, forward ? !replay.isBelow(other, kept) : !replay.isBelow(kept, other) { continue }
+                        best = other
+                    }
+                    return best
+                }
+            }
+            var next = forward ? replay.above(place) : replay.below(place)
+            while let other = next {
+                if passes(other, overlapping: mine, holding: held) { return other }
+                next = forward ? replay.above(other) : replay.below(other)
+            }
+            return nil
+        }
+    }
+
+    // Restacking in a replay (`StackReplay`): each as its namesake does it to the document, over the
+    // replay's order, and the document changed once, by `finish`.
+
+    /// A shape and what it holds, at any depth, by their places in a replay, bottom to top: what
+    /// restacking it moves.
+    private struct ReplayBlock {
+        let places: [Int]
+        private let members: Set<Int>?
+
+        init(_ places: [Int]) {
+            self.places = places
+            members = places.count > 16 ? Set(places) : nil
+        }
+
+        func has(_ place: Int) -> Bool { members?.contains(place) ?? places.contains(place) }
+    }
+
+    private func block(of id: ShapeID, at place: Int, in replay: StackReplay) -> ReplayBlock {
+        guard !registry.containingKinds.isEmpty, document.namesContainers, document.shapesNaming(id).isEmpty == false else { return ReplayBlock([place]) }
+        let held = document.descendants(of: id, containingKinds: registry.containingKinds).compactMap(replay.place(of:))
+        return ReplayBlock(replay.sorted([place] + held))
+    }
+
+    /// Where the shape's container is in the replay, which it goes no lower than just above; nil for
+    /// a shape on the board directly.
+    private func floor(of record: AnyShapeRecord, in replay: StackReplay) -> Int? {
+        guard record.namesContainer else { return nil }
+        return document.container(of: record, containingKinds: registry.containingKinds).flatMap(replay.place(of:))
+    }
+
+    private mutating func bringToFront(_ id: ShapeID, in replay: inout StackReplay) {
+        guard let place = replay.place(of: id) else { return }
+        let block = block(of: id, at: place, in: replay)
+        // The top shape that stays.
+        var anchor = replay.top, last = block.places.count - 1
+        while last >= 0, let top = anchor, top == block.places[last] {
+            anchor = replay.below(top)
+            last -= 1
+        }
+        guard last >= 0, !refuses(replay.stack[place]) else { return }
+        restack(block, above: anchor, in: &replay)
+    }
+
+    private mutating func sendToBack(_ id: ShapeID, in replay: inout StackReplay) {
+        guard let place = replay.place(of: id) else { return }
+        let record = replay.stack[place]
+        let block = block(of: id, at: place, in: replay), floor = floor(of: record, in: replay)
+        guard !replay.isBlock(block.places, justAbove: floor), !refuses(record) else { return }
+        restack(block, above: floor, in: &replay)
+    }
+
+    private mutating func move(_ id: ShapeID, above other: ShapeID, in replay: inout StackReplay) {
+        guard id != other, let from = replay.place(of: id), var anchor = replay.place(of: other) else { return }
+        let block = block(of: id, at: from, in: replay)
+        guard !block.has(anchor) else { return }
+        let record = replay.stack[from]
+        if let floor = floor(of: record, in: replay), replay.isBelow(anchor, floor) { anchor = floor }
+        guard !replay.isBlock(block.places, justAbove: anchor), !refuses(record) else { return }
+        restack(block, above: anchor, in: &replay)
+    }
+
+    private mutating func move(_ id: ShapeID, below other: ShapeID, in replay: inout StackReplay) {
+        guard id != other, let from = replay.place(of: id), let target = replay.place(of: other) else { return }
+        let block = block(of: id, at: from, in: replay)
+        guard !block.has(target) else { return }
+        // Just above the nearest shape below `other` that stays.
+        var anchor = replay.below(target)
+        while let below = anchor, block.has(below) { anchor = replay.below(below) }
+        let record = replay.stack[from]
+        if let floor = floor(of: record, in: replay), anchor.map({ replay.isBelow($0, floor) }) ?? true { anchor = floor }
+        guard !replay.isBlock(block.places, justAbove: anchor), !refuses(record) else { return }
+        restack(block, above: anchor, in: &replay)
+    }
+
+    /// Moves `block` to just above the shape at `anchor`, or to the bottom for nil, with keys between
+    /// its key and the next shape's that stays, as `restack(_:above:)` does in the document.
+    private mutating func restack(_ block: ReplayBlock, above anchor: Int?, in replay: inout StackReplay) {
+        var next: Int? = if let anchor { replay.above(anchor) } else { replay.bottom }
+        while let above = next, block.has(above) { next = replay.above(above) }
+        let low = anchor.flatMap(replay.key(at:)), high = next.flatMap(replay.key(at:)), count = block.places.count
+        replay.move(block.places, above: anchor, keys: count == 1 ? [keys.key(between: low, and: high)] : stackingKeys(count, between: low, and: high))
+        for place in block.places { noteChanged(replay.id(at: place), reordering: true) }
+    }
+
+    /// The document as the replay left it, in one change.
+    private mutating func finish(_ replay: StackReplay) {
+        guard !replay.keyed.isEmpty else { return }
+        tops = [:]
+        document.restack(replay.keyed.map { place, key in
+            var record = replay.stack[place]
+            record.stackingKey = key
+            return record
+        })
     }
 
     /// The shape at `index` and what it holds, at any depth, by their indices, ascending: what
@@ -1038,10 +1231,13 @@ public struct Transaction {
         let kinds = registry.referencingKinds
         guard !kinds.isEmpty else { return }
         let context = shapes
-        for record in document.shapes where kinds.contains(record.kind) && !deleting.contains(record.id) {
-            guard let released = record.remappingReferences({ ids.contains($0) ? nil : $0 }, in: context), released != record else { continue }
-            update(record.id) { $0 = released }
+        var released: [AnyShapeRecord] = []
+        document.shapes.forEach { record in
+            guard kinds.contains(record.kind), !deleting.contains(record.id),
+                  let letGo = record.remappingReferences({ ids.contains($0) ? nil : $0 }, in: context), letGo != record else { return }
+            released.append(letGo)
         }
+        for record in released { update(record.id) { $0 = record } }
     }
 
     // MARK: Turning, and moving to another board

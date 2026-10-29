@@ -14,7 +14,7 @@ struct QueryParams: SchemaDefined {
         Property("ask", \.ask).maxLength(QueryParams.questionLength)
             .keywords(["x-stdin": true, "x-value-name": "question", "x-timeout": .number(QueryParams.askWait)])
             .description("A question in English instead: the app has Claude write the query (with the key in Settings), runs it, and says what it wrote.")
-        Property("limit", \.limit).minimum(1).maximum(Double(QueryBudget.maxRows))
+        Property("limit", \.limit).minimum(1)
             .description("The most rows; count counts them all.")
         Property("count", \.count).description("Only how many match.")
         Property("brief", \.brief).description("Rows without their properties.")

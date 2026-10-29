@@ -241,13 +241,13 @@ private struct SplitMix: RandomNumberGenerator {
             h.editor.transact("Move") { $0.translate([record.id], by: CGPoint(x: x, y: 1)) }
             return "moving \(name(record.id)) and what it holds"
         case 62..<67:
-            guard let record = pick(shown) else { return "nothing" }
+            guard let record = pick(Array(shown)) else { return "nothing" }
             let front = Bool.random(using: &random)
             h.editor.transact("Restack") { front ? $0.bringToFront(record.id) : $0.sendToBack(record.id) }
             return "restacking \(name(record.id))"
         case 67..<77:
             guard let board = pick(showableBoards().filter { $0 != h.editor.board }) else { return "nothing" }
-            let there = h.file[board].shapes, added = fresh(), from = target(), to = target()
+            let there = Array(h.file[board].shapes), added = fresh(), from = target(), to = target()
             let rewired = pick(there)
             h.editor.transact(on: board, "Elsewhere") { t in
                 if let rewired, Bool.random(using: &random) { rewire(rewired.id, in: &t) } else { t.insert(link(added, from, to)) }

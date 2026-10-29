@@ -130,7 +130,7 @@ extension Budget {
     let base = generatedBoard(shapes: size)
     var types: [ShapeID] = [], instances: [ShapeID] = []
     var noteIndex = 0
-    var shapes = base.shapes
+    var shapes = Array(base.shapes)
     for index in shapes.indices where shapes[index].kind == StickyNote.kind {
         defer { noteIndex += 1 }
         if noteIndex % 50 == 0 {
@@ -457,7 +457,7 @@ extension Budget {
         let viewport = CGSize(width: 1200, height: 800)
         let context = try bitmapContext(viewport)
         for size in sizes {
-            var shapes = generatedBoard(shapes: size).shapes
+            var shapes = Array(generatedBoard(shapes: size).shapes)
             let type = sixFieldType(at: CGPoint(x: -400, y: 0))
             let values = FieldValues(["f1": "Ann", "f2": "Lee", "f3": "ann@acme.com", "f4": "Leeds", "f5": "gift", "f6": "none"])
             var instances: [ShapeID] = []
@@ -497,7 +497,7 @@ extension Budget {
         defer { pasteboard.releaseGlobally() }
         let viewport = CGSize(width: 1200, height: 800)
         for size in sizes {
-            var shapes = generatedBoard(shapes: size).shapes
+            var shapes = Array(generatedBoard(shapes: size).shapes)
             let type = sixFieldType(at: CGPoint(x: -400, y: 0), titledBy: "f1")
             let values = FieldValues(["f1": "Ann", "f2": "Lee", "f3": "ann@acme.com", "f4": "Leeds", "f5": "gift", "f6": "none"])
             var instances: [ShapeID] = []

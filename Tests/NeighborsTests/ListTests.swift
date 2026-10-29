@@ -511,6 +511,24 @@ extension EditorHarness {
         expect(h.list.linesDrawn > 0 && h.list.linesDrawn < 300, "drew \(h.list.linesDrawn) rows of 3,000 in a panel 700 points tall")
         #endif
     },
+    test("a list past what a query used to be cut at is all there too, counted and listed whole, and only its rows in view are drawn") {
+        let hub = ShapeID()
+        let many = 10_500
+        let spokes = (0..<many).map { _ in ShapeID() }
+        let h = try listHarness(CanvasFile(root: CanvasDocument(shapes: [called("Hub", box(hub))] + spokes.flatMap { [called("Spoke", box($0)), link(ShapeID(), hub, $0)] })))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: DetailPanelView(editor: h.editor))
+        defer { window.close() }
+        h.editor.selection = hub
+        window.spin(until: { h.list.subject == hub && h.list.hasLanded }, timeout: 20)
+        window.settle()
+        expectEqual(h.count(Lists.wiredTo), many)
+        expectEqual(h.rows(Lists.wiredTo).count, many, "every one of them, none cut at 10,000")
+        #if DEBUG
+        expect(h.list.linesDrawn > 0 && h.list.linesDrawn < 300, "drew \(h.list.linesDrawn) rows of \(many) in a panel 700 points tall")
+        #endif
+    },
 ])
 
 extension NSWindow {

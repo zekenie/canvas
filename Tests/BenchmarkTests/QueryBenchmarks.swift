@@ -264,9 +264,10 @@ func middleTitle(_ size: Int) -> String { "Title \(size / 2 + 4)" }
     /// Each frame's milliseconds from its timer's fire date to its draw's end, and how late it began.
     private(set) var times: [Double] = []
     private(set) var late: [Double] = []
-    /// The queries that ran meanwhile, and their slices.
+    /// The queries that ran meanwhile, their slices, and how long each took on the wall clock, in seconds.
     private(set) var queries = 0
     private(set) var slices = 0
+    private(set) var queryTimes: [Double] = []
     private var stop = false
     /// How many times the timer has fired, and how many of those fires found the main thread too
     /// busy to begin their frame before the next.
@@ -283,8 +284,9 @@ func middleTitle(_ size: Int) -> String { "Title \(size / 2 + 4)" }
         self.center = center
     }
 
-    /// At least `count` frames and, while `query` runs, at least `runs` of it, one after another.
-    func run(_ count: Int, while query: String? = nil, runs: Int = 0) throws {
+    /// At least `count` frames and, while `query` runs, at least `runs` of it, one after another, for up to
+    /// `seconds` (a query that the main actor serves a slice a frame takes as long as it has slices to ask).
+    func run(_ count: Int, while query: String? = nil, runs: Int = 0, seconds: TimeInterval = 60) throws {
         let queries = try require(h.editor.queries)
         let interval = Self.interval
         let first = DispatchTime.now().uptimeNanoseconds + interval
@@ -304,7 +306,9 @@ func middleTitle(_ size: Int) -> String { "Title \(size / 2 + 4)" }
         let running = Task { @MainActor in
             guard let query else { return }
             while !stop {
+                let began = DispatchTime.now().uptimeNanoseconds
                 let result = try await queries.run(QueryRequest(query, countOnly: true))
+                queryTimes.append(Double(DispatchTime.now().uptimeNanoseconds - began) / 1e9)
                 self.queries += 1
                 slices += result.timings.slices
                 slicesSeen.note(result, "\(query), frames drawn meanwhile")
@@ -312,12 +316,12 @@ func middleTitle(_ size: Int) -> String { "Title \(size / 2 + 4)" }
         }
         timer.activate()
         let started = Date()
-        while times.count < count || (query != nil && self.queries < runs), Date().timeIntervalSince(started) < 60 {
+        while times.count < count || (query != nil && self.queries < runs), Date().timeIntervalSince(started) < seconds {
             RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
         }
         timer.cancel()
         stop = true
-        try awaitResult(timeout: 60) { try await running.value }
+        try awaitResult(timeout: seconds) { try await running.value }
     }
 
     /// A frame for the fire at `fired` (uptime nanoseconds).
@@ -349,6 +353,9 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
                                    })
     }
 }
+
+/// The rows the row benchmarks list (`--limit 10000`): a query has no most, and these hold the cost of listing this many.
+let rowsListed = 10_000
 
 @MainActor let queryBenchmarks = Suite("Query benchmarks", [
     test("the vocabulary is made in a millisecond, on an editor's first query") {
@@ -641,14 +648,19 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             let alone = FrameDriver(h, context: context, viewport: viewport, from: center)
             try alone.run(30)
             let querying = FrameDriver(h, context: context, viewport: viewport, from: center)
-            try querying.run(30, while: ":invalid", runs: 2)
+            // :invalid over a board being dragged can't be kept (every frame's commit changes it): it asks the main actor for
+            // some 4,000 slices of 2 ms over 100,000 shapes and as many below, one a frame at best, so a minute or more.
+            let shapes = h.editor.file.shapeCount
+            let runs = size > 10_000 ? 1 : 2
+            try querying.run(30, while: ":invalid", runs: runs, seconds: max(60, Double(shapes) / 1_000))
             h.release()
-            expect(querying.queries >= 2, "\(querying.queries) queries ran")
+            expect(querying.queries >= runs, "\(querying.queries) queries ran")
             let worst = querying.times.max() ?? .nan
-            report(String(format: "%6d shapes on the board shown, as many below it: %d frames (%d dropped) while %d queries of :invalid ran in %d slices, the worst %5.1f ms from its timer's fire date (budget %.0f), the median %5.1f, the latest start %4.1f; without queries the worst %5.1f, the median %5.1f, the latest start %4.1f (%d dropped)",
+            let allowed = QueryBudget.deadline(forShapes: shapes)
+            report(String(format: "%6d shapes on the board shown, as many below it: %d frames (%d dropped) while %d queries of :invalid ran in %d slices, the worst %5.1f ms from its timer's fire date (budget %.0f), the median %5.1f, the latest start %4.1f; without queries the worst %5.1f, the median %5.1f, the latest start %4.1f (%d dropped); each query took up to %.1f s in all (its file allows %.1f s without a slice answered)",
                           size, querying.times.count, querying.dropped, querying.queries, querying.slices, worst, Budget.queryFrame,
                           middle(querying.times), querying.late.max() ?? .nan, alone.times.max() ?? .nan, middle(alone.times),
-                          alone.late.max() ?? .nan, alone.dropped))
+                          alone.late.max() ?? .nan, alone.dropped, querying.queryTimes.max() ?? .nan, Double(allowed.components.seconds) + Double(allowed.components.attoseconds) / 1e18))
             if holdsToBudgets { expect(worst < Budget.queryFrame, "a frame over \(size) shapes while slices ran took \(worst) ms from its fire date") }
         }
     },
@@ -663,7 +675,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             let queries = try require(editor.queries)
             _ = queries.vocabulary
             // The command, as `canvas` asks it.
-            let params: JSON = ["query": .string("*"), "limit": .number(Double(QueryBudget.maxRows))]
+            let params: JSON = ["query": .string("*"), "limit": .number(Double(rowsListed))]
             var mains: [Double] = [], offs: [Double] = [], answer: JSON = [:]
             for _ in 0..<5 {
                 let run = try cpu { try await commands.run("query", params, editor) }
@@ -672,7 +684,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
                 answer = run.value
             }
             expectEqual(answer["count"]?.numberValue, Double(size))
-            expectEqual(answer["rows"]?.arrayValue?.count, min(size, QueryBudget.maxRows))
+            expectEqual(answer["rows"]?.arrayValue?.count, min(size, rowsListed))
             #if DEBUG
             expectEqual(QueryOutput.lastBuiltOnMainThread, false, "the answer's JSON is built off the main thread")
             #endif
@@ -684,7 +696,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
             var beyond: [Double] = [], own: [Double] = [], evaluations: [Double] = []
             for _ in 0..<5 {
                 let run = try cpu { () async throws -> (JSON, QueryTimings) in
-                    let result = try await queries.run(QueryRequest("*", limit: QueryBudget.maxRows))
+                    let result = try await queries.run(QueryRequest("*", limit: rowsListed))
                     let timings = result.timings
                     return (await QueryOutput.json(consume result, countOnly: false), timings)
                 }
@@ -786,7 +798,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         let context = try bitmapContext(viewport)
         for size in sizes {
             // Forty of the notes are types of twenty fields each, whose lines `--ask` is told (`<fields>`).
-            var shapes = generatedBoard(shapes: size).shapes
+            var shapes = Array(generatedBoard(shapes: size).shapes)
             var made = 0
             for index in shapes.indices where shapes[index].kind == StickyNote.kind && shapes[index][TypeSchemaProperty.self] == nil && made < 40 {
                 let properties = (1...20).map { #""field\#($0)": {"type": "string"}"# }.joined(separator: ", ")
@@ -874,7 +886,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
                 scans.append(answered.timings.offMain.milliseconds)
                 notes = answered.count
                 paths.append(try queried(walks, on: editor).timings.offMain.milliseconds)
-                let all = try queried("*", on: editor, limit: QueryBudget.maxRows, properties: .none)
+                let all = try queried("*", on: editor, limit: rowsListed, properties: .none)
                 rows.append(all.timings.offMain.milliseconds)
                 listed = all
             }
@@ -951,7 +963,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         let registry = try Registry(plugins: shippedPlugins(pasteboard))
         let products = ["Mug", "Pen", "Cup", "Ink", "Lamp"]
         for size in sizes {
-            var shapes = generatedBoard(shapes: size).shapes
+            var shapes = Array(generatedBoard(shapes: size).shapes)
             var held = 0
             for index in shapes.indices where shapes[index].kind == StickyNote.kind && shapes[index][TypeSchemaProperty.self] == nil && held < size / 10 {
                 let items: [JSONValue] = (0..<5).map { ["product": .string(products[($0 + held) % 5] + "\(held % 7)"), "qty": .number(Double($0))] }
@@ -986,7 +998,7 @@ func heldCommitPlugin(_ held: HeldCommit) -> Contributor {
         defer { pasteboard.releaseGlobally() }
         let registry = try Registry(plugins: shippedPlugins(pasteboard))
         for size in sizes {
-            var shapes = generatedBoard(shapes: size).shapes
+            var shapes = Array(generatedBoard(shapes: size).shapes)
             var type: ShapeID?, held = 0
             for index in shapes.indices where shapes[index].kind == StickyNote.kind && shapes[index][TypeSchemaProperty.self] == nil {
                 if let type {

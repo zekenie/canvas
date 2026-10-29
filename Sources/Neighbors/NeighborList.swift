@@ -374,26 +374,32 @@ public final class NeighborList {
         let selector = "#\(subject)"
         let texts = groups.map { $0.query(selector) }
         let open = groups.indices.map(showsRows(of:))
+        // The lists shown, if they're the subject's, for the answer to be compared with where it's made.
+        // They stay as they are until it lands: only an ask lands one, and a new ask lets go of this.
+        let shown = current?.groups
         #if DEBUG
         asked += 1
         #endif
         asking = Task { [weak self, queries] in
-            let answered = await NeighborList.answer(queries, texts: texts, open: open, views: views, subject: subject)
+            let answered = await NeighborList.answer(queries, texts: texts, open: open, views: views, subject: subject, shown: shown)
             // One let go of lands nothing: whoever did that asked again, or the list went.
             guard !Task.isCancelled, let self else { return }
             asking = nil
-            land(NeighborListing(subject: subject, groups: answered))
+            land(NeighborListing(subject: subject, groups: answered.groups), readsAsShown: answered.readsAsShown)
         }
     }
 
     /// Shows an answer, unless it reads as the one shown and no change to the file asked for it: one
     /// a commit asked for is shown anyway, with the names read again, since what a row is called and
-    /// what its caption quotes are read from shapes the commit may have changed.
-    private func land(_ next: NeighborListing) {
+    /// what its caption quotes are read from shapes the commit may have changed. `readsAsShown` is
+    /// what an ask found when it compared the answer with the lists it began with (a long list is
+    /// compared off the main actor); nil, compared here.
+    private func land(_ next: NeighborListing, readsAsShown: Bool? = nil) {
         var next = next
         let followed = followsChange
         followsChange = false
-        if let listing, listing.subject == next.subject, listing.groups == next.groups, !followed { return }
+        let same = readsAsShown ?? (listing?.subject == next.subject && listing?.groups == next.groups)
+        if same, !followed { return }
         next.stamp = (listing?.stamp ?? 0) + 1
         names = [:]
         listing = next
@@ -408,9 +414,19 @@ public final class NeighborList {
         case counts([Int])
     }
 
+    /// What an ask found: every list, and whether they read as the ones shown.
+    private struct Answer: Sendable {
+        var groups: [NeighborListing.Group]
+        var readsAsShown: Bool
+    }
+
     /// Every list's answer: the folded ones counted in one batch of ids, each open one run for its
-    /// rows, all at once.
-    private static func answer(_ queries: QueryState, texts: [String], open: [Bool], views: [EdgeView], subject: ShapeID) async -> [NeighborListing.Group] {
+    /// rows, all at once, and compared with the lists `shown`. All of it off the main actor, which only
+    /// the engine's own turns take (a list of 100,000 rows is made, compared and handed over whole, and
+    /// costs the main actor what a list of ten does).
+    @concurrent
+    nonisolated private static func answer(_ queries: QueryState, texts: [String], open: [Bool], views: [EdgeView], subject: ShapeID,
+                                           shown: [NeighborListing.Group]?) async -> Answer {
         var groups = [NeighborListing.Group](repeating: .init(count: 0, rows: nil), count: texts.count)
         let closed = texts.indices.filter { !open[$0] }
         await withTaskGroup(of: Answered.self) { tasks in
@@ -427,14 +443,17 @@ public final class NeighborList {
                 }
             }
         }
-        return groups
+        return Answer(groups: groups, readsAsShown: shown == groups)
     }
 
-    /// How many shapes each query matches, the subject left out: the union of its views' ids. A
-    /// request the engine refuses (a shape that holds nothing asked what it holds) counts none.
-    private static func counts(_ queries: QueryState, _ texts: [String], views: [EdgeView], subject: ShapeID) async -> [Int] {
+    /// How many shapes each query matches, the subject left out: the union of its views' ids (with one
+    /// view the answer's own count, and no id asked for). A request the engine refuses (a shape that
+    /// holds nothing asked what it holds) counts none.
+    @concurrent
+    nonisolated private static func counts(_ queries: QueryState, _ texts: [String], views: [EdgeView], subject: ShapeID) async -> [Int] {
+        let limit = views.count > 1 ? QueryMatchRequest.every : 1
         let requests = texts.flatMap { text in
-            views.map { QueryMatchRequest(text, edges: $0, admitting: { $0.id != subject }) }
+            views.map { QueryMatchRequest(text, edges: $0, limit: limit, admitting: { $0.id != subject }) }
         }
         let answers = await queries.matches(requests)
         return texts.indices.map { index in
@@ -448,10 +467,11 @@ public final class NeighborList {
     }
 
     /// A query's rows, the subject left out: each view's, a shape once, the first view's first.
-    private static func rows(_ queries: QueryState, _ text: String, views: [EdgeView], subject: ShapeID) async -> NeighborListing.Group {
+    @concurrent
+    nonisolated private static func rows(_ queries: QueryState, _ text: String, views: [EdgeView], subject: ShapeID) async -> NeighborListing.Group {
         var rows: [NeighborRow] = [], seen: Set<ShapeID> = [subject], most = 0
         for view in views {
-            guard let result = try? await queries.run(QueryRequest(text, limit: QueryBudget.maxRows, properties: .none, edges: view)) else { continue }
+            guard let result = try? await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: .none, edges: view)) else { continue }
             var own = 0
             for row in result.rows {
                 if row.id == subject { own = 1 }

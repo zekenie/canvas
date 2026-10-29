@@ -21,7 +21,7 @@ public struct QueryRequest: Sendable, Equatable {
     }
 
     public var text: String
-    /// The most rows listed, 1 to `QueryBudget.maxRows`; `count` is always of all.
+    /// The most rows listed, at least 1 (`every`: all of them); `count` is always of all.
     public var limit: Int
     /// Only how many match: no rows.
     public var countOnly: Bool
@@ -33,18 +33,27 @@ public struct QueryRequest: Sendable, Equatable {
     /// How long to wait, at most, for answers still arriving (`TopologyIndex.isSettling`) before the
     /// query takes up the file: only a query that reads edges (`QueryPlan.readsEdges`) waits, holding
     /// nothing of the file, and one that goes on with answers still pending says so (`pending`). The
-    /// wait counts against `QueryBudget.deadline`. Nil: don't wait.
+    /// wait counts against the deadline. Nil: don't wait.
     public var settle: Duration?
+    /// The most time the query may take in all, from when it's run, where the file's own deadline
+    /// (`QueryBudget.deadline(forShapes:)`) is a time without a sign of life: what a caller that has
+    /// someone waiting for the answer says, as `canvas query` does (`QueryBudget.commandDeadline`,
+    /// under `canvas`'s wait). Nil: the file's alone.
+    public var deadline: Duration?
 
     public init(_ text: String, limit: Int = QueryBudget.rows, countOnly: Bool = false, properties: Properties = .all,
-                edges: EdgeView = .resolved, settle: Duration? = nil) {
+                edges: EdgeView = .resolved, settle: Duration? = nil, deadline: Duration? = nil) {
         self.text = text
         self.limit = limit
         self.countOnly = countOnly
         self.properties = properties
         self.edges = edges
         self.settle = settle
+        self.deadline = deadline
     }
+
+    /// The `limit` of a request for every row, however many match.
+    public static let every = Int.max
 }
 
 /// One query of a batch (`QueryState.matches(_:)`): ids only, for a plugin that keeps answers.
@@ -53,9 +62,8 @@ public struct QueryMatchRequest: Sendable {
     /// The edges its edge words see: `.recorded` for a stand-in's own query, which asks what to
     /// stand for and so can't see through itself.
     public var edges: EdgeView
-    /// At most this many ids, at least 1 (`every`: all of them); `count` is of all admitted. Ids are
-    /// no rows, so none is built for them, and the rows' most (`QueryBudget.maxRows`) is only the
-    /// default.
+    /// At most this many ids, at least 1 (`every`, the default: all of them); `count` is of all
+    /// admitted. Ids are no rows, so none is built for them.
     public var limit: Int
     /// Whether a match may be listed, asked off the main actor of each before `limit` is applied:
     /// the first match is the first admitted one, and `count` counts the admitted.
@@ -65,7 +73,7 @@ public struct QueryMatchRequest: Sendable {
     /// so the caller can say what it left out. Nil: none is.
     public var holdingBack: (@Sendable (AnyShapeRecord) -> Bool)?
 
-    public init(_ text: String, edges: EdgeView = .resolved, limit: Int = QueryBudget.maxRows,
+    public init(_ text: String, edges: EdgeView = .resolved, limit: Int = QueryMatchRequest.every,
                 admitting: @escaping @Sendable (AnyShapeRecord) -> Bool = { _ in true },
                 holdingBack: (@Sendable (AnyShapeRecord) -> Bool)? = nil) {
         self.text = text
@@ -75,8 +83,8 @@ public struct QueryMatchRequest: Sendable {
         self.holdingBack = holdingBack
     }
 
-    /// The `limit` of a request for every match, however many: what a plugin that stands for all of
-    /// them asks (a reference that stands for every match).
+    /// The `limit` of a request for every match, however many: what a plugin that shows or stands for
+    /// all of them asks (the lights a hover shows, a reference that stands for every match).
     public static let every = Int.max
 }
 
@@ -395,10 +403,14 @@ public struct QuerySelected: Sendable, Equatable {
 extension QueryError {
     /// The query's task was cancelled (the command line gave up waiting, say).
     static var cancelledQuery: QueryError { QueryError(.cancelled, "The query was cancelled.") }
-    /// Past `QueryBudget.deadline`.
-    static var tooSlow: QueryError {
-        QueryError(.tooSlow, "The query took more than 8 seconds.",
-                   hint: "Start from a kind, a title or an id, or give transitive words a type.")
+    /// Past a deadline: the time `allowed` (`QueryBudget.deadline(forShapes:)`, or the request's own).
+    static func tooSlow(after allowed: Duration) -> QueryError {
+        let seconds = Double(allowed.components.seconds) + Double(allowed.components.attoseconds) / 1e18
+        // A file's allowance has a fraction (12.5 s at 100,000 shapes), said to a tenth; a whole one as it is.
+        let tenths = Int((seconds * 10).rounded(.down))
+        let said = tenths % 10 == 0 ? "\(tenths / 10)" : "\(tenths / 10).\(tenths % 10)"
+        return QueryError(.tooSlow, "The query took more than \(said) seconds.",
+                          hint: "Start from a kind, a title or an id, or give transitive words a type.")
     }
     /// The editor went while the query ran.
     static var boardClosed: QueryError { QueryError(.boardClosed, "The board was closed before the command finished.") }

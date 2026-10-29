@@ -205,7 +205,9 @@ extension TranslatingSession: Session {
         let document = editor.document
         if sites == nil {
             let moving = Set(before.map(\.id))
-            sites = document.shapes.lazy.filter { kinds.contains($0.kind) && !$0.isOpaque && !moving.contains($0.id) }.map(\.id)
+            var found: [ShapeID] = []
+            document.shapes.forEach { if kinds.contains($0.kind) && !$0.isOpaque && !moving.contains($0.id) { found.append($0.id) } }
+            sites = found
         }
         guard let sites, !sites.isEmpty else { return }
         // Judged as the release settles them: by the container each came from, the hint showing

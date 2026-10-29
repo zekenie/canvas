@@ -144,7 +144,7 @@ func cellarFile() -> CanvasFile {
 @MainActor func rows(_ text: String, on h: EditorHarness, file: StaticString = #fileID, line: UInt = #line) throws -> [QueryRow] {
     let queries = try require(h.editor.queries, file: file, line: line)
     return try awaitResult(file: file, line: line) {
-        try await queries.run(QueryRequest(text, limit: QueryBudget.maxRows, properties: .none))
+        try await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: .none))
     }.rows
 }
 

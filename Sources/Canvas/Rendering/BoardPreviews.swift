@@ -294,7 +294,7 @@ public final class BoardPreviews {
 @MainActor
 private final class Build {
     let key: BoardPreviews.Key
-    private let shapes: [AnyShapeRecord]
+    private let shapes: ShapeStack
     private let context: ShapeContext
     private var next = 0
     private var geometries: [ShapeGeometry] = []

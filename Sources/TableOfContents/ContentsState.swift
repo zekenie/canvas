@@ -157,6 +157,9 @@ public final class ContentsState {
         var heard: Int
         var rows: [ShapeID: ShapeRow]
         var entries: [ContentsEntry]
+        /// Which rows these are: new each time they change, so a list showing them knows when to
+        /// read them again (`outlineRows(of:)`).
+        var version: Int
     }
 
     /// How a kind's shapes get their rows.
@@ -228,6 +231,18 @@ public final class ContentsState {
     /// The rows whose disclosure triangle the person turned from how it starts
     /// (`ContentsEntry.startsExpanded`): observed per row, through `isExpanded(_:)`.
     @ObservationIgnored private var turned: Set<ShapeID> = []
+    /// The lists showing the rows, told of each row turned wherever it was turned (spring-loading,
+    /// a headless turn), so each opens or closes it.
+    @ObservationIgnored private var turnWatchers: [WeakTurnWatcher] = []
+    /// Which listing `entries` returned last: the whole board's, or the scope's.
+    @ObservationIgnored private var listedScope = false
+    /// How many outlines' rows have been made or made again, for each one's `version`.
+    @ObservationIgnored private var outlinesMade = 0
+    /// Moves with each change that may change other boards or their rows: a commit that did more than
+    /// move shapes on the board shown, the shapes' tints, another board shown or a file put in place.
+    /// A list follows the boards open under its rows only when it moved, so a drag's every event costs
+    /// it none of them.
+    @ObservationIgnored private(set) var boardsMayHaveChanged = 0
     /// The shapes commits only moved since the rows were last read (`ChangeSet.moved`), whose rows,
     /// if kept, stay: the next read has them hold their shapes as they are, and reads their marks
     /// again (`followMoves`). So a drag's every event costs the table of contents one set's upkeep,
@@ -297,7 +312,7 @@ public final class ContentsState {
 
     /// The top-level rows in document order (back to front, as the core keeps shapes), each with the
     /// rows nested under it; the list shows every level the other way round, front to back, as a
-    /// layers list does, so its top row is the shape painted over the rest (`ListedRows`). Only
+    /// layers list does, so its top row is the shape painted over the rest (`ContentsList`). Only
     /// listed shapes in `scope` have rows. A row nests
     /// under the shape its kind names (`nestedUnder`) when that shape has a row too, unless that
     /// would make a loop: then the later shape stays at the top. Kept from one read to the next,
@@ -310,34 +325,25 @@ public final class ContentsState {
         followMoves()
         catchUpAway()
         guard let scope else {
+            listedScope = false
             keepUp(&board, scope: nil)
             return board!.entries
         }
+        listedScope = true
         keepUp(&filtered, scope: Set(scope))
         return filtered!.entries
     }
 
-    /// How many times a commit has brought rows in at more than one place (a script that draws a
-    /// shape and connects shapes far apart, whose arrows nest under the shapes they start from; a
-    /// deleted shape whose nested rows come out from under it, to their places far apart), or made
-    /// a listing start over: each time, the list replaces its rows rather than bring them in around
-    /// the rows it kept, and rows that were expanded collapse, as they do when what's listed
-    /// changes. Rows arriving at several places at once make AppKit, which sizes a `List`'s rows,
-    /// log a reentrant update (`TableOfContentsView`), in a list of any length.
-    @ObservationIgnored private(set) var replacements = 0
-
     /// Brings a listing up to date with what the commits since changed, or lists `scope` from
-    /// scratch (a new scope, or one listing again is quicker for), and notes a replacement when
-    /// its rows didn't come in as one run.
+    /// scratch (a new scope, or one listing again is quicker for): a new listing, which the list
+    /// shows whole, where one brought up to date it follows row by row.
     private func keepUp(_ listing: inout ContentsListing?, scope: Set<ShapeID>?) {
         if var kept = listing, kept.scope == scope {
             listing = nil               // so updating it doesn't copy it
             if kept.update(row: row(of:)) {
-                if kept.isScattered { replacements += 1 }
                 listing = kept
                 return
             }
-            replacements += 1
         }
         listing = self.listing(of: scope)
     }
@@ -519,6 +525,14 @@ public final class ContentsState {
             if isExpanded == entry.startsExpanded { turned.remove(entry.id) } else { turned.insert(entry.id) }
         }
         turns += 1
+        turnWatchers.removeAll { $0.watcher == nil }
+        for watcher in turnWatchers { watcher.watcher?.rowTurned(entry.id) }
+    }
+
+    /// Tells `watcher` of each row turned from here on, for as long as it's around.
+    func watchTurns(_ watcher: some ContentsTurnWatcher) {
+        turnWatchers.removeAll { $0.watcher == nil || $0.watcher === watcher }
+        turnWatchers.append(WeakTurnWatcher(watcher: watcher))
     }
 
     /// Whether the board shown's row of a shape shows in the list as it's listed now: listed, and every
@@ -564,11 +578,20 @@ public final class ContentsState {
             if lastBeyondMoves > kept.heard || changesHeard != now, remakeRowsReadingOthers(in: &kept.rows) {
                 let rows = kept.rows
                 kept.entries = ContentsListing(scope: nil, shapes: editor.contents(of: board).shapes.map(\.id)) { rows[$0] }.entries
+                outlinesMade += 1
+                kept.version = outlinesMade
             }
             kept.heard = now
         }
         outlines[board] = kept
         return kept.entries
+    }
+
+    /// A board's outline (`outline(of:)`), and which rows these are: a list showing them reads them
+    /// again when the version changes, and does nothing when it doesn't.
+    func outlineRows(of board: BoardID) -> (entries: [ContentsEntry], version: Int) {
+        let entries = outline(of: board)
+        return (entries, outlines[board]?.version ?? 0)
     }
 
     /// The board a row opens onto (`nestedBoard`), while it has shapes: nil for one with none, so its
@@ -590,7 +613,8 @@ public final class ContentsState {
             rows[id] = made
             return made
         }
-        return Outline(revision: revision, heard: now, rows: rows, entries: listing.entries)
+        outlinesMade += 1
+        return Outline(revision: revision, heard: now, rows: rows, entries: listing.entries, version: outlinesMade)
     }
 
     /// Makes again the rows of kinds whose rows read more than their shapes: whether any label changed.
@@ -607,6 +631,37 @@ public final class ContentsState {
         }
         return changed
     }
+
+    // MARK: The list's reads
+
+    /// Which listing `entries` returned last (`ContentsListing.serial`): another is shown whole.
+    var listedSerial: Int? { (listedScope ? filtered : board)?.serial }
+
+    /// How many updates have changed the listing `entries` returned last, so a list reads again.
+    var listedVersion: Int { (listedScope ? filtered : board)?.version ?? 0 }
+
+    /// What the updates of the listing `entries` returned last changed since `taker` took them, for it
+    /// to follow row by row; nil when it should show the listing whole (another took them since).
+    func takeListedChanges(by taker: AnyObject) -> ContentsListingChanges? {
+        if listedScope { return filtered?.takeChanges(by: ObjectIdentifier(taker)) }
+        return board?.takeChanges(by: ObjectIdentifier(taker))
+    }
+
+    /// The shape's row as the listing `entries` returned last lists it, nested rows and all.
+    func listedEntry(_ id: ShapeID) -> ContentsEntry? { (listedScope ? filtered : board)?.entry(of: id) }
+
+    /// The shape's row as that listing lists it.
+    func listedRow(_ id: ShapeID) -> ShapeRow? { (listedScope ? filtered : board)?.row(of: id) }
+
+    /// The shape whose row the shape's row is nested under in that listing: nil at the top; and
+    /// whether it's listed at all.
+    func listedPlace(of id: ShapeID) -> (isListed: Bool, parent: ShapeID?) {
+        guard let listing = listedScope ? filtered : board, listing.lists(id) else { return (false, nil) }
+        return (true, listing.parent(of: id))
+    }
+
+    /// The rows nested under the shape's in that listing (nil: its top-level rows), back to front.
+    func listedChildren(of id: ShapeID?) -> [ContentsEntry] { (listedScope ? filtered : board)?.children(of: id) ?? [] }
 
     // MARK: Rows
 
@@ -733,6 +788,7 @@ extension ContentsState: EditorService {
         kept.removeAll()
         touchedAway = [:]
         outlines = [:]
+        boardsMayHaveChanged += 1
         forget(Set(rows.keys))
     }
 
@@ -745,7 +801,10 @@ extension ContentsState: EditorService {
     /// them all.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         changesHeard = editor.revision
-        if !changes.onlyMoves { lastBeyondMoves = editor.revision }
+        if !changes.onlyMoves {
+            lastBeyondMoves = editor.revision
+            boardsMayHaveChanged += 1
+        }
         let moved = changes.moved
         let forgotten: Set<ShapeID>
         if moved.isEmpty {
@@ -860,6 +919,7 @@ extension ContentsState: EditorService {
         // A switch names nothing anew; a file put in place with it may have renamed anything.
         changesHeard = editor.revision
         if change.isFileReplaced { lastBeyondMoves = editor.revision }
+        boardsMayHaveChanged += 1
     }
 
     /// Keeps what was touched away only as far back as the board kept longest ago was left.
@@ -877,6 +937,18 @@ extension ContentsState: EditorService {
         board?.pending.formUnion(ids)
         filtered?.pending.formUnion(ids)
     }
+}
+
+/// What hears of each row turned (`ContentsState.setExpanded`): a list showing the rows.
+@MainActor
+protocol ContentsTurnWatcher: AnyObject {
+    func rowTurned(_ id: ShapeID)
+}
+
+/// A list told of turns, held weakly: the state is the editor's, and outlives the list.
+@MainActor
+private struct WeakTurnWatcher {
+    weak var watcher: (any ContentsTurnWatcher)?
 }
 
 extension CanvasEditor {

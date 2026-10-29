@@ -86,7 +86,7 @@ private func values(_ n: Int) -> FieldValues {
 /// The generated board with its first `types` notes made types, and then `typed` of the plain notes after them instances of
 /// the first, holding six values each if `holding`; `typed` of them are left untyped, with the same values, if `untyped`.
 @MainActor private func board(shapes size: Int, typed: Int, holding: Bool, untyped: Bool = false) -> (document: CanvasDocument, type: ShapeID, notes: [ShapeID]) {
-    var shapes = generatedBoard(shapes: size).shapes
+    var shapes = Array(generatedBoard(shapes: size).shapes)
     var type: ShapeID?
     var notes: [ShapeID] = []
     for index in shapes.indices where shapes[index].kind == StickyNote.kind && shapes[index][TypeSchemaProperty.self] == nil {
@@ -111,7 +111,7 @@ private func values(_ n: Int) -> FieldValues {
         for size in sizes {
             let base = generatedBoard(shapes: size)
             var types: [ShapeID] = []
-            var shapes = base.shapes
+            var shapes = Array(base.shapes)
             var noteIndex = 0
             for index in shapes.indices where shapes[index].kind == StickyNote.kind {
                 defer { noteIndex += 1 }
@@ -260,7 +260,7 @@ private func values(_ n: Int) -> FieldValues {
             let registry = try Registry(plugins: shippedPlugins(pasteboard))
             // As many instances as the board has shapes: the board's plain notes (some 6,000 of 10,000) and notes added to them.
             let (base, type, existing) = board(shapes: size, typed: size, holding: true)
-            var shapes = base.shapes
+            var shapes = Array(base.shapes)
             for n in existing.count..<size {
                 var note = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(n % 100) * 130, y: -200 - CGFloat(n / 100) * 130, width: 100, height: 100), text: MentionText(plain: "Extra \(n)")))
                 note[IsAProperty.self] = [TypeLink(type)]
@@ -341,7 +341,7 @@ private func values(_ n: Int) -> FieldValues {
             let count = min(200, size / 10)
             @MainActor func run(untyped: Bool, changing: Bool, restatingType: Bool) throws -> (ms: Double, result: JSON) {
                 var (document, type, notes) = board(shapes: size, typed: count, holding: true, untyped: untyped)
-                var shapes = document.shapes
+                var shapes = Array(document.shapes)
                 for (n, id) in notes.enumerated() { if let at = shapes.firstIndex(where: { $0.id == id }) { shapes[at][TitleProperty.self] = "Rec \(n)" } }
                 document = CanvasDocument(shapes: shapes)
                 let editor = CanvasEditor(registry: registry, document: document, scheduler: ManualScheduler())

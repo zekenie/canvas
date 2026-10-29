@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import Geometry
 import Observation
+import os
 import SwiftUI
 
 /// How the app makes boards: its plugins and each window's content. Set once, before any board
@@ -68,6 +69,13 @@ public final class BoardViewState {
 /// press (a drag), or while a key is held whose repeats are one step (an arrow key's nudges), waits
 /// for its release instead of splitting it, and runs once it's over.
 ///
+/// A save is written off the main thread (`canAsynchronouslyWrite`): the main actor takes the file, a
+/// value, as it takes the change count the save will mark saved (`changeCountToken`), O(1), and
+/// the encoding of every shape of every board, which takes seconds for a board of 100,000 shapes,
+/// and the write of the file are another thread's, which NSDocument starts holding the main thread
+/// until `data(ofType:)` says it has what it needs. The board is edited as it saves: what is changed
+/// after the count is taken is not in the file and leaves the board edited.
+///
 /// Opening never drops a shape: what the board keeps aside and what it repaired is in `loadReport`,
 /// shown when the window first shows; repairs mark the board edited, so the next save keeps them.
 /// A file that isn't a board, or comes from a newer app, doesn't open, and says why.
@@ -97,6 +105,17 @@ public final class BoardDocument: NSDocument {
     /// An autosave that can wait, waits: a press is under way, or a key is held whose repeats are
     /// part of its step, each with changes.
     private var autosaveWaits: Bool { editor.undoHistory.isPressing || editor.undoHistory.isKeyHolding }
+
+    /// What a save is to write, taken on the main actor as the save takes its change count and read by the
+    /// thread that writes (`data(ofType:)`), which takes it out: the file as it was then, or that the
+    /// save gave way to a press. Nothing else is shared between them: the encoding needs only this and
+    /// the codec.
+    private nonisolated let saving = OSAllocatedUnfairLock<Saving?>(initialState: nil)
+
+    private enum Saving: Sendable {
+        case file(CanvasFile)
+        case gaveWay
+    }
     #if DEBUG
     /// How often an autosave has been scheduled (debug builds, for tests): by NSDocument, or again
     /// once a press an autosave gave way to is over.
@@ -106,6 +125,13 @@ public final class BoardDocument: NSDocument {
     /// doing then, so a test closes the boards it edits (CompositionTests' `closeBoardsLeftOpen`).
     public static var unclosed: [BoardDocument] { made.allObjects.sorted { $0.number < $1.number } }
     private static let made = NSHashTable<BoardDocument>.weakObjects()
+    /// Whether the last file a board encoded was encoded on the main thread (debug builds, for tests):
+    /// a save's never is. Nil before the first.
+    public nonisolated static var lastEncodedOnMainThread: Bool? { encodedOnMain.withLock { $0 } }
+    private nonisolated static let encodedOnMain = OSAllocatedUnfairLock<Bool?>(initialState: nil)
+    /// What a test does on the writing thread once the main thread is let go and before the file is encoded
+    /// (debug builds): hold the encoding to change the board meanwhile.
+    public nonisolated static let beforeEncoding = OSAllocatedUnfairLock<(@Sendable () -> Void)?>(initialState: nil)
     #endif
 
     public override init() {
@@ -168,31 +194,79 @@ public final class BoardDocument: NSDocument {
 
     // MARK: Reading and writing
 
-    public override func data(ofType typeName: String) throws -> Data {
-        try snapshot(implicitlyCancellable: autosavingIsImplicitlyCancellable)
+    /// Saves are written on another thread, so the main thread is never held for the seconds that
+    /// encoding a large board takes.
+    public nonisolated override func canAsynchronouslyWrite(to url: URL, ofType typeName: String, for saveOperation: NSDocument.SaveOperationType) -> Bool {
+        true
     }
 
-    /// A save takes the change count it'll mark saved before it writes: the step under way closes
-    /// first, so a step that comes to nothing as it closes (a field typed into and back) takes its
-    /// change back before the count is taken, and the board reads unedited once saved. (Not for an
-    /// autosave that gives way to a press: it won't write.)
+    /// The board's bytes. NSDocument asks for them on another thread, while it holds the main thread
+    /// (`canAsynchronouslyWrite`): the file the save took with its change count is taken out, the main
+    /// thread is let go at once (`unblockUserInteraction`, with nothing left to read of the board), and
+    /// the file is encoded and handed back to be written off the main actor. Asked on the main thread
+    /// (a caller that wants the board as it is now, not a save), it is encoded there, from the board
+    /// as it is.
+    public nonisolated override func data(ofType typeName: String) throws -> Data {
+        guard !Thread.isMainThread else {
+            return try MainActor.assumeIsolated { try snapshot(implicitlyCancellable: autosavingIsImplicitlyCancellable) }
+        }
+        let taken = saving.withLock { held in
+            defer { held = nil }
+            return held
+        }
+        unblockUserInteraction()
+        switch taken {
+        case .file(let file)?: return try encode(file)
+        case .gaveWay?: throw CocoaError(.userCancelled)
+        case nil:
+            // No save took its change count first (one always does): the board as it is, taken once the main thread
+            // is let go, which the save then marks as it was before: edited, if anything.
+            let file = DispatchQueue.main.sync { MainActor.assumeIsolated { editor.undoHistory.breakStep(); return editor.file } }
+            return try encode(file)
+        }
+    }
+
+    private nonisolated func encode(_ file: CanvasFile) throws -> Data {
+        #if DEBUG
+        Self.beforeEncoding.withLock { $0 }?()
+        Self.encodedOnMain.withLock { $0 = Thread.isMainThread }
+        #endif
+        return try codec.encode(file)
+    }
+
+    /// A save takes the change count it'll mark saved, and the file it'll write, together: the step
+    /// under way closes first, so a step that comes to nothing as it closes (a field typed into and
+    /// back) takes its change back before the count is taken, and the board reads unedited once saved,
+    /// and what the file holds is what the count marks (NSDocument asks for the count some turns of the
+    /// run loop after the save was asked for, and nothing between those is saved). An autosave that
+    /// gives way to a press takes no file, and doesn't close the step: it won't write.
     public override func changeCountToken(for saveOperation: NSDocument.SaveOperationType) -> Any {
-        if !(autosavingIsImplicitlyCancellable && autosaveWaits) { editor.undoHistory.breakStep() }
+        let next = begin(implicitlyCancellable: autosavingIsImplicitlyCancellable)
+        saving.withLock { $0 = next }
         return super.changeCountToken(for: saveOperation)
     }
 
-    /// What a save writes: every board of the file as it is, those it can't show included, with the
+    /// What a save is to write: every board of the file as it is, those it can't show included, with the
     /// step under way closed there, so undo can go back to exactly what was saved. A save that may
     /// give way (a periodic autosave) does, during a press or while a key is held whose repeats are
-    /// one step, rather than split its step: it throws `userCancelled`, which NSDocument doesn't
-    /// show, and it's scheduled again once the press, or the key, is let go.
-    public func snapshot(implicitlyCancellable: Bool) throws -> Data {
+    /// one step, rather than split its step; it's scheduled again once the press, or the key, is let go.
+    private func begin(implicitlyCancellable: Bool) -> Saving {
         if implicitlyCancellable, autosaveWaits {
             autosaveWaited = true
-            throw CocoaError(.userCancelled)
+            return .gaveWay
         }
         editor.undoHistory.breakStep()
-        return try codec.encode(editor.file)
+        return .file(editor.file)
+    }
+
+    /// The board encoded on the main thread, as it is: what a save writes, for a caller that is not
+    /// one (a test, `data(ofType:)` asked on the main thread). A save that may give way throws
+    /// `userCancelled`, which NSDocument doesn't show.
+    public func snapshot(implicitlyCancellable: Bool) throws -> Data {
+        switch begin(implicitlyCancellable: implicitlyCancellable) {
+        case .gaveWay: throw CocoaError(.userCancelled)
+        case .file(let file): return try encode(file)
+        }
     }
 
     /// Deletes what the file keeps aside, as the load report's Delete Hidden Shapes does: the shapes
@@ -287,6 +361,7 @@ public final class BoardDocument: NSDocument {
     }
 
     public override func close() {
+        saving.withLock { $0 = nil }
         rememberView()
         // A command still running on it (one that waits) is answered now, and stops: nothing it
         // did after would reach a window.

@@ -11,27 +11,32 @@ import CoreGraphics
 @MainActor
 final class TintedRings {
     /// A few shapes outlined in full are looked for one by one, which compares ids, cheaper than
-    /// hashing them; more, in a set made once.
+    /// hashing them; more, in a set made once (and kept while the list is the same).
     private static let fewOutlined = 8
 
     private let outlines: Outlines
-    private var outlined: Set<ShapeID>?
+    /// The hint, outlined in full with `outlines.shapes` and not among them (a selection of thousands isn't copied to add it).
+    private let hint: ShapeID?
+    /// The shapes in a list, for a long one (the editor's, kept from frame to frame: `OutlineMembers`).
+    private let members: OutlineMembers
     private var outermost: [ShapeID: Int]?
 
-    init(_ outlines: Outlines) {
+    init(_ outlines: Outlines, hint: ShapeID? = nil, members: OutlineMembers) {
         self.outlines = outlines
+        self.hint = hint
+        self.members = members
     }
 
     /// Whether any shape is outlined in full: with none, no tint stands further out.
-    var hasOutlinedInFull: Bool { !outlines.shapes.isEmpty }
+    var hasOutlinedInFull: Bool { !outlines.shapes.isEmpty || hint != nil }
 
     /// Whether the shape is outlined in full too: selected, or the hint, which the core strokes
     /// alike. A hover's faint outline is over a tint, and moves none.
     func isOutlinedInFull(_ id: ShapeID) -> Bool {
+        if id == hint { return true }
         let full = outlines.shapes
         guard full.count > Self.fewOutlined else { return full.contains(id) }
-        if outlined == nil { outlined = Set(full) }
-        return outlined?.contains(id) == true
+        return members.members(of: full).contains(id)
     }
 
     /// The ring of the outermost tinted outline round the shape, counting the one further out of a

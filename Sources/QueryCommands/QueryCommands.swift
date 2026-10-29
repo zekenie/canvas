@@ -104,7 +104,7 @@ private func answer(_ text: String, with queries: QueryState, _ params: QueryPar
     do throws(QueryError) {
         // Edges are read as they settle: once answers still arriving have come, or `settleWait` has passed.
         return try await queries.run(QueryRequest(text, limit: params.limit, countOnly: params.count, properties: params.listing,
-                                                  settle: QueryBudget.settleWait))
+                                                  settle: QueryBudget.settleWait, deadline: QueryBudget.commandDeadline))
     } catch {
         throw AutomationError(error, in: text)
     }

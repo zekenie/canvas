@@ -191,7 +191,7 @@ extension TrailDefinition: ShapeReferencing {
           { "id" : "\(comet)", "index" : "a0", "kind" : "comet", "props" : {} }
         ] }
         """
-        var shapes = try BoardCodec(registry: registry).decode(Data(json.utf8)).document.shapes
+        var shapes = Array(try BoardCodec(registry: registry).decode(Data(json.utf8)).document.shapes)
         shapes.append(AnyShapeRecord(ShapeRecord(Trail(points: [.zero], follows: comet))))
         let editor = CanvasEditor(registry: registry, document: CanvasDocument(shapes: shapes))
         let trail = shapes[1].id
