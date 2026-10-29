@@ -260,6 +260,41 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         expectEqual(h.editor.box(note)?.origin, CGPoint(x: 150, y: 190), "what it holds with it")
         expectEqual(h.editor.selectedShapeIDs, [frame])
     },
+    test("a double-click inside a frame, empty or holding a note, puts a note in it, edited, as on the canvas; not on its tab; into a locked one none, and it shakes") {
+        let h = frameBoard()
+        let empty = h.frame()
+        let notes = { h.editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id) }
+        h.click(at: CGPoint(x: 400, y: 300))
+        expectEqual(h.editor.selection, empty, "an empty frame is pressed anywhere inside")
+        h.press(at: CGPoint(x: 400, y: 300), clickCount: 2); h.release()
+        let first = try require(notes().first)
+        expectEqual(h.editor.holder(of: first), empty)
+        expectEqual(h.editor.editingShapeID, first)
+        expectEqual(h.editor.undoHistory.undoName, "Add Note")
+        h.editor.endEditing()
+
+        let holding = h.frame(CGRect(x: 800, y: 100, width: 600, height: 400))
+        h.note(at: CGPoint(x: 820, y: 120), in: holding)
+        h.click(at: CGPoint(x: 1200, y: 380))
+        h.press(at: CGPoint(x: 1200, y: 380), clickCount: 2); h.release()
+        let second = try require(notes().last)
+        expectEqual(h.editor.holder(of: second), holding, "a frame holding a note, at an empty place in it")
+        expectEqual(h.editor.editingShapeID, second)
+        h.editor.endEditing()
+
+        let tab = try require(h.editor.adornmentFrames(of: empty).first?.rect)
+        h.click(at: middle(tab))
+        h.press(at: middle(tab), clickCount: 2); h.release()
+        expectEqual(notes().count, 3, "its tab is no room for one")
+
+        let locked = h.frame(CGRect(x: 100, y: 700, width: 600, height: 400))
+        h.editor.lock([locked])
+        h.click(at: CGPoint(x: 400, y: 900))
+        h.press(at: CGPoint(x: 400, y: 900), clickCount: 2); h.release()
+        expectEqual(notes().count, 3, "none in a locked frame")
+        h.wait(16)
+        expect(h.editor.drawingOffset(of: locked) != .zero, "which shakes")
+    },
     test("an untitled frame's tab says Frame, dimmed; titled, its title, and its row's") {
         let h = frameBoard()
         let frame = h.frame()

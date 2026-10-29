@@ -60,6 +60,25 @@ import TestKit
         expectEqual(h.editor.camera.origin, .zero)
         h.release()
     },
+    test("double-clicking a shape that neither opens nor edits (a container hit inside) places the claimed kind there, in it; with no claim, nothing") {
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), doubleClickCards(), CorralsPlugin()])
+        let corral = h.add(Corral(CGRect(x: 0, y: 0, width: 400, height: 300)))
+        h.press(at: CGPoint(x: 200, y: 150)); h.release()
+        expectEqual(h.editor.selection, corral)
+        h.press(at: CGPoint(x: 200, y: 150), clickCount: 2); h.release()
+        let card = try require(h.editor.document.shapes.first { $0.kind == Card.kind })
+        expectEqual(card.box, CGRect(x: 150, y: 120, width: 100, height: 60))
+        expectEqual(h.editor.holder(of: card.id), corral)
+        expectEqual(h.editor.editingShapeID, card.id)
+        expectEqual(h.editor.selection, card.id)
+
+        let unclaimed = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), CardsPlugin(), CorralsPlugin()])
+        let empty = unclaimed.add(Corral(CGRect(x: 0, y: 0, width: 400, height: 300)))
+        unclaimed.press(at: CGPoint(x: 200, y: 150)); unclaimed.release()
+        unclaimed.press(at: CGPoint(x: 200, y: 150), clickCount: 2); unclaimed.release()
+        expectEqual(unclaimed.editor.document.shapes.map(\.id), [empty])
+        expectEqual(unclaimed.editor.selection, empty)
+    },
     test("only one kind may claim double-clicking empty canvas") {
         expectThrows(RegistryError.conflict(point: "DoubleClickPlacement", key: "double-click on empty canvas", plugins: ["cards", "more-cards"])) {
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), doubleClickCards(), Contributor(id: "more-cards") { r in

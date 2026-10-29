@@ -2400,7 +2400,8 @@ shakes them).
 **Opting in** to the rest:
 
 - `note.createOnDoubleClick(place)` fills `DoubleClickPlacement`: what a double-click on empty
-  canvas places, at most one kind. StickyNotes does, so it can't be installed without Selection.
+  canvas places, at most one kind, and on a shape it would neither open nor edit (an empty frame,
+  hit anywhere inside), as tldraw's. StickyNotes does, so it can't be installed without Selection.
 - `HandleProviding` is Selection's capability: handles on the only selected shape. The select tool
   finds, draws and hit-tests them; the definition says what a press and a drag do.
 - `x.resizable(minimumSize:)` fills `ShapeResizing`: a box kind's shapes are resized with handles,

@@ -12,7 +12,8 @@ import Geometry
 /// goes somewhere makes the rest of its double-click the click's (`ignoresPress`). A plain click on
 /// the shape that was already the only one selected, of a kind edited in place (a note), edits it
 /// from where it's released (tldraw's), so that press waits for the threshold too; a double-click
-/// edits a shape from where it's pressed. A shape in a group (`SelectionGroups`) is pressed as its
+/// edits a shape from where it's pressed, and one on a shape it would neither open nor edit (an empty
+/// frame) places what it would on the canvas. A shape in a group (`SelectionGroups`) is pressed as its
 /// group, whole: the press selects the group, and a click on a shape of a group that's selected, or a
 /// double-click, selects the part under the pointer, one level in (tldraw's).
 final class SelectTool {}
@@ -67,7 +68,7 @@ extension SelectTool: Tool {
         let insideSelection = editor.isInSelectionBox(pointer.world)
         guard let hit = editor.selectableHit(at: pointer.world), let record = editor.document[hit.id],
               let definition = editor.registry.definition(for: record.kind) else {
-            if isDoubleClick, let placement = editor.registry.contributions(to: DoubleClickPlacement.self).first?.value {
+            if isDoubleClick, let placement = editor.doubleClickPlacement {
                 editor.selection = nil
                 editor.place(placement, at: pointer.world)
             } else if editor.isInSelectionBounds(pointer.world) {
@@ -119,6 +120,15 @@ extension SelectTool: Tool {
         if isDoubleClick, editor.canOpen(id) {
             editor.selection = id
             editor.open(id, at: hit.isOnShape ? pointer.world : nil, clickCount: pointer.clickCount)
+            return
+        }
+        // A double-click on a shape it would neither open nor edit (a frame that holds nothing, hit
+        // anywhere inside) is the canvas's there: it places the claimed kind, which settles into the
+        // shape if it's a container (tldraw's: a shape that can't be edited takes the canvas's
+        // double-click). Not on what's drawn for it outside it (a frame's tab), which is no room.
+        if isDoubleClick, hit.isOnShape, let placement = editor.doubleClickPlacement {
+            editor.selection = nil
+            editor.place(placement, at: pointer.world)
             return
         }
         // On a label (`LabeledShape`), a click edits and a drag moves the label: both wait for the
@@ -173,6 +183,11 @@ extension SelectTool: Tool {
         if let state = editor.selectionState { state.escape() } else { editor.selection = nil }
         return true
     }
+}
+
+extension CanvasEditor {
+    /// What a double-click on the canvas places (`DoubleClickPlacement`), if a kind claims it.
+    fileprivate var doubleClickPlacement: Placement? { registry.contributions(to: DoubleClickPlacement.self).first?.value }
 }
 
 /// A shape was pressed (tldraw's PointingShape). Past the drag threshold the selection moves, or,
