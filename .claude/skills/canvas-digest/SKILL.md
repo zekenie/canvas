@@ -76,5 +76,5 @@ Tell the user the list from the summary, in a sentence: how many shapes are publ
 ## Limits
 
 - It doesn't update a drawing shape by shape: `--replace` takes the last one back and draws the digest anew, so what the user changed in it goes too (one Undo Draw after the run's own brings the last drawing back).
-- An edge can't start or end on a frame (a frame has no ports); point it at a shape in it. A subboard can be an end.
+- An edge can't start or end on a frame here (the digest draws none at a frame); point it at a shape in it. A subboard can be an end.
 - Pills read from the app's own sizes. If the app changes how a note or a pill is sized, plan again; a plan is only good for the app it measured.

@@ -3,6 +3,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Colors
+import Connections
 import ContextMenus
 import DetailPanel
 import Frames
@@ -18,12 +19,12 @@ import Transform
 
 /// Every plugin a frame contributes to (Selection's resizing and marquee; Titles, and through it
 /// Adornments and slash commands; Mentions, and through it the panel, the context menu and Topology;
-/// Transform, whose container channel it offers; the table of contents; the keys), CanvasTesting's
-/// fixtures, for boxes to put in frames, and its freezing, for read-only shapes (a locked frame,
-/// without Locking).
+/// Transform, whose container channel it offers; Ports, whose channel it declares; the table of
+/// contents; the keys), CanvasTesting's fixtures, for boxes to put in frames, and its freezing, for
+/// read-only shapes (a locked frame, without Locking).
 @MainActor func framePlugins(_ refusals: RefusalLog = RefusalLog()) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), FramesPlugin(), ColorsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), TitlesPlugin(), MentionsPlugin(), TransformPlugin(),
+     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), PortsPlugin(), TitlesPlugin(), MentionsPlugin(), TransformPlugin(),
      FreezingPlugin(log: refusals)]
 }
 

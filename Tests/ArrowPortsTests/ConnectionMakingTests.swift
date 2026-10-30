@@ -225,10 +225,11 @@ let sideMiddles: [(side: PortSide, anchor: CGPoint)] = [(.top, CGPoint(x: 0.5, y
         let ids = (wired: board.addArrow(channel: Wire.id), plain: board.addArrow(channel: nil))
         let wired = try require(board.h.editor.document[ids.wired]), plain = try require(board.h.editor.document[ids.plain])
         let b = try require(board.h.editor.document[board.b]), c = try require(board.h.editor.document[board.c])
-        expect(board.registry.arrowMayBind(wired, .end, to: b))
-        expect(!board.registry.arrowMayBind(wired, .end, to: c), "the disc doesn't take the wire")
-        expect(board.registry.arrowMayBind(plain, .end, to: c))
+        let shapes = board.h.editor.shapeContext
+        expect(board.registry.arrowMayBind(wired, .end, to: b, in: shapes))
+        expect(!board.registry.arrowMayBind(wired, .end, to: c, in: shapes), "the disc doesn't take the wire")
+        expect(board.registry.arrowMayBind(plain, .end, to: c, in: shapes))
         let noRules = try Registry(plugins: PortBoard.plugins().filter { ![PluginID.ports, .arrowPorts, "channels"].contains($0.id) })
-        expect(noRules.arrowMayBind(wired, .end, to: c))
+        expect(noRules.arrowMayBind(wired, .end, to: c, in: shapes))
     },
 ])

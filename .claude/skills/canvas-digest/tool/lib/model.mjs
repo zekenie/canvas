@@ -199,7 +199,7 @@ export function buildModel(digest, mess) {
     const a = nodes.get(read.resolve(e.from).item.key), b = nodes.get(read.resolve(e.to).item.key);
     const from = a.key, to = b.key;
     if (from === to) return;
-    if (a.kind === 'frame' || b.kind === 'frame') { warnings.push(`edge "${label(from)}" -> "${label(to)}" dropped: a frame has no ports`); return; }
+    if (a.kind === 'frame' || b.kind === 'frame') { warnings.push(`edge "${label(from)}" -> "${label(to)}" dropped: the digest draws no edge at a frame (one is never public, and a frame and a note share no channel)`); return; }
     const key = from + '\u0000' + to;
     let g = pairs.get(key);
     if (!g) pairs.set(key, g = { from, to, a, b, items: [] });

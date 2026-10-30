@@ -592,6 +592,31 @@ edge "API" -> "Cache" channel: none
         spinRunLoop(until: { lingering.finished })
         board.close()
     },
+    test("canvas draw joins two frames on the frame link, and a subboard to a frame; a note and a frame share no channel; a frame and a shape it holds, no edge, on any channel or none") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess("""
+            frame "Sprint 1" size: 400x300
+            frame "Sprint 2" right of "Sprint 1" size: 400x300
+            subboard "Archive" below "Sprint 1"
+            """, on: editor)
+        _ = try drawnInProcess(#"sticky-note "Login" in "Sprint 1""#, on: editor)
+        let joined = try drawnInProcess("""
+            edge "Sprint 1" -> "Sprint 2"
+            edge "Archive" -> "Sprint 2"
+            """, on: editor)
+        expectEqual(joined["changes"]?.arrayValue?.map { $0["channel"] }, ["frame-link", "frame-link"])
+        let apart = try refusedInProcess(#"edge "Login" -> "Sprint 2""#, on: editor)
+        expectEqual(apart.reason, "no_channel")
+        expectEqual(apart.message, #""Login" and "Sprint 2" share no channel: a sticky-note connects on note-link, a frame on frame-link"#)
+        let holds = try refusedInProcess(#"edge "Sprint 1" -> "Login""#, on: editor)
+        expectEqual(holds.reason, "cannot_connect")
+        expectEqual(holds.message, #""Sprint 1" can't be connected to "Login", which it holds"#)
+        expectEqual(holds.hint, #"connect "Login" to a shape that doesn't hold it"#)
+        let held = try refusedInProcess(#"edge "Login" -> "Sprint 1" channel: none"#, on: editor)
+        expectEqual(held.reason, "cannot_connect")
+        expectEqual(held.message, #""Login" can't be connected to "Sprint 1", which holds it"#)
+    },
 ])
 
 /// A board command, `linger`, that waits until the test lets it go, whatever happens meanwhile (as a

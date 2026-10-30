@@ -60,10 +60,10 @@ final class ArrowTargeting {
     /// would bind. Its start is the connection's source, its end the target.
     func filter(for arrowID: ShapeID, _ end: ArrowEnd, also: ((AnyShapeRecord) -> Bool)? = nil) -> ((AnyShapeRecord) -> Bool)? {
         guard let arrow = editor.document[arrowID] else { return also }
-        let rules = rules, registry = editor.registry, editor = editor
+        let rules = rules, registry = editor.registry, shapes = editor.shapeContext, editor = editor
         let role: PortRole = end == .start ? .source : .target
         return { shape in
-            ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: registry).isAllowed(by: rules) && (also?(shape) ?? true)
+            ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: registry, shapes: shapes).isAllowed(by: rules) && (also?(shape) ?? true)
                 && editor.portsAllow(arrow, as: role, at: shape)
         }
     }

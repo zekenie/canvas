@@ -19,8 +19,8 @@ import Titles
 import Types
 import Validation
 
-// Ports as shipped, on real notes and subboards: a note links to a note, and a subboard to a note and
-// to a subboard, and they to it. A frame has no ports.
+// Ports as shipped, on real notes, subboards and frames: a note links to a note, a frame to a frame,
+// and a subboard to each of them and to a subboard, and they to it; never a frame and what it holds.
 // This file uses none of Ports' own API (`ChannelProperty`, `PortSide`), so it reads an arrow's
 // channel where the board keeps it (its added values, as BoardCodec writes them), and finds the
 // dots by where they're drawn: 12 points out from the middle of a side, at zoom 1.
@@ -55,6 +55,11 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
     AnyShapeRecord(ShapeRecord(Subboard(frame: frame)))
 }
 
+/// A frame at `rect`, untitled (its tab says "Frame", short of the middle of its top edge).
+@MainActor private func frame(_ rect: CGRect) -> AnyShapeRecord {
+    AnyShapeRecord(ShapeRecord(Frame(frame: rect)))
+}
+
 /// The shipped plugins on a board of `shapes`, their clipboard on `pasteboard`.
 @MainActor private func shipped(_ shapes: [AnyShapeRecord], _ pasteboard: NSPasteboard) -> EditorHarness {
     EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(shapes: shapes), scheduler: $0, pasteboard: pasteboard, model: ScriptedLanguageModel()) }
@@ -75,6 +80,7 @@ private func around(_ point: CGPoint, _ radius: CGFloat = 6) -> CGRect {
 /// What the stickies' and the subboards' channels are called on a board.
 private let noteLink = JSONValue.string(String(describing: NoteLink.id))
 private let subboardLink = JSONValue.string(String(describing: SubboardLink.id))
+private let frameLink = JSONValue.string(String(describing: FrameLink.id))
 
 /// A resting dot's middle: its channel's color at 60% over what's under it, in the renders' device RGB.
 @MainActor private func restingDot(_ color: NSColor, over under: [Int]) -> [Int] {
@@ -178,24 +184,81 @@ extension EditorHarness {
         expectEqual(h.editor.selectedShapeIDs, [])
         expectEqual(h.editor.currentToolID, .select)
     },
-    test("a drag from a subboard's dot outlines the shapes that take its link, a note, and not a frame, which has no ports: released over it, nothing is drawn") {
+    test("a drag from a subboard's dot outlines the shapes that take one of its links, a note and a frame: released over the frame, an arrow on the frame link") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let subFrame = CGRect(x: 100, y: 100, width: 240, height: 160)
         let noteFrame = CGRect(x: 500, y: 100, width: 200, height: 200), frameFrame = CGRect(x: 500, y: 400, width: 300, height: 200)
-        let h = shipped([subboard(subFrame), note(noteFrame), AnyShapeRecord(ShapeRecord(Frame(frame: frameFrame)))], pasteboard)
-        let before = h.editor.document
+        let sub = subboard(subFrame), target = frame(frameFrame)
+        let h = shipped([sub, note(noteFrame), target], pasteboard)
         let size = CGSize(width: 900, height: 640)
         let rest = renderBitmap(h.editor, size: size)
         h.connect(from: .right, of: subFrame, to: CGPoint(x: 420, y: 330), release: false)
         let drawing = renderBitmap(h.editor, size: size)
         // Just outside the left side of each, well away from the arrow being drawn.
         func leftSide(_ frame: CGRect) -> CGPoint { CGPoint(x: frame.minX - 1, y: frame.midY) }
-        expect(pixel(drawing, at: leftSide(noteFrame)) != pixel(rest, at: leftSide(noteFrame)), "the note, which takes it, is outlined")
-        expectEqual(pixel(drawing, at: leftSide(frameFrame)), pixel(rest, at: leftSide(frameFrame)), "the frame, which doesn't, isn't")
+        expect(pixel(drawing, at: leftSide(noteFrame)) != pixel(rest, at: leftSide(noteFrame)), "the note, which takes its note link, is outlined")
+        expect(pixel(drawing, at: leftSide(frameFrame)) != pixel(rest, at: leftSide(frameFrame)), "the frame, which takes its frame link, is outlined")
         h.release()
         h.connect(from: .right, of: subFrame, to: center(frameFrame))
-        expectEqual(h.editor.document, before, "a subboard links to no frame")
+        expectEqual(arrows(h).map { [$0.props.start.binding?.shapeID, $0.props.end.binding?.shapeID] }, [[sub.id, target.id]])
+        expectEqual(try arrows(h).map { try channel(of: $0.id, in: h.editor) }, [frameLink])
+    },
+    test("hovering a frame's edge shows its dots on its right, bottom and left, in its gray, and none on its top, where its tab is; in among what it holds they go") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let frameFrame = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let region = frame(frameFrame), inside = note(CGRect(x: 140, y: 140, width: 120, height: 120))
+        let h = shipped([region, inside], pasteboard)
+        h.editor.put([inside.id], in: region.id)
+        let size = CGSize(width: 620, height: 520)
+        let rest = renderBitmap(h.editor, size: size)
+        h.move(to: CGPoint(x: 220, y: frameFrame.maxY + 2))     // on its bottom edge, clear of its dot
+        expectEqual(h.editor.hovered, region.id)
+        let onEdge = renderBitmap(h.editor, size: size)
+        for side in [Side.right, .bottom, .left] {
+            let dot = side.dot(of: frameFrame)
+            expect(changedPixels(rest, onEdge, in: around(dot)) > 40, "its \(side) dot shows")
+            expectNear(pixel(onEdge, at: dot), restingDot(FrameLink.color, over: pixel(rest, at: dot)), "its \(side) dot")
+        }
+        expectEqual(changedPixels(rest, onEdge, in: around(Side.top.dot(of: frameFrame))), 0, "no dot on its top")
+        h.move(to: CGPoint(x: 380, y: 260))                      // deep inside, clear of the note
+        expectEqual(h.editor.hovered, nil)
+        let inAmong = renderBitmap(h.editor, size: size)
+        for side in [Side.right, .bottom, .left] {
+            expectEqual(changedPixels(rest, inAmong, in: around(side.dot(of: frameFrame))), 0, "its \(side) dot, gone in among what it holds")
+        }
+    },
+    test("a drag from a frame's dot to another frame draws an arrow on the frame link, ending on it wherever in its empty inside it's let go, or on a note in it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let aFrame = CGRect(x: 100, y: 100, width: 300, height: 200), bFrame = CGRect(x: 600, y: 100, width: 400, height: 300)
+        let a = frame(aFrame), b = frame(bFrame), inB = note(CGRect(x: 640, y: 140, width: 120, height: 120))
+        let h = shipped([a, b, inB], pasteboard)
+        h.editor.put([inB.id], in: b.id)
+        h.connect(from: .right, of: aFrame, to: CGPoint(x: 900, y: 330))
+        expectEqual(arrows(h).map { [$0.props.start.binding?.shapeID, $0.props.end.binding?.shapeID] }, [[a.id, b.id]])
+        expectEqual(try arrows(h).map { try channel(of: $0.id, in: h.editor) }, [frameLink])
+        h.connect(from: .bottom, of: aFrame, to: CGPoint(x: 700, y: 200))
+        expectEqual(arrows(h).map { $0.props.end.binding?.shapeID }, [b.id, b.id], "the note in it takes no frame link: the frame does")
+        expectEqual(h.editor.selectedShapeIDs, [])
+        expectEqual(h.editor.currentToolID, .select)
+    },
+    test("a frame and the frame it holds: neither's drag ends on the other, and let go there nothing is drawn; a frame's to a note draws nothing either") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let outerFrame = CGRect(x: 100, y: 100, width: 600, height: 400), innerFrame = CGRect(x: 160, y: 160, width: 240, height: 160)
+        let noteFrame = CGRect(x: 800, y: 100, width: 200, height: 200)
+        let outer = frame(outerFrame), inner = frame(innerFrame)
+        let h = shipped([outer, inner, note(noteFrame)], pasteboard)
+        h.editor.put([inner.id], in: outer.id)
+        let before = h.editor.document
+        h.connect(from: .right, of: innerFrame, to: CGPoint(x: 600, y: 420))
+        expectEqual(h.editor.document, before, "from the inner frame into the one that holds it")
+        h.connect(from: .bottom, of: outerFrame, to: center(innerFrame))
+        expectEqual(h.editor.document, before, "from the outer frame onto the one it holds")
+        h.connect(from: .right, of: outerFrame, to: center(noteFrame))
+        expectEqual(h.editor.document, before, "to a note")
     },
     test("a titled, locked note shows its dots whole: no pixel is both a dot's and the pill's or the lock chip's, but its top dot's, which a long title runs under: it's drawn over the pill") {
         let pasteboard = NSPasteboard.withUniqueName()

@@ -550,8 +550,8 @@ func rowIDs(_ output: String) throws -> [String] {
         expectEqual(note["attributes"]?["schema"], "text")
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsShapes"], true)
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsBoard"], true)
-        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["type"] }, ["stands-for", "mention", "is-a", "arrow", "note-link", "subboard-link"])
-        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["under"] ?? .null }, [.null, .null, .null, .null, "arrow", "arrow"])
+        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["type"] }, ["stands-for", "mention", "is-a", "arrow", "note-link", "subboard-link", "frame-link"])
+        expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["under"] ?? .null }, [.null, .null, .null, .null, "arrow", "arrow", "arrow"])
         let words = vocabulary["words"]?.arrayValue ?? []
         expectEqual(words.filter { $0["from"] != "queries" }.map { $0["word"] }, ["mentions", "mentioned-by", "invalid", "warned", "incomplete", "is-a", "misfit", "grouped-with", "selected"])
         expectEqual(words.first { $0["word"] == "mentions" }?["takes"], "shapes")

@@ -6062,9 +6062,11 @@ registrar.contextMenuForCanvas {                        // shown by the commands
 
 Ports are data-canvas's: dots just outside the sides of the shape the pointer is over, from which
 a drag draws an arrow to another shape. Not to any shape: each port is on a channel, a kind of
-connection, and the arrow may end only on a shape that takes its channel, so a note links to a note,
-while a subboard takes every
-channel, so anything with ports links to one, and one to anything with ports. They belong to
+connection, and the arrow may end only on a shape that takes its channel, so a note links to a note
+and a frame to a frame, while a subboard takes every
+channel, so anything with ports links to one, and one to anything with ports. And never a container
+and what it holds, either way round, at any depth: a frame and a note in it, or a frame inside it
+(`ShapeContext.mayConnect`, below). They belong to
 Connections ([`Sources/Connections`](../Sources/Connections)), a horizontal any kind opts into,
 built on Selection, whose [canvas buttons](#canvas-buttons) the dots are, and on Draw, whose edges its
 connections are (what tells two of one pair apart, an arrow's `is`, Types says to Draw itself). It holds ports,
@@ -6227,7 +6229,22 @@ stand-in as [Ports at a stand-in](#ports-at-a-stand-in) has it, for a connection
 `editor.channel(of: connection, endingAt: record)` is the channel a drag's connection would be
 drawn on if it ended at a shape: the first of its channels the shape takes as a target (for a
 shape that stands for others, [what it stands for](#ports-at-a-stand-in)), and nil for the shape it
-starts from, a shape kept aside, or one that takes none.
+starts from, a shape kept aside, one that takes none, and one that holds the start or that the
+start holds.
+
+That last is Connections' rule for every connection, `shapes.mayConnect(a, b)`: false where one
+holds the other, over the core's `nests` (a container's chain of containers, `containers(of:)`). An
+arrow between a frame and a note in it would run from inside the frame (tldraw aims an end at a
+shape that holds the other end at a point inside it), and the containment says already what it
+would. A drag's end skips such a shape and its faint outline leaves it out; `ArrowPortsPlugin`'s
+binding rule keeps a re-aimed or moved arrow's ends off it, whatever its channel, and refuses it to
+a connection made by name, so Connect shakes and `canvas draw` says `cannot_connect`.
+
+For a frame, which is hit only on its edge while it holds shapes, two more rules keep its edge its
+own. Its dots stay up near its edge, not across its inside (`PortState.isNear`: deeper inside a
+shape's bounds than a dot's reach, only where the shape is under the pointer), and where a press is
+on a container (its edge, its tab) a dot takes it only on its disc, while the nearest dot within
+reach still keeps its shape's dots showing as the pointer crosses the edge to it.
 
 ### Ports at a stand-in
 
@@ -6510,8 +6527,9 @@ connection by name from the keyboard: with two shapes selected and nothing under
 `registry.drawConnection(from:to:in:)`, the maker `canvas draw` makes an edge with, on the channel it
 picks, one step, Connect, the selection kept (a second between a pair is bent apart from the first,
 as a script's is). A reference pill is an end as what it stands for, as a drag reads its dots, and
-one that stands for nothing now is none. Where the maker refuses the pair (no channel joins them; a
-frame, which has no ports) or the board takes nothing, nothing is put down and both shake. `ConnectMenuPlugin` adds the item
+one that stands for nothing now is none. Where the maker refuses the pair (no channel joins them, a
+note and a frame; one holds the other, a frame and a note in it) or the board takes nothing, nothing
+is put down and both shake. `ConnectMenuPlugin` adds the item
 that runs it to a right-click on two shapes (`MenuItem(command: .connect)`), so the menu bar's Shape
 menu has it too; a list without ContextMenus leaves it out and keeps the key. PortEdgesTests'
 `connectTests` hold it over fixtures, CompositionTests' `connectShippedTests` over the shipped kinds.
@@ -9804,8 +9822,8 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   a card is theirs. An arrow keeps its channel, so a note's link to a subboard can be re-aimed onto
   notes and subboards only, and a subboard's to another onto subboards only. The top dot is in the
   row its title's pill is in, as a note's and a card's are. A pill that stands for one has the same
-  dots and links ([Ports at a stand-in](#ports-at-a-stand-in)). Frames have no ports, so an edge
-  between a subboard and a frame, in `canvas draw`, says `channel: none`.
+  dots and links ([Ports at a stand-in](#ports-at-a-stand-in)). A frame links to it, and it to a
+  frame, on the frame's channel, `frame-link`.
 - **Deleting it** deletes its board and every board under it, as one step, like any shape's;
   undoing it brings them all back with every id.
 - **Locking it** ([Locking](#locking)) locks what's on its board, at any depth: the core makes a board
@@ -9995,7 +10013,14 @@ registrar.createFrameItem()                                        // Create Fra
   end of the resize, what it leaves hanging over its edge and what it grows over
   ([Containers](#containers)). Its row is its symbol and "Untitled Frame", named by Titles; the
   table of contents lists what it holds under it. Locking, which opts every kind in, locks it, and
-  with it what it holds. No ports: nothing is drawn from a frame's sides. Transform's container channel
+  with it what it holds. Ports on its own channel, `FrameLink` (`frame-link`, in the frame's gray), on
+  its right, bottom and left (its top edge is its title's tab, which grabs it; an arrow starts at a
+  frame's middle and leaves by the side that faces where it goes, whatever dot it was drawn from), so
+  an arrow joins two frames, or a frame and a subboard; a note's channel isn't the frame's. Its dots
+  show from its edge and its tab and go as the pointer goes in among what it holds, and over its edge
+  a dot takes only a press on its disc, so the edge still moves it. An arrow's end lands on a frame
+  anywhere inside it, as tldraw's do, but never on the frame that holds its other end: a connection
+  never joins a container and what it holds ([Ports](#ports)). Transform's container channel
   (`frame.turnable(through: ContainerChannel.self)`, the last of its opt-ins) makes it something that can be
   turned into whatever takes the channel, a subboard in the app, from its menu ([Transform](#transform));
   Frames only offers the channel, names no kind that takes it, and brings no Turn into item or command of
@@ -14699,7 +14724,7 @@ topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → Add Note Beside · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
-framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
+framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
@@ -15777,8 +15802,7 @@ Each of these adds to the design without changing what plugins are written again
   arrow where it crosses its shape's edge toward the other end, whichever side that is); a
   channel's title, and a legend of the channels; a line in an arrow's detail panel naming its
   channel; and rules that read connections (which Topology's index can answer: a schema's links,
-  say). Frames have no ports, so a person can't connect them (`canvas draw` still
-  can, on no channel).
+  say).
 - **More of boards**: moving several selected shapes into a subboard, or up out of one, from a
   menu (Move to Subboard: [Moving](#moving)'s commands move the shapes they're typed for, under
   their ids, in one step, and never into their own board); arrows across boards (an end bound

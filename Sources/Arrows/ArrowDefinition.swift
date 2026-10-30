@@ -223,10 +223,10 @@ extension ArrowDefinition: CustomTranslation {
         // Each end sees only what the plugins' rules let it bind to (tldraw's onTranslate, which
         // looks for the shape under an end through its canBind filter).
         let rules = transaction.shapes.registry.contributions(to: ArrowBindingRules.self).map(\.value)
-        let record = transaction.shapes.shape(shape.id), registry = transaction.shapes.registry
+        let record = transaction.shapes.shape(shape.id), registry = transaction.shapes.registry, shapes = transaction.shapes
         func accepts(_ end: ArrowEnd) -> ((AnyShapeRecord) -> Bool)? {
             guard !rules.isEmpty, let record else { return nil }
-            return { candidate in ArrowBindingQuery(arrow: record, end: end, shape: candidate, registry: registry).isAllowed(by: rules) }
+            return { candidate in ArrowBindingQuery(arrow: record, end: end, shape: candidate, registry: registry, shapes: shapes).isAllowed(by: rules) }
         }
         let filters = [ArrowEnd.start: accepts(.start), .end: accepts(.end)]
         return ShapeTranslation { delta, shape, shapes in

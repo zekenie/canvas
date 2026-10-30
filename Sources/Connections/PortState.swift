@@ -162,10 +162,14 @@ final class PortState {
     /// The dot under a view point, for the select tool (`CanvasButtons`): the nearest that shows
     /// within `PortStyle.hitRadius` of it, of the shape whose dots show, the shape under the point,
     /// or any shape with a dot there (a dot the pointer comes to straight from empty canvas shows its
-    /// shape's, as data-canvas's halo does). Asked as the pointer moves, it also settles whose dots
-    /// show: the dot's shape; else none while a handle is under the pointer (it takes the hover); else
-    /// the shape under the pointer, if it has ports; else the one that showed them, while the pointer
-    /// is within reach of them (over empty canvas, or a shape without ports); else none.
+    /// shape's, as data-canvas's halo does); but where the point is on a container (the core's: a
+    /// frame's edge, or its tab), only on the dot's disc (`PortStyle.litRadius`), so the edge moves
+    /// and resizes its frame right up to its own dots and those of what it holds. Asked as the
+    /// pointer moves, it also settles whose dots show: the dot's shape, or the shape of the nearest
+    /// within reach that a press there doesn't take (the dots stay as the pointer crosses an edge to
+    /// one); else none while a handle is under the pointer (it takes the hover); else the shape under
+    /// the pointer, if it has ports; else the one that showed them, while the pointer is within reach
+    /// of them (`isNear`: over empty canvas, or a shape without ports); else none.
     func dot(atViewPoint point: CGPoint) -> PortDot? {
         // Nothing where the select tool hasn't seen the pointer move (just after a tool change, or a
         // first click into the window): no dots show there, so a press there presses what's under it.
@@ -189,7 +193,9 @@ final class PortState {
             .filter { $0.distance <= PortStyle.hitRadius }
             .sorted { $0.distance < $1.distance }
         // Whether a dot shows is worked out only for the few this near.
-        let hit = near.first { !liveDots(of: $0.dot.shape, on: [$0.dot.side]).isEmpty }?.dot
+        let nearest = near.first { !liveDots(of: $0.dot.shape, on: [$0.dot.side]).isEmpty }
+        let onContainer = under.flatMap { editor.document[$0] }.map(editor.registry.isContainer) ?? false
+        let hit = nearest.flatMap { $0.distance <= (onContainer ? PortStyle.litRadius : PortStyle.hitRadius) ? $0.dot : nil }
         if hit == nil, let handle = editor.handle(atViewPoint: point), !(handle.base is ResizeHandle) {
             // A kind's own handle takes the hover, as the select tool has it: no shape is hovered, so
             // none shows its dots. A resize handle leaves them be: its sides run their whole length,
@@ -199,6 +205,8 @@ final class PortState {
         }
         if let hit {
             host = hit.shape
+        } else if let nearest {
+            host = nearest.dot.shape
         } else if let under, underHasDots {
             host = under
         } else if let host, !(isNear(host, point) && hasDots(host)) {
@@ -207,11 +215,15 @@ final class PortState {
         return hit
     }
 
-    /// Whether a view point is within reach of a shape's dots: its bounds, grown by a dot's reach.
+    /// Whether a view point is within reach of a shape's dots: its bounds, grown by a dot's reach;
+    /// but farther inside them than that only where the shape is under the point, so a hollow one's
+    /// (a frame holding shapes, whose inside is the canvas and hovers nothing) show near its edge and
+    /// go as the pointer goes in among what it holds.
     func isNear(_ id: ShapeID, _ point: CGPoint) -> Bool {
         guard let bounds = editor.shapeContext.geometry(of: id)?.bounds, !bounds.isNull, !bounds.isInfinite else { return false }
-        let reach = PortStyle.offset + PortStyle.hitRadius
-        return editor.camera.toView(bounds).insetBy(dx: -reach, dy: -reach).contains(point)
+        let reach = PortStyle.offset + PortStyle.hitRadius, view = editor.camera.toView(bounds)
+        guard view.insetBy(dx: -reach, dy: -reach).contains(point) else { return false }
+        return !view.insetBy(dx: reach, dy: reach).contains(point) || editor.shapeContext.hitTest(editor.camera.toWorld(point), shape: id)
     }
 
     /// A drag from a dot, past the drag threshold: the connector's session drawing the connection,

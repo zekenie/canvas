@@ -342,10 +342,12 @@ extension CanvasEditor {
     /// that `shape` takes as a target (as `registry.takes(_:_:as:)` has it for its kind; for a
     /// shape that stands for others, a reference, what it stands for now: `ports(of:)`); nil if it
     /// takes none (or it's where the connection starts, as a connection never ends where it starts,
-    /// or it's kept aside). Cheap enough to ask of each shape under the pointer: it reads the port
-    /// table the editor keeps, and a stand-in's, kept until what it stands for changes.
+    /// or it holds where the connection starts or is held by it: `mayConnect`, or it's kept aside).
+    /// Cheap enough to ask of each shape under the pointer: it reads the port table the editor
+    /// keeps, a stand-in's, kept until what it stands for changes, and the two shapes' containers.
     public func channel(of connection: Connection, endingAt shape: AnyShapeRecord) -> ChannelID? {
-        guard shape.id != connection.shape, !shape.isOpaque, let ports = service(PortState.self)?.ports(of: shape) else { return nil }
+        guard shape.id != connection.shape, !shape.isOpaque, shapeContext.mayConnect(shape.id, connection.shape),
+              let ports = service(PortState.self)?.ports(of: shape) else { return nil }
         return connection.channels.first { ports.roles[$0]?.allows(.target) == true }
     }
 
@@ -365,6 +367,17 @@ extension CanvasEditor {
     /// or its file goes (and, as what it stands for changes, they're worked out again).
     public var standingPortsKept: Int { service(PortState.self)?.standingPortsKept ?? 0 }
     #endif
+}
+
+extension ShapeContext {
+    /// Whether a connection may join two shapes where they are: not when one holds the other, at any
+    /// depth (a frame and a note in it, or a frame inside it), either way round. One between them
+    /// would run from inside the one (an arrow aims its end at a shape that holds its other end at a
+    /// point inside it), and the containment says already what it would. A port's drag ends on
+    /// neither (`channel(of:endingAt:)`), Connect refuses the pair, `canvas draw` refuses the edge,
+    /// and the connector keeps its ends to it (`ArrowPortsPlugin`'s rule). True for a shape and
+    /// itself, which is another rule's. O(the shapes' depth).
+    public func mayConnect(_ a: ShapeID, _ b: ShapeID) -> Bool { !nests(a, b) }
 }
 
 // MARK: The plugin

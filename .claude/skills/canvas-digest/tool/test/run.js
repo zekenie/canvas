@@ -743,7 +743,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var rb = checkm.checkDigest(digest(big, []));
     assert(rb.warnings.length === 1 && /board "root" has 151/.test(rb.warnings[0]), JSON.stringify(rb.warnings));
     var re = checkm.checkDigest(digest([{ title: 'F', kind: 'frame' }, note('A')], [{ from: 'A', to: 'F' }]));
-    assert(/frame has no ports/.test(re.warnings.join()), JSON.stringify(re));
+    assert(/draws no edge at a frame/.test(re.warnings.join()), JSON.stringify(re));
   });
 
   await test('the measure script: every note and card once, then one edge through a reference to each end that is pointed at', async function () {

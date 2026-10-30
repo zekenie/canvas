@@ -119,6 +119,19 @@ extension ShapeContext {
         return storedDocument.container(of: id, containingKinds: registry.containingKinds)
     }
 
+    /// The containers a shape is in, the nearest first (`CanvasDocument.containers(of:containingKinds:)`);
+    /// empty for a shape on the board directly.
+    public func containers(of id: ShapeID) -> [ShapeID] {
+        currentIndexNotesDocument()
+        return storedDocument.containers(of: id, containingKinds: registry.containingKinds)
+    }
+
+    /// Whether one of two shapes holds the other, at any depth: a container and what's in it, a frame
+    /// in it too. False for a shape and itself. O(the shapes' depth).
+    public func nests(_ a: ShapeID, _ b: ShapeID) -> Bool {
+        a != b && (containers(of: a).contains(b) || containers(of: b).contains(a))
+    }
+
     /// The shapes directly in a container, back to front (`CanvasDocument.contents(of:containingKinds:)`).
     public func contents(of container: ShapeID) -> [ShapeID] {
         currentIndexNotesDocument()

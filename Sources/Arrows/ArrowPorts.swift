@@ -62,6 +62,9 @@ public struct ArrowPortsPlugin: ListedPlugin {
         // Connect (⌘L) gives the arrow it made the release a drag gives: the same wiring, in its step.
         registrar.connectionMade { connection, editor in editor.connectionDrawn(connection) }
         registrar.arrowBindingRule { query in
+            // Never a container and what it holds, either way round, whatever the arrow's channel: Connections' rule.
+            if let other = query.arrow.typed(as: Arrow.self)?.props[query.end.opposite].binding?.shapeID,
+               !query.shapes.mayConnect(other, query.shape.id) { return false }
             guard let channel = query.arrow[ChannelProperty.self], query.registry.declares(channel) else { return true }
             return query.registry.accepts(query.shape, on: channel, as: query.end == .start ? .source : .target)
         }
@@ -123,7 +126,7 @@ enum ArrowConnections {
         var made = AnyShapeRecord(arrow)
         if let existing { made.meta = existing.meta }
         let registry = shapes.registry
-        guard registry.arrowMayBind(made, .start, to: from), registry.arrowMayBind(made, .end, to: to) else { return nil }
+        guard registry.arrowMayBind(made, .start, to: from, in: shapes), registry.arrowMayBind(made, .end, to: to, in: shapes) else { return nil }
         return made
     }
 

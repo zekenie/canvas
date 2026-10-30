@@ -79,7 +79,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
     return id
 }
 
-/// A frame, which has no ports: it takes no links.
+/// A frame, which takes frame links and no note link.
 @MainActor private func frameShape(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
     let id = h.editor.add(Frame(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160))), title: title)
     if isPublic { h.editor.makePublic([id]) }

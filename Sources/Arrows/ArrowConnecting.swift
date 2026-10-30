@@ -25,6 +25,9 @@ public struct ArrowBindingQuery {
     /// A shape under the end.
     public let shape: AnyShapeRecord
     public let registry: Registry
+    /// The shapes it's judged among: the editor's, or a transaction's (what its other end is bound
+    /// to, what holds what).
+    public let shapes: ShapeContext
 }
 
 extension ArrowBindingQuery {
@@ -41,12 +44,12 @@ extension PluginRegistrar {
 }
 
 extension Registry {
-    /// Whether every plugin's rule (`ArrowBindingRules`) lets `end` of `arrow` bind to `shape`, as
-    /// they're asked while an end binds by pointer: for a plugin that binds an arrow's ends itself
-    /// (one made without a drag), with the arrow as it will be (what plugins add to it set first).
-    /// True with no rules.
-    public func arrowMayBind(_ arrow: AnyShapeRecord, _ end: ArrowEnd, to shape: AnyShapeRecord) -> Bool {
-        let query = ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: self)
+    /// Whether every plugin's rule (`ArrowBindingRules`) lets `end` of `arrow` bind to `shape` among
+    /// `shapes`, as they're asked while an end binds by pointer: for a plugin that binds an arrow's
+    /// ends itself (one made without a drag), with the arrow as it will be (what plugins add to it set
+    /// first). True with no rules.
+    public func arrowMayBind(_ arrow: AnyShapeRecord, _ end: ArrowEnd, to shape: AnyShapeRecord, in shapes: ShapeContext) -> Bool {
+        let query = ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: self, shapes: shapes)
         return query.isAllowed(by: contributions(to: ArrowBindingRules.self).map(\.value))
     }
 }

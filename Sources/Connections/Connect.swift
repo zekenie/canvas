@@ -61,9 +61,9 @@ extension CanvasEditor {
     /// channel the start has a dot on that the end takes; a second between a pair bent apart from the
     /// first), one step, "Connect". A stand-in (a reference pill) is an end as what it stands for, as a
     /// drag from a port reads it (`PortState.ports(of:)`): one that stands for nothing now is no end.
-    /// The selection stays. Where the connector refuses the pair (no channel joins them; a frame, which
-    /// has no ports), or the board takes nothing, nothing changes and both shake. Nothing for any other
-    /// number of shapes.
+    /// The selection stays. Where the connector refuses the pair (no channel joins them, as a note and
+    /// a frame; one holds the other, as a frame and a note in it: `mayConnect`), or the board takes
+    /// nothing, nothing changes and both shake. Nothing for any other number of shapes.
     public func connect(_ ids: [ShapeID]) {
         guard ids.count == 2 else { return }
         let ports = service(PortState.self)

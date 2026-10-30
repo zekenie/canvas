@@ -44,7 +44,8 @@ public struct PortEdgesPlugin: ListedPlugin {
 ///   ports on (a reference has them on its left and right) is `invalid_value`, saying where it does.
 ///
 /// Before any of that, the connector must be able to connect both ends in the board as the script
-/// leaves it (`canConnect`), or it's `cannot_connect`, naming the end.
+/// leaves it (`canConnect`), or it's `cannot_connect`, naming the end; and neither end may hold the
+/// other (`mayConnect`: a frame and a shape in it), or it's `cannot_connect`, on any channel or none.
 @MainActor
 enum EdgeChannels {
     /// What `channel: none` says: no channel.
@@ -129,6 +130,12 @@ enum EdgeChannels {
         for (isStart, name, end) in [(true, request.fromName, from), (false, request.toName, to)] where !registry.canConnect(end.record.id, in: shapes) {
             throw refuse(.cannotConnect, "\(name) can't be connected: nothing here connects \(indefinite(end.named))",
                          hint: "connect \(isStart ? "from" : "to") another shape")
+        }
+        // One holding the other (`mayConnect`'s rule): refused on any channel, and on none.
+        let startIsHeld = shapes.containers(of: request.from).contains(request.to)
+        if startIsHeld || shapes.containers(of: request.to).contains(request.from) {
+            throw refuse(.cannotConnect, "\(request.fromName) can't be connected to \(request.toName), which \(startIsHeld ? "holds it" : "it holds")",
+                         hint: "connect \(startIsHeld ? request.fromName : request.toName) to a shape that doesn't hold it")
         }
         let written = try self.written(request, in: registry)
         let channel: ChannelID?

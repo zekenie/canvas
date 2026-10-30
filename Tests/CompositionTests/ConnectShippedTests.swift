@@ -55,7 +55,7 @@ import TestKit
         h.editor.undo()
         expect(arrows(h).isEmpty)
     },
-    test("⌘L from a note to a subboard draws on the note link; to a frame, which has no ports, nothing, and both shake") {
+    test("⌘L from a note to a subboard draws on the note link; to a frame, which takes no note link, nothing, and both shake") {
         let note = record(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200)))
         let board = record(Subboard(frame: CGRect(x: 500, y: 0, width: 240, height: 160)))
         let frame = record(Frame(frame: CGRect(x: 0, y: 500, width: 300, height: 200)))
@@ -66,6 +66,25 @@ import TestKit
         h.editor.selectedShapeIDs = [note.id, frame.id]
         expect(pressConnect(h))
         expectEqual(arrows(h).count, 1, "nothing to the frame")
+        expect(h.editor.service(RefusalShake.self)?.isShaking == true)
+        expectEqual(h.editor.undoHistory.undoName, "Connect", "no step left by the refusal")
+    },
+    test("⌘L joins two frames on the frame link, and a subboard to a frame; a frame and the frame it holds, nothing, and both shake") {
+        let outer = record(Frame(frame: CGRect(x: 0, y: 0, width: 400, height: 300)))
+        let inner = record(Frame(frame: CGRect(x: 40, y: 40, width: 200, height: 150)))
+        let other = record(Frame(frame: CGRect(x: 600, y: 0, width: 300, height: 200)))
+        let board = record(Subboard(frame: CGRect(x: 600, y: 400, width: 240, height: 160)))
+        let h = shipped([outer, inner, other, board])
+        h.editor.put([inner.id], in: outer.id)
+        h.editor.selectedShapeIDs = [outer.id, other.id]
+        expect(pressConnect(h))
+        expectEqual(arrows(h).map { $0[ChannelProperty.self] }, [FrameLink.id])
+        h.editor.selectedShapeIDs = [board.id, other.id]
+        expect(pressConnect(h))
+        expectEqual(arrows(h).map { $0[ChannelProperty.self] }, [FrameLink.id, FrameLink.id], "a subboard to a frame, on the frame's link")
+        h.editor.selectedShapeIDs = [outer.id, inner.id]
+        expect(pressConnect(h))
+        expectEqual(arrows(h).count, 2, "nothing between a frame and the frame it holds")
         expect(h.editor.service(RefusalShake.self)?.isShaking == true)
         expectEqual(h.editor.undoHistory.undoName, "Connect", "no step left by the refusal")
     },
