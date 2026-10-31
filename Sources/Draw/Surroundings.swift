@@ -206,6 +206,24 @@ public struct Surroundings {
         return Landing(board: reading.board, rect: rect)
     }
 
+    /// Where Insert puts a shape of `size` down on the board shown (the core's insertion spot, which
+    /// Draw's plugin claims): beside one shape as `near` lands beside it, within the container it's in;
+    /// beside several as beside the box around them, within the container they share; with none
+    /// `anywhere`, in the middle of the view or the nearest spot round it clear of what's there. Nil with
+    /// none and no view, or a board the editor can't read.
+    static func insertionSpot(of size: CGSize, beside shapes: [ShapeID], in editor: CanvasEditor) -> CGRect? {
+        guard let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
+        let containers = Set(shapes.map { editor.shapeContext.container(of: $0) })
+        let holder = containers.count == 1 ? containers.first ?? nil : nil
+        switch shapes.count {
+        case 0: return surroundings.reading.view == nil ? nil : surroundings.anywhere().rect
+        case 1: return surroundings.near(shapes[0], within: holder)?.rect
+        default:
+            let bounds = shapes.compactMap { surroundings.reading.shapes.geometry(of: $0)?.bounds }.reduce(CGRect.null) { $0.union($1) }
+            return surroundings.near(bounds, within: holder)?.rect
+        }
+    }
+
     /// A stand-in (a pill) of `size` at `spot`, as `canvas draw` places the one it makes for an edge:
     /// against the shape it is beside, or, in a column of pills there, past the last (`StandInRoute`
     /// says where; its placements are the ones a script's statement gets). The box is a made-up one

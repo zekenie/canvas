@@ -539,6 +539,12 @@ public struct Registry {
     var resizeAdjuster: (@MainActor (CanvasEditor, ResizeStart) -> (any ResizeAdjuster)?)? {
         contributions(to: CorePoints.ResizeAdjusters.self).first?.value
     }
+    var insertionSpot: (@MainActor (CanvasEditor, CGSize, [ShapeID]) -> CGRect?)? {
+        contributions(to: CorePoints.InsertionSpots.self).first?.value
+    }
+    func madeBeside(_ kind: ShapeKind) -> (@MainActor (AnyShapeRecord, AnyShapeRecord) -> AnyShapeRecord)? {
+        contributions(to: CorePoints.MadeBeside.self, for: kind).first?.make
+    }
 
     /// Who contributes what, where: the runtime counterpart of Package.swift. A test pins it.
     public var report: String {
@@ -611,6 +617,7 @@ struct RawContribution {
         case let optIn as PropertyOptIn: "property \(optIn.key) → \(target == .any ? "every shape" : "\(target)")"
         case let label as KindLabel: "label \(label.name) → \(target)"
         case is KindTint: "tint → \(target)"
+        case is MadeBesideShape: "made beside → \(target)"
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
@@ -626,6 +633,7 @@ struct RawContribution {
             case is CorePoints.KeyReleases.Type: "key releases"
             case is CorePoints.TranslationAdjusters.Type: "translation adjuster"
             case is CorePoints.ResizeAdjusters.Type: "resize adjuster"
+            case is CorePoints.InsertionSpots.Type: "insertion spot"
             case is CorePoints.ShapeAccessibility.Type: "accessibility → \(target)"
             case is CorePoints.AccessibleOrder.Type: "accessible order"
             case is CorePoints.AccessibleParts.Type: "accessible parts"

@@ -49,7 +49,7 @@ import TextEditing
         let w = try NestedWindow()
         defer { w.board.close() }
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
-        expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Shape", "Arrange", "View", "Go", "Window", "Help"])
+        expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Insert", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         let shape = try require(menus.main.item(withTitle: "Shape")?.submenu)
         expect(shape.items.isEmpty && !shape.autoenablesItems)
         w.editor.selection = nil

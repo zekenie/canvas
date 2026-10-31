@@ -7,6 +7,7 @@ import Colors
 import Connections
 import ContextMenus
 import DetailPanel
+import Draw
 import Keyboard
 import Mentions
 import Selection
@@ -19,11 +20,11 @@ import Titles
 import Topology
 import Types
 
-/// The note, every plugin it opts into (Types among them), and Adornments, which lays out what Titles
-/// shows on it.
+/// The note, every plugin it opts into (Types among them), Adornments, which lays out what Titles
+/// shows on it, and Draw, whose insertion spot puts the note ⇧↩ makes beside another.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin()]
+     ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin(), DrawPlugin()]
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [

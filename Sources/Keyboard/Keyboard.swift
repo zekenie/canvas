@@ -273,7 +273,8 @@ extension Registry {
     /// `registrar.keyboardHelp`): a row for each thing the keys do, named as a tool's label, a
     /// command's title (`title(of:)`) or a shortcut's own title says, in the order they were
     /// registered. Keys under one name are one row (⌘↓, Return and Enter all open the selection),
-    /// filed with the command if one of them runs it, and the four arrows held with the same
+    /// filed with the command if one of them runs it, but a tool's keys never share a row with what
+    /// isn't a tool (the Note tool's N, Insert › Note's ⇧↩), and the four arrows held with the same
     /// modifiers are written as one ("←↑→↓", "⇧←↑→↓").
     public var keyboardHelpRows: [KeyboardHelpRow] {
         var rows: [(title: String, place: KeyboardHelpRow.Place, chords: [KeyChord])] = []
@@ -284,7 +285,7 @@ extension Registry {
             case .commands(let commands, let named, _): (title, place) = (named ?? self.title(of: commands[0]) ?? commands[0].rawValue, .command(commands[0]))
             case .custom(let name, _, _, _), .held(let name, _, _): (title, place) = (name, .canvas)
             }
-            if let index = rows.firstIndex(where: { $0.title == title }) {
+            if let index = rows.firstIndex(where: { $0.title == title && ($0.place == .tool) == (place == .tool) }) {
                 rows[index].chords.append(shortcut.chord)
                 if case .command = place, rows[index].place == .canvas { rows[index].place = place }
             } else {

@@ -29,9 +29,10 @@ public enum BoardMenus {
     public static func command(of item: NSMenuItem) -> CanvasCommand? { item.representedObject as? CanvasCommand }
 
     /// The menus of a Mac app in the order they come, by title: the window's own and those commands
-    /// name, as Apple's apps place them (Keynote's Arrange before View, the Finder's Go after it). A
-    /// menu a command names that isn't here goes before Window, in the order commands first name it.
-    static let menuOrder = ["File", "Edit", "Shape", "Format", "Arrange", "View", "Go"]
+    /// name, as Apple's apps place them (Keynote's and Freeform's Insert after Edit, Keynote's Arrange
+    /// before View, the Finder's Go after it). A menu a command names that isn't here goes before
+    /// Window, in the order commands first name it.
+    static let menuOrder = ["File", "Edit", "Insert", "Shape", "Format", "Arrange", "View", "Go"]
 
     /// What Infinite Canvas › Settings… (⌘,) sends up the responder chain: the app's delegate answers
     /// it, showing its Settings window (AppKit has no standard action for it).
@@ -509,6 +510,9 @@ final class MenuBar: NSMenu {
                 menu.performActionForItem(at: index)
                 return true
             }
+            // AppKit's own matching hands Return to an item that names ⇧↩ (Insert › Note), which would put a note down
+            // where Return opens the selection: an item that names the key with other modifiers takes it from none.
+            if let key = typed, key.count == 1, typedItem(key.first!, nil, in: self) != nil { return false }
         }
         return super.performKeyEquivalent(with: event)
     }
@@ -516,10 +520,11 @@ final class MenuBar: NSMenu {
     private static let keyModifiers: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
 
     /// The item, in `menu` or a menu under it, whose key equivalent is `key` (in any case) with exactly
-    /// these modifiers, and where it is.
-    private func typedItem(_ key: Character, _ modifiers: NSEvent.ModifierFlags, in menu: NSMenu) -> (NSMenu, Int)? {
+    /// these modifiers (with any, for nil), and where it is.
+    private func typedItem(_ key: Character, _ modifiers: NSEvent.ModifierFlags?, in menu: NSMenu) -> (NSMenu, Int)? {
         for (index, item) in menu.items.enumerated() {
-            if item.keyEquivalent.lowercased() == String(key).lowercased(), item.keyEquivalentModifierMask.intersection(Self.keyModifiers) == modifiers {
+            if item.keyEquivalent.lowercased() == String(key).lowercased(),
+               modifiers.map({ item.keyEquivalentModifierMask.intersection(Self.keyModifiers) == $0 }) ?? true {
                 return (menu, index)
             }
             if let submenu = item.submenu, let found = typedItem(key, modifiers, in: submenu) { return found }

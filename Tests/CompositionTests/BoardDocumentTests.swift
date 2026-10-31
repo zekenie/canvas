@@ -419,6 +419,10 @@ let boardType = "com.example.InfiniteCanvas.board"
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
         expectEqual(edit.items.map(\.title), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Paste at Pointer", "Duplicate", "Delete",
                                               "Select All", "Remove Mention", "", "Find", "Spelling and Grammar"], "the window's own items and Clipboard's and Find's, each at its order")
+        // Insert: an item for each tool that places a shape, in the toolbar's order, Note with ⇧Return.
+        try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)), "\r", .shift)
+        let insert = try require(menus.main.item(withTitle: "Insert")?.submenu)
+        expectEqual(insert.items.map(\.title), ["Note", "Subboard", "Frame", "Reference"])
         let find = try require(edit.item(withTitle: "Find")?.submenu)
         expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])
         expectEqual(find.items.compactMap(BoardMenus.command(of:)), [.find, .findNext, .findPrevious], "never an AppKit find action, which a text view answers")
@@ -447,7 +451,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
         expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out", "Actual Size",
                                               "Zoom to Fit", "Zoom to Selection", "", "Enter Full Screen"])
-        expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Shape", "Arrange", "View", "Go", "Window", "Help"])
+        expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Insert", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         expect(try require(menus.main.item(withTitle: "Shape")?.submenu).items.isEmpty, "Shape fills itself as it opens")
         try command("Arrange", "Group", .group, "g", [.command, .option])
         try command("Arrange", "Ungroup", .ungroup, "g", [.command, .option, .shift])

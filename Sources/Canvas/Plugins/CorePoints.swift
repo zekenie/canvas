@@ -142,6 +142,21 @@ enum CorePoints {
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the resize adjuster"] }
     }
 
+    /// Where a shape Insert puts down goes (`registrar.insertionSpot`). One plugin may claim it;
+    /// otherwise it goes in the middle of the view.
+    enum InsertionSpots: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, CGSize, [ShapeID]) -> CGRect?
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the insertion spot"] }
+    }
+
+    /// How a kind's shape Insert puts down beside one shape is made (`ShapeRegistrar.madeBeside`). One per kind.
+    enum MadeBeside: KeyedExtensionPoint {
+        typealias Contribution = MadeBesideShape
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: MadeBesideShape, for target: ShapeTarget) -> [AnyHashable] { [MadeBesideKey(target: target)] }
+    }
+
     /// What VoiceOver says of a shape (`scope.accessibility`, `shape.accessibility`): every
     /// contribution that reaches its kind, in plugin order, the kind's own first.
     enum ShapeAccessibility: ExtensionPoint {
@@ -207,6 +222,15 @@ struct KindTint {
 struct KindTintKey: Hashable, CustomStringConvertible {
     let target: ShapeTarget
     var description: String { "the tint of \(target)" }
+}
+
+struct MadeBesideShape {
+    let make: @MainActor (AnyShapeRecord, AnyShapeRecord) -> AnyShapeRecord
+}
+
+struct MadeBesideKey: Hashable, CustomStringConvertible {
+    let target: ShapeTarget
+    var description: String { "how \(target) is made beside a shape" }
 }
 
 struct ShapeRegistration {

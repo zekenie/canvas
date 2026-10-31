@@ -40,6 +40,8 @@ public struct DrawPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.contribute(DrawEngine(), to: DrawEngines.self)
+        // Where Insert puts a shape down: placed as a script's shape is (Placing).
+        registrar.insertionSpot { editor, size, beside in Surroundings.insertionSpot(of: size, beside: beside, in: editor) }
     }
 }
 

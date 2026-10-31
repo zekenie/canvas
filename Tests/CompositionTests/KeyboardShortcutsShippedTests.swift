@@ -40,7 +40,7 @@ import TestKit
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: registry)
         let sections = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, autosaveName: nil).sections
-        expectEqual(sections.map(\.title), ["Tools", "Infinite Canvas", "File", "Edit", "Arrange", "View", "Go", "Window", "Help", "Canvas", "Pointer", "Editing Text"])
+        expectEqual(sections.map(\.title), ["Tools", "Infinite Canvas", "File", "Edit", "Insert", "Arrange", "View", "Go", "Window", "Help", "Canvas", "Pointer", "Editing Text"])
         @MainActor func row(_ section: String, _ title: String) -> [String]? {
             sections.first { $0.title == section }?.rows.first { $0.title == title }?.keys
         }
@@ -79,7 +79,7 @@ import TestKit
         expectEqual(row("Canvas", "Page Down"), ["⇟"])
         expectEqual(row("Canvas", "Start of Board"), ["↖"])
         expectEqual(row("Canvas", "End of Board"), ["↘"])
-        expectEqual(row("Canvas", "Add Note Beside"), ["⇧↩"])
+        expectEqual(row("Insert", "Note"), ["⇧↩"], "Insert › Note's key, filed with its item")
         expectEqual(row("Canvas", "Cancel"), ["⎋", "⌘."])
         expectEqual(row("Canvas", "Next Shape"), ["⇥"])
         expectEqual(row("Canvas", "Previous Shape"), ["⇧⇥"])

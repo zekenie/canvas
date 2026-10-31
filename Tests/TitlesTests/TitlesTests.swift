@@ -59,7 +59,7 @@ import Titles
         expectEqual(registry.schema(for: Plaque.kind)?.json["required"], ["frame"], "no default, and not required: nil until named")
         expectEqual(registry.properties(for: Plaque.kind), ["title"])
         expectEqual(registry.owner(of: TitleProperty.key), .titles)
-        expect(registry.report.contains("plaques            shape plaque · tool plaque · shortcut P → tool plaque · property title → plaque · ShapeTitles → plaque"),
+        expect(registry.report.contains("plaques            shape plaque · tool plaque · command insert:plaque in InsertMenu.Shapes · shortcut P → tool plaque · property title → plaque · ShapeTitles → plaque"),
                registry.report)
     },
     test("a derived title isn't a property: the kind's schema doesn't have it") {

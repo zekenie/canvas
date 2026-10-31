@@ -83,14 +83,17 @@ public struct StickyNotesPlugin: ListedPlugin {
         registrar.keyHint("⇧↩ in a Note", "New Note Beside It", while: .text)
         registrar.keyHint("⇥ or ⇧⇥ in a Note", "Next or Previous Note", while: .text)
         registrar.service { NoteHops(editor: $0) }
-        // ⇧↩ on the canvas, one shape selected and none of its parts focused (⌥Tab): a new note beside it, edited,
-        // as ⇧↩ in a note's words puts one beside that note (any shape's side, the right first).
-        registrar.shortcut(KeyChord(KeyChord.return.key, .shift), "Add Note Beside", when: { $0.canAddNoteBeside }) { editor in
-            if let id = editor.selection { editor.service(NoteHops.self)?.addNote(beside: id) }
-        }
+        // ⇧↩ on the canvas is Insert › Note: a new note beside the selection (any shape's side, the right first), or with
+        // none somewhere clear in the middle of the view, edited, as ⇧↩ in a note's words puts one beside that note.
+        registrar.shortcut(KeyChord(KeyChord.return.key, .shift), forCommand: .insert(ToolID(placing: StickyNote.kind)))
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)
+            note.madeBeside { made, neighbor in                // a note put beside a shape takes its color, as tldraw's adjacent notes do
+                var made = made
+                if let color = neighbor[ColorProperty.self] { made[ColorProperty.self] = color }
+                return made
+            }
             note.colorable(default: .yellow)                   // a note has a color: its paper, yellow without one
             note.tint(NoteStyle.tint)                          // its yellow, wherever it's listed by its kind
             note.createOnDoubleClick(place)                    // opts into the selection's double-click

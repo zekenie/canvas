@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import Colors
 import Frames
 import Geometry
 import LanguageModels
@@ -12,9 +13,10 @@ import StickyNotes
 import TestKit
 
 // Making things with the keys alone, as the app ships it, on a new board: a placing tool's letter then
-// Return puts its shape down at the pointer or the view's middle and edits it, ⇧Return puts a note beside
-// the shape selected, and the first minute (a note, its words, a second, the two connected, a frame
-// around them) takes no more presses than clicks (keyboard navigation's principle 12).
+// Return puts its shape down at the pointer or the view's middle and edits it, ⇧Return (Insert › Note) puts
+// a note beside the selection or, with none, in the view's middle, and the first minute (a note, its words, a
+// second, the two connected, a frame around them) takes no more presses than clicks (keyboard navigation's
+// principle 12).
 
 /// A new board's window as the app makes one (`makeWindowControllers`, unshown): an empty board, the canvas
 /// with the keyboard.
@@ -109,29 +111,65 @@ final class EmptyBoardWindow {
         expectEqual(w.editor.editingShapeID, note, "the select tool: Return edits the note, as ever")
         expectEqual(w.editor.document.shapes.count, 2, "nothing placed")
     },
-    test("with one shape selected, ⇧Return on the canvas puts a note beside it and edits it; with none, or several, it does nothing new") {
+    test("⇧Return on the canvas is Insert › Note: with nothing selected a note in the middle of the view, edited; with one shape selected, beside it in its color; with several, beside them") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
-        let first = w.editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "First"))
-        w.editor.selection = first
-        let walk = w.walk(names: [first: "first"])
+        let walk = w.walk()
+        let view = w.editor.unobscuredViewport
         walk.press(Chord(Key.return, .shift))
-        let beside = try require(w.notes.first { $0.id != first })
-        let box = try require(beside.box)
-        expect(box.minX > 200 && box.minY < 200 && box.maxY > 0, "to its right: \(box)")
+        let first = try require(w.notes.first)
+        expectEqual(first.box.map { CGPoint(x: $0.midX, y: $0.midY) }, w.editor.camera.toWorld(CGPoint(x: view.midX, y: view.midY)),
+                    "nothing selected: the middle of the view")
+        expectEqual(w.editor.editingShapeID, first.id, "edited at once")
+        w.type("First", with: walk)
+        walk.press(.escape)
+        expectEqual(w.editor.undoHistory.undoName, "Add Note", "placed and typed into: one step")
+        expectEqual(w.editor.selectedShapeIDs, [first.id])
+        w.editor.transact("Color") { $0.update(first.id) { $0[ColorProperty.self] = .blue } }
+        walk.press(Chord(Key.return, .shift))
+        let beside = try require(w.notes.first { $0.id != first.id })
+        let firstBox = try require(w.editor.document[first.id]?.box), box = try require(beside.box)
+        expect(box.minX > firstBox.maxX && box.minY < firstBox.maxY && box.maxY > firstBox.minY, "to its right: \(box)")
+        expectEqual(beside[ColorProperty.self], .blue, "in the color of the note it's beside")
         expectEqual(w.editor.editingShapeID, beside.id)
         walk.press(.escape)
-        expectEqual(w.editor.undoHistory.undoName, "Add Note")
-        w.editor.selectedShapeIDs = [first, beside.id]
+        w.editor.selectedShapeIDs = [first.id, beside.id]
         walk.press(Chord(Key.return, .shift))
-        expectEqual(w.notes.count, 2, "two selected: no note beside")
+        expectEqual(w.notes.count, 3, "two selected: a note beside them")
+        let third = try require(w.notes.last?.box)
+        let both = firstBox.union(box)
+        expect(!third.intersects(firstBox) && !third.intersects(box), "clear of both: \(third) beside \(both)")
+        expectEqual(w.notes.last?[ColorProperty.self], nil, "beside two, none of their colors")
+    },
+    test("keys through the menu bar, as the app routes them: ⇧Return runs Insert › Note, and Return alone, which AppKit's own matching would hand that item, edits the selected note") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
+        w.window.makeFirstResponder(w.canvas)
+        let walk = KeyWalk(w.window, editor: w.editor, menu: menus.main, readers: [.canvas(w.canvas, editor: w.editor, names: [:]), .panel(of: w.canvas)])
+        walk.press(Chord(Key.return, .shift))
+        let note = try require(w.notes.first, "Insert › Note ran: \(walk.traceText)")
+        expectEqual(w.editor.editingShapeID, note.id)
+        walk.press(.escape)
+        expectEqual(w.editor.selectedShapeIDs, [note.id])
+        walk.press(.return)
+        expectEqual(w.notes.count, 1, "Return made no note: \(walk.traceText)")
+        expectEqual(w.editor.editingShapeID, note.id, "Return edits the selected note")
+    },
+    test("Insert › Frame puts an empty frame in the middle of the view, in one step") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let view = w.editor.unobscuredViewport
+        expect(w.editor.perform(.insert(ToolID(placing: Frame.kind))))
+        let frame = try require(w.editor.document.shapes.first { $0.kind == Frame.kind })
+        expectEqual(frame.box.map { CGPoint(x: $0.midX, y: $0.midY) }, w.editor.camera.toWorld(CGPoint(x: view.midX, y: view.midY)))
+        expectEqual(w.editor.undoHistory.undoName, "Add Frame")
     },
     test("the first minute by the keys (a note, its words, a second note, the two connected, a frame around them) takes no more presses than clicks") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         let walk = w.walk()
-        walk.press(Chord("n"))
-        walk.press(.return)
+        walk.press(Chord(Key.return, .shift))
         w.type("Plan", with: walk)
         walk.press(Chord(Key.return, .shift))
         w.type("Ship", with: walk)
@@ -148,6 +186,7 @@ final class EmptyBoardWindow {
         // By the pointer: the Note tool, the canvas, the Note tool, the canvas, a port's drag to the other note,
         // the Frame tool, and its drag around both.
         let clicks = 7
+        expectEqual(walk.presses.count, 6, "⇧Return twice, Escape, ⌘A, ⌘L, ⇧⌘F: \(walk.traceText)")
         expect(walk.presses.count <= clicks, "\(walk.presses.count) presses: \(walk.traceText)")
     },
 ])

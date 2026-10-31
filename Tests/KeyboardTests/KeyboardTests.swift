@@ -410,6 +410,13 @@ import TestKit
             for arrow in [KeyChord.leftArrow, .rightArrow, .upArrow] { r.shortcut(arrow, "Most") { _ in } }
         }])
         expectEqual(three.keyboardHelpRows.last?.keys, ["←", "→", "↑"], "three arrows are three keys")
+        let insertCard = CanvasCommand.insert(ToolID(placing: Card.kind))
+        let named = try Registry(plugins: [KeyboardPlugin(), CardsPlugin(), Contributor(id: "x") { r in
+            r.shortcut(KeyChord(KeyChord.return.key, .shift), forCommand: insertCard)
+        }, cardKey])
+        expectEqual(Array(named.keyboardHelpRows.suffix(2)), [KeyboardHelpRow(keys: ["⇧↩"], title: card.label, place: .command(insertCard)),
+                                                              KeyboardHelpRow(keys: ["C"], title: card.label, place: .tool)],
+                    "a tool's key and Insert's, named alike, are two rows")
     },
     test("a chord taken twice conflicts, whatever the letter's case, the Hand's H included") {
         expectThrows(RegistryError.conflict(point: "KeyboardShortcuts", key: "shortcut H", plugins: ["keyboard", "clash"])) {
@@ -468,7 +475,7 @@ import TestKit
         expectEqual(registry.report, """
         core          tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         keyboard      service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-        discs         shape disc · tool disc · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
+        discs         shape disc · tool disc · command insert:disc in InsertMenu.Shapes · shortcut D → tool disc · tool zap · shortcut Z → tool zap · command stamp · shortcut ⌘S → command stamp · shortcut ⇥ → Next
         """)
     },
     test("a command declared with its key in one call: its title, its menu bar item, when it runs and its rule, and the key, which its items show") {

@@ -114,6 +114,14 @@ public struct PluginRegistrar {
         contribute(begin, to: CorePoints.ResizeAdjusters.self)
     }
 
+    /// Where a shape Insert puts down goes (`editor.insert`): `spot` gets its size and the shapes it
+    /// goes beside (the selection, on the board shown; none for anywhere in view), and returns the
+    /// frame to put it in, world units, or nil to leave it in the middle of the view. At most one
+    /// plugin may claim it (Draw, in the shipped app, where Placing is); otherwise it goes there.
+    public mutating func insertionSpot(_ spot: @escaping @MainActor (CanvasEditor, CGSize, [ShapeID]) -> CGRect?) {
+        contribute(spot, to: CorePoints.InsertionSpots.self)
+    }
+
     /// Runs inside the deleting transaction, before the shapes are removed. It may change other
     /// shapes, and delete more (their handlers run too), read-only ones included: what it does keeps
     /// the board whole, which a lock doesn't stand in the way of. It may change shapes on other boards
@@ -192,7 +200,8 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
         contributions.append(RawContribution(value, to: P.self, for: .kind(kind), from: pluginID))
     }
 
-    /// A toolbar tool that places this shape where the canvas is pressed. Its id is the kind's,
+    /// A toolbar tool that places this shape where the canvas is pressed, and its item in the Insert
+    /// menu, which puts one down without the pointer (`CanvasCommand.insert`). Its id is the kind's,
     /// unless you give one (a kind with two place tools needs to).
     public mutating func tool(_ id: ToolID? = nil, label: String, systemImage: String, placing placement: Placement) {
         tool(id, label: label, systemImage: systemImage, placing: placement) { _ in PlaceShapeTool(placement) }
@@ -209,6 +218,21 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
         let descriptor = ToolDescriptor(id: id ?? ToolID(placing: kind), label: label, systemImage: systemImage)
         contributions.append(RawContribution(ToolRegistration(descriptor: descriptor, placement: placement, make: make),
                                              to: CorePoints.Tools.self, for: .any, from: pluginID))
+        // Every tool that places a shape has its item in Insert, so a new kind is put down from the menu bar with no code of its own.
+        let tool = descriptor.id
+        contributions.append(RawContribution(CommandRegistration(command: .insert(tool), title: label, section: InsertMenu.Shapes.self,
+                                                                 placement: .natural, answering: nil, moment: .whenIdle, menuTitle: nil,
+                                                                 isEnabled: { $0.editor.canInsert(tool) },
+                                                                 run: { $0.editor.insert(tool, beside: $0.shapes) }),
+                                             to: CorePoints.Commands.self, for: .any, from: pluginID))
+    }
+
+    /// How a shape of this kind is made when Insert puts it down beside one shape (`editor.insert`):
+    /// `make` is handed the shape its placement made and the shape it goes beside, and gives back the
+    /// shape to put down, of this kind (StickyNotes' takes that shape's color, as tldraw's adjacent
+    /// notes do). One per kind.
+    public mutating func madeBeside(_ make: @escaping @MainActor (AnyShapeRecord, AnyShapeRecord) -> AnyShapeRecord) {
+        contribute(MadeBesideShape(make: make), to: CorePoints.MadeBeside.self)
     }
 
     /// What the kind is called, and its symbol, wherever a shape is shown by its kind (a panel's

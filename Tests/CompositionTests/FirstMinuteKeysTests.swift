@@ -51,10 +51,9 @@ let firstMinutePending: [String] = []
             said.append("\(name): \(presses) presses, \(clicks) clicks")
             if presses > clicks { gaps.append("\(name): \(presses) presses to \(clicks) clicks") }
         }
-        // By the pointer: the Note tool, then the canvas.
+        // By the pointer: the Note tool, then the canvas. By the keys, Insert › Note's ⇧Return.
         task("a note", clicks: 2) {
-            walk.press(Chord("n"))
-            walk.press(.return)
+            walk.press(Chord(Key.return, .shift))
         }
         let person = try require(editor.editingShapeID, "a note edited")
         task("its words", clicks: 0) { w.type("Someone we work with", with: walk) }

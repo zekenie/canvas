@@ -100,6 +100,17 @@ extension EditMenu.FindAndSpelling: MenuBarSection {
     public static var menu: MenuBarMenu { "Edit" }
 }
 
+/// The Insert menu, the core's: a shape of each kind a tool places, put down without the pointer
+/// (`CanvasCommand.insert`, `editor.insert`).
+public enum InsertMenu {
+    /// An item for each tool that places a shape, in plugin order, as the toolbar lists them.
+    public enum Shapes {}
+}
+
+extension InsertMenu.Shapes: MenuBarSection {
+    public static var menu: MenuBarMenu { "Insert" }
+}
+
 /// The View menu's sections commands share with the window's own items, and the core's own commands
 /// are in. Enter Full Screen's, the window's, comes last.
 public enum ViewMenu {
