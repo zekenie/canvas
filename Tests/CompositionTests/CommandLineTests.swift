@@ -138,16 +138,32 @@ edge "API" -> "Cache" channel: none
         expectEqual(again["changes"]?.arrayValue?.map { $0["did"] }, ["unchanged"])
         expectEqual(again["warnings"], [], "what it names hasn't changed")
     },
-    test("canvas draw sticky-note is as tall as its text, from its top; a size: is as asked") {
+    test("canvas draw sticky-note is as tall as its text, from its top; a size: is the least it is, kept through typing, and never cuts its text off") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         let lines = (1...12).map { "Line \($0)" }.joined(separator: "\\n")
         _ = try drawnInProcess(#"sticky-note "Long" text: "\#(lines)""#, on: editor)
         _ = try drawnInProcess(#"sticky-note "Sized" right of "Long" text: "\#(lines)" size: 200x200"#, on: editor)
         _ = try drawnInProcess(#"sticky-note "Short" right of "Sized" text: "Hi""#, on: editor)
-        @MainActor func height(_ title: String) -> CGFloat? { editor.document.shapes.first { $0[TitleProperty.self] == title }?.box?.height }
+        _ = try drawnInProcess(#"sticky-note "Tall" right of "Short" text: "Hi" size: 260x400"#, on: editor)
+        @MainActor func note(_ title: String) -> ShapeRecord<StickyNote>? {
+            editor.document.shapes.first { $0[TitleProperty.self] == title }?.typed(as: StickyNote.self)
+        }
+        @MainActor func height(_ title: String) -> CGFloat? { note(title)?.frame.height }
         expectEqual(height("Long"), 12 * 19 + 33, "twelve lines")
-        expectEqual(height("Sized"), 200, "as asked")
+        expectEqual(height("Sized"), 12 * 19 + 33, "as tall as its text, past the height asked")
+        expectEqual(note("Sized")?.props.givenHeight, 200, "which it keeps")
         expectEqual(height("Short"), 200, "a new note's")
+        expectEqual(height("Tall"), 400, "as asked")
+        // Typed into, it keeps the height it was given, as a note resized by hand does.
+        let tall = try require(note("Tall")?.id)
+        expect(editor.beginEditing(tall))
+        let textView = try require(editor.makeEditingView()?.firstResponder as? NSTextView)
+        textView.insertText(" there", replacementRange: textView.selectedRange())
+        editor.endEditing()
+        expectEqual(height("Tall"), 400, "typing keeps it")
+        // Restated shorter than a new note, with a line of text: as asked, the text fitting.
+        _ = try drawnInProcess(#"sticky-note "Short" size: 260x120"#, on: editor)
+        expectEqual(height("Short"), 120)
     },
     test("canvas boards lists the open boards; --board picks one by its id, its file or its name") {
         try configureBoards()

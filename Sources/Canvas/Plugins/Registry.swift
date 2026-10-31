@@ -49,6 +49,8 @@ public struct Registry {
     let strokedShapes: [ShapeKind: any StrokedShape]
     /// Kinds laid out at another size than their box (`LaidOutBox`), found once: every shape's frame asks.
     let laidOutBoxes: [ShapeKind: any LaidOutBox]
+    /// Kinds whose shapes take a frame they're given their own way (`CustomSizing`), found once.
+    let customSizings: [ShapeKind: any CustomSizing]
     /// What provides each layout input (`registrar.layoutInput`), by the key's name, found once: a
     /// shape laid out asks for its inputs.
     let layoutProviders: [String: LayoutProvider]
@@ -109,6 +111,7 @@ public struct Registry {
         if let kind = laidOutBoxes.keys.filter(containingKinds.contains).min(by: { $0.rawValue < $1.rawValue }) {
             throw .invalid(point: "Shapes", reason: "\(kind) holds shapes, so it can't be laid out past its box")
         }
+        customSizings = definitions.compactMapValues { $0 as? any CustomSizing }
         customSkeletons = definitions.compactMapValues { $0 as? any CustomSkeleton }
         skeletonOutlines = definitions.compactMapValues { $0 as? any CustomSkeletonOutline }
         strokedShapes = definitions.compactMapValues { $0 as? any StrokedShape }
@@ -337,6 +340,26 @@ public struct Registry {
 
     /// Whether a kind's shapes may be laid out at another size than their box (`LaidOutBox`).
     public func isLaidOutBox(_ kind: ShapeKind) -> Bool { laidOutBoxes[kind] != nil }
+
+    /// Whether a kind's shapes take a frame they're given their own way (`CustomSizing`).
+    public func takesFramesItsOwnWay(_ kind: ShapeKind) -> Bool { customSizings[kind] != nil }
+
+    /// The shape given `frame`, in world units, as a resize by hand or `canvas draw`'s `size:` gives it, `axes` saying
+    /// which ways the frame gives its size, over `context` (the shapes as the writer has them): as its kind takes it
+    /// (`CustomSizing`: a note keeps a height it's given as the least it is, and is as tall as its words need), else
+    /// its box. As it is for a shape kept aside or with no box.
+    public func sized(_ record: AnyShapeRecord, to frame: CGRect, giving axes: SizeAxes, in context: ShapeContext) -> AnyShapeRecord {
+        guard !record.isOpaque, record.box != nil else { return record }
+        var record = record
+        if let sizing = customSizings[record.kind] { sizing.erasedSize(&record, to: frame, giving: axes, in: context) } else { record.box = frame }
+        return record
+    }
+
+    /// Whether a shape is resized by hand as far as its kind says (`CustomSizing.isResizable`): true for a kind that
+    /// says nothing of it. Which kinds resize at all is Selection's (`ShapeResizing`).
+    public func isResizable(_ record: AnyShapeRecord, in context: ShapeContext) -> Bool {
+        customSizings[record.kind].map { $0.erasedIsResizable(record, in: context) } ?? true
+    }
 
     /// A shape's outline as its kind draws it (its kind's `indicatorPath`), in world units: on the
     /// shape's own edge, which the core grows outward before it strokes a selection, a hover or the

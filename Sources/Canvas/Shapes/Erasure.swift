@@ -94,6 +94,17 @@ extension DerivedProps {
     }
 }
 
+extension CustomSizing {
+    func erasedSize(_ record: inout AnyShapeRecord, to frame: CGRect, giving axes: SizeAxes, in context: ShapeContext) {
+        guard var shape = record.typed(as: Props.self) else { return }
+        size(&shape, to: frame, giving: axes, in: context)
+        record.props = shape.props
+    }
+    func erasedIsResizable(_ record: AnyShapeRecord, in context: ShapeContext) -> Bool {
+        record.typed(as: Props.self).map { isResizable($0, in: context) } ?? false
+    }
+}
+
 extension PaintOrderAnchored {
     func erasedPaintAnchor(of record: AnyShapeRecord, in document: CanvasDocument) -> ShapeID? {
         record.typed(as: Props.self).flatMap { paintAnchor(of: $0, in: document) }

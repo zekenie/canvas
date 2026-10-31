@@ -201,7 +201,7 @@ private func close(_ a: [Int], _ b: [Int], within tolerance: Int = 3) -> Bool {
         let paint = editor.paintOrder(in: CGRect(x: 90, y: 250, width: 20, height: 5)).map(\.id)
         expect(!paint.contains(rel), "an area only the stored box reaches does not find it")
     },
-    test("no title pill and no chip shows above it, titled or not, and no resize handles; it is selected as any note is") {
+    test("no title pill and no chip shows above it, titled or not, and no resize handles, where a plain type has them; it is selected as any note is") {
         let editor = try makeEditor()
         let titled = editor.addTypeNote(title: "owner")
         let untitled = editor.addTypeNote(at: CGRect(x: 400, y: 60, width: 200, height: 200))
@@ -209,10 +209,18 @@ private func close(_ a: [Int], _ b: [Int], within tolerance: Int = 3) -> Bool {
             expectEqual(editor.titlePillRect(of: id), nil, "no pill above it")
             expectEqual(editor.adornmentFrames(of: id).count, 0, "and no chip")
         }
+        // Its size is its name's, so it has none of a note's resize handles, on the capsule or the box it stores.
         editor.selection = titled
-        expect(editor.handle(atViewPoint: try require(editor.laid(titled)).origin) == nil, "no handle")
+        let capsule = try require(editor.laid(titled)), box = try require(editor.box(titled))
+        for corner in [capsule.origin, CGPoint(x: capsule.maxX, y: capsule.maxY), box.origin, CGPoint(x: box.maxX, y: box.maxY)] {
+            expect(editor.handle(atViewPoint: corner) == nil, "no handle at \(corner)")
+        }
+        expect(!editor.shapeParts(of: titled).contains { $0.role == .handle }, "and no handle among its parts")
         let plain = editor.addTypeNote(marked: false, title: "Person", at: CGRect(x: 40, y: 300, width: 200, height: 200))
         expect(editor.titlePillRect(of: plain) != nil, "a plain type keeps its pill")
+        editor.selection = plain
+        let paper = try require(editor.laid(plain))
+        expect(editor.handle(atViewPoint: CGPoint(x: paper.maxX, y: paper.maxY)) != nil, "and a plain type's paper resizes")
     },
     test("an arrow bound to it ends at the capsule, not at the box it stores; the extent follows") {
         let editor = try makeEditor()

@@ -89,7 +89,7 @@ private final class ContentsList {
         expectEqual(read[migrated.id]?.typed(as: StickyNote.self)?.props.text, migrated.typed(as: StickyNote.self)?.props.text,
                     "not escaped again")
         expectEqual(try codec.encode(read), saved)
-        expectEqual(codec.version(of: StickyNote.kind), 3)
+        expectEqual(codec.version(of: StickyNote.kind), 4, "today's: a note keeps a height it's given since its fourth")
     },
     test("a note whose text is only a mention is listed by it, whitespace around it or not; one of only whitespace is an Empty Note") {
         let editor = try noteEditor()

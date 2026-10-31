@@ -38,7 +38,7 @@ import Types
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let directory = "Tests/CompositionTests/Fixtures/kinds"
-        expectEqual(codec.version(of: StickyNote.kind), 3)
+        expectEqual(codec.version(of: StickyNote.kind), 4)
         for version in 0...2 {
             let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/sticky-note.v\(version).json"))
             let note = try require(codec.decodeRecord(props: data, kind: StickyNote.kind, version: version).typed(as: StickyNote.self))

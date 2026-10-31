@@ -20,8 +20,8 @@ final class SelectionState {
     /// The zoom each kind that says so reads at (`ReadableZoom`), found once.
     @ObservationIgnored let readableZooms: [ShapeKind: CGFloat]
     /// The smallest each resizable kind's shapes go (`ShapeResizing`), found once. A kind laid out
-    /// past its box (`LaidOutBox`) is left out: handles on the box it stores would sit under a shape
-    /// drawn larger, and a resize would write the stored box under it.
+    /// past its box (`LaidOutBox`) is left out unless it takes a frame its own way (`CustomSizing`):
+    /// writing the frame it's laid out in as its box would put that frame elsewhere.
     @ObservationIgnored let minimumSizes: [ShapeKind: CGSize]
     /// What the open step's nudges moved, how far in all, and the container each was in before the first: settled as
     /// the step closes (`settleNudge`).
@@ -131,7 +131,9 @@ final class SelectionState {
         rules = editor.registry.contributionByKind(to: ShapeSelectability.self)
         openers = editor.registry.contributionByKind(to: ShapeOpening.self)
         readableZooms = editor.registry.contributionByKind(to: ReadableZoom.self)
-        minimumSizes = editor.registry.contributionByKind(to: ShapeResizing.self).filter { !editor.registry.isLaidOutBox($0.key) }
+        minimumSizes = editor.registry.contributionByKind(to: ShapeResizing.self).filter {
+            !editor.registry.isLaidOutBox($0.key) || editor.registry.takesFramesItsOwnWay($0.key)
+        }
         buttonSources = editor.registry.contributions(to: CanvasButtons.self).map(\.value)
         decorationHits = editor.registry.contributions(to: DecorationHits.self).map(\.value).reversed()
         faceSources = editor.registry.contributions(to: ShapeFaces.self).map(\.value).reversed()

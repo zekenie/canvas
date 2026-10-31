@@ -857,14 +857,41 @@ registrar.shape(StickyNoteDefinition()) { note in
 }
 ```
 
-A note is as tall as its text, and never shorter than a new one's 200 points (tldraw's note grows
-the same way): `NoteStyle.fittedHeight(of:width:keeping:)` measures the text as the render draws
-it, pills and all, with string drawing, and the note's editor writes the height in the same update
-as the text (`textDidChange`), so growing is part of the typing's step; its text view grows with
-the editor the canvas lays over the note. A note made or given text from properties is fitted too
-(`DerivedProps`, each mention measured as a live pill by the name it holds, `measuredString`), so
-`canvas draw` places it as tall as typing it would make it, and beginning to edit it grows it no
-taller; a board read keeps what it saved.
+A note is as tall as its text, and never shorter than its least height: the height it was given
+(`givenHeight`, by a resize or `canvas draw`'s `size:`), else a new one's 200 points (tldraw's note
+grows the same way): `NoteStyle.fittedHeight(of:width:least:keeping:)` measures the text as the
+render draws it, pills and all, with string drawing, and the note's editor writes the height in
+the same update as the text (`textDidChange`), so growing, and shrinking back to the least, are
+part of the typing's step; its text view grows with the editor the canvas lays over the note. A
+note made or given text from properties is fitted too (`DerivedProps`, each mention measured as a
+live pill by the name it holds, `measuredString`), so `canvas draw` places it as tall as typing it
+would make it, and beginning to edit it grows it no taller; a board read keeps what it saved.
+
+A note resizes with Selection's handles on its paper ([Resizing](#resizing)): its definition takes
+a frame its own way (`CustomSizing`, [Capabilities](#capabilities)), so a resize and draw's whole
+`size:` give it a frame alike. It takes the width (its words rewrap there), keeps a height it's
+given as its least, and is as tall as its words past it, so a side dragged past them stops there;
+never smaller than 80 by 52 by hand (`StickyNote.minimumSize`), and a relationship type's pill,
+whose size is its name's, not at all:
+
+```swift
+extension StickyNoteDefinition: CustomSizing {
+    func size(_ shape: inout ShapeRecord<StickyNote>, to frame: CGRect, giving axes: SizeAxes, in context: ShapeContext) {
+        guard isResizable(shape, in: context) else { return shape.props.frame = frame }   // a pill: the box as given
+        shape.props.frame.origin = frame.origin
+        if axes.contains(.width) { shape.props.frame.size.width = frame.width }
+        if axes.contains(.height) {
+            shape.props.givenHeight = frame.height
+            shape.props.frame.size.height = frame.height
+        }
+        derive(&shape.props)                     // as tall as its words, never under the height it was given
+    }
+
+    func isResizable(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> Bool {
+        NoteLayout.pill(shape, in: context) == nil
+    }
+}
+```
 
 The note's render draws its text with string drawing (`NSAttributedString.draw`), and its editing
 view is a TextKit 2 `NSTextView` laid over it, which the canvas scales by the zoom; the two must
@@ -2525,7 +2552,19 @@ overrides; a minimum that isn't above zero and finite either way refuses the plu
   room whatever it says, and draws what it shows. The translation adjuster isn't asked: that's a
   move's. ⌥ and an arrow resize by a unit, unsnapped, as a nudge moves one.
 - **Escape** puts the box back as it was as the drag began (its box alone, so what else changed
-  meanwhile stays), and the step comes to nothing.
+  meanwhile stays; a kind that takes a frame its own way, the shape as it was, unless something else
+  wrote it during the drag), and the step comes to nothing.
+- **A kind laid out past its box** (`LaidOutBox`: a note with rows) is resized only if it takes a
+  frame its own way (`CustomSizing`), and then only the shapes it says (`isResizable`: not a
+  relationship type's pill). Its handles are on the frame it's laid out in (`context.frame(of:)`),
+  which is the box for every other kind, and every frame a drag or a key gives goes through
+  `registry.sized(_:to:giving:in:)` with the ways the handle gives (a side's one, a corner's or ⇧'s
+  both), so `canvas draw`'s `size:`, which goes through it too, agrees. Where the kind lays the shape
+  out at another size than that frame (a note its words keep taller), the shape is moved, along each
+  way that changes, so the scaling's anchor stays where it was across it: dragged past what it needs,
+  a side stops there, and the side opposite stays put; along a way that doesn't change it grows as
+  its kind lays it out (a note narrowed by its side, down from its top). A key that leaves the frame
+  as it was commits nothing and leaves no step.
 - **The cursor** over a resize handle, and while it's pressed and dragged, is the frame-resize
   cursor for its place (`CanvasCursor.resize(_:)`, the core's, by side or corner): macOS 15's in the
   app; before it, the left-right and up-down arrows on a side, and the crosshair on a corner, which
@@ -11451,7 +11490,10 @@ against the board as the run starts:
    placed at, unless the statement gives one; given a width alone (`size: 300x`, a `Size` with no
    height), the shape is built at that width and what the kind derives is put in step there,
    whether any property is set or not (`registry.derived(_:)`), so a note is that wide and as tall
-   as its text in one run, and a kind that derives nothing keeps its height; a `size:` under the
+   as its text in one run, and a kind that derives nothing keeps its height; given whole
+   (`size: 300x200`), it's given that frame as a resize by hand gives one (`registry.sized(_:to:giving:in:)`,
+   `CustomSizing`), so a note keeps the height as its least, typing never taking it under, and is
+   as tall as its words past it; a `size:` under the
    smallest the kind's placement draws (`Placement.minimumSize`: a frame's 96 × 64, its tool's and
    resizing's too) is `invalid_value`, as one too big is, and `kinds` says it (`smallest`). What a
    shape is bound to (`ShapeReferencing`) must be on the board as the script leaves it, or it's
@@ -12623,7 +12665,7 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   input Types provides (`RowBook.provide`) only for the kinds that say where their rows go
   (`TypeRowsPlaces`, one contribution a kind, refused for a kind that holds neither `schema` nor `is`). The
   note is a `LaidOutBox` that reads it: as wide as it stores (so a type given to a note moves nothing beside it)
-  and as tall as its words and the rows, never shorter than a new note, with no record written: the stored box is the note as it is with no rows.
+  and as tall as its words and the rows, never shorter than its least height (the height it was given, else a new note's), with no record written: the stored box is the note as it is with no rows.
   Nothing is stored of the rows, and no change of them is an undo step. A relationship type has no rows: it is a
   pill. Types provides `TypeRows.pill` (`LayoutInputKey<TypePill>`: its name or none, its field count, and the size
   its text measures) for every shape that holds `schema` and the mark, of a kind that says where its rows go, whatever
@@ -13348,6 +13390,7 @@ it, the core or a horizontal.
 | `CustomTranslation` | Moving by its own rules instead of by its frame, when a `TranslatingSession` moves it (dragging the selection, a shape just placed). When a drag starts, `beginTranslation` gets the shape, every shape moving with it and the starting transaction (committed on its own, before the first move), and returns a `ShapeTranslation`: a closure run on every drag event with the drag's delta (the pointer's, or what the [translation adjuster](#the-cores-part-the-translation-adjuster) made of it: Snapping's snap), after the moving boxes have moved. A kind without a frame needs this to be movable at all. | Arrows (alone, bound ends slide on their shapes; with a shape they're bound to, they keep every binding) |
 | `HandleProviding` (Selection's) | Draggable handles on the only selected shape. The select tool finds, draws and hit-tests them; `pressHandle` returns `.drag` or `.consumed`, and `dragSession` does the dragging. | Arrows |
 | `BrushHitTesting` (Selection's) | Whether the marquee touches it, when the brush overlaps its bounds without containing them. Default: `ShapeGeometry.isHit(byBrush:)`. | Arrows (against the visible arc) |
+| `CustomSizing` | Takes a frame it's given its own way rather than as its box: `size(_:to:giving:in:)` writes the props as the shape takes the frame it's to be laid out in, `giving` the ways the frame says (`SizeAxes`: a side's resize handle gives one, the other being as the shape is), and `isResizable(_:in:)` (default true) says which shapes are resized by hand. What a resize by hand and `canvas draw`'s whole `size:` give a shape go through `registry.sized(_:to:giving:in:)`, which sets the box for a kind that doesn't adopt it. A `LaidOutBox` kind that adopts it is resized on the frame it's laid out in; one that doesn't is never resized by hand. | StickyNotes (a note keeps a height it's given as its least, and is as tall as its words past it; a relationship type's pill isn't resized) |
 | `DerivedProps` | Props that hold something following from the rest, which the kind's setters keep in step. A shape made from properties written somewhere else, `registry.shape(_:properties:)`, or given some of its own that way, `registry.shape(_:setting:)` (the command line's `draw`), goes through `derive(_:)` first, so it's as its setters would have left it, and so does one handed to `registry.derived(_:)` (`draw`'s width alone); a board read (a shape is as saved), a paste, and what a person does don't. | StickyNotes (a note's height, from its text) |
 | `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc and its heads, where its kept geometry is three points) |
@@ -14850,7 +14893,7 @@ keyboard             service KeyboardState · tool tips · menu keys · keyboard
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → Add Note Beside · shape sticky-note v3 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
+sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → Add Note Beside · shape sticky-note v4 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference

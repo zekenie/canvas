@@ -75,13 +75,14 @@ struct NoteLayout {
 
     /// The paper's size: the stored one, no rows. With rows, as wide as it stores (rows never widen
     /// a note, so a type given to one moves nothing beside it) and as tall as the padding, the words,
-    /// the gap, the rows and the padding, never under a new note's height nor what it stores.
+    /// the gap, the rows and the padding, never under its least height (the height it was given, else
+    /// a new note's) nor what it stores.
     static func size(of note: StickyNote, rows: RowsExtent?) -> CGSize {
         guard let rows else { return note.frame.size }
         let p = NoteStyle.padding
         let width = note.frame.width
         let words = wordsHeight(of: note.text, width: width - p * 2, rows: rows)
-        let needed = max(NoteStyle.size.height, p + words + (words > 0 ? NoteStyle.blockGap : 0) + rows.height + p)
+        let needed = max(note.leastHeight, p + words + (words > 0 ? NoteStyle.blockGap : 0) + rows.height + p)
         return CGSize(width: width, height: max(note.frame.height, needed))
     }
 }

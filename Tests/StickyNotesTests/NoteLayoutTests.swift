@@ -4,6 +4,7 @@ import CanvasTesting
 import Foundation
 import Geometry
 import Mentions
+import Selection
 import StickyNotes
 import TestKit
 import Titles
@@ -131,6 +132,31 @@ private func lines(_ count: Int) -> String { (1...count).map { "x\($0)" }.joined
         expectEqual(editor.words(of: id)?.height, 0)
         expectEqual(NoteWordsCounts.block(of: id, in: editor), CGRect(x: 26, y: 26, width: 200 - 2 * padding, height: rows))
         expectEqual(editor.laidOut(id), CGRect(x: 10, y: 10, width: 200, height: padding + rows + padding))
+    },
+    test("resized on its paper: its handles are on the frame it's laid out in, narrowed its words and rows take the width, and dragged up it stops under its rows") {
+        let h = try EditorHarness(plugins: notePlugins)
+        let type = h.editor.addType(fields: 2)
+        let note = h.editor.addNote(of: [type], frame: CGRect(x: 40, y: 30, width: 260, height: 200), text: MentionText(plain: lines(3)))
+        h.editor.selection = note
+        let paper = try require(h.editor.laidOut(note))
+        expectEqual(h.editor.handle(atViewPoint: h.view(CGPoint(x: paper.maxX, y: paper.maxY))), AnyHashable(ResizeHandle.bottomRight))
+        @MainActor func drag(_ handle: ResizeHandle, from point: CGPoint, by delta: CGPoint) {
+            let start = h.view(point)
+            h.move(to: start)
+            h.press(at: start)
+            h.drag(to: start + delta / 2)
+            h.drag(to: start + delta)
+            h.release()
+        }
+        drag(.right, from: CGPoint(x: paper.maxX, y: paper.midY), by: CGPoint(x: -60, y: 0))
+        let narrowed = try require(h.editor.laidOut(note))
+        expectEqual(narrowed.width, 200)
+        expectEqual(try require(NoteWordsCounts.block(of: note, in: h.editor)).width, 200 - 2 * padding, "the rows at its width")
+        drag(.bottom, from: CGPoint(x: narrowed.midX, y: narrowed.maxY), by: CGPoint(x: 0, y: -150))
+        let words = try require(h.editor.words(of: note))
+        let needed = padding + words.height + gap + rowsHeight(2) + padding
+        expect(needed < StickyNote.defaultSize.height, "shorter than a new note: \(needed)")
+        expectEqual(h.editor.laidOut(note), CGRect(x: 40, y: 30, width: 200, height: needed), "no shorter than its words and rows")
     },
     test("as wide as it stores, wide or narrow: rows never widen a note") {
         let editor = try makeEditor()

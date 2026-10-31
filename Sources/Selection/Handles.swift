@@ -49,8 +49,8 @@ extension HandleProviding {
 
 extension CanvasEditor {
     /// The only selected shape's handles, in view space, front to back: its kind's own
-    /// (`HandleProviding`), then, for a resizable kind (`ShapeResizing`), those of its box's corners
-    /// and sides that show there (`ResizeHandle`). A read-only shape (`registrar.readOnlyShapes`)
+    /// (`HandleProviding`), then, for a shape that resizes (`resizeFrame(of:)`), those of its frame's
+    /// corners and sides that show there (`ResizeHandle`). A read-only shape (`registrar.readOnlyShapes`)
     /// has none: a press there is a press on the shape. Nor does the shape being edited (an arrow's
     /// label), as in tldraw: its editing view is over them.
     func visibleHandles() -> [(handle: AnyHashable, point: CGPoint)] {
@@ -59,7 +59,7 @@ extension CanvasEditor {
         if let definition = registry.definition(for: record.kind) as? any HandleProviding {
             handles = definition.erasedHandles(of: record, in: shapeContext).map { ($0.handle, camera.toView($0.point)) }
         }
-        if let box = record.box, selectionState?.minimumSizes[record.kind] != nil {
+        if let box = resizeFrame(of: record) {
             let view = camera.toView(box)
             handles += ResizeHandle.shown(on: view).map { (AnyHashable($0), $0.point(on: view)) }
         }

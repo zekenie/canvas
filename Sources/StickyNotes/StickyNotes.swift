@@ -25,22 +25,36 @@ public struct StickyNote: BoxShapeProps {
         // Its text may mention shapes: text that would now read as a mention (or an escaped one)
         // is escaped, so it stays the text it was.
         PropsMigration("text may mention shapes") { props in MentionTextFormat.escapeLookalikesV1(in: &props, "text") },
+        // It keeps a height it's given (a resize, `canvas draw`'s `size:`) as the least it is: a member that's new,
+        // so a note saved before it is never shorter than a new one, as it was.
+        PropsMigration("givenHeight"),
     ]
     public static let properties = Properties<StickyNote>(title: "Sticky note") {
         Property("frame", \.frame).required()
         Property("text", \.text).description("What the note says.")
+        Property("givenHeight", \.givenHeight).unlisted()
     }
     public var frame: CGRect
     /// What it says, with mentions of other shapes.
     public var text: MentionText
-    public init(frame: CGRect = .zero, text: MentionText = "") {
+    /// The height it was last given (a resize that moves its top or bottom, `canvas draw`'s `size:`), which it keeps
+    /// as the least it is: it grows past it with its words and comes back to it as they go. Nil for a note never
+    /// given one, whose least is a new note's height. Its own to keep, so no attribute of a script's: `size:` sets it.
+    public var givenHeight: CGFloat?
+    public init(frame: CGRect = .zero, text: MentionText = "", givenHeight: CGFloat? = nil) {
         self.frame = frame
         self.text = text
+        self.givenHeight = givenHeight
     }
     public init() { self.init(frame: .zero) }
     /// A new note, typed or not: one width, wide enough for a type's rows to read (a field's name and a
     /// short value), since rows never widen a note.
     public static let defaultSize = CGSize(width: 260, height: 200)
+    /// The smallest a note is resized to by hand: a few letters a line, and the padding round one line
+    /// (`NoteStyle.padding`, `lineHeight`). Not its placement's, so `canvas draw` still draws one smaller (a badge).
+    public static let minimumSize = CGSize(width: 80, height: 52)
+    /// The least it's as tall as, whatever its words: the height it was given, else a new note's.
+    var leastHeight: CGFloat { givenHeight ?? Self.defaultSize.height }
 }
 
 extension ShapeRecord where Props == StickyNote {
@@ -80,6 +94,7 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.colorable(default: .yellow)                   // a note has a color: its paper, yellow without one
             note.tint(NoteStyle.tint)                          // its yellow, wherever it's listed by its kind
             note.createOnDoubleClick(place)                    // opts into the selection's double-click
+            note.resizable(minimumSize: StickyNote.minimumSize) // and its handles, on the paper as it's laid out
             note.title(coverSurface: NoteStyle.color)          // and titles: a title, its pill, its cover, and its row's name
             note.titlePillLook { shape, _ in                   // a type's note is white paper, so its cover's ink is chosen for that
                 shape[TypeSchemaProperty.self] != nil ? TitlePillLook(coverSurface: NoteStyle.typePaper) : nil
@@ -156,14 +171,35 @@ extension StickyNoteDefinition: LaidOutBox {
     }
 }
 
-/// A note is as tall as its text, and no shorter than a new one: typing fits it (`NoteEditor`), and
-/// so does a note made or given text from properties (the command line's `draw`), each mention
-/// measured as a live pill by the name it holds (`measuredString`), as the pure function of its
-/// props this is: as tall as typing it would make it while its shapes are called that.
+/// A note is as tall as its text, and no shorter than the height it was given, else a new one's: typing
+/// fits it (`NoteEditor`), and so does a note made or given text from properties (the command line's
+/// `draw`), each mention measured as a live pill by the name it holds (`measuredString`), as the pure
+/// function of its props this is: as tall as typing it would make it while its shapes are called that.
 extension StickyNoteDefinition: DerivedProps {
     func derive(_ note: inout StickyNote) {
         let string = NoteStyle.text.measuredString(note.text, width: note.frame.width - NoteStyle.padding * 2)
-        note.frame.size.height = NoteStyle.fittedHeight(of: string, width: note.frame.width, keeping: note.frame.height)
+        note.frame.size.height = NoteStyle.fittedHeight(of: string, width: note.frame.width, least: note.leastHeight, keeping: note.frame.height)
+    }
+}
+
+/// A note given a frame (a resize, `canvas draw`'s `size:`) takes its place and its width, keeps a height
+/// it's given as the least it is (`givenHeight`), and is as tall as its words need past it (`derive`): a
+/// resize stops at its words, and typing never takes it under the height it was given. A relationship type's
+/// pill is as big as its name, so it isn't resized, and the box it stores is what it's given, as any box's.
+extension StickyNoteDefinition: CustomSizing {
+    func size(_ shape: inout ShapeRecord<StickyNote>, to frame: CGRect, giving axes: SizeAxes, in context: ShapeContext) {
+        guard isResizable(shape, in: context) else { return shape.props.frame = frame }
+        shape.props.frame.origin = frame.origin
+        if axes.contains(.width) { shape.props.frame.size.width = frame.width }
+        if axes.contains(.height) {
+            shape.props.givenHeight = frame.height
+            shape.props.frame.size.height = frame.height     // what it keeps where its width leaves its words no room
+        }
+        derive(&shape.props)
+    }
+
+    func isResizable(_ shape: ShapeRecord<StickyNote>, in context: ShapeContext) -> Bool {
+        NoteLayout.pill(shape, in: context) == nil
     }
 }
 
@@ -176,7 +212,8 @@ extension StickyNoteDefinition: Editable {
     func makeEditingView(for shape: ShapeRecord<StickyNote>, context: EditContext<StickyNote>) -> EditingView {
         // A relationship type is edited in its pill: its name, one line over the capsule.
         if let editor = pillEditor(for: shape, context: context) { return EditingView(view: editor, firstResponder: editor.field) }
-        let editor = NoteEditor(text: shape.props.text, stored: shape.frame, frame: context.frame ?? shape.frame, context: context)
+        let editor = NoteEditor(text: shape.props.text, stored: shape.frame, least: shape.props.leastHeight,
+                                frame: context.frame ?? shape.frame, context: context)
         return EditingView(view: editor, firstResponder: editor.first ?? editor.textView)
     }
 }
@@ -236,14 +273,18 @@ enum NoteStyle {
     static let pillFallback = NSColor(white: 0.45, alpha: 1)
 
     /// How tall a note `width` wide is to show all of `text` (as it's drawn: `NoteStyle.text`, with
-    /// its pills): its lines (the empty one after a last Return too, where the caret is), and the
-    /// padding above and below, with half a point spare so string drawing never cuts the last line;
-    /// never shorter than a new note (tldraw's note grows the same way). `height`, a note's own, is
-    /// kept when the width leaves no room for text to measure.
-    static func fittedHeight(of text: NSAttributedString, width: CGFloat, keeping height: CGFloat) -> CGFloat {
+    /// its pills): its lines (the empty one after a last Return too, where the caret is; none for no
+    /// text, as `NoteWords` measures it), and the padding above and below, with half a point spare so
+    /// string drawing never cuts the last line;
+    /// never shorter than `least`, the note's least height (`StickyNote.leastHeight`: the height it was
+    /// given, else a new note's; tldraw's note grows the same way). `height`, a note's own, is kept when
+    /// the width leaves no room for text to measure.
+    static func fittedHeight(of text: NSAttributedString, width: CGFloat, least: CGFloat, keeping height: CGFloat) -> CGFloat {
         let inner = width - padding * 2
         guard inner > 0 else { return height }
-        return max(size.height, linesHeight(of: text, inner: inner) + padding * 2)
+        // An empty string has no attributes, so it would measure as a line of AppKit's default font.
+        guard text.length > 0 else { return max(least, padding * 2) }
+        return max(least, linesHeight(of: text, inner: inner) + padding * 2)
     }
 
     /// How tall `text`'s lines are `inner` wide, with half a point spare so string drawing never cuts
@@ -281,9 +322,10 @@ final class NoteEditor: NSView, NSTextViewDelegate {
     private var isShowing = false
 
     /// `stored` is the note's frame as it is kept, `frame` the one it is laid out in (the same, until
-    /// it has rows): the text view is as big as the paper, so its text wraps where the render's does,
-    /// while the note is fitted to its words as it stores it, at the width it stores.
-    init(text: MentionText, stored: CGRect, frame: CGRect, context: EditContext<StickyNote>) {
+    /// it has rows), `least` its least height (`StickyNote.leastHeight`): the text view is as big as the
+    /// paper, so its text wraps where the render's does, while the note is fitted to its words as it
+    /// stores it, at the width it stores.
+    init(text: MentionText, stored: CGRect, least: CGFloat, frame: CGRect, context: EditContext<StickyNote>) {
         self.context = context
         sync = context.service(TypeSync<TypeSchemaProperty>.self)
         types = context.service(TypeIndex.self)
@@ -330,7 +372,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         // grows to it as editing begins, as typing would grow it, so what was cut off can be read and
         // edited; the write joins the editing session's step. Never shorter than it is: a note drawn
         // taller keeps its height until it's typed into.
-        let fitted = NoteStyle.fittedHeight(of: textView.attributedString(), width: stored.width, keeping: stored.height)
+        let fitted = NoteStyle.fittedHeight(of: textView.attributedString(), width: stored.width, least: least, keeping: stored.height)
         if fitted > stored.height {
             context.update { $0.frame.size.height = max($0.frame.size.height, fitted) }
             textView.setFrameSize(CGSize(width: frame.width, height: max(fitted, frame.height)))
@@ -375,7 +417,8 @@ final class NoteEditor: NSView, NSTextViewDelegate {
 
     /// Commits the text only when it differs from the note's: a second report of one change (after
     /// an undo, the text view's own and then the board's window's) writes nothing. The note is fitted
-    /// to it in the same write, so growing is part of the typing's step ("Typing", "Add Note").
+    /// to it in the same write, never under the height it was given, so growing and shrinking back are
+    /// part of the typing's step ("Typing", "Add Note").
     func textDidChange(_ notification: Notification) {
         let text = textView.mentionText
         let shown = textView.attributedString()
@@ -383,7 +426,7 @@ final class NoteEditor: NSView, NSTextViewDelegate {
         context.update { note in
             guard note.text != text else { return }
             note.text = text
-            note.frame.size.height = NoteStyle.fittedHeight(of: shown, width: note.frame.width, keeping: note.frame.height)
+            note.frame.size.height = NoteStyle.fittedHeight(of: shown, width: note.frame.width, least: note.leastHeight, keeping: note.frame.height)
         }
         rows?.reposition()
         context.hoverPopover(nil)

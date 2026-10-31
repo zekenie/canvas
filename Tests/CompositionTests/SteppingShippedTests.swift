@@ -230,8 +230,9 @@ extension NestedWindow {
         let unselected = renderBitmap(w.editor, size: size)
         w.editor.selectedShapeIDs = [first]
         let accent = renderBitmap(w.editor, size: size)
-        // The note's left edge, at its middle: the outline stands off it, a little to the left.
-        let edge = w.editor.camera.toView(CGPoint(x: 80, y: 180))
+        // The note's left edge, between its corner's resize handle and its side's (which are the
+        // accent wherever the keyboard is): the outline stands off it, a little to the left.
+        let edge = w.editor.camera.toView(CGPoint(x: 80, y: 130))
         let spot = try require((0..<12).map { CGPoint(x: edge.x - CGFloat($0), y: edge.y) }
             .max { difference(accent, unselected, at: $0) < difference(accent, unselected, at: $1) })
         expect(difference(accent, unselected, at: spot) > 40, "outlined at \(spot)")

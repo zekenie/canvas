@@ -144,6 +144,10 @@ private let stickyNoteSchema = #"""
     "frame" : {
       "$ref" : "#/$defs/core.rect"
     },
+    "givenHeight" : {
+      "type" : "number",
+      "x-canvas-unlisted" : true
+    },
     "groups" : {
       "description" : "The groups the shape is in, outermost first, by id.",
       "items" : {

@@ -28,12 +28,17 @@ import TestKit
 // so every board here is drawn with no standoff (`outlineStandoff = 0`, host SPI), as the POC drew
 // it; what the app draws is held by CanvasTests' outline tests. A third: the app shows the zoom
 // above the minimap while it changes, which the POC had no such thing as, so the snapshots leave
-// it out (`zoomIndicator`, hidden), and CanvasUITests hold it. The goldens stay as the POC
-// recorded them.
+// it out (`zoomIndicator`, hidden), and CanvasUITests hold it. A fourth: a selected note has
+// resize handles, which the POC's notes had none of, so "zoomed" leaves out the discs where its
+// eight are drawn (`ignoring:`), and every other pixel, the outline under them up to their edge
+// included, matches; SelectionTests and StickyNotesTests hold the handles. The goldens stay as the
+// POC recorded them.
 
-/// Compares a snapshot of `view` with Fixtures/poc-<name>.png; on a difference, writes the
-/// snapshot to build/parity-<name>.png.
-@MainActor func expectMatchesPOC(_ view: NSView, _ name: String, file: StaticString = #fileID, line: UInt = #line) throws {
+/// Compares a snapshot of `view` with Fixtures/poc-<name>.png, but for the discs `ignoring`
+/// centers (view points) on what the POC never drew; on a difference, writes the snapshot to
+/// build/parity-<name>.png.
+@MainActor func expectMatchesPOC(_ view: NSView, _ name: String, ignoring discs: [CGPoint] = [],
+                                 file: StaticString = #fileID, line: UInt = #line) throws {
     (view as? CanvasView)?.zoomIndicator.isHidden = true
     let rep = snapshot(view)
     let golden = try require(NSBitmapImageRep(data: try Data(contentsOf: URL(fileURLWithPath: "Tests/CompositionTests/Fixtures/poc-\(name).png"))),
@@ -42,6 +47,11 @@ import TestKit
     expectEqual(rep.pixelsHigh, golden.pixelsHigh, "\(name): height", file: file, line: line)
     var differing = 0
     var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
+    // A resize handle's disc, 4 view points, its stroke and its anti-aliasing, at the snapshot's 2×.
+    let scale = CGFloat(rep.pixelsWide) / view.bounds.width, reach = 7 * scale
+    func ignored(_ x: Int, _ y: Int) -> Bool {
+        discs.contains { hypot(CGFloat(x) + 0.5 - $0.x * scale, CGFloat(y) + 0.5 - $0.y * scale) <= reach }
+    }
     // Byte-identical buffers are the usual case, and quick to check. (A PNG loads unpremultiplied,
     // which only matters for pixels that aren't opaque, and the canvas has none.)
     let layout = { (r: NSBitmapImageRep) in r.bitmapFormat.subtracting(.alphaNonpremultiplied) }
@@ -51,7 +61,7 @@ import TestKit
     for y in 0..<(sameBytes ? 0 : min(rep.pixelsHigh, golden.pixelsHigh)) {
         for x in 0..<min(rep.pixelsWide, golden.pixelsWide) {
             rep.getPixel(&p, atX: x, y: y); golden.getPixel(&q, atX: x, y: y)
-            if p != q { differing += 1 }
+            if p != q, !ignored(x, y) { differing += 1 }
         }
     }
     if differing > 0 {
@@ -85,7 +95,11 @@ let pocWelcomeTexts = [
         try expectMatchesPOC(canvas, "selected-arrow")
         editor.camera.setZoom(0.6, around: CGPoint(x: 300, y: 200))
         editor.selection = notes[1]
-        try expectMatchesPOC(canvas, "zoomed")
+        // Its resize handles, which the POC's notes had none of (above): its paper's corners and the middles of its sides.
+        let paper = editor.camera.toView(try require(editor.shapeContext.frame(of: notes[1])))
+        let handles = [paper.minX, paper.midX, paper.maxX].flatMap { x in [paper.minY, paper.midY, paper.maxY].map { CGPoint(x: x, y: $0) } }
+            .filter { $0 != CGPoint(x: paper.midX, y: paper.midY) }
+        try expectMatchesPOC(canvas, "zoomed", ignoring: handles)
     },
     // Target outlines, binding hints, handles and halos, reached with the same NSEvents as in the POC.
     test("arrow interactions render identically mid-gesture: outlines, hints, handles and halos") {

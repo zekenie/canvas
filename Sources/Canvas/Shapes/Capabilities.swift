@@ -197,6 +197,35 @@ public protocol DerivedProps: ShapeDefinition {
     func derive(_ props: inout Props)
 }
 
+/// A box kind whose shapes take a frame they're given their own way, rather than as their box: what a
+/// resize by hand (Selection's handles) and `canvas draw`'s `size:` give one goes through
+/// `registry.sized(_:to:giving:in:)`, so the two agree. `size` writes the shape as it's given `frame`,
+/// the frame it's to be laid out in, `giving` the ways the frame says (a side's handle gives one, the
+/// other being as the shape is), over `context`, the shapes as the writer has them: a note takes the
+/// width, keeps a height it's given as the least it is, and is as tall as its words need past it, and
+/// a relationship type's pill, whose size is its name's, takes the frame as its box. A `LaidOutBox`
+/// kind that adopts it is resized on the frame it's laid out in; one that doesn't is never resized by
+/// hand. Conform in an extension.
+public protocol CustomSizing: ShapeDefinition where Props: BoxShapeProps {
+    func size(_ shape: inout ShapeRecord<Props>, to frame: CGRect, giving: SizeAxes, in context: ShapeContext)
+    /// Whether the shape is resized by hand: false for one whose size isn't its own to give (a
+    /// relationship type's pill, as big as its name). Default true.
+    func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool
+}
+
+extension CustomSizing {
+    public func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool { true }
+}
+
+/// Which ways a frame given to a shape gives its size (`CustomSizing`): its width, its height, or both.
+public struct SizeAxes: OptionSet, Hashable, Sendable {
+    public let rawValue: UInt8
+    public init(rawValue: UInt8) { self.rawValue = rawValue }
+    public static let width = SizeAxes(rawValue: 1)
+    public static let height = SizeAxes(rawValue: 2)
+    public static let both: SizeAxes = [.width, .height]
+}
+
 /// Painted relative to another shape instead of by document order, so bringing it to front means
 /// nothing. A connector stays just above the shapes it joins; a label, above its host.
 public protocol PaintOrderAnchored: ShapeDefinition {

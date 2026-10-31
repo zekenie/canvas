@@ -1,0 +1,14 @@
+{
+  "frame" : [
+    [
+      80,
+      80
+    ],
+    [
+      200,
+      240
+    ]
+  ],
+  "givenHeight" : 240,
+  "text" : "Ask @[Groceries](shape:7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D) first.\nThen @[Q3 \\] review \\\\ notes](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9), not \\@[Q2](shape:11111111-2222-4333-8444-555555555555).\nSaved in C:\\\\@[Plans](shape:7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D)"
+}

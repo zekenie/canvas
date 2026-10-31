@@ -462,7 +462,8 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
         // Written back as read, but for the card's version: a board lists only the kinds the app
         // writes, so a shape kept aside carries its own (`v`), as the codec keeps every shape it
         // can't use. And the subboard, written before subboards had a description, is brought up
-        // to date: an empty one, at its kind's version now. Read again, it's the same file.
+        // to date: an empty one, at its kind's version now; and so are its notes, written before
+        // notes kept a height they're given, none given one. Read again, it's the same file.
         let written = try codec.encode(loaded.file)
         let card = #""schema" : "{\"title\": \"Order\", \"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"\#n      }"#
         let subboard = "\"kind\" : \"subboard\",\n      \"props\" : {\n"
@@ -471,6 +472,7 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
             .replacingOccurrences(of: "      \"schema-card\" : 1,\n", with: "")
             .replacingOccurrences(of: subboard, with: subboard + "        \"description\" : \"\",\n")
             .replacingOccurrences(of: "\"subboard\" : 0", with: "\"subboard\" : 1")
+            .replacingOccurrences(of: "\"sticky-note\" : 3", with: "\"sticky-note\" : 4")
         expectEqual(String(decoding: written, as: UTF8.self), rewritten)
         let again = try codec.decode(written)
         expectEqual(again.file, loaded.file)

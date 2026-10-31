@@ -5,7 +5,8 @@ import CoreGraphics
 public struct ResizeStart: Sendable {
     /// The shape it resizes.
     public let id: ShapeID
-    /// Its box as the drag began, in world units: what each drag event resizes.
+    /// Its frame as the drag began, in world units: what each drag event resizes (the one it's laid out
+    /// in, its box for most kinds).
     public let box: CGRect
     /// The smallest it goes either way, in world units (its kind's).
     public let minimum: CGSize

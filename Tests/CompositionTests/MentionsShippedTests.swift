@@ -290,7 +290,8 @@ extension CanvasEditor {
         expect(editor.beginEditing(note))
         text = try textView()
         let edited = renderBitmap(editor, size: size, editing: try require(editor.makeEditingView()))
-        expect(largestDifference(missing, edited, in: noteFrame) <= 64, "the editor draws the missing pill where the canvas does")
+        // Inside the resize handles, which the selected note has at rest and not while it's edited.
+        expect(largestDifference(missing, edited, in: noteFrame.insetBy(dx: 8, dy: 8)) <= 64, "the editor draws the missing pill where the canvas does")
         let shown = text.textStorage.flatMap { $0.attribute(.attachment, at: 4, effectiveRange: nil) as? MentionAttachment }
         expectEqual(shown?.resolution, .missing)
         expectEqual(shown?.shownLabel, "Launch checklist")

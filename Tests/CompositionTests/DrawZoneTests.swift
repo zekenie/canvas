@@ -599,7 +599,8 @@ private let corners = ["top-left", "top-right", "bottom-left", "bottom-right"]
             """#)
         let s1 = try board.box("S1"), s2 = try board.box("S2"), s3 = try board.box("S3")
         let above = CGRect(x: s3.midX - 70, y: s1.minY - 64 - 100, width: 140, height: 100)
-        let left = CGRect(x: s1.minX - 40 - 180, y: s2.midY - 20, width: 180, height: 40)
+        // S15 is as tall as its line of text, never cut off: 52, past the 40 it's given.
+        let left = CGRect(x: s1.minX - 40 - 180, y: s2.midY - 26, width: 180, height: 52)
         for script in [#"sticky-note "S14" above "S3" size: 140x100"#, #"sticky-note "S15" left of "S2" size: 180x40 text: "S15 text""#,
                        "sticky-note \"S14\" above \"S3\" size: 140x100\nsticky-note \"S15\" left of \"S2\" size: 180x40 text: \"S15 text\""] {
             let drew = try board.draw(script, dryRun: true)

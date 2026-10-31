@@ -1036,13 +1036,21 @@ struct Drawing {
             built = registry.derived(built)
         }
         if !settings.isEmpty || item.existing == nil { built = try record(built, setting: settings, item, vocabulary) }
+        // A size written whole (`size: 300x200`) is given as a resize gives one: as the kind takes a frame
+        // (`registry.sized`; a note keeps the height as the least it is, and is as tall as its words past it).
+        let sizedWhole = shape.size?.height != nil
+        if sizedWhole, let box = built.box {
+            built = registry.sized(built, to: CGRect(origin: box.origin, size: item.size), giving: .both, in: target.shapes)
+        }
         items[index].record = built
         try references(of: built, item)
         // A size the kind works out from what was set (a note's height, from its text) is
         // the one it's placed at, unless the statement says one; with a width alone, the height it works
-        // out at that width (any other kind's height as it was).
+        // out at that width (any other kind's height as it was); written whole, the size the kind took.
         if let widthAlone, let height = built.box?.height {
             items[index].size = CGSize(width: widthAlone, height: height)
+        } else if sizedWhole, let size = built.box?.size {
+            items[index].size = size
         } else if shape.size == nil, let before = item.record.box?.size, let after = built.box?.size, after != before {
             items[index].size = after
         }

@@ -4,11 +4,14 @@ import Geometry
 
 /// Which box kinds' shapes are resized with handles, and how small they go: a kind opts in with
 /// `x.resizable(minimumSize:)`. The only selected shape of such a kind, unless it's read-only or
-/// being edited, has eight handles (`ResizeHandle`), on the corners of its box and the middles of
+/// being edited, has eight handles (`ResizeHandle`), on the corners of its frame and the middles of
 /// its sides, drawn, hit, hovered and pressed as any handle is, each with the resize cursor for its
 /// place, a side's pressed from anywhere along it too (`ResizeHandle.side`); a drag on one resizes
-/// the box (`ResizingSession`). At most one per kind, plus one for every kind (`.any`), which a
-/// kind's own overrides; a minimum above zero and finite either way.
+/// it (`ResizingSession`). The frame is the one the shape is laid out in (`context.frame(of:)`), its
+/// box for most kinds; a kind laid out past its box (`LaidOutBox`) resizes only if it takes a frame
+/// its own way (`CustomSizing`: a note), and then only the shapes it says (`isResizable`). At most
+/// one per kind, plus one for every kind (`.any`), which a kind's own overrides; a minimum above
+/// zero and finite either way.
 public enum ShapeResizing {}
 
 extension ShapeResizing: KeyedExtensionPoint {
@@ -31,10 +34,11 @@ extension ShapeResizing: KeyedExtensionPoint {
 // Sugar, so opting in is one line and never names the extension point.
 extension ShapeRegistrar where Definition.Props: BoxShapeProps {
     /// Its shapes are resized with handles: the only selected one, unless it's read-only or being
-    /// edited, has eight, on the corners of its box and the middles of its sides, and a drag on one
+    /// edited, has eight, on the corners of its frame and the middles of its sides, and a drag on one
     /// (a side's from anywhere along it) moves that corner or side, the one opposite staying put (⇧
-    /// keeps the proportions the box had, ⌥ keeps its center), never to less than `minimumSize`
-    /// (world units) either way, as one undo step, "Resize".
+    /// keeps the proportions the frame had, ⌥ keeps its center), never to less than `minimumSize`
+    /// (world units) either way, as one undo step, "Resize". The shape takes each frame as its kind
+    /// takes one (`CustomSizing`), else as its box.
     public mutating func resizable(minimumSize: CGSize) {
         contribute(minimumSize, to: ShapeResizing.self)
         contribute(ResizeHandle.parts, to: ShapeParts.self)
@@ -201,10 +205,12 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
     }
 }
 
-/// Dragging a resize handle (`ResizeHandle`), past the drag threshold: the box follows the pointer
+/// Dragging a resize handle (`ResizeHandle`), past the drag threshold: the frame follows the pointer
 /// as the handle says (`resizing`), from where it was as the drag began, in a transaction per drag
 /// event, the press one undo step, "Resize". ⇧ keeps its proportions and ⌥ its center, taking effect
 /// as they're pressed or let go, without the pointer moving; never smaller than its kind's minimum.
+/// The shape takes each frame as its kind takes one (`Transaction.resize`), so a note too short for
+/// its words stops there, the side opposite the handle staying put.
 /// A shape in a container (a frame) stops `Settlement.gap` inside its edge, so it never grows across
 /// it. Where the pointer puts the box is the resize adjuster's to change, if a plugin claims it
 /// (`registrar.resizeAdjuster`: Snapping's snaps the sides that move to other shapes), and it draws
@@ -217,8 +223,12 @@ final class ResizingSession {
     let handle: ResizeHandle
     /// Where the handle was pressed, in world units.
     private let origin: CGPoint
-    /// The box as the drag began.
+    /// The frame as the drag began: the one the shape is laid out in (`resizeFrame(of:)`).
     private let start: CGRect
+    /// The shape as the drag began, which Escape puts back.
+    private let before: AnyShapeRecord
+    /// The shape as the drag last left it: while it's still that, nothing else has written it since.
+    private var written: AnyShapeRecord?
     private let minimum: CGSize
     /// Where the box may reach, for a shape in a container: inside its container's edge, or as far
     /// as the box already did. Nil on its board directly.
@@ -228,16 +238,17 @@ final class ResizingSession {
     /// The last drag event's pointer, to resize again from when held keys change.
     private var last: Pointer?
 
-    /// Nil for a shape that isn't there, has no box, or whose kind isn't resizable. The resize
-    /// adjuster, if a plugin claims it, is asked now.
+    /// Nil for a shape that isn't there, has no box, or isn't resized (`resizeFrame(of:)`). The
+    /// resize adjuster, if a plugin claims it, is asked now.
     init?(shapeID: ShapeID, handle: ResizeHandle, from origin: CGPoint, in editor: CanvasEditor) {
-        guard let record = editor.document[shapeID], let box = record.box,
+        guard let record = editor.document[shapeID], let box = editor.resizeFrame(of: record),
               let minimum = editor.selectionState?.minimumSizes[record.kind] else { return nil }
         let room = ResizingSession.room(for: record, box: box, in: editor)
         self.shapeID = shapeID
         self.handle = handle
         self.origin = origin
         start = box
+        before = record
         self.minimum = minimum
         self.room = room
         adjuster = editor.resizeAdjuster(for: ResizeStart(id: shapeID, box: box, minimum: minimum, room: room))
@@ -251,20 +262,22 @@ final class ResizingSession {
             .map { $0.insetBy(dx: gap, dy: gap).union(box) }
     }
 
-    /// The box where the pointer puts it, then where the adjuster puts that, if there is one (kept in
-    /// the room whatever it says).
+    /// The frame where the pointer puts it, then where the adjuster puts that, if there is one (kept in
+    /// the room whatever it says), as the shape takes it.
     private func resize(to pointer: Pointer, in editor: CanvasEditor) {
         last = pointer
         let keepingProportions = pointer.modifiers.contains(.shift), fromCenter = pointer.modifiers.contains(.option)
         var box = handle.resizing(start, by: pointer.world - origin, keepingProportions: keepingProportions,
                                   fromCenter: fromCenter, minimum: minimum)
         if let room { box = box.intersection(room) }
+        let scaling = handle.scaling(of: start, keepingProportions: keepingProportions, fromCenter: fromCenter)
         if let adjuster {
-            let scaling = handle.scaling(of: start, keepingProportions: keepingProportions, fromCenter: fromCenter)
             box = adjuster.adjust(box, scaling: scaling, for: pointer, in: editor)
             if let room { box = box.intersection(room) }
         }
-        editor.transact("Resize") { $0.update(shapeID) { $0.box = box } }
+        let registry = editor.registry, id = shapeID
+        editor.transact("Resize") { $0.resize(id, to: box, scaling: scaling, in: registry) }
+        written = editor.document[id]
     }
 }
 
@@ -290,10 +303,17 @@ extension ResizingSession: Session {
         editor.glide(editor.transact("Resize") { $0.settle(container: shapeID) })
     }
 
-    /// Escape: the box goes back to where it was as the drag began (only its box, so what else
-    /// changed meanwhile stays), and the step comes to nothing.
+    /// Escape: the shape goes back to its size as the drag began (its box, so what else changed
+    /// meanwhile stays; for a kind that takes a frame its own way, which keeps its size in its props
+    /// as it likes, the shape as it was, unless something else wrote it during the drag, a model's
+    /// answer landing, which stays, and then its box), and the step comes to nothing.
     func cancel(in editor: CanvasEditor) -> Bool {
-        editor.transact("Resize") { $0.update(shapeID) { $0.box = start } }
+        let before = before, whole = editor.registry.takesFramesItsOwnWay(before.kind) && editor.document[shapeID] == written
+        editor.transact("Resize") {
+            $0.update(shapeID) { record in
+                if whole { record = before } else { record.box = before.box }
+            }
+        }
         return true
     }
 
@@ -306,12 +326,14 @@ extension ResizingSession: Session {
 /// The open step's key resize, settled as it closes.
 private struct KeyResizeSettle: Hashable {}
 
+/// A key resize that left the frame as it was.
+private struct KeyResizeUnchanged: Error {}
+
 extension CanvasEditor {
     /// The shape ⌥ and an arrow resize: the only selected one, of a kind that resizes (`ShapeResizing`), with nothing
     /// under way or being edited; nil otherwise, and the key goes on. A read-only one counts: the key is its, and refused.
     var keyResizable: ShapeID? {
-        guard session == nil, editingShapeID == nil, let id = selection, let record = document[id], record.box != nil,
-              selectionState?.minimumSizes[record.kind] != nil else { return nil }
+        guard session == nil, editingShapeID == nil, let id = selection, let record = document[id], resizeFrame(of: record) != nil else { return nil }
         return id
     }
 
@@ -329,13 +351,22 @@ extension CanvasEditor {
     /// settles what it now reaches or lets go of (`settle(container:)`, the drag's release), gliding there. A
     /// read-only shape is refused, and shakes; at the minimum nothing changes.
     func resize(_ id: ShapeID, moving handle: ResizeHandle, by delta: CGPoint) {
-        guard let record = document[id], let box = record.box, let minimum = selectionState?.minimumSizes[record.kind] else { return }
+        guard let record = document[id], let box = resizeFrame(of: record), let minimum = selectionState?.minimumSizes[record.kind] else { return }
         guard !isReadOnly(id) else { return refuseChanges(to: [id]) }
         var resized = handle.resizing(box, by: delta, keepingProportions: false, fromCenter: false, minimum: minimum)
         if let room = ResizingSession.room(for: record, box: box, in: self) { resized = resized.intersection(room) }
         guard resized != box, !resized.isNull, resized.width > 0, resized.height > 0 else { return }
+        let registry = registry, scaling = handle.scaling(of: box, keepingProportions: false, fromCenter: false)
         undoHistory.group {
-            transact("Resize") { $0.update(id) { $0.box = resized } }
+            // A shape its kind keeps as it is (a note at its words' height) changes nothing that shows: no step.
+            do {
+                try transact("Resize") { transaction in
+                    transaction.resize(id, to: resized, scaling: scaling, in: registry)
+                    if transaction.shapes.frame(of: id) == box { throw KeyResizeUnchanged() }
+                }
+            } catch {
+                return
+            }
             undoHistory.finishing(KeyResizeSettle()) { [weak self] in
                 guard let self, document[id] != nil else { return }
                 glide(transact("Resize") { $0.settle(container: id) })
@@ -347,16 +378,15 @@ extension CanvasEditor {
     /// anywhere along a side whose handle shows, from just inside it to just past the outline drawn off it
     /// (`ResizeHandle.side`). Nil off them, and where the shape has no resize handles (`visibleHandles`).
     func resizeSide(atViewPoint point: CGPoint) -> ResizeHandle? {
-        guard let id = selection, id != editingShapeID, let record = document[id], let box = record.box,
-              selectionState?.minimumSizes[record.kind] != nil, !isReadOnly(id) else { return nil }
+        guard let id = selection, id != editingShapeID, let record = document[id], let box = resizeFrame(of: record),
+              !isReadOnly(id) else { return nil }
         return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap)
     }
 
-    /// The only selected shape's resize handles as parts (`ResizeHandle.parts`): those shown on its box, as
+    /// The only selected shape's resize handles as parts (`ResizeHandle.parts`): those shown on its frame, as
     /// `visibleHandles` shows them; none on a shape not selected alone, a read-only one, or one being edited.
     func resizeHandleParts(of shape: AnyShapeRecord) -> [ShapePart] {
-        guard selection == shape.id, editingShapeID != shape.id, !isReadOnly(shape.id), let box = shape.box,
-              selectionState?.minimumSizes[shape.kind] != nil else { return [] }
+        guard selection == shape.id, editingShapeID != shape.id, !isReadOnly(shape.id), let box = resizeFrame(of: shape) else { return [] }
         let id = shape.id, radius = SelectionStyle.handleRadius / camera.zoom
         return ResizeHandle.shown(on: camera.toView(box)).map { handle in
             let point = handle.point(on: box)
@@ -369,5 +399,44 @@ extension CanvasEditor {
                                  return true
                              })
         }
+    }
+}
+
+extension CanvasEditor {
+    /// The frame a shape is resized on, in world units: the one it's laid out in (`context.frame(of:)`, its box for a
+    /// kind laid out as it stores), for a shape of a kind that resizes (`ShapeResizing`, a kind laid out past its box
+    /// only if it takes a frame its own way) that its kind lets resize (`registry.isResizable`: not a relationship
+    /// type's pill). Nil for any other.
+    func resizeFrame(of record: AnyShapeRecord) -> CGRect? {
+        guard record.box != nil, selectionState?.minimumSizes[record.kind] != nil, registry.isResizable(record, in: shapeContext) else { return nil }
+        return shapeContext.frame(of: record)
+    }
+}
+
+extension Transaction {
+    /// Shape `id` given `frame`, the frame it's to be laid out in, by a drag or a key that scales it as `scaling` says:
+    /// as its kind takes a frame (`registry.sized`, giving the ways that change), then, where the kind lays it out at
+    /// another size than that (a note its words keep taller), moved along each way that changes so that what stays put
+    /// stays put: the anchor, at the same place across the frame it's laid out in as across `frame` (the side opposite
+    /// the handle, or the middle). Along a way that doesn't change, it grows as its kind lays it out (a note narrowed by
+    /// its side, down from its top).
+    mutating func resize(_ id: ShapeID, to frame: CGRect, scaling: ResizeScaling, in registry: Registry) {
+        var axes: SizeAxes = []
+        if scaling.changesWidth { axes.insert(.width) }
+        if scaling.changesHeight { axes.insert(.height) }
+        guard let record = document[id] else { return }
+        let sized = registry.sized(record, to: frame, giving: axes, in: shapes)
+        update(id) { $0 = sized }
+        guard let laid = shapes.frame(of: id), laid.size != frame.size else { return }
+        // Where a frame `length` long from `low` starts so that a frame `laid` long keeps the anchor at the same place
+        // across it, from 0 at its start to 1 at its end.
+        func start(_ low: CGFloat, _ length: CGFloat, _ laid: CGFloat, _ anchor: CGFloat) -> CGFloat {
+            let across = length > 0 ? min(max((anchor - low) / length, 0), 1) : 0.5
+            return low + across * (length - laid)
+        }
+        let shift = CGPoint(x: scaling.changesWidth ? start(frame.minX, frame.width, laid.width, scaling.anchor.x) - laid.minX : 0,
+                            y: scaling.changesHeight ? start(frame.minY, frame.height, laid.height, scaling.anchor.y) - laid.minY : 0)
+        guard shift != .zero else { return }
+        update(id) { record in record.box = record.box.map { $0.offsetBy(dx: shift.x, dy: shift.y) } }
     }
 }
