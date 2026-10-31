@@ -133,8 +133,8 @@ let ships = [
     // Slash commands: the list at a `/` in the text views Mentions hosts it in, and the bar `/` opens under the
     // selection (after Keyboard and Selection, whose points it fills). Titles offers `/title`, Locking `/lock`.
     "SlashCommands.SlashCommandsPlugin", "SlashCommands.SlashBarPlugin",
-    // The table of contents, and its list in the detail panel where the panel has no one shape to show.
-    "TableOfContents.TableOfContentsPlugin", "TableOfContents.ContentsOverviewPlugin",
+    // The table of contents, in the window's sidebar.
+    "TableOfContents.TableOfContentsPlugin",
     "Titles.TitlesPlugin",
     // After Titles, whose names its pills show, and the table of contents, whose rows it names.
     "Mentions.MentionsPlugin",
@@ -277,7 +277,7 @@ let package = Package(
         .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Keyboard", "Selection", "TextEditing"]), // layer: platform
         .target(name: "ContextMenus", dependencies: ["Canvas", "Keyboard", "Selection"]),                 // layer: platform
         .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "TextEditing"]), // layer: platform
-        .target(name: "TableOfContents", dependencies: ["Canvas", "DetailPanel", "Selection", "TextEditing"]), // layer: platform
+        .target(name: "TableOfContents", dependencies: ["Canvas", "Selection", "TextEditing"]), // layer: platform
         .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Palette", "Selection"]),       // layer: platform
         .target(name: "Find", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: platform
         // Horizontals, shape traits: the interfaces verticals plug into that a shape has.
@@ -355,7 +355,7 @@ let package = Package(
         .executableTarget(name: "ColorsTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Colors", "ContextMenus", "DetailPanel", "Draw", "Geometry", "Keyboard", "Palette", "Queries", "QueryLanguage", "Selection", "SlashCommands", "TestKit", "TextEditing", "Topology", "Validation"], path: "Tests/ColorsTests"), // layer: test
         .executableTarget(name: "ContextMenusTests", dependencies: ["Canvas", "CanvasTesting", "ContextMenus", "Keyboard", "Selection", "TestKit"], path: "Tests/ContextMenusTests"), // layer: test
         .executableTarget(name: "SlashCommandsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "Keyboard", "Selection", "SlashCommands", "TestKit", "TextEditing"], path: "Tests/SlashCommandsTests"), // layer: test
-        .executableTarget(name: "TableOfContentsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "DetailPanel", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit"], path: "Tests/TableOfContentsTests"), // layer: test
+        .executableTarget(name: "TableOfContentsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Geometry", "Keyboard", "Selection", "TableOfContents", "TestKit"], path: "Tests/TableOfContentsTests"), // layer: test
         .executableTarget(name: "AdornmentsTests", dependencies: ["Adornments", "Canvas", "CanvasTesting", "Geometry", "Keyboard", "Palette", "Selection", "TestKit"], path: "Tests/AdornmentsTests"), // layer: test
         .executableTarget(name: "ClipboardTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Clipboard", "ContextMenus", "Geometry", "Grouping", "Keyboard", "Selection", "TestKit"], path: "Tests/ClipboardTests"), // layer: test
         .executableTarget(name: "StickyNotesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Palette", "ProseMaps", "Selection", "SlashCommands", "StickyNotes", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Types"], path: "Tests/StickyNotesTests"), // layer: test

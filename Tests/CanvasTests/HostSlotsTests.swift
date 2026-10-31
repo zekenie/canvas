@@ -13,6 +13,7 @@ import TestKit
 @MainActor private final class Handed {
     var editor: CanvasEditor?
     var onExit: (@MainActor () -> Void)?
+    var content = false
     var wanted = false
     var dismissed = 0
     var exits = 0
@@ -60,11 +61,38 @@ import TestKit
         handed.onExit?()
         expectEqual(handed.exits, 1)
     },
-    test("the inspector: none unless a plugin gives one, wanted only when it says, and a second is a conflict") {
+    test("the sidebar: none unless a plugin gives one, made only when the window asks, its keyboard entry as given, and a second is a conflict") {
+        expect(try Registry(plugins: []).hostSidebar == nil)
+        let handed = Handed()
+        let entry = NSView()
+        let list = Contributor(id: "list") { registrar in
+            registrar.hostSidebar(keyboardEntry: { _ in entry }) { editor, onExit in
+                let _ = handed.note(editor, onExit)
+                Text("list")
+            }
+        }
+        let registry = try Registry(plugins: [list])
+        let editor = CanvasEditor(registry: registry, file: CanvasFile(), scheduler: ManualScheduler())
+        let sidebar = try require(registry.hostSidebar)
+        expect(handed.editor == nil, "not made until the window asks")
+        _ = sidebar.view(for: editor, onExit: { handed.exits += 1 })
+        expect(handed.editor === editor)
+        handed.onExit?()
+        expectEqual(handed.exits, 1)
+        expect(sidebar.keyboardEntry?(editor) === entry)
+        expectEqual(report(registry, of: "list"), "host sidebar")
+        let plain = Contributor(id: "plain") { $0.hostSidebar { _, _ in Text("plain") } }
+        expect(try require(try Registry(plugins: [plain]).hostSidebar).keyboardEntry == nil, "none named: the window looks for one")
+        expectThrows(RegistryError.conflict(point: "HostSidebars", key: "sidebar", plugins: ["list", "plain"])) {
+            _ = try Registry(plugins: [list, plain])
+        }
+    },
+    test("the inspector: none unless a plugin gives one, with something to show and wanted only when it says, and a second is a conflict") {
         expect(try Registry(plugins: []).hostInspector == nil)
         let handed = Handed()
         let panel = Contributor(id: "panel") { registrar in
-            registrar.hostInspector(isRequested: { _ in handed.wanted }, onDismiss: { _ in handed.dismissed += 1 }) { editor, onExit in
+            registrar.hostInspector(shownWhile: { _ in handed.content }, isRequested: { _ in handed.wanted },
+                                    onDismiss: { _ in handed.dismissed += 1 }) { editor, onExit in
                 let _ = handed.note(editor, onExit)
                 Text("panel")
             }
@@ -72,6 +100,9 @@ import TestKit
         let registry = try Registry(plugins: [panel])
         let editor = CanvasEditor(registry: registry, file: CanvasFile(), scheduler: ManualScheduler())
         let inspector = try require(registry.hostInspector)
+        expect(!inspector.shownWhile(editor))
+        handed.content = true
+        expect(inspector.shownWhile(editor))
         expect(!inspector.isRequested(editor))
         handed.wanted = true
         expect(inspector.isRequested(editor))
@@ -83,6 +114,7 @@ import TestKit
         let plain = Contributor(id: "plain") { $0.hostInspector { _, _ in Text("plain") } }
         let unasked = try require(try Registry(plugins: [plain]).hostInspector)
         expect(!unasked.isRequested(editor), "one that never says it's wanted is the person's to show")
+        expect(unasked.shownWhile(editor), "and one that never says when it has something to show always has")
         expectThrows(RegistryError.conflict(point: "HostInspectors", key: "inspector", plugins: ["panel", "plain"])) {
             _ = try Registry(plugins: [panel, plain])
         }

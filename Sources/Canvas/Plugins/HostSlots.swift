@@ -6,9 +6,9 @@ import SwiftUI
 // besides, said by the plugins whose views and words they are, and placed by the host, which knows
 // no plugin. A plugin can't import the window (CanvasUI) or the app, and neither can import a
 // plugin, so what passes between them is declared here, beneath both: views over the canvas, the
-// inspector beside it, the window's subtitle, the panes of the Settings window, the toolbar's tool
-// tips, the rows of the Keyboard Shortcuts window, the menu bar's commands and the keys menus show,
-// what Copy as Image draws and the commands the app's command server runs.
+// sidebar before it and the inspector after it, the window's subtitle, the panes of the Settings
+// window, the toolbar's tool tips, the rows of the Keyboard Shortcuts window, the menu bar's commands
+// and the keys menus show, what Copy as Image draws and the commands the app's command server runs.
 // Every point is the core's, so it's always installed: a plugin contributes from its own
 // `register`, and a list without the plugin is a host without its piece.
 //
@@ -46,6 +46,34 @@ public struct HostOverlay {
     public func view(for editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> AnyView { content(editor, onExit) }
 }
 
+// MARK: The sidebar
+
+/// The view a window shows before its canvas, in a sidebar the person shows and hides (the table of
+/// contents). At most one: two are `RegistryError.conflict` at startup. Without one the window has no
+/// sidebar.
+public enum HostSidebars {}
+
+extension HostSidebars: KeyedExtensionPoint {
+    public typealias Contribution = HostSidebar
+    public static var owner: PluginID { .core }
+    public static func uniqueKeys(of _: HostSidebar, for _: ShapeTarget) -> [AnyHashable] { ["sidebar"] }
+    public static func summary(of _: HostSidebar, for _: ShapeTarget) -> String { "host sidebar" }
+}
+
+/// What `HostSidebars` stores: the sidebar's view, and the view in it that takes the keyboard. Only
+/// the sugar makes one.
+@MainActor
+public struct HostSidebar {
+    /// Where the keyboard goes when the window gives the sidebar the keyboard (View ▸ Focus Sidebar,
+    /// Focus Next Pane): the view the plugin says takes it now, nil when it names none (the window then
+    /// looks for a list, field or control in the sidebar itself).
+    public let keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)?
+    let content: @MainActor (CanvasEditor, @escaping @MainActor () -> Void) -> AnyView
+
+    /// The view, for a window's sidebar.
+    public func view(for editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> AnyView { content(editor, onExit) }
+}
+
 // MARK: The inspector
 
 /// The view a window shows beside its canvas, in its inspector (the detail panel). At most one: two
@@ -59,15 +87,20 @@ extension HostInspectors: KeyedExtensionPoint {
     public static func summary(of _: HostInspector, for _: ShapeTarget) -> String { "host inspector" }
 }
 
-/// What `HostInspectors` stores: the inspector's view, when it's wanted whether or not the person
-/// has it shown, and what hiding it meanwhile does. Only the sugar makes one.
+/// What `HostInspectors` stores: the inspector's view, when it has something to show, when it's
+/// wanted whether or not the person has it shown, and what hiding it meanwhile does. Only the sugar
+/// makes one.
 ///
-/// The window keeps the rule, for whatever is wanted: wanted while hidden, it's shown; no longer
-/// wanted, it's hidden again if that's what showed it; and hidden by the person while wanted, it's
-/// dismissed (`onDismiss`), and the keyboard goes back to the canvas.
+/// The window keeps the rule, for whatever is wanted: it shows the inspector while it's wanted, and
+/// otherwise while the person has it shown and it has something to show (`shownWhile`); and hidden by
+/// the person while wanted, it's dismissed (`onDismiss`), and the keyboard goes back to the canvas.
 @MainActor
 public struct HostInspector {
-    /// Whether the inspector is wanted now. Read in a view's body, so it reads observable state.
+    /// Whether the inspector has something to show now (the detail panel: while shapes are selected),
+    /// so the person having it shown shows it. Read in a view's body, so it reads observable state.
+    public let shownWhile: @MainActor (CanvasEditor) -> Bool
+    /// Whether the inspector is wanted now, shown or hidden by the person. Read in a view's body, so it
+    /// reads observable state.
     public let isRequested: @MainActor (CanvasEditor) -> Bool
     /// The person hid the inspector while it was wanted: end what wanted it.
     public let onDismiss: @MainActor (CanvasEditor) -> Void
@@ -312,21 +345,37 @@ extension PluginRegistrar {
         contribute(HostOverlay(alignment: alignment, coveredTop: coveredTop, content: { AnyView(content($0, $1)) }), to: HostOverlays.self)
     }
 
-    /// The window's inspector. `isRequested` says when it's wanted whether or not it's shown (read
-    /// in a view's body: observable state), and `onDismiss` ends what wanted it, when the person
-    /// hides the inspector meanwhile, and `keyboardEntry` the view that takes the keyboard when the
-    /// window gives the inspector the keyboard:
+    /// The window's sidebar, before its canvas, and `keyboardEntry` the view that takes the keyboard
+    /// when the window gives the sidebar the keyboard:
     ///
-    ///     registrar.hostInspector(isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
+    ///     registrar.hostSidebar(keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
+    ///         TableOfContentsView(editor: editor, onExit: onExit)
+    ///     }
+    public mutating func hostSidebar<Content: View>(
+        keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)? = nil,
+        @ViewBuilder _ content: @escaping @MainActor (_ editor: CanvasEditor, _ onExit: @escaping @MainActor () -> Void) -> Content
+    ) {
+        contribute(HostSidebar(keyboardEntry: keyboardEntry, content: { AnyView(content($0, $1)) }), to: HostSidebars.self)
+    }
+
+    /// The window's inspector. `shownWhile` says when it has something to show (read in a view's body:
+    /// observable state; always, by default), `isRequested` when it's wanted whether or not it's shown,
+    /// and `onDismiss` ends what wanted it, when the person hides the inspector meanwhile, and
+    /// `keyboardEntry` the view that takes the keyboard when the window gives the inspector the keyboard:
+    ///
+    ///     registrar.hostInspector(shownWhile: { !$0.selectedShapeIDs.isEmpty },
+    ///                             isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
     ///                             onDismiss: { $0.registry.activeDetailTakeover(in: $0)?.onEscape($0) }) { editor, onExit in
     ///         DetailPanelView(editor: editor, onExit: onExit)
     ///     }
     public mutating func hostInspector<Content: View>(
+        shownWhile: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
         isRequested: @escaping @MainActor (CanvasEditor) -> Bool = { _ in false }, onDismiss: @escaping @MainActor (CanvasEditor) -> Void = { _ in },
         keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)? = nil,
         @ViewBuilder _ content: @escaping @MainActor (_ editor: CanvasEditor, _ onExit: @escaping @MainActor () -> Void) -> Content
     ) {
-        contribute(HostInspector(isRequested: isRequested, onDismiss: onDismiss, keyboardEntry: keyboardEntry, content: { AnyView(content($0, $1)) }), to: HostInspectors.self)
+        contribute(HostInspector(shownWhile: shownWhile, isRequested: isRequested, onDismiss: onDismiss, keyboardEntry: keyboardEntry,
+                                 content: { AnyView(content($0, $1)) }), to: HostInspectors.self)
     }
 
     /// What the window's subtitle says of the board shown, nil for none:
@@ -410,6 +459,9 @@ extension Registry {
     public func hostCoveredTop(on board: BoardID) -> CGFloat {
         hostOverlays.reduce(0) { max($0, $1.coveredTop(board)) }
     }
+
+    /// The sidebar, if a plugin gives one.
+    public var hostSidebar: HostSidebar? { contributions(to: HostSidebars.self).first?.value }
 
     /// The inspector, if a plugin gives one.
     public var hostInspector: HostInspector? { contributions(to: HostInspectors.self).first?.value }

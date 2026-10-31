@@ -195,12 +195,10 @@ public final class DetailPanelState {
 
     /// The tabs the panel shows for the one shape selected, and the one chosen among them; nil with
     /// no one shape selected or fewer than two tabs, where there is nothing to step between, and
-    /// while the panel shows something in their place: a takeover (Find), or the overview the
-    /// keyboard holds (the table of contents walked by keys), which have no tab strip.
+    /// while a takeover (Find), which has no tab strip, shows in their place.
     private func shownTabs() -> (kind: ShapeKind, tabs: [DetailTabID], index: Int)? {
         guard editor.selectedShapeIDs.count == 1, let id = editor.selection, let record = editor.document[id],
-              editor.registry.activeDetailTakeover(in: editor) == nil,
-              editor.registry.detailOverview?.holdsKeyboard(editor) != true else { return nil }
+              editor.registry.activeDetailTakeover(in: editor) == nil else { return nil }
         let layout = layout(for: record)
         guard layout.tabs.count > 1, let current = currentTab(in: layout, for: record.kind),
               let index = layout.tabs.firstIndex(of: current) else { return nil }
@@ -228,8 +226,8 @@ public final class DetailPanelState {
     @ObservationIgnored var focusesFirstControl: (@MainActor () -> Void)?
 
     /// The view of the panel that takes the keyboard when the window gives the inspector the keyboard
-    /// (the host slot's `keyboardEntry`): the list while the overview shows, else the header's field;
-    /// nil when the panel has neither. The panel sets it as it appears (it knows its window).
+    /// (the host slot's `keyboardEntry`): the header's field, else its first control; nil when the
+    /// panel has neither. The panel sets it as it appears (it knows its window).
     @ObservationIgnored public var keyboardEntry: (@MainActor () -> NSView?)?
 
     /// Remembered by key: an every-box section collapses for every kind, a kind's own for that kind. One

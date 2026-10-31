@@ -126,23 +126,32 @@ extension NestedWindow {
         defer { w.board.close() }
         w.board.viewState.showsDetails = false
         w.window.settle()
+        expect(!w.inspectorShown)
         w.window.makeFirstResponder(w.canvas)
         expect(w.canvas.performKeyEquivalent(with: w.window.keyEvent("f", code: 3, modifiers: .command)))
-        w.window.spin { w.board.viewState.showsDetails }
-        w.window.spin { w.findFieldHasKeyboard }
+        w.window.spin { w.findFieldHasKeyboard && w.inspectorShown }
+        expect(!w.board.viewState.showsDetails, "Find wants it shown; the person's choice stays theirs")
         w.window.pressEscape()
         w.window.spin { !w.find.isActive }
-        w.window.spin { !w.board.viewState.showsDetails }
+        w.window.spin { !w.inspectorShown }
         w.window.spin { w.window.firstResponder === w.canvas }
-        // Shown by the person, it stays as Find closes.
+        // With nothing selected, a shown inspector has nothing to show either once Find closes.
         w.board.viewState.showsDetails = true
         w.window.settle()
+        expect(!w.inspectorShown, "nothing selected")
+        expect(w.canvas.performKeyEquivalent(with: w.window.keyEvent("f", code: 3, modifiers: .command)))
+        w.window.spin { w.findFieldHasKeyboard && w.inspectorShown }
+        w.window.pressEscape()
+        w.window.spin { !w.find.isActive && !w.inspectorShown }
+        // Shown by the person over a selection, it stays as Find closes, showing the selection.
+        w.editor.selection = w.nest.notes(on: 1).0
+        w.window.spin { w.titleField != nil }
+        w.window.makeFirstResponder(w.canvas)
         expect(w.canvas.performKeyEquivalent(with: w.window.keyEvent("f", code: 3, modifiers: .command)))
         w.window.spin { w.findFieldHasKeyboard }
         w.window.pressEscape()
-        w.window.spin { !w.find.isActive }
-        w.window.settle()
-        expect(w.board.viewState.showsDetails)
+        w.window.spin { !w.find.isActive && w.titleField != nil }
+        expect(w.inspectorShown && w.board.viewState.showsDetails)
     },
     test("hiding the inspector while Find is open closes Find: no highlights and no ⌘G stepping with no panel to close it by") {
         let w = try NestedWindow()
@@ -152,12 +161,13 @@ extension NestedWindow {
         w.window.spin { w.findFieldHasKeyboard }
         w.window.type("first")
         w.window.spin { w.find.isSettled && w.find.total == 3 }
-        expect(w.board.viewState.showsDetails)
-        w.board.viewState.showsDetails = false
+        expect(w.inspectorShown)
+        w.controller.toggleDetails(nil)             // View › Hide Inspector, as the toolbar's button does
         w.window.spin { !w.find.isActive }
         w.window.spin { w.window.firstResponder === w.canvas }
+        expect(!w.board.viewState.showsDetails)
         expectEqual(w.find.query, "first", "what's typed is kept")
-        w.board.viewState.showsDetails = true
+        w.controller.toggleDetails(nil)
         w.window.settle()
         expect(!w.find.isActive, "showing it again doesn't reopen Find")
     },

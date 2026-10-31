@@ -6,17 +6,17 @@ import Selection
 import TestKit
 import TextEditing
 
-// View › Focus Inspector (⌥⌘I, pressed as the app routes it) in the app's window, over the nested file (two notes and an arrow on
-// the root, a subboard): the inspector shown if it's hidden, and given the keyboard.
+// View › Focus Inspector (⌥⌘I) and Focus Sidebar (⌥⌘S), pressed as the app routes them, in the app's window, over the nested file
+// (two notes and an arrow on the root, a subboard): the pane shown if it's hidden, and given the keyboard.
 
 extension NestedWindow {
-    /// The table of contents' list, while the panel shows it.
-    var list: NSTableView? { window.contentView?.descendants(NSTableView.self).first { $0.isTableOfContents } }
+    /// The table of contents' list, while the sidebar shows it.
+    var list: NSTableView? { window.contentView?.descendants(NSTableView.self).first { $0.isTableOfContents && !$0.isHiddenOrHasHiddenAncestor } }
 
-    /// Whether the keyboard is in the inspector: the list, or a view in the panel (not the canvas or what it hosts).
+    /// Whether the keyboard is in the inspector: a view in the panel (not the canvas or what it hosts, nor the sidebar).
     var inspectorHasKeyboard: Bool {
         guard let view = window.firstResponder as? NSView else { return false }
-        return !isCanvas(view) && view.isDescendant(of: window.contentView!)
+        return !isCanvas(view) && view.isDescendant(of: window.contentView!) && view.isInInspector(beside: canvas)
     }
 
     /// ⌥⌘I pressed, as the app routes it: the window's key equivalents, then the app's menus (View's
@@ -32,9 +32,7 @@ extension NestedWindow {
     func press(_ chord: Chord) -> String? {
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: editor.registry)
         for item in menus.main.item(withTitle: "View")?.submenu?.items ?? [] { item.target = controller }
-        let title = KeyDriver(window, menu: menus.main).send(chord).menuItem?.title
-        if chord == .focusInspector { expectEqual(title, "Focus Inspector", "the chord is View's item") }
-        return title
+        return KeyDriver(window, menu: menus.main).send(chord).menuItem?.title
     }
 
     /// The pane the keyboard is in, by the window's own reckoning.
@@ -64,13 +62,18 @@ extension Chord {
     static let previousPane = Chord(Key.f6, .shift)
 }
 
-@MainActor let inspectorFocusShippedTests = Suite("Focus Inspector, shipped", [
-    test("with nothing selected it gives the keyboard to the table of contents' list, and Escape gives it back to the canvas") {
-        let w = try NestedWindow()
+@MainActor let inspectorFocusShippedTests = Suite("Focus Inspector and Focus Sidebar, shipped", [
+    test("with nothing selected Focus Inspector is dimmed, the inspector hidden with nothing to show; Focus Sidebar gives the keyboard to the table of contents' list, and Escape gives it back to the canvas") {
+        let w = try NestedWindow(sidebar: true)
         w.window.spin { w.list != nil }
         expect(w.canvasHasKeyboard)
-        w.pressFocusInspector()
+        expect(!w.pressFocusInspector(), "nothing to inspect")
+        expect(w.canvasHasKeyboard)
+        expect(!w.controller.shownPanes().contains(.inspector))
+        expectEqual(w.press(.focusSidebar), "Focus Sidebar")
+        w.window.spin { w.firstResponder(isIn: w.list) }
         expect(w.firstResponder(isIn: w.list), "the list has the keyboard: \(String(describing: w.window.firstResponder))")
+        expectEqual(w.pane, .sidebar)
         w.window.pressEscape()
         w.window.spin { w.canvasHasKeyboard }
         expect(w.canvasHasKeyboard, "Escape in the list: \(String(describing: w.window.firstResponder))")
@@ -102,19 +105,20 @@ extension Chord {
     },
     test("with the inspector hidden it shows it first, and gives it the keyboard once it has views") {
         let w = try NestedWindow()
-        w.window.spin { w.list != nil }
+        w.editor.selection = w.nest.notes(on: 1).0
+        w.window.spin { w.titleField != nil }
         w.board.viewState.showsDetails = false
-        w.window.settle()
+        w.window.spin { w.titleField == nil }
         expect(!w.inspectorHasKeyboard)
         w.pressFocusInspector()
         expect(w.board.viewState.showsDetails)
-        w.window.spin { w.firstResponder(isIn: w.list) }
-        expect(w.firstResponder(isIn: w.list), "\(String(describing: w.window.firstResponder))")
+        w.window.spin { w.firstResponder(isIn: w.titleField) }
+        expect(w.firstResponder(isIn: w.titleField), "\(String(describing: w.window.firstResponder))")
         w.window.pressEscape()
         w.window.spin { w.canvasHasKeyboard }
         expect(w.canvasHasKeyboard)
     },
-    test("it's in the View menu after Show Inspector, on ⌥⌘I, enabled with an inspector; from a panel field it still runs") {
+    test("it's in the View menu after Show Inspector, on ⌥⌘I, enabled while the inspector has a shape to show; from a panel field it still runs") {
         let w = try NestedWindow()
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
@@ -123,9 +127,10 @@ extension Chord {
         expectEqual(titles[show + 1], "Focus Inspector")
         expectEqual(KeyboardShortcutSection.key(of: focus), "⌥⌘I")
         expectEqual(focus.action, #selector(BoardWindowController.focusInspector(_:)))
-        expect(w.controller.validateMenuItem(focus))
+        expect(!w.controller.validateMenuItem(focus), "nothing selected, nothing to show")
         w.editor.selection = w.nest.notes(on: 1).0
         w.window.spin { w.titleField != nil }
+        expect(w.controller.validateMenuItem(focus))
         w.window.focus(try require(w.titleField))
         expect(!w.canvasHasKeyboard)
         w.window.settle()
@@ -134,16 +139,17 @@ extension Chord {
         expect(w.firstResponder(isIn: w.titleField))
     },
     test("F6 walks the panes shown once each and comes round; Shift-F6 is its exact inverse, and says so in the View menu") {
-        let w = try NestedWindow()
+        let w = try NestedWindow(sidebar: true)
         w.window.spin { w.list != nil }
+        w.editor.selection = w.nest.notes(on: 1).0
+        w.window.spin { w.titleField != nil }
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
         let next = try require(view.items.first { $0.title == "Focus Next Pane" }), previous = try require(view.items.first { $0.title == "Focus Previous Pane" })
         expectEqual(KeyboardShortcutSection.key(of: next), "F6")
         expectEqual(KeyboardShortcutSection.key(of: previous), "⇧F6")
         let panes = w.controller.shownPanes()
-        expectEqual(panes.first, .canvas)
-        expect(panes.contains(.inspector), "the inspector is shown")
+        expectEqual(panes, [.canvas, .inspector, .sidebar], "the canvas, then round as the window reads: the toolbar has no views in an unshown window")
         expectEqual(w.pane, .canvas)
         var forward: [BoardWindowController.Pane?] = []
         for _ in panes { forward.append(w.cycle(.nextPane)) }
@@ -163,22 +169,29 @@ extension Chord {
             if pane == .canvas { expect(start === w.window.firstResponder, "the canvas has the keyboard again") }
         }
     },
-    test("hiding the inspector takes it out of the cycle") {
-        let w = try NestedWindow()
+    test("hiding the inspector, or having nothing to show in it, takes it out of the cycle; hiding the sidebar takes it out too") {
+        let w = try NestedWindow(sidebar: true)
         w.window.spin { w.list != nil }
+        expect(!w.controller.shownPanes().contains(.inspector), "nothing selected")
+        w.editor.selection = w.nest.notes(on: 1).0
+        w.window.spin { w.titleField != nil }
+        expect(w.controller.shownPanes().contains(.inspector))
         w.board.viewState.showsDetails = false
         w.window.settle()
         expect(!w.controller.shownPanes().contains(.inspector))
         w.press(.nextPane)
-        w.window.settle()
+        w.window.spin { w.pane == .sidebar }
         expect(w.pane != .inspector, "never the inspector")
-        expect(w.canvasHasKeyboard)
         w.board.viewState.showsDetails = true
         w.window.settle()
         expect(w.controller.shownPanes().contains(.inspector))
+        w.window.makeFirstResponder(w.canvas)
+        w.board.viewState.showsSidebar = false
+        w.window.spin { w.list == nil }
+        expectEqual(w.controller.shownPanes(), [.canvas, .inspector])
     },
     test("Escape from any pane returns to the canvas with the selection kept") {
-        let w = try NestedWindow()
+        let w = try NestedWindow(sidebar: true)
         let note = w.nest.notes(on: 1).0
         w.editor.selection = note
         w.window.spin { w.titleField != nil }
@@ -194,13 +207,24 @@ extension Chord {
     },
     test("Focus Inspector with nothing in the panel that takes the keyboard makes the hosting view first responder") {
         let w = try NestedWindow()
-        w.window.spin { w.list != nil }
+        w.editor.selection = w.nest.notes(on: 1).0
+        w.window.spin { w.titleField != nil }
         let canvasFrame = w.canvas.convert(w.canvas.bounds, to: nil)
-        // Every control beside the canvas is hidden: the panel has nothing to give the keyboard to.
-        for view in (w.window.contentView?.descendants(NSView.self) ?? []) where !w.isCanvas(view) && view !== w.window.contentView {
-            let frame = view.convert(view.bounds, to: nil)
-            if view.acceptsFirstResponder, !canvasFrame.contains(CGPoint(x: frame.midX, y: frame.midY)) { view.isHidden = true }
+        // Every control beside the canvas is hidden, again until the inspector that just slid in has made
+        // all of its own: the panel has nothing to give the keyboard to.
+        @MainActor func hideControls() -> Bool {
+            var hid = false
+            for view in (w.window.contentView?.descendants(NSView.self) ?? []) where !w.isCanvas(view) && view !== w.window.contentView {
+                let frame = view.convert(view.bounds, to: nil)
+                if view.acceptsFirstResponder, !view.isHidden, !canvasFrame.contains(CGPoint(x: frame.midX, y: frame.midY)) {
+                    view.isHidden = true
+                    hid = true
+                }
+            }
+            return hid
         }
+        let slidIn = Date(timeIntervalSinceNow: 0.5)
+        repeat { w.window.settle() } while hideControls() || Date() < slidIn
         w.pressFocusInspector()
         w.window.spin { w.window.firstResponder === w.window.contentView }
         expect(w.window.firstResponder === w.window.contentView, "the hosting view: \(String(describing: w.window.firstResponder))")
@@ -216,8 +240,9 @@ extension Chord {
         expect(w.canvasHasKeyboard, "Escape on the hosting view: \(String(describing: w.window.firstResponder))")
     },
     test("a field the window puts over the canvas (the board path, Jump To's) is the canvas's pane: F6 goes to the inspector, Shift-F6 round the other way") {
-        let w = try NestedWindow()
-        w.window.spin { w.list != nil }
+        let w = try NestedWindow(sidebar: true)
+        w.editor.selection = w.nest.notes(on: 1).0
+        w.window.spin { w.titleField != nil && w.list != nil }
         let content = try require(w.window.contentView)
         let canvasFrame = content.convert(w.canvas.convert(w.canvas.bounds, to: nil), from: nil)
         let field = NSTextField(frame: CGRect(x: canvasFrame.midX - 100, y: canvasFrame.midY - 12, width: 200, height: 24))
@@ -229,12 +254,14 @@ extension Chord {
         w.window.makeFirstResponder(field)
         expectEqual(w.cycle(.previousPane), w.controller.shownPanes().last)
     },
-    test("the panel's declared entry is the list with nothing selected and the header's field with a shape, and it is what Focus Inspector gives the keyboard to") {
-        let w = try NestedWindow()
+    test("the panel's declared entry is the header's field, and the sidebar's the list: what Focus Inspector and Focus Sidebar give the keyboard to") {
+        let w = try NestedWindow(sidebar: true)
         w.window.spin { w.list != nil }
+        let sidebarEntry = try require(w.editor.registry.hostSidebar?.keyboardEntry)
+        expect(sidebarEntry(w.editor) === w.list, "the list: \(String(describing: sidebarEntry(w.editor)))")
+        expect(w.controller.sidebarKeyView() === w.list)
+        expect(w.controller.inspectorKeyView() !== w.list, "never the sidebar's list")
         let entry = try require(w.editor.registry.hostInspector?.keyboardEntry)
-        expect(entry(w.editor) === w.list, "the list: \(String(describing: entry(w.editor)))")
-        expect(w.controller.inspectorKeyView() === w.list)
         w.editor.selection = w.nest.notes(on: 1).0
         w.window.spin { w.titleField != nil }
         expect(entry(w.editor) === w.titleField, "the header's field")
@@ -242,7 +269,6 @@ extension Chord {
     },
     test("with a toolbar view that takes the keyboard F6 visits canvas, inspector and toolbar once each, Shift-F6 is the inverse, and Escape from the toolbar goes back with the selection kept") {
         let w = try NestedWindow()
-        w.window.spin { w.list != nil }
         let note = w.nest.notes(on: 1).0
         w.editor.selection = note
         w.window.spin { w.titleField != nil }

@@ -89,7 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// A board window's content: the canvas (with the minimap in its corner), the tools in the toolbar,
 /// and around it what the plugins gave the host's slots, placed by CanvasUI's `BoardChrome`: inside
-/// a subboard the path over its top middle, a palette, and the details in an inspector.
+/// a subboard the path over its top middle, a palette, the table of contents in a sidebar, and the
+/// details in an inspector.
 struct ContentView: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
@@ -107,7 +108,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) { ToolPicker(editor: editor) }
             }
-            // Last: the path, the palette and the inspector go around the framed, toolbarred canvas.
-            .modifier(BoardChrome(editor: editor, showsInspector: $view.showsDetails, onExit: focus.take))
+            // Last: the path, the palette, the sidebar and the inspector go around the framed, toolbarred canvas.
+            .modifier(BoardChrome(editor: editor, showsSidebar: $view.showsSidebar, showsInspector: $view.showsDetails, onExit: focus.take))
     }
 }

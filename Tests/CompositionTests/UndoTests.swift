@@ -485,7 +485,6 @@ let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 
 
         @MainActor func expectAsFresh(_ when: String) {
             e.selectedShapeIDs = []
-            e.tableOfContents?.showAll()
             let fresh = CanvasEditor(registry: e.registry, document: e.document, scheduler: ManualScheduler())
             let (rows, issues) = listedAndFound(e), (freshRows, freshIssues) = listedAndFound(fresh)
             expectEqual(rows, freshRows, when)

@@ -78,7 +78,7 @@ extension CanvasEditor {
         expectEqual(registry.report, """
         core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
-        table-of-contents    service ContentsState · command showAllShapes last in ViewMenu.Panels
+        table-of-contents    service ContentsState · host sidebar
         validation-contents  ContentsMarks → every shape
         """)
     },

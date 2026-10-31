@@ -7,7 +7,7 @@ import SwiftUI
 import TableOfContents
 import TestKit
 
-/// The list's width in the window, about the detail panel's.
+/// The list's width in the window, about the sidebar's.
 let listWidth: CGFloat = 260
 
 /// The table of contents in an NSHostingView beside a canvas view, in an unshown window
@@ -53,10 +53,21 @@ final class ContentsWindow {
         return table.descendants(NSButton.self).filter { header.contains($0.convert($0.bounds, to: table)) }
     }
 
-    /// Gives the list the keyboard, as a click on a row does.
+    /// Gives the list the keyboard, as View ▸ Focus Sidebar does.
     func focusList() throws {
         let table = try require(table, "no list")
         window.makeFirstResponder(table)
+        window.settle()
+    }
+
+    /// Picks row `row` (the header is 0) as a click does: the outline's own selection, with no key, the
+    /// outline having the keyboard (a click gives it it first). A synthesized click doesn't reach a table
+    /// in an unshown window.
+    func click(row: Int) throws {
+        let table = try require(table, "no list")
+        window.settle()                 // a click comes as an event of its own, a turn after any key
+        window.makeFirstResponder(table)
+        table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         window.settle()
     }
 }
@@ -68,37 +79,38 @@ final class ContentsWindow {
         w.editor.add(Widget(name: "First"))
         w.window.spin { w.table != nil }
         expectEqual(w.rows, 1)    },
-    test("one row per shape, under a header; selecting on the canvas lists just the selection") {
+    test("one row per shape, under a header; selecting on the canvas keeps every row, the selected ones selected") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
         let (a, b, _) = threeWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
         editor.selectedShapeIDs = [b]
-        w.window.spin { w.rows == 1 }
+        w.window.spin { w.table?.selectedRowIndexes == [2] }        // front to back: C, B, A, under the header
+        expectEqual(w.rows, 3)
         editor.selectedShapeIDs = [a, b]
-        w.window.spin { w.rows == 2 }
+        w.window.spin { w.table?.selectedRowIndexes == [2, 3] }
         editor.selectedShapeIDs = []
-        w.window.spin { w.rows == 3 }
+        w.window.spin { w.table?.selectedRowIndexes.isEmpty == true }
+        expectEqual(w.rows, 3)
     },
-    test("a change of what's listed brings the new rows in as one run: the list keeps the keyboard and the selection, and AppKit logs no reentrant update") {
+    test("the selection changing on the canvas keeps the list's rows and its keyboard, and AppKit logs no reentrant update") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
-        let (_, b, _) = threeWidgets(editor)
+        let (a, b, _) = threeWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        let log = try standardError {
+        try w.focusList()
+        let rows = try require(w.outline).rows(in: try require(w.outline).visibleRect)
+        let log = standardError {
             editor.selectedShapeIDs = [b]
-            w.window.spin { w.rows == 1 }
-            editor.selectedShapeIDs = []            // A's row and C's come back on either side of B's
-            w.window.spin { w.rows == 3 }
-            editor.selectedShapeIDs = [b]
-            w.window.spin { w.rows == 1 }
-            try w.focusList()
-            editor.contents.showAll()
-            w.window.spin { w.rows == 3 && w.table?.selectedRowIndexes == [2] }     // B's new row, under the header and A's
+            w.window.spin { w.table?.selectedRowIndexes == [2] }
+            editor.selectedShapeIDs = []
+            w.window.spin { w.table?.selectedRowIndexes.isEmpty == true }
+            editor.selectedShapeIDs = [a]
+            w.window.spin { w.table?.selectedRowIndexes == [3] }
         }
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
-        expectEqual(editor.selectedShapeIDs, [b], "Show All keeps the selection")
-        expect(w.window.firstResponder === w.table, "the rows are new, the list isn't: it keeps the keyboard")
+        expectEqual(try require(w.outline).rows(in: try require(w.outline).visibleRect), rows, "the same rows in view")
+        expect(w.window.firstResponder === w.table, "the list keeps the keyboard")
     },
     test("a commit that brings rows in at several places at once brings each in where it goes: AppKit logs no reentrant update, the list keeps the keyboard") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
@@ -166,10 +178,10 @@ final class ContentsWindow {
         w.window.settle()
         w.window.settle()
         expectEqual(editor.hovered, ids[25], "its row moved")
-        editor.selectedShapeIDs = [ids[25], ids[24]]                // other rows listed, the list's whole
-        w.window.spin { w.rows == 2 }
+        editor.transact { $0.delete(Set(ids[20..<25])) }          // the rows around it taken out
+        w.window.spin { w.rows == 26 }
         w.window.settle()
-        expectEqual(editor.hovered, ids[25], "the rows replaced")
+        expectEqual(editor.hovered, ids[25], "the rows around it gone")
     },
     test("a commit that brings rows in at one place, or only changes rows, keeps the rows it has") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
@@ -210,15 +222,18 @@ final class ContentsWindow {
         let shown = contents.rowsRedrawn - before
         expect(shown >= inView && shown < 4 * inView, "first shown: \(shown) rows drawn of \(ids.count), \(inView) in view")
         let replacing = contents.rowsRedrawn
-        editor.selectedShapeIDs = Array(ids.prefix(2500))           // another scope: its rows shown whole
+        editor.transact { $0.delete(Set(ids.suffix(2500))) }      // too many rows gone to follow: listed afresh, shown whole
         w.window.spin { w.rows == 2500 }
         w.window.settle()
         let replaced = contents.rowsRedrawn - replacing
         expect(replaced >= inView && replaced < 4 * inView, "replaced: \(replaced) rows drawn of 2500")
         let selecting = contents.rowsRedrawn
-        editor.contents.select([ids[0]])                            // the last row, selected: none drawn but where it shows
+        editor.contents.select([ids[0]])                            // the last row, selected and scrolled to: the rows there drawn
         w.window.spin { w.table?.selectedRow == 2500 }
-        expect(contents.rowsRedrawn - selecting < inView, "\(contents.rowsRedrawn - selecting) rows drawn for a selection out of view")
+        w.window.settle()
+        let drawn = contents.rowsRedrawn - selecting
+        expect(drawn < 2 * inView, "\(drawn) rows drawn for a selection out of view, scrolled to")
+        expect(outline.visibleRect.intersects(outline.rect(ofRow: 2500)), "the row in view")
     },
     test("the list shows the selection as selected rows") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
@@ -273,33 +288,57 @@ final class ContentsWindow {
         w.window.spin { w.canvasHasKeyboard }
         expectEqual(w.exits, 1)
     },
-    test("the list says when it has the keyboard; ↓ in it walks by keys, a click's pick doesn't, and the walk ends as the keyboard leaves") {
+    test("a click on a row selects its shape and gives the canvas the keyboard; a key walks the rows and keeps it in the list") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
-        _ = threeWidgets(editor)
+        let (a, b, c) = threeWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        expect(!editor.contents.listHasKeyboard)
         try w.focusList()
-        expect(editor.contents.listHasKeyboard, "the reader heard the first responder change")
-        expect(!editor.contents.isWalkedByKeys, "nothing picked yet")
         let keys = KeyDriver(w.window)
         keys.send(.down)
-        expectEqual(editor.selectedShapeIDs.count, 1)
-        expect(editor.contents.isWalkedByKeys, "↓ picked the row")
-        w.window.settle()       // a click comes as an event of its own, a turn on
-        try require(w.table).selectRowIndexes(IndexSet(integer: 2), byExtendingSelection: false)
-        w.window.settle()
-        expectEqual(editor.selectedShapeIDs.count, 1)
-        expect(!editor.contents.isWalkedByKeys, "a click's pick, the list's selection with no key, isn't a walk")
-        keys.send(.down)
-        expect(editor.contents.isWalkedByKeys)
-        editor.selectedShapeIDs = []
-        expect(!editor.contents.isWalkedByKeys, "the selection changed elsewhere")
-        keys.send(.up)
-        expect(editor.contents.isWalkedByKeys)
-        keys.send(.escape)
+        expectEqual(editor.selectedShapeIDs, [c], "front to back: C first")
+        expect(w.window.firstResponder === w.table, "↓ walks the rows, in the list")
+        try w.click(row: 2)
+        expectEqual(editor.selectedShapeIDs, [b])
         w.window.spin { w.canvasHasKeyboard }
-        expect(!editor.contents.listHasKeyboard && !editor.contents.isWalkedByKeys, "the keyboard left the list")
+        expectEqual(w.exits, 1, "the click handed the keyboard to the canvas")
+        try w.focusList()
+        keys.send(.down)
+        expectEqual(editor.selectedShapeIDs, [a])
+        expect(w.window.firstResponder === w.table, "keys keep it")
+    },
+    test("a selection made on the canvas opens the rows it's nested under and scrolls to it; one made in the list moves nothing") {
+        let editor = try contentsEditor(scheduler: TaskScheduler())
+        let ids = widgets(60, in: editor)
+        let pin = editor.add(Pin("Deep", on: ids[1]))           // under the second widget's row, near the list's end
+        let w = ContentsWindow(editor)
+        w.window.spin { w.rows == 60 }
+        w.window.settle()
+        let outline = try require(w.outline)
+        let entry = try require(editor.contents.entries.first { $0.id == ids[1] })
+        expect(!editor.contents.isExpanded(entry), "a widget's pins are folded away to start with")
+        let top = outline.visibleRect
+        editor.selectedShapeIDs = [pin]
+        w.window.spin { outline.selectedRowIndexes.count == 1 }
+        let row = outline.selectedRow
+        expectEqual((outline.item(atRow: row) as AnyObject?).flatMap { outline.parent(forItem: $0) as AnyObject? } === outline.item(atRow: row - 1) as AnyObject?, true,
+                    "its row shows, under the widget's")
+        expect(editor.contents.isExpanded(entry), "the widget's row opened, and stays open")
+        expect(outline.visibleRect.intersects(outline.rect(ofRow: row)), "scrolled to")
+        expect(outline.visibleRect != top)
+        // A row picked in the list stays where it is: the list is where the person is.
+        outline.scroll(CGPoint(x: 0, y: 0))
+        w.window.settle()
+        let shown = outline.visibleRect
+        try w.click(row: 2)
+        expectEqual(editor.selectedShapeIDs.count, 1)
+        expectEqual(outline.visibleRect, shown, "a row picked in the list scrolls nothing")
+        // Several selected on the canvas open nothing (⌘A would open every row): only one does.
+        editor.contents.setExpanded(entry, false)
+        w.window.settle()
+        editor.selectedShapeIDs = [pin, ids[5]]
+        w.window.spin { outline.selectedRowIndexes.count == 1 }       // the pin's row is folded away: only ids[5]'s shows
+        expect(!editor.contents.isExpanded(entry), "two selected: nothing opened")
     },
     test("Tab and ⇧Tab step the rows as ↓ and ↑ do, and keep the keyboard in the list") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
@@ -316,7 +355,6 @@ final class ContentsWindow {
         }
         // Front to back: C, B, A; stopping at the ends, as the arrows do.
         expectEqual(picked, [[c], [b], [a], [a], [b], [c], [c]])
-        expect(editor.contents.isWalkedByKeys)
     },
     test("Caps Lock on, Tab and ⇧Tab still step the rows and keep the keyboard in the list") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
@@ -364,24 +402,5 @@ final class ContentsWindow {
         w.window.spin { w.rows == 6 }
         w.window.settle()
         expectEqual(triangles(), ["Unnamed", "A"], "rows replaced or moved, each still its own row's")
-    },
-    test("the header's Show All runs View › Show All Shapes, which lists every shape again while the list is scoped, keeping the selection") {
-        let editor = try contentsEditor(scheduler: TaskScheduler())
-        let (a, b, _) = threeWidgets(editor)
-        let w = ContentsWindow(editor)
-        w.window.spin { w.rows == 3 }
-        expectEqual(editor.registry.title(of: .showAllShapes), "Show All Shapes")
-        expect(!editor.canPerform(.showAllShapes), "every shape is listed")
-        editor.selectedShapeIDs = [a, b]
-        w.window.spin { w.rows == 2 }
-        expect(editor.canPerform(.showAllShapes))
-        try require(w.headerButtons.first, "Show All").performClick(nil)
-        w.window.spin { w.rows == 3 }
-        expectEqual(editor.selectedShapeIDs, [a, b])
-        expect(!editor.canPerform(.showAllShapes))
-        editor.selectedShapeIDs = [b]
-        w.window.spin { w.rows == 1 }
-        editor.perform(.showAllShapes)
-        w.window.spin { w.rows == 3 }
     },
 ])

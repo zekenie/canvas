@@ -16,10 +16,11 @@ import SwiftUI
 /// (Go › Enclosing Group). And Edit › Cut, Copy and Paste, AppKit's own, wherever the keyboard is (the
 /// canvas, the table of contents' list, a control in the panel), except in text, which takes them
 /// first: the commands that answer them. Edit › Undo and Redo are its window's (`BoardWindow`), which
-/// splits them between text and the board. Its own, with no command: showing or hiding the details
-/// and the minimap, View › Focus Inspector (the keyboard to the inspector's list, field or control) and
-/// Focus Next and Previous Pane (F6, ⇧F6: the canvas, the inspector, the toolbar, round),
-/// and Edit › Copy as Image (a PNG of what a plugin says to draw, on the pasteboard).
+/// splits them between text and the board. Its own, with no command: showing or hiding the sidebar,
+/// the details and the minimap, View › Focus Sidebar and Focus Inspector (the keyboard to the sidebar's
+/// list, or to the inspector's field or control), Focus Next and Previous Pane (F6, ⇧F6: the canvas,
+/// the inspector, the toolbar, the sidebar, round), and Edit › Copy as Image (a PNG of what a plugin
+/// says to draw, on the pasteboard).
 @MainActor
 public final class BoardWindowController: NSWindowController {
     public init(board: BoardDocument) {
@@ -65,19 +66,68 @@ public final class BoardWindowController: NSWindowController {
         board?.editor.perform(command)
     }
 
-    /// View › Show Inspector, or Hide Inspector.
-    @objc public func toggleDetails(_ sender: Any?) { board?.viewState.showsDetails.toggle() }
+    /// View › Show Sidebar, or Hide Sidebar.
+    @objc public func toggleSidebarShown(_ sender: Any?) { board?.viewState.showsSidebar.toggle() }
 
-    /// View › Focus Inspector (⌥⌘I): shows the inspector if it's hidden and gives it the keyboard: the view
-    /// that suits (`inspectorKeyView`), which is the table of contents' list when nothing is selected,
-    /// else the panel's first field or control. Escape gives the keyboard back to the canvas, as it does
-    /// from anywhere in the inspector (`onExit`).
-    @objc public func focusInspector(_ sender: Any?) {
-        guard let board, editor.registry.hostInspector != nil else { return }
+    /// View › Focus Sidebar (⌥⌘S): shows the sidebar if it's hidden and gives it the keyboard: the view
+    /// that suits (`sidebarKeyView`), the table of contents' list. Escape gives the keyboard back to the
+    /// canvas, as it does from anywhere in the sidebar (`onExit`).
+    @objc public func focusSidebar(_ sender: Any?) {
+        guard let board, editor.registry.hostSidebar != nil else { return }
         // A shape being edited is done with, as Find and Jump To end it before they take the keyboard:
         // its editing view would stay up while the keyboard is elsewhere.
         editor.endEditing()
-        if !board.viewState.showsDetails { board.viewState.showsDetails = true }
+        if !board.viewState.showsSidebar { board.viewState.showsSidebar = true }
+        giveSidebarTheKeyboard(retries: InspectorFocusStyle.retries)
+    }
+
+    /// The keyboard goes to the sidebar's view that suits; a sidebar just shown has none until SwiftUI has
+    /// made its views, a turn or two on, so it tries again a few times, while the keyboard stays where it
+    /// was (a key meanwhile, Escape, takes it elsewhere, which a later try never undoes). A sidebar with
+    /// nothing in it that takes the keyboard (the list of an empty board) leaves the keyboard where it is.
+    private func giveSidebarTheKeyboard(retries: Int) {
+        giveSidebarTheKeyboard(retries: retries, whileAt: window?.firstResponder)
+    }
+
+    private func giveSidebarTheKeyboard(retries: Int, whileAt asked: NSResponder?) {
+        if let view = sidebarKeyView() {
+            window?.makeFirstResponder(view)
+            return
+        }
+        guard retries > 0 else { return }
+        _ = editor.scheduler.schedule(after: InspectorFocusStyle.retryDelay) { [weak self, weak asked] in
+            guard let self, window?.firstResponder === asked else { return }
+            giveSidebarTheKeyboard(retries: retries - 1, whileAt: asked)
+        }
+    }
+
+    /// The view of the sidebar that gets the keyboard: the one its plugin declares it takes
+    /// (`HostSidebar.keyboardEntry`: the table of contents' list), else, as the inspector's, a list,
+    /// table or text field if it shows one, else any other control that takes it, the topmost, left to
+    /// right. The sidebar is the window's content before the canvas, whatever it holds.
+    public func sidebarKeyView() -> NSView? {
+        guard let sidebar = editor.registry.hostSidebar, board?.viewState.showsSidebar == true else { return nil }
+        if let declared = sidebar.keyboardEntry?(editor), declared.window === window, !declared.isHiddenOrHasHiddenAncestor,
+           declared.acceptsFirstResponder { return declared }
+        return keyView(in: .sidebar)
+    }
+
+    /// View › Show Inspector, or Hide Inspector: as the inspector's toolbar button (`HostInspector.toggle`).
+    @objc public func toggleDetails(_ sender: Any?) {
+        guard let board, let inspector = editor.registry.hostInspector else { return }
+        inspector.toggle(in: editor, chosen: &board.viewState.showsDetails, onExit: board.focus.take)
+    }
+
+    /// View › Focus Inspector (⌥⌘I): shows the inspector if it's hidden and gives it the keyboard: the view
+    /// that suits (`inspectorKeyView`), the panel's first field or control. Escape gives the keyboard back
+    /// to the canvas, as it does from anywhere in the inspector (`onExit`). Dimmed while the inspector has
+    /// nothing to show.
+    @objc public func focusInspector(_ sender: Any?) {
+        guard let board, let inspector = editor.registry.hostInspector, inspector.canToggle(in: editor, chosen: board.viewState.showsDetails) else { return }
+        // A shape being edited is done with, as Find and Jump To end it before they take the keyboard:
+        // its editing view would stay up while the keyboard is elsewhere.
+        editor.endEditing()
+        if !inspector.isShown(in: editor, chosen: board.viewState.showsDetails) { board.viewState.showsDetails = true }
         giveInspectorTheKeyboard(retries: InspectorFocusStyle.retries)
     }
 
@@ -86,6 +136,11 @@ public final class BoardWindowController: NSWindowController {
     /// at all, the inspector's hosting view takes the keyboard, where Tab enters the panel's loop:
     /// asking for the inspector never gives up silently.
     private func giveInspectorTheKeyboard(retries: Int) {
+        giveInspectorTheKeyboard(retries: retries, whileAt: window?.firstResponder)
+    }
+
+    /// Each try after the first only while the keyboard is where it was asked from, as the sidebar's.
+    private func giveInspectorTheKeyboard(retries: Int, whileAt asked: NSResponder?) {
         if let view = inspectorKeyView() {
             window?.makeFirstResponder(view)
             return
@@ -94,29 +149,35 @@ public final class BoardWindowController: NSWindowController {
             if let host = window?.contentView { window?.makeFirstResponder(host) }
             return
         }
-        _ = editor.scheduler.schedule(after: InspectorFocusStyle.retryDelay) { [weak self] in
-            self?.giveInspectorTheKeyboard(retries: retries - 1)
+        _ = editor.scheduler.schedule(after: InspectorFocusStyle.retryDelay) { [weak self, weak asked] in
+            guard let self, window?.firstResponder === asked else { return }
+            giveInspectorTheKeyboard(retries: retries - 1, whileAt: asked)
         }
     }
 
     /// The view of the inspector that gets the keyboard: the one the panel declares it takes
-    /// (`HostInspector.keyboardEntry`: the list when its overview shows, else its header's field), else
-    /// by its kind: a list, table or text field if it shows one, else any other control that takes it,
-    /// the topmost, left to right (with a shape selected its title field
-    /// above whatever lists its tab has; with nothing, the table of contents' list). The
-    /// inspector is the window's content beside the canvas, whatever it holds (the window knows no
-    /// plugin's view): the views that are shown, outside the canvas and what it hosts, and not over it
-    /// (the path of crumbs is a view over the canvas), that accept first responder (the scroll views a
-    /// list sits in do, and aren't wanted).
+    /// (`HostInspector.keyboardEntry`: its header's field), else by its kind: a list, table or text
+    /// field if it shows one, else any other control that takes it, the topmost, left to right (a
+    /// selected shape's title field above whatever lists its tab has). The inspector is the window's
+    /// content after the canvas, whatever it holds (the window knows no plugin's view).
     public func inspectorKeyView() -> NSView? {
-        guard let content = window?.contentView, let canvas = board?.focus.canvas else { return nil }
         if let declared = editor.registry.hostInspector?.keyboardEntry?(editor), declared.window === window, !declared.isHiddenOrHasHiddenAncestor,
            declared.acceptsFirstResponder { return declared }
+        return keyView(in: .inspector)
+    }
+
+    /// The view of a side of the window's content that gets the keyboard, by its kind: a list, table or
+    /// text field first, else any other control, the topmost, then the leftmost. Of the views that are
+    /// shown, outside the canvas and what it hosts, and not over it (the path of crumbs is a view over
+    /// the canvas), that accept first responder (the scroll views a list sits in do, and aren't wanted),
+    /// those on that side of it: before the canvas for the sidebar, after it for the inspector.
+    private func keyView(in pane: Pane) -> NSView? {
+        guard let content = window?.contentView, let canvas = board?.focus.canvas else { return nil }
         var found: [(view: NSView, rank: Int, frame: CGRect)] = []
         func walk(_ view: NSView) {
             guard !view.isHidden, view !== canvas else { return }
             let frame = view.convert(view.bounds, to: nil)
-            if view.acceptsFirstResponder, !(view is NSScrollView || view is NSClipView), !frame.isEmpty, !isOverCanvas(view, canvas: canvas) {
+            if view.acceptsFirstResponder, !(view is NSScrollView || view is NSClipView), !frame.isEmpty, side(of: view, canvas: canvas) == pane {
                 found.append((view, view is NSTableView || view is NSTextField || view is NSText ? 0 : 1, frame))
             }
             for subview in view.subviews { walk(subview) }
@@ -128,38 +189,47 @@ public final class BoardWindowController: NSWindowController {
 
     // MARK: Panes
 
-    /// The places the keyboard can be in the window, in the order F6 visits them.
-    public enum Pane: Equatable { case canvas, inspector, toolbar }
+    /// The places the keyboard can be in the window, in the order F6 visits them: the canvas, the
+    /// inspector, the toolbar, the sidebar, and round.
+    public enum Pane: Equatable { case canvas, inspector, toolbar, sidebar }
 
     /// The panes shown now, in order: the canvas, the inspector while it is shown, the toolbar while it has
-    /// a view that takes the keyboard.
+    /// a view that takes the keyboard, the sidebar while it is shown.
     public func shownPanes() -> [Pane] {
         var panes: [Pane] = [.canvas]
-        if board?.viewState.showsDetails == true, editor.registry.hostInspector != nil { panes.append(.inspector) }
+        if let board, let inspector = editor.registry.hostInspector, inspector.isShown(in: editor, chosen: board.viewState.showsDetails) {
+            panes.append(.inspector)
+        }
         if toolbarEntry() != nil { panes.append(.toolbar) }
+        if board?.viewState.showsSidebar == true, editor.registry.hostSidebar != nil { panes.append(.sidebar) }
         return panes
     }
 
     /// The pane the keyboard is in; nil when it is nowhere in one (on the window itself). The canvas's is the canvas
     /// and what lies over it, what it hosts and what the window puts over it (the board path, Jump To's field); the
-    /// inspector's is the rest of the window's content, its hosting view too (where Focus Inspector leaves the
-    /// keyboard when the panel has nothing to take it), so F6 from there goes on round.
+    /// sidebar's is the window's content before the canvas; the inspector's is the rest of the window's content, its
+    /// hosting view too (where Focus Inspector leaves the keyboard when the panel has nothing to take it), so F6 from
+    /// there goes on round.
     public func currentPane() -> Pane? {
         guard let responder = window?.firstResponder as? NSView else { return nil }
-        if let canvas = board?.focus.canvas, responder === canvas || responder.isDescendant(of: canvas) || isOverCanvas(responder, canvas: canvas) {
+        if let canvas = board?.focus.canvas, responder === canvas || responder.isDescendant(of: canvas) {
             return .canvas
         }
         if toolbarViews().contains(where: { responder === $0 || responder.isDescendant(of: $0) }) { return .toolbar }
-        if let content = window?.contentView, responder === content || responder.isDescendant(of: content) { return .inspector }
-        return nil
+        guard let content = window?.contentView, responder === content || responder.isDescendant(of: content) else { return nil }
+        guard let canvas = board?.focus.canvas else { return .inspector }
+        return side(of: responder, canvas: canvas)
     }
 
-    /// Whether a view of the window's content lies over the canvas (its middle in the canvas's frame): one the window
-    /// puts over it (the board path), not the inspector beside it. Never the content view itself, which holds both.
-    private func isOverCanvas(_ view: NSView, canvas: NSView) -> Bool {
-        guard view !== window?.contentView else { return false }
-        let frame = view.convert(view.bounds, to: nil)
-        return canvas.convert(canvas.bounds, to: nil).contains(CGPoint(x: frame.midX, y: frame.midY))
+    /// Which pane a view of the window's content is in, by where its middle is: over the canvas (in its
+    /// frame: a view the window puts over it, the board path), before it (the sidebar) or after it (the
+    /// inspector). The content view itself, which holds them all, is the inspector's.
+    private func side(of view: NSView, canvas: NSView) -> Pane {
+        guard view !== window?.contentView else { return .inspector }
+        let frame = view.convert(view.bounds, to: nil), canvasFrame = canvas.convert(canvas.bounds, to: nil)
+        let middle = CGPoint(x: frame.midX, y: frame.midY)
+        if canvasFrame.contains(middle) { return .canvas }
+        return middle.x < canvasFrame.minX ? .sidebar : .inspector
     }
 
     /// The toolbar's item views, which are in the window's frame, outside its content.
@@ -200,6 +270,9 @@ public final class BoardWindowController: NSWindowController {
         case .inspector:
             editor.endEditing()
             giveInspectorTheKeyboard(retries: InspectorFocusStyle.retries)
+        case .sidebar:
+            editor.endEditing()
+            giveSidebarTheKeyboard(retries: InspectorFocusStyle.retries)
         case .toolbar:
             editor.endEditing()
             if let entry = toolbarEntry() { window?.makeFirstResponder(entry) }
@@ -255,13 +328,22 @@ public final class BoardWindowController: NSWindowController {
 
 extension BoardWindowController: NSMenuItemValidation {
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(toggleDetails(_:)) {
-            item.title = board?.viewState.showsDetails == true ? "Hide Inspector" : "Show Inspector"
+        if item.action == #selector(toggleSidebarShown(_:)) {
+            item.title = ChromeStyle.sidebarHelp(shown: board?.viewState.showsSidebar == true)
+            return board != nil && editor.registry.hostSidebar != nil
+        }
+        if item.action == #selector(focusSidebar(_:)) { return board != nil && editor.registry.hostSidebar != nil }
+        if item.action == #selector(toggleDetails(_:)) || item.action == #selector(focusInspector(_:)) {
+            guard let board, let inspector = editor.registry.hostInspector else { return false }
+            if item.action == #selector(toggleDetails(_:)) {
+                item.title = ChromeStyle.inspectorHelp(shown: inspector.isShown(in: editor, chosen: board.viewState.showsDetails))
+            }
+            // With nothing to show (nothing selected), there's nothing to show it for.
+            return inspector.canToggle(in: editor, chosen: board.viewState.showsDetails)
         }
         if item.action == #selector(toggleMinimap(_:)) {
             item.title = board?.viewState.showsMinimap == true ? "Hide Minimap" : "Show Minimap"
         }
-        if item.action == #selector(focusInspector(_:)) { return board != nil && editor.registry.hostInspector != nil }
         if item.action == #selector(copyAsImage(_:)) { return editor.registry.imageSource?.isAvailable(editor) == true }
         if editor.editingShapeID != nil, !(window?.firstResponder is NSText), CanvasView.editMenuActions.contains(item.action) { return false }
         if let action = item.action.flatMap({ Self.standard[$0] }) { return board?.editor.canPerform(answering: action) == true }
@@ -280,8 +362,8 @@ extension BoardWindowController: NSMenuItemValidation {
 /// The window's own constants.
 @MainActor
 enum InspectorFocusStyle {
-    /// How often View › Focus Inspector looks again for a view to give the keyboard to, and how long
-    /// it waits between: an inspector it has just shown makes its views within a turn or two.
+    /// How often View › Focus Inspector and Focus Sidebar look again for a view to give the keyboard to,
+    /// and how long they wait between: a pane they have just shown makes its views within a turn or two.
     static let retries = 30
     static let retryDelay: Duration = .milliseconds(16)
 }

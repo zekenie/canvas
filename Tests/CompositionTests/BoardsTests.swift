@@ -230,13 +230,11 @@ extension ChangeSetWatcher: EditorService {
         expect(h.enter(pocket))
         h.editor.selection = card
         h.editor.perform(.cut)
-        contents.showAll()
         expectEqual(contents.entries.map(\.id), [note])
         expect(h.editor.showBoard(.root))
         h.editor.perform(.paste)
         expectEqual(h.editor.selection, card)
         expectEqual(h.editor.file.board(containing: card), .root)
-        contents.showAll()
         expectEqual(contents.entries.map(\.id), [pocket, card])
         expectEqual(h.editor.validation?.result(for: card)?.issues ?? [], issues)
         expect(h.enter(pocket))

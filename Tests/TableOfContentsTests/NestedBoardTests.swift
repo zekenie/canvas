@@ -47,7 +47,7 @@ struct PocketsInPockets {
         editor.contents.select([nest.a, nest.c])
         expectEqual(editor.board, nest.pBoard)
         expectEqual(editor.selectedShapeIDs, [nest.c])
-        expectEqual(editor.contents.entries.outline, ["C"], "the board it went to, listing the selection")
+        expectEqual(editor.contents.entries.outline, ["C", "  on C", "D", "pocket"], "the board it went to, listed whole")
         editor.goBack()
         expectEqual(editor.board, .root)
         expectEqual(editor.selectedShapeIDs, [nest.a])
@@ -169,7 +169,7 @@ extension ContentsWindow {
         w.window.spin { w.rows == 7 }
         let log = try standardError {
             try require(w.table).selectRowIndexes([4], byExtendingSelection: false)      // D
-            w.window.spin { editor.board == nest.pBoard && w.rows == 1 }  // the list lists the selection there
+            w.window.spin { editor.board == nest.pBoard && w.rows == 3 }  // the list lists that board: C, D and the pocket
             w.window.settle()
         }
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")

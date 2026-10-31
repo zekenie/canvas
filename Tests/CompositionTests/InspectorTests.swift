@@ -22,7 +22,9 @@ import Types
 import Validation
 
 /// The app's window (a `BoardWindow`), unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
-/// panel in an `.inspector`, wired by a `CanvasFocus` as the app wires them. The editor keeps real
+/// panel in an `.inspector`, and the table of contents in a sidebar while `showsSidebar` (hidden by default, so
+/// the canvas starts at the window's left edge, where the tests' points take it), wired by a `CanvasFocus` as
+/// the app wires them. The editor keeps real
 /// time, so SwiftUI's updates and the panel's hand-back land while the main run loop runs
 /// (`window.spin`, from CanvasTesting). The window is deferred, never given a place in the window
 /// server, so each turn lays its views out without drawing their layers, which nothing here looks
@@ -37,14 +39,16 @@ final class InspectorWindow {
 
     /// Shows or hides the inspector, as View › Hide Inspector does.
     var showsDetails = true {
-        didSet { host.rootView = InspectorHost(editor: editor, focus: focus, showsDetails: showsDetails) }
+        didSet { host.rootView = InspectorHost(editor: editor, focus: focus, showsDetails: showsDetails, showsSidebar: showsSidebar) }
     }
+    let showsSidebar: Bool
 
     /// Over an empty board, or `file`.
-    init(file: CanvasFile? = nil) throws {
+    init(file: CanvasFile? = nil, showsSidebar: Bool = false) throws {
         editor = try file.map { CanvasEditor(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel()), file: $0, scheduler: TaskScheduler()) }
             ?? ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
-        host = NSHostingView(rootView: InspectorHost(editor: editor, focus: focus, showsDetails: true))
+        self.showsSidebar = showsSidebar
+        host = NSHostingView(rootView: InspectorHost(editor: editor, focus: focus, showsDetails: true, showsSidebar: showsSidebar))
         host.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
         window.editor = editor
         window.contentView = host
@@ -53,16 +57,18 @@ final class InspectorWindow {
         window.settle()
     }
 
+    /// The panel's views of a class: those in the inspector, after the canvas.
+    func panel<View: NSView>(_: View.Type) -> [View] { host.descendants(View.self).filter { $0.isInInspector(beside: canvas) } }
     /// The panel's editable text fields under its header, in view order.
-    var fields: [NSTextField] { host.descendants(NSTextField.self).filter { $0.isEditable && !$0.isInPanelHeader(of: host) } }
+    var fields: [NSTextField] { panel(NSTextField.self).filter { $0.isEditable && !$0.isInPanelHeader(of: host) } }
     /// The header's title field (Titles' `TitleHeader`), for a shape renamed there.
-    var titleField: NSTextField? { host.descendants(NSTextField.self).first { $0.isEditable && $0.isInPanelHeader(of: host) } }
-    /// The panel's lists, less the table of contents.
-    var tables: [NSTableView] { host.descendants(NSTableView.self).filter { !$0.isTableOfContents } }
+    var titleField: NSTextField? { panel(NSTextField.self).first { $0.isEditable && $0.isInPanelHeader(of: host) } }
+    /// The panel's lists.
+    var tables: [NSTableView] { panel(NSTableView.self) }
     /// The panel's buttons under its header (whose back button is there once a shape is selected).
-    var buttons: [NSButton] { host.descendants(NSButton.self).filter { !$0.isInPanelHeader(of: host) } }
+    var buttons: [NSButton] { panel(NSButton.self).filter { !$0.isInPanelHeader(of: host) } }
     /// The header's back button.
-    var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInPanelHeader(of: host) } }
+    var backButton: NSButton? { panel(NSButton.self).first { $0.isInPanelHeader(of: host) } }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
 
     /// The lines of the selected shape's Issues tab (Validation's), as the panel shows them.
@@ -71,14 +77,21 @@ final class InspectorWindow {
         return state.layout(for: record).statuses(in: .of(IssuesTab.self)).map(\.text)
     }
 
-    /// A press on the canvas, at a view point: AppKit gives the canvas the keyboard first, as
-    /// `NSWindow.sendEvent` does (which doesn't reach views in an unshown window).
+    /// A press on the canvas, at a point of the canvas's view: AppKit gives the canvas the keyboard
+    /// first, as `NSWindow.sendEvent` does (which doesn't reach views in an unshown window).
     func click(_ point: CGPoint) {
         window.makeFirstResponder(canvas)
         time += 0.1
-        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: point, time: time))
-        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: point, time: time + 0.05))
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: inContent(point), time: time))
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: inContent(point), time: time + 0.05))
         window.settle()
+    }
+
+    /// A point of the canvas's view in the window content's top-left coordinates, where
+    /// `window.mouse` takes it: the canvas is after the sidebar, when that shows.
+    func inContent(_ point: CGPoint) -> CGPoint {
+        let inWindow = canvas.convert(point, to: nil)
+        return CGPoint(x: inWindow.x, y: host.frame.height - inWindow.y)
     }
 
     /// The canvas as the window draws it.
@@ -92,8 +105,8 @@ final class InspectorWindow {
             return !folds.contains { $0 === button } && canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
         }
     }
-    /// The table of contents' list, while the panel shows it.
-    var contents: NSTableView? { host.descendants(NSTableView.self).first { $0.isTableOfContents } }
+    /// The table of contents' list, while the sidebar shows it.
+    var contents: NSTableView? { host.descendants(NSTableView.self).first { $0.isTableOfContents && !$0.isHiddenOrHasHiddenAncestor } }
     /// Its rows, less its header.
     var contentsRows: Int { max(0, (contents?.numberOfRows ?? 0) - 1) }
     /// The buttons in its header: up from the board, while it can go up.
@@ -107,17 +120,19 @@ final class InspectorWindow {
 }
 
 /// The app's content view, less its toolbar: the canvas, with the path over it (its root crumb
-/// named as the editor's told, `rootName`, which a board document's window does), and the panel.
+/// named as the editor's told, `rootName`, which a board document's window does), the table of
+/// contents in a sidebar, and the panel.
 struct InspectorHost: View {
     let editor: CanvasEditor
     let focus: CanvasFocus
     let showsDetails: Bool
     var showsMinimap = false
+    var showsSidebar = false
     var view: BoardViewState?
 
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: showsMinimap)
-            .modifier(BoardChrome(editor: editor, showsInspector: shown, onExit: focus.take))
+            .modifier(BoardChrome(editor: editor, showsSidebar: sidebarShown, showsInspector: shown, onExit: focus.take))
             .transaction { $0.disablesAnimations = true }
     }
 
@@ -126,6 +141,12 @@ struct InspectorHost: View {
     private var shown: Binding<Bool> {
         guard let view else { return .constant(showsDetails) }
         return Binding(get: { view.showsDetails }, set: { view.showsDetails = $0 })
+    }
+
+    /// The board's view's, as the app binds it, where there is one; else as given.
+    private var sidebarShown: Binding<Bool> {
+        guard let view else { return .constant(showsSidebar) }
+        return Binding(get: { view.showsSidebar }, set: { view.showsSidebar = $0 })
     }
 }
 
@@ -148,6 +169,23 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(state.layout(for: try require(w.editor.document[shape.id])).tabs.map(\.title), ["Connections", "Style"])
         expectEqual(w.fields.count, 0)
         expectEqual(w.tables.count, 0)
+    },
+    test("a note selected across the canvas's right edge keeps the part that showed in view as the inspector slides in beside it, narrowing the canvas") {
+        let w = try InspectorWindow()
+        let wide = w.canvas.bounds.width
+        // Half of it past the canvas's edge.
+        let frame = w.editor.camera.toWorld(CGRect(x: wide - 60, y: 250, width: 120, height: 120))
+        let showed = frame.intersection(w.editor.camera.toWorld(w.editor.unobscuredViewport))
+        expectEqual(showed.width, 60)
+        let edge = w.editor.add(StickyNote(frame: frame, text: "Edge"))
+        expect(w.titleField == nil, "nothing selected: no inspector")
+        w.editor.selection = edge
+        w.window.spin { w.titleField != nil && w.canvas.bounds.width < wide }
+        let slid = Date(timeIntervalSinceNow: 0.5)
+        repeat { w.window.settle() } while Date() < slid
+        expect(w.canvas.bounds.width < wide, "the inspector took its room from the canvas")
+        let shown = w.editor.camera.toView(showed)
+        expect(w.editor.unobscuredViewport.contains(shown), "in view: \(shown) in \(w.editor.unobscuredViewport)")
     },
     test("typing into a panel field never switches tools") {
         let w = try InspectorWindow()
@@ -317,9 +355,9 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let pill = CGRect(x: frame.minX, y: frame.minY - 28, width: 150, height: 20)
         expect(changedPixels(untitled, w.render(), in: pill) > 20, "the pill shows the new name")
     },
-    test("inside a subboard, with nothing selected, the overview lists its board under its name, with a way up") {
+    test("inside a subboard, the sidebar lists its board under its name, with a way up") {
         let nest = NestedFile()
-        let w = try InspectorWindow(file: nest.file)
+        let w = try InspectorWindow(file: nest.file, showsSidebar: true)
         w.window.spin { w.contentsRows == 3 }
         expectEqual(w.contentsHeaderButtons.count, 0, "nothing above the root")
         let contents = try require(w.editor.tableOfContents)
@@ -353,13 +391,14 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let all = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel())
         let order = all.map(\.id)
         @MainActor func place(_ id: PluginID) throws -> Int { try require(order.firstIndex(of: id), "\(id) isn't shipped") }
-        let faces: [(face: PluginID, after: [PluginID])] = [(.contentsOverview, [.detailPanel, .tableOfContents]), (.boardContents, [.boards, .tableOfContents]),
+        let faces: [(face: PluginID, after: [PluginID])] = [(.boardContents, [.boards, .tableOfContents]),
                                                            (.findPanel, [.findInBoards, .detailPanel]), (.boardFind, [.boards, .findInBoards])]
         for (face, after) in faces {
             for owner in after { expect(try place(owner) < place(face), "\(face) comes after \(owner)") }
         }
         let without = try Registry(plugins: all.filter { plugin in !faces.contains { $0.face == plugin.id } })
-        expect(!without.report.contains("detail overview") && !without.report.contains("detail takeover"), "the panel has neither")
+        expect(!without.report.contains("detail takeover"), "the panel has no takeover")
+        expect(without.hostSidebar != nil, "the list is still the window's sidebar")
         let editor = CanvasEditor(registry: without, file: CanvasFile(), scheduler: ManualScheduler())
         editor.nameRoot("Roadmap")
         expectEqual(editor.tableOfContents?.heading.title, "Board", "the list's own heading")
@@ -368,19 +407,20 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
     },
     test("inside a subboard, the way up is back once a click on empty canvas has let go of a note") {
         let nest = NestedFile()
-        let w = try InspectorWindow(file: nest.file)
+        let w = try InspectorWindow(file: nest.file, showsSidebar: true)
         expect(w.editor.showBoard(nest.sBoard))
         w.editor.camera = Camera()
         w.window.spin { w.contentsHeaderButtons.count == 1 }
         w.click(CGPoint(x: 180, y: 180))
         expectEqual(w.editor.selection, nest.notes(on: 2).0)
-        w.window.spin { w.contents == nil }
-        // As AppKit delivers it: the list comes back, and its heading draws, while the press is
-        // under way, when there's no going up.
-        let empty = CGPoint(x: 600, y: 600)
+        w.window.spin { w.titleField != nil }
+        expectEqual(w.contentsRows, 3, "the list stays")
+        // As AppKit delivers it: the heading draws while the press is under way, when there's no
+        // going up.
+        let empty = w.inContent(CGPoint(x: 400, y: 600))
         w.window.makeFirstResponder(w.canvas)
         w.canvas.mouseDown(with: w.window.mouse(.leftMouseDown, at: empty, time: 10))
-        w.window.spin { w.contentsRows == 3 }
+        w.window.settle()
         expect(!w.editor.canPerform(.goUpBoard), "mid-press")
         w.canvas.mouseUp(with: w.window.mouse(.leftMouseUp, at: empty, time: 10.05))
         expect(w.editor.canPerform(.goUpBoard))

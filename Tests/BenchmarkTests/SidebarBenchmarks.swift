@@ -2,7 +2,6 @@ import AppKit
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
-import DetailPanel
 import Foundation
 import LanguageModels
 import Mentions
@@ -12,24 +11,24 @@ import SwiftUI
 import TableOfContents
 import TestKit
 
-// The inspector's list, the table of contents' outline in an NSHostingView, replaced on a switch between
+// The sidebar's list, the table of contents' outline in an NSHostingView, replaced on a switch between
 // boards of the board's worth of shapes each: from the switch to the new board's rows in the table.
 // Reported against its target, not held to it (design §6), in its own file since it needs SwiftUI. A
 // tenth of the board's worth of notes added in one commit and deleted in another, with the list showing:
 // from each commit to the rows in the table. And a crumb's menu over the root's rows, from its showing to
 // its rows in the window: reported.
 
-@MainActor let inspectorBenchmarks = Suite("Inspector benchmarks", [
-    test("the inspector's list is replaced on a switch between boards of the board's worth of shapes") {
+@MainActor let sidebarBenchmarks = Suite("Sidebar benchmarks", [
+    test("the sidebar's list is replaced on a switch between boards of the board's worth of shapes") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         for size in sizes {
             let file = generatedFile(root: size, children: [size])
             let owner = try require(owners(in: file).first)
-            // As the app places it: the detail panel, which shows the table of contents with
-            // nothing selected, about the panel's width, with real time for SwiftUI's updates.
+            // As the app places it: the window's sidebar, the table of contents' (the host's slot),
+            // about the sidebar's width, with real time for SwiftUI's updates.
             let editor = CanvasEditor(registry: registry, file: file, scheduler: TaskScheduler())
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 260, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
-            let hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: {}))
+            let hosting = NSHostingView(rootView: try require(registry.hostSidebar).view(for: editor, onExit: {}))
             hosting.frame = CGRect(x: 0, y: 0, width: 260, height: 700)
             window.contentView = hosting
             // The table's rows, less its header, and those it should show for the board shown: one
@@ -53,16 +52,16 @@ import TestKit
             }
             expect(editor.board.isRoot && rows() > 0, "the root's rows are shown")
             let warnings = logged.components(separatedBy: tableReentrancyWarning).count - 1
-            report(String(format: "%6d shapes on each board: the inspector's list first shown %.0f ms; replaced going into the subboard %.0f ms, back up %.0f ms (target %.0f, reported); AppKit's reentrancy warning logged %d times",
+            report(String(format: "%6d shapes on each board: the sidebar's list first shown %.0f ms; replaced going into the subboard %.0f ms, back up %.0f ms (target %.0f, reported); AppKit's reentrancy warning logged %d times",
                           size, first, down, up, Budget.listReplacedTarget, warnings))
         }
     },
-    test("a tenth of the board's worth of notes added in one commit, then deleted in another, with the inspector's list showing the board") {
+    test("a tenth of the board's worth of notes added in one commit, then deleted in another, with the sidebar's list showing the board") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         for size in sizes {
             let editor = CanvasEditor(registry: registry, file: CanvasFile(root: generatedBoard(shapes: size)), scheduler: TaskScheduler())
             let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 260, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
-            let hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: {}))
+            let hosting = NSHostingView(rootView: try require(registry.hostSidebar).view(for: editor, onExit: {}))
             hosting.frame = CGRect(x: 0, y: 0, width: 260, height: 700)
             window.contentView = hosting
             let rows = { max(0, (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) - 1) }
@@ -84,7 +83,7 @@ import TestKit
                 window.spin(until: { rows() == listed() }, timeout: 120)
             }.milliseconds
             expect(rows() == listed(), "the list's rows are the board's")
-            report(String(format: "%6d shapes, the inspector's list showing them: %d notes added in one commit, in the table %.0f ms after; deleted in one, %.0f ms (reported)",
+            report(String(format: "%6d shapes, the sidebar's list showing them: %d notes added in one commit, in the table %.0f ms after; deleted in one, %.0f ms (reported)",
                           size, notes.count, added, deleted))
         }
     },

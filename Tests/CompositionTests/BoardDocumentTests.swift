@@ -23,11 +23,14 @@ import TestKit
 /// and Copy as Image's pasteboard on `pasteboard` (the test's own unless it passes one).
 /// `extra`: plugins after the shipped list.
 @MainActor func configureBoards(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: ScriptedLanguageModel = ScriptedLanguageModel(),
-                                extra: [any CanvasPlugin] = []) throws {
+                                extra: [any CanvasPlugin] = [], sidebar: Bool = false) throws {
     BoardDocument.configuration = BoardConfiguration(registry: try Registry(plugins: ShippedPlugins.plugins(pasteboard: pasteboard, model: model) + extra),
                                                      imagePasteboard: pasteboard) { board in
-        AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
-                              view: board.view))
+        // A window opens with its sidebar hidden unless the test is about it, so the canvas starts at the
+        // window's left edge, where the tests' points take it (a view remembered for its file still says).
+        board.view.showsSidebar = sidebar
+        return AnyView(InspectorHost(editor: board.editor, focus: board.focus, showsDetails: board.view.showsDetails, showsMinimap: board.view.showsMinimap,
+                                     view: board.view))
     }
 }
 
@@ -281,14 +284,6 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(board.editor.cameraTarget.zoom, 2, "the next stop")
         controller.runCommand(commandItem(.zoomToActualSize))
         window.spin { board.editor.camera.zoom == 1 }
-        let item = NSMenuItem(title: "", action: #selector(BoardWindowController.toggleDetails(_:)), keyEquivalent: "")
-        _ = controller.validateMenuItem(item)
-        expectEqual(item.title, "Hide Inspector")
-        controller.toggleDetails(nil)
-        expect(!board.viewState.showsDetails)
-        _ = controller.validateMenuItem(item)
-        expectEqual(item.title, "Show Inspector")
-
         let back = commandItem(.goBack, title: "Back")
         expect(!controller.validateMenuItem(back), "nothing to go back to")
         board.editor.selection = board.editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Here"))
@@ -296,6 +291,27 @@ let boardType = "com.example.InfiniteCanvas.board"
         controller.runCommand(back)
         expectEqual(board.editor.selectedShapeIDs, [])
         expect(!controller.validateMenuItem(back))
+
+        let item = NSMenuItem(title: "", action: #selector(BoardWindowController.toggleDetails(_:)), keyEquivalent: "")
+        expect(!controller.validateMenuItem(item), "nothing selected: nothing to show")
+        expectEqual(item.title, "Show Inspector")
+        let shown = board.editor.add(StickyNote(frame: CGRect(x: 0, y: 300, width: 200, height: 200), text: "Shown"))
+        board.editor.selection = shown
+        expect(controller.validateMenuItem(item))
+        expectEqual(item.title, "Hide Inspector")
+        controller.toggleDetails(nil)
+        expect(!board.viewState.showsDetails)
+        expect(controller.validateMenuItem(item))
+        expectEqual(item.title, "Show Inspector")
+        board.editor.selection = nil
+        let sidebar = NSMenuItem(title: "", action: #selector(BoardWindowController.toggleSidebarShown(_:)), keyEquivalent: "")
+        board.viewState.showsSidebar = true
+        expect(controller.validateMenuItem(sidebar))
+        expectEqual(sidebar.title, "Hide Sidebar")
+        controller.toggleSidebarShown(nil)
+        expect(!board.viewState.showsSidebar)
+        _ = controller.validateMenuItem(sidebar)
+        expectEqual(sidebar.title, "Show Sidebar")
     },
     test("View › Hide Minimap takes the minimap off the board's canvas, and Show Minimap puts it back") {
         BoardDocument.configuration = BoardConfiguration(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel())) { board in
@@ -349,7 +365,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         board.close()
         expectEqual(memory.recall(for: a), .init(x: 7, y: 8, zoom: 2, showsDetails: false, showsMinimap: true), "closing remembers it")
     },
-    test("a view remembered before boards had a minimap still reads, with the minimap showing") {
+    test("a view remembered before boards had a minimap or a sidebar still reads, with both showing") {
         let suite = "BoardDocumentTests-\(UUID().uuidString)"
         let defaults = try require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -357,7 +373,8 @@ let boardType = "com.example.InfiniteCanvas.board"
         defaults.set(Data(old.utf8), forKey: "BoardViews")
         let memory = BoardViewMemory(defaults: defaults)
         expectEqual(memory.recall(for: URL(fileURLWithPath: "/tmp/old.canvasboard")), .init(x: 1, y: 2, zoom: 3, showsDetails: false, showsMinimap: true))
-        expect(BoardViewState().showsMinimap, "a new board shows it")
+        expectEqual(memory.recall(for: URL(fileURLWithPath: "/tmp/old.canvasboard"))?.showsSidebar, true)
+        expect(BoardViewState().showsMinimap && BoardViewState().showsSidebar, "a new board shows them")
     },
     test("the menus send a document app's standard actions, with their shortcuts, and the plugins' commands, each where it says, with its key") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -414,6 +431,8 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("Go", "Forward", .goForward, "]")
         try command("Go", "Enclosing Board", .enclosingBoard, "\u{F700}")
         try command("Go", "Open Selection", .openSelection, "\u{F701}")
+        try check("View", "Show Sidebar", "toggleSidebarShown:", "s", [.command, .control])
+        try check("View", "Focus Sidebar", "focusSidebar:", "s", [.command, .option])
         try check("View", "Show Inspector", "toggleDetails:", "i", [.command, .control])
         try check("View", "Show Minimap", "toggleMinimap:", "m", [.command, .control])
         try command("View", "Next Inspector Tab", .nextInspectorTab, "]", [.command, .option])
@@ -424,7 +443,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("View", "Zoom to Fit", .zoomToFit, "1", .shift)
         try command("View", "Zoom to Selection", .zoomToSelection, "2", .shift)
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
-        expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "Show All Shapes", "", "Zoom In", "Zoom Out", "Actual Size",
+        expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out", "Actual Size",
                                               "Zoom to Fit", "Zoom to Selection", "", "Enter Full Screen"])
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         expect(try require(menus.main.item(withTitle: "Shape")?.submenu).items.isEmpty, "Shape fills itself as it opens")

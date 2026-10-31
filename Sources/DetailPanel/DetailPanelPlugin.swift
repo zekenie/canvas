@@ -1,5 +1,6 @@
 import Canvas
 import Keyboard
+import Selection
 import SwiftUI
 
 extension CanvasCommand {
@@ -12,16 +13,18 @@ extension CanvasCommand {
 /// The panel's own contribution: its state, and the panel as the window's inspector (the host's
 /// slot for one). Every section in it is some plugin's.
 ///
-/// The inspector is wanted while a takeover is active, whether or not the person has it shown: a
-/// takeover is something open in the panel (Find), which would go on with nothing shown to end it
-/// by. So the window shows a hidden inspector for it, and hiding the inspector meanwhile escapes the
-/// takeover, as Escape in the panel does.
+/// The inspector has something to show while shapes are selected: with nothing selected the window
+/// hides it, whether or not the person has it shown. It's wanted while a takeover is active, whether
+/// or not the person has it shown or anything is selected: a takeover is something open in the panel
+/// (Find), which would go on with nothing shown to end it by. So the window shows a hidden inspector
+/// for it, and hiding the inspector meanwhile escapes the takeover, as Escape in the panel does.
 public struct DetailPanelPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .detailPanel }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { DetailPanelState(editor: $0) }
-        registrar.hostInspector(isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
+        registrar.hostInspector(shownWhile: { !$0.selectedShapeIDs.isEmpty },
+                                isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
                                 onDismiss: { $0.registry.activeDetailTakeover(in: $0)?.onEscape($0) },
                                 keyboardEntry: { $0.detailPanel?.keyboardEntry?() }) { editor, onExit in
             DetailPanelView(editor: editor, onExit: onExit)

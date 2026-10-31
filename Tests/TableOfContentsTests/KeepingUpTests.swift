@@ -17,16 +17,11 @@ extension Array where Element == ContentsEntry {
     }
 }
 
-/// What listing the editor's rows from scratch gives: another editor on the same board, listing
-/// the same shapes.
+/// What listing the editor's rows from scratch gives: another editor on the same board, held while
+/// its list is read (the list holds its editor unowned).
 @MainActor func listedAfresh(_ editor: CanvasEditor) -> [String] {
     let fresh = CanvasEditor(registry: editor.registry, document: editor.document, scheduler: ManualScheduler())
-    if let scope = editor.contents.scope {
-        let present = scope.filter { editor.document[$0] != nil }
-        guard !present.isEmpty else { return [] }
-        fresh.selectedShapeIDs = present
-    }
-    return fresh.contents.entries.tree
+    return withExtendedLifetime(fresh) { fresh.contents.entries.tree }
 }
 
 /// Reads the table of contents as it hears of a commit, before the table of contents does, when
@@ -174,18 +169,17 @@ private struct SeededRandom: RandomNumberGenerator {
         expectEqual(editor.contents.entries.last?.label?.badge, "5")
         expectEqual(widgetRowsMade, made + 2)
     },
-    test("the board and a selection each keep their list, from rows made once") {
+    test("the board keeps its list through selections, a row made again once for a change") {
         let editor = try contentsEditor()
         let (a, b, _) = threeWidgets(editor)
         expectEqual(editor.contents.entries.outline, ["A", "B", "C"])
         editor.selectedShapeIDs = [a, b]
-        expectEqual(editor.contents.entries.outline, ["A", "B"])
         let made = widgetRowsMade
         editor.transact { $0.update(b, as: Widget.self) { $0.props.name = "Bee" } }
-        expectEqual(editor.contents.entries.outline, ["A", "Bee"])
+        expectEqual(editor.contents.entries.outline, ["A", "Bee", "C"])
         editor.selectedShapeIDs = []
         expectEqual(editor.contents.entries.outline, ["A", "Bee", "C"])
-        expectEqual(widgetRowsMade, made + 1, "the board's list takes the row the selection's made")
+        expectEqual(widgetRowsMade, made + 1, "B's row made again, and no other")
     },
     test("read by a service that hears of a commit first, the rows are up to date, and stay so") {
         let editor = try editorWithEarlyReader()
@@ -301,12 +295,10 @@ private struct SeededRandom: RandomNumberGenerator {
                         tx.update(id, as: Link.self) { $0.props.target = other }
                     }
                 }
-            case 80..<83:
+            case 80..<85:
                 editor.selectedShapeIDs = someShapes(8)
-            case 83..<93:
+            case 85..<96:
                 editor.selectedShapeIDs = []
-            case 93..<96:
-                editor.contents.showAll()
             default:
                 editor.contents.select(Set(someShapes(4)))
             }

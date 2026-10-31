@@ -130,8 +130,7 @@ import Validation
         context-menus        service ContextMenuState · secondary-click menu · selection menu · command showContextMenu · shortcut ⌃↩ → command showContextMenu · shortcut Menu → command showContextMenu · CanvasContextMenu in SelectionMenuGroup last
         slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
         slash-bar            service SlashBar · command runSlashCommand · shortcut / → command runSlashCommand · SelectionObservers
-        table-of-contents    service ContentsState · command showAllShapes last in ViewMenu.Panels
-        contents-overview    detail overview
+        table-of-contents    service ContentsState · host sidebar
         titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
         mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
         mention-slash-bar    slash bar field

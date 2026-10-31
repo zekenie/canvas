@@ -68,9 +68,10 @@ final class EmptyBoardWindow {
         let walk = w.walk()
         walk.press(Chord("n"))
         expectEqual(w.editor.currentToolID, ToolID(placing: StickyNote.kind))
+        // The view as Return is pressed: the inspector slides in over the note after.
+        let view = w.editor.unobscuredViewport
         walk.press(.return)
         let note = try require(w.notes.first)
-        let view = w.editor.unobscuredViewport
         let middle = w.editor.camera.toWorld(CGPoint(x: view.midX, y: view.midY))
         expectEqual(note.box.map { CGPoint(x: $0.midX, y: $0.midY) }, middle)
         expectEqual(w.editor.editingShapeID, note.id, "edited at once")
@@ -97,9 +98,9 @@ final class EmptyBoardWindow {
         defer { w.board.close() }
         let walk = w.walk()
         walk.press(Chord("f"))
+        let view = w.editor.unobscuredViewport
         walk.press(.return)
         let frame = try require(w.editor.document.shapes.first { $0.kind == Frame.kind })
-        let view = w.editor.unobscuredViewport
         expectEqual(frame.box.map { CGPoint(x: $0.midX, y: $0.midY) }, w.editor.camera.toWorld(CGPoint(x: view.midX, y: view.midY)))
         expectEqual(w.editor.currentToolID, .select)
         let note = w.editor.add(StickyNote(frame: CGRect(x: 2000, y: 2000, width: 200, height: 200)))

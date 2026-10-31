@@ -179,7 +179,7 @@ extension SampleBoardWindow {
         })
     },
     test("the table of contents: from its third row each key means what the table says, the rows a column") {
-        let w = try SampleBoardWindow()
+        let w = try SampleBoardWindow(sidebar: true)
         defer { w.board.close() }
         w.window.spin { w.rows == 6 }
         w.sendsCommandsToItsController()
@@ -201,7 +201,7 @@ extension SampleBoardWindow {
             w.restore(start)
             w.window.makeFirstResponder(w.canvas)
             w.window.spin { w.list != nil && w.titleField == nil }
-            walk.driver.send(.focusInspector)
+            walk.driver.send(.focusSidebar)
             w.window.spin { w.listHasKeyboard && w.rows > 0 }
             for _ in 0..<3 { walk.driver.send(.down) }
             w.window.settle()

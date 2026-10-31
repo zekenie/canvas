@@ -18,6 +18,7 @@ extension CanvasEditor {
     /// The view's new size, in view points.
     @_spi(Host) public func viewportDidResize(to size: CGSize) {
         viewportSize = size
+        keepViewAfterResize()
         cardFollowsCamera()
     }
 

@@ -50,7 +50,7 @@ public struct ContentsEntry: Identifiable {
 /// A shape's row as its kind made it for one version of the shape, with its marks and what places
 /// it in the list. Made again only when the shape changes other than by moving (a row says what a
 /// shape is, never where it is), copied with its new marks when they change while the shape
-/// doesn't, and shared by every scope that lists it.
+/// doesn't, and shared by every listing that lists it.
 @MainActor
 final class ShapeRow {
     /// The shape as it is: as the row was made, or moved since (`follow(_:)`).
@@ -132,12 +132,6 @@ final class ShapeRow {
 @MainActor
 @Observable
 public final class ContentsState {
-    /// What the table of contents listed when it last selected, and the selection it made then.
-    private struct Pin {
-        let scope: [ShapeID]?
-        let selectionRevision: Int
-    }
-
     /// What's kept of a board that isn't shown: its rows, the listing of all of them, which rows to
     /// make again and whose marks to read again, and the editor's revision as it was left.
     private struct Kept {
@@ -181,7 +175,7 @@ public final class ContentsState {
     @ObservationIgnored unowned let editor: CanvasEditor
     /// Each kind's, found once: the registry is frozen.
     @ObservationIgnored private var kinds: [ShapeKind: KindRows] = [:]
-    /// Each shape's row, made when a scope first takes the shape in, and again after it changes.
+    /// Each shape's row, made when the listing first takes the shape in, and again after it changes.
     @ObservationIgnored private var rows: [ShapeID: ShapeRow] = [:]
     /// Shapes whose rows are kept but whose marks may have changed (only shapes with a row here):
     /// the next read of each reads its marks again, and keeps the row object unless they changed.
@@ -190,10 +184,8 @@ public final class ContentsState {
     /// (only shapes with a row here): the next read of each makes its row again, and keeps the row
     /// object unless its label changed.
     @ObservationIgnored private var remakes: Set<ShapeID> = []
-    /// What's listed for the whole board, and for the last scope of some shapes: each kept, and
-    /// brought up to date as it's read.
+    /// What's listed of the board shown: kept, and brought up to date as it's read.
     @ObservationIgnored private var board: ContentsListing?
-    @ObservationIgnored private var filtered: ContentsListing?
     /// The commit heard whose rows' and marks' `affected` haven't been asked yet: they're asked once every
     /// service has it (`noteAffectedIfDue`), since what they read is other services'.
     @ObservationIgnored private var toNote: ChangeSet?
@@ -234,8 +226,6 @@ public final class ContentsState {
     /// The lists showing the rows, told of each row turned wherever it was turned (spring-loading,
     /// a headless turn), so each opens or closes it.
     @ObservationIgnored private var turnWatchers: [WeakTurnWatcher] = []
-    /// Which listing `entries` returned last: the whole board's, or the scope's.
-    @ObservationIgnored private var listedScope = false
     /// How many outlines' rows have been made or made again, for each one's `version`.
     @ObservationIgnored private var outlinesMade = 0
     /// Moves with each change that may change other boards or their rows: a commit that did more than
@@ -260,15 +250,9 @@ public final class ContentsState {
     @ObservationIgnored var admitted: (drag: Int, revision: Int, target: ContentsDropTarget, answer: Bool)?
     /// How many times a row's disclosure triangle has been turned.
     @ObservationIgnored private(set) var turns = 0
-    private var pin: Pin?
-    /// Whether the list has the keyboard, which its view says as the window's first responder
-    /// changes (`TableOfContentsView`).
-    public internal(set) var listHasKeyboard = false
-    /// The selection the list's keys made last, as of `editor.selectionRevision`: a walk by keys,
-    /// told from a click.
-    private var keyedSelection: Int?
-    /// A key reached the list this turn: a selection the list makes meanwhile is the key's.
-    @ObservationIgnored private var keyArrived = false
+    /// The list's outline, which takes the keyboard when the window gives the sidebar the keyboard
+    /// (`HostSidebar.keyboardEntry`): the last list made, while it's around.
+    @ObservationIgnored weak var keyboardEntry: NSView?
     /// How many times a service has said rows changed outside a commit (`contentsDidChange(for:)`):
     /// read by `entries`, so whoever reads the list reads again.
     private var outsideChanges = 0
@@ -292,31 +276,17 @@ public final class ContentsState {
 
     // MARK: What's listed
 
-    /// What the header calls the board listed, when it lists every shape: what a plugin says
-    /// (`registrar.contentsHeading`), else "Board". Whoever reads it observes what the plugin's
-    /// heading reads.
+    /// What the header calls the board listed: what a plugin says (`registrar.contentsHeading`), else
+    /// "Board". Whoever reads it observes what the plugin's heading reads.
     public var heading: ContentsHeading { namedHeading?(editor) ?? ContentsHeading(ContentsStyle.heading) }
-
-    /// The shapes listed, nil for every shape. It follows the selection: select shapes (on the
-    /// canvas, or anywhere but here) and just they are listed; select nothing and every shape is.
-    /// Selecting rows (`select`) leaves it as it was, so a row of a long list can be picked without
-    /// the rest going away, and `showAll` lists every shape without deselecting. Either holds until
-    /// the selection next changes some other way.
-    public var scope: [ShapeID]? {
-        if let pin, pin.selectionRevision == editor.selectionRevision { return pin.scope }
-        let selected = editor.selectedShapeIDs
-        return selected.isEmpty ? nil : selected
-    }
-
-    public var isFiltered: Bool { scope != nil }
 
     /// The top-level rows in document order (back to front, as the core keeps shapes), each with the
     /// rows nested under it; the list shows every level the other way round, front to back, as a
-    /// layers list does, so its top row is the shape painted over the rest (`ContentsList`). Only
-    /// listed shapes in `scope` have rows. A row nests
-    /// under the shape its kind names (`nestedUnder`) when that shape has a row too, unless that
-    /// would make a loop: then the later shape stays at the top. Kept from one read to the next,
-    /// so a read after a commit costs what the commit changed.
+    /// layers list does, so its top row is the shape painted over the rest (`ContentsList`). Every
+    /// shape of the board shown that its kind lists has a row, whatever is selected: the list shows
+    /// the selection on its rows. A row nests under the shape its kind names (`nestedUnder`) when that
+    /// shape has a row too, unless that would make a loop: then the later shape stays at the top. Kept
+    /// from one read to the next, so a read after a commit costs what the commit changed.
     public var entries: [ContentsEntry] {
         _ = outsideChanges
         // Ties whoever reads the list to every commit, as reading the document would.
@@ -324,39 +294,27 @@ public final class ContentsState {
         noteAffectedIfDue()
         followMoves()
         catchUpAway()
-        guard let scope else {
-            listedScope = false
-            keepUp(&board, scope: nil)
-            return board!.entries
-        }
-        listedScope = true
-        keepUp(&filtered, scope: Set(scope))
-        return filtered!.entries
+        keepUp()
+        return board!.entries
     }
 
-    /// Brings a listing up to date with what the commits since changed, or lists `scope` from
-    /// scratch (a new scope, or one listing again is quicker for): a new listing, which the list
-    /// shows whole, where one brought up to date it follows row by row.
-    private func keepUp(_ listing: inout ContentsListing?, scope: Set<ShapeID>?) {
-        if var kept = listing, kept.scope == scope {
-            listing = nil               // so updating it doesn't copy it
+    /// Brings the listing up to date with what the commits since changed, or lists the board from
+    /// scratch (none yet, or one listing again is quicker for): a new listing, which the list shows
+    /// whole, where one brought up to date it follows row by row.
+    private func keepUp() {
+        if var kept = board {
+            board = nil                 // so updating it doesn't copy it
             if kept.update(row: row(of:)) {
-                listing = kept
+                board = kept
                 return
             }
         }
-        listing = self.listing(of: scope)
+        board = ContentsListing(shapes: editor.document.shapes.map(\.id), row: row(of:))
     }
 
-    /// Every row in scope (nil for every shape), listed from scratch, from the rows made already.
-    private func listing(of scope: Set<ShapeID>?) -> ContentsListing {
-        ContentsListing(scope: scope, shapes: inDocumentOrder(scope), row: row(of:))
-    }
-
-    /// Every shape, or the shapes of `ids` still in the document, back to front.
-    func inDocumentOrder(_ ids: Set<ShapeID>?) -> [ShapeID] {
+    /// The shapes of `ids` still in the document, back to front.
+    func inDocumentOrder(_ ids: Set<ShapeID>) -> [ShapeID] {
         let document = editor.document
-        guard let ids else { return document.shapes.map(\.id) }
         return ids.compactMap { id in document.index(of: id).map { (id, $0) } }.sorted { $0.1 < $1.1 }.map(\.0)
     }
 
@@ -381,8 +339,7 @@ public final class ContentsState {
 
     /// What selecting rows does (a click, ⌘- and ⇧-clicks, the arrow keys): selects their shapes,
     /// in document order, and brings them into view, zoomed to fit (no closer than 120%; Selection's
-    /// `editor.reveal`). What's listed stays as it was. Selecting what's already selected moves
-    /// nothing. A row of a board nested under its owner's (`nestedBoard`) is of a shape on another
+    /// `editor.reveal`). Selecting what's already selected moves nothing. A row of a board nested under its owner's (`nestedBoard`) is of a shape on another
     /// board, so selecting it goes there, as following a link does (Selection's `editor.goTo`: its
     /// board shown and it selected, one step back), and leaves the rest of the rows selected behind;
     /// but only when such rows are all a selection adds: a ⇧-click whose range passes over an open
@@ -390,11 +347,9 @@ public final class ContentsState {
     public func select(_ ids: Set<ShapeID>) {
         let away = elsewhere(ids)
         if !away.isEmpty, ids.subtracting(editor.selectedShapeIDs).isSubset(of: away) { return editor.goTo(Self.boardFirst(away, in: editor.file)) }
-        let listed = scope
         let ordered = inDocumentOrder(ids)
         let isNew = Set(ordered) != Set(editor.selectedShapeIDs)
         editor.selectedShapeIDs = ordered
-        pin = Pin(scope: listed, selectionRevision: editor.selectionRevision)
         if isNew { editor.reveal(editor.selectedShapeIDs) }
     }
 
@@ -443,32 +398,6 @@ public final class ContentsState {
         return place.reversed()
     }
 
-    /// Whether the list is being walked by keys: it has the keyboard, and a key in it made the
-    /// selection as it is (↑ ↓, Tab and ⇧Tab, ⇧ with them). While it is, the detail panel keeps the
-    /// list up whatever is selected (`isWalkedByKeys` is the overview's `holdsKeyboard`), so the next
-    /// key walks on rather than nudging the shape; the keyboard leaving the list (Escape, Return,
-    /// a click elsewhere), a click on a row, or the selection changing anywhere else ends it, and the
-    /// panel shows what the selection calls for.
-    public var isWalkedByKeys: Bool { listHasKeyboard && keyedSelection == editor.selectionRevision }
-
-    /// A key reached the list: what the list selects for it, before the next turn, is by keys.
-    func keyReachedList() {
-        guard !keyArrived else { return }
-        keyArrived = true
-        _ = editor.scheduler.schedule(after: .zero) { [weak self] in self?.keyArrived = false }
-    }
-
-    /// The list's own selection changed (a click, a key): `select`, noting a key's.
-    func selectFromList(_ ids: Set<ShapeID>) {
-        select(ids)
-        if keyArrived, keyedSelection != editor.selectionRevision { keyedSelection = editor.selectionRevision }
-    }
-
-    /// Lists every shape, keeping the selection, until the selection next changes.
-    public func showAll() {
-        pin = Pin(scope: nil, selectionRevision: editor.selectionRevision)
-    }
-
     // MARK: Hovering
 
     /// The pointer is on the shape's row (and, called again as it moves there, still is): the
@@ -511,7 +440,7 @@ public final class ContentsState {
     /// Whether the row shows the rows nested under it: as it starts (`startsExpanded`: a container's
     /// expanded, every other row collapsed) until the person turns its disclosure triangle, then as
     /// they left it, kept by shape for the editor's life, whatever's listed, so a row stays as it
-    /// was through Show All, the list's rows replaced, or another board shown and back. Observing it
+    /// was through the list's rows replaced, or another board shown and back. Observing it
     /// hears only this row's turning, so turning one redraws that row and its own rows alone.
     public func isExpanded(_ entry: ContentsEntry) -> Bool {
         access(keyPath: \.[turned: entry.id])
@@ -539,7 +468,7 @@ public final class ContentsState {
     /// row it's nested under open. A dragged selected row takes only the selected rows that show, as the
     /// list's table drags only those.
     func showsRow(of id: ShapeID) -> Bool {
-        guard let listing = scope == nil ? board : filtered else { return true }
+        guard let listing = board else { return true }
         guard listing.lists(id) else { return false }
         var next = listing.parent(of: id), steps = 0
         while let parent = next, steps <= rows.count {
@@ -559,7 +488,7 @@ public final class ContentsState {
     /// A board's rows as the table of contents lists every shape of it, whether it's shown or not:
     /// what a view of a board of the file lists, the one shown or another (the path's crumb menus,
     /// each its crumb's board; the rows of a board nested under its owner's, `nestedBoard`). The rows
-    /// are those `entries` would list there with nothing selected, less their marks, which are the
+    /// are those `entries` would list there, less their marks, which are the
     /// board shown's (validation checks only it). Made on the first read, and kept while the board is
     /// as it was (its revision) and, once another board is shown, on the path to it; a read after a
     /// commit that did more than move shapes makes again the rows that read more than their shapes
@@ -577,7 +506,7 @@ public final class ContentsState {
         if kept.heard != now {
             if lastBeyondMoves > kept.heard || changesHeard != now, remakeRowsReadingOthers(in: &kept.rows) {
                 let rows = kept.rows
-                kept.entries = ContentsListing(scope: nil, shapes: editor.contents(of: board).shapes.map(\.id)) { rows[$0] }.entries
+                kept.entries = ContentsListing(shapes: editor.contents(of: board).shapes.map(\.id)) { rows[$0] }.entries
                 outlinesMade += 1
                 kept.version = outlinesMade
             }
@@ -607,7 +536,7 @@ public final class ContentsState {
         let document = editor.contents(of: board)
         var rows: [ShapeID: ShapeRow] = [:]
         rows.reserveCapacity(document.shapes.count)
-        let listing = ContentsListing(scope: nil, shapes: document.shapes.map(\.id)) { id in
+        let listing = ContentsListing(shapes: document.shapes.map(\.id)) { id in
             guard let record = document[id] else { return nil }
             let made = makeRow(of: record, in: document, marked: false)
             rows[id] = made
@@ -635,33 +564,32 @@ public final class ContentsState {
     // MARK: The list's reads
 
     /// Which listing `entries` returned last (`ContentsListing.serial`): another is shown whole.
-    var listedSerial: Int? { (listedScope ? filtered : board)?.serial }
+    var listedSerial: Int? { board?.serial }
 
     /// How many updates have changed the listing `entries` returned last, so a list reads again.
-    var listedVersion: Int { (listedScope ? filtered : board)?.version ?? 0 }
+    var listedVersion: Int { board?.version ?? 0 }
 
     /// What the updates of the listing `entries` returned last changed since `taker` took them, for it
     /// to follow row by row; nil when it should show the listing whole (another took them since).
     func takeListedChanges(by taker: AnyObject) -> ContentsListingChanges? {
-        if listedScope { return filtered?.takeChanges(by: ObjectIdentifier(taker)) }
-        return board?.takeChanges(by: ObjectIdentifier(taker))
+        board?.takeChanges(by: ObjectIdentifier(taker))
     }
 
     /// The shape's row as the listing `entries` returned last lists it, nested rows and all.
-    func listedEntry(_ id: ShapeID) -> ContentsEntry? { (listedScope ? filtered : board)?.entry(of: id) }
+    func listedEntry(_ id: ShapeID) -> ContentsEntry? { board?.entry(of: id) }
 
     /// The shape's row as that listing lists it.
-    func listedRow(_ id: ShapeID) -> ShapeRow? { (listedScope ? filtered : board)?.row(of: id) }
+    func listedRow(_ id: ShapeID) -> ShapeRow? { board?.row(of: id) }
 
     /// The shape whose row the shape's row is nested under in that listing: nil at the top; and
     /// whether it's listed at all.
     func listedPlace(of id: ShapeID) -> (isListed: Bool, parent: ShapeID?) {
-        guard let listing = listedScope ? filtered : board, listing.lists(id) else { return (false, nil) }
+        guard let listing = board, listing.lists(id) else { return (false, nil) }
         return (true, listing.parent(of: id))
     }
 
     /// The rows nested under the shape's in that listing (nil: its top-level rows), back to front.
-    func listedChildren(of id: ShapeID?) -> [ContentsEntry] { (listedScope ? filtered : board)?.children(of: id) ?? [] }
+    func listedChildren(of id: ShapeID?) -> [ContentsEntry] { board?.children(of: id) ?? [] }
 
     // MARK: Rows
 
@@ -797,8 +725,7 @@ extension ContentsState: EditorService {
     /// carrying all it holds), whose rows say what they are and not where, so they stay, noted for
     /// the next read to follow them (`followMoves`); and notes the shapes whose rows or marks it may
     /// change though it doesn't touch them (as the rows' and the marks' contributors say), for the
-    /// next read to make their rows again or read their marks again. Each scope's listing notes
-    /// them all.
+    /// next read to make their rows again or read their marks again. The listing notes them all.
     public func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         changesHeard = editor.revision
         if !changes.onlyMoves {
@@ -842,7 +769,7 @@ extension ContentsState: EditorService {
     /// is now, since a row says what a shape is, never where (its kind's row, `when`, `nestedUnder`,
     /// its name; and its container, which a move never changes); and those listed with marks have
     /// their marks read again, since a mark from a service may follow where a shape is (a
-    /// validation rule that doesn't ignore moves), each scope's listing noting them. A row made
+    /// validation rule that doesn't ignore moves), the listing noting them. A row made
     /// again since, or gone, needs nothing.
     private func followMoves() {
         guard !movedSinceRead.isEmpty else { return }
@@ -888,8 +815,7 @@ extension ContentsState: EditorService {
     }
 
     /// Lists the board shown: what was kept of it, if it's as it was left (and, when some rows read
-    /// other shapes, no file was put in place since), else nothing yet (the next read makes its rows). A scope of some shapes pinned (`select`, `showAll`) and the last scope's
-    /// listing were the board left's, and go.
+    /// other shapes, no file was put in place since), else nothing yet (the next read makes its rows).
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         // A file put in place says nothing of what it changed on the boards kept, so rows that
         // read other boards can't tell what they missed: they're made again.
@@ -903,11 +829,9 @@ extension ContentsState: EditorService {
         remakes = taken?.remakes ?? []
         remarks = taken?.remarks ?? []
         board = taken?.board
-        filtered = nil
         rowHover = nil                  // the board left's, whose hovers Selection let go of
         rowHoverElsewhere = nil
         if pointedDrop != nil || springing != nil { point(nil) }
-        if pin != nil { pin = nil }
         toNote = nil
         missed = []
         if let taken, readsOtherShapes {
@@ -931,11 +855,10 @@ extension ContentsState: EditorService {
         touchedAway = touchedAway.filter { $0.value > oldest }
     }
 
-    /// Tells each scope's listing to look at these shapes' rows again on its next read.
+    /// Tells the listing to look at these shapes' rows again on its next read.
     private func note(_ ids: Set<ShapeID>) {
         guard !ids.isEmpty else { return }
         board?.pending.formUnion(ids)
-        filtered?.pending.formUnion(ids)
     }
 }
 

@@ -115,6 +115,8 @@ public enum BoardMenus {
             ]),
             OwnItems(ViewMenu.Panels.self, [
                 item("Show Toolbar", #selector(NSWindow.toggleToolbarShown(_:)), "t", [.command, .option]),
+                item("Show Sidebar", #selector(BoardWindowController.toggleSidebarShown(_:)), "s", [.command, .control]),
+                item("Focus Sidebar", #selector(BoardWindowController.focusSidebar(_:)), "s", [.command, .option]),
                 item("Show Inspector", #selector(BoardWindowController.toggleDetails(_:)), "i", [.command, .control]),
                 item("Focus Inspector", #selector(BoardWindowController.focusInspector(_:)), "i", [.command, .option]),
             ]),

@@ -191,8 +191,8 @@ extension ViewSquareDefinition: ShapeDefinition {
         let a = h.add(Box(CGRect(x: 10, y: 20, width: 100, height: 50)))
         let b = h.add(Box(CGRect(x: 300, y: 200, width: 50, height: 50)))
         let c = h.add(Box(CGRect(x: 500, y: 0, width: 50, height: 50)))
-        h.editor.selectedShapeIDs = [a, b]
         let before = h.editor.selectionBoundsWorkedOut
+        h.editor.selectedShapeIDs = [a, b]
         expectEqual(h.editor.selectionBounds, CGRect(x: 10, y: 20, width: 340, height: 230))
         _ = renderBitmap(h.editor, size: CGSize(width: 600, height: 400))
         _ = renderBitmap(h.editor, size: CGSize(width: 600, height: 400))

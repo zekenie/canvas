@@ -354,4 +354,30 @@ private let far = CGRect(x: 3000, y: 2000, width: 100, height: 100)
         h.wait(200)
         expectEqual(h.editor.camera, revealed(box))
     },
+    test("what's selected stays in view as the view settles: a shape by the view's edge is brought back in as the view narrows (the inspector sliding in), one revealed is fitted again into what's left, and a selection not in view keeps nothing") {
+        let h = try goToHarness()
+        let narrow = CGSize(width: 700, height: 700)
+        let edge = h.add(Box(CGRect(x: 880, y: 300, width: 100, height: 100)))
+        h.editor.selection = edge
+        h.editor.viewportDidResize(to: narrow)
+        // Its right edge 16 points in from the view's: 980 - (700 - 16).
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 296, y: 0)))
+        // Revealed, then narrowed as it glides: fitted into what's left.
+        h.editor.viewportDidResize(to: view)
+        let far = CGRect(x: 3000, y: 3000, width: 400, height: 200)
+        h.editor.selection = h.add(Box(far))
+        h.editor.reveal(h.editor.selectedShapeIDs)
+        h.wait(64)
+        h.editor.viewportDidResize(to: narrow)
+        h.wait(400)
+        expectEqual(h.editor.camera, Camera(fitting: far, in: CGRect(origin: .zero, size: narrow), inset: 100, maxZoom: 1.2))
+        // Selected out of view: nothing kept, so the camera stays.
+        h.wait(700)
+        h.editor.viewportDidResize(to: view)
+        let stayed = h.editor.camera
+        h.editor.selection = edge
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, stayed)
+        expectEqual(h.scheduler.pendingCount, 0)
+    },
 ])

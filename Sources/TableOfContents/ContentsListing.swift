@@ -1,14 +1,12 @@
 import Canvas
 
-/// What the table of contents lists for one scope: the rows, nested, as `entries` hands them to
-/// the list, and where each one is. Kept from one read to the next and brought up to date by
+/// What the table of contents lists of a board: the rows, nested, as `entries` hands them to the
+/// list, and where each one is. Kept from one read to the next and brought up to date by
 /// placing again only the rows of the shapes that changed, with the rows named under a shape that
 /// came or went, so a commit costs what it changed rather than what's on the board. What each update
 /// changed is noted for the list that shows it (`changes`), which follows it row by row.
 @MainActor
 struct ContentsListing {
-    /// The shapes it may list; nil for every shape.
-    let scope: Set<ShapeID>?
     /// Which listing this is: each one listed from scratch is a new one, which a list shows whole.
     let serial: Int
     /// The top-level rows, back to front, each with the rows nested under it. The rows at every
@@ -58,9 +56,8 @@ struct ContentsListing {
     /// those, however many rows there are.
     private static let mostMoves = 256
 
-    /// Lists the rows of `shapes` (back to front, each in `scope`) whose kinds list them.
-    init(scope: Set<ShapeID>?, shapes: [ShapeID], row: (ShapeID) -> ShapeRow?) {
-        self.scope = scope
+    /// Lists the rows of `shapes` (back to front) whose kinds list them.
+    init(shapes: [ShapeID], row: (ShapeID) -> ShapeRow?) {
         Self.made += 1
         serial = Self.made
         // By position in `order` from here on, which is quicker than by id.
@@ -189,7 +186,7 @@ struct ContentsListing {
     private func plan(for changed: Set<ShapeID>, row: (ShapeID) -> ShapeRow?) -> Plan? {
         // The changed shapes listed now, with their rows.
         var fresh: [ShapeID: ShapeRow] = [:]
-        for id in changed where scope?.contains(id) ?? true {
+        for id in changed {
             if let made = row(id), made.isListed { fresh[id] = made }
         }
         func isListed(_ id: ShapeID) -> Bool { changed.contains(id) ? fresh[id] != nil : nodes[id] != nil }

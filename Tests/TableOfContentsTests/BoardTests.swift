@@ -109,17 +109,6 @@ struct UpPlugin: CanvasPlugin {
         expectEqual(editor.contents.entries.outline, ["C"])
         expectEqual(editor.contents.rowsMade, made + 1, "a board put back has a new revision: its rows are made again")
     },
-    test("a scope pinned on the board left isn't the board shown's") {
-        let (file, pocket) = pocketFile(outside: ["A", "B"], inside: ["C"])
-        let editor = try contentsEditor([PocketsPlugin()], file: file)
-        let a = editor.document.shapes[0].id
-        editor.selectedShapeIDs = [a]                   // lists A alone
-        editor.contents.select([])                      // a click in the list's empty space: A stays listed
-        expectEqual(editor.contents.scope, [a])
-        editor.showBoard(BoardID(owner: pocket))
-        expectEqual(editor.contents.scope, nil)
-        expectEqual(editor.contents.entries.outline, ["C"])
-    },
     test("a row's primary action opens its shape, as Return does; several rows, or a shape that can't be opened, open nothing") {
         let (file, pocket) = pocketFile(outside: ["A", "B"], inside: ["C"])
         let editor = try contentsEditor([PocketsPlugin(), openingPockets()], file: file)
@@ -186,7 +175,7 @@ extension ContentsWindow {
         w.window.spin { editor.board == .root && w.rows == 2 }
         expectEqual(w.headerButtons.count, 0)
     },
-    test("with no heading the header is Board's, and Selection's while some shapes are listed") {
+    test("with no heading the header is Board's, whatever is selected") {
         let (file, _) = pocketFile(outside: ["A"], inside: [])
         let windows = try [nil, ContentsHeading("Board"), ContentsHeading("Board", systemImage: "folder"), ContentsHeading("Root")].map { heading in
             let w = ContentsWindow(try contentsEditor([PocketsPlugin(), headingPlugin { _ in heading }], file: file, scheduler: TaskScheduler()))
@@ -198,8 +187,10 @@ extension ContentsWindow {
         expect(try windows[0].headerDiffers(from: windows[3]) > 0, "another title")
         let plain = snapshot(windows[3].hosting), header = try windows[3].rect(ofRow: 0)
         windows[3].editor.selectedShapeIDs = [windows[3].editor.document.shapes[0].id]
-        windows[3].window.spin { windows[3].rows == 1 && windows[3].headerButtons.count == 1 }       // Show All
-        expect(changedPixels(plain, snapshot(windows[3].hosting), in: header) > 0, "Selection, whatever the heading")
+        windows[3].window.spin { windows[3].table?.selectedRowIndexes.count == 1 }
+        expectEqual(windows[3].rows, 2)
+        expectEqual(windows[3].headerButtons.count, 0)
+        expectEqual(changedPixels(plain, snapshot(windows[3].hosting), in: header), 0, "the heading stays")
     },
     test("Return on a pocket's row, the list's primary action, enters its board") {
         let (file, pocket) = pocketFile(outside: ["A"], inside: ["C", "D"])
@@ -227,7 +218,7 @@ extension ContentsWindow {
                 w.window.spin { w.rows == 51 }
             }
             editor.selectedShapeIDs = [editor.document.shapes[3].id]
-            w.window.spin { w.rows == 1 }
+            w.window.spin { w.table?.selectedRowIndexes.count == 1 }
             editor.showBoard(BoardID(owner: pocket))
             w.window.spin { w.rows == 50 }
         }

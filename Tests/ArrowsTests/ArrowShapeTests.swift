@@ -120,7 +120,7 @@ import TestKit
         board.h.editor.transact { $0.bringToFront(board.a) }       // raising A carries nothing; B is still higher
         expectEqual(board.h.editor.paintOrder().map(\.id), [board.b, c, board.a, try require(board.arrow), loose])
     },
-    test("in the table of contents an arrow is listed under the shape it starts from, and at the top when that shape isn't listed") {
+    test("in the table of contents an arrow is listed under the shape it starts from, at the top when it starts at none, whatever is selected") {
         let board = try Board(arrow: 0)
         let contents = try require(board.h.editor.tableOfContents)
         let loose = board.h.add(Arrow(start: .free(CGPoint(x: 700, y: 700)), end: .free(CGPoint(x: 800, y: 800))))   // starts free
@@ -131,7 +131,8 @@ import TestKit
         expectEqual(entries.first?.children?.first?.label?.text, "Arrow", "the kind's label")
         expectEqual(entries.first?.children?.first?.symbol, "arrow.up.right")
         board.h.editor.selectedShapeIDs = [try require(board.arrow), board.b]
-        expectEqual(contents.entries.map(\.id), [board.b, try require(board.arrow)], "its start isn't selected, so it's at the top")
+        expectEqual(contents.entries.map(\.id), [board.a, board.b, loose], "its start not selected, it stays under it")
+        expectEqual(contents.entries.first?.children?.map(\.id), [try require(board.arrow)])
     },
     test("pressing an arrow selects it without reordering anything") {
         let board = try Board(arrow: 0)

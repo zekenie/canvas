@@ -98,7 +98,7 @@ extension PeekSection: MenuBarSection {
         let seek = try require(menus.main.item(withTitle: "Edit")?.submenu?.item(withTitle: "Seek")?.submenu)
         expectEqual(seek.items.map(\.title), ["Seek…", "Seek Next"])
         expectEqual(seek.items.compactMap(BoardMenus.command(of:)), ["seek", "seek-next"])
-        expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out",
+        expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out",
                                                "Actual Size", "Zoom to Fit", "", "Enter Full Screen"], "the core's zooms, among the window's own")
     },
     test("sections and items go where they say beside each other: a submenu's sections inside it with a line between, an item first, one beside a command that isn't there where one that says nothing goes, and Enter Full Screen last") {
@@ -115,7 +115,7 @@ extension PeekSection: MenuBarSection {
         expectEqual(try titles(menus, "Edit"), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Shine", "Delete", "Select All", "Stray", "",
                                                "Seek", "Spelling and Grammar"], "beside a command that isn't there: after the section's own")
         expectEqual(try titles(menus, "Arrange"), ["Stack", "", "Lead", "Tidy", "Spin"])
-        expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Inspector", "Focus Inspector", "Lens", "Focus Next Pane", "Focus Previous Pane",
+        expectEqual(try titles(menus, "View"), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Lens", "Focus Next Pane", "Focus Previous Pane",
                                                "Show Minimap", "Glass", "", "Zoom In", "Zoom Out", "Actual Size", "Zoom to Fit", "", "Peek", "",
                                                "Enter Full Screen"],
                     "among the panels, one that says nothing after the inspector's items, one placed last after the minimap's; a section of View's before Enter Full Screen")

@@ -108,6 +108,12 @@ final class ContentsListController: NSObject {
     /// The listing shown (`ContentsListing.serial`), and the editor's selection as shown.
     private var shownListing: Int?
     private var shownSelection: [ShapeID]?
+    /// The selection the list made last, as of `editor.selectionRevision`: its rows show already, so
+    /// showing it opens and scrolls to nothing.
+    private var listSelection: Int?
+    /// A key reached the outline this turn: what it selects meanwhile is the key's (↑ ↓, Tab and ⇧Tab,
+    /// ⇧ with them), and the list keeps the keyboard; what it selects otherwise is a click's.
+    private var keyArrived = false
     /// The state's `boardsMayHaveChanged` as the boards open under rows were last followed: a drag's
     /// every event leaves it, and costs them nothing.
     private var followedBoards: Int?
@@ -127,10 +133,11 @@ final class ContentsListController: NSObject {
         outline.dataSource = self
         outline.delegate = self
         outline.target = self
+        outline.action = #selector(rowClicked(_:))
         outline.doubleAction = #selector(openClicked(_:))
-        view.onFirstResponder = { [weak self] hasIt in self?.noteKeyboard(hasIt) }
         view.onHide = { [weak self] in self?.reclaimSoon() }
         state.watchTurns(self)
+        state.keyboardEntry = outline
     }
 
     // MARK: Keeping up
@@ -174,6 +181,8 @@ final class ContentsListController: NSObject {
         }
         if let pointed = pointerRow, items[pointed] == nil { endPointing() }
         shownSelection = nil
+        // Rows of another listing (another board, the selection a row of it went to there): brought into view.
+        listSelection = nil
     }
 
     /// Follows the listing's updates row by row: the rows that left their place out of it, the rows
@@ -436,12 +445,18 @@ final class ContentsListController: NSObject {
 
     // MARK: The selection
 
-    /// Shows the editor's selection as the outline's: the rows of the shapes selected that show.
+    /// Shows the editor's selection as the outline's: the rows of the shapes selected that show. A
+    /// selection the list didn't make (on the canvas, Jump To, Find, an undo) is brought into view too:
+    /// the first selected row scrolled to, and for one shape the rows its row is nested under opened
+    /// first (an arrow's under the note it starts from), as the person would open them. Several
+    /// selected open nothing: ⌘A would open every row.
     private func showSelection() {
         let selected = editor.selectedShapeIDs
         guard selected != shownSelection else { return }
         shownSelection = selected
+        let fromList = listSelection == editor.selectionRevision
         var rows = IndexSet()
+        if !fromList, selected.count == 1 { openRows(above: selected[0]) }
         if selected.count <= ContentsStyle.selectedRowLookups {
             for id in selected {
                 guard let item = items[id], isShown(item) else { continue }
@@ -455,18 +470,56 @@ final class ContentsListController: NSObject {
                 if let item = outline.item(atRow: row) as? ContentsItem, wanted.contains(item.id) { rows.insert(row) }
             }
         }
-        guard rows != outline.selectedRowIndexes else { return }
-        outline.selectRowIndexes(rows, byExtendingSelection: false)
+        if rows != outline.selectedRowIndexes { outline.selectRowIndexes(rows, byExtendingSelection: false) }
+        if !fromList, let first = rows.first { outline.scrollRowToVisible(first) }
+    }
+
+    /// Opens the rows the shape's row is nested under, the outermost first, each kept open as the
+    /// person would leave it (`setExpanded`), so the row shows.
+    private func openRows(above id: ShapeID) {
+        var above: [ShapeID] = [], next = state.listedPlace(of: id)
+        guard next.isListed else { return }
+        while let parent = next.parent, !above.contains(parent) {
+            above.append(parent)
+            next = state.listedPlace(of: parent)
+        }
+        for parent in above.reversed() {
+            guard let item = items[parent], isShown(item), isExpandable(item) else { return }
+            guard !outline.isItemExpanded(item) else { continue }
+            state.setExpanded(item.entry, true)
+            outline.expandItem(item)
+        }
     }
 
     /// The person changed the outline's selection (a click, ⌘- and ⇧-clicks, a key): their shapes
-    /// selected (`selectFromList`), noted as the keys' when a key made it.
+    /// selected (`ContentsState.select`). A click's pick gives the canvas the keyboard, so its keys act
+    /// on the shapes picked at once, a nudge or Delete; a key's keeps it in the list, for the next key to
+    /// walk on (the list has it by View ▸ Focus Sidebar).
     private func selectionChanged() {
         var ids: Set<ShapeID> = []
         for row in outline.selectedRowIndexes {
             if let item = outline.item(atRow: row) as? ContentsItem { ids.insert(item.id) }
         }
-        state.selectFromList(ids)
+        state.select(ids)
+        listSelection = editor.selectionRevision
+        if !keyArrived { giveCanvasTheKeyboardSoon() }
+    }
+
+    /// A click on a row, once it's let go (the outline's action; not a press that dragged, nor the
+    /// header's row): one on a row already selected, which changes no selection, gives the canvas the
+    /// keyboard as one that picks does. The second click of a double-click opens the shape
+    /// (`openClicked`).
+    @objc private func rowClicked(_ sender: Any?) {
+        guard outline.clickedRow > 0 else { return }
+        giveCanvasTheKeyboardSoon()
+    }
+
+    /// The canvas gets the keyboard a turn on, once the click is done with, if the list still has it.
+    private func giveCanvasTheKeyboardSoon() {
+        _ = editor.scheduler.schedule(after: .zero) { [weak self] in
+            guard let self, let window = outline.window, window.firstResponder === outline else { return }
+            onExit()
+        }
     }
 
     // MARK: Opening
@@ -485,11 +538,6 @@ final class ContentsListController: NSObject {
 
     // MARK: The keyboard
 
-    /// The window's first responder changed: whether it's this list's outline.
-    private func noteKeyboard(_ hasIt: Bool) {
-        if state.listHasKeyboard != hasIt { state.listHasKeyboard = hasIt }
-    }
-
     /// The keyboard back to the canvas: Escape, ⌘↑, ⌘↩, ⌘.
     func exit() { onExit() }
 
@@ -500,9 +548,13 @@ final class ContentsListController: NSObject {
         }
     }
 
-    /// A key the outline heard, before it handles it: what it is to the list.
+    /// A key the outline heard, before it handles it: what it is to the list. What the outline selects
+    /// for it, before the next turn, is the key's.
     func key(_ event: NSEvent) -> ContentsKey {
-        state.keyReachedList()
+        if !keyArrived {
+            keyArrived = true
+            _ = editor.scheduler.schedule(after: .zero) { [weak self] in self?.keyArrived = false }
+        }
         let held = KeyMeaning.Modifiers(event.modifierFlags)
         let characters = event.charactersIgnoringModifiers ?? ""
         // ⌥Tab and ⌥⇧Tab go into a thing's drawn parts, which a row has none of (keyboard navigation's

@@ -43,10 +43,10 @@ import Types
         expectEqual(pasted.start.binding?.normalizedAnchor, original.start.binding?.normalizedAnchor)
         expectEqual(h.editor.arrowGeometry(of: byOriginal[arrow]!)?.bodyPath.boundingBoxOfPath,
                     h.editor.arrowGeometry(of: arrow)?.bodyPath.boundingBoxOfPath, "pasted in place, over the original")
-        // Selected, so the table of contents lists just the copies: the arrow under the note it starts from.
-        let entries = try require(h.editor.tableOfContents).entries
-        expectEqual(entries.map(\.id), [byOriginal[notes[0]]!, byOriginal[notes[1]]!])
-        expectEqual(entries.first?.children?.map(\.id), [byOriginal[arrow]!])
+        // The table of contents lists the copies among the board's shapes: the arrow under the note it starts from.
+        let copied = try require(h.editor.tableOfContents).entries.filter { byOriginal.values.contains($0.id) }
+        expectEqual(copied.map(\.id), [byOriginal[notes[0]]!, byOriginal[notes[1]]!])
+        expectEqual(copied.first?.children?.map(\.id), [byOriginal[arrow]!])
     },
     test("an arrow copied alone pastes free, ending where it was drawn: as the original does once its notes are deleted") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -114,7 +114,7 @@ import Types
     test("with the table of contents' list focused, Edit › Cut, Copy and Paste go through the responder chain to the board's editor") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        try configureBoards(pasteboard: pasteboard)
+        try configureBoards(pasteboard: pasteboard, sidebar: true)
         defer { try? configureBoards() }
         let board = BoardDocument()
         board.start(with: SampleBoard.document())
@@ -123,10 +123,9 @@ import Types
         let window = try require(board.windowControllers.first?.window)
         window.settle()
         let notes = board.editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
-        board.editor.selectedShapeIDs = [notes[0], notes[1]]          // the panel lists just these
-        // The list is made again for the new selection: find the one in the window, once it's there.
+        board.editor.selectedShapeIDs = [notes[0], notes[1]]          // the sidebar's list shows them selected
         @MainActor func contents() -> NSTableView? {
-            window.contentView?.descendants(NSTableView.self).first { $0.isTableOfContents && $0.window === window && $0.numberOfRows == 3 }
+            window.contentView?.descendants(NSTableView.self).first { $0.isTableOfContents && $0.window === window && $0.selectedRowIndexes.count == 2 }
         }
         window.spin { contents() != nil }
         let list = try require(contents())

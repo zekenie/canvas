@@ -363,6 +363,8 @@ public final class CanvasEditor {
     /// The last Zoom to Fit's camera and the camera it left (CanvasEditor+Camera.swift): Zoom to Fit
     /// again, while the camera is still headed for that fit, goes back to this.
     @ObservationIgnored var cameraBeforeFit: (before: Camera, fit: Camera)?
+    /// What the camera keeps in view while the view around it settles (CanvasEditor+Camera.swift).
+    @ObservationIgnored var keptView: KeptView?
     // The popover (Popovers.swift): the one showing, the one waiting its delay and its timer, and
     // while one has just gone, the end of that moment.
     @ObservationIgnored var shownPopover: CanvasPopover?
@@ -1176,6 +1178,7 @@ public final class CanvasEditor {
                                  isFileReplaced: replacingFile, fileValues: fileValues)
         withMutation(keyPath: \.document) { storedDocument = storedFile[target] }
         cameraBeforeFit = nil
+        keptView = nil
         board = target
         boardPath = storedFile.path(to: target) ?? [.root]
         // Whether this board takes shapes, before services hear of it.

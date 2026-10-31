@@ -2,20 +2,15 @@ import AppKit
 import Canvas
 import SwiftUI
 
-/// The table of contents, as a plugin: an outline of the board's shapes, one row each, shown in the
-/// detail panel when it has no one shape to show. Each kind says how its shapes appear
-/// (data-canvas's TOC card providers): the row, which shapes are listed, and which shape a row
-/// nests under. The rows are a Mac source list's, so rows from different plugins line up. Selecting
-/// on the canvas lists just the selected shapes; selecting a row selects its shape and brings it
-/// into view. The core never learns what a table of contents is.
+/// The table of contents, as a plugin: an outline of the board's shapes, one row each, in the
+/// window's sidebar (the host's slot for one). Each kind says how its shapes appear (data-canvas's
+/// TOC card providers): the row, which shapes are listed, and which shape a row nests under. The rows
+/// are a Mac source list's, so rows from different plugins line up. It lists every shape of the board
+/// shown whatever is selected: a selection made on the canvas is shown on its rows, opened to and
+/// scrolled to; selecting a row selects its shape and brings it into view. The core never learns what
+/// a table of contents is.
 extension PluginID {
     public static let tableOfContents: PluginID = "table-of-contents"
-}
-
-extension CanvasCommand {
-    /// View › Show All Shapes: the list, scoped to the selection, lists every shape again
-    /// (`ContentsState.showAll()`); its header's Show All runs it.
-    public static let showAllShapes: CanvasCommand = "showAllShapes"
 }
 
 // MARK: The extension point
@@ -712,18 +707,21 @@ extension EnvironmentValues {
 
 // MARK: The plugin
 
-/// The table of contents' state. Contributes no rows of its own: a kind nobody describes is listed
-/// by its label and symbol (`registry.label(of:)`).
+/// The table of contents' state, and the list as the window's sidebar (the host's slot for one),
+/// whose outline takes the keyboard when the window gives the sidebar it (View ▸ Focus Sidebar).
+/// Contributes no rows of its own: a kind nobody describes is listed by its label and symbol
+/// (`registry.label(of:)`).
 public struct TableOfContentsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .tableOfContents }
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ContentsState(editor: $0) }
-        // No key: the list's header has its button, and the menu bar its item, for the keyboard (View,
-        // last among the panels' items: after Show Minimap).
-        registrar.command(.showAllShapes, title: ContentsStyle.showAllShapes, in: ViewMenu.Panels.self, placed: .last,
-                          isEnabled: { $0.editor.tableOfContents?.isFiltered == true }) { $0.editor.tableOfContents?.showAll() }
+        registrar.hostSidebar(keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
+            TableOfContentsView(editor: editor, onExit: onExit)
+                .navigationSplitViewColumnWidth(min: ContentsStyle.sidebarMinWidth, ideal: ContentsStyle.sidebarWidth,
+                                                max: ContentsStyle.sidebarMaxWidth)
+        }
     }
 }
 
@@ -736,12 +734,10 @@ enum ContentsStyle {
     /// The header's: what it calls the board listed when no plugin says (`ContentsHeadings`); between
     /// the up button, the heading's symbol and its title; the up button's width.
     static let heading = "Board"
-    /// The header of a list of the selection, its button that lists every shape again and that
-    /// button's tooltip; the command it runs.
-    static let selectionHeading = "Selection"
-    static let showAllButton = "Show All"
-    static let showAllHelp = "List every shape on the board"
-    static let showAllShapes = "Show All Shapes"
+    /// The sidebar the list is in: its narrowest, the width it starts at, and its widest.
+    static let sidebarMinWidth: CGFloat = 180
+    static let sidebarWidth: CGFloat = 240
+    static let sidebarMaxWidth: CGFloat = 400
     /// What ⇧Tab types: the back-tab character, which the list takes as ↑.
     static let backTab = "\u{19}"
     static let headerSpacing: CGFloat = 4

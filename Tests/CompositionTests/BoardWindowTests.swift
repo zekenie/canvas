@@ -34,7 +34,7 @@ import Types
 }
 
 /// A board window as the app makes it (`makeWindowControllers`, unshown), over the nested file: the
-/// canvas with the path over it, and the panel.
+/// canvas with the path over it, the panel, and with `sidebar` the table of contents in the sidebar.
 @MainActor
 final class NestedWindow {
     let board: BoardDocument
@@ -46,8 +46,8 @@ final class NestedWindow {
 
     /// `extra`: plugins after the shipped list. `pasteboard`: the clipboard's and Copy as Image's (the
     /// test's own unless it passes one).
-    init(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, extra: [any CanvasPlugin] = []) throws {
-        try configureBoards(pasteboard: pasteboard, extra: extra)
+    init(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, extra: [any CanvasPlugin] = [], sidebar: Bool = false) throws {
+        try configureBoards(pasteboard: pasteboard, extra: extra, sidebar: sidebar)
         board = try nestedDocument()
         board.makeWindowControllers()
         controller = try require(board.windowControllers.first as? BoardWindowController)
@@ -56,19 +56,24 @@ final class NestedWindow {
         canvas = try require(board.focus.canvas, "the window's content made the canvas")
     }
 
-    /// The path's crumbs that are buttons, over the canvas, leading first ("…" isn't one).
+    /// The path's crumbs that are buttons, over the canvas, leading first ("…" isn't one; nor is a hidden
+    /// sidebar's button, whose frame may still lie there).
     var crumbs: [NSButton] {
         guard let content = window.contentView else { return [] }
         let folds = pathFolds(under: content)
         return content.descendants(NSButton.self)
-            .filter { button in !folds.contains { $0 === button } && overCanvas(button) && onCanvas(button).minY < Self.pathBottom }
+            .filter { button in
+                !button.isHiddenOrHasHiddenAncestor && !folds.contains { $0 === button } && overCanvas(button)
+                    && onCanvas(button).minY < Self.pathBottom
+            }
             .sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
     }
 
     /// The buttons of the crumb's menu that shows, over the canvas below the path, top first: each
     /// row's, and a disclosure triangle's before a row with rows under it.
     var menuButtons: [NSButton] {
-        (window.contentView?.descendants(NSButton.self) ?? []).filter { overCanvas($0) && onCanvas($0).minY >= Self.pathBottom }
+        (window.contentView?.descendants(NSButton.self) ?? [])
+            .filter { !$0.isHiddenOrHasHiddenAncestor && overCanvas($0) && onCanvas($0).minY >= Self.pathBottom }
             .sorted { (onCanvas($0).minY, onCanvas($0).minX) < (onCanvas($1).minY, onCanvas($1).minX) }
     }
 
@@ -86,10 +91,13 @@ final class NestedWindow {
     /// Below the path, which is 8 points down and 27 tall (`BoardPath.coveredHeight`, 35).
     static let pathBottom: CGFloat = 40
 
-    /// The panel header's text field (Titles' `TitleHeader`), beside the canvas.
+    /// Whether the inspector shows: some view of it after the canvas, shown.
+    var inspectorShown: Bool { window.contentView?.descendants(NSView.self).contains { $0.isInInspector(beside: canvas) } ?? false }
+
+    /// The panel header's text field (Titles' `TitleHeader`), in the inspector after the canvas.
     var titleField: NSTextField? {
         guard let content = window.contentView else { return nil }
-        return content.descendants(NSTextField.self).first { $0.isEditable && !overCanvas($0) && $0.isInPanelHeader(of: content) }
+        return content.descendants(NSTextField.self).first { $0.isEditable && $0.isInInspector(beside: canvas) && $0.isInPanelHeader(of: content) }
     }
 
     /// The app's menus, with Go's items sent to this window's controller (an unshown window isn't the

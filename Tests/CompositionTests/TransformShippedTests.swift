@@ -74,11 +74,9 @@ import Validation
         h.editor.put([cheese], in: dairy)
     }
 
-    /// What the table of contents says a shape is, on the board shown: it lists every shape (`showAll`), whatever
-    /// is selected, as it lists the selection alone otherwise.
+    /// What the table of contents says a shape is, on the board shown.
     func row(_ id: ShapeID) -> String? {
-        h.editor.tableOfContents?.showAll()
-        return h.editor.tableOfContents?.entries.first { $0.id == id }?.label?.text
+        h.editor.tableOfContents?.entries.first { $0.id == id }?.label?.text
     }
 
     /// An arrow's ends' bindings, from the file, wherever the arrow is.

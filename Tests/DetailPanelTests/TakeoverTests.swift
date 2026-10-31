@@ -37,69 +37,30 @@ private struct TakeoverField: View {
     var body: some View { TextField(name, text: $model.text) }
 }
 
-/// Whether an overview holds the keyboard (`HoldingOverviewPlugin`).
-@Observable @MainActor final class HoldModel {
-    var holds = false
-}
-
-/// An overview, a field whose placeholder is "Overview", that holds the keyboard while `model` says.
-private struct HoldingOverviewPlugin: CanvasPlugin {
-    let model: HoldModel
-    var id: PluginID { "holding-overview" }
-
-    func register(into registrar: inout PluginRegistrar) {
-        let model = model
-        registrar.detailOverview(holdsKeyboard: { _ in model.holds }) { _, _ in TextField("Overview", text: .constant("")) }
-    }
-}
-
-@MainActor let takeoverTests = Suite("Panel overview and takeovers", [
-    test("an overview that holds the keyboard stays up whatever is selected, the same view with the keyboard in it as the header of several comes and goes; let go, one shape's panel shows") {
-        let model = HoldModel()
-        let editor = try gadgetEditor([HoldingOverviewPlugin(model: model)], scheduler: TaskScheduler())
-        let panel = PanelWindow(editor)
-        let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame.offsetBy(dx: 300, dy: 0)))
-        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
-        let field = try panel.field("Overview")
-        panel.window.focus(field)
-        model.holds = true
-        for selection in [[a], [a, b], [], [b]] {
-            editor.selectedShapeIDs = selection
-            panel.window.settle()
-            expect(panel.fields.count == 1 && panel.fields.first === field, "\(selection.count) selected: the overview's field, the same one: \(panel.fields.map(\.stringValue))")
-            expect((panel.window.firstResponder as? NSTextView)?.delegate === field, "and it keeps the keyboard")
-        }
-        expectEqual(editor.selectedShapeIDs, [b])
-        model.holds = false
-        panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "380 pt", "40 pt"] }
-    },
-    test("Next and Previous Inspector Tab step only the tabs the panel shows: not under a takeover, nor while the overview holds the keyboard") {
-        let hold = HoldModel(), takeover = TakeoverModel()
-        let editor = try gadgetEditor([WalkersPlugin(), HoldingOverviewPlugin(model: hold), TakeoverPlugin(model: takeover)], scheduler: TaskScheduler())
+@MainActor let takeoverTests = Suite("Panel takeovers", [
+    test("Next and Previous Inspector Tab step only the tabs the panel shows: not under a takeover") {
+        let takeover = TakeoverModel()
+        let editor = try gadgetEditor([WalkersPlugin(), TakeoverPlugin(model: takeover)], scheduler: TaskScheduler())
         let id = editor.add(Walker(gadgetFrame))
         editor.selection = id
         let state = try require(editor.detailPanel)
         @MainActor func tab() throws -> DetailTabID? { state.currentTab(in: try editor.layout(id), for: Walker.kind) }
         expectEqual(state.canStepTab, true)
-        hold.holds = true
-        expectEqual(state.canStepTab, false, "the overview has no tab strip")
-        expect(!state.stepTab(by: 1))
-        expectEqual(try tab(), .of(WalkerTab.self), "and the remembered tab was not changed")
-        hold.holds = false
         takeover.active = true
         expectEqual(state.canStepTab, false, "a takeover is in the tabs' place")
         expect(!state.stepTab(by: -1))
-        expectEqual(try tab(), .of(WalkerTab.self))
+        expectEqual(try tab(), .of(WalkerTab.self), "and the remembered tab was not changed")
         takeover.active = false
         expect(state.stepTab(by: 1))
         expectEqual(try tab(), .of(SecondWalkerTab.self))
     },
-    test("active, a takeover shows in place of the selection's panel and the overview; inactive, the panel is as it was") {
+    test("active, a takeover shows in place of the selection's panel, and with nothing selected; inactive, the panel is as it was") {
         let model = TakeoverModel()
-        let editor = try gadgetEditor([OverviewPlugin(), TakeoverPlugin(model: model)], scheduler: TaskScheduler())
+        let editor = try gadgetEditor([TakeoverPlugin(model: model)], scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         let box = editor.add(Box(gadgetFrame))
-        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
+        panel.window.settle()
+        expectEqual(panel.fields.count, 0, "nothing selected, nothing to show")
         editor.selection = box
         panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "80 pt", "40 pt"] }
         model.active = true
@@ -107,27 +68,18 @@ private struct HoldingOverviewPlugin: CanvasPlugin {
         expectEqual(panel.fields.count, 1, "the selection's fields are gone")
         editor.selection = nil
         panel.window.settle()
-        expectEqual(panel.fields.map(\.placeholderString), ["Takeover"], "no selection: still the takeover, not the overview")
+        expectEqual(panel.fields.map(\.placeholderString), ["Takeover"], "no selection: still the takeover")
         model.active = false
-        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
+        panel.window.spin { panel.fields.isEmpty }
         editor.selection = box
         panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "80 pt", "40 pt"] }
     },
-    test("the overview and a takeover are the panel's points: the report names them, and a list without the panel refuses either") {
-        let registry = try Registry(plugins: [KeyboardPlugin(), DetailPanelPlugin(), OverviewPlugin(), TakeoverPlugin(model: TakeoverModel())])
+    test("a takeover is the panel's point: the report names it, and a list without the panel refuses it") {
+        let registry = try Registry(plugins: [KeyboardPlugin(), DetailPanelPlugin(), TakeoverPlugin(model: TakeoverModel())])
         let lines = registry.report.split(separator: "\n")
-        expect(lines.contains { $0.hasPrefix("overview ") && $0.hasSuffix(" detail overview") }, registry.report)
         expect(lines.contains { $0.hasPrefix("takeover ") && $0.hasSuffix(" detail takeover") }, registry.report)
-        expectThrows(RegistryError.ownerNotInstalled(point: "DetailOverviews", owner: .detailPanel, contributor: "overview")) {
-            _ = try Registry(plugins: [OverviewPlugin()])
-        }
         expectThrows(RegistryError.ownerNotInstalled(point: "DetailTakeovers", owner: .detailPanel, contributor: "takeover")) {
             _ = try Registry(plugins: [TakeoverPlugin(model: TakeoverModel())])
-        }
-    },
-    test("the panel has one overview: a second is a conflict") {
-        expectThrows(RegistryError.conflict(point: "DetailOverviews", key: "overview", plugins: ["overview", "second"])) {
-            _ = try Registry(plugins: [KeyboardPlugin(), DetailPanelPlugin(), OverviewPlugin(), OverviewPlugin(name: "Second")])
         }
     },
     test("of several takeovers the first that's active shows, in plugin order, and Escape is its own") {
@@ -146,10 +98,17 @@ private struct HoldingOverviewPlugin: CanvasPlugin {
         first.active = false
         panel.window.spin { panel.fields.map(\.placeholderString) == ["Second"] }
     },
-    test("the panel is the window's inspector: wanted while a takeover is active, and dismissed as Escape escapes it") {
+    test("the panel is the window's inspector: with something to show while shapes are selected, wanted while a takeover is active, and dismissed as Escape escapes it") {
         let model = TakeoverModel()
         let editor = try gadgetEditor([TakeoverPlugin(model: model)])
         let inspector = try require(editor.registry.hostInspector)
+        expect(!inspector.shownWhile(editor), "nothing selected: nothing to show")
+        let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame.offsetBy(dx: 300, dy: 0)))
+        editor.selection = a
+        expect(inspector.shownWhile(editor))
+        editor.selectedShapeIDs = [a, b]
+        expect(inspector.shownWhile(editor), "several: their header")
+        editor.selection = nil
         expect(!inspector.isRequested(editor), "the person's to show or hide")
         model.active = true
         expect(inspector.isRequested(editor))

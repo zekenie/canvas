@@ -34,6 +34,70 @@ extension CanvasEditor {
         scheduleAnimationFrame(from: camera, to: target, elapsed: 0, total: total, easing: easing)
     }
 
+    /// Moves the camera as `animateCamera(to:duration:)` does, to fit `rect` (world units) into the part
+    /// of the view the host leaves clear (`unobscuredViewport`) with `inset` view points of margin in
+    /// all, no closer than `maxZoom`; and keeps that fit while the view around it settles: a change of
+    /// the view's size in the next `Style.viewSettle` that leaves part of `rect` out (the inspector the
+    /// selection shows sliding in beside the canvas, narrowing it) fits it again into what is clear then,
+    /// unless something else has moved the camera since. What bringing shapes into view goes by (Selection's `reveal`). Replaces
+    /// what was kept (`keepInViewWhileSettling`). Nothing before the view has a size, or for a null rect.
+    public func animateCamera(toFit rect: CGRect, inset: CGFloat, maxZoom: CGFloat, duration: Duration) {
+        let view = unobscuredViewport
+        guard !view.isEmpty, !rect.isNull else { return }
+        let target = Camera(fitting: rect, in: view, inset: inset, maxZoom: maxZoom)
+        animateCamera(to: target, duration: duration)
+        keptView = KeptView(rect: rect, keeping: .fit(inset: inset, maxZoom: maxZoom), camera: target,
+                            until: scheduler.now + Style.viewSettle)
+    }
+
+    /// Keeps what of `rect` (world units) is in view now in view while the view around it settles: all of
+    /// it, or the part the clear view shows (`unobscuredViewport`, where the camera is headed) of one cut
+    /// by its edge. A change of the view's size in the next `Style.viewSettle` that leaves part of that out
+    /// (the inspector the selection shows sliding in beside the canvas) pans the camera by as little as
+    /// brings it back, `Style.keepInViewMargin` in from the edges (a part too big for that keeps its
+    /// top-left corner in view), unless something else has moved the camera since or a press is under way.
+    /// What a selection does as it changes (Selection's), so a shape selected by the canvas's edge isn't
+    /// left under the inspector. Replaces what was kept (a fit, `animateCamera(toFit:…)`); a rect with
+    /// nothing in view keeps nothing new.
+    public func keepInViewWhileSettling(_ rect: CGRect) {
+        let view = unobscuredViewport, camera = cameraTarget
+        guard !view.isEmpty, !rect.isNull else { return }
+        let shown = rect.intersection(camera.toWorld(view))
+        guard !shown.isNull, shown.width > 0 || shown.height > 0 else { return }
+        keptView = KeptView(rect: shown, keeping: .inView, camera: camera, until: scheduler.now + Style.viewSettle)
+    }
+
+    /// The view's size changed: a view kept (`animateCamera(toFit:…)`, `keepInViewWhileSettling`) whose
+    /// time isn't up and whose camera nothing else has moved since (where the camera is headed is where
+    /// it was left), and which the view now leaves part of out, is kept in what is clear of it: a fit
+    /// fitted again, a rect brought back into view, easing there while the camera's move is under way,
+    /// at once otherwise.
+    func keepViewAfterResize() {
+        guard let kept = keptView else { return }
+        guard scheduler.now < kept.until, cameraTarget == kept.camera else { return keptView = nil }
+        // Only a view that leaves part of it out: one wider again (the inspector sliding back out) moves nothing.
+        let view = unobscuredViewport
+        guard !view.isEmpty, !kept.camera.toWorld(view).contains(kept.rect) else { return }
+        let target: Camera
+        switch kept.keeping {
+        case .fit(let inset, let maxZoom):
+            target = Camera(fitting: kept.rect, in: view, inset: inset, maxZoom: maxZoom)
+        case .inView:
+            guard session == nil else { return }
+            let margin = view.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
+            var moved = kept.camera
+            moved.pan(by: Self.shift(bringing: kept.camera.toView(kept.rect), into: margin.isEmpty ? view : margin))
+            target = moved
+        }
+        guard target != kept.camera else { return }
+        keptView?.camera = target
+        if cameraAnimationTarget != nil {
+            animateCamera(to: target, duration: Style.keptViewDuration)
+        } else {
+            camera = target
+        }
+    }
+
     /// Where the camera comes to rest: while an animation runs (`animateCamera`), its target;
     /// otherwise the camera itself (a slide after a fling has no fixed end). What to remember a view
     /// as, if it's remembered mid-motion.
@@ -47,17 +111,22 @@ extension CanvasEditor {
         guard session == nil, let box = editingFrame(of: id) else { return }
         let view = unobscuredViewport.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
         guard view.width > 0, view.height > 0 else { return }
-        let shown = camera.toView(rect.offsetBy(dx: box.minX, dy: box.minY))
-        /// How far to move what's shown along one axis to bring `low...high` inside `min...max`.
+        let delta = Self.shift(bringing: camera.toView(rect.offsetBy(dx: box.minX, dy: box.minY)), into: view)
+        guard delta != .zero else { return }
+        camera.pan(by: delta)
+    }
+
+    /// How far to move what's shown (view points) to bring `shown` inside `view`, by as little as it
+    /// takes; one too big for it along a way keeps its top or left edge in view.
+    static func shift(bringing shown: CGRect, into view: CGRect) -> CGSize {
+        /// Along one axis: `low...high` inside `min...max`.
         func shift(_ low: CGFloat, _ high: CGFloat, into min: CGFloat, _ max: CGFloat) -> CGFloat {
             if low < min || high - low > max - min { return min - low }
             if high > max { return max - high }
             return 0
         }
-        let delta = CGSize(width: shift(shown.minX, shown.maxX, into: view.minX, view.maxX),
-                           height: shift(shown.minY, shown.maxY, into: view.minY, view.maxY))
-        guard delta != .zero else { return }
-        camera.pan(by: delta)
+        return CGSize(width: shift(shown.minX, shown.maxX, into: view.minX, view.maxX),
+                      height: shift(shown.minY, shown.maxY, into: view.minY, view.maxY))
     }
 
     /// Any camera change (a scroll, a pinch, a zoom command, a hand drag, a test setting it) stops
@@ -126,6 +195,24 @@ extension CanvasEditor {
         let u = t - 1
         return u * u * u + 1
     }
+}
+
+/// What the camera keeps in view while the view around it settles (`CanvasEditor.animateCamera(toFit:…)`,
+/// `keepInViewWhileSettling`): the world rect and how, where the camera was headed as it was last left
+/// (anything else that moves the camera leaves `cameraTarget` elsewhere, and it goes), and when its time
+/// is up, on the scheduler's clock.
+struct KeptView {
+    enum Keeping {
+        /// Fitted again into what is clear of the view.
+        case fit(inset: CGFloat, maxZoom: CGFloat)
+        /// Brought back into view by as little as it takes, if the view leaves part of it out.
+        case inView
+    }
+
+    let rect: CGRect
+    let keeping: Keeping
+    var camera: Camera
+    let until: Duration
 }
 
 /// Which way a pan by the keys moves the view over the board (`CanvasEditor.pan`): `.right` shows

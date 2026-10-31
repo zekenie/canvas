@@ -8,16 +8,13 @@ import SwiftUI
 // (its hover's tint, a drop's ring and line, its triangle's name), and the cells that host a row's view
 // and the header in SwiftUI.
 
-/// The list's view: the outline in its scroll view, on the panel's background. It tells the list
-/// whether the window's first responder is its outline, each time it changes, and when it's hidden
-/// (it, or a view it's in, like the panel), which SwiftUI doesn't say.
+/// The list's view: the outline in its scroll view, on the sidebar's background. It tells the list
+/// when it's hidden (it, or a view it's in, like the sidebar), which SwiftUI doesn't say.
 @MainActor
 final class ContentsListView: NSView {
     let scrollView = NSScrollView()
     let outline = ContentsTable()
-    var onFirstResponder: (@MainActor (Bool) -> Void)?
     var onHide: (@MainActor () -> Void)?
-    private var watching: NSKeyValueObservation?
 
     init() {
         super.init(frame: .zero)
@@ -60,27 +57,9 @@ final class ContentsListView: NSView {
         outline.sizeLastColumnToFit()
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        watching = window?.observe(\.firstResponder, options: [.initial, .new]) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.firstResponderChanged() }
-        }
-        if window == nil { onFirstResponder?(false) }
-    }
-
     override func viewDidHide() {
         super.viewDidHide()
         onHide?()
-        firstResponderChanged()
-    }
-
-    override func viewDidUnhide() {
-        super.viewDidUnhide()
-        firstResponderChanged()
-    }
-
-    private func firstResponderChanged() {
-        onFirstResponder?(window != nil && window?.firstResponder === outline && !isHiddenOrHasHiddenAncestor)
     }
 }
 
@@ -367,8 +346,8 @@ struct ContentsRowLabelStyle: LabelStyle {
     }
 }
 
-/// The header's cell, the group row's: the heading, or "Selection" and Show All, in SwiftUI, which
-/// redraws it as what it reads changes (`ContentsHeader`).
+/// The header's cell, the group row's: the heading, in SwiftUI, which redraws it as what it reads
+/// changes (`ContentsHeader`).
 @MainActor
 final class ContentsHeaderCell: NSTableCellView {
     init(state: ContentsState, editor: CanvasEditor) {

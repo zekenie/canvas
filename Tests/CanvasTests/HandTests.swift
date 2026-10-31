@@ -90,6 +90,104 @@ import TestKit
         h.editor.animateCamera(to: Camera(zoom: 3), duration: .milliseconds(200))
         expectEqual(h.scheduler.pendingCount, 0)
     },
+    test("a fit keeps to its rect while the view settles: the view narrowed mid-move or just after fits it again into what's left, and not once something else moved the camera or its time is up") {
+        let h = try EditorHarness(plugins: [])
+        let rect = CGRect(x: 0, y: 0, width: 2000, height: 400)
+        let wide = CGSize(width: 1200, height: 800), narrow = CGSize(width: 920, height: 800)
+        @MainActor func fitted(in size: CGSize) -> Camera { Camera(fitting: rect, in: CGRect(origin: .zero, size: size), inset: 100, maxZoom: 1.2) }
+        h.editor.viewportDidResize(to: wide)
+        // Mid-move: an inspector sliding in beside the canvas as the selection's shown.
+        h.editor.animateCamera(toFit: rect, inset: 100, maxZoom: 1.2, duration: .milliseconds(200))
+        expectEqual(h.editor.cameraTarget, fitted(in: wide))
+        h.wait(48)
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.cameraTarget, fitted(in: narrow), "headed for the fit into what's left")
+        h.wait(400)
+        expectEqual(h.editor.camera, fitted(in: narrow))
+        // Just after the move: at once.
+        h.editor.viewportDidResize(to: wide)
+        h.editor.animateCamera(toFit: rect, inset: 100, maxZoom: 1.2, duration: .milliseconds(200))
+        h.wait(250)
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, fitted(in: narrow))
+        h.editor.viewportDidResize(to: wide)
+        expectEqual(h.editor.camera, fitted(in: narrow), "wider again (the inspector sliding out), it's all in view: nothing moves")
+        // Something else moved the camera since: the view's size moves nothing.
+        h.editor.animateCamera(toFit: rect, inset: 100, maxZoom: 1.2, duration: .milliseconds(200))
+        h.wait(250)
+        h.editor.camera.pan(by: CGSize(width: 30, height: 0))
+        let panned = h.editor.camera
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, panned)
+        // Its time is up: a window resized later keeps the camera, as ever.
+        h.editor.viewportDidResize(to: wide)
+        h.editor.animateCamera(toFit: rect, inset: 100, maxZoom: 1.2, duration: .milliseconds(200))
+        h.wait(700)
+        let settled = h.editor.camera
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, settled)
+        expectEqual(h.scheduler.pendingCount, 0, "no timer of its own: its time is the scheduler's clock")
+    },
+    test("what of a rect is in view stays in view while the view settles: a narrower view that leaves part of it out pans by as little as brings it back (the part that showed, of one cut by the view's edge), unless none of it was in view, the camera moved, a press is under way or its time is up; a fit replaces it") {
+        let h = try EditorHarness(plugins: [])
+        let wide = CGSize(width: 1200, height: 800), narrow = CGSize(width: 900, height: 800)
+        // In the wide view, past the narrow one's right edge.
+        let rect = CGRect(x: 1000, y: 300, width: 150, height: 100)
+        h.editor.viewportDidResize(to: wide)
+        h.editor.keepInViewWhileSettling(rect)
+        h.wait(100)
+        h.editor.viewportDidResize(to: narrow)
+        // Its right edge `keepInViewMargin`, 16 points, in from the view's: 1150 - (900 - 16).
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 266, y: 0)))
+        h.editor.viewportDidResize(to: wide)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 266, y: 0)), "wider, it's still in view: nothing moves")
+        // Cut by the view's edge as it's kept: the part that showed (1100 to 1200) comes back into view.
+        h.editor.camera = Camera()
+        h.editor.keepInViewWhileSettling(CGRect(x: 1100, y: 300, width: 200, height: 100))
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 316, y: 0)), "1200 - (900 - 16)")
+        // None of it in view: nothing.
+        h.editor.viewportDidResize(to: wide)
+        h.editor.camera = Camera()
+        h.editor.keepInViewWhileSettling(CGRect(x: 1300, y: 300, width: 200, height: 100))
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, Camera())
+        // The camera moved since: nothing.
+        h.editor.viewportDidResize(to: wide)
+        h.editor.keepInViewWhileSettling(rect)
+        h.editor.camera.pan(by: CGSize(width: -10, height: 0))
+        let panned = h.editor.camera
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, panned)
+        // A press under way (the Hand's): nothing until it's over, while there's time.
+        h.editor.camera = Camera()
+        h.editor.viewportDidResize(to: wide)
+        h.editor.keepInViewWhileSettling(rect)
+        h.press(at: CGPoint(x: 100, y: 100))
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, Camera())
+        h.release()
+        h.editor.viewportDidResize(to: CGSize(width: 899, height: 800))
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 267, y: 0)))
+        // A fit replaces it: fitted again into a view that cuts it (centered in the wide view at 120%, it
+        // ends 690 points in).
+        h.editor.camera = Camera()
+        h.editor.viewportDidResize(to: wide)
+        h.editor.keepInViewWhileSettling(rect)
+        h.editor.animateCamera(toFit: rect, inset: 100, maxZoom: 1.2, duration: .milliseconds(200))
+        h.wait(250)
+        let cutting = CGSize(width: 600, height: 800)
+        h.editor.viewportDidResize(to: cutting)
+        expectEqual(h.editor.camera, Camera(fitting: rect, in: CGRect(origin: .zero, size: cutting), inset: 100, maxZoom: 1.2))
+        // Its time is up: nothing.
+        h.editor.camera = Camera()
+        h.editor.viewportDidResize(to: wide)
+        h.editor.keepInViewWhileSettling(rect)
+        h.wait(700)
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(h.editor.camera, Camera())
+        expectEqual(h.scheduler.pendingCount, 0)
+    },
 ])
 
 @MainActor let handTests = Suite("Hand", [

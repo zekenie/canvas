@@ -49,8 +49,8 @@ import Validation
 // shapes are pushed along the grid; and the root crumb's menu inside a subboard, the root's rows
 // after a move and a rename on the board shown. `./build.sh bench` runs these in a release build
 // and holds them to the budgets; `./test.sh` runs them debug and small, so they keep working, and
-// only reports. Reported alone: the inspector's list replaced on a switch, and a crumb's menu shown
-// in the window (InspectorBenchmarks.swift), a chain of 1,000 boards, a crumb's menu's first read,
+// only reports. Reported alone: the sidebar's list replaced on a switch, and a crumb's menu shown
+// in the window (SidebarBenchmarks.swift), a chain of 1,000 boards, a crumb's menu's first read,
 // the first frame zoomed in to 35% from skeletons (every text in view laid out), and a pinch from
 // 100% to 10% and back, a frame at each zoom (in full just above 35%, a frame of the
 // generated board takes more than 16 ms). New frame budgets time the main thread's CPU
@@ -149,7 +149,7 @@ enum Budget {
     static let dragInputOverAlone = 3.0
     /// And more, for a timing too short to hold to a ratio (a drag on a board of 1,000, some 0.03 ms).
     static let dragInputSlack = 0.1
-    /// The inspector's list replaced on a switch between boards of 10,000 rows each: reported, not
+    /// The sidebar's list replaced on a switch between boards of 10,000 rows each: reported, not
     /// held, until it's known to fit.
     static let listReplacedTarget = 50.0
     /// A `canvas draw` of 20 notes on 10,000 shapes, each pushed along its row to the end: the
@@ -904,15 +904,10 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 step += 1
                 h.drag(to: center + CGPoint(x: CGFloat(step), y: CGFloat(step) / 2))
             }
-            // Pressing the note selects it, which lists it alone. The rows read are held until the
-            // next read, as the list holds the rows it shows.
+            // Pressing the note selects it; every shape stays listed, through the drag and after it. The
+            // rows read are held until the next read, as the list holds the rows it shows.
             h.press(at: center)
             var rows = contents.entries
-            let alone = median(runs: 21, prepare: dragNote) { rows = contents.entries }
-            expectEqual(rowCount(rows), 1)
-            // Show All lists every shape again, through the drag and after it.
-            contents.showAll()
-            rows = contents.entries
             let drag = median(runs: 21, prepare: dragNote) { rows = contents.entries }
             h.release()
             var added: [ShapeID] = []
@@ -931,12 +926,11 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 let id = restackable[restacked * restackable.count / 22].id
                 h.editor.transact { $0.bringToFront(id) }
             }) { rows = contents.entries }
-            expect(contents.scope == nil, "every shape is listed")
-            expectEqual(rowCount(rows), size)
-            report(String(format: "%6d shapes, the table of contents' rows: after a drag event %6.3f ms (budget %.0f), %6.3f listing only the dragged shape; after an insert %6.3f, a delete %6.3f, a restack %6.3f",
-                          size, drag, Budget.contentsRows, alone, insert, delete, restack))
+            expectEqual(rowCount(rows), size, "every shape is listed")
+            report(String(format: "%6d shapes, the table of contents' rows: after a drag event %6.3f ms (budget %.0f); after an insert %6.3f, a delete %6.3f, a restack %6.3f",
+                          size, drag, Budget.contentsRows, insert, delete, restack))
             if holdsToBudgets {
-                for (what, time) in [("a drag event", drag), ("a drag event, listing only the dragged shape,", alone), ("an insert", insert),
+                for (what, time) in [("a drag event", drag), ("an insert", insert),
                                      ("a delete", delete), ("a restack", restack)] {
                     expect(time < Budget.contentsRows, "reading the rows after \(what) on \(size) shapes took \(time) ms")
                 }
@@ -1217,34 +1211,19 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 try reads()
             }
             expect(h.editor.board.isRoot, "⌘↑ went up")
-            expectEqual(rowCount(rows), 1, "the subboard selected, and listed alone")
+            expectEqual(rowCount(rows), size + 1, "every shape of the root listed, the subboard's too")
             let down = try median(runs: 21, prepare: { if !h.editor.board.isRoot { h.editor.perform(.enclosingBoard) } }) {
                 h.editor.perform(.openSelection)
                 try reads()
             }
             expectEqual(h.editor.board, child, "⌘↓ went down")
-            // Up again, then the selection let go of, so the root lists every row: its rows and
-            // listing as it was left, taken back.
-            let upListed = try median(runs: 21, prepare: {
-                if h.editor.board.isRoot {
-                    h.editor.selectedShapeIDs = [owner]
-                    h.editor.perform(.openSelection)
-                }
-            }) {
-                h.editor.perform(.enclosingBoard)
-                h.editor.selectedShapeIDs = []
-                try reads()
-            }
-            expect(h.editor.board.isRoot, "⌘↑ went up")
-            expectEqual(rowCount(rows), size + 1, "every shape of the root listed, the subboard's too")
-            report(String(format: "%6d shapes on each board: entering the subboard, cold, %6.1f ms (budget %.0f; fitted at %.0f%%); going back up to the root %5.1f ms (listing it all %5.1f), down again %5.1f (budget %.0f)",
-                          size, cold, Budget.enterCold, fitted * 100, up, upListed, down, Budget.warmReturn))
+            report(String(format: "%6d shapes on each board: entering the subboard, cold, %6.1f ms (budget %.0f; fitted at %.0f%%); going back up to the root, listing it all, %5.1f ms, down again %5.1f (budget %.0f)",
+                          size, cold, Budget.enterCold, fitted * 100, up, down, Budget.warmReturn))
             if holdsToBudgets {
                 if size >= 10_000 {
                     expect(cold < Budget.enterCold, "entering a subboard of \(size) shapes, cold, took \(cold) ms")
                 }
-                expect(up < Budget.warmReturn, "going back up to a board of \(size) shapes took \(up) ms")
-                expect(upListed < Budget.warmReturn, "going back up to a board of \(size) shapes and listing it all took \(upListed) ms")
+                expect(up < Budget.warmReturn, "going back up to a board of \(size) shapes and listing it all took \(up) ms")
                 expect(down < Budget.warmReturn, "going back down to a board of \(size) shapes took \(down) ms")
             }
         }
@@ -1294,7 +1273,6 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 draw(h.editor, into: context, size: viewport)
             }
             let input = dragInput(h, from: center, step: &step)
-            contents.showAll()
             var rows = contents.entries
             let afterDrag = median(runs: 21, prepare: {
                 step += 1

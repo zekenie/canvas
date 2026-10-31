@@ -306,8 +306,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make a double-click, Return or ⌘↓ on a kind's shape do something other than edit it (show its board) | `x.opens("Open") { shape, editor in ... }` (Selection's `ShapeOpening`) | [Selection](#selection) |
 | Make a kind's shapes open onto the boards they own: Open in its menu, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
 | Show where you are in a file's boards, and go up | `BoardPath(editor:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:)` | [Boards](#boards) |
-| Put a view of yours over the window's canvas, beside it as the inspector, a pane in Settings, or words in the window's subtitle or a tool's tip | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }`, `hostInspector`, `settingsPane`, `windowSubtitle`, `toolTips` | [Host slots](#host-slots) |
-| Show a view of yours in the detail panel where it has no one shape to show, or in its place while something of yours is open | `registrar.detailOverview { editor, onExit in … }`; `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }` | [The detail panel](#the-overview-and-takeovers) |
+| Put a view of yours over the window's canvas, before it as the sidebar, beside it as the inspector, a pane in Settings, or words in the window's subtitle or a tool's tip | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }`, `hostSidebar`, `hostInspector`, `settingsPane`, `windowSubtitle`, `toolTips` | [Host slots](#host-slots) |
+| Show a view of yours in the detail panel in place of the selection's details while something of yours is open | `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }` | [The detail panel](#takeovers) |
 | Say what a board is called over another plugin's list of it | `registrar.contentsHeading { editor in … }` (the table of contents'), `registrar.findHeading { board, editor in … }` (Find's) | [Boards](#boards) |
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
 | Hold shapes in a region of the board that moves them with it, locks them with it and keeps what's put down from sitting across its edge | `ShapeContaining` on a box kind's definition, nothing to implement; `FramesPlugin`, whose Frame tool (F) draws one | [Frames](#frames), [Containers](#containers) |
@@ -467,9 +467,9 @@ Opting in goes in one of four directions:
   value of its own in the owner's module (`ValidationDetailsPlugin`, `ValidationContentsPlugin`,
   `MentionValidationPlugin` and `PathValidationPlugin`): the registry refuses a contribution whose
   point's owner isn't installed, so a list with Validation and no panel installs `ValidationPlugin()`
-  alone. One in the window shows itself on another the same way: the table of contents is the detail
-  panel's overview (`ContentsOverviewPlugin`), Find's panel its takeover (`FindPanelPlugin`), and
-  Boards heads both their lists with a board's name (`BoardContentsPlugin`, `BoardFindPlugin`).
+  alone. One in the window shows itself on another the same way: Find's panel is the detail panel's
+  takeover (`FindPanelPlugin`), and Boards heads the table of contents' list and Find's with a
+  board's name (`BoardContentsPlugin`, `BoardFindPlugin`).
 - **A word in a language is given by the module that owns its meaning**, as a plugin value of its
   own, through the engine's points; when the owner sits below the engine, the engine's module
   gives it. The query engine is an engine, not what agents speak, so [queries](#queries)' points are
@@ -1032,7 +1032,9 @@ The details:
   still held, so letting go of ⌥ and the mouse together doesn't undo ⌥.
 - **Time**: timers go through `editor.scheduler`. Tests swap in a `ManualScheduler` and run time by
   hand, which is how the arrows' 600/320/150 ms timers are pinned to the millisecond, and how the
-  hand tool's slide plays frame by frame.
+  hand tool's slide plays frame by frame. A moment that needs no timer of its own is read off the
+  scheduler's clock (`scheduler.now`, how long it has run), which a `ManualScheduler` moves only as
+  the test does.
 - **Keys** are [Keyboard's](#keyboard-shortcuts): a tool's is `shortcut:` on the call that registers
   it (Frames' F). A tool id used twice is a registry error, and so is a key.
 - **The toolbar** is the default tool, then the rest in plugin-list order, the core's Hand first. It
@@ -2313,8 +2315,11 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   centers the shapes' bounds (`shapeContext.bounds(of:)`) in the part of the view the host leaves
   clear (`editor.unobscuredViewport`: below the path over a subboard's canvas), zoomed to fit with
   100 points of margin in all but no closer than 120%, over 200 ms, as data-canvas's table of
-  contents does (tldraw's zoomToBounds). It's what selecting rows does, and Zoom to Selection
-  (⇧2), only on the board shown, and does nothing before the view has a size. A trackpad's smart
+  contents does (tldraw's zoomToBounds), the fit kept while the view settles (the inspector sliding
+  in: [the editor](#the-editor-the-document-and-drawing)). It's what selecting rows does, and Zoom to Selection
+  (⇧2), only on the board shown, and does nothing before the view has a size. What of a
+  selection is in view as it changes is kept in view the same way, so a shape selected by the
+  canvas's edge isn't left under the inspector. A trackpad's smart
   zoom (`smartMagnify()`, the `.smartMagnify` command, which the canvas runs on a two-finger
   double-tap) reveals the selectable shape under the pointer, and the next, while the camera is
   still where that one took it, eases it back, as Safari's and Preview's do. The canvas says where
@@ -2996,7 +3001,8 @@ What the shipped app's keys do:
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
 | ⇧⌘V | Pastes as ⌘V does, centered on the pointer while it's over the canvas (`editor.isPointerOverCanvas`), else as ⌘V; Edit › Paste at Pointer, which text being edited keeps the key of | Clipboard |
 | ⇧⌘C | Copies the selection, or the whole board with nothing selected, as a PNG image (2×, in the window's appearance): Edit › Copy as Image, a menu item of the window's own, which draws what [Clipboard says](#host-slots) (`registrar.imageSource`) | The window (CanvasUI), Clipboard's shapes |
-| ⌥⌘I | Shows the inspector if it's hidden and gives it the keyboard: the table of contents' list with nothing selected, else the panel's first field or control; Escape gives it back to the canvas. View › Focus Inspector, beside Show Inspector (⌃⌘I) | The window (CanvasUI) |
+| ⌥⌘S | Shows the sidebar if it's hidden and gives it the keyboard: the table of contents' list, which ↑ ↓ then walk (an empty board has none, and the keyboard stays where it was); Escape gives it back to the canvas. View › Focus Sidebar, beside Show Sidebar (⌃⌘S) | The window (CanvasUI), the table of contents' list |
+| ⌥⌘I | Shows the inspector if it's hidden and gives it the keyboard: the panel's first field or control, the selected shape's title; Escape gives it back to the canvas. View › Focus Inspector, beside Show Inspector (⌃⌘I); both dimmed with nothing selected, when the inspector has nothing to show and nothing wants it | The window (CanvasUI) |
 | Q | Turns the tool lock on and off ([the tool lock](#the-editor-the-document-and-drawing)) | Keyboard, for the core's `editor.isToolLocked` |
 | ⌘D | Duplicates the selection beside itself, as Edit › Duplicate does, without the pasteboard | Clipboard |
 | ⌥⌘G, ⌥⇧⌘G | Groups the selection, and takes apart the groups it holds whole, as Arrange › Group and Ungroup do (⌘G is Find Next) | Grouping |
@@ -3088,7 +3094,7 @@ What the shipped app's keys do:
   Grammar, Remove Mention after Select All, Forward after Back and Enclosing Board after Forward (in
   Selection's `NavigationSection`), Jump To… first in Boards' `PathSection`, before Board Path, the
   window's panes' focus and Show Minimap placed last among View's panels, so the inspector's tab
-  commands, which say nothing, come after Focus Inspector, Show All Shapes last after them, and Enter Full Screen
+  commands, which say nothing, come after Focus Inspector, and Enter Full Screen
   last; the rest is the window's listing and plugin order. The registry refuses an item placed in no
   section, a submenu inside
   itself, a submenu its sections place two ways, sections or items placed beside each other in a
@@ -3468,12 +3474,12 @@ the treatment a named one does.
 ## Host slots
 
 A board's window puts things around its canvas that are plugins': the path of crumbs over its top,
-a palette, the inspector beside it, the window's subtitle, the panes of the Settings window, the
+a palette, the sidebar before it, the inspector after it, the window's subtitle, the panes of the Settings window, the
 toolbar's tips, the keys its menu items show. And the app takes three more things from them: the rows of its Keyboard Shortcuts
 window, what its Copy as Image draws, and the commands its command server runs. A plugin can't import the window (CanvasUI) or the
 app, and neither can import a plugin (the app and CanvasUI may use only the core and the app's
 own modules). So what passes between them is declared beneath both, in the core,
-[`Sources/Canvas/Plugins/HostSlots.swift`](../Sources/Canvas/Plugins/HostSlots.swift): ten
+[`Sources/Canvas/Plugins/HostSlots.swift`](../Sources/Canvas/Plugins/HostSlots.swift): eleven
 extension points a plugin contributes to and the host reads. The menu bar's commands are no slot:
 they're the [commands](#commands) plugins declare with a `menu:`, which the window reads as
 `registry.menuBarCommands`. The core imports SwiftUI for them,
@@ -3488,7 +3494,8 @@ plugins ([What ships](#what-ships)).
 | Slot | A plugin says | The host reads | Shipped |
 |---|---|---|---|
 | Views over the canvas (`HostOverlays`, a list in plugin order, a later one over an earlier) | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }` | `registry.hostOverlays`, `registry.hostCoveredTop(on:)` | Boards' path (`.top`, covering its pill's height off the root), Jump To's palette |
-| The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(isRequested:onDismiss:) { editor, onExit in … }` | `registry.hostInspector` | the detail panel |
+| The sidebar (`HostSidebars`, at most one) | `registrar.hostSidebar(keyboardEntry:) { editor, onExit in … }`: the view, and the view in it that takes the keyboard when the window gives the sidebar the keyboard | `registry.hostSidebar` | the table of contents' list, from `TableOfContentsPlugin`'s own `register` |
+| The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(shownWhile:isRequested:onDismiss:keyboardEntry:) { editor, onExit in … }`: when it has something to show (always, by default), when it's wanted (never), what hiding it meanwhile does (nothing) | `registry.hostInspector` | the detail panel: something to show while shapes are selected, wanted while a takeover is active |
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
 | Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
@@ -3505,19 +3512,33 @@ window's views.
 
 The window's side is CanvasUI's, and knows no plugin:
 
-- **`BoardChrome(editor:showsInspector:onExit:)`**, a view modifier the app applies to its canvas
-  (`CanvasRepresentable`, after its frame and toolbar): each registered view over the canvas, in
-  plugin order, then the registered inspector in an `.inspector`, with the toolbar button that
-  shows and hides it (Inspector; its tooltip "Show Inspector" or "Hide Inspector", as View › Show
-  Inspector is titled). A registry with no inspector gets none.
-- **The inspector follows what wants it.** An inspector may say it's wanted whether or not the
-  person has it shown (`isRequested`, read in a view's body, so on observable state), and what
-  hiding it meanwhile does (`onDismiss`). The window keeps the rule, for whatever is wanted: wanted
-  while hidden, it's shown; no longer wanted, it's hidden again if that's what showed it, and left
-  as the person had it otherwise; hidden by the person while wanted, what wanted it is dismissed
-  and the keyboard goes back to the canvas. The detail panel is wanted while [a takeover](#the-overview-and-takeovers)
-  is active and dismissing escapes it, so ⌘F shows a hidden inspector, closing Find hides it again,
-  and hiding the inspector closes Find, though the window has never heard of Find.
+- **`BoardChrome(editor:showsSidebar:showsInspector:onExit:)`**, a view modifier the app applies to
+  its canvas (`CanvasRepresentable`, after its frame and toolbar): each registered view over the
+  canvas, in plugin order, then the registered inspector in an `.inspector` on the canvas, with the
+  toolbar button that shows and hides it (Inspector; its tooltip "Show Inspector" or "Hide
+  Inspector", as View › Show Inspector is titled). With a sidebar registered the canvas, with its
+  views and its inspector, is the detail column of SwiftUI's `NavigationSplitView(columnVisibility:)`
+  and the sidebar's view the sidebar column, shown while `showsSidebar`, with a toolbar button at
+  the toolbar's leading end (Sidebar; its tooltip "Show Sidebar" or "Hide Sidebar", as View › Show
+  Sidebar is titled), where it stays while the sidebar is hidden. A registry with no sidebar gets
+  no split view, and one with no inspector no `.inspector`. The window keeps whether the sidebar
+  shows and whether the person has the details shown (`BoardViewState`'s `showsSidebar` and
+  `showsDetails`, which the app binds), per file.
+- **The inspector's rule.** An inspector says when it has something to show (`shownWhile`, read in
+  a view's body, so on observable state; always, by default: the detail panel's, while shapes are
+  selected), when it's wanted whether or not the person has it shown (`isRequested`: a takeover is
+  active), and what hiding it meanwhile does (`onDismiss`). The window keeps the rule, for whatever
+  the inspector shows, as three functions on `HostInspector` that the toolbar button and the View
+  menu share. `isShown(in:chosen:)` is `isRequested || (chosen && shownWhile)`, where `chosen` is
+  the person's choice (the window's `showsDetails`); `canToggle(in:chosen:)` is `isShown ||
+  shownWhile`, so with nothing showing and nothing to show it's dimmed; and `toggle(in:chosen:onExit:)`
+  hides what shows (the choice becomes hiding, and what wanted it is dismissed, `onDismiss`, the
+  keyboard back to the canvas) and shows what doesn't (the choice becomes showing). Something
+  wanting the inspector shows it without changing the person's choice, and once it no longer wants
+  it the inspector is as they chose, and as there is something to show. The detail panel is wanted
+  while [a takeover](#takeovers) is active and dismissing escapes it, so ⌘F shows a hidden
+  inspector, closing Find returns it to what the person chose, and hiding the inspector closes
+  Find, though the window has never heard of Find.
 - **What the canvas covers.** A view over the canvas says how far down it reaches on a board
   (`coveredTop`: the path's pill, about 35 points inside a subboard). The window tells each board's
   editor the most any says (`BoardDocument` sets `editor.coveredTop` from
@@ -3534,11 +3555,27 @@ The window's side is CanvasUI's, and knows no plugin:
   (the file's colors, types and what mentions name are all there to read; only those shapes drawn) (2×, the window's appearance, at most 2048 points a side, 32 of margin) and puts the
   PNG on the pasteboard `BoardConfiguration.imagePasteboard` names: the system's in the app, a test's
   own in tests.
-- **View › Focus Inspector** (⌥⌘I) is the controller's too (`focusInspector:`): it shows the inspector
-  if it's hidden, then gives the keyboard to the inspector's list or table if it shows one, else its
-  first text field, else its first control, top to bottom (the views outside the canvas that accept
-  first responder), trying again for a few turns while a view just shown has none; a window with
-  no inspector dims it.
+- **View › Show Sidebar** (⌃⌘S, `toggleSidebarShown:`) shows and hides the sidebar, titled for what
+  it does next, and is dimmed in a window with none. **View › Focus Sidebar** (⌥⌘S, `focusSidebar:`)
+  is the controller's too: it shows the sidebar if it's hidden, then gives the keyboard to the view
+  the sidebar says takes it (`keyboardEntry`: the table of contents' list), else to the topmost list,
+  table or text field in the window's content before the canvas, else its topmost control, trying
+  again for a few turns while a sidebar just shown has no views. With nothing in it that takes the
+  keyboard (the list of an empty board) it leaves the keyboard where it is. Escape in
+  the sidebar gives it back to the canvas (`onExit`), and so does hiding the sidebar while a view
+  in it has the keyboard.
+- **View › Show Inspector** (⌃⌘I, `toggleDetails:`) is the rule's `toggle`, titled by `isShown` and
+  dimmed while `canToggle` is false. **View › Focus Inspector** (⌥⌘I) is the controller's too
+  (`focusInspector:`), dimmed likewise: it shows the inspector if it isn't shown (the person's
+  choice becomes showing it), then gives the keyboard to the view the inspector says takes it
+  (`keyboardEntry`: the detail panel's header field), else to the topmost list, table or text field
+  in the window's content after the canvas, else its topmost control, trying again for a few turns
+  while a view just shown has none; never to the sidebar's list.
+- **View › Focus Next Pane and Focus Previous Pane** (F6, ⇧F6) move the keyboard round the panes
+  shown: the canvas, the inspector while it's shown, the toolbar while it has a view that takes the
+  keyboard, the sidebar while it's shown, and round; ⇧F6 is the exact inverse. The window tells
+  which pane the keyboard is in by where its view is: in the canvas's frame, the canvas's; before
+  it, the sidebar's; after it, the inspector's.
 - **`CommandServer.Commands(registry:)`** is the commands the server runs beyond its own
   ([The command line](#the-command-line)): none where the list has no command line.
 
@@ -3546,12 +3583,15 @@ The app's own side is one line: it starts its command server on
 `CommandServer.Commands(registry:)`.
 
 Tests: CanvasTests' `hostSlotsTests` hold the points with contributors of their own (order, the
-most covered, one inspector, one subtitle, a pane's title once, a tip's default, what Copy as Image
+most covered, one sidebar and the keyboard entry it names, one inspector and when it has something
+to show, one subtitle, a pane's title once, a tip's default, what Copy as Image
 draws, the commands read off the built registry and none without a contributor); CanvasUITests' `chromeTests` the chrome over a real canvas in an
-unshown window (each view where it says, the inspector's rule with a fixture that's wanted while a
-model says) and `toolPickerTests` the tips; each plugin's own tests what it gives; and
-CompositionTests the shipped six (ShippedTests) and the window's behavior with Find
-(`findShippedTests`).
+unshown window (each view where it says, no split view without a sidebar or an inspector, the
+sidebar before the canvas and the inspector after it, the inspector's rule with a fixture that has
+something to show and is wanted while a model says) and `toolPickerTests` the tips; each plugin's
+own tests what it gives; and CompositionTests the shipped six (ShippedTests), the window's behavior
+with Find (`findShippedTests`) and the keys that give the sidebar, the inspector and the panes the
+keyboard (`inspectorFocusShippedTests`).
 
 ## The detail panel
 
@@ -3594,10 +3634,10 @@ The panel owns all of the chrome, and plugins fill it in:
 | Fonts, control size, the label column and checkbox toggles, all through the environment | |
 | Focus: what gives the keyboard back to the canvas | |
 
-With nothing selected the panel shows its overview, a view the host may give it (the app's is [the
-table of contents](#the-table-of-contents)), else "No Selection". With several, it shows "N Shapes"
-over the kinds selected, then the overview (details are per shape: editing several at once isn't
-built). A shape with no sections to show (an arrow, a note without issues, in a list without [Neighbors](#neighbors)'
+With nothing selected the window hides the panel (`shownWhile`, below), whatever the person chose; a
+panel hosted alone says "No Selection". With several shapes selected, it shows "N Shapes" over the
+kinds selected, their header alone (details are per shape: editing several at once isn't built).
+A shape with no sections to show (an arrow, a note without issues, in a list without [Neighbors](#neighbors)'
 Connections tab, which every shape has) gets its header, then "No Options". Without `DetailPanelPlugin` installed, the panel says "No Details". A
 read-only shape (a [locked](#locking) one, one in a locked frame, at any depth, or one on a locked
 subboard's board) shows its whole panel, but nothing in it edits the shape: the panel disables its sections' content, and its header
@@ -4192,12 +4232,14 @@ passes `onExit`. `CanvasFocus` (CanvasUI) is the handle: `CanvasRepresentable(ed
 it, and `take()` makes the canvas its window's first responder.
 
 The window places the panel, and knows nothing of it: the panel's plugin gives it as the window's
-inspector, [the host's slot for one](#host-slots), and says when it's wanted whether or not the
-person has it shown (while a takeover is active, below) and what hiding it meanwhile does (escapes
-that takeover):
+inspector, [the host's slot for one](#host-slots), and says when it has something to show (while
+shapes are selected: with none the window hides it, whatever the person chose), when it's wanted
+whether or not the person has it shown (while a takeover is active, below) and what hiding it
+meanwhile does (escapes that takeover):
 
 ```swift
-registrar.hostInspector(isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
+registrar.hostInspector(shownWhile: { !$0.selectedShapeIDs.isEmpty },
+                        isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
                         onDismiss: { $0.registry.activeDetailTakeover(in: $0)?.onEscape($0) }) { editor, onExit in
     DetailPanelView(editor: editor, onExit: onExit)
 }
@@ -4205,40 +4247,38 @@ registrar.hostInspector(isRequested: { $0.registry.activeDetailTakeover(in: $0) 
 
 and [the app](../Sources/InfiniteCanvas/InfiniteCanvasApp.swift) applies CanvasUI's `BoardChrome` to
 its canvas, which puts the registered inspector in an `.inspector` (resizing, collapsing in narrow
-windows, and View › Show Inspector, ⌃⌘I) with its toolbar button, and the views plugins gave over
-the canvas (the path, [Jump To's](#jump-to) palette):
+windows, and View › Show Inspector, ⌃⌘I) with its toolbar button, the registered sidebar (the
+table of contents) before the canvas, and the views plugins gave over the canvas (the path,
+[Jump To's](#jump-to) palette):
 
 ```swift
 CanvasRepresentable(editor: editor, focus: canvasFocus)
-    .modifier(BoardChrome(editor: editor, showsInspector: $showsDetails, onExit: canvasFocus.take))
+    .modifier(BoardChrome(editor: editor, showsSidebar: $showsSidebar, showsInspector: $showsDetails, onExit: canvasFocus.take))
 ```
 
-### The overview and takeovers
+### Takeovers
 
-Two points say what the panel shows besides a shape's details. It reads both from the editor's
-registry, and never learns what either view is.
+One point says what the panel shows in place of a shape's details (`DetailTakeovers`, a list in
+plugin order: the first that's active shows). It reads it from the editor's registry, and never
+learns what the view is. A plugin gives one with
+`registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }`: `isActive` (read in the
+panel's body, so on observable state: the panel redraws when it flips), `onEscape` and the view.
+While it's active the panel shows the view in place of everything else, every selection branch, in
+the panel's own environment, frame and width. Escape and ⌘. in the panel call its `onEscape`, then
+`onExit` (a text view holding keys still hears Escape first). [Find](#find) gives its panel, active
+while Find is open, `onEscape` closing it (`FindPanelPlugin`).
 
-- **The overview** (`DetailOverviews`, at most one: a second is a conflict) shows where the panel
-  has no one shape to show: in place of "No Selection", and under the header of several
-  (data-canvas's details panel takes an `emptyView` and a `multiSelectView` the same way). A plugin
-  gives it with `registrar.detailOverview { editor, onExit in … }`, and its view follows the
-  editor by itself. `holdsKeyboard:` says when it holds the keyboard (read in the panel's body, so
-  on observable state, as a takeover's `isActive` is): meanwhile the panel shows it whatever is
-  selected, one shape too, and it stays the same view as the header of several comes and goes, so
-  a list walked by keys isn't taken away by its own first step. The table of contents gives its
-  list (`ContentsOverviewPlugin`, below), holding the keyboard while it's walked by keys.
-- **A takeover** (`DetailTakeovers`, a list in plugin order: the first that's active shows) is
-  `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }`: `isActive` (read in the
-  panel's body, so on observable state: the panel redraws when it flips), `onEscape` and the view.
-  While it's active the panel shows the view in place of everything else, the overview and every
-  selection branch, in the panel's own environment, frame and width. Escape and ⌘. in the panel
-  call its `onEscape`, then `onExit` (a text view holding keys still hears Escape first).
-  [Find](#find) gives its panel, active while Find is open, `onEscape` closing it
-  (`FindPanelPlugin`).
+The view is handed the panel's editor and its `onExit`, and is made as the panel is. The point is
+the panel's, so each contributor is a plugin value of its own after `DetailPanelPlugin`: a list
+without the panel leaves it out, and one with the contributor and no panel is refused. While one is
+active the panel is wanted, so the window shows the inspector with nothing selected
+([the inspector's rule](#host-slots)).
 
-Each view is handed the panel's editor and its `onExit`, and is made as the panel is. Both points
-are the panel's, so each contributor is a plugin value of its own after `DetailPanelPlugin`: a
-list without the panel leaves it out, and one with the contributor and no panel is refused.
+With no takeover active the panel shows what the selection calls for: several shapes, their
+header alone; one, its panel; and none, "No Selection", which only a panel hosted alone shows,
+since the window hides the inspector then. (data-canvas's details panel takes an `emptyView` and a
+`multiSelectView`, the table of contents; here that list is the window's sidebar, beside the canvas
+whatever is selected.)
 
 ### Performance
 
@@ -4538,20 +4578,22 @@ take or ignore. ContextMenus keeps each kind's items, gathered once, in a servic
 
 ## The table of contents
 
-The table of contents is an outline of the board, one row per shape, in the right-hand panel, as
-data-canvas has it: with nothing selected the detail panel shows it for the whole board; with
-several, just them, under their header; with one, that shape's details instead. It's a horizontal
-([`Sources/TableOfContents`](../Sources/TableOfContents)) with data-canvas's contract (its TOC
-card providers): each kind says how its shapes appear, and which shapes are listed and under what.
-It doesn't look like data-canvas's, though: it's a Mac source list, AppKit's outline with the
-system's rows, selection, disclosure triangles and keyboard, making views for the rows in view alone,
-so a board of 100,000 shapes lists at once ([The list](#the-list)). Its rows run front to back, as a
-layers list's do, and dragging them restacks shapes, or moves them into a frame or onto a subboard's
-board ([Dragging rows](#dragging-rows)).
+The table of contents is an outline of the board, one row per shape, in the window's sidebar, before
+the canvas: it lists every shape of the board shown that its kind lists, whatever is selected, and
+shows the selection on its rows, while the inspector after the canvas has the selected shape's
+details. It's a horizontal ([`Sources/TableOfContents`](../Sources/TableOfContents)) with
+data-canvas's contract (its TOC card providers): each kind says how its shapes appear, and which
+shapes are listed and under what. It doesn't look or sit like data-canvas's, though: that is the
+details panel's list, the whole board with nothing selected and the selection alone with several;
+this is a Mac source list, AppKit's outline with the system's rows, selection, disclosure triangles
+and keyboard, making views for the rows in view alone, so a board of 100,000 shapes lists at once
+([The list](#the-list)). Its rows run front to back, as a layers list's do, and dragging them
+restacks shapes, or moves them into a frame or onto a subboard's board
+([Dragging rows](#dragging-rows)).
 
 ```
-┌─ the panel, with nothing selected ──┐  front to back: the top row is the shape in front
-│ Board                               │ header: "Selection", with Show All, when filtered
+┌─ the sidebar ───────────────────────┐  front to back: the top row is the shape in front
+│ Board                               │ header: the board's heading, with its way up
 │ ▾ ▤ Double-click empty space to a…  │ a note: its text, on one line
 │     ↗ Arrow                         │   an arrow, under the shape it starts from
 │   ▤ Groceries                       │ a titled note: its title (Titles), not its text
@@ -4621,8 +4663,8 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   shape of a kind without it, goes under the [container](#containers) it's in, a frame
   (`registry.container(of:in:)`, as the core goes by it, read from the shape's own record: joining
   or leaving a container changes it, so its row is made again and placed under the new one). It
-  holds only while that shape is listed too, so a selection of just the child still shows it, at
-  the top. Rows nest as deep as their shapes do (a frame in a frame, what that holds under it); a
+  holds only while that shape is listed too, so a child whose shape its kind doesn't list (`when`)
+  is at the top. Rows nest as deep as their shapes do (a frame in a frame, what that holds under it); a
   loop keeps the later shape at the top. Arrows nest under the shape they start from, as
   data-canvas's edges do under their start node, whatever frame that's in.
 - **Each level opens and closes on its own**, its own disclosure triangle (the outline's: a row of
@@ -4630,8 +4672,8 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   (`entry.startsExpanded`): what it holds is on the board shown, inside it on the canvas, as a
   folder's contents show in a sidebar. Every other row starts collapsed: the arrows under a note,
   a subboard's board (read only once it's opened, below). A row keeps what the person turns it to
-  (`ContentsState.isExpanded(_:)` and `setExpanded(_:_:)`, by shape, for the editor's life): Show
-  All, the rows replaced, another board shown and back leave it as it was. A turn made anywhere but
+  (`ContentsState.isExpanded(_:)` and `setExpanded(_:_:)`, by shape, for the editor's life): the
+  rows replaced, another board shown and back leave it as it was. A turn made anywhere but
   the outline (a drag springing a row open, below) reaches the list showing the row, which opens it.
 - **A board under its owner.** A shape that owns a board (a `BoardOwning` kind's, a subboard)
   opens onto that board's rows: the rows its [outline](#another-boards-outline) lists, each as its
@@ -4682,7 +4724,7 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
 | `filter` | `when:` |
 | `getParentShapeId` | `nestedUnder:`, else the shape's container |
 | `getZoomConfig` | The shape's geometry bounds, with 100 points of margin, for every kind |
-| `onClick` | Return on a picked row opens its shape, as Return on the canvas does (Selection's `editor.open`); a double-click too, where the list stays on screen ([Opening a row](#whats-listed-and-selecting)) |
+| `onClick` | Return on a picked row opens its shape, as Return on the canvas does (Selection's `editor.open`); a double-click too ([Opening a row](#whats-listed-and-selecting)) |
 | `getGroupChildren` | The board a shape owns: its rows, under the shape's ([A board under its owner](#a-kinds-row)); and what a container holds, under it, open from the start |
 | The "other" row (type and id) | The kind's label and symbol (`registry.label(of:)`) |
 
@@ -4809,26 +4851,31 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
 - **A shape the board keeps aside has no row**, whatever its kind (one that isn't installed isn't
   listed by its kind's name), since nothing on the canvas sees it
   ([Boards on disk](#boards-on-disk)). A row that names it to nest under stays at the top.
-- **Selecting filters the list**, like data-canvas's multi-select summary: select several shapes
-  on the canvas and only they are listed, under their header ("2 Shapes") and "Selection"; select
-  nothing and the whole board is, under "Board"; select one and the panel shows its details. Show
-  All lists the board again without deselecting.
-- **A change of what's listed replaces the rows**, so the new scope's come in whole under the
-  header, not around the rows both scopes list (each open or closed as it was). A commit's rows
-  come in, go and move where they are, however many places they're at (a `canvas draw` that adds a
-  shape and connects two shapes far apart in the list; deleting a note that two arrows start from,
-  as their rows come out from under it): the list's rows are all of one height, so AppKit measures
-  none and never logs "a reentrant operation in its NSTableView delegate" ([The list](#the-list)).
-  A row that goes lets go only of a hover the pointer on it set (`ContentsState.endHover`), never
-  one the canvas set, so the shape under the pointer stays outlined.
+- **Every shape is listed, whatever is selected.** The selection shows on the list's rows (the
+  outline's selected rows) and changes none: a selection made on the canvas, in Jump To or Find, by
+  an undo or on a row makes no row and no listing, so the rows stay as they were, and the inspector,
+  not the list, has the selected shape's details. A selection the list did not make
+  (`editor.selectionRevision` tells the list's own, as it left it, from another's) is brought into
+  view too: the first selected row scrolls into view, and with exactly one shape selected the rows
+  its row is nested under open first (an arrow's under the note it starts from), each as the person
+  would turn it open, so it stays open. Several selected open nothing, since ⌘A would open every
+  row. A selection the list made scrolls and opens nothing: the person is where they are. A listing
+  shown whole (another board, a listing made afresh) forgets which selection the list made, so
+  after a row of a nested board takes the window to that board, the selection there is brought into
+  view.
+- **A commit's rows come in, go and move where they are**, however many places they're at (a
+  `canvas draw` that adds a shape and connects two shapes far apart in the list; deleting a note
+  that two arrows start from, as their rows come out from under it): the list's rows are all of one
+  height, so AppKit measures none and never logs "a reentrant operation in its NSTableView
+  delegate" ([The list](#the-list)). A row that goes lets go only of a hover the pointer on it set
+  (`ContentsState.endHover`), never one the canvas set, so the shape under the pointer stays
+  outlined.
 - **Selecting rows** (a click, ⌘- and ⇧-clicks, the arrow keys) selects their shapes and brings
   them into view: centered, zoomed to fit with 100 points of margin but no closer than 120%, over
   200 ms (data-canvas's click-to-zoom, and tldraw's zoomToBounds): Selection's `editor.reveal`,
-  the one way any plugin brings shapes into view ([Selection](#selection)). A click on one row selects one
-  shape, so its details replace the list, as in data-canvas. ⌘- and ⇧-clicks leave several
-  selected, and the list keeps listing what it listed, so rows can be added and taken out without
-  the rest going away. That holds until the selection next changes some other way, which
-  `editor.selectionRevision` tells apart from the same shapes selected again.
+  the one way any plugin brings shapes into view ([Selection](#selection)). A click on one row
+  selects one shape, whose details the inspector shows. ⌘- and ⇧-clicks leave several selected,
+  whose header the inspector shows, so rows can be added and taken out without the rest going away.
 - **A row of a board under its owner's** is of a shape that isn't on the board shown, so selecting
   it goes to it, as following a link does (Selection's `editor.goTo`): its board shown, the shape
   selected there and brought into view, one step back, leaving whatever else was selected behind.
@@ -4855,11 +4902,10 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   hover another plugin set.
 - **The board shown.** It lists `editor.document`, so the board shown and nothing under it. Each
   board's rows, and its listing of every row, are kept for the boards shown last (a `BoardStash`),
-  and taken back on the way back to one that hasn't changed since, so going back makes no row. A
-  scope pinned by selecting rows or Show All was the board left's, and goes. Another board's rows
-  replace this one's whole, whatever's listed on either: each listing is a new one to the list
+  and taken back on the way back to one that hasn't changed since, so going back makes no row.
+  Another board's rows replace this one's whole: each listing is a new one to the list
   (`ContentsListing.serial`).
-- **The heading.** The header says "Board" over the whole board. A plugin that knows what a board
+- **The heading.** The header says "Board" over the board shown. A plugin that knows what a board
   is called can name it instead (the `ContentsHeadings` point, at most one: a second is a
   conflict): `registrar.contentsHeading { editor in … }` returns a `ContentsHeading`, or nil for
   the list's own: a title, a symbol before it, and `up`, a command
@@ -4869,36 +4915,32 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   one, as a tool's is. It's read in
   the header's body (`ContentsState.heading`), so it reads observable state and the header alone
   redraws as that changes. The table of contents doesn't know what a board is called; the
-  heading's maker does (Boards' `BoardContentsPlugin`: [Boards](#boards)). Filtered, the header is
-  "Selection" with Show All, whatever the heading: a button that runs View › Show All Shapes
-  (`.showAllShapes`, the table of contents' command, no key, enabled while the list is scoped), so
-  the menu bar has the way back to every row too. Both headings are headers to VoiceOver.
+  heading's maker does (Boards' `BoardContentsPlugin`: [Boards](#boards)). The heading is a header
+  to VoiceOver.
 - **Opening a row.** A double-click or Return on a row opens its shape, as Return on the canvas
   does: `ContentsState.open(_:)`, the list's primary action, selects it and runs Selection's
   `editor.open` (entering the board it owns, editing it, whatever its kind opens to; one row, that
-  `editor.canOpen`; several open nothing). A single click still selects and zooms. That's the list
-  on its own; in the app's panel, a click on one row selects its shape, so the panel shows that
-  shape's panel in the list's place (the list is gone before a double-click's second click) and
-  hands the keyboard to the canvas, where Return opens it. A row walked to by keys stays in the
-  list (below), so Return there is the list's.
+  `editor.canOpen`; several open nothing). A single click still selects and zooms, and hands the
+  keyboard to the canvas, where Return opens the shape. The list stays on screen, so a double-click
+  reaches it (the outline's `doubleAction`). A row walked to by keys stays in the list (below), so
+  Return there is the list's.
 - **Going back.** A row's click is a step in Selection's history like any other change of the
-  selection, so the back button in the shape's header (or Go › Back, ⌘[) brings the list back,
-  with the view as it was before the zoom, as data-canvas's back button does.
-- **The keyboard.** A click gives the list the keyboard, as a source list does, and so does View ›
-  Focus Inspector (⌥⌘I) with nothing selected: ↑ and ↓ walk the rows (⇧ extends), selecting and
-  revealing each shape, Tab and ⇧Tab step them as ↓ and ↑ do and stay in the list, → and ← open and
-  close a row's disclosure triangle, Return opens the row's shape, Delete runs the `.delete` command
-  (deleting the selected shapes, as Delete on the canvas does), and Escape gives the keyboard back
-  to the canvas (`onExit`), the shape still selected. So does hiding the panel while the list has the
-  keyboard. While it's walked by keys (`ContentsState.isWalkedByKeys`: the list has the keyboard,
-  which its view reads from the window's first responder, and a key in it made the selection as it
-  is) the panel keeps the list up, though one shape is selected, so the next ↓ walks on rather than
-  nudging that shape; once the keyboard leaves (Escape, Return, a click elsewhere) or the selection
-  changes some other way (a click on a row, the canvas), the panel shows what the selection calls
-  for. Rows are said with their kind ("Checkout, Note"; a stand-in "Alias"), and each disclosure
-  triangle is named by its row.
+  selection, so the back button in the shape's header (or Go › Back, ⌘[) goes back to what was
+  selected before, nothing too, with the view as it was before the zoom, as data-canvas's back
+  button does.
+- **The keyboard.** View › Focus Sidebar (⌥⌘S) gives the list the keyboard, showing the sidebar if
+  it's hidden, and so does F6 coming round the panes; a click on a row, even one already selected,
+  gives the canvas the keyboard instead, so the canvas's keys act on the shape picked at once. With
+  the keyboard in it, ↑ and ↓ walk the rows (⇧ extends), selecting and revealing each shape, Tab and
+  ⇧Tab step them as ↓ and ↑ do and stay in the list, → and ← open and close a row's disclosure
+  triangle, Return opens the row's shape, Delete runs the `.delete` command (deleting the selected
+  shapes, as Delete on the canvas does), and Escape gives the keyboard back to the canvas
+  (`onExit`), the shape still selected. So does hiding the sidebar while the list has the keyboard.
+  The inspector shows each shape picked, or the header of several, and takes no keyboard, so the
+  list keeps it and the next ↓ walks on rather than nudging that shape. Rows are said with their
+  kind ("Checkout, Note"; a stand-in "Alias"), and each disclosure triangle is named by its row.
 - **Headless**, `ContentsState` (`editor.tableOfContents`) is all of it: `entries` (the rows, a tree),
-  `scope`, `select(_:)`, `showAll()`, `listHasKeyboard` and `isWalkedByKeys`, the rows' hover: `hover(_:)` and `endHover(_:)` as the
+  `select(_:)`, the rows' hover: `hover(_:)` and `endHover(_:)` as the
   pointer moves onto a row and off it (for a row of another board, read back with
   `editor.hoveredElsewhere`) and `isHovered(_:)` for whether a row shows as hovered; and
   their disclosure, `isExpanded(_:)` and `setExpanded(_:_:)`. Tests read a row's text, symbol and
@@ -4910,11 +4952,11 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
 
 ### The list
 
-What the panel shows is `ContentsList`, an `NSOutlineView` in source-list style, whose controller
+What the sidebar shows is `ContentsList`, an `NSOutlineView` in source-list style, whose controller
 (`ContentsListController`) reads the state's rows as the outline asks for them, so what it costs is
 the rows in view and a pass over the top-level rows, whatever's listed: its own share of showing
 100,000 rows, the first time or on going back to a board, is some 100 ms (`./build.sh bench`'s
-inspector benchmark; the state's rows, and Validation's marks on them, made the first time a board
+list benchmark; the state's rows, and Validation's marks on them, made the first time a board
 shows, cost more).
 
 - **Rows of one height**, the system's sidebar size (System Settings' sidebar icon size), so AppKit
@@ -4922,11 +4964,11 @@ shows, cost more).
   made a self-sizing list log a reentrant update). A row's cell hosts its view in SwiftUI
   (`ContentsRowView`: the kind's row and its marks), reused as rows scroll into view; its symbol in a
   column, the text white on a selected row of a list with the keyboard, as a source list's.
-- **The header** is the outline's first row, a group row ("Board", or "Selection" with Show All),
-  which tests read so.
+- **The header** is the outline's first row, a group row (the board's heading: "Board", or what a
+  plugin calls it), which tests read so.
 - **Kept up row by row.** The view's body reads `entries` and hands the list which listing it is
   (`ContentsListing.serial`), how often it changed, the editor's revision and the selection. A new
-  listing (another scope, another board, one listed afresh) is shown whole. The one shown is
+  listing (another board, one listed afresh) is shown whole. The one shown is
   followed as its own updates changed it (`ContentsListingChanges`, which a listing gathers until
   the list takes them): the rows that left their place taken out, those that came in put in where
   their stacking keys say, open as they were, the triangles of rows whose nested rows came or went,
@@ -4967,8 +5009,8 @@ like any other, so a shape moves off a subboard's board, onto it, and across.
   selected row that shows then.
   A shape that can't move doesn't: one with no box (an arrow, whose place in the stack doesn't say
   where it's drawn), one read-only (locked, or in a locked frame), one kept aside. Pressing a row and
-  dragging doesn't select it (the outline selects on the release of a click), so the panel doesn't turn
-  to the shape's details under a drag. The outline asks for what each dragged row carries
+  dragging doesn't select it (the outline selects on the release of a click), so a drag leaves the
+  selection, and the inspector, as they were. The outline asks for what each dragged row carries
   (`pasteboardWriter(from:)`, which begins the drag, `beginDrag(from:)`): a private type
   (`com.example.InfiniteCanvas.contents-rows`, conforming to `public.data`, which the app declares),
   dragged within the app alone, so a drop in another app does nothing, and a list takes a drop only of
@@ -5016,9 +5058,9 @@ like any other, so a shape moves off a subboard's board, onto it, and across.
 
 ### Another board's outline
 
-The list is the board shown's, as the selection filters it. A view of any board of the file lists
-that board's rows through `ContentsState.outline(of: board)`: the rows `entries` would list there
-with nothing selected, nested alike, whichever board is shown. What the path's crumb menus show
+The list is the board shown's. A view of any board of the file lists that board's rows through
+`ContentsState.outline(of: board)`: the rows `entries` would list there, nested alike, whichever
+board is shown. What the path's crumb menus show
 (Boards: a crumb's menu is its own board, [A crumb's menu](#a-crumbs-menu)).
 
 ```swift
@@ -5053,32 +5095,31 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
 
 ### Hosting
 
-(The app's window wraps the canvas in CanvasUI's `BoardChrome(editor:showsInspector:onExit:)`, a
-view modifier that places what the plugins gave [the host's slots](#host-slots): the path, Jump To's
-palette (`JumpToPalette`, over the canvas, given `onExit` to give the keyboard back),
-the inspector with this panel and its toolbar button, and the rule that shows the inspector while
-it's wanted (a takeover is active: Find, open, with the inspector hidden; and hides it again
-as Find closes, if that's what showed it); CompositionTests'
-`InspectorHost` applies the same modifier. The toolbar and the frame stay the app's.)
+(The app's window wraps the canvas in CanvasUI's `BoardChrome(editor:showsSidebar:showsInspector:onExit:)`,
+a view modifier that places what the plugins gave [the host's slots](#host-slots): the path, Jump To's
+palette (`JumpToPalette`, over the canvas, given `onExit` to give the keyboard back), this list in
+the sidebar before the canvas, with the toolbar button that shows and hides it, and the inspector
+with the detail panel, shown by its rule (while shapes are selected and the person has it shown,
+or while something wants it: Find, open); CompositionTests' `InspectorHost` applies the same
+modifier. The toolbar and the frame stay the app's.)
 
-The detail panel has [an overview](#the-overview-and-takeovers), a view it shows where it has no
-one shape to show, and the table of contents gives its list as that, from a plugin value of its
-own, so TableOfContents imports DetailPanel (one horizontal on another) and the list of what ships names
-the plugin, after both:
+The table of contents gives its list as the window's sidebar from its own `register`, a host slot
+that needs no plugin value of its own, so TableOfContents imports no DetailPanel and the list of
+what ships names `TableOfContentsPlugin` alone:
 
 ```swift
-public struct ContentsOverviewPlugin: ListedPlugin {
-    public var id: PluginID { .contentsOverview }      // "contents-overview"
-    public func register(into registrar: inout PluginRegistrar) {
-        registrar.detailOverview(holdsKeyboard: { $0.tableOfContents?.isWalkedByKeys == true }) { editor, onExit in
-            TableOfContentsView(editor: editor, onExit: onExit)
-        }
-    }
+registrar.service { ContentsState(editor: $0) }
+registrar.hostSidebar(keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
+    TableOfContentsView(editor: editor, onExit: onExit)
+        .navigationSplitViewColumnWidth(min: ContentsStyle.sidebarMinWidth, ideal: ContentsStyle.sidebarWidth,
+                                        max: ContentsStyle.sidebarMaxWidth)
 }
 ```
 
-A list without the panel leaves it out and keeps the list's state, which the path's crumbs' menus
-read too; a list with it and no panel is refused (`ownerNotInstalled`).
+The sidebar starts 240 points wide, between 180 and 400. `keyboardEntry` is the list's outline
+(`ContentsState.keyboardEntry`: the last list made, while it's around), which View › Focus Sidebar
+gives the keyboard. A list without the table of contents has no sidebar, and the window no split
+view.
 
 Bringing shapes into view is Selection's `editor.reveal`, which the table of contents calls. It
 takes two generic things from the core: `editor.viewportSize`, which
@@ -8309,10 +8350,11 @@ conflict), `registrar.findHeading { board, editor in FindHeading(…) }`, a titl
 it, so Find never learns what names a board: Boards' `BoardFindPlugin` gives the path's names
 ([Boards](#boards)); without one the root's rows are headed "Board" and another board's have no name.
 `FindPanelPlugin` (id `find-panel`), a plugin value of Find's own after `FindPlugin` and
-`DetailPanelPlugin`, gives the panel as the detail panel's [takeover](#the-overview-and-takeovers) while
+`DetailPanelPlugin`, gives the panel as the detail panel's [takeover](#takeovers) while
 `editor.find?.isActive`, with `onEscape` closing Find (a list without the detail panel leaves it
-out, and keeps Find's state, highlights and commands), and so the window shows a hidden inspector
-while Find is open (and hides it again as Find closes, if that's what showed it), and
+out, and keeps Find's state, highlights and commands), and so the window shows the inspector
+while Find is open, whatever the person chose and whatever is selected (as Find closes it is as
+they chose, and shown only while something is selected), and
 hiding the inspector while Find is open closes Find: the window's rule for any takeover
 ([Host slots](#host-slots)), which Find knows nothing of. `FindState` (`editor.find`, `@Observable`) is what views read: `isActive`,
 `query`, `results`, `total`, `current`, `currentNumber`, `focusRequest`, `isIndexing`.
@@ -9503,9 +9545,8 @@ contributes to Boards' `BoardKinds` point (at most one per kind; its report line
 - **Opening**: Selection's `opens("Open")`, which shows the shape's board
   (`editor.showBoard(BoardID(owner:))`), so a double-click, Return, Enter, ⌘↓ and Go › Open Selection all
   enter it ([opening a shape](#selection)), and so does its row in the table of contents: Return
-  on the row (walked to by keys, the list's own; picked by a click, in the app's panel the canvas's
-  Return, since a click on a row shows the shape's panel and gives the canvas the keyboard), and a
-  double-click only where the list stays put, not in the app's panel
+  on the row (walked to by keys, the list's own; picked by a click, the canvas's Return, since a
+  click on a row gives the canvas the keyboard), and a double-click on the row
   ([opening a row](#the-table-of-contents)).
 - **Open** first in its context menu (`BoardsMenuGroup`, `.before(ShapeMenuGroup.self)`, as Finder's Open is): Selection's
   `.openSelection`, titled Open, so it shows ⌘↓ and does to the menu's shapes what ⌘↓ does: it opens
@@ -9880,8 +9921,8 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   no more than a tenth of its board, drawn once it's built and big enough on screen, else nothing.
   Two fills and the preview; its title is Titles' [cover](#a-cover-zoomed-out), over it, as there's no pill zoomed out.
 - **Opening it** is Boards': a double-click, Return, Enter or ⌘↓ with it the only one selected, Open
-  first in its menu, and Return once its row is picked (a
-  double-click on the row only where the list stays put, not in the app's panel). ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
+  first in its menu, and Return once its row is picked, or a
+  double-click on the row. ⌘↑ comes back with it selected, and ⌘[ retraces. Its panel's header renames it, a run of
   typing one undo step; its row is its symbol and its title, or "Untitled Subboard".
 - **Mentioning it** is Mentions': a note's `@` picker offers it by its title, or "Untitled
   Subboard", with its symbol, and a double-click on its pill (or Go to) enters it
@@ -13503,6 +13544,18 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   inside a subboard, `BoardPath.coveredHeight(on:)`, which a board's window tells it from [the host's slots](#host-slots)), what
   a fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`, and `canvas
   draw`'s `--reveal`, whose `view` is that part of it too.
+- **A view kept while the view settles.** The inspector slides in beside the canvas as a shape is
+  selected, narrowing it, so what the camera was just asked to show is kept shown for a moment
+  (`Style.viewSettle`, 600 ms, on the scheduler's clock, no timer): `editor.animateCamera(toFit:
+  inset:maxZoom:duration:)` (Selection's `reveal`) fits its rect again into what is clear of the
+  view after a change of the view's size that leaves part of it out (one wider again moves
+  nothing), easing there while its move is under way; and
+  `editor.keepInViewWhileSettling(_:)` (what Selection does with the selection as it changes)
+  keeps what of the rect is in view, all of it or the part a rect cut by the view's edge shows,
+  and pans by as little as brings that back once the view leaves part of it out,
+  `Style.keepInViewMargin` in from the edges, never while a press is under way. Either lets go once
+  anything else moves the camera, another board is shown or its time is up, and a fit replaces the
+  rect kept, which is why the table of contents and `goTo` select before they reveal.
 - **Zooming** is the core's commands, which View's items run (through
   the board's window controller, dimmed while they can't run) and Keyboard gives keys: `.zoomIn`
   and `.zoomOut` (⌘= and ⌘-) go to the next of the stops (`Camera.zoomStops`: 10, 25, 50, 100,
@@ -14083,9 +14136,9 @@ dots it showed; the panel commits a number being typed in `boardWillChange`, and
 there; and the context menus, the keyboard, the clipboard and the language model keep nothing per
 shape, and hear nothing of it. So no shipped service works out the change set (CompositionTests'
 BoardsTests hold them to it), and going back to a board shown lately costs the editor, the canvas and the services a frame
-(`./build.sh bench`). Not the panel's list: with the table of contents showing, a switch replaces
-every row of its `List`, which AppKit sizes one by one, some 120 ms at 1,000 rows and a second at
-10,000, however warm the board ([Not built yet](#not-built-yet)).
+(`./build.sh bench`). Not the sidebar's list: a switch shows the new board's rows whole, some 200 ms
+going into a subboard of 10,000 shapes, most of it its rows made, and some 35 back up
+([The list](#the-list)).
 
 Damage marks name the index they were taken on (`DamageMark`, `editor.isCurrent`), so a picture kept
 for a board (the minimap keeps 8) is current only while the editor kept that board's index, and a
@@ -14538,8 +14591,9 @@ board it would save back whole, and refuses one it would save without what it do
 Formats 1 and 2 give each kind's version in `schema`; format 3 in `versions`, beside each added
 property's (`kinds` and `added`). A shape's `props` are its kind's own properties; the values of
 the properties plugins add to its kind are beside them, in `added`, by key. What a shape doesn't
-have is left out. The camera, the selection and whether the details and the minimap show aren't
-in it: they're remembered per file on this Mac, so panning never marks a board edited. So are the
+have is left out. The camera, the selection and whether the sidebar, the details and the minimap
+show aren't in it: they're remembered per file on this Mac (a view remembered before there was a
+sidebar shows it), so panning never marks a board edited. So are the
 camera on each of a file's boards and the board left open (`BoardViewMemory.View`'s `board` and
 `boards`, read with `decodeIfPresent`, so a view remembered before files had boards is the root's;
 saved for the boards the file can still show: the one shown and those above it, then those shown
@@ -14806,8 +14860,7 @@ detail-panel         service DetailPanelState · host inspector · command nextI
 context-menus        service ContextMenuState · secondary-click menu · selection menu · command showContextMenu · shortcut ⌃↩ → command showContextMenu · shortcut Menu → command showContextMenu · CanvasContextMenu in SelectionMenuGroup last
 slash-commands       service SlashCommandState · key hint / at a Line's Start Run a Command
 slash-bar            service SlashBar · command runSlashCommand · shortcut / → command runSlashCommand · SelectionObservers
-table-of-contents    service ContentsState · command showAllShapes last in ViewMenu.Panels
-contents-overview    detail overview
+table-of-contents    service ContentsState · host sidebar
 titles               property title · adornment TitlePill → every shape with a title pill · adornment TitleTab → every shape with a title tab · /title → every shape holding title · overlay TitleCoverOverlay · accessibility → every shape with a title
 mentions             service MentionState · key hint @ Mention a Shape · edge type mention · edges → every shape naming shapes · overlay MentionFrames · ShapeFaces · CanvasContextMenu in MentionsMenuGroup after ShapeMenuGroup · command goToMention in NavigationSection · shortcut ⌥⌘↩ → command goToMention · command showWhatMentionsOfPill in NavigationSection · command removeMention after selectAll in EditMenu.CutCopyPaste · parts mentions → every shape with mention text
 mention-slash-bar    slash bar field
@@ -15550,8 +15603,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   board alone, since drawing would hide a commit's upkeep of the whole file); the minimap's picture of the board entered, a frame at a time; and deleting
   a subboard whose boards hold 10,000 shapes (the commit and every board under it, in a frame and 2 ms: the
   generated file holds 2,608 titles twice, which the title index took out, as Boards' `PathIndex` (`PathValidationPlugin`'s service) takes out their paths now), and
-  undoing and redoing that (with its frame). It only reports the inspector's list replaced on a
-  switch between boards of 10,000 (a `List` in an unshown window, against a 50 ms target), and a
+  undoing and redoing that (with its frame). It only reports the sidebar's list replaced on a
+  switch between boards of 10,000 (an outline in an unshown window, against a 50 ms target), and a
   chain of 1,000 boards written, read, walked (`path(to:)`) and shown. `./test.sh` runs it small, in
   debug, and only reports.
 - **Undo.** `h.editor.undo()` and `redo()` headlessly, with `undoHistory.undoName` for the step's
@@ -15704,7 +15757,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 | Keyed / list registries, last write wins | `KeyedExtensionPoint` / `ExtensionPoint`; every collision is an error. |
 | `ValidationIndicatorLayer` | `ValidationOverlay`, through the core's overlay point. |
 | `toc: { component, filter, getParentShapeId }` on `defineShape`, `TocRegistry` | `x.contentsRow(when:nestedUnder:) { ContentsLabel(...) }`, sugar from the TableOfContents horizontal ([the table of contents](#the-table-of-contents)). |
-| `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | `DetailPanelView`'s overview (its `DetailOverviews` point), which the table of contents' `ContentsOverviewPlugin` gives `TableOfContentsView`. |
+| `DetailsPanel`'s `emptyView` and `multiSelectView` (the TOC, whole or filtered to the selection) | The window's sidebar (the `HostSidebars` host slot), which `TableOfContentsPlugin` gives `TableOfContentsView`: every shape of the board shown, whatever is selected. |
 | `adornments:` on `definePlugin` (`AdornmentShapeUtil`, the `adornment-attachment` binding with its anchor, offset, gap and slot; `singletonPerHost`, `isEligibleHost`; `attachAdornment` and `toggleAdornment`) | An `Adornment` type (its place and its order band) and a label made from the shape's data, placed with `x.adornment`, `registrar.adornment(_:on:)` or `scope.adornment` in `registrar.forShapes(adopting:)`, whose capability's test reads the kind and the registry, another plugin's point included (as the sticker read its referenceable registry). Never a record: nothing to attach, sync, cascade on delete, copy or migrate; one per type per shape by construction; laid out by [Adornments](#adornments), so none overlap. A fact one shows (locked, public) is an [added property](#something-the-user-turns-on) of the shape. |
 | `ToolIdle` / `ToolPointing` click-to-create | `Placement` (follow the pointer, or edit), used by place tools and the double-click claim. |
 | `toolbarItems` with a decorative `kbd` | A key registered with the Keyboard horizontal (`shortcut:`), collision-checked, that the canvas answers and the tooltip names. |
@@ -15842,20 +15895,16 @@ Each of these adds to the design without changing what plugins are written again
   since today a pinch across 35% flips every shape each time it crosses; zooming in by degrees,
   skeletons turning into their shapes a frame's budget at a time, as previews fill in, where the
   frame that crosses the level draws every shape in view in full at once; and a level per kind, or by a shape's size on screen, where one zoom decides for the canvas.
-- **More of going back**: going forward again (⌘]), and a step keeping what the table of contents
-  listed, so Show All survives a trip back.
+- **More of going back**: going forward again (⌘]).
 - **More of the keyboard**: a window listing every shortcut; menu items that take their key
   equivalents from Keyboard, so the View menu's zoom keys and Edit › Select All's ⌘A are declared
   once; and keys the user remaps.
 - **More of the table of contents**: each row's disclosure remembered across launches (it's kept
-  for the editor's life); a selection's rows nesting under the nearest container listed (a row
-  nests under its own container only while that's listed, so a frame selected with a note two
-  frames down lists the note at the top); dragging rows to restack their shapes, or into a frame;
-  per-kind zoom targets (data-canvas's `getZoomConfig`);
-  a double-click on a row opening its shape in the app's panel, which shows the picked shape's
-  panel in the list's place before the second click; and arrow rows that name the shapes they join.
-- **More of validation**: listing just the shapes with issues in the table of contents (a filter
-  beside Show All), and going to the next one from anywhere (Xcode's ⌘'), for a board too big to
+  for the editor's life); dragging rows to restack their shapes, or into a frame;
+  per-kind zoom targets (data-canvas's `getZoomConfig`); and arrow rows that name the shapes they
+  join.
+- **More of validation**: listing just the shapes with issues in the table of contents (a filter),
+  and going to the next one from anywhere (Xcode's ⌘'), for a board too big to
   look down for dots; an issue in the Issues tab going to the row it's about, which the panel would
   mark (below); rules that depend on the clock (a deadline passed), which the engine, caching by
   revision, can't keep up to date today; and checking boards that haven't been shown: the engine

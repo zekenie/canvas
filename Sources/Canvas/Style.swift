@@ -123,6 +123,12 @@ public enum Style {
     static let firstVisitInset: CGFloat = 64
     /// How long the zoom commands ease the camera (tldraw's animationMediumMs).
     static let zoomDuration: Duration = .milliseconds(320)
+    /// How long the camera keeps a view (a fit, `animateCamera(toFit:…)`; a rect in view,
+    /// `keepInViewWhileSettling`) as the view around it settles: long enough for a panel the selection
+    /// shows (the inspector) to slide in beside the canvas. And how long a view kept eases the camera
+    /// when it moves it while the camera's own move is under way.
+    static let viewSettle: Duration = .milliseconds(600)
+    static let keptViewDuration: Duration = .milliseconds(120)
     /// How far a pan by the keys moves the view (`CanvasEditor.pan`), in view points, the same on
     /// screen at any zoom; a page (⇧, Page Up and Down) is this much of the view's clear part.
     static let panStep: CGFloat = 50

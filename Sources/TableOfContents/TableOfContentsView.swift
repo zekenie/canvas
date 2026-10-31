@@ -6,16 +6,16 @@ import TextEditing
 
 /// The table of contents: a Mac source list of the shown board's shapes, a shape that owns a board
 /// opening onto that board's (`ContentsList`, AppKit's outline, which makes views for the rows in
-/// view alone, so a board of any size shows at once). The app shows it in the detail panel when
-/// nothing or several shapes are selected (`ContentsOverviewPlugin`), and while it's walked by keys
-/// (`ContentsState.isWalkedByKeys`); it follows the editor by itself. Clicking a row gives it the
-/// keyboard, as a source list does: ↑ and ↓ move through the rows (⇧ extends), and so do Tab and ⇧Tab,
-/// which stay in the list; → and ← open and close a row's disclosure triangle; Delete runs the
-/// `.delete` command (what Delete on the canvas and Edit › Delete run: deleting the selection); a
-/// double-click or Return on a row opens its shape (as Return on the canvas does: Selection's
-/// `editor.open`); and Escape calls `onExit`, which gives the keyboard back to the canvas, as ⌘↑ and ⌘↩ do. So does
-/// hiding the list while a row has the keyboard. It tells the state when it has the keyboard, from
-/// the window's first responder, and which selections its keys made.
+/// view alone, so a board of any size shows at once). The app shows it in the window's sidebar,
+/// whatever is selected (`TableOfContentsPlugin`'s `hostSidebar`); it follows the editor by itself,
+/// showing a selection made elsewhere on its rows, opened to and scrolled to. A click on a row selects
+/// its shape and gives the canvas the keyboard (`onExit`), so the canvas's keys act on it at once; a
+/// double-click opens it. With the keyboard (View ▸ Focus Sidebar), ↑ and ↓ move through the rows
+/// (⇧ extends), and so do Tab and ⇧Tab, which stay in the list; → and ← open and close a row's
+/// disclosure triangle; Delete runs the `.delete` command (what Delete on the canvas and Edit › Delete
+/// run: deleting the selection); Return on a row opens its shape (as Return on the canvas does:
+/// Selection's `editor.open`); and Escape calls `onExit`, which gives the keyboard back to the canvas,
+/// as ⌘↑ and ⌘↩ do. So does hiding the list while a row has the keyboard.
 ///
 /// Its header names the board listed: a plugin says how (`ContentsHeadings`), else it's "Board".
 /// The list doesn't know what a board is called; the plugin that names boards does.
@@ -31,7 +31,7 @@ public struct TableOfContentsView: View {
     public var body: some View {
         if let state = editor.tableOfContents {
             let entries = state.entries
-            if entries.isEmpty && !state.isFiltered {
+            if entries.isEmpty {
                 ContentUnavailableView("No Shapes", systemImage: "square.on.square.dashed",
                                        description: Text("Shapes on the board are listed here."))
             } else {
@@ -47,8 +47,7 @@ public struct TableOfContentsView: View {
     }
 }
 
-/// What the table of contents' header calls the board it lists, when it lists every shape: its
-/// title, a symbol before it, and a command that goes up from it, which the header offers as a
+/// What the table of contents' header calls the board it lists: its title, a symbol before it, and a command that goes up from it, which the header offers as a
 /// button while it can run (`editor.canPerform`), called what the command is (`registry.title(of:)`,
 /// what VoiceOver says, and what a menu item that runs it is called), with `upHelp` its tooltip (the
 /// title and its key, where it has one: "Back (⌘[)"; the title, by default).
@@ -67,8 +66,7 @@ public struct ContentsHeading {
 }
 
 /// The board's heading (`ContentsState.heading`: a plugin's, else "Board"), with a button up from it
-/// while it can go up; or "Selection" with a button that lists every shape again. Its own view, so
-/// what the heading reads redraws only the header.
+/// while it can go up. Its own view, so what the heading reads redraws only the header.
 struct ContentsHeader: View {
     let state: ContentsState
     let editor: CanvasEditor
@@ -85,35 +83,25 @@ struct ContentsHeader: View {
     }
 
     @ViewBuilder private var content: some View {
-        if state.isFiltered {
-            Text(ContentsStyle.selectionHeading)
-                .accessibilityAddTraits(.isHeader)
-            Spacer()
-            // View › Show All Shapes, the command.
-            Button(ContentsStyle.showAllButton) { editor.perform(.showAllShapes) }
-                .buttonStyle(.borderless)
-                .help(ContentsStyle.showAllHelp)
-        } else {
-            let heading = state.heading
-            if let up = heading.up, editor.canPerform(up) {
-                let upTitle = editor.registry.title(of: up) ?? up.rawValue
-                Button { editor.perform(up) } label: {
-                    // Not a chevron: in a list's disclosure column, one reads as collapsing.
-                    Image(systemName: ContentsStyle.upSymbol)
-                        .frame(width: ContentsStyle.upWidth)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .help(heading.upHelp ?? upTitle)
-                .accessibilityLabel(upTitle)
+        let heading = state.heading
+        if let up = heading.up, editor.canPerform(up) {
+            let upTitle = editor.registry.title(of: up) ?? up.rawValue
+            Button { editor.perform(up) } label: {
+                // Not a chevron: in a list's disclosure column, one reads as collapsing.
+                Image(systemName: ContentsStyle.upSymbol)
+                    .frame(width: ContentsStyle.upWidth)
+                    .contentShape(Rectangle())
             }
-            if let symbol = heading.systemImage {
-                Image(systemName: symbol)
-            }
-            Text(heading.title).lineLimit(1)
-                .accessibilityAddTraits(.isHeader)
-            Spacer()
+            .buttonStyle(.borderless)
+            .help(heading.upHelp ?? upTitle)
+            .accessibilityLabel(upTitle)
         }
+        if let symbol = heading.systemImage {
+            Image(systemName: symbol)
+        }
+        Text(heading.title).lineLimit(1)
+            .accessibilityAddTraits(.isHeader)
+        Spacer()
     }
 }
 

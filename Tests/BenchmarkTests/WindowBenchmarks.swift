@@ -10,8 +10,8 @@ import TableOfContents
 import TestKit
 
 // A board document's own window, made as the app makes it (an NSHostingController for the window's
-// content: the canvas, and `BoardChrome`'s inspector, which shows the table of contents with nothing
-// selected), unshown: from making its controllers to the window, and from there to the table of
+// content: the canvas, and `BoardChrome`'s sidebar, which shows the table of contents, and inspector),
+// unshown: from making its controllers to the window, and from there to the table of
 // contents' rows in its outline, one for each row listed at the top. Reported, not held to a budget:
 // the list's first showing was quadratic while it was SwiftUI's `List` (some 88 s at 10,000 shapes),
 // and the outline costs the rows in view and a pass over those listed.
@@ -25,7 +25,7 @@ struct BoardWindowBench: View {
     var body: some View {
         CanvasRepresentable(editor: editor, focus: focus, showsMinimap: false)
             .frame(minWidth: 480, minHeight: 320)
-            .modifier(BoardChrome(editor: editor, showsInspector: .constant(true), onExit: focus.take))
+            .modifier(BoardChrome(editor: editor, showsSidebar: .constant(true), showsInspector: .constant(true), onExit: focus.take))
             .transaction { $0.disablesAnimations = true }
     }
 }

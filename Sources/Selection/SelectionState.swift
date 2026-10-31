@@ -234,7 +234,8 @@ final class SelectionState {
 
     /// Drops what isn't there or isn't selectable, and repeats. Does nothing if that's what's
     /// selected already. Unless `recording` is false, the selection left is a step back. What the
-    /// selection is inside (`focus`) is worked out again, unless nothing is selected now.
+    /// selection is inside (`focus`) is worked out again, unless nothing is selected now. What is
+    /// selected, if it is all in view, is kept there while the view settles (`keepInViewWhileSettling`).
     func select(_ ids: [ShapeID], recording: Bool = true) {
         var seen = Set<ShapeID>()
         let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
@@ -254,6 +255,8 @@ final class SelectionState {
             hoveredHandle = nil            // handles belong to the only selected shape
         }
         editor.setNeedsDisplay()
+        // The inspector a selection shows may slide in beside the canvas, narrowing it: what was in view stays there.
+        if !kept.isEmpty, !editor.unobscuredViewport.isEmpty, let bounds = selectionBounds { editor.keepInViewWhileSettling(bounds) }
         tellObservers(left: left)
     }
 

@@ -55,6 +55,8 @@ import TestKit
         expectEqual(row("View", "Zoom Out"), ["⌘-", "-"])
         expectEqual(row("View", "Actual Size"), ["⌘0", "⇧0"])
         expectEqual(row("View", "Focus Inspector"), ["⌥⌘I"], "a menu item of the window's own: its key from the menu bar")
+        expectEqual(row("View", "Show Sidebar"), ["⌃⌘S"])
+        expectEqual(row("View", "Focus Sidebar"), ["⌥⌘S"])
         expectEqual(row("View", "Focus Next Pane"), ["F6"])
         expectEqual(row("View", "Focus Previous Pane"), ["⇧F6"])
         expectEqual(row("Edit", "Paste at Pointer"), ["⇧⌘V"], "Clipboard's command, with the item that runs it")

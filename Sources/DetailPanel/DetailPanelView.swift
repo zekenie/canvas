@@ -11,15 +11,13 @@ import TextEditing
 /// with that control in it (an `.inspector` hides its content without removing it). The keyboard
 /// would otherwise land on the window itself, and tool shortcuts would stop.
 ///
-/// Where it has no one shape to show it shows the overview a plugin gave (`DetailOverviews`), and
-/// while the overview holds the keyboard it shows it whatever is selected; while a takeover a plugin
-/// gave is active (`DetailTakeovers`), that in place of everything. It reads both from the editor's
-/// registry, and makes their views as it's made.
+/// With several shapes selected it shows their header; while a takeover a plugin gave is active
+/// (`DetailTakeovers`), that in place of everything. It reads the takeovers from the editor's
+/// registry, and makes their views as it's made. With nothing selected the window hides it
+/// (`DetailPanelPlugin`'s `shownWhile`).
 public struct DetailPanelView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
-    let overview: AnyView?
-    let overviewHoldsKeyboard: @MainActor (CanvasEditor) -> Bool
     let takeovers: [PlacedTakeover]
     @State private var window = WindowBox()
     @State private var drafts = DraftTracker()
@@ -27,9 +25,6 @@ public struct DetailPanelView: View {
     public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}) {
         self.editor = editor
         self.onExit = onExit
-        overview = editor.registry.detailOverview?.content(editor, onExit)
-        let holds = editor.registry.detailOverview?.holdsKeyboard
-        overviewHoldsKeyboard = { holds?($0) ?? false }
         takeovers = editor.registry.detailTakeovers.map { PlacedTakeover(takeover: $0, content: $0.content(editor, onExit)) }
     }
 
@@ -37,30 +32,15 @@ public struct DetailPanelView: View {
     /// panel redraws as what each `isActive` reads changes.
     private var activeTakeover: PlacedTakeover? { takeovers.first { $0.takeover.isActive(editor) } }
 
-    /// Whether the overview (a list) is what the panel shows now: no takeover, and nothing or several
-    /// selected, or the overview holding the keyboard. Reads the editor alone, so the closure that asks
-    /// it holds nothing of the panel (the state is the editor's, and the editor would never go).
-    static func showsOverview(_ editor: CanvasEditor) -> Bool {
-        guard let overview = editor.registry.detailOverview, editor.registry.activeDetailTakeover(in: editor) == nil else { return false }
-        let record = editor.selection.flatMap { editor.document[$0] }
-        return editor.selectedShapeIDs.count != 1 || record == nil || overview.holdsKeyboard(editor)
-    }
-
     public var body: some View {
         Group {
             if let takeover = activeTakeover {
                 takeover.content
             } else if let state = editor.detailPanel {
                 let ids = editor.selectedShapeIDs
-                // One place for the overview, whatever is selected around it, so it stays the same
-                // view (a list keeps the keyboard) as the header of several comes and goes.
-                let record = editor.selection.flatMap { editor.document[$0] }
-                if let overview, ids.count != 1 || record == nil || overviewHoldsKeyboard(editor) {
-                    SelectionSummary(header: ids.count > 1 ? state.selectionSummary(of: ids.compactMap { editor.document[$0] }) : nil,
-                                     editor: editor, overview: overview)
-                } else if ids.count > 1 {
-                    SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor, overview: nil)
-                } else if let id = editor.selection, let record {
+                if ids.count > 1 {
+                    SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor)
+                } else if let id = editor.selection, let record = editor.document[id] {
                     // Status lines and `shownWhile` read services, and whether the shape can change
                     // reads the containers it's in (a locked frame's shapes are locked too: O(its
                     // depth)) and its board (a locked subboard's), so they're read here, on every
@@ -94,11 +74,8 @@ public struct DetailPanelView: View {
                 guard let scheduler = editor?.scheduler else { return }
                 window.focusFirstControl(excluding: window.controls(), retries: DetailStyle.focusRetries, scheduler: scheduler)
             }
-            // Where the keyboard enters the panel: the list the overview is, else the header's field.
-            editor.detailPanel?.keyboardEntry = { [window, weak editor] in
-                guard let editor else { return nil }
-                return window.entry(listFirst: Self.showsOverview(editor))
-            }
+            // Where the keyboard enters the panel: the header's field.
+            editor.detailPanel?.keyboardEntry = { [window] in window.entry() }
             closeRingSoon()
         }
         .onKeyPress(.escape, phases: [.down, .repeat]) { press in
@@ -205,12 +182,11 @@ final class WindowBox {
         return rows.flatMap { $0.sorted { $0.frame.minX < $1.frame.minX }.map(\.view) }
     }
 
-    /// Where the keyboard enters the panel: its first list or table when `listFirst` (the overview shows),
-    /// else its first text field or text view (the header's, at the top). Nil for neither.
-    func entry(listFirst: Bool) -> NSView? {
+    /// Where the keyboard enters the panel: its first text field or text view (the header's, at the
+    /// top), else its first list or table. Nil for neither.
+    func entry() -> NSView? {
         let controls = controls()
-        if listFirst, let list = controls.first(where: { $0 is NSTableView }) { return list }
-        return controls.first { ($0 as? NSTextField)?.isEditable == true || $0 is NSTextView } ?? (listFirst ? nil : controls.first { $0 is NSTableView })
+        return controls.first { ($0 as? NSTextField)?.isEditable == true || $0 is NSTextView } ?? controls.first { $0 is NSTableView }
     }
 
     /// Tab off the panel's last control goes round to its first, and ⇧Tab off the first to the last:
@@ -317,24 +293,15 @@ struct Placeholder: View {
     }
 }
 
-/// Several shapes are selected: their header, then the overview if there is one. Details are per
-/// shape: editing several at once isn't built. With no header, the overview alone (nothing
-/// selected, or one shape while the overview holds the keyboard), in the same place.
+/// Several shapes are selected: their header. Details are per shape: editing several at once isn't
+/// built.
 struct SelectionSummary: View {
-    let header: DetailHeader?
+    let header: DetailHeader
     let editor: CanvasEditor
-    let overview: AnyView?
     var body: some View {
         VStack(spacing: 0) {
-            if let header {
-                HeaderView(editor: editor, content: header)
-                Divider()
-            }
-            if let overview {
-                overview
-            } else {
-                Placeholder(text: "Select one shape to see its details")
-            }
+            HeaderView(editor: editor, content: header)
+            Divider()
         }
     }
 }

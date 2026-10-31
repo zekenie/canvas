@@ -85,8 +85,8 @@ private struct Seeded: RandomNumberGenerator {
         contents.setExpanded(c, true)
         expect(!contents.isExpanded(outer) && contents.isExpanded(c))
         editor.selectedShapeIDs = [nest.outer, nest.a]
-        expectEqual(editor.contents.entries.outline, ["corral", "  A"])
-        expect(!contents.isExpanded(try require(contents.entry(nest.outer))), "listed again, its row stays collapsed")
+        expectEqual(editor.contents.entries.outline, ["corral", "  A", "  corral", "    B", "C", "  on C", "pocket"])
+        expect(!contents.isExpanded(try require(contents.entry(nest.outer))), "selected, its row stays collapsed")
         editor.selectedShapeIDs = []
         editor.transact { $0.update(pin, as: Pin.self) { $0.props.name = "on C, renamed" } }
         @MainActor func expanded() throws -> [Bool] {
@@ -187,17 +187,13 @@ private struct Seeded: RandomNumberGenerator {
             expectEqual(editor.contents.entries.tree, expected)
         }
     },
-    test("selecting lists the selection: a shape alone at the top, under its container while that's listed too") {
+    test("selecting leaves every row where it nests: a shape under its containers, whatever is selected") {
         let editor = try corralEditor()
         let nest = NestedCorrals(in: editor)
-        editor.selectedShapeIDs = [nest.b]
-        expectEqual(editor.contents.entries.outline, ["B"])
-        editor.selectedShapeIDs = [nest.inner, nest.b, nest.c]
-        expectEqual(editor.contents.entries.outline, ["corral", "  B", "C"])
-        editor.selectedShapeIDs = [nest.outer, nest.b]
-        expectEqual(editor.contents.entries.outline, ["corral", "B"], "B's container, the inner corral, isn't listed")
-        editor.contents.showAll()
-        expectEqual(editor.contents.entries.outline, ["corral", "  A", "  corral", "    B", "C"])
+        for selection in [[nest.b], [nest.inner, nest.b, nest.c], [nest.outer, nest.b], []] {
+            editor.selectedShapeIDs = selection
+            expectEqual(editor.contents.entries.outline, ["corral", "  A", "  corral", "    B", "C"])
+        }
     },
     test("a move keeps every row, the container's and all it holds: a read after it makes none, and reads their marks again") {
         flag([])

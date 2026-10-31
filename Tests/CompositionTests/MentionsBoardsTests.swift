@@ -61,11 +61,9 @@ extension CanvasEditor {
     /// The note's text, on whatever board it is.
     fileprivate func text(of id: ShapeID) -> MentionText? { file.record(id)?.typed(as: StickyNote.self)?.props.text }
 
-    /// The shape's row, with every row listed (going up selects the board's owner, which would list
-    /// only it).
+    /// The shape's row.
     fileprivate func contentsRow(_ id: ShapeID) -> String? {
-        tableOfContents?.showAll()
-        return tableOfContents?.entries.first { $0.id == id }?.label?.text
+        tableOfContents?.entries.first { $0.id == id }?.label?.text
     }
 
     fileprivate func setText(_ id: ShapeID, _ text: String) {

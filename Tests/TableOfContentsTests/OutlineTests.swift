@@ -43,7 +43,7 @@ import TestKit
         flag([a, c])
         editor.transact { $0.update(a, as: Widget.self) { $0.props.count = 1 } }     // so the flags are read
         editor.selectedShapeIDs = [a]
-        expectEqual(editor.contents.entries.outline, ["A"], "the list lists the selection")
+        expectEqual(editor.contents.entries.outline, ["A", "  on A", "B", "pocket"], "the list lists every shape, the selection too")
         expectEqual(editor.contents.entries.marks.first, ["Flagged"])
         expectEqual(editor.contents.outline(of: .root).outline, ["A", "  on A", "B", "pocket"])
         expect(editor.contents.outline(of: .root).marks.allSatisfy(\.isEmpty), "no marks")

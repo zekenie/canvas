@@ -62,13 +62,16 @@ extension CanvasEditor {
     /// Brings the shapes into view: centers their bounds (`shapeContext.bounds(of:)`) in the part of
     /// the view the host leaves clear (`unobscuredViewport`: below the path over a subboard's canvas),
     /// zoomed to fit with 100 points of margin in all but no closer than 120%, and moves the camera
-    /// there over 200 ms (`animateCamera`), as data-canvas's table of contents does (tldraw's
-    /// zoomToBounds). What selecting rows of the table of contents does, and Zoom to Selection. Only
-    /// on the board shown (`goTo` goes to shapes on another). Does nothing before the view has a
-    /// size, or when none of the shapes has bounds (none is on the board shown).
+    /// there over 200 ms, as data-canvas's table of contents does (tldraw's zoomToBounds); a fit kept
+    /// while the view settles (`animateCamera(toFit:…)`), so the inspector the selection shows,
+    /// sliding in beside the canvas, leaves them fitted in what's left. What selecting rows of the
+    /// table of contents does, and Zoom to Selection. Only on the board shown (`goTo` goes to shapes
+    /// on another). Does nothing before the view has a size, or when none of the shapes has bounds
+    /// (none is on the board shown).
     public func reveal(_ ids: [ShapeID]) {
-        guard let bounds = shapeContext.bounds(of: ids), let target = revealCamera(fitting: bounds) else { return }
-        animateCamera(to: target, duration: SelectionStyle.revealDuration)
+        guard let bounds = shapeContext.bounds(of: ids) else { return }
+        animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.revealMaxZoom,
+                      duration: SelectionStyle.revealDuration)
     }
 
     /// Brings the shapes into view only if they are not all in it (tldraw's `zoomToSelectionIfOffscreen`,
@@ -86,8 +89,7 @@ extension CanvasEditor {
     func revealIfOffscreen(rect bounds: CGRect) {
         let view = unobscuredViewport, camera = cameraTarget
         guard !view.isEmpty, !bounds.isNull, !camera.toWorld(view).contains(bounds) else { return }
-        animateCamera(to: Camera(fitting: bounds, in: view, inset: SelectionStyle.revealInset, maxZoom: camera.zoom),
-                      duration: SelectionStyle.revealDuration)
+        animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: camera.zoom, duration: SelectionStyle.revealDuration)
     }
 
     /// Goes to the shapes, as following a link to them does: ends editing, selects those that can

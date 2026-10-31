@@ -23,8 +23,8 @@ final class PanelWindow {
     private(set) var exits = 0
 
     /// `inBoardWindow`: the window is a board's, as the app's is, which splits Edit › Undo between
-    /// text and the board. The panel's overview and takeovers are the editor's plugins'
-    /// (`OverviewPlugin`, TakeoverTests' `TakeoverPlugin`).
+    /// text and the board. The panel's takeovers are the editor's plugins' (TakeoverTests'
+    /// `TakeoverPlugin`).
     init(_ editor: CanvasEditor, panelWidth: CGFloat = DetailStyle.idealWidth, locale: Locale = Locale(identifier: "en_US"),
          inBoardWindow: Bool = false) {
         self.editor = editor
@@ -159,27 +159,18 @@ struct CountingPlugin: CanvasPlugin {
 enum ListTab {}
 extension ListTab: DetailTab { static var title: String { "List" } }
 
-/// Gives the panel its overview, as a plugin does: a text field whose placeholder is "Overview"
-/// (or `name`).
-struct OverviewPlugin: CanvasPlugin {
-    var name = "Overview"
-    var id: PluginID { PluginID(name.lowercased()) }
-    func register(into registrar: inout PluginRegistrar) {
-        let name = name
-        registrar.detailOverview { _, _ in TextField(name, text: .constant("")) }
-    }
-}
-
 @MainActor let windowTests = Suite("Panel in a window", [
-    test("an overview stands in for No Selection and goes under the header of several; one shape shows its own panel") {
-        let editor = try gadgetEditor([OverviewPlugin()], scheduler: TaskScheduler())
+    test("several shapes show their header, and nothing under it; one shape shows its own panel") {
+        let editor = try gadgetEditor(scheduler: TaskScheduler())
         let panel = PanelWindow(editor)
         let a = editor.add(Box(gadgetFrame)), b = editor.add(Box(gadgetFrame.offsetBy(dx: 300, dy: 0)))
-        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
         editor.selection = a
         panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "80 pt", "40 pt"] }
         editor.selectedShapeIDs = [a, b]
-        panel.window.spin { panel.fields.map(\.placeholderString) == ["Overview"] }
+        panel.window.spin { panel.fields.isEmpty }
+        expectEqual(panel.hosting.descendants(NSTextField.self).filter(\.isEditable).count, 0, "no field anywhere: the header of several is words")
+        editor.selection = b
+        panel.window.spin { panel.fields.map(\.stringValue) == ["240 pt", "160 pt", "380 pt", "40 pt"] }
     },
     test("nothing selected shows no fields; selecting a box shows its size and position") {
         let editor = try gadgetEditor(scheduler: TaskScheduler())
