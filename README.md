@@ -69,6 +69,23 @@ Agent Skills standard look), installs them as a plugin for Claude Code if `claud
 `canvas` into a folder on your PATH. It doesn't need the app to be running, and running it again after
 an update brings the copies up to date (`canvas help install`).
 
+## Drawing this repository
+
+`mise run ingest` draws this repository's code as boards in the running app: its modules, files and
+plugin system, from the main checkout's latest commit (never what isn't committed), from any checkout.
+
+```sh
+mise run ingest                                          # on the board in front
+mise run ingest --new-file ~/Documents/code.canvasboard  # in a new board file
+```
+
+The app must be running, built in the main checkout (`./build.sh`). The board in front must be empty
+(File › New) or the one the last run drew, which is drawn again in its place (one undo step); any
+other is refused. The first run type-checks every module and takes minutes; later runs redo only what
+changed. Nothing in it reaches the network. Without mise, run `.claude/skills/canvas-ingest/ingest` in
+the main checkout; `--help` lists the rest (`--commit REF` draws another commit). What the boards show
+is this repository's lens, `.canvas/lens.py`.
+
 ## Controls
 
 | Action | How |
