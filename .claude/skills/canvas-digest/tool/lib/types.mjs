@@ -394,6 +394,7 @@ export function typeProblems(model) {
         else if (!type.relationship) errors.push(`${q}: is "${t}", a type that isn't a relationship type: a note is of it, and an arrow only of a relationship type`);
       }
       if (arrow.is.length && e.end) errors.push(`${q}: an end of a relationship type joins a type and a relationship type; it is not itself a relationship`);
+      if (arrow.is.length && e.atFrame) errors.push(`${q}: is on an arrow at a frame; a relationship joins two notes`);
       if (arrow.fieldValuesGiven) {
         if (!plainObject(arrow.fieldValues)) errors.push(`${q}: fieldValues is a JSON object, not ${Array.isArray(arrow.fieldValues) ? 'a list' : JSON.stringify(arrow.fieldValues)}`);
         else if (!arrow.is.length) errors.push(`${q}: fieldValues needs an is (the relationship type whose fields they are)`);

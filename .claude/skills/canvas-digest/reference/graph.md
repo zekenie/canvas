@@ -64,11 +64,11 @@ A board with more than about 150 shapes is hard to read; make a subboard of a pa
 
 ## Edges
 
-An edge is "from points at to". Both must be notes or subboards, never frames.
+An edge is "from points at to". Its ends are notes or subboards, or frames: two frames, or a frame and a subboard, on one board, are joined by an arrow, as the app joins them (never a pill, so the plan never moves one; a frame is never public).
 
 | field | meaning |
 |---|---|
-| `from`, `to` | ids or titles of nodes (as `in`). An edge to itself is ignored. An edge that names a frame is dropped with a warning. |
+| `from`, `to` | ids or titles of nodes (as `in`). An edge to itself is ignored. An edge at a frame the app can't draw is dropped with a warning that says why: between a frame and what it holds (at any depth), between a note and a frame (they share no channel), or between two boards or with `via: "reference"` (a pill can't stand for a frame). An arrow at a frame takes no `is`: a relationship joins two notes. |
 | `weight` | how strongly the layout keeps the two near. Default 1. Two edges with the same ends are one edge, with their weights added. |
 | `is` | a relationship type's title, or a list: the arrow is a **relationship** of that type. Two edges between one pair with different `is` are two arrows, drawn each with its type, and one edge to the layout. [Types](#types). |
 | `fieldValues` | an object: what the relationship holds for its type's fields. Needs `is`. |

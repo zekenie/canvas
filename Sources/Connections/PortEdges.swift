@@ -245,7 +245,7 @@ enum EdgeChannels {
 
     /// What some ends connect on, as a message says it: `a sticky-note connects on note-link, a
     /// subboard on subboard-link`; by side, `a sticky-note has note-link ports on its top, right,
-    /// bottom and left`; `a frame has no ports`. An end that's a stand-in is named for what it
+    /// bottom and left`; `a reference has no ports`. An end that's a stand-in is named for what it
     /// stands for, the shape the script wrote; by side, as what it is, with its own sides (`a
     /// reference for a sticky-note has note-link ports on its left and right`).
     static func described(_ ends: [End], sides: Bool, in registry: Registry) -> String {

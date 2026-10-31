@@ -734,7 +734,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq((await planOf(sourced)).plan.boards, (await planOf(plain)).plan.boards, 'and the plan is the same');
   });
 
-  await test('check: warns past 15 shapes in a frame and 150 on a board, and for an edge into a frame', async function () {
+  await test('check: warns past 15 shapes in a frame and 150 on a board, and for an edge between a note and a frame', async function () {
     var nodes = [{ title: 'F', kind: 'frame' }];
     for (var i = 0; i < 16; i++) nodes.push(note('n' + i, 'F'));
     var r = checkm.checkDigest(digest(nodes, []));
@@ -743,7 +743,63 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var rb = checkm.checkDigest(digest(big, []));
     assert(rb.warnings.length === 1 && /board "root" has 151/.test(rb.warnings[0]), JSON.stringify(rb.warnings));
     var re = checkm.checkDigest(digest([{ title: 'F', kind: 'frame' }, note('A')], [{ from: 'A', to: 'F' }]));
-    assert(/draws no edge at a frame/.test(re.warnings.join()), JSON.stringify(re));
+    eq(re.warnings, ['edge "A" -> "F" dropped: a note and a frame share no channel'], 'the warning');
+  });
+
+  // frames F and G on the first board, H in F, a subboard S holding a frame K, and edges at frames of every sort
+  function frameEdges() {
+    var nodes = [{ title: 'F', kind: 'frame' }, note('a1', 'F'), note('a2', 'F'), { title: 'H', kind: 'frame', in: 'F' }, note('h1', 'H'),
+      { title: 'G', kind: 'frame' }, note('b1', 'G'), { title: 'S', kind: 'subboard' }, { title: 'K', kind: 'frame', in: 'S' }, note('k1', 'K')];
+    var edges = [{ from: 'F', to: 'G' }, { from: 'G', to: 'S' }, { from: 'S', to: 'F' }, { from: 'H', to: 'G' }, { from: 'a1', to: 'a2' },
+      { from: 'a1', to: 'F' }, { from: 'F', to: 'H' }, { from: 'S', to: 'K' }, { from: 'b1', to: 'F' }, { from: 'K', to: 'G' }, { from: 'G', to: 'F', via: 'reference' }];
+    return digest(nodes, edges);
+  }
+
+  await test('edges at frames: two frames, and a frame and a subboard, on one board are arrows; a frame and what it holds, a note, another board and via: reference are dropped, each saying why', async function () {
+    var d = frameEdges();
+    eq(checkm.checkDigest(d).warnings, [
+      'edge "a1" -> "F" dropped: a frame and what it holds are never connected',
+      'edge "F" -> "H" dropped: a frame and what it holds are never connected',
+      'edge "S" -> "K" dropped: a frame and what it holds are never connected',
+      'edge "b1" -> "F" dropped: a note and a frame share no channel',
+      'edge "K" -> "G" dropped: an edge at a frame is an arrow on one board, never a pill (none stands for a frame, which is never public, nor sits beside one)',
+      'edge "G" -> "F" dropped: an edge at a frame is an arrow on one board, never a pill (none stands for a frame, which is never public, nor sits beside one)',
+    ], 'what is dropped, and why');
+    var r = await planOf(d);
+    checkPlan(r.plan);
+    var root = r.plan.boards.find(function (b) { return b.board === 'root'; });
+    eq(root.edges.map(function (e) { return e.from + '>' + e.to + (e.via ? ' via' : ''); }), ['F>G', 'G>S', 'H>G', 'S>F', 'a1>a2'], 'the arrows on the first board');
+    eq(root.pills, [], 'no pill'); eq(r.report.public, [], 'nothing public');
+    eq(edgeLines(r, 'root'), ['edge "F" -> "G"', 'edge "G" -> "S"', 'edge "H" -> "G"', 'edge "S" -> "F"', 'edge "a1" -> "a2"'], 'the edge script');
+    var ms = sizes.measureScript(model.buildModel(d));
+    eq(ms.split('\n').filter(function (l) { return /via: reference/.test(l); }), ['edge "S" -> "a2" via: reference'], 'a pill measured for the note pointed at, and none for an edge at a frame');
+    // the arrows between the frames are the board's own: laid out by them, and none crosses a frame's border to reach its own end
+    var rep = r.report.boards.root;
+    var top = rep.algorithms.find(function (a) { return a.container === 'root'; });
+    assert(top && top.algorithm !== 'rectpacking' && top.arrows === 4, 'the board is laid out by its arrows: ' + JSON.stringify(rep.algorithms));
+    eq(rep.end.Fx, 0, 'no arrow crosses a frame border');
+  });
+
+  await test('edges at frames, the rest: a subboard and a frame on another board dropped as a pill would be, a frame and a subboard it holds as nesting, and is on an arrow at a frame refused', async function () {
+    var d = digest([{ title: 'F', kind: 'frame' }, { title: 'Sub', kind: 'subboard', in: 'F' }, { title: 'Far', kind: 'subboard' }, { title: 'K', kind: 'frame', in: 'Far' }, note('k1', 'K'),
+      { title: 'G', kind: 'frame' }, { title: 'R', kind: 'sticky-note', schema: { type: 'object' }, relationship: true, text: 'r' }],
+      [{ from: 'Sub', to: 'F' }, { from: 'G', to: 'K' }, { from: 'F', to: 'G', is: 'R' }]);
+    var r = checkm.checkDigest(d);
+    eq(r.warnings.filter(function (w) { return / dropped: /.test(w); }), [
+      'edge "Sub" -> "F" dropped: a frame and what it holds are never connected',
+      'edge "G" -> "K" dropped: an edge at a frame is an arrow on one board, never a pill (none stands for a frame, which is never public, nor sits beside one)',
+    ], 'what is dropped');
+    assert(r.errors.some(function (e) { return e === 'edge "F" -> "G": is on an arrow at a frame; a relationship joins two notes'; }), JSON.stringify(r.errors));
+  });
+
+  await test('a subboard many frames point at stays where their arrows are: an edge at a frame is never a pill, so it is never promoted through them', async function () {
+    var nodes = [{ title: 'Hub', kind: 'subboard' }], edges = [];
+    for (var i = 1; i <= 7; i++) { nodes.push({ title: 'F' + i, kind: 'frame' }, note('n' + i, 'F' + i)); edges.push({ from: 'F' + i, to: 'Hub' }); }
+    var r = await planOf(digest(nodes, edges));
+    checkPlan(r.plan);
+    eq(r.report.promotions, [], 'nothing promoted'); eq(r.report.public, [], 'nothing public');
+    eq(pillSet(r.plan), [], 'no pill');
+    eq(r.plan.boards[0].edges.length, 7, 'seven arrows');
   });
 
   await test('the measure script: every note and card once, then one edge through a reference to each end that is pointed at', async function () {

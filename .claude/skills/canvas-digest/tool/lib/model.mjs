@@ -8,6 +8,19 @@ import { isEndOf, isKey, canon } from './types.mjs';
 export const LEAF_KINDS = new Set(['sticky-note', 'subboard']);
 const isPlain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * Why the digest draws no arrow for edge `e`, from node a to node b, at a frame; null where it draws one: an edge at a frame is an arrow, on `frame-link`,
+ * between two frames or a frame and a subboard on one board, as the app joins them. A frame and what it holds, at any depth, are never joined (the
+ * app's `cannot_connect`); a note and a frame share no channel; and a pill can neither stand for a frame (which is never public) nor sit beside one.
+ */
+function frameRefusal(a, b, e) {
+  if (a.kind !== 'frame' && b.kind !== 'frame') return null;
+  if (a.chain.includes(b.key) || b.chain.includes(a.key)) return 'a frame and what it holds are never connected';
+  if (a.kind === 'sticky-note' || b.kind === 'sticky-note') return 'a note and a frame share no channel';
+  if (a.board !== b.board || e.via === 'reference') return 'an edge at a frame is an arrow on one board, never a pill (none stands for a frame, which is never public, nor sits beside one)';
+  return null;
+}
+
 /** `is` as the digest writes it (a title, or a list of them) as a list of folded titles, without repeats; bad: it is neither. */
 function isList(v) {
   if (v == null) return { list: [], bad: false };
@@ -199,7 +212,8 @@ export function buildModel(digest, mess) {
     const a = nodes.get(read.resolve(e.from).item.key), b = nodes.get(read.resolve(e.to).item.key);
     const from = a.key, to = b.key;
     if (from === to) return;
-    if (a.kind === 'frame' || b.kind === 'frame') { warnings.push(`edge "${label(from)}" -> "${label(to)}" dropped: the digest draws no edge at a frame (one is never public, and a frame and a note share no channel)`); return; }
+    const refused = frameRefusal(a, b, e);
+    if (refused) { warnings.push(`edge "${label(from)}" -> "${label(to)}" dropped: ${refused}`); return; }
     const key = from + '\u0000' + to;
     let g = pairs.get(key);
     if (!g) pairs.set(key, g = { from, to, a, b, items: [] });
@@ -248,6 +262,7 @@ export function buildModel(digest, mess) {
     for (const ar of arrows.values()) { ar.orders.sort((x, y) => (x.join('\u0000') < y.join('\u0000') ? -1 : x.join('\u0000') > y.join('\u0000') ? 1 : 0)); ar.is = ar.orders[0]; }
     edge.arrows = [...arrows.entries()].sort((x, y) => byTitle(x[0], y[0])).map((x) => x[1]);
     if (edge.end) edge.direct = true;   // an end is an arrow between two types: never a pill, which would be an arrow into a reference
+    if (g.a.kind === 'frame' || g.b.kind === 'frame') { edge.atFrame = true; edge.direct = true; }   // never a pill: none stands for a frame, nor sits beside one
     edgeMap.set(key, edge);
   }
   const edges = [...edgeMap.values()].sort((x, y) => byTitle(x.from, y.from) || byTitle(x.to, y.to));

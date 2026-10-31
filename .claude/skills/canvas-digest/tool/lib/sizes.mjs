@@ -26,9 +26,9 @@ export function toMeasure(model) {
   return items.sort((a, b) => byTitle(a.key, b.key));
 }
 
-/** The ends a pill may be drawn for: every shape something points at (an end of a relationship type is never a pill: it is drawn between its two types). */
+/** The ends a pill may be drawn for: every shape something points at (an end of a relationship type is never a pill: it is drawn between its two types; nor is an edge at a frame). */
 export function pillTargets(model) {
-  return [...model.nodes.values()].filter((n) => LEAF_KINDS.has(n.kind) && !n.never && (model.inn.get(n.key) || []).some((e) => !e.end)).map((n) => n.key).sort(byTitle);
+  return [...model.nodes.values()].filter((n) => LEAF_KINDS.has(n.kind) && !n.never && (model.inn.get(n.key) || []).some((e) => !e.end && !e.atFrame)).map((n) => n.key).sort(byTitle);
 }
 
 /** The key of the width of a pill for `target` beside a start in `container` (a node's `container`: 'f:<frame>' or 'b:<board>'). */
@@ -74,7 +74,7 @@ export function measurePlan(model, opts = {}) {
     if (!shared(t)) continue;
     const seats = new Map();   // container -> the first start in it, by key
     for (const e of model.inn.get(t) || []) {
-      if (e.end || e.from === t) continue;
+      if (e.end || e.atFrame || e.from === t) continue;
       const c = model.node(e.from).container;
       if (!seats.has(c) || byTitle(e.from, seats.get(c)) < 0) seats.set(c, e.from);
     }

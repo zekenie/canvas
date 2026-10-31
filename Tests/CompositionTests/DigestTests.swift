@@ -391,6 +391,30 @@ private func isByDesign(_ message: String) -> Bool {
         expect(run.process.output.contains("descriptions 1/1"), "verify counts it: \(run.process.output)")
     },
 
+    test("digest all with arrows at frames: two frames, and a frame and a subboard, joined on frame-link, every shape, pill and arrow on its plan; an edge between a note and a frame dropped, saying why") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("frames")
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let run = try runDigest("all", "frames", server: server, target: ["--board", "\(board.number)", "--into", "Frames map"], out: folder)
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expect(run.process.output.contains("verify ok"), run.process.output)
+        let said = run.process.output + run.process.error
+        expect(said.contains(#"edge "Gateway" -> "web" dropped: a note and a frame share no channel"#), "the dropped edge is said: \(said)")
+        try expectOnPlan(run, board: board, "frames")
+        try expectNoWarnings(run, "frames")
+        expectEqual(try queried(server, board, #":edge-from("web", frame-link)"#), ["api"], "a frame's arrow to a frame")
+        expectEqual(try queried(server, board, #":edge-from("api", frame-link)"#).sorted(), ["Billing", "store"], "to a frame and to a subboard")
+        expectEqual(try queried(server, board, #":edge-from("Billing", frame-link)"#), ["store"], "a subboard's arrow to a frame")
+        expectEqual(try queried(server, board, #":edge-to("web", arrow)"#), [], "no arrow from the note")
+    },
+
     test("digest all on a spine: a band of cards that point at the same notes, the pills they share between its columns, each placed by its edge, every shape and pill on its plan") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

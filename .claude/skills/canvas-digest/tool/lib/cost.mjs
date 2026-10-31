@@ -15,13 +15,14 @@ export const ALPHA = 5;
 export const pillId = (i) => '\u0001pill' + i;
 
 /**
- * Every arrow of a layout, as {a, b, A, B, fromNode, toNode, kind}: a, b are ids (a title, or a pill's id), A, B their boxes.
+ * Every arrow of a layout, as {a, b, A, B, fromNode, toNode, kind}: a, b are ids (a title, or a pill's id), A, B their boxes (a plain arrow's end may be a frame).
  * Plain arrows first, in plan.direct's order (so `per` lines up with it), then arrows into shared pills, then each start to its own pills.
  */
 export function arrowsOf(layout) {
-  const { boxes, pills, plan } = layout;
+  const { boxes, frames, pills, plan } = layout;
   const out = [];
-  for (const e of plan.direct) out.push({ a: e.from, b: e.to, A: boxes.get(e.from), B: boxes.get(e.to), fromNode: e.from, toNode: e.to, kind: 'plain', n: 1 });
+  const box = (t) => boxes.get(t) || frames.get(t);
+  for (const e of plan.direct) out.push({ a: e.from, b: e.to, A: box(e.from), B: box(e.to), fromNode: e.from, toNode: e.to, kind: 'plain', n: 1 });
   for (const m of plan.members) out.push({ a: m.e.from, b: pillId(m.pill), A: boxes.get(m.e.from), B: pills[m.pill], fromNode: m.e.from, toNode: m.host, kind: 'shared', n: 1 });
   // a pill in a column is joined to its start by a short link; a shared pill stands apart, and its host's arrow to it is an arrow like any
   pills.forEach((p, i) => out.push({ a: p.start, b: pillId(i), A: boxes.get(p.start), B: p, fromNode: p.start, toNode: p.start, kind: p.free ? 'shared' : 'link', n: 1 }));
@@ -49,7 +50,7 @@ export function evaluate(model, layout, mu) {
     for (const j of grid.near(s)) { if (owners[j] === x.a || owners[j] === x.b) continue; if (segHitsBox(s, solids[j])) { ne++; if (j < nNotes) NEnote++; else NEpill++; } }
     const na = model.node(x.fromNode).frames, nb = model.node(x.toNode).frames;
     for (const f of frameList) {
-      if (na.includes(f.t) || nb.includes(f.t)) continue;
+      if (na.includes(f.t) || nb.includes(f.t) || f.t === x.fromNode || f.t === x.toNode) continue;   // an arrow at a frame ends on its border
       const bx = f.b;
       if (Math.max(s.x1, s.x2) < bx.x || Math.min(s.x1, s.x2) > bx.x + bx.w || Math.max(s.y1, s.y2) < bx.y || Math.min(s.y1, s.y2) > bx.y + bx.h) continue;
       if (segHitsBox(s, bx, 0)) fx++;
