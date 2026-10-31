@@ -14,18 +14,24 @@ extension CanvasCommand {
 /// slot for one). Every section in it is some plugin's.
 ///
 /// The inspector has something to show while shapes are selected: with nothing selected the window
-/// hides it, whether or not the person has it shown. It's wanted while a takeover is active, whether
-/// or not the person has it shown or anything is selected: a takeover is something open in the panel
-/// (Find), which would go on with nothing shown to end it by. So the window shows a hidden inspector
-/// for it, and hiding the inspector meanwhile escapes the takeover, as Escape in the panel does.
+/// hides it, whether or not the person has it shown. It's wanted while a takeover or a band is active,
+/// whether or not the person has it shown or anything is selected: a takeover is something open in the
+/// panel (Find), a band something held over it (the walk's), which would go on with nothing shown to end
+/// it by. So the window shows a hidden inspector for it, and hiding the inspector meanwhile escapes the
+/// takeover, as Escape in the panel does, and cancels the band, as ⌘. does.
 public struct DetailPanelPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .detailPanel }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { DetailPanelState(editor: $0) }
         registrar.hostInspector(shownWhile: { !$0.selectedShapeIDs.isEmpty },
-                                isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil },
-                                onDismiss: { $0.registry.activeDetailTakeover(in: $0)?.onEscape($0) },
+                                isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil || $0.registry.activeDetailBand(in: $0) != nil },
+                                onDismiss: { editor in
+                                    // Both found before either runs: ending the takeover may end the band's reason too.
+                                    let takeover = editor.registry.activeDetailTakeover(in: editor), band = editor.registry.activeDetailBand(in: editor)
+                                    takeover?.onEscape(editor)
+                                    band?.onCancel(editor)
+                                },
                                 keyboardEntry: { $0.detailPanel?.keyboardEntry?() }) { editor, onExit in
             DetailPanelView(editor: editor, onExit: onExit)
         }

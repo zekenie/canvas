@@ -12,6 +12,8 @@ public enum DetailStyle {
     public static let idealWidth: CGFloat = 260
     public static let maxWidth: CGFloat = 340
     public static let inset: CGFloat = 16
+    /// What heads the root board's rows in a list when no plugin names boards (`BoardHeadings`).
+    static let rootBoardHeading = "Board"
     public static let headerHeight: CGFloat = 44
     static let headerSymbolWidth: CGFloat = 20
     static let backWidth: CGFloat = 20
@@ -363,32 +365,113 @@ extension EnvironmentValues {
 /// (`registry.title(of:)`) unless `title` says otherwise, its tooltip the title and the command's key
 /// ("Next (⌘G)"; none for a command with no key, whose label says it all). Borderless, as the panel's
 /// other buttons are.
+///
+/// A button that has the keyboard is never dimmed by its command: the command may turn off while the keyboard is on the button
+/// (End Issue Walk, in the update that takes a band's Done away; Previous Issue when a drag begins on the canvas; Issue List when
+/// Find opens over the list), and a disabled control that has the keyboard hands it to the window in the middle of that update
+/// (SwiftUI reports an AttributeGraph cycle, and with Keyboard navigation on the keyboard is left on the window). So while the
+/// button has the keyboard it stays enabled, its press doing nothing while `canPerform` says no (`perform` refuses), drawn at
+/// the dimmed strength and spoken as "dimmed"; it is dimmed for real once the keyboard leaves it. Asked of AppKit as the body
+/// is made (the keyboard may have come since the last update), and the body is made again as the window's first responder moves.
+///
+/// `label` draws the button's content where its title and symbol are not it (a band's count); the button is the command's all the
+/// same, with its tooltip and its key.
 public struct DetailCommandButton: View {
     let command: CanvasCommand
     let title: String?
+    let label: AnyView?
     let systemImage: String?
     @Environment(\.detailEditor) private var editor
+    @State private var keyboard = ButtonKeyboard()
+    @State private var keyboardMoves = 0
 
     public init(command: CanvasCommand, title: String? = nil, systemImage: String? = nil) {
         self.command = command
         self.title = title
         self.systemImage = systemImage
+        label = nil
+    }
+
+    public init<Label: View>(command: CanvasCommand, @ViewBuilder label: () -> Label) {
+        self.command = command
+        title = nil
+        systemImage = nil
+        self.label = AnyView(label())
     }
 
     public var body: some View {
+        let _ = keyboardMoves
         let title = title ?? editor?.registry.title(of: command) ?? command.rawValue
+        let canPerform = editor?.canPerform(command) ?? false
+        let held = !canPerform && keyboard.holds
         let button = Button {
             editor?.perform(command)
         } label: {
-            if let systemImage { Label(title, systemImage: systemImage) } else { Text(title) }
+            if let label { label } else if let systemImage { Label(title, systemImage: systemImage) } else { Text(title) }
         }
         .buttonStyle(.borderless)
-        .disabled(!(editor?.canPerform(command) ?? false))
+        .background(KeyboardProbe(keyboard: keyboard) { keyboardMoves += 1 })
+        .disabled(!canPerform && !held)
+        .opacity(held ? DetailStyle.dimmedRow : 1)
+        .accessibilityValue(held ? "dimmed" : "")
         if let editor, editor.registry.shortcut(forCommand: command) != nil {
             button.help(editor.registry.help(title, forCommand: command))
         } else {
             button
         }
+    }
+}
+
+/// Where a `DetailCommandButton` is, to ask whether the window's keyboard is on it.
+@MainActor
+final class ButtonKeyboard {
+    weak var view: NSView?
+
+    /// Whether the window's first responder is the button AppKit made of it: the control whose place is the button's own, never
+    /// one that only covers it (a list's table, scrolled, runs up under the band above it).
+    var holds: Bool {
+        guard let view, let window = view.window, let control = window.firstResponder as? NSControl else { return false }
+        return control.convert(control.bounds, to: nil).integral == view.convert(view.bounds, to: nil).integral
+    }
+}
+
+/// Fills the button's place (as its background), and tells it when the window's keyboard moves.
+private struct KeyboardProbe: NSViewRepresentable {
+    let keyboard: ButtonKeyboard
+    let moved: @MainActor () -> Void
+
+    func makeNSView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.moved = moved
+        keyboard.view = probe
+        return probe
+    }
+
+    func updateNSView(_ view: Probe, context: Context) {
+        view.moved = moved
+        keyboard.view = view
+    }
+
+    final class Probe: NSView {
+        var moved: @MainActor () -> Void = {}
+        private var watching: NSKeyValueObservation?
+
+        // Stopped before the window goes: an observation of a window that is gone crashes.
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            watching?.invalidate()
+            watching = nil
+            super.viewWillMove(toWindow: newWindow)
+        }
+
+        override func viewDidMoveToWindow() {
+            guard let window else { return }
+            // A turn later: the keyboard may move in the middle of an update, which must not be asked to change state.
+            watching = window.observe(\.firstResponder, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor in self?.moved() }
+            }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

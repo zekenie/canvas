@@ -45,7 +45,7 @@ public struct OfferedSlashCommand {
     /// For a command about the target as a whole that runs at once (`SelectionSlashCommand.atOnce`): it run
     /// with what was typed, bound as `answering` is. Nil for any other command.
     fileprivate let acting: (@MainActor (SlashArguments) -> Void)?
-    /// What VoiceOver hears while the bar waits for a command that answers later ("Asking"), if it says.
+    /// What VoiceOver hears while the bar waits for a command that answers later ("Interpreting…"), if it says.
     public let waiting: String?
 
     /// One command, on the shapes of the target that offer it.

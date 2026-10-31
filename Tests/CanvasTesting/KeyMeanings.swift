@@ -26,6 +26,7 @@ public enum KeyMeaningOfKey: String, Sendable, CaseIterable, CustomStringConvert
     case into = "into a thing's content"
     case out = "out to its container"
     case filter = "filter a focused list"
+    case page = "a page: scroll, or a list's highlight a screenful"
 
     public var description: String { rawValue }
 }
@@ -63,6 +64,8 @@ public enum KeyMeanings {
         Row(keys: "⌘↩", chords: [.commandReturn], meaning: .finish),
         Row(keys: "⌘↓", chords: [Chord(Key.down, .command)], meaning: .into),
         Row(keys: "⌘↑", chords: [Chord(Key.up, .command)], meaning: .out),
+        Row(keys: "Page Up", chords: [.pageUp], meaning: .page),
+        Row(keys: "Page Down", chords: [.pageDown], meaning: .page),
         Row(keys: "typing", chords: [], meaning: .filter),
     ]
 
@@ -100,6 +103,9 @@ public enum KeyMeanings {
                   means: "→ opens a row, ← closes it", reason: "as macOS's outlines do"),
         Exception(id: "canvas-space", keys: [.space], place: "the canvas with nothing focused", means: "held: the Hand",
                   reason: "the Hand is held while Space is, as in every canvas app"),
+        Exception(id: "board-pages", keys: [.pageUp, .pageDown], place: "a list grouped by board whose rows are a walk's (the issue walk's list)",
+                  means: "the first stop of the previous and next board, wrapping",
+                  reason: "a walk's list is read by board, and a screenful of it is not a place anyone is going"),
     ]
 
     public static func exception(_ id: String) -> Exception? { exceptions.first { $0.id == id } }
@@ -123,6 +129,9 @@ public enum KeyMeanings {
         case .into: [.deeper, .none]
         case .out: [.shallower, .none]
         case .filter: [.acted, .none]
+        // A page moves the view, or a list's highlight, and acts on nothing; where it takes a walk to the board's first stop
+        // somewhere else it says so (`board-pages`).
+        case .page: axes.contains(.vertical) ? [.none, .forward, .backward] : [.none]
         }
     }
 }
@@ -153,17 +162,24 @@ public struct KeySurface: Sendable {
 
     public let name: String
     public let axes: Axes
+    /// The surface is one stop of the loop around it (a list of the panel: its rows are ↑ ↓'s, as a table's are), so
+    /// Tab and ⇧Tab go on past it, to the loop's next and previous stop, which is Tab's own meaning and no exception.
+    public let isOneStopOfLoop: Bool
     public let overrides: [Override]
 
-    public init(_ name: String, axes: Axes = [], overrides: [Override] = []) {
+    public init(_ name: String, axes: Axes = [], isOneStopOfLoop: Bool = false, overrides: [Override] = []) {
         self.name = name
         self.axes = axes
+        self.isOneStopOfLoop = isOneStopOfLoop
         self.overrides = overrides
     }
 
-    /// What `chord` may do here: the override's effects, or what its meaning allows.
+    /// What `chord` may do here: the override's effects, or what its meaning allows. On one stop of a loop, Tab and
+    /// ⇧Tab leave it for the loop's next and previous stop: somewhere else, or a level in or out when that is a part
+    /// of the shape or the canvas.
     public func allowed(_ chord: Chord) -> Set<KeyEffect> {
         if let override = overrides.first(where: { $0.chord == chord }) { return override.effects }
+        if isOneStopOfLoop, chord == .tab || chord == .backTab { return [.elsewhere, .deeper, .shallower] }
         return KeyMeanings.meaning(of: chord).map { KeyMeanings.allows($0, axes: axes) } ?? []
     }
 

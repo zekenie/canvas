@@ -101,7 +101,7 @@ public enum QueryTranslationError: Error, Sendable, Equatable {
 }
 
 /// Who a translated query is for.
-public enum TranslationContext: Sendable {
+public enum TranslationContext: Sendable, Hashable {
     /// A person asking, whose query is run at once (`--ask`): it may use what the person has selected
     /// and the board they're looking at.
     case person
@@ -109,10 +109,24 @@ public enum TranslationContext: Sendable {
     /// kept to those (the command bar's `/query` on a selection): as `.person`, and what the model is told of
     /// where the person is says so.
     case selection
-    /// A query that is stored and run later without the person (a reference's): the selection is left
-    /// out of what the model is told, every word that reads the editor is left out of the vocabulary,
-    /// one rule line says so, and the query must read only the file.
-    case reference
+    /// A query that is stored and run later without the person (a reference's, a rule's chip's): the selection is
+    /// left out of what the model is told, every word that reads the editor is left out of the vocabulary, one rule
+    /// line says so, and the query must read only the file. Bound (a chip's), it is run for each shape of a type
+    /// (`binding`), each as `:scope`: the model is told so and the sentence the words are in (`BoundWords`), and the
+    /// query may use the `:scope` words.
+    case stored(binding: StoredBinding? = nil, sentence: String? = nil)
+
+    /// Whether the query is stored and run later.
+    public var isStored: Bool {
+        if case .stored = self { return true }
+        return false
+    }
+
+    /// What a stored query is bound to, if anything.
+    public var binding: StoredBinding? {
+        if case .stored(let binding, _) = self { return binding }
+        return nil
+    }
 }
 
 /// What `translate` made: the query, as the language writes it (canonical, checked, its titles
@@ -143,17 +157,20 @@ public struct TranslatedQuery: Sendable, Equatable {
 public final class QueryTranslator {
     /// The system prompt.
     public let system: String
-    /// The one rule line added to it for a stored query (`TranslationContext.reference`).
+    /// The one rule line added to it for a stored query (`TranslationContext.stored`).
     public let referenceRule: String
+    /// What a bound one adds (`TranslationContext.stored(binding:sentence:)`).
+    public let bound: BoundWords
     public let style: AskStyle
     /// Weak: a question in flight never keeps a closed file's editor alive. Nor does a call hold it
     /// in a local across its awaits: what a question needs of it is taken at once (`inputs(for:)`), so
     /// the editor can go while a model call is out, and what cancels with it stops that call.
     private weak var editor: CanvasEditor?
 
-    init(system: String, referenceRule: String, style: AskStyle, editor: CanvasEditor) {
+    init(system: String, referenceRule: String, bound: BoundWords, style: AskStyle, editor: CanvasEditor) {
         self.system = system
         self.referenceRule = referenceRule
+        self.bound = bound
         self.style = style
         self.editor = editor
     }
@@ -201,8 +218,8 @@ public final class QueryTranslator {
     /// Asks the editor's model to write a query for `words`, and checks it without running it: the
     /// same pipeline as `ask` (the request, the prompt, the model, the 55 s deadline, the second try
     /// before 40 s), validated three ways, each refusal going into the one second try: the query
-    /// reads and resolves (`QueryState.check`); in `.reference` context it reads only the file (the
-    /// words that read the editor are refused, naming the first); and the titles and ids in it are
+    /// reads and resolves (`QueryState.check`); stored, it reads only the file (the words that read the editor are
+    /// refused, naming the first), and bound it may use the `:scope` words; and the titles and ids in it are
     /// the file's (`checkNames`), so a wrong title is repaired, never returned. Nothing is evaluated.
     /// Refused as `ask` is.
     public func translate(_ words: String, about context: TranslationContext = .person) async throws(QueryTranslationError) -> TranslatedQuery {
@@ -212,7 +229,7 @@ public final class QueryTranslator {
         do throws(QueryTranslationError) {
             return try await bounded(on: scheduler) { (bounds: AskBounds) async throws(QueryTranslationError) -> TranslatedQuery in
                 let talk = try await translator.converse(words, context: context, queries: queries, model: model, facts: facts, bounds: bounds) { (text: String) async throws(QueryError) -> String in
-                    let plan = try context == .reference ? queries.checkStored(text) : queries.check(text)
+                    let plan = try context.isStored ? queries.checkStored(text, binding: context.binding == nil ? nil : .scope) : queries.check(text)
                     if let refusal = await queries.checkNames(plan) { throw refusal }
                     return plan.canonical
                 }
@@ -274,16 +291,22 @@ public final class QueryTranslator {
         async throws(QueryTranslationError) -> Talk<Checked> {
         let place: QueryWhere, titles: [QueryTitle]
         do throws(QueryError) {
-            place = try await queries.whereThePersonIs(selectedLimit: context == .reference ? 0 : AskStyle.selected)
+            place = try await queries.whereThePersonIs(selectedLimit: context.isStored ? 0 : AskStyle.selected)
             titles = try await queries.titles(for: question, limit: AskStyle.titles)
         } catch {
             throw bounds.timedOut ? .tooSlow : .refused(error)
         }
-        let reference = context == .reference
-        let prompt = reference && !referenceRule.isEmpty ? system + "\n" + referenceRule : system
-        let vocabulary = reference ? queries.vocabulary.textForStoredQueries : queries.vocabulary.text
+        let stored = context.isStored
+        var prompt = stored && !referenceRule.isEmpty ? system + "\n" + referenceRule : system
+        var vocabulary = stored ? queries.vocabulary.textForStoredQueries : queries.vocabulary.text
+        // Bound: the line that says what the query is run for, and the sentence the words are in; the `:scope` words.
+        if case .stored(let binding?, let sentence) = context {
+            let line = bound.line(for: binding, sentence: sentence), words = bound.vocabulary(for: binding)
+            if !line.isEmpty { prompt += "\n" + line }
+            if !words.isEmpty { vocabulary += "\n" + words }
+        }
         var request = AskRequest.request(question: question, vocabulary: vocabulary, where: place, titles: titles, system: prompt, style: style,
-                                         selection: !reference, narrowing: context == .selection, facts: facts)
+                                         selection: !stored, narrowing: context == .selection, facts: facts)
         var tokens = (input: 0, output: 0), answers: [String] = []
         var repaired: String?
         for attempt in 1...2 {
@@ -340,19 +363,22 @@ extension CanvasEditor {
     public var queryTranslator: QueryTranslator? { service(QueryTranslator.self) }
 }
 
-/// Lends every editor a `QueryTranslator`. Every plugin list with it needs `QueriesPlugin` and
-/// `LanguageModelsPlugin` (without them it answers `noQueries` and `noModel`).
+/// Lends every editor a `QueryTranslator`, and `Interpretations`, the words its hosts are turning into queries. Every
+/// plugin list with it needs `QueriesPlugin` and `LanguageModelsPlugin` (without them it answers `noQueries` and
+/// `noModel`).
 public struct QueryTranslationPlugin: ListedPlugin {
     let prompt: String
     let referenceRule: String
+    let bound: BoundWords
     let style: AskStyle
 
-    /// `prompt` is the system prompt the model is asked with, and `referenceRule` the one line added
-    /// to it when the query is stored and run later (`TranslationContext.reference`); `style` which
-    /// model it asks, and how (`AskStyle.shipped` unless an evaluation tries another).
-    public init(prompt: String, referenceRule: String, style: AskStyle = .shipped) {
+    /// `prompt` is the system prompt the model is asked with, `referenceRule` the one line added to it when the query
+    /// is stored and run later (`TranslationContext.stored`), and `bound` what a bound one adds (none unless given);
+    /// `style` which model it asks, and how (`AskStyle.shipped` unless an evaluation tries another).
+    public init(prompt: String, referenceRule: String, bound: BoundWords = .none, style: AskStyle = .shipped) {
         self.prompt = prompt
         self.referenceRule = referenceRule
+        self.bound = bound
         self.style = style
     }
 
@@ -362,21 +388,24 @@ public struct QueryTranslationPlugin: ListedPlugin {
     /// prompt is the file byte for byte; the rule is its one line, without the line break. Only an
     /// executable that is the product has them: anything else passes its own (`init(prompt:referenceRule:style:)`).
     public init() {
-        guard let prompt = ShippedText.named(Self.promptFile), let rule = ShippedText.named(Self.ruleFile) else {
-            preconditionFailure("QueryTranslationPlugin() reads Shipped/\(Self.promptFile).txt and \(Self.ruleFile).txt, which the build puts only in the product's executables: pass a prompt")
+        guard let prompt = ShippedText.named(Self.promptFile), let rule = ShippedText.named(Self.ruleFile),
+              let bound = ShippedText.named(Self.boundFile).flatMap(BoundWords.init(text:)) else {
+            preconditionFailure("QueryTranslationPlugin() reads Shipped/\(Self.promptFile).txt, \(Self.ruleFile).txt and \(Self.boundFile).txt, which the build puts only in the product's executables: pass a prompt")
         }
-        self.init(prompt: prompt, referenceRule: rule.trimmingCharacters(in: .newlines))
+        self.init(prompt: prompt, referenceRule: rule.trimmingCharacters(in: .newlines), bound: bound)
     }
 
     /// The product's files this plugin reads (`Shipped/<name>.txt`).
     public nonisolated static let promptFile = "ask-prompt"
     public nonisolated static let ruleFile = "ask-rule"
+    public nonisolated static let boundFile = "ask-bound"
 
     public var id: PluginID { .queryTranslation }
 
     public func register(into registrar: inout PluginRegistrar) {
-        let prompt = prompt, referenceRule = referenceRule, style = style
-        registrar.service { QueryTranslator(system: prompt, referenceRule: referenceRule, style: style, editor: $0) }
+        let prompt = prompt, referenceRule = referenceRule, bound = bound, style = style
+        registrar.service { QueryTranslator(system: prompt, referenceRule: referenceRule, bound: bound, style: style, editor: $0) }
+        registrar.service { Interpretations(editor: $0) }
     }
 }
 

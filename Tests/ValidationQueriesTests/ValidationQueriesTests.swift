@@ -85,7 +85,7 @@ import Validation
         let bare = try EditorHarness(plugins: [TopologyPlugin(), FixturesPlugin(), CardsPlugin(), ValidationPlugin(), QueriesPlugin()])
         expectEqual(try refusal(":invalid", on: bare)?.reason, .unknownPseudoClass)
     },
-    test("a row of :invalid lists each error, a field's with where in it, from the cache or from the rules; :warned lists none") {
+    test("a row of :invalid lists each error, a field's with where in it, from the cache or from the rules; :warned its warnings") {
         let runs = RuleRuns()
         let file = CanvasFile(root: CanvasDocument(shapes: [record(1, Card(unit, text: "bad")), record(2, Card(unit, text: "deep")),
                                                           record(3, Card(unit, text: "fine")), record(4, Card(unit, text: "meh"))]))
@@ -102,7 +102,9 @@ import Validation
             expectEqual(queries.problemsAsked - asked, 2)
             let warned = try awaitResult { try await queries.run(QueryRequest(":warned", limit: 10, properties: .none)) }.rows
             expectEqual(warned.map(\.id), [2, 4].map(id))
-            expect(warned.allSatisfy { $0.problems == nil }, "`:warned` is not asked")
+            expectEqual(warned.map(\.problems), [[ShapeProblem(field: "lines", path: nil, class: "warning", message: "Mind it.")],
+                                                  [ShapeProblem(field: nil, path: nil, class: "warning", message: "It's so-so.")]],
+                        "each warning, class warning (cached: \(cached))")
         }
     },
     test(":incomplete is a shape with an issue of the third level, on every board, from a rule that is not Types': the other words leave it out") {

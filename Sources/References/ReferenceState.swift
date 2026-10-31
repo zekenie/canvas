@@ -83,11 +83,10 @@ public final class ReferenceState {
     let answered = AnswerRevisions()
     /// Topology's settling counts this service's work.
     private var settling: SettleSource?
-    /// What typing and interpreting have made of references' words, by reference: never in the
-    /// document (`ReferenceInterpreting.swift`).
-    var interpretations: [ShapeID: Interpretation] = [:]
-    var lastGeneration = 0
-    private var keyObserver: (any NSObjectProtocol)?
+    /// The host of references' words in the lifecycle every host shares (`editor.interpretations`), which holds it
+    /// weakly: what typing and interpreting make of a reference's words is never in the document
+    /// (`ReferenceInterpreting.swift`).
+    lazy var interpreter = ReferenceInterpreter(state: self)
     #if DEBUG
     /// How many batches have been asked, and how many have landed (debug builds).
     public internal(set) var batchesAsked = 0
@@ -112,25 +111,18 @@ public final class ReferenceState {
         settling = editor.topology?.keepsSettling { [weak self] in self?.isFinding ?? false }
         following = editor.topology?.follow { [weak self] change in self?.edgesChanged(change) }
         rebuildDynamic()
-        // A sign-in in Settings tries again the words that failed for want of one.
-        keyObserver = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.keyDidChange() }
-        }
     }
 
-    /// The file closed and the editor went: whatever is out for it stops. A model call in flight is
-    /// cancelled, so it doesn't run on (a minute at most) spending the person's tokens on an answer
-    /// nothing lands; so are the batch, the waits and the draft's request. Isolated, so every one of
-    /// them is the main actor's to cancel, as it is while the editor lives.
+    /// The file closed and the editor went: whatever is out for it stops: the batch and the waits (a model call in
+    /// flight for a reference's words is the lifecycle's, which cancels its own as the editor goes). Isolated, so
+    /// every one of them is the main actor's to cancel, as it is while the editor lives.
     isolated deinit {
-        if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
         debounce?.cancel()
         hop?.cancel()
         slowTimer?.cancel()
         batch?.cancel()
         showing?.cancel()
         for task in makingPublic.values { task.cancel() }
-        for entry in interpretations.values { entry.cancelWork() }
         settling?.cancel()
         following?.cancel()
     }
@@ -588,7 +580,6 @@ extension ReferenceState: EditorService {
     /// kept by every commit, whatever board it was on (`elsewhere`), so a switch works out no change set.
     public func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         if change.isFileReplaced {
-            dropInterpretations()
             filePutInPlace()
             rebuildDynamic()
         }

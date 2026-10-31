@@ -157,6 +157,15 @@ private let stickyNoteSchema = #"""
       "x-canvas-owner" : "grouping",
       "x-canvas-unlisted" : true
     },
+    "ignoredRules" : {
+      "description" : "The rules of its types the shape is not checked against, by their sentences.",
+      "items" : {
+        "type" : "string"
+      },
+      "type" : "array",
+      "x-canvas-owner" : "language-rules",
+      "x-canvas-unlisted" : true
+    },
     "is" : {
       "description" : "The types the shape is, by the ids of the shapes that are them, in the order they were added: a later one wins where two say the same.",
       "items" : {

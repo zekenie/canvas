@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import DetailPanel
 @_spi(Host) import CanvasUI
 import Foundation
 import Locking
@@ -9,7 +10,9 @@ import Selection
 import ShippedTesting
 import StickyNotes
 import TestKit
+import Titles
 import Types
+import Validation
 
 // Keyboard navigation's P6, same key, same meaning, held across the app as it ships: on each surface every key of the
 // table (CanvasTesting's `KeyMeanings`) is pressed from a middle stop, and what it did is held to what it means there,
@@ -71,7 +74,9 @@ extension SampleBoardWindow {
         for row in rows {
             let cells = row.split(separator: "|", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
             guard cells.count >= 4 else { continue }
-            let keys = cells[1].split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init).filter { !$0.isEmpty }
+            // "Tab, ⇧Tab", "↑ ↓" (keys side by side) and "Page Up, Page Down" (a key of two words): by commas, then by spaces unless it is a row's.
+            let pieces: [String] = cells[1].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let keys: [String] = pieces.flatMap { (piece: String) -> [String] in named.contains(piece) ? [piece] : piece.split(separator: " ").map(String.init) }
             for key in keys { expect(named.contains(key), "the principle's \(key) has no row in KeyMeanings") }
             let chords = KeyMeanings.canonical.filter { keys.contains($0.keys) }.flatMap(\.chords)
             if !cells[3].isEmpty {
@@ -177,6 +182,64 @@ extension SampleBoardWindow {
                 m.window.settle()
             }
         })
+    },
+    test("the issue walk's list: from the second of three stops of a board each key means what the table says, Tab one stop of the panel's loop, Page Up and Page Down going by board as the list's named exception") {
+        let scene = try ListWalk(boards: true)
+        // A third stop on the root, so the current stop has one above and one below it on a board of the list, with Texas under it.
+        try scene.draw(#"sticky-note "Prius" right of "Corolla" is: "Listing" text: "Dented." fieldValues: {"make": "Toyota"}"#, flagged: 5)
+        let prius = try require(scene.editor.file[.root].shapes.first { $0[TitleProperty.self] == "Prius" }, "Prius in the file").id
+        let start = scene.editor.file
+        let w = scene.w, editor = scene.editor, walk = scene.walk
+        let names: [ShapeID: String] = [scene.mustang: "Mustang", scene.corolla: "Corolla", scene.camry: "Camry", scene.civic: "Civic", prius: "Prius"]
+        let table = { scene.table }
+        let keys = KeyWalk(w.window, editor: editor, readers: [
+            .custom("list") { window in
+                guard let list = table(), window.firstResponder === list, let row = walk.currentRow else { return nil }
+                return .of(window, surface: "list", element: names[row.shape] ?? "?")
+            },
+            .canvas(w.canvas, editor: editor, names: names),
+            .panel(of: w.canvas),
+        ])
+        keys.pending = meaningsPending
+        let surface = KeySurface("The issue walk's list", axes: .vertical, isOneStopOfLoop: true, overrides: [
+            // Another board shown is a change of the editor's revision, so the walk calls it an act: the check below holds that
+            // it is the board that changed.
+            .init(.pageUp, [.none, .forward, .backward, .elsewhere, .acted], exception: "board-pages"),
+            .init(.pageDown, [.none, .forward, .backward, .elsewhere, .acted], exception: "board-pages"),
+        ])
+        // The root's three stops between its head and Texas's (folded).
+        let stops = ["list/Mustang", "list/Corolla", "list/Prius"]
+        keys.expectMeanings(of: surface, stops: stops, at: 1, depth: { focus in
+            // The canvas 0, the band 1, the list 2, the shape's panel under a closed list 3 (Return goes into the shape).
+            // With Keyboard navigation on, Escape from the list gives the band the keyboard: the panel says where it is.
+            if focus.surface == "list" { return 2 }
+            if focus.surface == "canvas" { return 0 }
+            switch editor.detailPanel?.keyboardPlace {
+            case .band: return 1
+            case .takeover: return 2
+            case .content: return 3
+            case nil: return walk.isListOpen ? 2 : (walk.isRunning ? 3 : 0)
+            }
+        }, reset: {
+            while editor.canUndo, editor.file != start { editor.undo() }
+            if walk.isRunning { walk.end() }
+            try? scene.begin(at: .shape(scene.corolla), stops: 5)
+            walk.toggleList()
+            w.window.spin { scene.table != nil && w.window.firstResponder === scene.table }
+            w.window.settle()
+        })
+        // The exception's meaning, held directly: from the root's second stop Page Down is Texas's first stop and Page Up the
+        // previous board's, wrapping, the board shown following.
+        try? scene.begin(at: .shape(scene.corolla), stops: 5)
+        walk.toggleList()
+        w.window.spin { scene.table != nil && w.window.firstResponder === scene.table }
+        keys.press(.init(.pageDown))
+        w.window.settle()
+        expectEqual(walk.currentRow?.shape, scene.camry, "Page Down: the first stop of the next board")
+        expectEqual(editor.board, scene.texas)
+        keys.press(.init(.pageUp))
+        w.window.settle()
+        expectEqual(editor.board, .root, "Page Up: the previous board")
     },
     test("the table of contents: from its third row each key means what the table says, the rows a column") {
         let w = try SampleBoardWindow(sidebar: true)

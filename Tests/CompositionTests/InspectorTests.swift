@@ -4,6 +4,7 @@ import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import DecisionModels
 import DetailPanel
 import Find
 import Geometry
@@ -44,9 +45,9 @@ final class InspectorWindow {
     let showsSidebar: Bool
 
     /// Over an empty board, or `file`.
-    init(file: CanvasFile? = nil, showsSidebar: Bool = false) throws {
-        editor = try file.map { CanvasEditor(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel()), file: $0, scheduler: TaskScheduler()) }
-            ?? ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
+    init(file: CanvasFile? = nil, showsSidebar: Bool = false, decisions: any DecisionModel = ScriptedDecisionModel()) throws {
+        editor = try file.map { CanvasEditor(registry: try ShippedPlugins.registry(model: ScriptedLanguageModel(), decisionModel: decisions), file: $0, scheduler: TaskScheduler()) }
+            ?? ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel(), decisionModel: decisions)
         self.showsSidebar = showsSidebar
         host = NSHostingView(rootView: InspectorHost(editor: editor, focus: focus, showsDetails: true, showsSidebar: showsSidebar))
         host.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
@@ -392,7 +393,8 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let order = all.map(\.id)
         @MainActor func place(_ id: PluginID) throws -> Int { try require(order.firstIndex(of: id), "\(id) isn't shipped") }
         let faces: [(face: PluginID, after: [PluginID])] = [(.boardContents, [.boards, .tableOfContents]),
-                                                           (.findPanel, [.findInBoards, .detailPanel]), (.boardFind, [.boards, .findInBoards])]
+                                                           (.findPanel, [.findInBoards, .detailPanel]), (.boardHeadings, [.boards, .detailPanel]),
+                                                           ("issue-walk-panel", [.findPanel, .detailPanel, "issue-walk"])]
         for (face, after) in faces {
             for owner in after { expect(try place(owner) < place(face), "\(face) comes after \(owner)") }
         }
@@ -402,7 +404,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let editor = CanvasEditor(registry: without, file: CanvasFile(), scheduler: ManualScheduler())
         editor.nameRoot("Roadmap")
         expectEqual(editor.tableOfContents?.heading.title, "Board", "the list's own heading")
-        expectEqual(editor.find?.heading(of: .root), FindHeading("Board"), "and Find's")
+        expectEqual(editor.boardHeading(of: .root), BoardHeading("Board"), "and the panel's board headings, which Find's rows read")
         expectEqual(editor.name(of: .root), "Roadmap", "Boards names the root all the same")
     },
     test("inside a subboard, the way up is back once a click on empty canvas has let go of a note") {

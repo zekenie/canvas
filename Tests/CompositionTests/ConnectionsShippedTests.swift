@@ -142,7 +142,7 @@ extension ConnectionGroup {
             tabs.append(panel.layout(for: record).tabs.map(\.title))
         }
         expectEqual(kinds, Set(editor.registry.kinds), "every kind there is")
-        expectEqual(tabs, [["Connections", "Style"], ["Description", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"], ["Connections", "Schema", "Style"]])
+        expectEqual(tabs, [["Connections", "Style"], ["Description", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"], ["Connections", "Schema", "Rules", "Style"]])
     },
 
     test("a note with an arrow out and an arrow in lists the notes at the other ends under Points To and Pointed To By, and no arrow, with a count each") {

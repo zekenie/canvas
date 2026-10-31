@@ -1,20 +1,30 @@
 import Canvas
 
-/// A member of a type's schema that the type's shape holds as a value of its own too: `"$name": {"const": <a literal>}`
-/// in the root's `properties`, beside `$title` (`SchemaDirectives`: no field, no row, nothing a note of the type holds).
-/// There are two, each kept saying what its value says by a rule `canBeType()` gives the kind: `$color`, the type's
-/// color (`TypeColorDirective`), and `$autofill`, whether its notes fill their fields from their words
-/// (`TypeAutofillDirective`). What the two share is `HeldDirectives`'. The edits here keep the rest of the text as typed.
+/// A member of a type's schema that is held aside from what the type says of its fields: `"$name": {"const": <a
+/// literal>}` in the root's `properties`, beside `$title` (`SchemaDirectives`: no field, no row, nothing a note of the
+/// type holds). Types holds two, each kept saying what a value of the type's shape says by a rule `canBeType()` gives
+/// the kind: `$color`, the type's color (`TypeColorDirective`), and `$autofill`, whether its notes fill their fields
+/// from their words (`TypeAutofillDirective`); another plugin gives more (`registrar.typeDirective`: LanguageRules'
+/// `$rules`). What they share is `HeldDirectives`'. The edits here keep the rest of the text as typed.
 public struct HeldDirective: Sendable {
     /// The member's key in the root's `properties`: `$color`.
     public let key: String
     /// The member's one keyword: what it says.
     public static let keyword = "const"
 
-    init(name: String) { key = "$" + name }
+    /// The directive `$name`: a plugin that holds one (`registrar.typeDirective(name)`) writes it through this.
+    public init(name: String) { key = "$" + name }
 
     /// The member, as the root says it (the last of the last `properties`, as JSON is read); nil for none.
     func member(in root: JSONNode) -> JSONNode? { root["properties"]?[key] }
+
+    /// `text` with the member's `const` saying `literal` (JSON, as written), or without the member for nil, the rest of
+    /// the text as typed: how a plugin writes the directive it holds. Nil when the text isn't a JSON object or its
+    /// `properties` isn't one.
+    public func text(_ text: String, setting literal: String?) -> String? {
+        guard let literal else { return removed(from: text) }
+        return self.text(text, saying: literal, isSaid: { _ in false })
+    }
 
     /// `text` with the member saying `literal` (JSON, as written): the `const` of the member replaced (its
     /// value made `{"const": …}` if it was something else; the text itself where `isSaid` holds of the `const`
@@ -127,28 +137,79 @@ public struct HeldDirective: Sendable {
     }
 }
 
-/// What `$color` and `$autofill` share, being the shape's and none of its fields': the model is never sent one, a
-/// schema written whole keeps those of the one it replaces unless it says them, and a change to one alone says
-/// nothing of the type's fields (no revision of the type moves, and its words aren't written again).
-public enum HeldDirectives {
-    static let all = [TypeColorDirective.directive, TypeAutofillDirective.directive]
+/// What the held directives share, being no field's: the model is never sent one, a schema written whole keeps those
+/// of the one it replaces unless it says them, and a change to one alone says nothing of the type's fields (no revision
+/// of the type moves, and its words aren't written again). Types' own two, then those the registry's plugins give, in
+/// plugin order (`registry.heldDirectives`).
+public struct HeldDirectives: Sendable {
+    let all: [HeldDirective]
+
+    /// Types' own: `$color` and `$autofill`.
+    static let own = [TypeColorDirective.directive, TypeAutofillDirective.directive]
+
+    /// Types' own and those named (without their `$`): what a registry holds is `registry.heldDirectives`.
+    public init(adding names: [String] = []) {
+        all = Self.own + names.map { HeldDirective(name: $0) }
+    }
 
     /// Whether a root `properties` key is one of them.
-    public static func isHeld(_ key: String) -> Bool { all.contains { $0.key == key } }
+    public func isHeld(_ key: String) -> Bool { all.contains { $0.key == key } }
 
     /// `text` without them, as the model is sent a schema.
-    public static func stripped(_ text: String) -> String { all.reduce(text) { $1.stripped($0) } }
+    public func stripped(_ text: String) -> String { all.reduce(text) { $1.stripped($0) } }
 
     /// `written` with each that `held` has and `written` doesn't, as `held` writes it: a schema written whole
-    /// (draw's `schema:`, the model's, words that are JSON) keeps the type's color and what its notes do, unless
-    /// it says them.
-    public static func carried(from held: String?, into written: String) -> String {
+    /// (draw's `schema:`, the model's, words that are JSON) keeps the type's color, what its notes do and what
+    /// other plugins keep there, unless it says them.
+    public func carried(from held: String?, into written: String) -> String {
         all.reduce(written) { $1.carried(from: held, into: $0) }
     }
 
     /// Whether two schemas' texts are the same but for them: what a type given another color, or told
-    /// whether its notes fill their fields, changes, which says nothing of its fields.
-    public static func sameButHeld(_ a: String, _ b: String) -> Bool {
+    /// whether its notes fill, or given other rules, changes, which says nothing of its fields.
+    public func sameButHeld(_ a: String, _ b: String) -> Bool {
         a == b || all.contains { a.contains($0.key) || b.contains($0.key) } && stripped(a) == stripped(b)
+    }
+
+    /// Whether a schema's root holds none of them: what lets a text be sent as it is.
+    func isAbsent(from root: JSONNode?) -> Bool { all.allSatisfy { held in root.flatMap { held.member(in: $0) } == nil } }
+}
+
+/// The directives other plugins hold in a type's schema (`registrar.typeDirective`): each a name, held as Types holds
+/// `$color` and `$autofill` (`HeldDirectives`). A name once; none of Types' own, nor `title`.
+public enum TypeDirectives {}
+
+extension TypeDirectives: KeyedExtensionPoint {
+    public typealias Contribution = String
+    public static var owner: PluginID { .types }
+    public static func uniqueKeys(of name: String, for _: ShapeTarget) -> [AnyHashable] { [name] }
+    public static func summary(of name: String, for _: ShapeTarget) -> String { "type directive $\(name)" }
+
+    /// A name is a word (letters and digits, a letter first), and none Types says itself.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        for name in registry.contributions(to: TypeDirectives.self).map(\.value) {
+            guard let first = name.first, first.isLetter, name.allSatisfy({ $0.isLetter || $0.isNumber }) else {
+                throw .invalid(point: "TypeDirectives", reason: "$\(name) isn't a word")
+            }
+            guard !["title", "color", "autofill"].contains(name) else { throw .invalid(point: "TypeDirectives", reason: "$\(name) is Types' own") }
+        }
+    }
+}
+
+extension PluginRegistrar {
+    /// A member of every type's schema that is this plugin's, `"$name": {"const": …}` in the root's `properties`,
+    /// held aside as `$color` is: the model that keeps a type's words and schema in step is never sent it, a schema
+    /// written whole keeps it unless it says it, and a change to it alone is no change to the type's fields.
+    ///
+    ///     registrar.typeDirective("rules")
+    public mutating func typeDirective(_ name: String) {
+        contribute(name, to: TypeDirectives.self)
+    }
+}
+
+extension Registry {
+    /// Every directive held aside: Types' own, then those plugins give (`typeDirective`), in plugin order.
+    public var heldDirectives: HeldDirectives {
+        memo("Types.heldDirectives") { HeldDirectives(adding: contributions(to: TypeDirectives.self).map(\.value)) }
     }
 }

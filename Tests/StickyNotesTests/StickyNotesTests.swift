@@ -9,6 +9,7 @@ import ContextMenus
 import DetailPanel
 import Draw
 import Keyboard
+import LanguageRules
 import Mentions
 import Selection
 import SlashCommands
@@ -24,7 +25,8 @@ import Types
 /// shows on it, and Draw, whose insertion spot puts the note ⇧↩ makes beside another.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin(), DrawPlugin()]
+     ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin(), DrawPlugin(),
+     LanguageRulesPlugin()]
 }
 
 @MainActor let stickyNotesTests = Suite("Sticky notes", [
@@ -64,6 +66,8 @@ import Types
             _ = try Registry(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
                                        ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin()])
         }
+        // A note is checked against its types' rules: the property it holds for that is LanguageRules'.
+        expect((try? Registry(plugins: Array(notePlugins.dropLast()))) == nil, "no LanguageRules, no ignoredRules to opt into")
     },
     test("its row in the table of contents: its text on one line, or Empty Note") {
         let editor = CanvasEditor(registry: try Registry(plugins: notePlugins), scheduler: ManualScheduler())

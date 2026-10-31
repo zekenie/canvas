@@ -151,8 +151,9 @@ public enum LanguageModelError: Error, Equatable, Sendable {
     }
 
     /// `text` up to its first sentence's end (`. `), trimmed, without a period at its end; nil if
-    /// that leaves nothing.
-    static func firstSentence(of text: String) -> String? {
+    /// that leaves nothing. What a service's refusal says to a person (DecisionModels' errors say
+    /// theirs the same way).
+    public static func firstSentence(of text: String) -> String? {
         var sentence = text.range(of: ". ").map { String(text[..<$0.lowerBound]) } ?? text
         sentence = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
         while sentence.hasSuffix(".") { sentence.removeLast() }

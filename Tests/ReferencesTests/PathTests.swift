@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import Mentions
 import Publishing
+import QueryTranslation
 import References
 import TableOfContents
 import TestKit

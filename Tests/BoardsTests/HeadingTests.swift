@@ -2,7 +2,7 @@ import AppKit
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
-import Find
+import DetailPanel
 import Observation
 import SwiftUI
 import TableOfContents
@@ -10,7 +10,7 @@ import TestKit
 import Titles
 
 // What Boards calls a board wherever another plugin lists one: the table of contents' heading and
-// Find's rows' headings, each a plugin value of its own, and the root's name, which is the editor's.
+// the headings of the lists that group shapes by board (Find's, the issue walk's), each a plugin value of its own, and the root's name, which is the editor's.
 
 @MainActor let headingTests = Suite("Boards' names over other plugins' lists", [
     test("the root is called what the file is, as its window tells the editor, else Board") {
@@ -60,17 +60,17 @@ import Titles
         h.editor.transact(on: .root, "Rename") { $0.update(nest.d) { $0[TitleProperty.self] = "Kitchen" } }
         expectEqual(contents.heading.title, "Kitchen", "as the path names it, renamed from the board above")
     },
-    test("BoardFindPlugin heads each board's rows in Find's list with its name and symbol, as the path has them") {
+    test("BoardHeadingsPlugin heads each board's rows in a list with its name and symbol, as the path has them") {
         let nest = Nest()
-        let h = try nestHarness(nest, [FindPlugin(), BoardFindPlugin()])
-        let find = try require(h.editor.find)
-        expectEqual(find.heading(of: .root), FindHeading("Board"))
-        h.editor.nameRoot("Plans")
-        expectEqual(find.heading(of: .root), FindHeading("Plans"))
-        expectEqual(find.heading(of: nest.dBoard), FindHeading("Untitled Drawer", systemImage: "archivebox"))
-        expectEqual(find.heading(of: nest.pBoard), FindHeading("Untitled Pocket", systemImage: "tray"))
+        let h = try nestHarness(nest, [BoardHeadingsPlugin()])
+        let editor = h.editor
+        expectEqual(editor.boardHeading(of: .root), BoardHeading("Board"))
+        editor.nameRoot("Plans")
+        expectEqual(editor.boardHeading(of: .root), BoardHeading("Plans"))
+        expectEqual(editor.boardHeading(of: nest.dBoard), BoardHeading("Untitled Drawer", systemImage: "archivebox"))
+        expectEqual(editor.boardHeading(of: nest.pBoard), BoardHeading("Untitled Pocket", systemImage: "tray"))
         h.name(nest.d, "Kitchen")
-        expectEqual(find.heading(of: nest.dBoard), FindHeading("Kitchen", systemImage: "archivebox"))
+        expectEqual(editor.boardHeading(of: nest.dBoard), BoardHeading("Kitchen", systemImage: "archivebox"))
     },
     test("the window hosts the path over the top of the canvas, clear of a fit as far as its pill reaches, and names the board shown in its subtitle") {
         let nest = Nest()
@@ -97,12 +97,12 @@ import Titles
         expectThrows(RegistryError.ownerNotInstalled(point: "ContentsHeadings", owner: .tableOfContents, contributor: .boardContents)) {
             _ = try Registry(plugins: boardsPlugins([BoardContentsPlugin()]))
         }
-        expectThrows(RegistryError.ownerNotInstalled(point: "FindHeadings", owner: .findInBoards, contributor: .boardFind)) {
-            _ = try Registry(plugins: boardsPlugins([BoardFindPlugin()]))
+        expectThrows(RegistryError.ownerNotInstalled(point: "BoardHeadings", owner: .detailPanel, contributor: .boardHeadings)) {
+            _ = try Registry(plugins: [BoardHeadingsPlugin()])
         }
-        let registry = try Registry(plugins: boardsPlugins([TableOfContentsPlugin(), BoardContentsPlugin(), FindPlugin(), BoardFindPlugin()]))
+        let registry = try Registry(plugins: boardsPlugins([TableOfContentsPlugin(), BoardContentsPlugin(), BoardHeadingsPlugin()]))
         let lines = registry.report.split(separator: "\n")
         expect(lines.contains { $0.hasPrefix("board-contents ") && $0.hasSuffix(" contents heading") }, registry.report)
-        expect(lines.contains { $0.hasPrefix("board-find ") && $0.hasSuffix(" find heading") }, registry.report)
+        expect(lines.contains { $0.hasPrefix("board-headings ") && $0.hasSuffix(" board heading") }, registry.report)
     },
 ])

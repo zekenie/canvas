@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import Mentions
 import TestKit
+import TextEditing
 import Titles
 
 // The `@` picker's model, headless: when an `@` opens it, what closes it, its rows (sections,
@@ -64,6 +65,34 @@ private func picker(_ h: EditorHarness, owner: ShapeID?, query: String = "") -> 
         expectEqual(p.read((long + "g") as NSString, selection: NSRange(location: limit + 2, length: 0), isEdit: true), .tooLong)
     },
 
+    test("a picker that takes words ends a typed query's list with them, set off from the shapes; they're highlighted once no shape is left, and then a space doesn't close it") {
+        let (h, jot) = try pickerBoard { editor in
+            editor.add(Plate(CGRect(x: 300, y: 0, width: 100, height: 60)), titled: "Grocery List")
+        }
+        let p = MentionPicker(at: 0, mentions: h.editor.mentionState, scope: AnyMentionable.self, owner: jot, wordsRow: true)
+        expect(!p.rows.contains(.words("")), "nothing typed: no words")
+        expectEqual(p.read("@gro" as NSString, selection: NSRange(location: 4, length: 0), isEdit: true), nil)
+        expectEqual(p.rows.last, .words("gro"))
+        expectEqual(p.highlightedCandidate?.appearance.label, "Grocery List", "a shape that matches comes first")
+        expect(!p.isHandoff)
+        expectEqual(p.highlightedWords, nil)
+        let words = try require(p.list.rows.last?.item)
+        expectEqual(words.title, "gro")
+        expectEqual(words.symbol, "magnifyingglass")
+        expect(words.separated, "a line above it, under the shapes")
+        expectEqual(words.spoken, "Words, gro")
+        expectEqual(p.read("@the one I made " as NSString, selection: NSRange(location: 16, length: 0), isEdit: true), nil,
+                    "the words are highlighted, so a space is part of them")
+        expectEqual(p.rows, [.words("the one I made ")], "no No matches: the words are what's left")
+        expect(p.isHandoff)
+        expectEqual(p.highlightedWords, "the one I made ")
+        expect(!(p.list.rows.first?.item?.separated ?? true), "nothing above it")
+        expectEqual(p.perform(#selector(NSResponder.insertNewline(_:))).action, .pick)
+        expectEqual(p.read("@ " as NSString, selection: NSRange(location: 2, length: 0), isEdit: true), .spaceWithoutMatch,
+                    "only a space typed: no words, so nothing to pick")
+        let plain = picker(h, owner: jot, query: "qqqq")
+        expectEqual(plain.rows, [.empty("No matches")], "a picker that doesn't take words is as it was")
+    },
     test("a query ending in a space closes it only when nothing matches") {
         let (h, jot) = try pickerBoard { editor in
             editor.add(Plate(CGRect(x: 300, y: 0, width: 100, height: 60)), titled: "Grocery List")

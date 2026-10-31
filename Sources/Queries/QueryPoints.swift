@@ -224,6 +224,10 @@ struct ContributedPseudoClass: Sendable {
     /// What a row it matched says of why (`ShapeProblem`), on the main actor, for the rows a query
     /// returns alone.
     let problems: (@MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> [ShapeProblem])?
+    /// Whether a query that holds it waits for answers still arriving (`TopologyIndex.isSettling`), as one that
+    /// reads edges does: a word whose verdicts a plugin works out later (Validation's, which a rule's model
+    /// answers feed).
+    var settles = false
 }
 
 /// A relation a plugin answers from what it keeps of the file (`:is-a(S)`), type-erased: `related`
@@ -280,8 +284,9 @@ struct SelectedShapes: Sendable {
 }
 
 /// The words plugins add to queries, each once: none may be one of the language's own
-/// (`QueryLanguage.Word`), nor one it knows people reach for (`KnownInventions`), and a relation
-/// follows edge types some installed plugin declares.
+/// (`QueryLanguage.Word`), nor one the engine binds per request (`:scope`, `:scope-start`,
+/// `:scope-end`: `QueryBinding`), nor one it knows people reach for (`KnownInventions`), and a
+/// relation follows edge types some installed plugin declares.
 public enum QueryWords {}
 
 extension QueryWords: KeyedExtensionPoint {
@@ -300,6 +305,7 @@ extension QueryWords: KeyedExtensionPoint {
             }
             guard isWord(word) else { throw refuse("which isn't lowercase words joined by hyphens") }
             guard Word(rawValue: word) == nil else { throw refuse("one of the language's own words") }
+            guard ScopeWord(rawValue: word) == nil else { throw refuse("one of the engine's own words, bound per request") }
             guard KnownInventions.invention(for: word) == nil else {
                 throw refuse("which the language refuses as a word people reach for; pick another")
             }
@@ -509,17 +515,20 @@ extension PluginRegistrar {
     /// app has it then. It reads the editor (`QueryReads.editor`): a plan that holds it isn't
     /// `readsOnlyTheFile`. `problems` says what a row it matched has to answer for (a `ShapeProblem`
     /// each: a field and why), asked on the main actor in slices of only the rows a query returns,
-    /// and listed on those rows as `problems`.
+    /// and listed on those rows as `problems`. `settles`: a query that holds it waits, before it takes up
+    /// the file, while answers are still arriving (`TopologyIndex.isSettling`, `QueryRequest.settle`), as one
+    /// that reads edges does, for a word whose verdicts a plugin works out later.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String,
         prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)? = nil,
-        problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])? = nil
+        problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])? = nil,
+        settles: Bool = false
     ) {
         contributePseudoClass(word, summary, example: example, reads: .editor, prepare: { prepare($0) }, seeds: seeds, matches: matches,
-                              onMain: onMain, problems: problems)
+                              onMain: onMain, problems: problems, settles: settles)
     }
 
     /// As above, for a word whose verdict reads only the file (`reads: .file`): `prepare` is given
@@ -533,7 +542,7 @@ extension PluginRegistrar {
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict
     ) {
         contributePseudoClass(word, summary, example: example, reads: .file, prepare: { prepare($0.file) }, seeds: seeds, matches: matches,
-                              onMain: nil, problems: nil)
+                              onMain: nil, problems: nil, settles: false)
     }
 
     private mutating func contributePseudoClass<Prepared: Sendable>(
@@ -542,7 +551,8 @@ extension PluginRegistrar {
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)?,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)?,
-        problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])?
+        problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])?,
+        settles: Bool
     ) {
         let erasedPrepare: @MainActor (QueryPreparation) -> any Sendable = { prepare($0) }
         let erasedMatches: @Sendable (QueryShape, any Sendable) -> QueryVerdict = { shape, prepared in matches(shape, prepared as! Prepared) }
@@ -557,7 +567,7 @@ extension PluginRegistrar {
             erasedProblems = { record, board, prepared, context in problems(record, board, prepared as! Prepared, context) }
         }
         let pseudoClass = ContributedPseudoClass(reads: reads, prepare: erasedPrepare, seeds: erasedSeeds, matches: erasedMatches,
-                                                 onMain: erasedOnMain, problems: erasedProblems)
+                                                 onMain: erasedOnMain, problems: erasedProblems, settles: settles)
         contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass)),
                    to: QueryWords.self)
     }

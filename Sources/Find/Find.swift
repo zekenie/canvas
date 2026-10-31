@@ -209,42 +209,6 @@ extension FindableTextsContribution {
     }
 }
 
-// MARK: Board headings
-
-/// What a board is called over its rows in Find's list: its title, and a symbol before it.
-public struct FindHeading: Hashable {
-    public var title: String
-    public var systemImage: String?
-
-    public init(_ title: String, systemImage: String? = nil) {
-        self.title = title
-        self.systemImage = systemImage
-    }
-}
-
-/// What heads each board's rows in Find's list, from the plugin that knows what a board is called
-/// (Boards', its `BoardFindPlugin`: the path's names), so Find never learns what names a board. At
-/// most one: two are `RegistryError.conflict` at startup. Without one the root's rows are headed
-/// "Board" and another board's have no name.
-public enum FindHeadings {}
-
-extension FindHeadings: KeyedExtensionPoint {
-    public typealias Contribution = @MainActor (BoardID, CanvasEditor) -> FindHeading
-    public static var owner: PluginID { .findInBoards }
-    public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["heading"] }
-    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "find heading" }
-}
-
-extension PluginRegistrar {
-    /// What a board is called over its rows in Find's list (`FindHeadings`). Read in the panel's
-    /// body, for each board with rows in view:
-    ///
-    ///     registrar.findHeading { board, editor in FindHeading(editor.name(of: board), systemImage: editor.symbol(of: board)) }
-    public mutating func findHeading(_ heading: @escaping @MainActor (BoardID, CanvasEditor) -> FindHeading) {
-        contribute(heading, to: FindHeadings.self)
-    }
-}
-
 // MARK: The plugin
 
 /// ⌘F, ⌘G and ⇧⌘G (Edit › Find's items), the state they drive (`editor.find`), and the

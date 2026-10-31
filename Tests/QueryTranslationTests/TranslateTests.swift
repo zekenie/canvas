@@ -12,7 +12,7 @@ import Topology
 // `translate`, the translator's other call: English into a query that is stored and run later, not
 // run now. It validates as `--ask` does and one thing more (the check, in a reference's context the
 // gate on the words that read the editor, and the names), each refusal going into the one second
-// try; the `.reference` context leaves the selection and the editor's words out of what the model
+// try; the stored context (`.stored()`) leaves the selection and the editor's words out of what the model
 // is told and adds one rule line. Fixtures only: captioned chores, a selection word `:picked` (it
 // reads the editor), a scripted model.
 
@@ -29,8 +29,9 @@ extension Label: ShapeProperty {
     var ids: [ShapeID] = []
 }
 
-@MainActor func translateHarness(_ model: ScriptedLanguageModel?, picked: Picked = Picked(), queries: Bool = true) throws -> EditorHarness {
-    var plugins: [any CanvasPlugin] = [ChoresPlugin(), TopologyPlugin()]
+@MainActor func translateHarness(_ model: ScriptedLanguageModel?, picked: Picked = Picked(), queries: Bool = true,
+                                 adding more: [any CanvasPlugin] = [], shapes extra: [AnyShapeRecord] = []) throws -> EditorHarness {
+    var plugins: [any CanvasPlugin] = [ChoresPlugin(), TopologyPlugin()] + more
     if queries {
         plugins.append(QueriesPlugin())
         plugins.append(Contributor(id: "label-names") { registrar in
@@ -50,11 +51,11 @@ extension Label: ShapeProperty {
         return record
     }
     picked.ids = [shapes[0].id]
-    return try EditorHarness(plugins: plugins, document: CanvasDocument(shapes: shapes))
+    return try EditorHarness(plugins: plugins, document: CanvasDocument(shapes: shapes + extra))
 }
 
 /// What `translate` came to, with the context: the query, or the refusal.
-@MainActor func translated(_ words: String, on h: EditorHarness, about context: TranslationContext = .reference) throws -> Result<TranslatedQuery, QueryTranslationError> {
+@MainActor func translated(_ words: String, on h: EditorHarness, about context: TranslationContext = .stored()) throws -> Result<TranslatedQuery, QueryTranslationError> {
     let translator = try require(h.editor.queryTranslator)
     return try awaitResult { () async -> Result<TranslatedQuery, QueryTranslationError> in
         do throws(QueryTranslationError) { return .success(try await translator.translate(words, about: context)) } catch { return .failure(error) }
@@ -214,7 +215,7 @@ func message(_ request: ModelRequest) -> String { request.messages.first?.text ?
             let box = ResultBox()
             let translator = try require(h.editor.queryTranslator)
             let task = Task { @MainActor in
-                do throws(QueryTranslationError) { box.result = .success(try await translator.translate("pantry", about: .reference)) } catch { box.result = .failure(error) }
+                do throws(QueryTranslationError) { box.result = .success(try await translator.translate("pantry", about: .stored())) } catch { box.result = .failure(error) }
             }
             spinRunLoop(until: { model.waiting == 1 })
             h.wait(wait)
@@ -242,7 +243,7 @@ func message(_ request: ModelRequest) -> String { request.messages.first?.text ?
         let box = ResultBox()
         let translator = try require(h.editor.queryTranslator)
         let task = Task { @MainActor in
-            do throws(QueryTranslationError) { box.result = .success(try await translator.translate("chores", about: .reference)) } catch { box.result = .failure(error) }
+            do throws(QueryTranslationError) { box.result = .success(try await translator.translate("chores", about: .stored())) } catch { box.result = .failure(error) }
         }
         spinRunLoop(until: { model.waiting == 1 })
         h.wait(55_000)
@@ -257,7 +258,7 @@ func message(_ request: ModelRequest) -> String { request.messages.first?.text ?
         // Each call, and how it ended: nil when it answered.
         let calls: [(String, @MainActor (QueryTranslator) async -> QueryTranslationError?)] = [
             ("translate", { translator in
-                do throws(QueryTranslationError) { _ = try await translator.translate("chores", about: .reference); return nil } catch { return error }
+                do throws(QueryTranslationError) { _ = try await translator.translate("chores", about: .stored()); return nil } catch { return error }
             }),
             ("ask", { translator in
                 do throws(QueryTranslationError) { _ = try await translator.ask("chores"); return nil } catch { return error }
@@ -295,7 +296,7 @@ func message(_ request: ModelRequest) -> String { request.messages.first?.text ?
         let box = ResultBox()
         let translator = try require(h.editor.queryTranslator)
         let task = Task { @MainActor in
-            do throws(QueryTranslationError) { box.result = .success(try await translator.translate("chores", about: .reference)) } catch { box.result = .failure(error) }
+            do throws(QueryTranslationError) { box.result = .success(try await translator.translate("chores", about: .stored())) } catch { box.result = .failure(error) }
         }
         spinRunLoop(until: { model.waiting == 1 })
         task.cancel()

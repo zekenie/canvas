@@ -1,4 +1,5 @@
 import AppKit
+import CanvasTesting
 import TestKit
 import TextEditing
 
@@ -112,5 +113,69 @@ private func mark(_ location: Int, _ length: Int) -> TextHighlight {
         // The rounded corner leaves its corner pixel to the background.
         let corner = try require(color(frame.minX + 0.2, frame.minY + 0.2))
         expect(corner.blueComponent > 0.9, "a rounded corner: \(corner)")
+    },
+
+    test("a highlight with a symbol makes room for it before its text, with a kern, and takes it back when it goes; the text stays as it is") {
+        let (_, view) = highlightedText()
+        let plain = try require(view.frames(of: mark(6, 6)).first)
+        let applePlain = try require(view.frames(of: mark(0, 5)).first)
+        view.highlights = [TextHighlight(range: NSRange(location: 6, length: 6), fill: sand, symbol: "magnifyingglass")]
+        expectEqual(view.string, "apple banana cherry")
+        let moved = try require(view.frames(of: mark(6, 6)).first)
+        // The room is a kern on the space before it, whose gap TextKit 2 splits between the two: the word's segment
+        // starts halfway in, the word itself a whole room on.
+        let kern = try require(view.textStorage?.attribute(.kern, at: 5, effectiveRange: nil) as? CGFloat)
+        expect(kern >= 10, "an em's room, nearly: \(kern)")
+        expect(abs(moved.minX - (plain.minX + kern / 2)) < 0.5, "the word moved over for the symbol: \(plain) then \(moved)")
+        view.highlights = []
+        expectEqual(view.textStorage?.attribute(.kern, at: 5, effectiveRange: nil) as? CGFloat, nil, "taken back")
+        expectEqual(try require(view.frames(of: mark(6, 6)).first).minX, plain.minX)
+        view.highlights = [TextHighlight(range: NSRange(location: 0, length: 5), fill: sand, symbol: "magnifyingglass")]
+        let indented = try require(view.frames(of: mark(0, 5)).first)
+        expect(indented.minX > applePlain.minX + 8, "at the text's start, an indent: \(applePlain) then \(indented)")
+        expect(((view.textStorage?.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.firstLineHeadIndent ?? 0) > 0)
+    },
+
+    test("highlights derived from the text follow it as it's typed, kept while it's read-only, and their room follows them") {
+        let (window, view) = highlightedText("apple banana cherry")
+        view.highlighting = { text in
+            guard let range = text.range(of: "banana") else { return [] }
+            return [TextHighlight(range: NSRange(range, in: text), fill: sand, symbol: "magnifyingglass")]
+        }
+        expectEqual(view.highlights.map(\.range), [NSRange(location: 6, length: 6)])
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        window.type("ripe ")
+        expectEqual(view.string, "ripe apple banana cherry")
+        expectEqual(view.highlights.map(\.range), [NSRange(location: 11, length: 6)], "moved with the typing")
+        expectEqual(view.textStorage?.attribute(.kern, at: 5, effectiveRange: nil) as? CGFloat, nil, "the old room let go")
+        expectEqual((view.textStorage?.attribute(.kern, at: 10, effectiveRange: nil) as? CGFloat).map { $0 > 0 }, true, "the new one made")
+        view.isEditable = false
+        expectEqual(view.highlights.map(\.range), [NSRange(location: 11, length: 6)], "what the text means, read-only too")
+    },
+
+    test("the keyboard arriving tells which way it came: Tab from the stop before, Shift-Tab from the one after") {
+        let window = NSWindow(contentRect: CGRect(x: 200, y: 200, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let container = NSView(frame: CGRect(x: 0, y: 0, width: 300, height: 200))
+        let before = EditingTextView(frame: CGRect(x: 0, y: 150, width: 300, height: 40)), after = EditingTextView(frame: CGRect(x: 0, y: 0, width: 300, height: 40))
+        let view = EditingTextView(frame: CGRect(x: 0, y: 60, width: 300, height: 80))
+        for text in [before, view, after] {
+            text.tabBehavior = .movesKeyView
+            container.addSubview(text)
+        }
+        before.nextKeyView = view
+        view.nextKeyView = after
+        after.nextKeyView = before
+        window.contentView = container
+        var heard: [NSWindow.SelectionDirection] = []
+        view.onEnter = { heard.append($0) }
+        window.makeFirstResponder(after)
+        _ = window.press(.backTab)
+        expect(window.firstResponder === view)
+        expectEqual(heard, [.selectingPrevious])
+        window.makeFirstResponder(before)
+        _ = window.press(.tab)
+        expectEqual(heard, [.selectingPrevious, .selectingNext])
     },
 ])

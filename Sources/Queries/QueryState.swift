@@ -71,19 +71,27 @@ public final class QueryState {
     /// Reads and resolves a query, and answers nothing. Refused `no_topology` without Topology,
     /// whatever the query. A hint that waits on what the kinds or the shapes by id say is settled
     /// (`HintPremise`); one that waits on titles is left for `run`, which reads them.
-    public func check(_ text: String) throws(QueryError) -> QueryPlan {
+    ///
+    /// `binding` is what the asker will bind (`QueryBinding`): a query that uses a word bound per
+    /// request (`:scope`, `:scope-start`, `:scope-end`) is refused `unsupported` unless it is bound,
+    /// each use where it stands (`QueryPlan.usesScope`). Nil, as for every caller that never said,
+    /// binds nothing.
+    public func check(_ text: String, binding: QueryBinding? = nil) throws(QueryError) -> QueryPlan {
         guard let editor else { throw .boardClosed }
         guard let topology = editor.topology else { throw .noTopology }
-        return try check(text, presentEdgeTypes: topology.snapshot().presentTypes)
+        let plan = try check(text, presentEdgeTypes: topology.snapshot().presentTypes)
+        if let refusal = plan.unbound(by: binding) { throw refusal }
+        return plan
     }
 
     /// `check` for a query stored to be run later (a reference's, a property that holds one,
     /// `x-canvas-query`): refused too for a word that reads the editor (`QueryPlan.editorWords`: who
     /// is looking, what is selected), the first named, since a stored query reads only the file.
     /// The one gate every stored query goes through: the translator's `.reference` answers, a
-    /// reference's answers, draft and warning, and `canvas draw`'s check of a query it writes.
-    public func checkStored(_ text: String) throws(QueryError) -> QueryPlan {
-        let plan = try check(text)
+    /// reference's answers, draft and warning, and `canvas draw`'s check of a query it writes. A
+    /// word bound per request is no such word, and is refused first when it isn't bound (`check`).
+    public func checkStored(_ text: String, binding: QueryBinding? = nil) throws(QueryError) -> QueryPlan {
+        let plan = try check(text, binding: binding)
         if let word = plan.editorWords.first { throw .readsTheEditor(word) }
         return plan
     }
@@ -148,8 +156,9 @@ public final class QueryState {
         let clock = try startClock(cappedAt: request.deadline)
         defer { clock.stop() }
         // Before the file is taken up, so a query that waits holds no snapshot.
-        let settling = request.settle != nil && plan.readsEdges
-        if let settle = request.settle, settling { await waitForSettled(min(settle, clock.allowed)) }
+        // A plan of edges alone waits for edges alone, never for a verdict still being worked out.
+        let settling: SettleWait? = request.settle == nil || !plan.waitsForAnswers ? nil : plan.uses.settles ? .everything : .edges
+        if let settle = request.settle, let settling { await waitForSettled(min(settle, clock.allowed), for: settling) }
         let limit = max(request.limit, 1)
         let countOnly = request.countOnly, properties = request.properties
         // Rows that list attributes read text through every format; else only those the query tests.
@@ -162,7 +171,7 @@ public final class QueryState {
         timings.main += .cpu(checked)
         result.timings = timings
         result.warnings += unknownFields(in: plan)
-        if let pending { result.warnings.append(.pending(pending)) }
+        if let pending { result.warnings.append(.pending(pending, ofEdges: settling == .edges)) }
         return result
     }
 
@@ -196,8 +205,14 @@ public final class QueryState {
     /// before `limit`, or its refusal (as `check` and `run`'s names refuse it); when the batch itself
     /// fails (`cancelled`, `too_slow`, `board_closed`, `no_topology`), every request that wasn't
     /// refused already fails so. A refusal's hint that waits on titles is left as it is. Each text is
-    /// checked once, however many requests carry it (a query asked in two views), over the edge types
-    /// the file has, read once for the batch.
+    /// checked once, however many requests carry it (a query asked in two views, or of many shapes),
+    /// over the edge types the file has, read once for the batch.
+    ///
+    /// A request is bound to its own shape (`QueryMatchRequest.scope`): its `:scope`, `:scope-start`
+    /// and `:scope-end` are that shape's, and one text asked of many shapes is checked once and
+    /// evaluated for each. A request with no scope whose query uses those words is refused alone
+    /// (`unsupported`, as `check` refuses them), and so is one whose scope is no shape the query
+    /// ranges over (`unknown_id`).
     public func matches(_ requests: [QueryMatchRequest]) async -> [Result<QueryMatches, QueryError>] {
         var results = [Result<QueryMatches, QueryError>?](repeating: nil, count: requests.count)
         var asked: [BatchedQuery] = []
@@ -212,7 +227,13 @@ public final class QueryState {
                 plans[request.text] = plan
             }
             switch plan {
-            case .success(let plan): asked.append(BatchedQuery(index: index, plan: plan, request: request))
+            case .success(let plan):
+                // The plan is the text's, whatever is bound; whether it can be asked is the request's.
+                if let refusal = plan.unbound(by: request.binding) {
+                    results[index] = .failure(refusal)
+                } else {
+                    asked.append(BatchedQuery(index: index, plan: plan, request: request))
+                }
             case .failure(let error): results[index] = .failure(error)
             }
         }
@@ -254,11 +275,17 @@ public final class QueryState {
         }
     }
 
-    /// Waits, at most `timeout`, while answers the edges depend on are still arriving
-    /// (`TopologyIndex.isSettling`): before the query takes up the file, so it holds no snapshot.
-    private func waitForSettled(_ timeout: Duration) async {
-        guard let topology = editor?.topology, topology.isSettling else { return }
-        _ = await topology.settled(timeout: timeout)
+    /// What a query waits for before it takes up the file: answers about edges alone (a plan of edge
+    /// words), or every answer still arriving (one that holds a word that waits, `settles`).
+    enum SettleWait {
+        case edges, everything
+    }
+
+    /// Waits, at most `timeout`, while the answers `wait` names are still arriving
+    /// (`TopologyIndex.isSettlingEdges`, `isSettling`): before the query takes up the file, so it holds no snapshot.
+    private func waitForSettled(_ timeout: Duration, for wait: SettleWait) async {
+        guard let topology = editor?.topology, wait == .edges ? topology.isSettlingEdges : topology.isSettling else { return }
+        _ = await topology.settled(timeout: timeout, edgesOnly: wait == .edges)
     }
 
     /// For `--ask`'s titles: named shapes the query would range over, up to `limit`, each name, kind
@@ -314,8 +341,9 @@ public final class QueryState {
     /// time before this (a wait for answers), else from here. `edges` are the views of Topology the
     /// evaluation reads, the first for what the words prepare; `settling` asks, as the file is taken
     /// up, whether answers are still arriving (`pending`: how many stand-ins are asked and
-    /// unanswered, nil if none are).
-    private func perform<Answer: Sendable>(words: Set<String>, formats: Set<String>, edges: [EdgeView] = [.resolved], settling: Bool = false,
+    /// unanswered when only edges are waited for, else 0, a count that would leave out what words wait
+    /// on; nil if none are).
+    private func perform<Answer: Sendable>(words: Set<String>, formats: Set<String>, edges: [EdgeView] = [.resolved], settling: SettleWait? = nil,
                                            clock started: QueryRun? = nil,
                                            _ work: @escaping @Sendable (Evaluation) async throws(QueryError) -> Answer)
         async throws(QueryError) -> (answer: Answer, timings: QueryTimings, pending: Int?) {
@@ -358,10 +386,14 @@ public final class QueryState {
 
     /// Takes up the file (`capture`), and what that cost the main actor.
     private func takeUp(words: Set<String>, formats: Set<String>, edges: [EdgeView],
-                        settling: Bool) throws(QueryError) -> (Handover<QuerySnapshot>, MainFacts, UInt64, Int?) {
+                        settling: SettleWait?) throws(QueryError) -> (Handover<QuerySnapshot>, MainFacts, UInt64, Int?) {
         guard let editor, let topology = editor.topology else { throw .boardClosed }
         let start = threadCPU()
-        let pending = settling && topology.isSettling ? topology.pendingStandIns.count : nil
+        let pending: Int? = switch settling {
+        case .edges?: topology.isSettlingEdges ? topology.pendingStandIns.count : nil
+        case .everything?: topology.isSettling ? 0 : nil
+        case nil: nil
+        }
         let (handover, facts) = capture(editor, topology: topology, words: words, formats: formats, edges: edges)
         return (handover, facts, threadCPU() - start, pending)
     }

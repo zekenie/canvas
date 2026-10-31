@@ -344,7 +344,7 @@ public final class TypeIndex {
     /// Read in the body of a view that shows what types give a shape (the panel's Fields, a form): it
     /// draws again after a commit that changed a type (one that came, went, or whose schema, name or own
     /// types changed), which `chainRevision` alone does not tell a view.
-    func observeChanges() { access(keyPath: \.changeCount) }
+    public func observeChanges() { access(keyPath: \.changeCount) }
 
     @ObservationIgnored private var autofillsTold = 0
     private var autofillCount: Int { autofillsTold }
@@ -461,7 +461,7 @@ public final class TypeIndex {
         // A type given another color has it written in its schema too (its `$color`): that alone is a color
         // change, which moves no revision (`TypeColorDirective`); so is a type told whether its shapes fill (its
         // `$autofill`), which nothing keeps but its entry.
-        let sameSchema = kept.map { HeldDirectives.sameButHeld($0.schema, schema.text) } ?? false
+        let sameSchema = kept.map { registry.heldDirectives.sameButHeld($0.schema, schema.text) } ?? false
         let same = sameSchema && kept?.name == name
         if var kept, same, kept.isRelationship == mark {
             guard kept.color != color || kept.schema != schema.text || kept.autofill != autofill else { return }

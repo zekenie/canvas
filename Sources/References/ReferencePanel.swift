@@ -2,9 +2,9 @@ import AppKit
 import Boards
 import Canvas
 import DetailPanel
-import LanguageModels
 import Mentions
 import Queries
+import QueryTranslation
 import Selection
 import SwiftUI
 
@@ -108,7 +108,7 @@ extension ReferenceState {
         let status = status(of: id)
         switch status {
         case .interpreting?:
-            line = ReferenceStatusLine(text: ReferenceStyle.interpreting, isWarning: false, isBusy: true, action: nil)
+            line = ReferenceStatusLine(text: InterpretationWords.interpreting, isWarning: false, isBusy: true, action: nil)
         case .finding(slow: true)?:
             line = ReferenceStatusLine(text: ReferenceStyle.finding, isWarning: false, isBusy: true, action: nil)
         case .refused(let message)?:
@@ -116,7 +116,7 @@ extension ReferenceState {
         case .failed(let failure)?:
             line = ReferenceStatusLine(text: failure.message, isWarning: true, isBusy: false, action: failure.action)
         case .unavailable?:
-            line = ReferenceStatusLine(text: ReferenceStyle.cantFind, isWarning: true, isBusy: false, action: nil)
+            line = ReferenceStatusLine(text: InterpretationWords.unavailable, isWarning: true, isBusy: false, action: nil)
         case .answered(let matches)? where matches.heldBack > 0:
             // What it found and doesn't stand for, as it isn't public, and the step that makes it so.
             line = ReferenceStatusLine(text: ReferenceStyle.notPublic(matches.heldBack), isWarning: false, isBusy: false, action: .makePublic)
@@ -143,12 +143,12 @@ struct ReferenceQueryView: View {
     let props: Reference
     let state: ReferenceState?
 
-    /// What a status line offers: Retry asks again, Open Settings… is where a key is saved, Make Public
-    /// makes public what the query found that isn't.
+    /// What a status line offers: Retry asks again and Open Settings… is where a key is saved, as every host
+    /// of words offers them; Make Public makes public what the query found that isn't.
     private func actions(of line: ReferenceStatusLine) -> [DetailStatusAction] {
         switch line.action {
-        case .retry?: [DetailStatusAction(ReferenceStyle.retry) { [state, id] in state?.retry(id) }]
-        case .openSettings?: [DetailStatusAction(ReferenceStyle.openSettings) { _ = AnthropicSettingsView.showSettings() }]
+        case .retry?: [InterpretationStatus.Action.retry.button { [state, id] in state?.retry(id) }]
+        case .openSettings?: [InterpretationStatus.Action.openSettings.button {}]
         case .makePublic?: [DetailStatusAction(ReferenceStyle.makePublic) { [state, id] in state?.makeMatchesPublic(of: id) }]
         case nil: []
         }
@@ -158,7 +158,7 @@ struct ReferenceQueryView: View {
         let content = state?.queryContent(of: props, id: id) ?? ReferenceQueryContent(query: props.query, status: nil)
         VStack(alignment: .leading, spacing: ReferenceStyle.panelSpacing) {
             if let query = content.query {
-                DetailCodeEditor(.constant(query), height: ReferenceStyle.queryBoxHeight, isEditable: false, coloring: ReferenceQueryColoring.spans)
+                InterpretedQueryView(query)
             }
             if let line = content.status {
                 DetailStatusLine(DetailStatus(line.text, tone: line.isWarning ? .warning : .neutral), isBusy: line.isBusy, actions: actions(of: line))
@@ -175,35 +175,15 @@ struct ReferenceQueryView: View {
 
 // MARK: The Matches section
 
-/// A row of the Matches section: a shape a dynamic reference found.
-public struct ReferenceMatchRow: Equatable, Identifiable {
-    public var id: ShapeID
-    public var symbol: String
-    public var tint: NSColor?
-    public var name: String
-    /// Where it is, when that isn't the board shown: the containers it is inside, else its board's name.
-    public var place: String?
-    /// A first-match reference's rows after the first: what All would add.
-    public var dimmed: Bool
-
-    public init(id: ShapeID, symbol: String, tint: NSColor?, name: String, place: String?, dimmed: Bool) {
-        self.id = id
-        self.symbol = symbol
-        self.tint = tint
-        self.name = name
-        self.place = place
-        self.dimmed = dimmed
-    }
-}
-
 extension ReferenceState {
-    /// The Matches section's rows (at most `ReferenceStyle.matchRows`), and how many more there are.
-    public func matchRows(of id: ShapeID) -> (rows: [ReferenceMatchRow], more: Int) {
+    /// The Matches section's rows (at most `InterpretationStyle.foundRows`, the rows after the first dimmed in
+    /// first mode: what All would add), and how many more there are.
+    public func matchRows(of id: ShapeID) -> (rows: [FoundRow], more: Int) {
         guard case .found(_, let found)? = state(of: id) else { return ([], 0) }
-        var rows: [ReferenceMatchRow] = []
-        for (index, match) in found.ids.prefix(ReferenceStyle.matchRows).enumerated() {
+        var rows: [FoundRow] = []
+        for (index, match) in found.ids.prefix(InterpretationStyle.foundRows).enumerated() {
             guard let record = editor.shape(inFile: match), let appearance = editor.mentionAppearance(of: record) else { continue }
-            rows.append(ReferenceMatchRow(id: match, symbol: appearance.systemImage, tint: appearance.tint, name: appearance.label, place: place(ofShape: match),
+            rows.append(FoundRow(id: match, symbol: appearance.systemImage, tint: appearance.tint, name: appearance.label, place: place(ofShape: match),
                                           dimmed: !found.all && index > 0))
         }
         return (rows, found.count - rows.count)
@@ -213,19 +193,9 @@ extension ReferenceState {
     public func follow(match id: ShapeID) {
         editor.mentions?.follow(id)
     }
-
-    /// The pointer on a match's row hovers it on the canvas, if it's on the board shown.
-    func hover(match id: ShapeID) {
-        guard editor.document[id] != nil else { return }
-        editor.hovered = id
-    }
-
-    func endHover(match id: ShapeID) {
-        if editor.hovered == id { editor.hovered = nil }
-    }
 }
 
-/// The matches, a row each, then how many more there are.
+/// The matches, a row each, then how many more there are (`FoundRows`); a click follows one as a mention.
 struct ReferenceMatchesView: View {
     let id: ShapeID
     let state: ReferenceState?
@@ -233,72 +203,7 @@ struct ReferenceMatchesView: View {
     var body: some View {
         if let state {
             let (rows, more) = state.matchRows(of: id)
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(rows) { row in
-                    Button { state.follow(match: row.id) } label: {
-                        DetailShapeRow(symbol: row.symbol, tint: row.tint, name: row.name, detail: row.place, dimmed: row.dimmed)
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.primary)
-                    .onHover { inside in
-                        if inside { state.hover(match: row.id) } else { state.endHover(match: row.id) }
-                    }
-                    .onDisappear { state.endHover(match: row.id) }
-                }
-                if more > 0 {
-                    Text(ReferenceStyle.more(more))
-                        .font(.system(size: ReferenceStyle.captionSize))
-                        .foregroundStyle(.secondary)
-                        .padding(.leading, ReferenceStyle.moreIndent)
-                }
-            }
+            FoundRows(rows, more: more, editor: state.editor) { state.follow(match: $0) }
         }
-    }
-}
-
-// MARK: Coloring a query
-
-/// A query's runs as code is colored (`DetailCodeSpan`): a kind or an attribute's name as a name,
-/// a quoted string as a string, a number as a number, a `:word` as a keyword, and a string left open
-/// as what doesn't belong. A scan, not a parse: asked of the whole text as it's shown.
-enum ReferenceQueryColoring {
-    @MainActor static func spans(_ text: String) -> [DetailCodeSpan] {
-        let units = Array(text.utf16)
-        var spans: [DetailCodeSpan] = []
-        var index = 0
-        func isLetter(_ unit: UInt16) -> Bool {
-            (65...90).contains(unit) || (97...122).contains(unit) || unit == 95 || unit > 127
-        }
-        func continues(_ unit: UInt16) -> Bool { isLetter(unit) || (48...57).contains(unit) || unit == 45 }
-        while index < units.count {
-            let unit = units[index]
-            if unit == 34 || unit == 39 {
-                let start = index
-                index += 1
-                while index < units.count, units[index] != unit {
-                    if units[index] == 92 { index += 1 }
-                    index += 1
-                }
-                let closed = index < units.count
-                index = min(index + 1, units.count)
-                spans.append(DetailCodeSpan(closed ? .string : .invalid, NSRange(location: start, length: index - start)))
-            } else if unit == 58 {
-                let start = index
-                index += 1
-                while index < units.count, continues(units[index]) { index += 1 }
-                spans.append(DetailCodeSpan(.keyword, NSRange(location: start, length: index - start)))
-            } else if isLetter(unit) {
-                let start = index
-                while index < units.count, continues(units[index]) { index += 1 }
-                spans.append(DetailCodeSpan(.name, NSRange(location: start, length: index - start)))
-            } else if (48...57).contains(unit) {
-                let start = index
-                while index < units.count, continues(units[index]) || units[index] == 46 { index += 1 }
-                spans.append(DetailCodeSpan(.number, NSRange(location: start, length: index - start)))
-            } else {
-                index += 1
-            }
-        }
-        return spans
     }
 }

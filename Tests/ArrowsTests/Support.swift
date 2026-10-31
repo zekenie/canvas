@@ -8,6 +8,7 @@ import DetailPanel
 import CoreGraphics
 import Geometry
 import Keyboard
+import LanguageRules
 import Mentions
 import Selection
 import SlashCommands
@@ -28,7 +29,8 @@ let fast: CGFloat = 3, slow: CGFloat = 0.1
 @MainActor
 func arrowsPlugins(before: [any CanvasPlugin] = [], more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin()] + before
-        + [ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin()] + more
+        + [ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
+           LanguageRulesPlugin()] + more
 }
 
 /// A box of words that can be a type (`canBeType()`), for an arrow to be an instance of: titled and

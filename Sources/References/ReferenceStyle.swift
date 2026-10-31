@@ -37,7 +37,7 @@ enum ReferenceStyle {
     static let badgeHeight: CGFloat = 18
     static let badgePad: CGFloat = 6
     static let badgeFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-    static let badgeFill = fading(NSColor.labelColor, to: 0.08)
+    static let badgeFill = NSColor.labelColor.fading(to: 0.08)
     /// What a count reads in its capsule: as it is below a thousand, then in thousands with a tenth
     /// below ten thousand ("1.2k", "9.9k") and whole above ("12k", "999k"), then in millions alike
     /// ("1.2M", "12M"); cut down, never rounded up, so it never says more than were found. The panel
@@ -69,10 +69,6 @@ enum ReferenceStyle {
     static let answersKept = 4
     static let memosKept = 256
     static let memoIDsKept = 1_000_000
-    /// How long the words a person types rest, with nothing public to pick, before they're turned
-    /// into a query (and each keystroke starts the wait again).
-    static let interpretDelay: Duration = .milliseconds(600)
-
     /// The face the leading symbol's button has around the symbol, in view points: the box and this
     /// margin all round (divided by the zoom, in world units).
     static let goMargin: CGFloat = 4
@@ -153,7 +149,7 @@ enum ReferenceStyle {
         $0.isDark ? NSColor(srgbRed: 0x2C / 255, green: 0x2C / 255, blue: 0x2E / 255, alpha: 1) : .white
     }
     /// The dashes of a pill that stands for nothing: the label's color at a third.
-    static let dash = fading(NSColor.labelColor, to: dashStrength)
+    static let dash = NSColor.labelColor.fading(to: dashStrength)
     static let border = NSColor(name: nil) { $0.isDark ? NSColor.white.withAlphaComponent(0.16) : NSColor.black.withAlphaComponent(0.14) }
     static let label = NSColor.labelColor
     static let secondary = NSColor.secondaryLabelColor
@@ -162,7 +158,7 @@ enum ReferenceStyle {
     /// Under the pointer on the leading symbol: the accent, and a step darker while it's pressed.
     static let goColor = NSColor.controlAccentColor
     static let goPressedColor = NSColor(name: nil) { appearance in
-        resolved(in: appearance) { NSColor.controlAccentColor.blended(withFraction: 0.25, of: .black) ?? .controlAccentColor }
+        NSColor.resolved(in: appearance) { NSColor.controlAccentColor.blended(withFraction: 0.25, of: .black) ?? .controlAccentColor }
     }
 
     /// The pill's fill and border as the appearance being drawn in has them, worked out once for each
@@ -209,9 +205,8 @@ enum ReferenceStyle {
     static let pickerRest = 50
     /// What the list says with no public shape in the file and nothing typed: dimmed, the one row.
     static let noPublicShapes = "No public shapes"
-    /// What VoiceOver calls the list, and says of its last row.
+    /// What VoiceOver calls the list (its words row is Mentions', `MentionPicker.wordsItem`).
     static let pickerAccessibilityLabel = "References"
-    static let wordsSpoken = "Words"
 
     // MARK: Copy
 
@@ -245,34 +240,19 @@ enum ReferenceStyle {
     static let allTitle = "All"
     static let finding = "Finding…"
     static let tooSlow = "Too slow"
-    static let retry = "Retry"
-    static let cantFind = "Unavailable"
     /// What a query found that isn't public, so the reference doesn't stand for it, and the step that
     /// makes it public (the words of Publishing's own).
     static func notPublic(_ count: Int) -> String { "\(count) not public" }
     static let makePublic = "Make Public"
-    /// Turning words into a query: the status while it's under way, the button that starts it, its
-    /// symbol, and the undo step it lands as; and what a failure of it says (a model's own failures
-    /// say theirs).
-    static let interpreting = "Interpreting…"
+    /// Turning words into a query: the button that starts it, its symbol, and the undo step it lands
+    /// as (what's said while it's under way, and of its failures, is every host's: `InterpretationWords`).
     static let interpret = "Interpret"
     static let interpretSymbol = "sparkles"
     static let interpretStep = "Interpret"
-    static let notSignedIn = "Not signed in"
-    static let keyRejected = "Key rejected"
-    static let noQuery = "No query for these words"
-    static let unusable = "Unusable answer"
-    static let openSettings = "Open Settings…"
     static let noMatches = "No matches"
-    /// The Query section's rows apart, its query box's least height, and the "and 42 more" under the
-    /// matches: caption-sized, under their names (past the symbol's column and its gap).
+    /// The Query section's rows apart (its query box and the rows of what it found are QueryTranslation's:
+    /// `InterpretationStyle`).
     static let panelSpacing: CGFloat = 8
-    static let queryBoxHeight: CGFloat = 20
-    static let captionSize: CGFloat = 10
-    static let moreIndent: CGFloat = 16 + 4
-    /// The most matches the panel lists; past it, how many more there are.
-    static let matchRows = 8
-    static func more(_ count: Int) -> String { "and \(count) more" }
 
     /// The header's line under a dynamic reference that found shapes: "First of 7", "12 matches",
     /// "1,284 matches" (the count whole, as the locale writes it).
@@ -295,17 +275,4 @@ enum ReferenceStyle {
         let radius = min(rect.height, rect.width) / 2
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
-}
-
-/// `color` at `strength` of its opacity, still following the appearance: a system color's
-/// `withAlphaComponent` is fixed to the appearance it was made in.
-func fading(_ color: NSColor, to strength: CGFloat) -> NSColor {
-    NSColor(name: nil) { appearance in resolved(in: appearance) { color.withAlphaComponent(strength) } }
-}
-
-/// A color made as it is in `appearance`: the system's colors change with it.
-func resolved(in appearance: NSAppearance, _ make: () -> NSColor) -> NSColor {
-    var color = NSColor.clear
-    appearance.performAsCurrentDrawingAppearance { color = make() }
-    return color
 }

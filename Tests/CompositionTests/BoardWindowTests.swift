@@ -251,7 +251,7 @@ final class NestedWindow {
         expectEqual(w.editor.rootName, w.board.displayName, "the root board is called what the file is: its window told the editor")
         expect(!w.editor.rootName.isEmpty)
         expectEqual(w.editor.tableOfContents?.heading.title, w.board.displayName, "and so the list's heading, as the path's root crumb")
-        expectEqual(w.editor.find?.heading(of: .root).title, w.board.displayName, "and Find's rows on the root")
+        expectEqual(w.editor.boardHeading(of: .root).title, w.board.displayName, "and the board headings Find's rows have, on the root")
         w.window.settle()
         expectEqual(w.crumbs.count, 0, "nothing on the root")
         let top = w.canvasPoint(x: w.canvas.bounds.midX, fromTop: 20)

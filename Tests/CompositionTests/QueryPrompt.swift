@@ -21,7 +21,7 @@ enum QueryPrompt {
     static let system = ShippedText.named(QueryTranslationPlugin.promptFile) ?? ""
 
     /// The one line added to the system prompt when the query is stored and run later, by a reference
-    /// that stands for what it finds (`TranslationContext.reference`): the prompt itself, whose
+    /// that stands for what it finds (`TranslationContext.stored()`): the prompt itself, whose
     /// examples still teach `:selected` and `:current-board`, is `--ask`'s byte for byte, so this line
     /// (and the vocabulary leaving those words out, and the check that refuses them) keeps the model
     /// off every word that reads the person. Not an example, so not in the skill's copy. The file's

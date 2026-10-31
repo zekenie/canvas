@@ -270,6 +270,43 @@ import Topology
         expectEqual(tooLong.data?["length"], 50)
         expectEqual(marked(tooLong.data), String(repeating: " ", count: 50))
     },
+    test("a word the engine binds to a request (:scope, :scope-start, :scope-end) is refused, where it stands, since a command binds nothing; and the vocabulary does not list it") {
+        let h = try shelfHarness()
+        let hint = "`:scope` is the shape a query is asked about, and this one is asked about none."
+        // The query, the word as the message says it, and where it stands in the line.
+        for (query, word, column) in [(":scope", ":scope", 1), (":scope-start", ":scope-start", 1), (":scope-end", ":scope-end", 1),
+                                      ("chore:not(:scope)", ":scope", 11), ("link:starts-at(:scope-start)", ":scope-start", 16),
+                                      ("chore:SCOPE-End", ":scope-end", 6)] {
+            for line in [["query", query], ["query", "--count", query], ["query", "--brief", query]] {
+                let error = try refused(line, on: h)
+                expectEqual(error.reason, "unsupported", "\(line)")
+                expectEqual(error.code, RPCError.failed, "\(line)")
+                expectEqual(error.message, "“\(word)” can’t be used here.", "\(line)")
+                expectEqual(error.hint, hint, "\(line)")
+                expectEqual(error.data?["line"], 1, "\(line)")
+                expectEqual(error.data?["column"], .number(Double(column)), "\(line)")
+                expectEqual(error.data?["length"], .number(Double(word.count)), "\(line)")
+                expectEqual(error.data?["statement"], .string(query), "\(line)")
+                expectEqual(error.data?["errors"], nil, "one use, one problem: \(line)")
+            }
+            // As the engine says it.
+            let engine = try require(checked(query, on: h), query)
+            expectEqual(engine.reason, .unsupported, query)
+            expectEqual(engine.hint, hint, query)
+        }
+        // Each use is a problem of its own, where it stands, the first leading.
+        let several = try refused(["query", ":scope:not(:scope-end)"], on: h)
+        expectEqual(several.reason, "unsupported")
+        expectEqual(several.message, "“:scope” can’t be used here.")
+        let problems = try require(several.data?["errors"]?.arrayValue)
+        expectEqual(problems.map { $0["message"] }, ["“:scope” can’t be used here.", "“:scope-end” can’t be used here."])
+        expectEqual(problems.map { $0["column"] }, [1, 12])
+        expectEqual(problems.map { $0["reason"] }, ["unsupported", "unsupported"])
+        // Neither the block `--ask` sends nor the words listed name them: a command can't use them, so no one is told of them.
+        let json = try answered(["query-vocabulary"], on: h)
+        expect(json["vocabulary"]?.stringValue?.contains("scope") == false, "not in the block --ask sends")
+        expect(try require(json["words"]?.arrayValue).allSatisfy { $0["word"]?.stringValue?.hasPrefix("scope") == false }, "nor among the words")
+    },
     test("without QueriesPlugin, nothing answers queries: no_queries") {
         let h = try shelfHarness(commandPlugins(queries: false))
         for line in [["query", "chore"], ["query", "--ask", "which chores?"]] {

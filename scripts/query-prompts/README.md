@@ -124,6 +124,14 @@ fish" on a selection ignored the selection (c16 0 of 3), so `/query` on a select
 question picks out of the selected is kept (3 of 3); and c01's thinking ran past 2,048 tokens once and was cut
 off, so the room is 4,096.
 
+The round with `<connections>` (`connections-1`, 2026-10-29, Haiku 5.5 at `high`, 324 runs): every request now
+tells how arrows join the file's shapes, by type, else kind, with counts (Types' `<connections>`, which a rule's
+chips needed: "the member's district" went from 0 of 4 to 4 of 4 in `scripts/language-rules/chips_eval.py`), and
+the prompt says what it is. 322 (99.4%) after repair, 319 (98.5%) first try, the bar met; "direction" went from 38
+of 42 to 42 of 42 (e13, c14 and c19 right every run), and the two misses are s20 ("which subboard is Refund policy
+directly in?", `subboard > "Refund policy"`, which missed 2 of 3 in `relationships-2` too), "inside" 37 of 39 (95%).
+About 200 tokens more a request (6,986 in, mean).
+
 Earlier, round 2 (`r2-haiku` and `r2-sonnet` in `results.tsv`, after the language and prompt
 changes round 1 prompted), 192 runs each, when Sonnet 5.5 was the only model that cleared the bar:
 

@@ -1,0 +1,9 @@
+## line
+The question is a phrase in brackets in a rule on the type {type}, whose shapes are {shapes}. Write a query that finds the shapes the phrase names, so that whoever checks the rule can read them. The rule is judged elsewhere, never by the query: never answer UNANSWERABLE because a query can't judge the rule. The query is run once for each shape of the type: :scope is the shape being checked{ends}. Words about the shape being checked, or about what is around it, are written from these words; words that name the same shapes whatever shape is checked are written as any stored query. The rule, for what the phrase means: “{sentence}” <connections> says how arrows join shapes on the board: the type, else the kind, at each end, and how many.
+## ends
+, :scope-start the shape it starts at and :scope-end the shape it ends at
+## words
+- :scope — the shape the rule is checking. Example: :scope
+## end words
+- :scope-start — the shape the arrow being checked starts at. Example: :scope-start
+- :scope-end — the shape the arrow being checked ends at. Example: :scope-end

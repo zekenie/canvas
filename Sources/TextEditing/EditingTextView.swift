@@ -89,10 +89,23 @@ open class EditingTextView: NSTextView {
         didSet { if placeholder != oldValue { needsDisplay = true } }
     }
     /// Ranges of the text drawn on a rounded background under it. Set by the owner that marks them,
-    /// and taken away when the view is made read-only.
+    /// and taken away when the view is made read-only; or derived from the text (`highlighting`).
     public var highlights: [TextHighlight] = [] {
-        didSet { if highlights != oldValue { needsDisplay = true } }
+        didSet {
+            guard highlights != oldValue else { return }
+            needsDisplay = true
+            if highlights.contains(where: { $0.symbol != nil }) || oldValue.contains(where: { $0.symbol != nil }) { makeRoomForSymbols() }
+        }
     }
+    /// Derives `highlights` from the text, after every change, as it's set and when asked (`refreshHighlights()`):
+    /// marks a host finds in the text (a rule's chips, by their phrases), so a keystroke that moves one moves its mark.
+    /// Kept while the text is read-only: they say what the text means, and act on nothing.
+    public var highlighting: (@MainActor (String) -> [TextHighlight])? {
+        didSet { refreshHighlights() }
+    }
+    /// The keyboard arriving, and from which way (`.selectingPrevious` for ⇧Tab from the next stop), so a host whose
+    /// text has stops of its own (a rule's chips) starts at its last one.
+    public var onEnter: (@MainActor (NSWindow.SelectionDirection) -> Void)?
     /// How its words are checked, as they change (`Spelling.app`, for words). Nil, as AppKit has it.
     public var spelling: Spelling? {
         didSet {
@@ -122,6 +135,7 @@ open class EditingTextView: NSTextView {
             guard !isEditable else { return }
             caretListWindow?.closeList()
             highlights = []
+            refreshHighlights()
         }
     }
 
@@ -265,6 +279,12 @@ open class EditingTextView: NSTextView {
 
     /// The keyboard leaving commits, closes the list at the caret, and tells `onLeave`. The words it
     /// was told to ignore go to `spelling`, for every text that follows it.
+    open override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became, let onEnter { onEnter(window?.keyViewSelectionDirection ?? .directSelection) }
+        return became
+    }
+
     open override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
         if resigned {
@@ -352,7 +372,21 @@ open class EditingTextView: NSTextView {
 
     open override func didChangeText() {
         super.didChangeText()
+        refreshHighlights()
         if placeholder != nil { needsDisplay = true }
+    }
+
+    /// Derives the highlights from the text again (`highlighting`): what a subclass calls after showing text it was
+    /// handed, which no `didChangeText` follows.
+    public func refreshHighlights() {
+        guard let highlighting else { return }
+        let derived = highlighting(string)
+        if derived != highlights {
+            highlights = derived
+        } else if derived.contains(where: { $0.symbol != nil }) {
+            // The same marks over text that changed under them (typed beside one, shown afresh): their room again.
+            makeRoomForSymbols()
+        }
     }
 
     /// The highlights and the placeholder are drawn with the background, under where the text is

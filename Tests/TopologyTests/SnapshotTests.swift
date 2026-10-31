@@ -152,6 +152,21 @@ private func expectFileOrder(_ snapshot: TopologySnapshot, _ h: EditorHarness, _
         check(snapshot.isTopLevel(id) == (board == .root && index.parent(of: id) == nil), "isTopLevel(\(name(id)))")
     }
 
+    // Board order: file order's shapes, bucketed by board and listed board by board.
+    let rootOrder = snapshot.boardOrder(from: .root)
+    check(rootOrder == boardOrdered(order, boards, from: .root), "board order \(rootOrder.map(name))")
+    check(rootOrder.count == order.count && Set(rootOrder) == Set(order), "board order lists each shape once")
+    let boardKeys = order.map(snapshot.boardOrderKey(of:))
+    check(!boardKeys.contains(nil), "a board order key for every shape in file order")
+    check(order.shuffled().sorted { snapshot.boardOrderKey(of: $0)! < snapshot.boardOrderKey(of: $1)! } == rootOrder,
+          "sorting by board order key is board order")
+    for scope in Set(boards).union([.root]) where h.editor.canShow(scope) {
+        let scoped = snapshot.boardOrder(from: scope)
+        check(scoped == boardOrdered(order, boards, from: scope), "board order from a board")
+        check(scoped == rootOrder.filter(Set(scoped).contains), "board order from a board is root order's, restricted")
+    }
+    check(snapshot.boardOrder(from: BoardID(owner: ShapeID())) == [], "no board order from a board that isn't there")
+
     let keys = order.map(snapshot.fileOrderKey(of:))
     check(!keys.contains(nil), "a key for every shape in file order")
     let sorted = keys.compactMap { $0 }
@@ -159,11 +174,26 @@ private func expectFileOrder(_ snapshot: TopologySnapshot, _ h: EditorHarness, _
     for record in every {
         let shown = h.editor.shape(inFile: record.id)
         check(snapshot.shape(record.id) == shown, "shape(\(name(record.id)))")
-        if shown == nil { check(snapshot.fileOrderKey(of: record.id) == nil, "no key for \(name(record.id))") }
+        if shown == nil {
+            check(snapshot.fileOrderKey(of: record.id) == nil, "no key for \(name(record.id))")
+            check(snapshot.boardOrderKey(of: record.id) == nil, "no board order key for \(name(record.id))")
+        }
         let descendants = snapshot.descendants(of: record.id), expected = preOrder(index.children(of: record.id), index)
         check(descendants == expected, "descendants(of: \(name(record.id))) \(descendants.map(name)), not \(expected.map(name))")
     }
     return held
+}
+
+/// Board order worked out from file order, as the shapes (with their boards) come in it: the board's
+/// own shapes, then each board its shapes own that has shapes, depth first, in the owners' order.
+private func boardOrdered(_ order: [ShapeID], _ boards: [BoardID], from scope: BoardID) -> [ShapeID] {
+    var buckets: [BoardID: [ShapeID]] = [:]
+    for (id, board) in zip(order, boards) { buckets[board, default: []].append(id) }
+    func listed(_ board: BoardID) -> [ShapeID] {
+        let own = buckets[board] ?? []
+        return own + own.flatMap { buckets[BoardID(owner: $0)] == nil ? [] : listed(BoardID(owner: $0)) }
+    }
+    return listed(scope)
 }
 
 /// A reproducible stream of choices.
@@ -403,6 +433,43 @@ private struct Tail {
         }
     },
 
+    test("board order: a board's own shapes before the boards under it, which file order lists straight after their owners") {
+        // Root: a, frame f holding c and pocket p, b, pocket q. P's board: x, pocket r, y. R's board: z. Q's board: w.
+        let a = ShapeID(), f = ShapeID(), c = ShapeID(), p = ShapeID(), b = ShapeID(), q = ShapeID()
+        let x = ShapeID(), r = ShapeID(), y = ShapeID(), z = ShapeID(), w = ShapeID()
+        let file = CanvasFile(root: board(box(a), corral(f), held(box(c), in: f), held(pocket(p), in: f), box(b), pocket(q)),
+                              children: [p: board(box(x), pocket(r), box(y)), r: board(box(z)), q: board(box(w))])
+        let h = try graph(file, more: [CorralsPlugin()])
+        let snapshot = h.topology.snapshot()
+        var fileOrder: [ShapeID] = []
+        snapshot.forEachShape { record, _ in fileOrder.append(record.id) }
+        expectEqual(fileOrder, [a, f, c, p, x, r, z, y, b, q, w], "file order lists a board at its owner")
+        let expected = [a, f, c, p, b, q, x, r, y, z, w]
+        expectEqual(snapshot.boardOrder(from: .root), expected)
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: p)), [x, r, y, z])
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: r)), [z])
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: q)), [w])
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: a)), [], "a box owns no board")
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: ShapeID())), [])
+        let keys = Dictionary(uniqueKeysWithValues: expected.map { ($0, snapshot.boardOrderKey(of: $0)!) })
+        expectEqual(expected.shuffled().sorted { keys[$0]! < keys[$1]! }, expected, "sorting by key is board order")
+        expect(keys[b]! < keys[x]!, "b, after the owner p on its board, comes before p's board")
+        expect(keys[q]! < keys[x]!, "an owner comes before every board under any owner")
+        expect(keys[p]! < keys[b]! && keys[f]! < keys[c]! && keys[c]! < keys[p]!, "a frame, what it holds, then the owner in it")
+        expect(keys[y]! < keys[z]! && keys[x]! < keys[r]!, "a board's own shapes before the board under it")
+        expect(keys[z]! < keys[w]!, "p's boards before q's")
+        expect(!(keys[a]! < keys[a]!) && keys[a]! == snapshot.boardOrderKey(of: a), "equal for the same shape")
+        expectEqual(snapshot.boardOrderKey(of: ShapeID()), nil)
+        // A key is still right with another board shown, and after a commit puts a shape in.
+        expect(h.enter(p))
+        expectEqual(h.topology.snapshot().boardOrder(from: .root), expected)
+        h.editor.transact("Insert") { t in t.insert(box(ShapeID())) }
+        let after = h.topology.snapshot()
+        let ordered = after.boardOrder(from: .root)
+        expectEqual(ordered.count, expected.count + 1)
+        expectEqual(ordered.sorted { after.boardOrderKey(of: $0)! < after.boardOrderKey(of: $1)! }, ordered)
+    },
+
     test("what the app can't show is outside file order: a board under a shape kept aside, an orphan and owners that hold each other's boards") {
         let h = try graph(try hiddenFile().file)
         let snapshot = h.topology.snapshot()
@@ -414,6 +481,11 @@ private struct Tail {
         expectEqual(snapshot.shape(id(11)), nil)
         expectEqual(snapshot.fileOrderKey(of: id(10)), [2])
         expectEqual(snapshot.fileOrderKey(of: id(11)), nil)
+        expectEqual(snapshot.boardOrder(from: .root), [id(1), id(2), id(10)])
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: id(10))), [], "a board the app can't show has no order")
+        expect(snapshot.boardOrderKey(of: id(2))! < snapshot.boardOrderKey(of: id(10))!, "the gadget is on the root, in its place")
+        expectEqual(snapshot.boardOrderKey(of: id(11)), nil)
+        expectEqual(snapshot.boardOrderKey(of: id(14)), nil)
         expectEqual(snapshot.descendants(of: id(10)), [])
         expectEqual(snapshot.children(of: id(10)), [])
         expectEqual(snapshot.end(id(11)), .unavailable)
@@ -429,9 +501,12 @@ private struct Tail {
         order = []
         held.forEachShape { record, _ in order.append(record.id) }
         expectEqual(order, [a, p, c])
+        expectEqual(held.boardOrder(from: .root), [a, p, c])
+        expectEqual(held.boardOrder(from: BoardID(owner: x)), [], "owners that hold each other's boards")
         for id in [s, x, y, w] {
             expectEqual(held.shape(id), nil)
             expectEqual(held.fileOrderKey(of: id), nil, "going up from a loop stops")
+            expectEqual(held.boardOrderKey(of: id), nil, "going up from a loop stops")
             expectEqual(held.parent(of: id), nil)
             expectEqual(held.ancestors(of: id), [])
             expectEqual(held.descendants(of: id), [])
@@ -454,6 +529,12 @@ private struct Tail {
         snapshot.forEachShape { _, _ in count += 1 }
         expectEqual(count, 4_000)
         expectEqual(snapshot.fileOrderKey(of: last), [0] + Array(repeating: 1, count: 1_999) + [0])
+        let ordered = snapshot.boardOrder(from: .root)
+        expectEqual(ordered.count, 4_000)
+        expectEqual(ordered.last, last)
+        expectEqual(ordered.first, owners[0])
+        let deep = snapshot.boardOrderKey(of: last)!, top = snapshot.boardOrderKey(of: owners[0])!
+        expect(top < deep && !(deep < top), "the deepest board's shape comes last")
         expectEqual(snapshot.descendants(of: owners[0]).count, 3_999)
         expectEqual(snapshot.ancestors(of: last).count, 2_000)
     },

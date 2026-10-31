@@ -155,6 +155,20 @@ public struct SettingsPane {
     public func view() -> AnyView { content() }
 }
 
+extension EnvironmentValues {
+    /// Whether a Settings pane puts the keyboard in its first field as it appears: the window says
+    /// true to its first pane and false to the rest, so it opens with the keyboard at its top; a pane
+    /// hosted alone takes it.
+    public var settingsPaneTakesFocus: Bool {
+        get { self[SettingsPaneFocusKey.self] }
+        set { self[SettingsPaneFocusKey.self] = newValue }
+    }
+}
+
+private struct SettingsPaneFocusKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
 // MARK: Tool tips
 
 /// What the toolbar says of a tool when the pointer rests on it: from the plugin that knows more of

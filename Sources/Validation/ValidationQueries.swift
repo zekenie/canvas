@@ -8,16 +8,16 @@ import Queries
 /// started, and the shape not waiting to be checked again: `cachedResult(for:)`, which never checks anything), else by
 /// running its kind's rules against the board it's on as the app has it (`registry.validationIssues(of:in:)`), as
 /// Validation would once that board is shown. All read the editor (`QueryReads.editor`): the rules run over the app's
-/// live board, and Validation's cache is the editor's. A row of a query that names `:invalid` lists its errors, and one
-/// that names `:incomplete` what it still needs (`problems`: each a field and where in it when Validation says, its
-/// class (`wrong`, `needed`) and its words), read the same way.
+/// live board, and Validation's cache is the editor's. A row of a query that names `:invalid` lists its errors, one that
+/// names `:warned` its warnings and one that names `:incomplete` what it still needs (`problems`: each a field and where
+/// in it when Validation says, its class (`wrong`, `warning`, `needed`) and its words), read the same way.
 public struct ValidationQueriesPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "validation-queries" }
 
     public func register(into registrar: inout PluginRegistrar) {
         Self.word(.invalid, "it has an error", severity: .error, says: "wrong", into: &registrar)
-        Self.word(.warned, "it has a warning", severity: .warning, says: nil, into: &registrar)
+        Self.word(.warned, "it has a warning", severity: .warning, says: "warning", into: &registrar)
         Self.word(.incomplete, "it still needs something", severity: .incomplete, says: "needed", into: &registrar)
     }
 
@@ -26,20 +26,16 @@ public struct ValidationQueriesPlugin: ListedPlugin {
         case invalid, warned, incomplete
     }
 
-    /// `:word`, a shape with an issue of `severity`; its rows list those issues as `problems` of `class`, if it has one.
-    private static func word(_ word: Word, _ summary: String, severity: Severity, says problemClass: String?, into registrar: inout PluginRegistrar) {
-        guard let problemClass else {
-            registrar.queryPseudoClass(word.rawValue, summary, example: ":\(word.rawValue)",
-                                       prepare: { _ in () },
-                                       matches: { _, _ in .onMain },
-                                       onMain: { record, board, _, context in has(severity, record, on: board, context) })
-            return
-        }
+    /// `:word`, a shape with an issue of `severity`; its rows list those issues as `problems` of `class`. A rule may
+    /// answer later than its commit (LanguageRules': a decision model's), so a query of it waits while answers are
+    /// still arriving, as one that reads edges does.
+    private static func word(_ word: Word, _ summary: String, severity: Severity, says problemClass: String, into registrar: inout PluginRegistrar) {
         registrar.queryPseudoClass(word.rawValue, summary, example: ":\(word.rawValue)",
                                    prepare: { _ in () },
                                    matches: { _, _ in .onMain },
                                    onMain: { record, board, _, context in has(severity, record, on: board, context) },
-                                   problems: { record, board, _, context in listed(severity, as: problemClass, record, on: board, context) })
+                                   problems: { record, board, _, context in listed(severity, as: problemClass, record, on: board, context) },
+                                   settles: true)
     }
 
     /// What a row says of a shape for a word: each issue of `severity`, a field's with where in its value.

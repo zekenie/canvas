@@ -1,10 +1,10 @@
 import Canvas
-import Find
+import DetailPanel
 import TableOfContents
 
 extension PluginID {
     public static let boardContents: PluginID = "board-contents"
-    public static let boardFind: PluginID = "board-find"
+    public static let boardHeadings: PluginID = "board-headings"
 }
 
 /// The table of contents' heading (`ContentsHeadings`): the board shown's crumb, so the list names
@@ -26,14 +26,14 @@ public struct BoardContentsPlugin: ListedPlugin {
     }
 }
 
-/// What heads each board's rows in Find's list (`FindHeadings`): the board's name and symbol, as the
-/// path has them (`editor.name(of:)`, `symbol(of:)`). A plugin value of its own, after `BoardsPlugin`
-/// and `FindPlugin`: a list without Find leaves it out.
-public struct BoardFindPlugin: ListedPlugin {
+/// What heads each board's rows in a list that groups shapes by board (`BoardHeadings`: Find's): the
+/// board's name and symbol, as the path has them (`editor.name(of:)`, `symbol(of:)`). A plugin value
+/// of its own, after `BoardsPlugin`: a list without the detail panel leaves it out.
+public struct BoardHeadingsPlugin: ListedPlugin {
     public init() {}
-    public var id: PluginID { .boardFind }
+    public var id: PluginID { .boardHeadings }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.findHeading { board, editor in FindHeading(editor.name(of: board), systemImage: editor.symbol(of: board)) }
+        registrar.boardHeading { board, editor in BoardHeading(editor.name(of: board), systemImage: editor.symbol(of: board)) }
     }
 }

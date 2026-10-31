@@ -5,6 +5,7 @@ import Connections
 import ContextMenus
 import DetailPanel
 import Keyboard
+import LanguageRules
 import Mentions
 import Selection
 import SlashCommands
@@ -19,5 +20,6 @@ import Types
 /// are here and not in StickyNotesTests, since a test of a note may not import Arrows.
 @MainActor var notePlugins: [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
-     ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin()]
+     ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin(),
+     LanguageRulesPlugin()]
 }

@@ -172,6 +172,60 @@ import TestKit
         expectEqual(find.currentNumber, 4)
         expectEqual(h.editor.board, pockets.bBoard)
     },
+    test("⌘G and ⇧⌘G are dimmed while shapes wait to be placed, as the walker refuses, and live again after") {
+        let pockets = PocketFile(root: ["pear pear"], inA: ["pear"], inA1: [], inB: [])
+        let h = try findHarness(pockets.file)
+        let find = try search("pear", in: h)
+        let record = AnyShapeRecord(ShapeRecord(Memo(.zero, "waiting")))
+        expect(h.editor.placeLater(PendingPlacement([record], stepName: "Add Memo") { _ in [.zero] }))
+        expect(h.editor.isPlacingLater)
+        expect(!h.editor.canPerform(.findNext))
+        expect(!h.editor.canPerform(.findPrevious))
+        let before = find.currentNumber
+        find.step(forward: true)
+        expectEqual(find.currentNumber, before, "the walker refuses, as the items say")
+        h.escape()
+        expect(h.editor.canPerform(.findNext))
+        find.step(forward: true)
+        expectEqual(find.currentNumber, (before ?? 0) + 1)
+    },
+    test("⌘G with Find closed on a remembered query opens it while shapes wait to be placed, as ⌘F does") {
+        let pockets = PocketFile(root: ["pear pear"], inA: ["pear"], inA1: [], inB: [])
+        let h = try findHarness(pockets.file)
+        let find = try search("pear", in: h)
+        find.close()
+        expect(!find.isActive)
+        let record = AnyShapeRecord(ShapeRecord(Memo(.zero, "waiting")))
+        expect(h.editor.placeLater(PendingPlacement([record], stepName: "Add Memo") { _ in [.zero] }))
+        expect(h.editor.isPlacingLater)
+        expect(h.editor.canPerform(.findNext), "opening is no step the walker refuses")
+        expect(h.editor.canPerform(.findPrevious))
+        expect(h.editor.perform(.findNext))
+        expect(find.isActive, "Find opens on the remembered query")
+    },
+    test("⇧⌘G with Find closed on a remembered query opens it while shapes wait to be placed and lands on the hit before the first, wrapping, as one landing") {
+        let pockets = PocketFile(root: ["pear pear"], inA: ["pear"], inA1: [], inB: [])
+        let h = try findHarness(pockets.file)
+        let find = try search("pear", in: h)
+        expectEqual(find.currentNumber, 1)
+        find.close()
+        let record = AnyShapeRecord(ShapeRecord(Memo(.zero, "waiting")))
+        expect(h.editor.placeLater(PendingPlacement([record], stepName: "Add Memo") { _ in [.zero] }))
+        let steps = find.stepCount
+        expect(h.editor.perform(.findPrevious))
+        try settle(find, h)
+        expect(find.isActive)
+        expectEqual(find.total, 3)
+        expectEqual(find.currentNumber, 3, "the hit before the first one, wrapping: the walker's refusal of a step does not keep it on the first")
+        expectEqual(find.stepCount, steps, "a landing, not a step")
+        expect(h.editor.isPlacingLater, "the shapes still wait: the hit is on Texas's board and that board is not shown")
+        expectEqual(h.editor.board, .root)
+        // ⌘G from closed lands on the first hit, as it did.
+        find.close()
+        expect(h.editor.perform(.findNext))
+        try settle(find, h)
+        expectEqual(find.currentNumber, 1)
+    },
     test("the whole session is one step back: Back returns to where Find began") {
         let pockets = PocketFile(root: ["plain"], inA: ["pear"], inA1: ["pear"], inB: ["pear"])
         let h = try findHarness(pockets.file)

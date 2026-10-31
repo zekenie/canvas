@@ -19,6 +19,18 @@ public enum Severity: Int, Comparable, Sendable {
     public var shows: Bool { self != .incomplete }
 }
 
+/// Where an issue comes from: the plugin that gave it and a key of its own, opaque to everyone else, so what a plugin's
+/// issues are is found by the key and never by matching their sentence (LanguageRules' key is its rule's).
+public struct IssueSource: Hashable, Sendable {
+    public let plugin: PluginID
+    public let key: String
+
+    public init(plugin: PluginID, key: String) {
+        self.plugin = plugin
+        self.key = key
+    }
+}
+
 public struct ValidationIssue: Hashable, Sendable {
     public var message: String
     public var severity: Severity
@@ -27,25 +39,56 @@ public struct ValidationIssue: Hashable, Sendable {
     /// Where in the field's value, as a JSON Pointer (`/lineItems/0/quantity`), when the value has
     /// parts; nil for the field as a whole or for an issue about the whole shape.
     public var path: String?
-    public init(_ message: String, severity: Severity, field: String? = nil, path: String? = nil) {
+    /// What can be done about it, offered on its line in the Issues tab ("Ignore", "Show Rule").
+    public var actions: [IssueAction]
+    /// Where the issue comes from, when its plugin says; nil otherwise.
+    public var source: IssueSource?
+    public init(_ message: String, severity: Severity, field: String? = nil, path: String? = nil, actions: [IssueAction] = [], source: IssueSource? = nil) {
         self.message = message
         self.severity = severity
         self.field = field
         self.path = path
+        self.actions = actions
+        self.source = source
     }
     /// Makes the shape invalid.
-    public static func error(_ message: String, field: String? = nil, path: String? = nil) -> ValidationIssue {
-        ValidationIssue(message, severity: .error, field: field, path: path)
+    public static func error(_ message: String, field: String? = nil, path: String? = nil, actions: [IssueAction] = [], source: IssueSource? = nil) -> ValidationIssue {
+        ValidationIssue(message, severity: .error, field: field, path: path, actions: actions, source: source)
     }
     /// Flags the shape, which stays valid.
-    public static func warning(_ message: String, field: String? = nil, path: String? = nil) -> ValidationIssue {
-        ValidationIssue(message, severity: .warning, field: field, path: path)
+    public static func warning(_ message: String, field: String? = nil, path: String? = nil, actions: [IssueAction] = [], source: IssueSource? = nil) -> ValidationIssue {
+        ValidationIssue(message, severity: .warning, field: field, path: path, actions: actions, source: source)
     }
     /// Says the shape still needs something: it stays valid and is not flagged, nothing shows on the board, and a query
     /// can ask for it (`:incomplete`).
     public static func incomplete(_ message: String, field: String? = nil, path: String? = nil) -> ValidationIssue {
         ValidationIssue(message, severity: .incomplete, field: field, path: path)
     }
+}
+
+/// What an action is for, read by whoever must find one by its purpose rather than its title.
+public enum IssueActionRole: Hashable, Sendable {
+    /// Sets the issue aside, as its plugin means it.
+    case ignore
+}
+
+/// Something a person can do about an issue, a button on its line in the Issues tab: its title, and what it does.
+/// Two are the same when their titles are: what one does is its issue's own, so a verdict checked again with the same
+/// issues is the same verdict.
+public struct IssueAction: Hashable, Sendable {
+    public let title: String
+    /// What the action is for, when a reader other than its line's button must find it (the issue walk's Ignore Issue).
+    public let role: IssueActionRole?
+    public let perform: @MainActor @Sendable () -> Void
+
+    public init(_ title: String, role: IssueActionRole? = nil, perform: @escaping @MainActor @Sendable () -> Void) {
+        self.title = title
+        self.role = role
+        self.perform = perform
+    }
+
+    public static func == (a: IssueAction, b: IssueAction) -> Bool { a.title == b.title }
+    public func hash(into hasher: inout Hasher) { hasher.combine(title) }
 }
 
 public struct ValidationResult: Equatable, Sendable {
@@ -110,6 +153,12 @@ public struct ValidationContext {
     /// changes that for. Nil where shapes are checked without an editor (`validationIssues(of:in:)`
     /// given none: what `canvas draw` checks before it commits).
     public func service<S: EditorService>(_ type: S.Type) -> S? { editor?.service(type) }
+
+    /// A service as the file holds it committed, wherever shapes are checked: the editor's, else the one lent to what
+    /// checks them (a transaction's, `canvas draw`'s check before it commits). For a rule that asks a plugin what it
+    /// knows of the file as committed (whether a query reads, `QueryState.checkStored`), never what the shapes being
+    /// checked change.
+    public func committedService<S: EditorService>(_ type: S.Type) -> S? { editor?.service(type) ?? shapes.service(type) }
 }
 
 /// The shapes a shape's rules looked up while it was checked: by the rules that ignore moves, and
@@ -302,6 +351,12 @@ public final class ValidationEngine {
         }
     }
 
+    /// Whether any rule of the kind reads where shapes are (doesn't ignore moves): a shape of it that only moved may have other
+    /// issues, as one of a kind whose rules all ignore moves cannot.
+    public func rulesReadPlacement(of kind: ShapeKind) -> Bool {
+        rules(for: kind).contains { !$0.ignoresMoves }
+    }
+
     /// The shapes whose rules looked up a shape that writes not yet committed changed (`Transaction.pending`),
     /// as the commit would check them again: those whose rules of any sort looked up a shape the writes added,
     /// removed or changed other than by moving it, and, for one they only moved, those whose rules that don't
@@ -319,13 +374,13 @@ public final class ValidationEngine {
     /// The shapes whose issues a commit may change though it doesn't change them, for a plugin that
     /// keeps what it shows of each shape's issues and redoes it for what each commit changed
     /// (`ValidationContentsPlugin`'s marks): those whose rules looked up a shape it changed
-    /// (`dependents(of:)`), and those on the board shown that the rules' `affected` named for it
+    /// (`dependents(on:)`: for a shape it only moved, those whose rules read where shapes are), and those on the board shown that the rules' `affected` named for it
     /// (asked of the rules then, if they haven't been yet: so asked once services have settled).
     /// Given what other boards changed while the board shown wasn't (`elsewhere`: the table of
     /// contents' catch-up on going back to it), those the rules named on it meanwhile too.
     public func affected(by changes: ChangeSet) -> Set<ShapeID> {
         askRules()
-        var found = dependents(of: changes.shapeIDs)
+        var found = dependents(on: changes)
         if named.revision == editor.revision { found.formUnion(named.ids) }
         if !changes.elsewhere.isEmpty { found.formUnion(namedAway) }
         return found
@@ -337,6 +392,8 @@ public final class ValidationEngine {
         guard !affectedByRules.isEmpty else { return [] }
         var ids: Set<ShapeID> = []
         for affected in affectedByRules { ids.formUnion(affected(changes, editor)) }
+        // The issue walk follows these, on boards kept aside too, which `mark` files away.
+        editor.issueWalk?.shapesMayHaveChanged(ids)
         return mark(ids)
     }
 
@@ -380,6 +437,7 @@ public final class ValidationEngine {
     /// Redraws, and has the table of contents make their rows again.
     public func recheck(_ ids: Set<ShapeID>) {
         guard !ids.isEmpty else { return }
+        editor.issueWalk?.shapesMayHaveChanged(ids)
         let here = mark(ids)
         board?.unchecked.formUnion(here)
         // What `affected(by:)` names for this revision, so what asks it once services have the commit
@@ -396,6 +454,7 @@ public final class ValidationEngine {
     /// not current, so a query runs the rules). On a board it keeps, they are checked again when it is taken back.
     public func recheckWords(_ ids: Set<ShapeID>) {
         guard !ids.isEmpty else { return }
+        editor.issueWalk?.shapesMayHaveChanged(ids)
         let here = mark(ids)
         board?.worded.formUnion(here)
     }
@@ -603,9 +662,9 @@ enum ValidationStyle {
 /// canvas draws round a closed shape (`OverlayContext.tintedOutset(of:)`: a shape in two lights,
 /// or selected and lit, has its ring that much further out, so it isn't drawn over theirs).
 /// Zoomed out, where shapes are skeletons, the
-/// rings are a map of where the problems are, and there, with thousands in view, each is its
-/// bounds' ring filled with square corners (as the selection's outlines are there), a run of one
-/// color at a time as one path, and no outline is grown: Core Graphics fills rects in one path for
+/// rings are a map of where the problems are, and there, with thousands in view, each closed shape's is
+/// its bounds' ring filled with square corners (as the selection's outlines are there), a run of one
+/// color at a time as one path, and no outline is grown (an open shape's follows its line, as in full): Core Graphics fills rects in one path for
 /// a fraction of what stroking each costs (4,800 at 10%: 2.7 ms against 21), while rounded corners
 /// in one path, stroked or filled, cost ten times more than each stroked alone.
 struct ValidationOverlay: CanvasOverlay {
@@ -643,8 +702,27 @@ struct ValidationOverlay: CanvasOverlay {
         // other color.
         var run: (severity: Severity, path: CGMutablePath)?
         for record in shapes {
-            guard record.id != editing, let worst = results[record.id]?.worst, let bounds = context.shapes.geometry(of: record.id)?.bounds else { continue }
+            guard record.id != editing, let worst = results[record.id]?.worst, let geometry = context.shapes.geometry(of: record.id) else { continue }
             let offset = context.worldDrawingOffset(of: record.id)
+            // An open shape (an arrow) is ringed along its line, as in full: a long slanted one's bounds would be a box
+            // over everything beside it, nine flagged votes nine large boxes. They are few, so each is stroked alone,
+            // after the run before it, which keeps paint order.
+            guard geometry.isClosed else {
+                if let filled = run {
+                    Self.fill(filled.path, in: filled.severity.color, on: cg)
+                    run = nil
+                }
+                let ring = engine.rings.ring(of: record, geometry: geometry, in: context.shapes, standoff: context.editor.outlineGap,
+                                             outset: context.tintedOutset(of: record.id))
+                var shift = CGAffineTransform(translationX: offset.x, y: offset.y)
+                cg.addPath(offset == .zero ? ring : ring.copy(using: &shift) ?? ring)
+                cg.setLineWidth(width)
+                cg.setLineJoin(.round)
+                cg.setStrokeColor(worst.color.cgColor)
+                cg.strokePath()
+                continue
+            }
+            let bounds = geometry.bounds
             let away = pad + context.tintedOutset(of: record.id) / zoom
             let outline = bounds.offsetBy(dx: offset.x, dy: offset.y).insetBy(dx: -away, dy: -away)
             if let filled = run, filled.severity != worst {

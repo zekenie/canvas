@@ -74,6 +74,34 @@ import Topology
         expect(warning.message.hasPrefix("1 answer is still arriving"), warning.message)
         source.cancel()
     },
+    test("a source that settles no edges waits only a query that holds a word that waits: one of edges goes on, and one that waits says no edges") {
+        let checked = Contributor(id: "checked-words") { registrar in
+            registrar.queryPseudoClass("checked", "its verdict is in", example: ":checked", prepare: { _ in () },
+                                       matches: { _, _ in .yes }, settles: true)
+        }
+        let h = try relay(more: [checked])
+        let topology = try require(h.editor.topology)
+        let working = Working()
+        working.busy = true
+        let source = topology.keepsSettling(edges: false) { working.busy }
+        expect(topology.isSettling && !topology.isSettlingEdges)
+        let edges = try start(QueryRequest(#"chore:connected-to("Alpha")"#, settle: .seconds(2)), on: h)
+        expect(edges.done, "edges alone: no source of edges is busy")
+        expectEqual(edges.result?.warnings, [])
+        let waiting = try start(QueryRequest("chore:checked", settle: .seconds(2)), on: h)
+        expect(!waiting.done, "it waits for the verdicts")
+        h.scheduler.advance(by: .seconds(2))
+        spinRunLoop(until: { waiting.done })
+        expectEqual(waiting.result?.warnings, [QueryWarning.pending(0, ofEdges: false)])
+        expectEqual(waiting.result?.warnings.first?.message, "Answers are still arriving; what the query says may change.")
+        let settled = try start(QueryRequest("chore:checked", settle: .seconds(2)), on: h)
+        expect(!settled.done)
+        working.busy = false
+        topology.settleSourceChanged()
+        spinRunLoop(until: { settled.done })
+        expectEqual(settled.result?.warnings, [], "woken once the source went idle")
+        source.cancel()
+    },
     test("a query that reads no edge never waits, nor warns, and a request that doesn't ask to wait doesn't") {
         let h = try relay()
         let topology = try require(h.editor.topology)

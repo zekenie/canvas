@@ -60,13 +60,14 @@ public final class SettingsWindow {
 }
 
 /// The Settings window's panes, one under another, each as its plugin made it: a pane says what it
-/// is itself (a form's own label), so none is headed here.
+/// is itself (a form's own label), so none is headed here. The first takes the keyboard as the
+/// window opens (`settingsPaneTakesFocus`), and Tab goes on down from it.
 struct SettingsPanesView: View {
     let panes: [SettingsPane]
 
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(panes.indices, id: \.self) { panes[$0].view() }
+            ForEach(panes.indices, id: \.self) { panes[$0].view().environment(\.settingsPaneTakesFocus, $0 == 0) }
         }
     }
 }

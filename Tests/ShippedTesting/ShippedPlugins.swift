@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Clipboard
+import DecisionModels
 import LanguageModels
 import StickyNotes
 import TestKit
@@ -13,7 +14,9 @@ import TestKit
 /// pasteboard.
 ///
 /// `model` has no default, so no test asks the real model by leaving it out: every test passes a
-/// `ScriptedLanguageModel`, but the two live ones. The list itself refuses to load without both
+/// `ScriptedLanguageModel`, but the two live ones. The decision model is a `ScriptedDecisionModel`
+/// unless a test passes its own (`decisionModel:`), so every call site that has no use for one
+/// reads as before and none reaches TypeSafe. The list itself refuses to load without all three
 /// plugins (`ShippedListError.notSupplied`), and only the app and its extension may load it whole.
 @MainActor
 public enum ShippedPlugins {
@@ -34,24 +37,30 @@ public enum ShippedPlugins {
 
     private static var testPasteboard: NSPasteboard?
 
-    /// The shipped list, its clipboard on `pasteboard` and its language model `model`.
-    public static func plugins(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel) -> [any CanvasPlugin] {
+    /// The shipped list, its clipboard on `pasteboard`, its language model `model` and its decision
+    /// model `decisionModel`.
+    public static func plugins(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel,
+                               decisionModel: any DecisionModel = ScriptedDecisionModel()) -> [any CanvasPlugin] {
         do {
-            return try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: pasteboard), LanguageModelsPlugin(model: model)])
+            return try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: pasteboard), LanguageModelsPlugin(model: model),
+                                                       DecisionModelsPlugin(model: decisionModel)])
         } catch {
             fatalError("The shipped plugins don't load: \(error)")   // ShippedTests' first test says why
         }
     }
 
-    public static func registry(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel) throws(RegistryError) -> Registry {
-        try Registry(plugins: plugins(pasteboard: pasteboard, model: model))
+    public static func registry(pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel,
+                                decisionModel: any DecisionModel = ScriptedDecisionModel()) throws(RegistryError) -> Registry {
+        try Registry(plugins: plugins(pasteboard: pasteboard, model: model, decisionModel: decisionModel))
     }
 
     /// An editor of the shipped plugins, on the sample board (`SampleBoard`) unless `document` says.
     public static func makeEditor(document: CanvasDocument = SampleBoard.document(), scheduler: any Scheduler = TaskScheduler(),
-                                  pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel) -> CanvasEditor {
+                                  pasteboard: NSPasteboard = ShippedPlugins.pasteboard, model: any LanguageModel,
+                                  decisionModel: any DecisionModel = ScriptedDecisionModel()) -> CanvasEditor {
         do {
-            return CanvasEditor(registry: try registry(pasteboard: pasteboard, model: model), document: document, scheduler: scheduler)
+            return CanvasEditor(registry: try registry(pasteboard: pasteboard, model: model, decisionModel: decisionModel),
+                                document: document, scheduler: scheduler)
         } catch {
             fatalError("The shipped plugins don't register: \(error)")   // ShippedTests catches this first
         }

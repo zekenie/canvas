@@ -7,6 +7,7 @@ import Connections
 import ContextMenus
 import CoreGraphics
 import Keyboard
+import LanguageRules
 import Mentions
 import Selection
 import SlashCommands
@@ -64,7 +65,7 @@ struct PortBoard {
         }
         return [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
                 AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
-                PortsPlugin(), ArrowPortsPlugin(), channels] + more
+                LanguageRulesPlugin(), PortsPlugin(), ArrowPortsPlugin(), channels] + more
     }
 
     var arrows: [ShapeRecord<Arrow>] { h.editor.document.shapes.compactMap { $0.typed(as: Arrow.self) } }

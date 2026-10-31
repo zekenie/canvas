@@ -7,6 +7,7 @@ import Colors
 import ContextMenus
 import CoreGraphics
 import Keyboard
+import LanguageRules
 import Mentions
 import Reordering
 import Selection
@@ -35,7 +36,8 @@ private let arrowColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
     },
     test("Reordering: every kind but those painted by anchor gets Arrange; to front and to back keep the selection's order") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(),
-                                            SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(), FixturesPlugin(), ReorderingPlugin()])
+                                            SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(), LanguageRulesPlugin(),
+                                            FixturesPlugin(), ReorderingPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
         let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
@@ -121,7 +123,8 @@ private let arrowColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
     },
     test("Reordering: the shape /bring-in-front-of and /send-behind take is one they'd put a shape past, on the board shown, painted in document order") {
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), ContextMenusPlugin(), ArrowsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(),
-                                            SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(), FixturesPlugin(), CorralsPlugin(), ReorderingPlugin()])
+                                            SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(), LanguageRulesPlugin(),
+                                            FixturesPlugin(), CorralsPlugin(), ReorderingPlugin()])
         let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
         let corral = h.add(Corral(CGRect(x: 200, y: 0, width: 300, height: 200)))
         let b = h.add(Box(CGRect(x: 600, y: 0, width: 100, height: 100)))

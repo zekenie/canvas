@@ -1,4 +1,5 @@
 import AppKit
+import Canvas
 import Foundation
 import SwiftUI
 
@@ -20,13 +21,17 @@ enum SettingsStyle {
 
 /// The Settings window's content: how the app signs in to Claude, one of two ways. Claude Code: whom
 /// the app is signed in as, Sign In… (Anthropic's page, in the browser), Cancel while the browser
-/// waits, Sign Out and Test, and Install Claude Code when there's none. An API key: a secure field,
-/// Save, Remove, Test, and where to get one; where it's kept is the field's tooltip. The app hosts
-/// it (Infinite Canvas › Settings…, ⌘,), afresh each time the window opens; Claude Code is asked
-/// again whenever the app comes forward (after it's been installed).
+/// waits, Sign Out and Test, and Install Claude Code when there's none. An API key: the key's rows
+/// every key's pane has (`KeyRows`), and where to get one. The app hosts it (Infinite Canvas ›
+/// Settings…, ⌘,), afresh each time the window opens; Claude Code is asked again whenever the app
+/// comes forward (after it's been installed). The key's field takes the keyboard as it appears when
+/// the window says this is its first pane (`settingsPaneTakesFocus`).
 public struct AnthropicSettingsView: View {
     @State private var settings: SignInSettings
     @FocusState private var keyFieldFocused: Bool
+    @Environment(\.settingsPaneTakesFocus) private var takesFocus
+    /// True while a key's field has the keyboard, this pane's or another's (`KeyRows`).
+    @FocusedValue(\.typingKey) private var typingKey
 
     /// The ways `model` signs in; `keyModel` and `claudeCodeModel` are what each way's Test asks (by
     /// default, the model's own for that way).
@@ -35,7 +40,9 @@ public struct AnthropicSettingsView: View {
     }
 
     /// Where keys are made.
-    public static let consoleURL = URL(string: "https://console.anthropic.com/settings/keys")!
+    public static var consoleURL: URL { KeyService.anthropic.console }
+    /// The request the key's Test sends: as small as a real call gets.
+    public static let testRequest = ModelRequest(messages: [.user("Reply with the word OK.")], maxTokens: 5)
     /// Where Claude Code's installation is told.
     public static let claudeCodeSetupURL = URL(string: "https://code.claude.com/docs/en/setup")!
 
@@ -52,9 +59,7 @@ public struct AnthropicSettingsView: View {
     }
 
     /// The key field's tooltip: where the key is kept (the path, never anything read from the file).
-    static func storageHelp(_ keys: AnthropicKeyStore) -> String {
-        "Saved in \((keys.url.path as NSString).abbreviatingWithTildeInPath)"
-    }
+    static func storageHelp(_ keys: AnthropicKeyStore) -> String { KeySettingsView.storageHelp(keys) }
 
     public var body: some View {
         Form {
@@ -77,7 +82,7 @@ public struct AnthropicSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear { keyFieldFocused = settings.method == .apiKey }
+        .onAppear { keyFieldFocused = takesFocus && settings.method == .apiKey }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             settings.refresh()
         }
@@ -99,8 +104,10 @@ public struct AnthropicSettingsView: View {
         case .signedOut:
             HStack(spacing: SettingsStyle.buttonSpacing) {
                 Spacer(minLength: SettingsStyle.statusGap)
+                // The default button but while a key's field has the keyboard: the window may hold
+                // another pane's, where Return saves the key being typed.
                 Button("Sign In…") { claudeCode.signIn() }
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(typingKey == true ? nil : .defaultAction)
                     .help("Sign in to Claude in your browser")
             }
         case .signingIn:
@@ -128,25 +135,7 @@ public struct AnthropicSettingsView: View {
     // MARK: The API key
 
     @ViewBuilder private var keyRows: some View {
-        @Bindable var key = settings.key
-        SecureField("Anthropic API key", text: $key.draft, prompt: Text(key.hasKey ? "Saved" : "sk-ant-…"))
-            .onSubmit { key.save() }
-            .focused($keyFieldFocused)
-            .help(Self.storageHelp(key.keys))
-        HStack(spacing: SettingsStyle.buttonSpacing) {
-            Button("Save") { key.save() }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!key.canSave)
-            Button("Remove") { key.remove() }
-                .disabled(!key.canRemove)
-            Spacer(minLength: SettingsStyle.statusGap)
-            if let text = key.statusText {
-                SettingsStatusLine(text: text, tone: Tone(key.status), help: key.statusHelp ?? text)
-            }
-            Button("Test") { key.test() }
-                .disabled(!key.canTest)
-                .help("Send a test request")
-        }
+        KeyRows(settings: settings.key, focused: $keyFieldFocused, isFocused: keyFieldFocused)
     }
 
     @ViewBuilder private var footer: some View {
@@ -164,7 +153,7 @@ public struct AnthropicSettingsView: View {
 }
 
 /// What a status's symbol says.
-private enum Tone {
+enum Tone {
     case working, works, warning
 
     init(_ status: AnthropicKeySettings.Status) {
@@ -187,7 +176,7 @@ private enum Tone {
 /// A test's progress or outcome, or a failure: its symbol (only the symbol takes the tone, as the
 /// detail panel's status lines do), then its text, on one line; `help`, when it says more than the
 /// text, is its tooltip and its accessibility hint.
-private struct SettingsStatusLine: View {
+struct SettingsStatusLine: View {
     let text: String
     let tone: Tone
     let help: String

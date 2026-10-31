@@ -127,25 +127,22 @@ enum FindSearch {
 
     /// The scope's shapes, in the order Find lists and steps through them: the scope board's, in
     /// file order (what a frame holds after it), then each board under it, depth first, in file
-    /// order (the board a shape owns as its owner comes in its own board's order). From Topology's
-    /// walk of the file (`forEachShape(inFileOrder:)`, every board the editor can show), bucketed
-    /// by board; without Topology, each board's shapes in document order.
+    /// order (the board a shape owns as its owner comes in its own board's order). Topology's
+    /// snapshot gives it (`boardOrder(from:)`, every board the editor can show); without Topology,
+    /// each board's shapes in document order.
     nonisolated static func order(of scope: BoardID, topology: TopologySnapshot?, file: CanvasFile) -> [ShapeID] {
-        var buckets: [BoardID: [ShapeID]] = [:]
-        if let topology {
-            topology.forEachShape { record, board in buckets[board, default: []].append(record.id) }
-        }
+        if let topology { return topology.boardOrder(from: scope) }
         var order: [ShapeID] = []
         var stack: [BoardID] = [scope]
         var met: Set<BoardID> = [scope]
         // Depth first: a board's shapes, then the boards its shapes own, in its order.
         while let board = stack.popLast() {
-            let shapes = topology == nil ? file[board].shapes.map(\.id) : buckets[board] ?? []
+            let shapes = file[board].shapes.map(\.id)
             order.append(contentsOf: shapes)
             var owned: [BoardID] = []
             for id in shapes {
                 let child = BoardID(owner: id)
-                guard topology == nil ? file.children[id] != nil : buckets[child] != nil, met.insert(child).inserted else { continue }
+                guard file.children[id] != nil, met.insert(child).inserted else { continue }
                 owned.append(child)
             }
             stack.append(contentsOf: owned.reversed())

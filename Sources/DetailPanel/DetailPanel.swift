@@ -97,7 +97,9 @@ public struct DetailHeader: Equatable, Sendable {
 }
 
 /// A line of the shape's state, not a setting: pinned at the panel's foot, on every tab, or in a tab
-/// of its own (`DetailStatuses`).
+/// of its own (`DetailStatuses`), with what can be done about it under it (`actions`: "Ignore").
+/// Two lines are the same when their text, tone and actions' titles are: what an action does is the
+/// line's own, so a line drawn again for the same shape keeps the buttons it had.
 public struct DetailStatus: Hashable, Sendable {
     public enum Tone: Int, Comparable, Sendable {
         case neutral, info, warning, error
@@ -106,10 +108,22 @@ public struct DetailStatus: Hashable, Sendable {
 
     public var text: String
     public var tone: Tone
+    public var actions: [DetailStatusAction]
 
-    public init(_ text: String, tone: Tone = .neutral) {
+    public init(_ text: String, tone: Tone = .neutral, actions: [DetailStatusAction] = []) {
         self.text = text
         self.tone = tone
+        self.actions = actions
+    }
+
+    public static func == (a: DetailStatus, b: DetailStatus) -> Bool {
+        a.text == b.text && a.tone == b.tone && a.actions.map(\.title) == b.actions.map(\.title)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(tone)
+        hasher.combine(actions.map(\.title))
     }
 }
 

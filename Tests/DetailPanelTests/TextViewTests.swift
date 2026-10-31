@@ -337,6 +337,24 @@ extension PanelWindow {
         try require(host.descendants(NSButton.self).first).performClick(nil)
         expectEqual(pressed.titles, ["Again"])
     },
+    test("a tab's status line draws the buttons its status carries, which run their actions") {
+        final class Pressed { var count = 0 }
+        let pressed = Pressed()
+        let editor = try gadgetEditor([Contributor(id: "alerts") { r in
+            r.forEveryShape { scope in
+                scope.detailStatus(in: AlertsTab.self) { _, _ in [DetailStatus("It failed.", tone: .error, actions: [DetailStatusAction("Again") { pressed.count += 1 }])] }
+            }
+        }], scheduler: TaskScheduler())
+        let panel = PanelWindow(editor)
+        panel.window.isReleasedWhenClosed = false
+        defer { panel.window.close() }
+        let box = editor.add(Box(gadgetFrame))
+        editor.detailPanel?.choose(.of(AlertsTab.self), for: Box.kind)
+        editor.selection = box
+        panel.window.spin { !panel.checkboxes.isEmpty }
+        try require(panel.checkboxes.first).performClick(nil)
+        expectEqual(pressed.count, 1)
+    },
     test("a status line's text can be selected, to copy, and isn't a field to type in; with buttons too") {
         for actions in [[], [DetailStatusAction("Retry") {}]] {
             let line = DetailStatusLine(DetailStatus("Invalid JSON: expected a value at line 12, column 3.", tone: .error), actions: actions)

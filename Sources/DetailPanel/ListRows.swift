@@ -31,21 +31,25 @@ public struct DetailCheckbox: View {
 /// A row for a shape in a panel's list, laid out as the panel's status lines are: the kind's symbol
 /// (in `tint`, else secondary) in the status icon's column, then the shape's `name` on one line in the
 /// panel's text size, with an optional `detail` at the end of it and up to two `lines` of caption
-/// text under it. A `dimmed` row (a shape that can't be gone to, say) is all dimmed, its secondary
+/// text under it (`detailTruncation`: which end of the detail is cut when it doesn't fit, the start by default, for a path,
+/// and `.tail` for a value read from its start). A `dimmed` row (a shape that can't be gone to, say) is all dimmed, its secondary
 /// text with it. The row is a plain view: wrap it in a `Button` to make it one.
 public struct DetailShapeRow: View {
     let symbol: String
     let tint: NSColor?
     let name: String
     let detail: String?
+    let detailTruncation: Text.TruncationMode
     let lines: [String]
     let dimmed: Bool
 
-    public init(symbol: String, tint: NSColor? = nil, name: String, detail: String? = nil, lines: [String] = [], dimmed: Bool = false) {
+    public init(symbol: String, tint: NSColor? = nil, name: String, detail: String? = nil, detailTruncation: Text.TruncationMode = .head,
+                lines: [String] = [], dimmed: Bool = false) {
         self.symbol = symbol
         self.tint = tint
         self.name = name
         self.detail = detail
+        self.detailTruncation = detailTruncation
         self.lines = Array(lines.prefix(DetailStyle.shapeRowLines))
         self.dimmed = dimmed
     }
@@ -61,7 +65,7 @@ public struct DetailShapeRow: View {
                     if let detail {
                         Spacer(minLength: 0)
                         // A path is told by the container its shape is in, which is last: cut at the start.
-                        Text(detail).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                        Text(detail).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(detailTruncation)
                     }
                 }
                 ForEach(lines.indices, id: \.self) { i in
@@ -199,7 +203,7 @@ public struct DetailSearchField: View {
 
 /// One line of a `DetailRowList`: a row, or the head of a group of rows that folds them. `parent` is
 /// the head a row is under, which ← goes up to. `activate` is what Return, Space and a click do (a head:
-/// fold or unfold).
+/// fold or unfold), unless `click` says what a click does.
 public struct DetailRowItem<ID: Hashable & Sendable>: Identifiable {
     public enum Kind: Equatable, Sendable {
         case row
@@ -212,6 +216,9 @@ public struct DetailRowItem<ID: Hashable & Sendable>: Identifiable {
     /// How tall: `DetailRowItem.height(captionLines:)`, or a head's.
     public var height: CGFloat
     public var activate: @MainActor () -> Void
+    /// What a click on the line does instead of `activate`, when it is not the same as Return and Space: a list whose
+    /// highlight is the place of a walk moves the walk on a click and closes on Return. Nil: a click activates.
+    public var click: (@MainActor () -> Void)?
 
     @MainActor public init(id: ID, kind: Kind = .row, parent: ID? = nil, height: CGFloat? = nil,
                 activate: @escaping @MainActor () -> Void) {
@@ -238,11 +245,13 @@ public final class DetailListHandle {
 
     public init() {}
 
-    /// The keyboard goes to the list, on its highlighted row, else its first.
-    public func enter() {
+    /// The keyboard goes to the list, on its highlighted row, else its first. Whether it did: false while the list
+    /// has no table in a window yet (a list just made), so a caller that enters as the list appears asks again.
+    @discardableResult
+    public func enter() -> Bool {
         onEnter?()
-        guard let table = table(), let window = table.window else { return }
-        window.makeFirstResponder(table)
+        guard let table = table(), let window = table.window else { return false }
+        return window.makeFirstResponder(table)
     }
 
     /// The list's table is named for assistive apps (a `List` hands its label to the container, not the table).
@@ -278,48 +287,67 @@ public final class DetailListHandle {
 /// head), and a click on a row highlights it and runs it. Tab goes on out of it, ⇧Tab back, Escape out of
 /// the panel. `onHighlight` hears the highlighted row (nil for none) while the list has the keyboard,
 /// and nil as it leaves, so a list can light what the row stands for as the pointer on the row does.
-/// `label` is what assistive apps call the list. Rows are `item.height` tall; the list is as tall as its rows, and no taller than the panel. `row`
+/// `label` is what assistive apps call the list.
+///
+/// `highlight`, given, is the highlight, kept by the caller: the list reads it and writes the row a key
+/// or a click lands on, and never writes nil, as the keyboard leaves it or the row it is on folds away
+/// (it stays, a row of no list for now), so it is the caller's place in the list whether or not the list
+/// has the keyboard, and the caller moves it by writing it (the list scrolls to the row, also when the row appears later,
+/// as its head unfolds). Without it the list keeps its own, which it clears as its row goes.
+///
+/// `pages`, given, takes Page Up and Page Down: it is asked for the row to go to (true: Page Down, the
+/// next), and the highlight goes there; nil from it leaves the highlight where it is, the key taken
+/// all the same. Without it they are the table's own, a screenful.
+///
+/// Rows are `item.height` tall; the list is as tall as its rows, and no taller than the panel less 96 points, or, with
+/// `maxHeightShare`, than that share of the panel's height (a list that leaves room under it for more). `row`
 /// draws the row's content, which says how assistive apps read it (`detailRowAccessibility`).
 public struct DetailRowList<ID: Hashable & Sendable, Row: View>: View {
     let items: [DetailRowItem<ID>]
     let label: String
     let handle: DetailListHandle?
+    let highlight: Binding<ID?>?
+    let pages: ((Bool) -> ID?)?
+    let maxHeightShare: CGFloat?
     let onHighlight: @MainActor (ID?) -> Void
     let row: (DetailRowItem<ID>) -> Row
-    @State private var highlighted: ID?
+    @State private var ownHighlight: ID?
     @State private var ownHandle = DetailListHandle()
     @FocusState private var hasKeyboard: Bool
 
-    public init(_ items: [DetailRowItem<ID>], label: String, handle: DetailListHandle? = nil,
-                onHighlight: @escaping @MainActor (ID?) -> Void = { _ in }, @ViewBuilder row: @escaping (DetailRowItem<ID>) -> Row) {
+    public init(_ items: [DetailRowItem<ID>], label: String, handle: DetailListHandle? = nil, highlight: Binding<ID?>? = nil,
+                pages: ((Bool) -> ID?)? = nil, maxHeightShare: CGFloat? = nil, onHighlight: @escaping @MainActor (ID?) -> Void = { _ in },
+                @ViewBuilder row: @escaping (DetailRowItem<ID>) -> Row) {
         self.items = items
         self.label = label
         self.handle = handle
+        self.highlight = highlight
+        self.pages = pages
+        self.maxHeightShare = maxHeightShare
         self.onHighlight = onHighlight
         self.row = row
     }
 
+    /// The highlighted row: the caller's, which the list never clears, else its own.
+    private var highlighted: ID? {
+        get { highlight?.wrappedValue ?? ownHighlight }
+        nonmutating set {
+            if let highlight {
+                if let newValue { highlight.wrappedValue = newValue }
+            } else {
+                ownHighlight = newValue
+            }
+        }
+    }
+
+    /// What the table selects: `highlighted`, read and written (a caller's is never written nil).
+    private var selection: Binding<ID?> { Binding(get: { highlighted }, set: { highlighted = $0 }) }
+
     public var body: some View {
         let fitted = items.reduce(DetailStyle.rowListChrome) { $0 + $1.height }
         ScrollViewReader { proxy in
-            List(selection: $highlighted) {
-                ForEach(items) { item in
-                    // A click is a button's, as it is in any list of the panel; the keys are the list's.
-                    Button {
-                        highlighted = item.id
-                        item.activate()
-                    } label: {
-                        row(item)
-                            .frame(height: item.height)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.primary)
-                    .focusable(false)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .tag(item.id)
-                }
+            List(selection: selection) {
+                ForEach(items) { item in rowButton(item) }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -330,24 +358,60 @@ public struct DetailRowList<ID: Hashable & Sendable, Row: View>: View {
             .onChange(of: highlighted) { _, now in
                 if hasKeyboard { onHighlight(now) }
             }
-            .onChange(of: hasKeyboard) { _, has in
-                if has, highlighted == nil, let first = items.first { highlighted = first.id }
-                onHighlight(has ? highlighted : nil)
+            .onChange(of: hasKeyboard) { _, has in keyboardMoved(has) }
+            .onChange(of: items.map(\.id)) { old, ids in
+                rowsChanged(ids)
+                // The caller's highlight is on a row that has just appeared (its head unfolded): in view.
+                if let now = highlight?.wrappedValue, ids.contains(now), !old.contains(now) { proxy.scrollTo(now) }
             }
-            .onChange(of: items.map(\.id)) { _, ids in
-                if let highlighted, !ids.contains(highlighted) { self.highlighted = nil }
+            // Moved from outside, by a walk's key while the list has the keyboard too: the row comes into
+            // view (a no-op for one that is, so the keys' own moves, which scroll, cost nothing).
+            .onChange(of: highlight?.wrappedValue) { _, now in
+                if let now { proxy.scrollTo(now) }
             }
             .onDisappear { onHighlight(nil) }
-            .background(ListAnchor(handle: handle ?? ownHandle, label: label, enter: enter) { code in move(code, proxy: proxy) })
+            .background(ListAnchor(handle: handle ?? ownHandle, label: label, takesPages: pages != nil, enter: { enter(proxy: proxy) }) { code in move(code, proxy: proxy) })
         }
         .containerRelativeFrame(.vertical, alignment: .top) { visible, _ in
-            min(fitted, max(DetailStyle.rowListMinHeight, visible - DetailStyle.rowListMargin))
+            let room = maxHeightShare.map { visible * $0 } ?? visible - DetailStyle.rowListMargin
+            return min(fitted, max(DetailStyle.rowListMinHeight, room))
         }
     }
 
-    /// ↓ in the search field above: the highlight is where it was, else on the first row.
-    private func enter() {
+    /// A click is a button's, as it is in any list of the panel; the keys are the list's.
+    private func rowButton(_ item: DetailRowItem<ID>) -> some View {
+        Button {
+            highlighted = item.id
+            (item.click ?? item.activate)()
+        } label: {
+            row(item)
+                .frame(height: item.height)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.primary)
+        .focusable(false)
+        .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
+        .tag(item.id)
+    }
+
+    /// Entering the list highlights its first row, unless the highlight is on one of them.
+    private func keyboardMoved(_ has: Bool) {
+        if has, !items.contains(where: { $0.id == highlighted }), let first = items.first { highlighted = first.id }
+        onHighlight(has ? highlighted : nil)
+    }
+
+    /// A list's own highlight goes with its row; a caller's stays where it is put.
+    private func rowsChanged(_ ids: [ID]) {
+        if highlight == nil, let highlighted, !ids.contains(highlighted) { self.highlighted = nil }
+    }
+
+    /// The keyboard comes into the list (↓ in the search field above, `DetailListHandle.enter()`): the highlight is where it was,
+    /// else on the first row, and the table shows it. A list that opens on a highlight far down scrolls nowhere by itself.
+    private func enter(proxy: ScrollViewProxy) {
         if highlighted == nil || !items.contains(where: { $0.id == highlighted }) { highlighted = items.first?.id }
+        if let now = highlighted { proxy.scrollTo(now) }
     }
 
     /// Return and Space run the highlighted row (the table leaves them to SwiftUI).
@@ -358,12 +422,16 @@ public struct DetailRowList<ID: Hashable & Sendable, Row: View>: View {
         return .handled
     }
 
-    /// Home, End, ← and → by their key codes: the table takes those itself (it scrolls, and opens and
+    /// Home, End, Page Up and Page Down (when `pages` is given), ← and → by their key codes: the table takes those itself (it scrolls, and opens and
     /// closes the rows it knows), so they come by the key equivalents, which the window offers its views first.
     private func move(_ code: UInt16, proxy: ScrollViewProxy) -> Bool {
         switch code {
         case 115: return go(items.first, proxy) == .handled
         case 119: return go(items.last, proxy) == .handled
+        case 116, 121:
+            guard let pages else { return false }
+            _ = go(pages(code == 121).flatMap { id in items.first { $0.id == id } }, proxy)
+            return true
         case 123:
             guard let current = items.first(where: { $0.id == highlighted }) else { return false }
             if case .head(let isFolded) = current.kind {
@@ -406,6 +474,7 @@ extension View {
 private struct ListAnchor: NSViewRepresentable {
     let handle: DetailListHandle
     let label: String
+    let takesPages: Bool
     let enter: @MainActor () -> Void
     let move: @MainActor (UInt16) -> Bool
 
@@ -413,6 +482,7 @@ private struct ListAnchor: NSViewRepresentable {
 
     func updateNSView(_ view: Anchor, context: Context) {
         view.move = move
+        view.takesPages = takesPages
         handle.anchor = view
         handle.label = label
         handle.onEnter = enter
@@ -424,11 +494,19 @@ private struct ListAnchor: NSViewRepresentable {
     final class Anchor: NSView {
         weak var handle: DetailListHandle?
         var move: (@MainActor (UInt16) -> Bool)?
+        /// Page Up and Page Down are the list's too, rather than the table's, where it has pages of its own.
+        var takesPages = false
 
-        /// Home, End, ← and → with the list's table having the keyboard are the list's.
+        /// Home, End, ← and → (and Page Up and Page Down, if `takesPages`) with the list's table having the keyboard are the list's, and ⌘↓, ⌘↑ and ⌥Tab do nothing.
         override func performKeyEquivalent(with event: NSEvent) -> Bool {
-            let plain = event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
-            guard plain, [115, 119, 123, 124].contains(event.keyCode), let table = window?.firstResponder as? NSTableView,
+            let held = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            // ⌘↓ and ⌘↑ (into a thing's content, out to its container) and ⌥Tab and ⌥⇧Tab (into a thing's drawn parts) mean nothing
+            // to a list, whose rows hold neither: the table would take the first two as ↓ and ↑ and the loop the others as Tab (P6).
+            let inertKeys: [UInt16] = held == .command ? [125, 126] : held == .option || held == [.option, .shift] ? [48] : []
+            if inertKeys.contains(event.keyCode), let table = window?.firstResponder as? NSTableView, table === handle?.currentTable { return true }
+            let plain = held.isEmpty
+            let keys: [UInt16] = takesPages ? [115, 119, 123, 124, 116, 121] : [115, 119, 123, 124]
+            guard plain, keys.contains(event.keyCode), let table = window?.firstResponder as? NSTableView,
                   table === handle?.currentTable, MainActor.assumeIsolated({ move?(event.keyCode) }) == true else {
                 return super.performKeyEquivalent(with: event)
             }

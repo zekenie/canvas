@@ -31,9 +31,9 @@ public struct QueryRequest: Sendable, Equatable {
     /// (`EdgeView`).
     public var edges: EdgeView
     /// How long to wait, at most, for answers still arriving (`TopologyIndex.isSettling`) before the
-    /// query takes up the file: only a query that reads edges (`QueryPlan.readsEdges`) waits, holding
-    /// nothing of the file, and one that goes on with answers still pending says so (`pending`). The
-    /// wait counts against the deadline. Nil: don't wait.
+    /// query takes up the file: only a query that reads edges, or holds a word that waits as they do
+    /// (`QueryPlan.waitsForAnswers`), waits, holding nothing of the file, and one that goes on with answers
+    /// still pending says so (`pending`). The wait counts against the deadline. Nil: don't wait.
     public var settle: Duration?
     /// The most time the query may take in all, from when it's run, where the file's own deadline
     /// (`QueryBudget.deadline(forShapes:)`) is a time without a sign of life: what a caller that has
@@ -59,6 +59,12 @@ public struct QueryRequest: Sendable, Equatable {
 /// One query of a batch (`QueryState.matches(_:)`): ids only, for a plugin that keeps answers.
 public struct QueryMatchRequest: Sendable {
     public var text: String
+    /// The shape this request is about, which its query's `:scope`, `:scope-start` and `:scope-end`
+    /// name (`QueryBinding.scope`): each request of a batch has its own, so a phrase asked of many
+    /// shapes is one text in one batch. A query that uses those words and has none is refused
+    /// (`unsupported`) alone, and a shape that is none the query ranges over (gone, kept aside, on a
+    /// board the app can't show) is refused `unknown_id`, as `#<id>` would be. Nil: bound to nothing.
+    public var scope: ShapeID?
     /// The edges its edge words see: `.recorded` for a stand-in's own query, which asks what to
     /// stand for and so can't see through itself.
     public var edges: EdgeView
@@ -73,10 +79,11 @@ public struct QueryMatchRequest: Sendable {
     /// so the caller can say what it left out. Nil: none is.
     public var holdingBack: (@Sendable (AnyShapeRecord) -> Bool)?
 
-    public init(_ text: String, edges: EdgeView = .resolved, limit: Int = QueryMatchRequest.every,
+    public init(_ text: String, scope: ShapeID? = nil, edges: EdgeView = .resolved, limit: Int = QueryMatchRequest.every,
                 admitting: @escaping @Sendable (AnyShapeRecord) -> Bool = { _ in true },
                 holdingBack: (@Sendable (AnyShapeRecord) -> Bool)? = nil) {
         self.text = text
+        self.scope = scope
         self.edges = edges
         self.limit = limit
         self.admitting = admitting
@@ -322,10 +329,12 @@ public struct QueryWarning: Sendable, Equatable, Encodable {
     }
 
     /// Answers still arriving when the wait ran out: `count` stand-ins are asked and unanswered
-    /// (`TopologyIndex.pendingStandIns`; none if what's busy is only a wait before asking).
-    public static func pending(_ count: Int) -> QueryWarning {
+    /// (`TopologyIndex.pendingStandIns`; none if what's busy is only a wait before asking, or a plugin
+    /// working out what a word reads), said of edges when only edges were waited for; a query that holds
+    /// a word that waits counts none, as what that word waits on isn't counted.
+    public static func pending(_ count: Int, ofEdges: Bool = true) -> QueryWarning {
         let waiting = count == 0 ? "Answers are" : count == 1 ? "1 answer is" : "\(count) answers are"
-        return QueryWarning(.pending, "\(waiting) still arriving; what the query says of edges may change.")
+        return QueryWarning(.pending, "\(waiting) still arriving; what the query says\(ofEdges ? " of edges" : "") may change.")
     }
 }
 

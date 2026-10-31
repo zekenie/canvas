@@ -74,7 +74,7 @@ import Topology
         expect(try !rig.offers(.text(rig.pantry)), "nor a shape's text")
         let query = try require(try require(rig.editor.slashCommands).command(named: "query", for: rig.everything))
         expectEqual(query.argument, "question")
-        expectEqual(query.waiting, "Asking")
+        expectEqual(query.waiting, "Interpreting…", "the words every host of words says")
         expect(query.answersLater)
         expect(!query.accepts(SlashArguments([])) && query.accepts("the pantry"))
         expectEqual(rig.editor.registry.report.split(separator: "\n").first { $0.hasPrefix("query-slash") }.map(String.init)?.hasSuffix("/query → the command bar's target"),
@@ -114,7 +114,7 @@ import Topology
         model.queue(.notSignedIn)
         expectEqual(try rig.ask("the attic", on: rig.everything), .failed("Not signed in"))
         model.queue("UNANSWERABLE: where shapes sit on the canvas")
-        expectEqual(try rig.ask("the chore on the left", on: rig.everything), .failed("A query can't ask that: where shapes sit on the canvas."))
+        expectEqual(try rig.ask("the chore on the left", on: rig.everything), .failed("No query for these words"))
         expectEqual(rig.editor.selectedShapeIDs, [rig.pantry, rig.cellar], "nothing selected by a failure")
         expectEqual(rig.editor.undoHistory.undoName, nil, "and no step")
     },

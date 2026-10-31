@@ -4,6 +4,7 @@ import Arrows
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
+import DetailPanel
 import Find
 import LanguageModels
 import Mentions
@@ -297,10 +298,10 @@ extension NestedWindow {
         try settled(find, h)
         expectEqual(find.results.map(\.id), [nest.notes(on: 1).1, nest.notes(on: 2).1, nest.notes(on: 3).1])
         expectEqual(find.results.map(\.board), [.root, nest.sBoard, nest.tBoard])
-        // Each board's rows are headed as the path names the board: Boards', for Find's list.
+        // Each board's rows are headed as the path names the board: Boards', for the panel's lists.
         h.editor.nameRoot("Roadmap")
-        expectEqual(find.results.map { find.heading(of: $0.board) },
-                    [FindHeading("Roadmap"), FindHeading("Plans", systemImage: "rectangle.stack"), FindHeading("Untitled Subboard", systemImage: "rectangle.stack")])
+        expectEqual(find.results.map { h.editor.boardHeading(of: $0.board) },
+                    [BoardHeading("Roadmap"), BoardHeading("Plans", systemImage: "rectangle.stack"), BoardHeading("Untitled Subboard", systemImage: "rectangle.stack")])
         find.step(forward: true)
         find.step(forward: true)
         expectEqual(h.editor.board, nest.tBoard, "two boards down")

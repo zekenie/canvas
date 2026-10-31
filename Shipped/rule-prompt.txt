@@ -1,0 +1,14 @@
+## preface
+These rules come from the {noun}'s types, the most general type first. Read them together: where two disagree, the more specific type's rule wins. Each rule says something that should be true of the {noun}.
+## rule
+{number}. (on {type}) "{says}"
+## together
+Read together, does this {noun} meet them?
+true: It meets them
+false: It breaks one
+flags when: false
+## each
+Read with the others, does this {noun} fail rule {number}?
+true: Yes
+false: No
+flags when: true

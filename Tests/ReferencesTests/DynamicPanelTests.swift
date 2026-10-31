@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import DetailPanel
 import Publishing
+import QueryTranslation
 import References
 import Selection
 import SwiftUI

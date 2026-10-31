@@ -30,7 +30,7 @@ public struct FindPanelPlugin: ListedPlugin {
 /// Find's panel, for the detail panel's place while Find is open (`FindPanelPlugin`):
 /// its own header (the field, with a spinner while the index is built, and Done), the count ("3 of
 /// 12", hits) with the buttons that step, and a row per shape with hits, under its board's heading
-/// (`FindState.heading(of:)`), in order: the kind's symbol, the text around its first hit with each
+/// (`editor.boardHeading(of:)`), in order: the kind's symbol, the text around its first hit with each
 /// hit there semibold, and its count when it has more than one. A click on a row makes its first hit
 /// current, keeping the keyboard in the field, and so do Up, Down, Page Up and Page Down there; ⌘↩
 /// closes Find on the current hit's shape, selected (`FindState.finish()`). A row is read as its text,
@@ -200,7 +200,7 @@ private struct FindPanelContent: View {
     }
 
     private func boardHeading(_ board: BoardID) -> some View {
-        let named = find.heading(of: board)
+        let named = editor.boardHeading(of: board)
         return HStack(spacing: FindStyle.buttonSpacing) {
             if let symbol = named.systemImage { Image(systemName: symbol).foregroundStyle(.secondary) }
             Text(named.title).font(FindStyle.boardTitle).lineLimit(1)
@@ -210,10 +210,13 @@ private struct FindPanelContent: View {
     }
 
     /// The field takes the keyboard, its text selected, for each ⌘F not yet answered.
+    ///
+    /// A turn later: written in the pass that makes the field (`onAppear`, the panel just shown for Find), under the
+    /// panel's stack (a band over it), the request is dropped, the field not yet one SwiftUI's focus knows.
     private func focusIfAsked() {
         guard find.focusRequest != handledRequest else { return }
         handledRequest = find.focusRequest
-        focused = true
+        DispatchQueue.main.async { focused = true }
         // Once it has the keyboard, what's typed is selected, as a second ⌘F selects it.
         DispatchQueue.main.async { [window] in
             (window.window?.firstResponder as? NSTextView)?.selectAll(nil)

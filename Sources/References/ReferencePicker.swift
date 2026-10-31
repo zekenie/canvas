@@ -117,8 +117,8 @@ public final class ReferencePicker {
         }
     }
 
-    /// The rows as the list draws and says them: a shape's line is Mentions' (`MentionChoice.items`); the
-    /// words row has a magnifier and a line above it when shapes are listed.
+    /// The rows as the list draws and says them: a shape's line is Mentions' (`MentionChoice.items`), and so is
+    /// the words row (`MentionPicker.wordsItem`: a magnifier, and a line above it when shapes are listed).
     private static func listRows(_ rows: [ReferencePickerRow]) -> [CaretListRow] {
         var choices: [ReferenceChoice] = []
         for case .shape(let choice) in rows { choices.append(choice) }
@@ -128,8 +128,7 @@ public final class ReferencePicker {
             switch row {
             case .empty(let words): return .empty(words)
             case .words(let words):
-                return .item(CaretListItem(words, symbol: ReferenceStyle.dynamicSymbol, separated: !choices.isEmpty,
-                                           spoken: "\(ReferenceStyle.wordsSpoken), \(words)"))
+                return .item(MentionPicker.wordsItem(words, separated: !choices.isEmpty))
             case .shape:
                 position += 1
                 return .item(items[position - 1])

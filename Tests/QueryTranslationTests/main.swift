@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([parseTests, translatorTests, translateTests, querySlashTests])
+runTests([parseTests, translatorTests, translateTests, interpretationsTests, querySlashTests])

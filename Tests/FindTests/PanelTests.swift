@@ -20,8 +20,8 @@ final class FindWindow {
     private(set) var exits = 0
     private var time: TimeInterval = 1
 
-    init(_ file: CanvasFile) throws {
-        editor = CanvasEditor(registry: try Registry(plugins: findPlugins(more: [DetailPanelPlugin(), FindPanelPlugin()])), file: file,
+    init(_ file: CanvasFile, more: [any CanvasPlugin] = []) throws {
+        editor = CanvasEditor(registry: try Registry(plugins: findPlugins(more: [DetailPanelPlugin(), FindPanelPlugin()] + more)), file: file,
                               scheduler: TaskScheduler())
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 1000 - DetailStyle.idealWidth, height: 700)
@@ -294,24 +294,34 @@ final class FindWindow {
         let h = try findHarness(CanvasFile(root: CanvasDocument(shapes: memos(["pear"]))))
         expectEqual(try search("pear", in: h).total, 1, "no panel, and Find finds as ever")
     },
-    test("a board's rows are headed as a plugin calls the board, else Board for the root and no name; two plugins naming boards conflict") {
+    test("a row on another board is labeled with the board as a plugin calls it (the panel's board headings), and the board shown is not said") {
         let pockets = PocketFile(root: ["pear"], inA: ["pear"], inA1: [], inB: [])
-        let plain = try findHarness(pockets.file)
-        expectEqual(plain.editor.find?.heading(of: .root), FindHeading("Board"))
-        expectEqual(plain.editor.find?.heading(of: pockets.aBoard), FindHeading(""))
-        let naming = Contributor(id: "naming") { $0.findHeading { board, _ in board.isRoot ? FindHeading("Top") : FindHeading("Pocket", systemImage: "tray") } }
-        let named = try findHarness(pockets.file, more: [naming])
-        expectEqual(named.editor.find?.heading(of: .root), FindHeading("Top"))
-        expectEqual(named.editor.find?.heading(of: pockets.aBoard), FindHeading("Pocket", systemImage: "tray"))
-        let report = named.editor.registry.report
-        expect(report.split(separator: "\n").contains { $0.hasPrefix("naming ") && $0.hasSuffix(" find heading") }, report)
-        let again = Contributor(id: "again") { $0.findHeading { _, _ in FindHeading("Again") } }
-        expectThrows(RegistryError.conflict(point: "FindHeadings", key: "heading", plugins: ["naming", "again"])) {
-            _ = try Registry(plugins: findPlugins(more: [naming, again]))
+        let naming = Contributor(id: "naming") { $0.boardHeading { board, _ in board.isRoot ? BoardHeading("Top") : BoardHeading("Pocket", systemImage: "tray") } }
+        let h = try findHarness(pockets.file, more: [DetailPanelPlugin(), naming])
+        let find = try search("pear", in: h)
+        expectEqual(find.total, 2)
+        expectEqual((0..<2).map { find.rowLabel(of: $0) }, ["pear, memo, hit 1 of 2", "pear, memo, Pocket, hit 2 of 2"])
+        expectEqual(h.editor.boardHeading(of: pockets.aBoard), BoardHeading("Pocket", systemImage: "tray"), "the same heading the panel's rows have")
+    },
+    test("the panel heads each board's rows with the heading the editor gives, title and symbol") {
+        let pockets = PocketFile(root: ["pear"], inA: ["pear"], inA1: [], inB: [])
+        // The panel draws the heading as text (SwiftUI's, no view of its own), so it is read as pixels:
+        // the same board headed another title, or another symbol, draws another picture.
+        @MainActor func panel(_ title: String, _ symbol: String?) throws -> NSBitmapImageRep {
+            let naming = Contributor(id: "naming") { $0.boardHeading { board, _ in board.isRoot ? BoardHeading("Top") : BoardHeading(title, systemImage: symbol) } }
+            let w = try FindWindow(pockets.file, more: [naming])
+            w.commandF()
+            w.window.spin { w.fieldHasKeyboard }
+            w.window.type("pear")
+            w.window.spin { w.find.total == 2 && w.find.isSettled }
+            w.window.settle()
+            return snapshot(w.hosting)
         }
-        expectThrows(RegistryError.ownerNotInstalled(point: "FindHeadings", owner: .findInBoards, contributor: "naming")) {
-            _ = try Registry(plugins: [naming])
-        }
+        let list = try panel("Pocket", "tray")
+        let bounds = CGRect(x: 0, y: 0, width: DetailStyle.idealWidth, height: 700)
+        expectEqual(changedPixels(list, try panel("Pocket", "tray"), in: bounds), 0, "drawn the same each time")
+        expect(changedPixels(list, try panel("Cabin", "tray"), in: bounds) > 0, "another title is another picture")
+        expect(changedPixels(list, try panel("Pocket", nil), in: bounds) > 0, "no symbol is another picture")
     },
     test("No matches for a query nothing matches") {
         let w = try FindWindow(CanvasFile(root: CanvasDocument(shapes: memos(["pear"]))))

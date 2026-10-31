@@ -272,25 +272,28 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expectEqual(QueryPrompt.system, prompt)
         expectEqual(ShippedText.named("no-such-text"), nil, "a name the folder has no file of")
     },
-    test("the request built by the shipped list carries <fields> after <titles> and <instances> last, the file's types, their fields and which shapes are of each, and neither for a file with no types") {
+    test("the request built by the shipped list carries <fields> after <titles>, then <instances> and <connections> last, the file's types, their fields, which shapes are of each and how arrows join them, and no types' blocks for a file with none") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let model = ScriptedLanguageModel(answers: ["sticky-note", "sticky-note"])
         let h = try QueryStory.harness(pasteboard: pasteboard, model: model)
         let translator = try require(h.editor.queryTranslator)
         _ = try awaitResult { try await translator.translate("which employees started?", about: .person) }
-        _ = try awaitResult { try await translator.translate("notes", about: .reference) }
+        _ = try awaitResult { try await translator.translate("notes", about: .stored()) }
         for request in model.requests {
             let text = try require(request.messages.first?.text)
             let titles = try require(text.range(of: "</titles>\n\n<fields>\n"), "after the titles: " + text)
             let end = try require(text.range(of: "\n</fields>"))
             expect(end.lowerBound > titles.upperBound, "the fields after the titles")
             let instances = try require(text.range(of: "</fields>\n\n<instances>\n"), "the instances after the fields: " + text)
-            expect(text.hasSuffix("</instances>"), "and last")
+            let connections = try require(text.range(of: "</instances>\n\n<connections>\n"), "the connections after the instances: " + text)
+            expect(text.hasSuffix("</connections>"), "and last")
             // Ann is an Employee card, and so a Person too, by title; the types with no shape of them have no line; and the
             // titled notes of no type last, in the boards' order (the untitled ones aren't named).
-            expectEqual(text[instances.upperBound...].split(separator: "\n").dropLast().map(String.init),
+            expectEqual(text[instances.upperBound..<connections.lowerBound].split(separator: "\n").map(String.init),
                         [#"Employee card: "Ann""#, #"Person: "Ann""#, #"Of no type: "API gateway", "Auth", "Ledger", "Checkout", "Refund policy""#])
+            // The story's one arrow bound at both ends joins two notes of no type: by their kind, and no title.
+            expectEqual(text[connections.upperBound...].split(separator: "\n").dropLast().map(String.init), ["sticky-note → sticky-note: 1 arrow"])
             let fields = String(text[titles.upperBound..<end.lowerBound]).split(separator: "\n").map(String.init)
             for line in ["Person: name (text)", "Employee card builds on Person: desk (text), started (date), teams (list) {name (text)}"] {
                 expect(fields.contains(line), "the story's \(line): \(fields)")
@@ -317,7 +320,7 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         let model = ScriptedLanguageModel(answers: ["sticky-note", "sticky-note"])
         let h = try QueryStory.harness(pasteboard: pasteboard, model: model)
         let translator = try require(h.editor.queryTranslator)
-        _ = try awaitResult { try await translator.translate("notes", about: .reference) }
+        _ = try awaitResult { try await translator.translate("notes", about: .stored()) }
         _ = try awaitResult { try await translator.translate("notes", about: .person) }
         let stored = try require(model.requests.first), person = try require(model.requests.last)
         let words = try require(h.editor.queries).vocabulary.words
@@ -340,5 +343,30 @@ private func groups(of pattern: String, in text: String) -> [String]? {
         expect(!(stored.messages.first?.text ?? "").contains("Selected:"), "no selection in <board>")
         expect((person.messages.first?.text ?? "").contains("Selected:"), "a person's has it")
         expect(QueryPrompt.referenceRule.contains(":selected"), "the line names the word the examples teach")
+    },
+    test("a bound query's request carries the product's bound line after the rule line, its type, shapes and sentence filled in, and the :scope words; arrows' ends too") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(answers: [":scope", ":scope"])
+        let h = try QueryStory.harness(pasteboard: pasteboard, model: model)
+        let translator = try require(h.editor.queryTranslator)
+        let notes = StoredBinding(type: "Order", shapes: "sticky-notes", connections: false)
+        let arrows = StoredBinding(type: "Employment", shapes: "arrows", connections: true)
+        _ = try awaitResult { try await translator.translate("the other orders", about: .stored(binding: notes, sentence: "Priced unlike [the other orders].")) }
+        _ = try awaitResult { try await translator.translate("the company", about: .stored(binding: arrows, sentence: "Unusual for [the company].")) }
+        let bound = try require(ShippedText.named(QueryTranslationPlugin.boundFile).flatMap(BoundWords.init(text:)), "the product's bound words")
+        let note = try require(model.requests.first), arrow = try require(model.requests.last)
+        expectEqual(note.system, QueryPrompt.system + "\n" + QueryPrompt.referenceRule + "\n" + bound.line(for: notes, sentence: "Priced unlike [the other orders]."))
+        expect(note.system?.contains(#"a rule on the type "Order", whose shapes are sticky-notes"#) == true)
+        expect(note.system?.contains("“Priced unlike [the other orders].”") == true)
+        expect(!(note.system ?? "").contains(":scope-start") && (arrow.system ?? "").contains(":scope-start the shape it starts at"), "the ends, for arrows")
+        func vocabulary(_ request: ModelRequest) -> String {
+            let text = request.messages.first?.text ?? ""
+            guard let start = text.range(of: "<vocabulary>"), let end = text.range(of: "</vocabulary>") else { return "" }
+            return String(text[start.upperBound..<end.lowerBound])
+        }
+        expect(vocabulary(note).hasSuffix("- :scope — the shape the rule is checking. Example: :scope\n"), vocabulary(note))
+        expect(!vocabulary(note).contains(":scope-start") && vocabulary(arrow).contains("- :scope-end — the shape the arrow being checked ends at."))
+        expect((note.messages.first?.text ?? "").hasPrefix("<question>\nthe other orders\n</question>"), "the phrase is the question")
     },
 ])

@@ -77,8 +77,6 @@ public enum FindStyle {
     static let noMatchesFont = Font.system(size: 13)
     /// What the list says when nothing matches, as Jump To's and the @ picker's do.
     static let noMatches = "No matches"
-    /// What heads the root board's rows when no plugin names boards (`FindHeadings`).
-    static let rootHeading = "Board"
     /// The field's well.
     static let fieldFill = Color.primary.opacity(0.06)
 }

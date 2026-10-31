@@ -136,8 +136,12 @@ final class Evaluation {
     private var everyShape: Set<ShapeID>?
     /// Shapes looked up without the universe: nil for one outside it.
     private var looked: [ShapeID: Entry?] = [:]
-    /// What each node and list matched among every shape.
+    /// What each node and list matched among every shape. Per request in a batch: a plan is the
+    /// text's alone, and `scope` is the request's, so what `:scope` matched is not another's.
     private var sets: [PlanNodeID: Set<ShapeID>] = [:]
+    /// The shape the request being answered is bound to (`QueryMatchRequest.scope`): what `:scope`,
+    /// `:scope-start` and `:scope-end` name. Nil for an answer of `run`, which binds nothing.
+    private var scope: ShapeID?
     /// Each file relation's shapes by those they're related to (`reversed`), by word.
     private var reversedRelations: [String: [ShapeID: [ShapeID]]] = [:]
     /// Names read, named or derived: nil for none.
@@ -243,14 +247,16 @@ final class Evaluation {
     /// here, off the main actor, of each, before `limit`), the first `limit` in file order and how
     /// many in all, and how many of those it turned away `holdingBack` takes. What the requests read
     /// is shared: the shapes walked, the names read (named and derived, once for all) and the title
-    /// index; what each node matched is not, as a plan's nodes are its own. A request refused
-    /// (`unknown_title`) is one answer, not the batch's; a cancellation is the batch's.
+    /// index; what each node matched is not, as a plan's nodes are its own, and each request has its
+    /// own `scope`. A request refused (`unknown_title`, or `unknown_id` for a scope no shape has) is
+    /// one answer, not the batch's; a cancellation is the batch's.
     func admitted(_ batch: [BatchedQuery]) async throws(QueryError) -> [Result<QueryMatches, QueryError>] {
         var answers: [Result<QueryMatches, QueryError>] = []
         answers.reserveCapacity(batch.count)
         for query in batch {
             try checkCancelled()
             snapshot = snapshot.reading(query.request.edges)
+            scope = query.request.scope
             sets.removeAll(keepingCapacity: true)
             emptyNameTests.removeAll()
             read.removeAll()
@@ -376,11 +382,12 @@ final class Evaluation {
 
     // MARK: Names and ids
 
-    /// Refuses, before anything is answered, every id no shape the query ranges over has, every name
-    /// none has, and every name standing where a container goes whose shapes are all of kinds that
-    /// hold no shapes: the problems in the order they're in the query. A name no shape has that
-    /// stands for an edge word's or a relation's anchor may be one a shape that's gone had: when an
-    /// edge it follows points at a shape that isn't there, the hint says how to find what carries it.
+    /// Refuses, before anything is answered, every id no shape the query ranges over has (and the
+    /// shape the request is bound to, where the query says `:scope`), every name none has, and every
+    /// name standing where a container goes whose shapes are all of kinds that hold no shapes: the
+    /// problems in the order they're in the query. A name no shape has that stands for an edge
+    /// word's or a relation's anchor may be one a shape that's gone had: when an edge it follows
+    /// points at a shape that isn't there, the hint says how to find what carries it.
     private func checkNames(in plan: QueryPlan) async throws(QueryError) {
         var titles: [PlanNode] = [], ids: [PlanNode] = []
         var anchoring: [PlanNodeID: [(types: PlanEdgeTypes, end: AnchorEnd)]] = [:]
@@ -402,6 +409,10 @@ final class Evaluation {
         for node in ids {
             guard case .id(let id) = node.op, entry(id) == nil else { continue }
             problems.append(unknownID(id, span: node.span))
+        }
+        // The shape a request is bound to is named where its query says `:scope`, as an id is.
+        if let scope, entry(scope) == nil {
+            for use in plan.uses.scope { problems.append(unknownID(scope, span: use.span)) }
         }
         if !titles.isEmpty {
             let index = try await titleIndex()
@@ -780,6 +791,8 @@ final class Evaluation {
             return topLevel(among: candidates)
         case .currentBoard:
             return onBoard(snapshot.shown, among: candidates)
+        case .scope(let word):
+            return try bound(word, among: candidates)
         case .edges(let word, let anchor, let second, let types):
             let anchors = try await matches(anchor, among: .all)
             switch word {
@@ -839,10 +852,11 @@ final class Evaluation {
         return try members(current)
     }
 
-    /// Whether a node finds its shapes directly: an id, a name, a word with seeds.
+    /// Whether a node finds its shapes directly: an id, a name, the shape a request is bound to and
+    /// the ends of its connection, a word with seeds.
     private func finds(_ node: PlanNode) -> Bool {
         switch node.op {
-        case .id, .title: true
+        case .id, .title, .scope: true
         case .pseudo(let word):
             if case .pseudoClass(let behavior)? = vocabulary.contributedWords[word]?.meaning { behavior.seeds != nil } else { false }
         default: false
@@ -1362,6 +1376,20 @@ final class Evaluation {
         return found
     }
 
+    /// A word the request binds: the shape it is bound to as `#<id>` finds it (itself, no forwarding
+    /// through a stand-in; nothing if it isn't a shape the query ranges over), and where the
+    /// connection it carries starts or ends as `:start-of(#<id>)` and `:end-of(#<id>)` find them, of
+    /// every edge type, in the request's edge view: none for a shape that carries no connection.
+    /// Nothing for an answer that binds nothing (`QueryPlan.unbound(by:)` refuses those first).
+    private func bound(_ word: ScopeWord, among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
+        guard let scope, entry(scope) != nil else { return [] }
+        switch word {
+        case .scope: return restrict([scope], to: candidates)
+        case .start: return try ends(of: [scope], .outgoing, types: .all, among: candidates)
+        case .end: return try ends(of: [scope], .incoming, types: .all, among: candidates)
+        }
+    }
+
     /// Shapes that carry an edge whose far end (an end that isn't the carrier) isn't a shape the
     /// query ranges over: gone, kept aside, or on a board the app can't show.
     private func dangling(_ types: PlanEdgeTypes, among candidates: Candidates) throws(QueryError) -> Set<ShapeID> {
@@ -1572,7 +1600,7 @@ extension PlanNode {
             anchor.forEachNode(body)
         case .and(let nodes):
             for node in nodes { node.forEachNode(body) }
-        case .all, .kinds, .title, .id, .attribute, .contains, .topLevel, .currentBoard, .dangling, .pseudo:
+        case .all, .kinds, .title, .id, .attribute, .contains, .topLevel, .currentBoard, .scope, .dangling, .pseudo:
             break
         }
     }

@@ -40,7 +40,9 @@ public struct QueryPlan: Sendable {
 
     /// Whether every word in it reads only the file (`editorWords` is empty): what it matches is a
     /// function of the file as the query takes it up, whoever asks and whatever they have selected
-    /// or shown, so an answer to it stays an answer until the file changes.
+    /// or shown, so an answer to it stays an answer until the file changes. A word bound per request
+    /// (`usesScope`) is none that reads the editor: the answer is a function of the file and of the
+    /// shape bound.
     public var readsOnlyTheFile: Bool { uses.editorWords.isEmpty }
 
     /// Whether the plan names a shape, by title or by id: what `QueryState.checkNames(_:)` checks.
@@ -55,10 +57,16 @@ public struct QueryPlan: Sendable {
         return names
     }
 
-    /// Whether the plan has an edge word (`:edge-to`, a relation, `:dangling`, and the others): the
-    /// edge view a request asks for, and a wait for answers still arriving (`QueryRequest.settle`),
+    /// Whether the plan has an edge word (`:edge-to`, a relation, `:dangling`, and the others, and
+    /// `:scope-start` and `:scope-end`, which are the ends of a connection; not `:scope`): the edge
+    /// view a request asks for, and a wait for answers still arriving (`QueryRequest.settle`),
     /// matter to it. A plan without one never reads edges.
     public var readsEdges: Bool { uses.edges }
+
+    /// Whether a query of it waits for answers still arriving before it takes up the file (`QueryRequest.settle`):
+    /// one that reads edges, and one that holds a word that says it waits (Validation's, whose verdicts a plugin
+    /// may still be working out).
+    public var waitsForAnswers: Bool { uses.edges || uses.settles }
 }
 
 /// A node's number in its plan.
@@ -112,6 +120,9 @@ indirect enum PlanOp: Sendable {
     case topLevel
     /// On the board the file's window shows, as the query started.
     case currentBoard
+    /// A word bound per request: the shape the request is bound to, or where its connection starts or
+    /// ends (`QueryMatchRequest.scope`). The plan holds the word, never the id.
+    case scope(ScopeWord)
     /// One of the language's edge words (`:edge-to` … `:between`): its anchors (`second` only for
     /// `:between`) and the edge types it follows.
     case edges(word: Word, anchor: PlanList, second: PlanList?, types: PlanEdgeTypes)
@@ -228,6 +239,8 @@ struct PlanUses: Sendable, Equatable {
     var pseudoClasses: Set<String> = []
     /// Topology's edges.
     var edges = false
+    /// A word that waits for answers still arriving, as edges do (`queryPseudoClass(settles:)`).
+    var settles = false
     /// Topology's containment.
     var containment = false
     /// The board the window shows.
@@ -237,6 +250,9 @@ struct PlanUses: Sendable, Equatable {
     var readsText = false
     /// The words that read the editor (`QueryPlan.editorWords`), in the order they're met, each once.
     var editorWords: [String] = []
+    /// Where it uses a word bound per request (`:scope`, `:scope-start`, `:scope-end`), in the order
+    /// they're met, each use once: what the asker must bind (`QueryPlan.usesScope`).
+    var scope: [PlanScopeUse] = []
     /// The paths into an attribute's members it tests (`[fieldValues.a.b]`), each once, as written.
     var paths: [PlanPath] = []
 
@@ -331,6 +347,7 @@ extension QueryPlan: CustomStringConvertible {
                 list(inner, depth + 1)
             case .topLevel: lines.append(indent + "top level")
             case .currentBoard: lines.append(indent + "on the board shown")
+            case .scope(let word): lines.append(indent + word.written)
             case .edges(let word, let anchor, let second, let types):
                 lines.append(indent + "\(word.rawValue) \(types.planDescription)")
                 list(anchor, depth + 1)

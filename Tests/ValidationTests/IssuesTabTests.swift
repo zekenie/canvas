@@ -107,4 +107,44 @@ extension EditorHarness {
         validation-details  DetailStatuses in Issues after Style → every shape
         """)
     },
+    test("an issue's actions are the buttons of its line: what they do is the issue's; two issues alike but for what their actions do are the same") {
+        final class Pressed { var count = 0 }
+        let pressed = Pressed()
+        let rules = Contributor(id: "acting") { r in
+            r.forEveryShape { scope in
+                scope.validate { _, _ in [.warning("Odd.", actions: [IssueAction("Mend") { pressed.count += 1 }])] }
+            }
+        }
+        let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), rules])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
+        let line = try require(h.issues(box).first)
+        expectEqual(line, DetailStatus("Odd.", tone: .warning, actions: [DetailStatusAction("Mend") {}]), "the same line: its text, tone and buttons' titles")
+        expect(line != DetailStatus("Odd.", tone: .warning), "a line with a button is another line")
+        line.actions.first?.perform()
+        expectEqual(pressed.count, 1)
+        expectEqual(ValidationIssue.warning("Odd.", actions: [IssueAction("Mend") {}]), ValidationIssue.warning("Odd.", actions: [IssueAction("Mend") { pressed.count += 1 }]))
+        expect(ValidationIssue.warning("Odd.", actions: [IssueAction("Mend") {}]) != .warning("Odd."))
+    },
+    test("an issue carries its source and an action its role through validationIssues and the Issues tab; equality by title stays; an issue has none unless its rule says") {
+        let source = IssueSource(plugin: "fixture", key: "k1")
+        let rules = Contributor(id: "sourced") { r in
+            r.forEveryShape { scope in
+                scope.validate { _, _ in [.warning("Odd.", actions: [IssueAction("Ignore", role: .ignore) {}, IssueAction("Look") {}], source: source), .error("Plain.")] }
+            }
+        }
+        let h = try harness([ValidationPlugin(), DetailPanelPlugin(), ValidationDetailsPlugin(), rules])
+        let box = h.add(Box(CGRect(x: 0, y: 0, width: 40, height: 40)))
+        let found = h.editor.registry.validationIssues(of: try require(h.editor.document[box]), in: h.editor.shapeContext)
+        let odd = try require(found.first { $0.message == "Odd." })
+        expectEqual(odd.source, source)
+        expectEqual(odd.actions.map(\.role), [.ignore, nil])
+        expectEqual(found.first { $0.message == "Plain." }?.source, nil, "no source unless said")
+        expectEqual(try require(h.editor.validation?.result(for: box)).issues.first { $0.message == "Odd." }?.source, source, "the engine keeps it")
+        expectEqual(try h.issues(box).count, 2)
+        expectEqual(try h.issues(box).first { $0.text == "Odd." }?.actions.map(\.title), ["Ignore", "Look"])
+        expectEqual(IssueAction("Ignore", role: .ignore) {}, IssueAction("Ignore") {}, "equal by title, whatever the role")
+        expectEqual(ValidationIssue.warning("Odd.", source: source), ValidationIssue.warning("Odd.", source: source))
+        expect(ValidationIssue.warning("Odd.", source: source) != .warning("Odd."), "the source is part of the issue")
+        expect(IssueSource(plugin: "fixture", key: "k1") != IssueSource(plugin: "fixture", key: "k2"))
+    },
 ])

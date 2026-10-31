@@ -34,6 +34,17 @@ extension CofferDefinition: ShapeContaining {}
 
 @MainActor func coffersPlugin() -> Contributor { Contributor(id: "coffers") { $0.shape(CofferDefinition()) } }
 
+/// What `ChangeSet.mayHaveChangedBoardOrder` said of each commit it heard.
+@MainActor private final class OrderVerdicts {
+    var said: [Bool] = []
+}
+
+extension OrderVerdicts: EditorService {
+    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        said.append(changes.mayHaveChangedBoardOrder(in: editor.file))
+    }
+}
+
 /// Every shape on the boards the app can show, as an editor has them: what's asked about.
 @MainActor private func showable(_ h: EditorHarness) -> [ShapeID] {
     var ids: [ShapeID] = []
@@ -248,7 +259,34 @@ private func keptAsideFile(corralVersion: Int) -> Data {
         expectEqual(snapshot.fileOrderKey(of: d), [0, 4, 2])
         let keyed = order.shuffled().sorted { snapshot.fileOrderKey(of: $0)!.lexicographicallyPrecedes(snapshot.fileOrderKey(of: $1)!) }
         expectEqual(keyed, order)
+        // Board order lists what the coffer holds on the root with the root's shapes, then its board: the owner's
+        // offset in the file order key is not in the board order key.
+        let boardOrder = [x, a, b, c, y, d]
+        expectEqual(snapshot.boardOrder(from: .root), boardOrder)
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: x)), [c, y, d])
+        let boardKeys = Dictionary(uniqueKeysWithValues: boardOrder.map { ($0, snapshot.boardOrderKey(of: $0)!) })
+        expectEqual(order.shuffled().sorted { boardKeys[$0]! < boardKeys[$1]! }, boardOrder)
+        expect(boardKeys[a]! < boardKeys[b]! && boardKeys[b]! < boardKeys[c]!, "what the coffer holds, then the root's rest, then its board")
+        expect(boardKeys[c]! < boardKeys[y]! && boardKeys[y]! < boardKeys[d]!)
         expectSnapshotAgrees(h, about: order)
+    },
+
+    test("a coffer inside a frame: board order lists the frame, the coffer, what it holds, the rest of the root, then the coffer's board") {
+        let f = ShapeID(), x = ShapeID(), a = ShapeID(), e = ShapeID(), c = ShapeID(), y = ShapeID(), d = ShapeID()
+        let coffer = AnyShapeRecord(ShapeRecord(id: x, Coffer(unit)))
+        let h = try graph(CanvasFile(root: board(corral(f), held(coffer, in: f), held(box(a), in: x), box(e)),
+                                     children: [x: board(box(c), corral(y), held(box(d), in: y))]),
+                          more: [CorralsPlugin(), coffersPlugin()])
+        let snapshot = h.topology.snapshot()
+        expectEqual(h.topology.parent(of: x), f)
+        expectEqual(h.topology.parent(of: a), x)
+        let boardOrder = [f, x, a, e, c, y, d]
+        expectEqual(snapshot.boardOrder(from: .root), boardOrder)
+        expectEqual(snapshot.boardOrder(from: BoardID(owner: x)), [c, y, d])
+        let keys = Dictionary(uniqueKeysWithValues: boardOrder.map { ($0, snapshot.boardOrderKey(of: $0)!) })
+        expectEqual(boardOrder.shuffled().sorted { keys[$0]! < keys[$1]! }, boardOrder)
+        expect(keys[e]! < keys[c]!, "the root's own shapes come before the board under any owner")
+        expectSnapshotAgrees(h, about: boardOrder)
     },
 
     test("a loop of containers, which reading breaks, is never walked into, and nothing asked of it goes round for ever") {
@@ -266,5 +304,28 @@ private func keptAsideFile(corralVersion: Int) -> Data {
             expect(snapshot.descendants(of: id).count <= 3)
             expect(snapshot.ancestors(of: id).count <= 2)
         }
+    },
+
+    test("a commit may have changed board order when shapes came, went, were restacked or put in another container; an edit or a move changes none") {
+        let g = ShapeID(), f = ShapeID(), a = ShapeID(), b = ShapeID()
+        let h = try graph(CanvasFile(root: board(corral(g), corral(f), box(a))),
+                          more: [CorralsPlugin(), Contributor(id: "order-verdicts") { $0.service { _ in OrderVerdicts() } }])
+        let verdicts = try require(h.editor.service(OrderVerdicts.self))
+        @MainActor func commit(_ name: String, _ body: (inout Transaction) -> Void) -> Bool {
+            let before = verdicts.said.count
+            h.editor.transact(name, body)
+            return verdicts.said.count == before + 1 ? verdicts.said[before] : true
+        }
+        expect(!commit("Move") { $0.translate([a], by: CGPoint(x: 5, y: 5)) }, "a move of a box changes no board order")
+        expect(!commit("Edit") { $0.update(a, as: Box.self) { $0.props.frame = unit.insetBy(dx: 1, dy: 1) } }, "nor does an edit that leaves the container")
+        expect(commit("Front") { $0.bringToFront(g) }, "a restack does")
+        expect(commit("Add") { $0.insert(box(b)) }, "a shape added does")
+        expect(commit("Delete") { $0.delete([b]) }, "and a shape removed")
+        // F is above G in the stack already, so nothing is restacked: only its container changes.
+        h.editor.transact("Back") { $0.sendToBack(f) }
+        h.editor.transact("Front") { $0.bringToFront(f) }
+        expect(commit("Put in a frame") { $0.setContainer(f, to: g) }, "a shape put in a container does, though nothing is restacked")
+        expect(commit("Take out") { $0.setContainer(f, to: nil) }, "and one taken out")
+        expect(!commit("Edit again") { $0.update(a, as: Box.self) { $0.props.frame = unit } })
     },
 ])

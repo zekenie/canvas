@@ -251,7 +251,7 @@ extension Drawing {
         do throws(DrawError) {
             let written = try writer.write(value, textWriter.context(of: key, in: vocabulary, owner: owner))
             guard let held else { return (written, written) }
-            return (written, writer.merge(written, held))
+            return (written, writer.merge(written, held, registry))
         } catch {
             guard error.reason != Self.skipped else { throw error }
             throw error.said("\(prefix): \(error.message)\(suffix)", on: statement)

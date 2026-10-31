@@ -13,6 +13,8 @@ lowercase letters, digits and hyphens, at most 14 characters, since it names a s
 |---|---|---|
 | `ask-prompt.txt` | `canvas query --ask`'s system prompt, byte for byte: no comments, and it ends with its last line's one line break. | `QueryTranslationPlugin()` |
 | `ask-rule.txt` | The one line added to that prompt when the query is stored and run later (a reference's). The translator takes it without its line break. | `QueryTranslationPlugin()` |
+| `ask-bound.txt` | What that prompt adds for a stored query bound to a shape (a rule's chip, run for each shape the rule checks): sections after `## <name>` lines, `line` (one line added after `ask-rule.txt`'s, `{type}`, `{shapes}`, `{ends}` and `{sentence}` filled in), `ends` (what `{ends}` is for arrows), `words` and `end words` (the `:scope` words' lines added to the request's vocabulary, the second for arrows). The prototype's words (`scripts/language-rules/chips_eval.py`), whose live check is that script. | `QueryTranslationPlugin()` |
+| `rule-prompt.txt` | The words a shape's rules are asked in: sections after `## <name>` lines (`preface`, `rule`, `together`, `each`), `{noun}`, `{number}`, `{type}` and `{says}` filled in, each question followed by `true:`, `false:` and `flags when:`. Its live check is `scripts/language-rules/rules_eval.py`. | `LanguageRulesPlugin()` |
 
 ## Changing the prompt
 

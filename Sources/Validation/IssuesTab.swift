@@ -13,9 +13,24 @@ public struct ValidationDetailsPlugin: ListedPlugin {
         // Every shape is checked (its schema, at least), so any may have issues.
         registrar.forEveryShape { every in
             every.detailStatus(in: IssuesTab.self) { shape, context in
-                // What a shape still needs is no line here: `worstFirst` leaves it out, and so does the tone.
-                (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
-                    .compactMap { issue in DetailStatus.Tone(issue.severity).map { DetailStatus(issue.message, tone: $0) } }
+                // What a shape still needs is no line here: `worstFirst` leaves it out, and so does the tone. What can
+                // be done about an issue is under its line.
+                let issues = context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? []
+                let walk = context.service(IssueWalk.self)
+                return issues.enumerated().compactMap { index, issue in
+                    DetailStatus.Tone(issue.severity).map { tone -> DetailStatus in
+                        // An action run from the line is told to the issue walk first, which an Ignore's row reads "ignored" by.
+                        var actions = issue.actions.map { action in
+                            DetailStatusAction(action.title) {
+                                walk?.willPerform(action.role, onIssueAt: index, among: issues, of: shape.id)
+                                action.perform()
+                            }
+                        }
+                        // After its own: "9 of 63", where the issue's walk would begin (or the walk running goes to).
+                        if let more = walk?.lineAction(for: issue, of: shape.id) { actions.append(more) }
+                        return DetailStatus(issue.message, tone: tone, actions: actions)
+                    }
+                }
             }
         }
     }

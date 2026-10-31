@@ -174,6 +174,74 @@ struct Containment: Sendable {
         }
     }
 
+    /// The shapes of the board `scope` and every board under it, in board order: the scope board's
+    /// own shapes in file order (what a frame holds right after the frame), then each board under
+    /// it, depth first, in the order of the shapes that own them, each board's own shapes before the
+    /// boards under it. It differs from file order, which lists a board straight after its owner.
+    /// None when the app can't show `scope`. O(those shapes); one walk of the scope, no board or
+    /// container twice.
+    func boardOrder(from scope: BoardID) -> [ShapeID] {
+        guard file.canShow(scope, boardOwningKinds: boardOwningKinds) else { return [] }
+        var buckets: [BoardID: [ShapeID]] = [:]
+        walk([run(of: scope)], entered: []) { record, board in buckets[board, default: []].append(record.id) }
+        var order: [ShapeID] = []
+        var stack: [BoardID] = [scope]
+        var met: Set<BoardID> = [scope]
+        // Depth first: a board's shapes, then the boards its shapes own, in its order.
+        while let board = stack.popLast() {
+            let shapes = buckets[board] ?? []
+            order.append(contentsOf: shapes)
+            var owned: [BoardID] = []
+            for id in shapes {
+                let child = BoardID(owner: id)
+                guard buckets[child] != nil, met.insert(child).inserted else { continue }
+                owned.append(child)
+            }
+            stack.append(contentsOf: owned.reversed())
+        }
+        return order
+    }
+
+    /// Where a shape comes in board order (`boardOrder(from: .root)`), as a key that sorts as that
+    /// order does: for each board from the root down to the shape's, the place there of the shape that
+    /// owns the next board (its container chain on the board, as `fileOrderKey` builds it, outermost
+    /// first), then the shape's own place on its board. Nil for a shape on a board the app can't show,
+    /// or in no board of the file. O(its depth), in one climb.
+    func boardOrderKey(of id: ShapeID) -> BoardOrderKey? {
+        guard var board = file.board(containing: id) else { return nil }
+        var document = file[board]
+        guard var index = document.index(of: id) else { return nil }
+        // Climbed from the shape up, so each segment's marks come innermost first and the whole is
+        // reversed at the end (`BoardOrderKey`'s layout).
+        var parts: [Int] = []
+        var segment = BoardOrderKey.own
+        // The same guards as `fileOrderKey`'s.
+        var boards = file.children.count + 1, containers = document.shapes.count
+        while true {
+            if isContaining(document), let holder = document.container(of: document.shapes[index], containingKinds: containingKinds),
+               let at = document.index(of: holder) {
+                parts.append(index + BoardOrderKey.shift)
+                containers -= 1
+                guard containers >= 0 else { return nil }
+                index = at
+                continue
+            }
+            parts.append(index + BoardOrderKey.shift)
+            parts.append(segment)
+            guard let owner = board.owner else { return BoardOrderKey(parts: parts.reversed()) }
+            boards -= 1
+            guard boards > 0, let above = file.board(containing: owner) else { return nil }
+            let upper = file[above]
+            guard let at = upper.index(of: owner) else { return nil }
+            guard ownsShowableBoard(upper.shapes[at]) else { return nil }
+            segment = BoardOrderKey.owner
+            board = above
+            document = upper
+            index = at
+            containers = document.shapes.count
+        }
+    }
+
     // MARK: Walking
 
     /// Where a walk is: a board's shapes in no container, or a container's contents (`contents`, its

@@ -104,3 +104,9 @@ enum MentionStyle {
     static let goToMention = "Go to Mention"
     static func showWhatMentions(_ label: String) -> String { "Show What Mentions “\(label)”" }
 }
+
+extension MentionTextStyle {
+    /// Mention text in the panel, as `MentionTextArea` sets it: the panel's font, the label's color, a neutral surface,
+    /// so pills are tinted. For another plugin's box over a `MentionTextView` (a rule's).
+    @MainActor public static var panel: MentionTextStyle { MentionStyle.panelText }
+}

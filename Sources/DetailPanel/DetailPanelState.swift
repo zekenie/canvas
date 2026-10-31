@@ -193,6 +193,13 @@ public final class DetailPanelState {
 
     public func choose(_ tab: DetailTabID, for kind: ShapeKind) { chosenTabs[kind] = tab }
 
+    /// The tab chosen for the kind (`choose`, a click on the strip, Next Inspector Tab), nil while none has been:
+    /// what a plugin that chooses a tab for a while (a walk through issues) keeps to give back.
+    public func chosenTab(for kind: ShapeKind) -> DetailTabID? { chosenTabs[kind] }
+
+    /// Lets go of the choice for the kind: its panel opens on the first tab again, as before any choice.
+    public func forgetChoice(for kind: ShapeKind) { chosenTabs[kind] = nil }
+
     /// The tabs the panel shows for the one shape selected, and the one chosen among them; nil with
     /// no one shape selected or fewer than two tabs, where there is nothing to step between, and
     /// while a takeover (Find), which has no tab strip, shows in their place.
@@ -225,10 +232,56 @@ public final class DetailPanelState {
     /// panel sets it as it appears (it knows its window).
     @ObservationIgnored var focusesFirstControl: (@MainActor () -> Void)?
 
+    /// Gives the keyboard to the first control of the shape's panel as a takeover that was over it closes (a list the keyboard
+    /// was in, closed by Return), once the panel has drawn it: the controls there are now are left alone, so the band keeps
+    /// to its own. A panel with no control the keys reach gives the canvas the keyboard. The panel sets how, as it appears.
+    public func focusContent() { focusesContent?() }
+
+    @ObservationIgnored var focusesContent: (@MainActor () -> Void)?
+
+    /// Whether a takeover listed before the plugin's own is active, so it shows in place of the plugin's (the first that is active
+    /// shows, in plugin order): for a plugin whose takeover may be covered by another's (the issue walk's list under Find's panel)
+    /// to turn its own way in off while it is. For a plugin with no takeover of its own, whether any is. Reads what each
+    /// `isActive` reads, so a view that asks follows it.
+    public func hasTakeover(over plugin: PluginID) -> Bool {
+        for takeover in editor.registry.contributions(to: DetailTakeovers.self) {
+            if takeover.pluginID == plugin { return false }
+            if takeover.value.isActive(editor) { return true }
+        }
+        return false
+    }
+
+    /// Gives the canvas the keyboard, as the panel's `onExit` does on Escape: for a plugin whose view in the panel remembers the
+    /// canvas had it (the issue walk's list, closed). The panel sets how, as it appears.
+    public func exitToCanvas() { exitsToCanvas?() }
+
+    @ObservationIgnored var exitsToCanvas: (@MainActor () -> Void)?
+
+    /// Writes a number being typed in the panel, as Return in its field does: for a plugin that is about to take the panel
+    /// over (a takeover turning active removes the shape's panel as it stands, and its draft with it).
+    public func commitDraft() { drafts?.commit() }
+
     /// The view of the panel that takes the keyboard when the window gives the inspector the keyboard
     /// (the host slot's `keyboardEntry`): the header's field, else its first control; nil when the
     /// panel has neither. The panel sets it as it appears (it knows its window).
     @ObservationIgnored public var keyboardEntry: (@MainActor () -> NSView?)?
+
+    /// Where in the panel the keyboard is, if it is in it: the band over the panel, a takeover
+    /// (Find's panel, a list over the shape's), or the rest (the shape's panel, the overview). Nil with
+    /// the keyboard elsewhere, the canvas's or another window's. Read when asked, from the window's first
+    /// responder; the panel sets how, as it appears.
+    public var keyboardPlace: KeyboardPlace? { keyboardPlaceReader?() ?? nil }
+
+    /// The panel's answer to `keyboardPlace`, set as it appears (it knows its window).
+    @ObservationIgnored var keyboardPlaceReader: (@MainActor () -> KeyboardPlace?)?
+
+    /// Gives the keyboard to the band's first control, if a band is showing and has one the keys can
+    /// reach (a button is one only with Keyboard navigation on). Whether it did: Escape goes on to the
+    /// canvas when it didn't. The panel sets how, as it appears.
+    @discardableResult
+    public func focusBand() -> Bool { focusesBand?() ?? false }
+
+    @ObservationIgnored var focusesBand: (@MainActor () -> Bool)?
 
     /// Remembered by key: an every-box section collapses for every kind, a kind's own for that kind. One
     /// collapsed until opened is collapsed until the person opens it, for every kind its key reaches.
@@ -237,6 +290,16 @@ public final class DetailPanelState {
     public func setCollapsed(_ key: DetailSectionKey, _ isCollapsed: Bool) {
         folds[key] = isCollapsed
     }
+}
+
+/// Where in the panel the keyboard is (`DetailPanelState.keyboardPlace`).
+public enum KeyboardPlace: Sendable {
+    /// In the band over the panel (`DetailBands`).
+    case band
+    /// In a takeover (`DetailTakeovers`), the band aside.
+    case takeover
+    /// In the shape's panel or the overview.
+    case content
 }
 
 extension DetailPanelState: EditorService {

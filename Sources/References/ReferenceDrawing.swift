@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Mentions
+import Palette
 
 /// What the pill draws, worked out once from its condition: the leading symbol, the label and how
 /// it's dressed, what trails, and whether it stands for nothing. A value, so what the render, the
@@ -262,7 +263,7 @@ final class ReferenceMemo {
         if labels.count >= ReferenceStyle.memoCapacity { labels.removeAll(keepingCapacity: true) }
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
-        let color = placeholder ? ReferenceStyle.placeholderColor : strength < 1 ? fading(ReferenceStyle.label, to: strength) : ReferenceStyle.label
+        let color = placeholder ? ReferenceStyle.placeholderColor : strength < 1 ? ReferenceStyle.label.fading(to: strength) : ReferenceStyle.label
         let string = NSAttributedString(string: text, attributes: [.font: italic ? ReferenceStyle.missingFont : ReferenceStyle.labelFont,
                                                                     .foregroundColor: color, .paragraphStyle: paragraph])
         let built = Label(string: string, width: ceil(string.size().width))
@@ -278,7 +279,7 @@ final class ReferenceMemo {
         if boards.count >= ReferenceStyle.memoCapacity { boards.removeAll(keepingCapacity: true) }
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
-        let color = strength < 1 ? fading(ReferenceStyle.boardColor, to: strength) : ReferenceStyle.boardColor
+        let color = strength < 1 ? ReferenceStyle.boardColor.fading(to: strength) : ReferenceStyle.boardColor
         let string = NSAttributedString(string: text, attributes: [.font: ReferenceStyle.boardFont, .foregroundColor: color, .paragraphStyle: paragraph])
         let built = Label(string: string, width: ceil(string.size().width))
         boards[key] = built
@@ -291,7 +292,7 @@ final class ReferenceMemo {
         let key = LabelKey(text: text, italic: false, strength: strength, placeholder: false)
         if let found = badges[key] { return found }
         if badges.count >= ReferenceStyle.memoCapacity { badges.removeAll(keepingCapacity: true) }
-        let color = strength < 1 ? fading(ReferenceStyle.label, to: strength) : ReferenceStyle.label
+        let color = strength < 1 ? ReferenceStyle.label.fading(to: strength) : ReferenceStyle.label
         let string = NSAttributedString(string: text, attributes: [.font: ReferenceStyle.badgeFont, .foregroundColor: color])
         let built = Label(string: string, width: ceil(string.size().width))
         badges[key] = built
@@ -351,12 +352,12 @@ final class ReferenceMemo {
         let base: NSColor
         if let tint = symbol.tint {
             base = NSColor(name: nil) { appearance in
-                resolved(in: appearance) { symbol.blends ? tint.blended(withFraction: ReferenceStyle.tintBlend, of: .labelColor) ?? tint : tint }
+                NSColor.resolved(in: appearance) { symbol.blends ? tint.blended(withFraction: ReferenceStyle.tintBlend, of: .labelColor) ?? tint : tint }
             }
         } else {
             base = ReferenceStyle.secondary
         }
-        return symbol.strength < 1 ? fading(base, to: symbol.strength) : base
+        return symbol.strength < 1 ? base.fading(to: symbol.strength) : base
     }
 
     /// The width of a label as the pill sets it, for fitting a pill to what it says.

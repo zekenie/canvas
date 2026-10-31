@@ -102,7 +102,8 @@ func query(_ params: QueryParams, in context: AutomationContext) async throws(Au
 @MainActor
 private func answer(_ text: String, with queries: QueryState, _ params: QueryParams) async throws(AutomationError) -> QueryResult {
     do throws(QueryError) {
-        // Edges are read as they settle: once answers still arriving have come, or `settleWait` has passed.
+        // Answers still arriving settle first (a stand-in's edges; the verdicts a word like :warned reads, for a query that
+        // holds one): once they have come, or `settleWait` has passed.
         return try await queries.run(QueryRequest(text, limit: params.limit, countOnly: params.count, properties: params.listing,
                                                   settle: QueryBudget.settleWait, deadline: QueryBudget.commandDeadline))
     } catch {
@@ -110,10 +111,6 @@ private func answer(_ text: String, with queries: QueryState, _ params: QueryPar
     }
 }
 
-extension AutomationError {
-    /// No `QueriesPlugin`: nothing answers queries.
-    static var noQueries: AutomationError { AutomationError("This app can't answer queries.", reason: "no_queries") }
-}
 
 extension AutomationError {
     /// A question's refusal as the command line reports it: the model's failures with a hint to save

@@ -195,6 +195,25 @@ import Types
         let said = try require(w.editor.fileFields).text(for: "")
         expect(!said.contains("Ann Lee") && !said.contains("secret"), "no note's values, and no arrow's text that is not on an end")
     },
+    test("<connections> says how arrows join shapes: by their first type, else their kind, the arrow's type, and how many, most first; an end at a type is left out") {
+        let w = try RelationshipWorld()
+        let fields = try require(w.editor.fileFields)
+        expectEqual(fields.connectionsText(for: ""), "", "the ends of a relationship type are <fields>', never connections")
+        let ann = w.editor.addInstance("Ann", of: [w.person], at: CGPoint(x: 500, y: 400))
+        let bo = w.editor.addInstance("Bo", of: [w.person], at: CGPoint(x: 700, y: 400))
+        let acme = w.editor.addInstance("Acme", of: [w.company], at: CGPoint(x: 900, y: 400))
+        let loose = w.editor.addInstance("A loose note", of: [], at: CGPoint(x: 1100, y: 400))
+        w.editor.addBond(ann, acme, of: [w.employment])
+        w.editor.addBond(bo, acme, of: [w.employment])
+        w.editor.addBond(ann, loose)
+        w.editor.addBond(ann, nil)
+        let kind = try require(w.editor.document[loose]).kind.rawValue
+        expectEqual(fields.connectionsText(for: ""), """
+            Person → Company: 2 Employment arrows
+            Person → \(kind): 1 arrow
+            """, "a free end is no connection")
+        expect(!fields.connectionsText(for: "").contains("Ann"), "never a title")
+    },
     test("builds on comes before relates; a side with no end is anything, several types are joined by or; a name derived is not told, a flag alone is, and no clause when neither") {
         let w = try RelationshipWorld(named: false)
         let agency = w.editor.addType(#"{"type": "object", "properties": {"city": {"type": "string"}}}"#, title: "Agency", at: CGPoint(x: 40, y: 700))

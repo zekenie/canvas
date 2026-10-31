@@ -188,6 +188,70 @@ description = "Copy --ask's prompt (Shipped/ask-prompt.txt) into the canvas skil
 depends = ["guard"]
 run = "python3 scripts/query-prompts/copy_prompt.py"
 
+# Language rules' prototype and lite evals: boards of real data drawn in a test copy of the app (on a socket of
+# its own, CANVAS_SOCKET), their rules asked of Jev and Claude, and scored; scripts/language-rules/README.md
+# says the order. A task that has Jev asked, by its script or by the test app checking a board it draws, asks
+# first, as one that calls Claude does.
+[tasks."eval:rules"]
+description = "Calls Jev and Claude: a prototype board's rules asked each way, a row each in results.tsv (scripts/language-rules)"
+usage = 'arg "[args]..." help="Passed to evals.py (scripts/language-rules/README.md)"'
+confirm = "This calls Jev and Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-}"; python3 scripts/language-rules/evals.py "$@"'
+
+[tasks."eval:rules:score"]
+description = "Score a run of eval:rules: what each rule caught, missed and falsely flagged at the app's cutoffs, and its AUC"
+raw_args = true
+depends = ["guard"]
+run = "python3 scripts/language-rules/score.py"
+
+[tasks."eval:rules:fetch"]
+description = "Fetch the public data the language rules' prototype boards are drawn from into DATA (Census Reporter, Wikipedia, CRS)"
+raw_args = true
+depends = ["guard"]
+run = "python3 -I scripts/language-rules/fetch.py"
+
+[tasks."eval:rules:prepare"]
+description = "Make the prototype's Cars and Votes boards from the fetched data, with what each rule should say of each shape"
+raw_args = true
+depends = ["guard"]
+run = "python3 -I scripts/language-rules/prepare.py"
+
+[tasks."eval:rules:boards"]
+description = "Calls Jev or Claude, through the test app: the prototype's Cars and Votes boards drawn with canvas draw (scripts/language-rules)"
+usage = 'arg "[args]..." help="Passed to boards.py (scripts/language-rules/README.md)"'
+confirm = "The test app checks the boards drawn, calling Jev or Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-}"; python3 scripts/language-rules/boards.py "$@"'
+
+[tasks."eval:rules:house"]
+description = "Calls Jev or Claude, through the test app: a step of house.py, the whole House drawn and its votes checked (scripts/language-rules)"
+usage = 'arg "[args]..." help="The step (fetch, prepare, draw, rules or score) and its arguments, passed to house.py"'
+confirm = "The draw and rules steps have the test app call Jev or Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-}"; python3 -I scripts/language-rules/house.py "$@"'
+
+[tasks."eval:rules:chips"]
+description = "Calls Claude: a rule's chips' words written as queries, as the app asks, and run on the test app's boards (scripts/language-rules)"
+usage = 'arg "[args]..." help="Passed to chips_eval.py, with OUT and VARIANT from the environment (scripts/language-rules/README.md)"'
+confirm = "This calls Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-}"; python3 scripts/language-rules/chips_eval.py "$@"'
+
+[tasks."eval:rules:decide"]
+description = "Calls Claude: the decision models' Haiku adapter, as the app asks it, over a run of eval:rules (scripts/language-rules)"
+usage = 'arg "[args]..." help="Passed to decide_eval.py (scripts/language-rules/README.md)"'
+confirm = "This calls Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-}"; python3 scripts/language-rules/decide_eval.py "$@"'
+
+[tasks."eval:rules:prompt"]
+description = "Calls Jev: the rules' words as shipped (Shipped/rule-prompt.txt) over a run of eval:rules (scripts/language-rules)"
+usage = 'arg "[args]..." help="Passed to rules_eval.py (scripts/language-rules/README.md)"'
+confirm = "This calls Jev over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-}"; python3 scripts/language-rules/rules_eval.py "$@"'
+
 # --- Assets and fixtures ---------------------------------------------------------------------------
 
 [tasks.icon]

@@ -2,6 +2,7 @@ import Canvas
 import Observation
 import Publishing
 import Queries
+import QueryTranslation
 import QueryLanguage
 import TableOfContents
 import Topology
@@ -48,15 +49,16 @@ public enum ReferenceFailure: Equatable, Sendable {
     /// The model's query, and its second, were refused.
     case unusable
 
-    /// What the Query section says of it.
+    /// What the Query section says of it: a translation's failures in the words every host of words says
+    /// (`InterpretationWords`).
     @MainActor public var message: String {
         switch self {
         case .tooSlow: ReferenceStyle.tooSlow
-        case .notSignedIn: ReferenceStyle.notSignedIn
-        case .keyRejected: ReferenceStyle.keyRejected
+        case .notSignedIn: InterpretationWords.notSignedIn
+        case .keyRejected: InterpretationWords.keyRejected
         case .model(let message): message
-        case .noQuery: ReferenceStyle.noQuery
-        case .unusable: ReferenceStyle.unusable
+        case .noQuery: InterpretationWords.noQuery
+        case .unusable: InterpretationWords.unusable
         }
     }
 

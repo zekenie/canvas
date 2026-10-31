@@ -61,6 +61,8 @@ public struct TypeQueriesPlugin: ListedPlugin {
         registrar.queryAskFact(tag: "fields") { editor, question in editor.fileFields?.text(for: question) ?? "" }
         // And which shapes are of each, by title, so a note of no type is told apart from one that is.
         registrar.queryAskFact(tag: "instances") { editor, question in editor.fileFields?.instancesText(for: question) ?? "" }
+        // And how arrows join them, by type (else kind), with counts: what a question follows from one shape to another.
+        registrar.queryAskFact(tag: "connections") { editor, question in editor.fileFields?.connectionsText(for: question) ?? "" }
         // A path into a note's values names a field no type has: a warning, and the query still answers.
         registrar.queryPathCheck(attribute: FieldValuesProperty.key.rawValue) { members, editor in
             editor.fileFields?.unknown(members).map { QueryPathUnknown(index: $0.index, known: $0.known) }

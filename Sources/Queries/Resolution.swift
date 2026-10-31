@@ -678,8 +678,11 @@ private struct Resolver {
         }
     }
 
-    /// A word the language doesn't know: a plugin's pseudo-class or relation, else refused.
+    /// A word the language doesn't know: one the engine binds per request (`:scope`), a plugin's
+    /// pseudo-class or relation, else refused. A plugin may not add a word of the first sort
+    /// (`QueryWords.check`), so none is hidden by the other.
     mutating func contributed(_ pseudo: PseudoClass, in compound: Compound, kinds: CompoundKinds) -> PlanNode? {
+        if let bound = ScopeWord(rawValue: pseudo.name) { return scoped(bound, pseudo) }
         guard let declared = vocabulary.contributedWords[pseudo.name] else {
             let attributes: [String] = switch kinds {
             case .known(let kind): vocabulary.kind(kind)?.attributes.map(\.name) ?? []
@@ -689,12 +692,13 @@ private struct Resolver {
             return nil
         }
         switch declared.meaning {
-        case .pseudoClass:
+        case .pseudoClass(let behavior):
             if case .raw = pseudo.argument {
                 problem(QueryError(.badArgument, ":\(declared.word) takes \(declared.takes).", hint: ":\(declared.word)", span: pseudo.span))
                 return nil
             }
             uses.pseudoClasses.insert(declared.word)
+            if behavior.settles { uses.settles = true }
             if declared.reads.contains(.editor) { uses.noteEditorWord(":\(declared.word)") }
             return node(.pseudo(word: declared.word), span: pseudo.span)
         case .fileRelation:
@@ -726,6 +730,20 @@ private struct Resolver {
                 node(.relation(word: declared.word, anchor: $0, types: PlanEdgeTypes(types: Set(types)), direction: direction), span: pseudo.span)
             }
         }
+    }
+
+    /// A word bound per request (`:scope`, `:scope-start`, `:scope-end`): it takes no argument, and the
+    /// plan keeps where it's used, for the asker to bind (`QueryPlan.unbound(by:)`). The ends are
+    /// Topology's connection edges, which a stand-in may still be answering, so those two wait for
+    /// them as `:start-of` and `:end-of` do; `:scope` reads the bound id alone.
+    mutating func scoped(_ word: ScopeWord, _ pseudo: PseudoClass) -> PlanNode? {
+        if case .raw = pseudo.argument {
+            problem(QueryError(.badArgument, "\(word.written) takes \(Word.Signature.none.takes).", hint: word.written, span: pseudo.span))
+            return nil
+        }
+        uses.scope.append(PlanScopeUse(word: word, span: pseudo.span))
+        if word.readsEdges { uses.edges = true }
+        return node(.scope(word), span: pseudo.span)
     }
 
     /// A type list: each type and, unless it says `only`, those under it. A type must be declared,
@@ -774,7 +792,7 @@ private struct Resolver {
     /// How early a node runs in its compound.
     func cost(_ op: PlanOp) -> PlanCost {
         switch op {
-        case .id, .title: .found
+        case .id, .title, .scope: .found
         case .all, .kinds: .kinds
         case .topLevel, .currentBoard: .captured
         case .not, .is, .inside, .has, .parentIn, .ancestorIn, .edges, .relation, .fileRelation, .dangling, .and: .structure

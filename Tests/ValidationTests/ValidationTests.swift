@@ -625,6 +625,21 @@ struct OneAtATime: CanvasOverlay {
         expectEqual(h.editor.validation?.ringsGrown, 0, "no ring grown from an outline, though each shape is 100 points across")
         #endif
     },
+    test("zoomed out, an open shape's ring follows its line, not its bounds: a long slanted one is no box over what's beside it") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), LinksPlugin(), ValidationPlugin(), Rules { r in
+            r.validate(Link.self) { _, _ in [.error("always")] }
+        }])
+        let a = h.add(Box(CGRect(x: 200, y: 200, width: 40, height: 40)))
+        let b = h.add(Box(CGRect(x: 1200, y: 900, width: 40, height: 40)))
+        h.add(Link(from: a, to: b))
+        h.editor.camera = Camera(origin: .zero, zoom: 0.2)             // the line from about (44, 44) to (244, 184)
+        expect(h.editor.drawsSkeletons)
+        let rep = renderBitmap(h.editor, size: CGSize(width: 300, height: 220))
+        @MainActor func red(_ point: CGPoint) -> Bool { let p = pixel(rep, at: point); return p[0] > 200 && p[1] < 120 && p[2] < 120 }
+        let middle = CGPoint(x: 144, y: 114)
+        expect((-6...6).contains { red(CGPoint(x: middle.x, y: middle.y + CGFloat($0))) }, "a ring beside the line's middle")
+        expect(!red(CGPoint(x: 230, y: 50)) && !red(CGPoint(x: 60, y: 175)), "nothing at the bounds' far corners")
+    },
     test("zoomed out, the shape being edited has no ring, and the ring of a shape under it shows where the two crossed") {
         // As above, but cards, and B, in front, being edited: A's is a ring, B has none.
         let a = CGRect(x: 200, y: 200, width: 500, height: 300), b = CGRect(x: 500, y: 400, width: 500, height: 300)

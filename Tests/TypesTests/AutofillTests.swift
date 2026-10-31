@@ -50,14 +50,15 @@ extension CanvasEditor {
     },
     test("a schema written whole keeps $color and $autofill unless it says them; the model sees neither; a change to them alone is none") {
         let held = #"{"properties": {"$color": {"const": "teal"}, "$autofill": {"const": false}, "a": {}}}"#
-        let carried = HeldDirectives.carried(from: held, into: #"{"properties": {"b": {}}}"#)
+        let directives = HeldDirectives()
+        let carried = directives.carried(from: held, into: #"{"properties": {"b": {}}}"#)
         expectEqual(Directive.reading(of: carried), .autofills(false))
         expectEqual(TypeColorDirective.reading(of: carried), .color(.teal))
-        expectEqual(HeldDirectives.carried(from: held, into: #"{"properties": {"$autofill": {"const": true}}}"#),
+        expectEqual(directives.carried(from: held, into: #"{"properties": {"$autofill": {"const": true}}}"#),
                     #"{"properties": {"$color": {"const": "teal"}, "$autofill": {"const": true}}}"#, "it says one, and keeps the other")
-        expectEqual(HeldDirectives.stripped(held), #"{"properties": {"a": {}}}"#)
-        expect(HeldDirectives.sameButHeld(held, #"{"properties": {"a": {}}}"#))
-        expect(!HeldDirectives.sameButHeld(held, #"{"properties": {"b": {}}}"#))
+        expectEqual(directives.stripped(held), #"{"properties": {"a": {}}}"#)
+        expect(directives.sameButHeld(held, #"{"properties": {"a": {}}}"#))
+        expect(!directives.sameButHeld(held, #"{"properties": {"b": {}}}"#))
     },
 ])
 

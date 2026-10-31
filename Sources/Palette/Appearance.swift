@@ -23,6 +23,20 @@ extension NSColor {
     public convenience init(_ tone: Tone) {
         self.init(light: tone.light, dark: tone.dark)
     }
+
+    /// This color at `strength` of its opacity, still following the appearance it's drawn in: a system color's own
+    /// `withAlphaComponent` is fixed to the appearance current as it's made (the dark's white, faded, is nothing on a
+    /// light ground). The alpha is replaced, so at 1 a color with an alpha of its own (`labelColor`) is opaque.
+    public func fading(to strength: CGFloat) -> NSColor {
+        NSColor(name: nil) { appearance in NSColor.resolved(in: appearance) { self.withAlphaComponent(strength) } }
+    }
+
+    /// A color made as it is in `appearance`: the system's colors change with it.
+    public static func resolved(in appearance: NSAppearance, _ make: () -> NSColor) -> NSColor {
+        var color = NSColor.clear
+        appearance.performAsCurrentDrawingAppearance { color = make() }
+        return color
+    }
 }
 
 extension RGB {

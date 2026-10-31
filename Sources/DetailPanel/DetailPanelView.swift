@@ -14,11 +14,13 @@ import TextEditing
 /// With several shapes selected it shows their header; while a takeover a plugin gave is active
 /// (`DetailTakeovers`), that in place of everything. It reads the takeovers from the editor's
 /// registry, and makes their views as it's made. With nothing selected the window hides it
-/// (`DetailPanelPlugin`'s `shownWhile`).
+/// (`DetailPanelPlugin`'s `shownWhile`). A band a plugin gave (`DetailBands`) shows above whichever
+/// of them shows, the first that's active.
 public struct DetailPanelView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
     let takeovers: [PlacedTakeover]
+    let bands: [PlacedBand]
     @State private var window = WindowBox()
     @State private var drafts = DraftTracker()
 
@@ -26,13 +28,84 @@ public struct DetailPanelView: View {
         self.editor = editor
         self.onExit = onExit
         takeovers = editor.registry.detailTakeovers.map { PlacedTakeover(takeover: $0, content: $0.content(editor, onExit)) }
+        bands = editor.registry.detailBands.enumerated().map { PlacedBand(index: $0.offset, band: $0.element, content: $0.element.content(editor, onExit)) }
     }
 
     /// The takeover that shows: the first that's active, in plugin order. Read in the body, so the
     /// panel redraws as what each `isActive` reads changes.
     private var activeTakeover: PlacedTakeover? { takeovers.first { $0.takeover.isActive(editor) } }
 
+    /// Which takeover shows, by its place in the list.
+    private var activeTakeoverIndex: Int? { takeovers.firstIndex { $0.takeover.isActive(editor) } }
+
+    /// The band that shows: the first that's active, in plugin order. Read in the body, like the takeover.
+    private var activeBand: PlacedBand? { bands.first { $0.band.isActive(editor) } }
+
     public var body: some View {
+        VStack(spacing: 0) {
+            if let band = activeBand {
+                band.content
+                    .background(BandReader(box: window))
+                    .id(band.index)
+            }
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(WindowReader(box: window, onHide: reclaimSoon))
+        .controlSize(.small)
+        .font(DetailStyle.body)
+        .labeledContentStyle(DetailRowStyle())
+        .toggleStyle(DetailCheckboxStyle())
+        .environment(\.detailDrafts, drafts)
+        .environment(\.detailExit, onExit)
+        .environment(\.detailReclaim, reclaimSoon)
+        .environment(\.detailEditor, editor)
+        // So a number being typed lands on its shape before another board is shown.
+        .onAppear {
+            editor.detailPanel?.drafts = drafts
+            // Weak: the state is the editor's, and the editor would never go.
+            editor.detailPanel?.focusesFirstControl = { [window, weak editor] in
+                guard let scheduler = editor?.scheduler else { return }
+                window.focusFirstControl(excluding: window.controls(), retries: DetailStyle.focusRetries, scheduler: scheduler)
+            }
+            // Like it, for a takeover that has just closed over the shape's panel: and the canvas if the panel has no control.
+            editor.detailPanel?.focusesContent = { [window, weak editor, onExit] in
+                guard let scheduler = editor?.scheduler else { return }
+                window.focusFirstControl(excluding: window.controls(), retries: DetailStyle.focusRetries, scheduler: scheduler) {
+                    if let host = window.window, host.firstResponder === host { onExit() }
+                }
+            }
+            // Where the keyboard enters the panel: the header's field.
+            editor.detailPanel?.keyboardEntry = { [window] in window.entry() }
+            editor.detailPanel?.keyboardPlaceReader = { [window, weak editor] in
+                guard let editor else { return nil }
+                return window.place(isTakeoverShown: editor.registry.activeDetailTakeover(in: editor) != nil)
+            }
+            editor.detailPanel?.focusesBand = { [window] in window.focusBand() }
+            editor.detailPanel?.exitsToCanvas = onExit
+            window.scheduler = editor.scheduler
+            closeRingSoon()
+        }
+        .onKeyPress(.escape, phases: [.down, .repeat]) { press in
+            exitByKey(.escape, withOption: press.modifiers.contains(.option)) ? .handled : .ignored
+        }
+        // ⌘., which the window sends up the responder chain as `cancelOperation:` with no key
+        // down: the panel's text views and fields leave it to their superviews. So does Escape in a
+        // table (a list), which `WindowBox.takeCommandPeriod` tells apart.
+        .onExitCommand { _ = exitByKey(window.takeCommandPeriod() ? .commandPeriod : .escape, withOption: false) }
+        .onChange(of: editor.selectedShapeIDs) { reclaimSoon() }
+        // The band's controls join the ring first (they are above everything), or leave it; a band that goes with the keyboard
+        // in it (Done, pressed) leaves it on the window, which the canvas then has.
+        .onChange(of: activeBand?.index) { reclaimSoonOfBand() }
+        // A takeover coming or going swaps the panel's controls a turn after the key that closed it made the ring (Escape to the
+        // band): made again once its views are gone.
+        .onChange(of: activeTakeoverIndex) { closeRingSoon() }
+        .inspectorColumnWidth(min: DetailStyle.minWidth, ideal: DetailStyle.idealWidth, max: DetailStyle.maxWidth)
+    }
+
+    /// What the panel shows under the band: a takeover, else the selection's panel.
+    @ViewBuilder
+    private var content: some View {
         Group {
             if let takeover = activeTakeover {
                 takeover.content
@@ -57,42 +130,22 @@ public struct DetailPanelView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(WindowReader(box: window, onHide: reclaimSoon))
-        .controlSize(.small)
-        .font(DetailStyle.body)
-        .labeledContentStyle(DetailRowStyle())
-        .toggleStyle(DetailCheckboxStyle())
-        .environment(\.detailDrafts, drafts)
-        .environment(\.detailExit, onExit)
-        .environment(\.detailReclaim, reclaimSoon)
-        .environment(\.detailEditor, editor)
-        // So a number being typed lands on its shape before another board is shown.
-        .onAppear {
-            editor.detailPanel?.drafts = drafts
-            // Weak: the state is the editor's, and the editor would never go.
-            editor.detailPanel?.focusesFirstControl = { [window, weak editor] in
-                guard let scheduler = editor?.scheduler else { return }
-                window.focusFirstControl(excluding: window.controls(), retries: DetailStyle.focusRetries, scheduler: scheduler)
-            }
-            // Where the keyboard enters the panel: the header's field.
-            editor.detailPanel?.keyboardEntry = { [window] in window.entry() }
-            closeRingSoon()
-        }
-        .onKeyPress(.escape, phases: [.down, .repeat]) { press in
-            exitByKey(withOption: press.modifiers.contains(.option)) ? .handled : .ignored
-        }
-        // ⌘., which the window sends up the responder chain as `cancelOperation:` with no key
-        // down: the panel's text views and fields leave it to their superviews.
-        .onExitCommand { _ = exitByKey(withOption: false) }
-        .onChange(of: editor.selectedShapeIDs) { reclaimSoon() }
-        .inspectorColumnWidth(min: DetailStyle.minWidth, ideal: DetailStyle.idealWidth, max: DetailStyle.maxWidth)
+    }
+
+    /// The keys that leave the panel, which differ when a band is over it (`DetailBands`).
+    private enum ExitKey {
+        /// One level out: the takeover closes, then the band has the keyboard, then (from the band, or
+        /// with no band) the canvas has it. The band stays.
+        case escape
+        /// All the way out: the takeover closes, the band is cancelled, the canvas has the keyboard.
+        case commandPeriod
     }
 
     /// Escape or ⌘.: drops a number being typed rather than committing it, the first time, and leaves the
     /// panel the next; unless a text view holding keys (a list it shows over its text) has the keyboard, whose key
     /// it is (the panel hears keys before the view with the keyboard does), or, for ⌥⎋, one that
     /// completes what's typed (a code editor's `complete:`). Whether it left.
-    private func exitByKey(withOption: Bool) -> Bool {
+    private func exitByKey(_ key: ExitKey, withOption: Bool) -> Bool {
         let text = window.window?.firstResponder as? EditingTextView
         if text?.holdsKeys == true || (withOption && text?.offersCompletions == true) { return false }
         // A number being typed goes first, alone: the field shows what it was, and the next Escape leaves.
@@ -100,8 +153,22 @@ public struct DetailPanelView: View {
             drafts.revert(in: window.window?.firstResponder as? NSTextView)
             return true
         }
-        activeTakeover?.takeover.onEscape(editor)
-        onExit()
+        switch key {
+        case .escape:
+            // From inside the band, the canvas: what's under the band (a list) is as it was.
+            if window.place(isTakeoverShown: activeTakeover != nil) == .band {
+                onExit()
+                return true
+            }
+            activeTakeover?.takeover.onEscape(editor)
+            // A band with nothing the keys reach (a button, with Keyboard navigation off) lets Escape through.
+            if activeBand != nil, window.focusBand() { return true }
+            onExit()
+        case .commandPeriod:
+            activeTakeover?.takeover.onEscape(editor)
+            activeBand?.band.onCancel(editor)
+            onExit()
+        }
         return true
     }
 
@@ -116,12 +183,21 @@ public struct DetailPanelView: View {
     /// it to the canvas. A control that is still there keeps it. Asked as the selection changes, the
     /// panel hides, the tab's sections change, and a status line goes (its text may have been
     /// selected: `detailReclaim`); it acts only when the window has the keyboard, so asking is free.
-    private func reclaimSoon() {
+    ///
+    /// With `whenHostHasIt` (a band that has gone: its focused button left the window) the view that hosts the panel, or any view
+    /// above it, having the keyboard is as good as the window having it: SwiftUI gives the host the focus its control had.
+    private func reclaimSoon() { reclaimSoon(whenHostHasIt: false) }
+
+    private func reclaimSoon(whenHostHasIt: Bool) {
         closeRingSoon()
         _ = editor.scheduler.schedule(after: .zero) { [window, onExit] in
-            if let window = window.window, window.firstResponder === window { onExit() }
+            guard let host = window.window else { return }
+            if host.firstResponder === host || (whenHostHasIt && window.hostHasKeyboard) { onExit() }
         }
     }
+
+    /// As `reclaimSoon`, for a band that has come or gone.
+    private func reclaimSoonOfBand() { reclaimSoon(whenHostHasIt: true) }
 }
 
 /// The panel's window, for `reclaimSoon`, and the panel's place in it: the view that fills the panel
@@ -134,6 +210,13 @@ final class WindowBox {
     weak var window: NSWindow?
     weak var reader: NSView?
     weak var content: NSView?
+    /// The view that fills the band over the panel, while there is one.
+    weak var band: NSView?
+    /// For clearing `commandPeriodSeen`: the editor's, set as the panel appears.
+    var scheduler: (any Scheduler)?
+    /// ⌘. went by as a key equivalent just now (`ReaderView`), so the `cancelOperation:` that follows
+    /// is its, not an Escape's: the two reach the panel the same way.
+    private var commandPeriodSeen = false
     /// Watches the window's first responder: the panel's Tab ring is closed as the keyboard comes into it.
     private var watching: NSKeyValueObservation?
 
@@ -148,10 +231,53 @@ final class WindowBox {
         return region.contains(CGPoint(x: frame.midX, y: frame.midY))
     }
 
+    /// Whether `view` is in the band's place: placed as every control of the panel is (`isPlaced`), so a
+    /// table taller than the panel, scrolled through the band's strip, is not the band's.
+    private func isInBand(_ view: NSView) -> Bool {
+        guard let band, !band.isHiddenOrHasHiddenAncestor else { return false }
+        return Self.isPlaced(view, in: band.convert(band.bounds, to: nil))
+    }
+
     /// Whether the keyboard is in the panel: the window's first responder is a view in its place.
     var hasKeyboard: Bool {
         guard let panel = reader, let responder = window?.firstResponder as? NSView, responder !== panel else { return false }
         return Self.isPlaced(responder, in: panel.convert(panel.bounds, to: nil))
+    }
+
+    /// Whether the keyboard is in a view that contains the panel (the view that hosts it): no control of the panel has it.
+    var hostHasKeyboard: Bool {
+        guard let panel = reader, let responder = window?.firstResponder as? NSView, responder !== panel else { return false }
+        return panel.isDescendant(of: responder)
+    }
+
+    /// Where in the panel the keyboard is: the band (the responder's middle is in the band's place),
+    /// else a takeover while one shows, else the rest; nil with the keyboard out of the panel.
+    func place(isTakeoverShown: Bool) -> KeyboardPlace? {
+        guard hasKeyboard, let responder = window?.firstResponder as? NSView else { return nil }
+        if isInBand(responder) { return .band }
+        return isTakeoverShown ? .takeover : .content
+    }
+
+    /// Gives the keyboard to the band's first control: the first of the panel's controls in its place.
+    /// Whether anything took it.
+    func focusBand() -> Bool {
+        guard let window, let band, !band.isHiddenOrHasHiddenAncestor else { return false }
+        guard let first = controls().first(where: { isInBand($0) }) else { return false }
+        closeRing()
+        return window.makeFirstResponder(first)
+    }
+
+    /// A key equivalent is going by: if it is ⌘., the next `takeCommandPeriod` says so, until this turn is over.
+    func noteKeyEquivalent(_ event: NSEvent) {
+        commandPeriodSeen = event.charactersIgnoringModifiers == "." && event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command
+        guard commandPeriodSeen else { return }
+        _ = scheduler?.schedule(after: .zero) { [weak self] in self?.commandPeriodSeen = false }
+    }
+
+    /// Whether the `cancelOperation:` being answered is ⌘.'s, once.
+    func takeCommandPeriod() -> Bool {
+        defer { commandPeriodSeen = false }
+        return commandPeriodSeen
     }
 
     /// The panel's controls the key view loop visits, in reading order: the views of the window under
@@ -200,8 +326,8 @@ final class WindowBox {
 
     /// The first control under the tab strip that is not one of `old` (those the tab just left) gets the
     /// keyboard, once the panel has drawn the new tab: tried a few times, as SwiftUI makes its views a turn
-    /// or two on. A tab with no control leaves the keyboard where it is.
-    func focusFirstControl(excluding old: [NSView], retries: Int, scheduler: any Scheduler) {
+    /// or two on. A tab with no control leaves the keyboard where it is, or, given, `exhausted` runs.
+    func focusFirstControl(excluding old: [NSView], retries: Int, scheduler: any Scheduler, exhausted: (@MainActor () -> Void)? = nil) {
         guard let window else { return }
         let below = content.map { $0.convert($0.bounds, to: nil) }
         let first = controls().first { control in
@@ -215,8 +341,10 @@ final class WindowBox {
             window.makeFirstResponder(first)
         } else if retries > 0 {
             _ = scheduler.schedule(after: DetailStyle.focusRetry) { [weak self] in
-                self?.focusFirstControl(excluding: old, retries: retries - 1, scheduler: scheduler)
+                self?.focusFirstControl(excluding: old, retries: retries - 1, scheduler: scheduler, exhausted: exhausted)
             }
+        } else {
+            exhausted?()
         }
     }
 
@@ -269,7 +397,24 @@ struct WindowReader: NSViewRepresentable {
             box.watchKeyboard()
         }
         override func viewDidHide() { onHide() }
+        /// Hears the key equivalents the window offers its views, to tell ⌘. from Escape.
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            MainActor.assumeIsolated { box.noteKeyEquivalent(event) }
+            return super.performKeyEquivalent(with: event)
+        }
     }
+}
+
+/// Fills the band over the panel: where the band is, so the keyboard in it is told from the keyboard in
+/// the panel under it.
+struct BandReader: NSViewRepresentable {
+    let box: WindowBox
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        box.band = view
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) { box.band = view }
 }
 
 /// Fills the area under the tab strip: where the panel's tab content is.
@@ -354,24 +499,8 @@ struct ShapePanel: View, Equatable {
                 }
                 Divider()
                 ScrollView {
-                    VStack(spacing: 0) {
-                        // The tab's status lines lead, as a headerless block.
-                        if !lines.isEmpty {
-                            StatusList(statuses: lines, spacing: DetailStyle.rowSpacing)
-                                .padding(.horizontal, DetailStyle.inset)
-                                .padding(.top, DetailStyle.sectionTop)
-                                .padding(.bottom, DetailStyle.sectionBottom)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if !sections.isEmpty { Divider() }
-                        }
-                        ForEach(sections, id: \.key) { resolved in
-                            SectionView(resolved: resolved, editor: editor, record: record, isReadOnly: isReadOnly,
-                                        isCollapsed: state.isCollapsed(resolved.key),
-                                        toggle: { state.setCollapsed(resolved.key, !state.isCollapsed(resolved.key)) })
-                                .equatable()
-                            if resolved.key != sections.last?.key { Divider() }
-                        }
-                    }
+                    TabContent(state: state, editor: editor, record: record, isReadOnly: isReadOnly, lines: lines, sections: sections)
+                        .equatable()
                 }
                 .background(ContentReader(box: place))
             } else {
@@ -704,7 +833,7 @@ struct StatusList: View {
     let spacing: CGFloat
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
-            ForEach(statuses.indices, id: \.self) { i in DetailStatusLine(statuses[i]) }
+            ForEach(statuses.indices, id: \.self) { i in DetailStatusLine(statuses[i], actions: statuses[i].actions) }
         }
     }
 }

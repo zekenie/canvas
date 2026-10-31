@@ -14,6 +14,11 @@ enum TextEditingStyle {
     static let highlightCornerRadius: CGFloat = 4.0 / 16
     /// How far it reaches past the text at each end, in points.
     static let highlightPadding: CGFloat = 2
+    /// A highlight's symbol (a rule's chip's magnifier): the room made for it before the text, its size, both in ems,
+    /// and how strongly it's drawn in the text's color.
+    static let highlightSymbolRoom: CGFloat = 15.0 / 16
+    static let highlightSymbolSize: CGFloat = 10.0 / 16
+    static let highlightSymbolStrength: CGFloat = 0.7
 
     // MARK: Caret lists (`CaretListWindow`)
 

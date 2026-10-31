@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import CoreGraphics
+import DetailPanel
 import Foundation
 import FuzzyMatching
 import Geometry
@@ -25,8 +26,8 @@ import Topology
 public final class FindState {
     @ObservationIgnored private unowned let editor: CanvasEditor
     @ObservationIgnored let index: FindIndex
-    /// What a plugin calls each board (`FindHeadings`), if one does.
-    @ObservationIgnored private let namedHeading: FindHeadings.Contribution?
+    /// The stepping: the place among the results, its moves, and the one step back (Selection's).
+    @ObservationIgnored let walk: ShapeWalk
 
     /// Whether Find is open: its panel shows, its highlights draw.
     public private(set) var isActive = false
@@ -39,11 +40,14 @@ public final class FindState {
     @ObservationIgnored private var labelStems: [Int: String] = [:]
     /// How many hits, exact and typos alike.
     public private(set) var total = 0
-    /// The current hit: a result, and which of its hits.
-    public private(set) var current: FindPosition?
+    /// The current hit: a result, and which of its hits (the walk's place).
+    public private(set) var current: FindPosition? {
+        get { walk.current.map { FindPosition(result: $0.row, ordinal: $0.ordinal) } }
+        set { walk.land(at: newValue.map { WalkPosition(row: $0.result, ordinal: $0.ordinal) }) }
+    }
     /// +1 each step to another hit (⌘G, the arrows and buttons, a click on a row), never for typing's
     /// landing: what VoiceOver announces by, so typing is not talked over.
-    public private(set) var stepCount = 0
+    public var stepCount: Int { walk.stepCount }
     /// +1 each ⌘F: the panel focuses its field and selects what's typed.
     public private(set) var focusRequest = 0
     /// Whether the index is still being built: the field shows a spinner.
@@ -72,8 +76,6 @@ public final class FindState {
     /// The scope's shapes in order, as the last answer went by, while nothing has changed the file's
     /// shapes but moves.
     @ObservationIgnored private var order: (scope: BoardID, ids: [ShapeID])?
-    /// Where a Find session began: Back after it returns there.
-    @ObservationIgnored private var start: NavigationStart?
     /// Each result's hits, worked out when first asked (in view, current, listed), for this query.
     @ObservationIgnored private var hitsByShape: [ShapeID: [[TextHit]]] = [:]
     /// Where each shape's hits are drawn, kept for this query while the shape's size (and, for a
@@ -102,30 +104,22 @@ public final class FindState {
         /// Typed: the first hit in view on the board shown, else its first (revealed), else the first.
         case typed
         /// After an edit: the current hit kept, else the next; the camera stays.
-        case kept(ShapeID, ordinal: Int, rank: Int)
+        case kept(WalkKept)
     }
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        walk = ShapeWalk(editor: editor, arrival: .shows)
         index = FindIndex(editor: editor)
-        namedHeading = editor.registry.contributions(to: FindHeadings.self).first?.value
         index.didChange = { [weak self] ids in self?.indexDidChange(ids) }
         index.didBuild = { [weak self] in self?.indexDidBuild() }
+        walk.source = self
     }
 
     // MARK: Reading
 
-    /// What heads a board's rows in the panel: what a plugin calls the board (`registrar.findHeading`),
-    /// else "Board" for the root and no name for any other.
-    public func heading(of board: BoardID) -> FindHeading {
-        namedHeading?(board, editor) ?? FindHeading(board.isRoot ? FindStyle.rootHeading : "")
-    }
-
     /// The current hit's number, from 1, in `total`.
-    public var currentNumber: Int? {
-        guard let current, offsets.indices.contains(current.result) else { return nil }
-        return offsets[current.result] + current.ordinal + 1
-    }
+    public var currentNumber: Int? { walk.number }
 
     /// Whether the search for what's typed has answered and nothing is being indexed: what tests and
     /// benchmarks wait for.
@@ -162,9 +156,13 @@ public final class FindState {
 
     /// The current hit's shape, text and range.
     public var currentHit: (shape: ShapeID, hit: FindHit)? {
-        guard let current, results.indices.contains(current.result) else { return nil }
-        let id = results[current.result].id
-        var left = current.ordinal
+        current.flatMap(hit(at:))
+    }
+
+    private func hit(at position: FindPosition) -> (shape: ShapeID, hit: FindHit)? {
+        guard results.indices.contains(position.result) else { return nil }
+        let id = results[position.result].id
+        var left = position.ordinal
         for (text, hits) in hits(of: id).enumerated() {
             if left < hits.count { return (id, FindHit(text: text, range: hits[left].range, isExact: hits[left].isExact)) }
             left -= hits.count
@@ -184,7 +182,7 @@ public final class FindState {
         if opening {
             isActive = true
             scope = editor.board
-            start = editor.navigationStart
+            walk.begin()
             index.start()
             isIndexing = !index.isBuilt
         }
@@ -204,7 +202,7 @@ public final class FindState {
         isActive = false
         cancelSearch()
         pendingStep = nil
-        start = nil
+        walk.end()
         laidOut = [:]
         editor.setNeedsDisplay()
     }
@@ -270,12 +268,13 @@ public final class FindState {
         switch landing {
         case .typed:
             land()
-        case .kept(let id, let ordinal, let rank):
-            keep(id, ordinal: ordinal, rank: rank)
+        case .kept(let kept):
+            walk.rowsDidChange(keeping: kept)
         }
         if let forward = pendingStep {
             pendingStep = nil
-            step(forward: forward)
+            // A step is refused while shapes wait to be placed; the landing ⇧⌘G opens on is not.
+            if editor.isPlacingLater { walk.land(stepping: forward) } else { step(forward: forward) }
         }
         editor.setNeedsDisplay()
     }
@@ -291,7 +290,7 @@ public final class FindState {
         self.places = places
         self.offsets = offsets
         self.total = total
-        if let current, !list.indices.contains(current.result) { self.current = nil }
+        walk.rowsDidChange()
     }
 
     /// Typing's current hit: the first on the board shown that's in view, else the first on the
@@ -326,40 +325,26 @@ public final class FindState {
             }
         }
         if let firstHere {
-            current = FindPosition(result: firstHere, ordinal: 0)
-            go(to: firstHere)
+            walk.land(at: WalkPosition(row: firstHere, ordinal: 0), arriving: true)
         } else {
             current = FindPosition(result: 0, ordinal: 0)
         }
     }
 
-    /// After an edit: the hit that was current, if its shape still has as many, else its shape's
-    /// last, else the first of the next shape with hits.
-    private func keep(_ id: ShapeID, ordinal: Int, rank: Int) {
-        guard !results.isEmpty else {
-            current = nil
-            return
-        }
-        if let i = places[id] {
-            current = FindPosition(result: i, ordinal: min(ordinal, results[i].hitCount - 1))
-        } else {
-            let next = results.firstIndex { $0.rank >= rank } ?? 0
-            current = FindPosition(result: next, ordinal: 0)
-        }
-    }
-
     // MARK: Stepping
 
-    /// Whether ⌘G and ⇧⌘G can run: nothing under way, and hits to step to, or, with Find closed, a
-    /// query to open it on.
+    /// Whether ⌘G and ⇧⌘G can run: nothing under way, and with Find open hits to step to and no shapes
+    /// waiting to be placed (the walker's own guard, which refuses a step then); with Find closed, a
+    /// query to open it on, which ⌘F does while shapes wait too.
     func canStep(in editor: CanvasEditor) -> Bool {
         guard editor.session == nil, !search.isEmpty || !query.isEmpty else { return false }
-        return isActive ? total > 0 : true
+        return isActive ? total > 0 && !editor.isPlacingLater : true
     }
 
     /// ⌘G, ⇧⌘G, Return and ⇧Return in the field, the buttons: the next hit (or the one before),
     /// wrapping, its board shown and the hit brought into view. With Find closed, ⌘G opens on what
-    /// was typed and lands on the first hit in view, which is its step; ⇧⌘G lands there and steps back.
+    /// was typed and lands on the first hit in view, which is its step; ⇧⌘G lands there and steps back,
+    /// as one landing while shapes wait to be placed (a step is refused then: `ShapeWalk.land(stepping:)`).
     public func step(forward: Bool) {
         guard editor.session == nil else { return }
         guard isActive else {
@@ -374,34 +359,13 @@ public final class FindState {
             return
         }
         guard !results.isEmpty else { return }
-        let next: FindPosition
-        if let current, results.indices.contains(current.result) {
-            if forward {
-                next = current.ordinal + 1 < results[current.result].hitCount
-                    ? FindPosition(result: current.result, ordinal: current.ordinal + 1)
-                    : FindPosition(result: (current.result + 1) % results.count, ordinal: 0)
-            } else if current.ordinal > 0 {
-                next = FindPosition(result: current.result, ordinal: current.ordinal - 1)
-            } else {
-                let previous = (current.result + results.count - 1) % results.count
-                next = FindPosition(result: previous, ordinal: results[previous].hitCount - 1)
-            }
-        } else {
-            next = forward ? FindPosition(result: 0, ordinal: 0) : FindPosition(result: results.count - 1, ordinal: results[results.count - 1].hitCount - 1)
-        }
-        current = next
-        stepCount &+= 1
-        go(to: next.result)
-        editor.setNeedsDisplay()
+        walk.step(forward: forward)
     }
 
     /// A row clicked: its shape's first hit is current, brought into view.
     public func select(_ id: ShapeID) {
         guard isActive, editor.session == nil, let i = places[id] else { return }
-        current = FindPosition(result: i, ordinal: 0)
-        stepCount &+= 1
-        go(to: i)
-        editor.setNeedsDisplay()
+        walk.pick(row: i)
     }
 
     /// Up, Down, Page Up and Page Down in the field: the result `by` rows on (negative: before),
@@ -410,17 +374,7 @@ public final class FindState {
     /// nor the document.
     public func move(by rows: Int) {
         guard isActive, editor.session == nil, answered == generation, task == nil, !results.isEmpty else { return }
-        let count = results.count
-        let target: Int
-        if let current, results.indices.contains(current.result) {
-            target = ((current.result + rows) % count + count) % count
-        } else {
-            target = rows >= 0 ? 0 : count - 1
-        }
-        current = FindPosition(result: target, ordinal: 0)
-        stepCount &+= 1
-        go(to: target)
-        editor.setNeedsDisplay()
+        walk.move(by: rows)
     }
 
     /// ⌘↩ in the field: closes Find and selects the current hit's shape, taking the hit along. The
@@ -429,12 +383,8 @@ public final class FindState {
     /// board). False, with Find left open, when there is no hit.
     @discardableResult
     public func finish() -> Bool {
-        guard isActive, editor.session == nil, let hit = currentHit else { return false }
-        let began = start
-        close()
-        let select = { [editor] in editor.goTo([hit.shape]) }
-        if let began { editor.navigate(from: began, select) } else { select() }
-        return true
+        guard isActive, editor.session == nil, currentHit != nil else { return false }
+        return walk.finish { close() }
     }
 
     /// What VoiceOver reads for a result's row: the text around its first hit, the kind's name, the
@@ -454,7 +404,7 @@ public final class FindState {
         let result = results[index]
         var parts = [FindSnippet.text(of: result, in: self), kindName(of: result.id)]
         if result.board != editor.board {
-            let board = heading(of: result.board).title
+            let board = editor.boardHeading(of: result.board).title
             if !board.isEmpty { parts.append(board) }
         }
         let made = parts.joined(separator: ", ")
@@ -473,26 +423,10 @@ public final class FindState {
         editor.withoutObservingDocument { editor.file.record(id).map { editor.registry.label(of: $0.kind).name } ?? "" }
     }
 
-    /// Shows a result's board, if it isn't shown, and brings the current hit into view unless it's
-    /// there: part of the session's one step back.
-    private func go(to i: Int) {
-        labelStems.removeAll(keepingCapacity: true)  // the board shown may change, which rows name
-        let result = results[i]
-        let move = { [self] in
-            if result.board != editor.board {
-                guard editor.showBoard(result.board) else { return }
-            }
-            let view = editor.unobscuredViewport
-            guard !view.isEmpty, let bounds = hitBounds(of: result.id) ?? editor.shapeContext.bounds(of: [result.id]) else { return }
-            if !editor.cameraTarget.toWorld(view).contains(bounds) { editor.reveal([result.id]) }
-        }
-        if let start { editor.navigate(from: start, move) } else { move() }
-    }
-
     /// Where the current hit is drawn, world units, if it's in this shape and laid out: what has to
     /// be in view.
-    private func hitBounds(of id: ShapeID) -> CGRect? {
-        guard let hit = currentHit, hit.shape == id, let record = editor.document[id],
+    private func hitBounds(of id: ShapeID, at position: FindPosition) -> CGRect? {
+        guard let hit = hit(at: position), hit.shape == id, let record = editor.document[id],
               let rects = FindOverlay.rects(of: hit.hit, in: record, state: self, editor: editor) else { return nil }
         return rects.reduce(CGRect.null) { $0.union($1) }.nilIfNull
     }
@@ -555,7 +489,7 @@ public final class FindState {
         }
         if !removed.isEmpty { list.removeAll { removed.contains($0.id) } }
         setResults(list)
-        if case .kept(let id, let ordinal, let rank) = kept { keep(id, ordinal: ordinal, rank: rank) } else { current = nil }
+        if case .kept(let place) = kept { walk.rowsDidChange(keeping: place) } else { current = nil }
         editor.setNeedsDisplay()
     }
 
@@ -569,9 +503,7 @@ public final class FindState {
 
     /// What keeps the current hit across a search again.
     private func keptLanding() -> Landing {
-        guard let current, results.indices.contains(current.result) else { return .kept(ShapeID(), ordinal: 0, rank: 0) }
-        let result = results[current.result]
-        return .kept(result.id, ordinal: current.ordinal, rank: result.rank)
+        .kept(walk.kept ?? WalkKept(key: ShapeID(), ordinal: 0, rank: 0))
     }
 
     private func indexDidBuild() {
@@ -588,6 +520,32 @@ public struct FindPosition: Hashable, Sendable {
     public init(result: Int, ordinal: Int) {
         self.result = result
         self.ordinal = ordinal
+    }
+}
+
+/// The results are the walk's rows: a result is a shape with as many stops as it has hits.
+extension FindState: ShapeWalkSource {
+    public var walkRowCount: Int { results.count }
+
+    public func walkRow(at index: Int) -> WalkRow {
+        let result = results[index]
+        return WalkRow(key: result.id, shape: result.id, board: result.board, stops: result.hitCount, rank: result.rank)
+    }
+
+    public func walkPlace(ofKey key: AnyHashable) -> Int? { (key as? ShapeID).flatMap { places[$0] } }
+
+    public func walkStops(before index: Int) -> Int { offsets[index] }
+
+    /// Where the current hit is drawn on the board just shown.
+    public func walkFocus(of position: WalkPosition) -> CGRect? {
+        guard results.indices.contains(position.row) else { return nil }
+        return hitBounds(of: results[position.row].id, at: FindPosition(result: position.row, ordinal: position.ordinal))
+    }
+
+    /// The rows name the board shown, which the move may have changed; the hits are drawn again.
+    public func walkDidMove() {
+        labelStems.removeAll(keepingCapacity: true)
+        editor.setNeedsDisplay()
     }
 }
 

@@ -2,13 +2,16 @@ import AppKit
 import Canvas
 import TextEditing
 
-/// One row of the `@` picker: a section's header, a shape that can be picked, or the one row an
-/// empty list shows instead (quiet: "No matches", "Nothing to mention"). Only a shape's row can be
+/// One row of the `@` picker: a section's header, a shape that can be picked, the one row an
+/// empty list shows instead (quiet: "No matches", "Nothing to mention"), or, for a host that takes
+/// words as well as shapes, the words typed (`wordsRow`). A shape's row and the words' can be
 /// highlighted and picked.
 public enum MentionPickerRow: Hashable, Sendable {
     case header(String)
     case candidate(MentionCandidate)
     case empty(String)
+    /// What's typed after the `@`, last, for a host that takes words: picked, they're its whole.
+    case words(String)
 
     /// The shape a row picks; nil for a header or an empty state.
     public var candidate: MentionCandidate? {
@@ -28,7 +31,9 @@ public enum MentionPickerRow: Hashable, Sendable {
 /// at the start of the text, after whitespace or a line break, or after an opening bracket or
 /// quote opens it (`opens(in:at:)`); the caret leaving the query, the `@` deleted, a line break in
 /// the query, a query longer than `MentionStyle.queryLimit` characters, and a query ending in a
-/// space that matches nothing close it (`Closing`).
+/// space that matches nothing close it (`Closing`). A picker that takes words (`wordsRow`) ends a
+/// typed query's list with the words themselves, set off from the shapes above them, the highlight
+/// on them once no shape is left; it never says "No matches", and a space never closes it.
 @MainActor
 public final class MentionPicker {
     /// Why an open picker closes, as the text read after a change says (`read`).
@@ -77,13 +82,17 @@ public final class MentionPicker {
     private var queryEnd: Int
     /// What the picker lists for a query.
     private let search: @MainActor (String) -> MentionCandidates
+    /// Whether a typed query's list ends with its words (`MentionPickerRow.words`).
+    public let wordsRow: Bool
     /// Called after the rows or the highlight change.
     var onChange: (@MainActor () -> Void)?
 
-    /// A picker for the `@` at `location`, listing what `search` finds for each query.
-    public init(at location: Int, search: @escaping @MainActor (String) -> MentionCandidates) {
+    /// A picker for the `@` at `location`, listing what `search` finds for each query, and, with
+    /// `wordsRow`, the words typed after the shapes.
+    public init(at location: Int, wordsRow: Bool = false, search: @escaping @MainActor (String) -> MentionCandidates) {
         self.location = location
         self.search = search
+        self.wordsRow = wordsRow
         queryEnd = location + 1
         setRows(for: "")
         list.onChange = { [weak self] in self?.onChange?() }
@@ -97,8 +106,8 @@ public final class MentionPicker {
     /// their shapes are ranked (`MentionState.candidates`).
     public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owners: [ShapeID],
                                              kinds: Set<ShapeKind>? = nil,
-                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil) {
-        self.init(at: location) { [weak mentions] query in
+                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil, wordsRow: Bool = false) {
+        self.init(at: location, wordsRow: wordsRow) { [weak mentions] query in
             mentions?.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits) ?? MentionCandidates()
         }
     }
@@ -106,8 +115,9 @@ public final class MentionPicker {
     /// `init(at:mentions:scope:owners:kinds:admitting:)` for text on `owner`, or on no shape.
     public convenience init<S: MentionScope>(at location: Int, mentions: MentionState, scope: S.Type, owner: ShapeID?,
                                              kinds: Set<ShapeKind>? = nil,
-                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil) {
-        self.init(at: location, mentions: mentions, scope: scope, owners: owner.map { [$0] } ?? [], kinds: kinds, admitting: admits)
+                                             admitting admits: (@MainActor (ShapeID) -> Bool)? = nil, wordsRow: Bool = false) {
+        self.init(at: location, mentions: mentions, scope: scope, owners: owner.map { [$0] } ?? [], kinds: kinds, admitting: admits,
+                  wordsRow: wordsRow)
     }
 
     // MARK: Opening and closing
@@ -151,7 +161,8 @@ public final class MentionPicker {
     // MARK: Rows
 
     /// Lists what the query finds, the first shape highlighted: for an empty query, the recent picks
-    /// and the shapes nearby, each under its header; for any other, the best matches.
+    /// and the shapes nearby, each under its header; for any other, the best matches, and then, for a
+    /// picker that takes words, the words (highlighted where no shape is listed).
     private func setRows(for query: String) {
         self.query = query
         let found = search(query)
@@ -162,7 +173,11 @@ public final class MentionPicker {
             if rows.isEmpty { rows = [.empty(MentionStyle.nothingToMention)] }
         } else {
             rows = found.matches.map { .candidate($0) }
-            if rows.isEmpty { rows = [.empty(MentionStyle.noMatches)] }
+            if wordsRow, query.contains(where: { !$0.isWhitespace }) {
+                rows.append(.words(query))
+            } else if rows.isEmpty {
+                rows = [.empty(MentionStyle.noMatches)]
+            }
         }
         self.rows = rows
         list.setRows(Self.listRows(rows))
@@ -179,6 +194,7 @@ public final class MentionPicker {
             switch row {
             case .header(let words): return .header(words)
             case .empty(let words): return .empty(words)
+            case .words(let words): return .item(wordsItem(words, separated: shapes > 0))
             case .candidate(let candidate):
                 position += 1
                 let appearance = candidate.appearance
@@ -194,6 +210,25 @@ public final class MentionPicker {
 
     /// The highlighted row's shape.
     public var highlightedCandidate: MentionCandidate? { highlighted.flatMap { rows[$0].candidate } }
+
+    /// The words, when their row is the one highlighted.
+    public var highlightedWords: String? {
+        guard let highlighted, case .words(let words) = rows[highlighted] else { return nil }
+        return words
+    }
+
+    /// Whether the words are all that's left: no shape matches what's typed.
+    public var isHandoff: Bool {
+        guard rows.count == 1, case .words = rows[0] else { return false }
+        return true
+    }
+
+    /// The words' row as every list that takes words draws and says it (this picker's, a reference's):
+    /// a magnifier and the words as typed, a line above it when shapes are listed (`separated`), said
+    /// "Words, …".
+    public static func wordsItem(_ words: String, separated: Bool) -> CaretListItem {
+        CaretListItem(words, symbol: MentionStyle.wordsSymbol, separated: separated, spoken: "\(MentionStyle.wordsSpoken), \(words)")
+    }
 
     /// Highlights a row (the pointer's over it); a header or an empty state highlights nothing new.
     public func highlight(row index: Int) { list.highlight(row: index) }
@@ -242,6 +277,9 @@ extension MentionStyle {
     static let nothingToMention = "Nothing to mention"
     /// After a read-only shape's label.
     static let readOnlySymbol = "lock.fill"
+    /// The words' row: its symbol, and what VoiceOver says before the words.
+    static let wordsSymbol = "magnifyingglass"
+    static let wordsSpoken = "Words"
     /// What VoiceOver calls the picker's list.
     static let pickerAccessibilityLabel = "Mentions"
     /// The picker's size, its own; its look is every caret list's.

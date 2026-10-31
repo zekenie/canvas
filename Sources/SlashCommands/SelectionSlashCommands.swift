@@ -23,9 +23,9 @@ public enum SlashAnswer: Sendable, Equatable {
 /// (cancels the task) as it closes, or when the line is changed or run again. The task holds nothing that
 /// keeps the editor alive (take what it needs at once, as `QueryTranslator` does, and the editor weakly), so
 /// a file closed while it waits goes; the bar cancels it then too. `waiting` is what VoiceOver hears while
-/// it waits ("Asking").
+/// it waits ("Interpreting…").
 ///
-///     SelectionSlashCommand("query", argument: "question", waiting: "Asking", when: { target, _ in target.shapes.count != 1 }) { target, arguments, editor in
+///     SelectionSlashCommand("query", argument: "question", waiting: "Interpreting…", when: { target, _ in target.shapes.count != 1 }) { target, arguments, editor in
 ///         let translator = editor.queryTranslator
 ///         return Task { @MainActor [weak editor] in … }
 ///     }

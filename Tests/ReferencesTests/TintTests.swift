@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import QueryTranslation
 import References
 import SwiftUI
 import TableOfContents

@@ -83,6 +83,14 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     public var isOneLine = false
     /// The text was emptied, while it's one line (the command bar closes as its `/` goes).
     public var onEmptied: (@MainActor () -> Void)?
+    /// A host that takes words as well as shapes (a rule's box, whose words become a query): its
+    /// picker ends with the words typed after the `@`, and picking them closes it and hands the host
+    /// the words and where they and their `@` are in the text, which the host then writes as it will.
+    /// Set before the picker opens.
+    public var onWords: (@MainActor (_ words: String, _ range: NSRange) -> Void)?
+    /// A shape picked, when set: the host puts in what it does for it, where `@query` is (the range covers the `@`), in
+    /// place of a pill (a rule's box, whose shape is a chip of its name).
+    public var onShape: (@MainActor (_ candidate: MentionCandidate, _ range: NSRange) -> Void)?
     /// The substitutions the picker turned off while it's open, to put back as they were.
     private var substitutions: CaretListSubstitutions?
     /// The target the picker's highlight hovers, and the one the pointer hovers.
@@ -612,7 +620,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         slashCommands?.close()
         let shapes = slashCommands?.admittedShapes(at: location)
         let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owners: pickerOwners,
-                                   kinds: shapes?.kinds, admitting: shapes?.rule)
+                                   kinds: shapes?.kinds, admitting: shapes?.rule, wordsRow: onWords != nil)
         self.picker = picker
         substitutions = CaretListSubstitutions(of: self)
         CaretListSubstitutions.off.apply(to: self)
@@ -695,10 +703,23 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// Whether the picker's window is on screen: never while the text's window isn't.
     public var isPickerShown: Bool { pickerWindow?.isVisible ?? false }
 
-    /// Picks the shape of a row clicked in the picker's list.
+    /// Picks the shape, or the words, of a row clicked in the picker's list (or the one highlighted, by keys).
     private func pick(row index: Int) {
-        guard let candidate = picker?.rows[index].candidate else { return }
-        pick(candidate)
+        guard let picker, picker.rows.indices.contains(index) else { return }
+        switch picker.rows[index] {
+        case .candidate(let candidate): pick(candidate)
+        case .words(let words): pick(words: words)
+        case .header, .empty: break
+        }
+    }
+
+    /// Picks the words: the picker closes, the text as typed, and the host has them and where they are.
+    private func pick(words: String) {
+        guard let picker, let onWords else { return closePicker() }
+        let caret = selectedRange().location
+        closePicker()
+        guard caret > picker.location else { return }
+        onWords(words, NSRange(location: picker.location, length: caret - picker.location))
     }
 
     /// Picks a shape: the pill in the place of `@query`, then a space unless what follows is
@@ -707,6 +728,12 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     private func pick(_ candidate: MentionCandidate) {
         guard let picker, let storage = textStorage else { return }
         let caret = selectedRange().location
+        if let onShape {
+            closePicker()
+            guard caret > picker.location else { return }
+            mentions?.didPick(candidate.id)
+            return onShape(candidate, NSRange(location: picker.location, length: caret - picker.location))
+        }
         guard caret > picker.location, let pill = pillString(candidate.id, storedLabel: candidate.appearance.label) else { return closePicker() }
         closePicker()
         let replacement = NSMutableAttributedString(attributedString: pill)
@@ -915,6 +942,7 @@ extension MentionTextView: DetailTextContent {
         reported = mentionText
         observeTargets()
         fitPills()
+        refreshHighlights()
         toolTipsAreStale = true
         needsDisplay = true
     }

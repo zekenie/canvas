@@ -2,6 +2,7 @@ import Canvas
 import CanvasRPC
 import Foundation
 import Titles
+import Topology
 
 /// What the file's types say of the members a note's values can hold, by key at each depth: the union over
 /// every type of its own fields, a group's members, another type's fields' and a list's items'. What a query
@@ -423,3 +424,56 @@ extension CanvasEditor {
     /// What the file's types say of the members a note's values hold (`FileFields`); nil without TypesPlugin.
     public var fileFields: FileFields? { fieldBook?.fileFields }
 }
+
+// MARK: Connections
+
+/// One line of `<connections>`: the type (else the kind) arrows start at, their type, and the type (else the kind)
+/// they end at.
+private struct ConnectionLine: Hashable {
+    let from: String
+    let type: String?
+    let to: String
+}
+
+/// The most lines `<connections>` says.
+private let connectionLines = 30
+
+extension FileFields {
+    /// How arrows join the file's shapes, for `--ask` (`<connections>`): a line for each type an arrow starts at, the
+    /// arrow's type and the type it ends at, with how many, most first, 30 at most (`Member → Bill: 225 Vote arrows`,
+    /// `sticky-note → sticky-note: 3 arrows`). A shape is named by its first type, else by its kind as a query writes it;
+    /// an arrow is any shape that carries a connection, its ends read through what stands in for them; one at a type
+    /// itself (an end of a relationship type) is left out, as `<fields>` says those. So a question can follow arrows
+    /// from what a phrase names to what it means ("the member's district"). Read afresh at each question: one walk of
+    /// the file's shapes. Never a title, a word or a value.
+    public func connectionsText(for _: String) -> String {
+        guard let editor, let index = editor.types, let topology = editor.topology else { return "" }
+        let snapshot = topology.snapshot(.resolved)
+        func name(of id: ShapeID) -> String? {
+            guard let record = snapshot.shape(id), !record.isOpaque, record[TypeSchemaProperty.self] == nil else { return nil }
+            guard let first = record[IsAProperty.self]?.first else { return record.kind.rawValue }
+            return index.name(of: first.shape) ?? Self.untitledType
+        }
+        var counts: [ConnectionLine: Int] = [:]
+        snapshot.forEachShape(inFileOrder: { record, _ in
+            var counted: Set<ConnectionLine> = []
+            for edge in snapshot.edges(carriedBy: record.id) where edge.isConnection {
+                guard let from = name(of: edge.source), let to = name(of: edge.target) else { continue }
+                let type = record[IsAProperty.self]?.first.map { index.name(of: $0.shape) ?? Self.untitledType }
+                let line = ConnectionLine(from: from, type: type, to: to)
+                if counted.insert(line).inserted { counts[line, default: 0] += 1 }
+            }
+        })
+        return counts.sorted { a, b in
+            if a.value != b.value { return a.value > b.value }
+            return (a.key.from, a.key.type ?? "", a.key.to) < (b.key.from, b.key.type ?? "", b.key.to)
+        }
+        .prefix(connectionLines)
+        .map { line, count in "\(line.from) → \(line.to): \(count) \(line.type.map { $0 + " " } ?? "")arrow\(count == 1 ? "" : "s")" }
+        .joined(separator: "\n")
+    }
+
+    /// What a type with no title is called in `<connections>`.
+    static let untitledType = "an untitled type"
+}
+

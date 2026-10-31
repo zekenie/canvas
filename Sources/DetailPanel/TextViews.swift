@@ -199,7 +199,7 @@ extension DetailStatus.Tone {
 }
 
 /// A button under a `DetailStatusLine`.
-public struct DetailStatusAction {
+public struct DetailStatusAction: Sendable {
     public let title: String
     public let perform: @MainActor () -> Void
 

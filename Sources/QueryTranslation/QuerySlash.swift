@@ -68,13 +68,13 @@ enum QuerySlash {
         let translator = editor.queryTranslator, queries = editor.queries
         let selection: Set<ShapeID>? = if case .selection(let ids) = target { Set(ids) } else { nil }
         return Task { @MainActor [weak editor] in
-            guard let queries else { return .failed(QueryTranslationError.noQueries.message) }
-            guard let translator else { return .failed(QueryTranslationError.noModel.message) }
+            guard let queries, let translator else { return .failed(InterpretationStatus.unavailable.words) }
             let query: String
             do throws(QueryTranslationError) {
                 query = try await translator.translate(question, about: selection == nil ? .person : .selection).query
             } catch {
-                return error == .cancelled ? .done : .failed(QuerySlashStyle.failure(error))
+                // In the words every host of words says (a cancellation says nothing).
+                return InterpretationStatus(error).map { .failed($0.words) } ?? .done
             }
             // Stopped, or the file closed, while the model answered: nothing to find or select.
             guard !Task.isCancelled, editor != nil else { return .done }
@@ -113,18 +113,12 @@ enum QuerySlash {
 enum QuerySlashStyle {
     /// The hint beside its name in the list.
     static let argument = "question"
-    /// What VoiceOver hears while the model is asked.
-    static let asking = "Asking"
+    /// What VoiceOver hears while the model is asked: every host's words for it.
+    static let asking = InterpretationWords.interpreting
     /// Nothing the query found is among the shapes it was asked of, as every list says it.
     static let noMatches = "No matches"
     /// What it found can't be selected (a kind that opted out of selection).
     static let notSelectable = "Can’t select what it found"
-
-    /// How a translation failed, in the bar: the model's own words, a deadline's in two.
-    static func failure(_ error: QueryTranslationError) -> String {
-        if case .tooSlow = error { return "Too slow" }
-        return error.message
-    }
 
     /// "4 shapes selected", "1 shape selected, 3 more on other boards".
     static func selected(_ count: Int, elsewhere: Int) -> String {

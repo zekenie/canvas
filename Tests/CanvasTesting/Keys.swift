@@ -122,6 +122,7 @@ public struct Chord: Hashable, Sendable, CustomStringConvertible {
     public static let optionTab = Chord(Key.tab, .option)
     public static let optionBackTab = Chord(Key.tab, [.option, .shift])
     public static let up = Chord(Key.up), down = Chord(Key.down), left = Chord(Key.left), right = Chord(Key.right)
+    public static let pageUp = Chord(Key.pageUp), pageDown = Chord(Key.pageDown)
     public static let `return` = Chord(Key.return)
     public static let enter = Chord(Key.enter)
     public static let escape = Chord(Key.escape)

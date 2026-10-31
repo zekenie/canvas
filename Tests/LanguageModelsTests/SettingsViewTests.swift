@@ -1,4 +1,5 @@
 import AppKit
+import Canvas
 import CanvasTesting
 import Foundation
 import LanguageModels
@@ -93,6 +94,38 @@ private func hostSettings(account: AnthropicAccount, model: ScriptedLanguageMode
                 window.pressReturn()
                 return claude.ran(.authLogin)
             }, timeout: 10)
+        }
+    },
+    test("with another key's pane under it, signed out, Return in that pane's field saves its key and doesn't sign in") {
+        try withTemporaryAccount { account, claude in
+            try account.setMethod(.claudeCode)
+            try claude.answer(.authStatus, stdout: claudeStatus(signedIn: false))
+            try claude.answer(.authLogin, stdout: "Login successful.\n")
+            try withTemporaryStore { other in
+                let service = KeyService(name: "Other", placeholder: "Not saved", console: URL(string: "https://example.com")!,
+                                         keyDidChange: Notification.Name("SettingsViewTests.otherKeyDidChange"))
+                // As the Settings window hosts its panes: one under another, only the first taking the keyboard.
+                let hosting = NSHostingView(rootView: VStack(spacing: 0) {
+                    AnthropicSettingsView(model: SignedInModel(account: account), keyModel: ScriptedLanguageModel(), claudeCodeModel: ScriptedLanguageModel())
+                    KeySettingsView(settings: KeySettings(service: service, keys: other) { nil })
+                        .environment(\.settingsPaneTakesFocus, false)
+                })
+                let window = NSWindow(contentRect: CGRect(origin: .zero, size: hosting.fittingSize), styleMask: [.titled], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.contentView = hosting
+                window.settle()
+                defer { window.close() }
+                // Sign In… shows once Claude Code has said it's signed out: its row makes the pane taller.
+                let checking = hosting.fittingSize.height
+                window.spin(until: { hosting.fittingSize.height > checking }, timeout: 10)
+                let field = try require(hosting.descendants(NSSecureTextField.self).first, "the other pane's field, Claude Code's way having none")
+                window.focus(field)
+                window.type("other-key-0123")
+                window.settle()
+                window.pressReturn()
+                window.spin(until: { other.read() == "other-key-0123" })
+                expect(!claude.ran(.authLogin), "Return went to Sign In…")
+            }
         }
     },
     test("by keys: Tab comes round the pane's stops and back to the key field, each shown and named") {

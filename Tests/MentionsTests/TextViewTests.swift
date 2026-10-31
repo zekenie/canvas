@@ -148,6 +148,40 @@ final class NotificationCount: @unchecked Sendable {
 @MainActor private let groceries = MentionText([.text("Buy "), .mention(idA, label: "Groceries"), .text(" today")])
 
 @MainActor let textViewTests = Suite("Text view", [
+    test("a host that takes words: its picker ends with them, and picking them closes it and hands the host the words and where they are, the text left as typed") {
+        let jot = try EditedJot("Unusual for ")
+        defer { jot.window.close() }
+        var handed: [(String, NSRange)] = []
+        jot.textView.onWords = { words, range in handed.append((words, range)) }
+        jot.type("@the district")
+        let picker = try require(jot.textView.picker)
+        expectEqual(picker.rows.last, .words("the district"))
+        expect(picker.isHandoff, "no shape is called that")
+        jot.window.pressReturn()
+        expect(jot.textView.picker == nil, "picked: the picker closes")
+        expectEqual(handed.map(\.0), ["the district"])
+        expectEqual(handed.first?.1, NSRange(location: 12, length: 13), "the @ and what's after it")
+        expectEqual(jot.string, "Unusual for @the district", "the host writes what it will in their place")
+    },
+    test("a host that takes a shape: picking one hands the host the shape and where `@query` is, in place of a pill") {
+        let jot = try EditedJot("Cheaper than ")
+        defer { jot.window.close() }
+        var handed: [(ShapeID, String, NSRange)] = []
+        jot.textView.onShape = { candidate, range in handed.append((candidate.id, candidate.appearance.label, range)) }
+        jot.type("@Groc")
+        jot.window.pressReturn()
+        expect(jot.textView.picker == nil, "picked: the picker closes")
+        expectEqual(handed.map(\.0), [idA])
+        expectEqual(handed.first?.1, "Groceries")
+        expectEqual(handed.first?.2, NSRange(location: 13, length: 5))
+        expectEqual(jot.string, "Cheaper than @Groc", "no pill: the host writes what it will")
+    },
+    test("a host that takes no words: the picker is as it was, and Return on No matches does what it would without it") {
+        let jot = try EditedJot()
+        defer { jot.window.close() }
+        jot.type("@qqqq")
+        expectEqual(jot.textView.picker?.rows, [.empty("No matches")])
+    },
     // MARK: Engine and delegate
 
     test("both initializers make a TextKit 2 view that keeps the host's delegate, and nothing switches it to TextKit 1") {

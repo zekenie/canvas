@@ -131,6 +131,25 @@ import TestKit
         expect(h.key("."), "⌘. is ⇧⌘; on a French keyboard")
         expectEqual(h.editor.currentToolID, .hand)
     },
+    test("⇧⌘' is the key that types \" with ⌘: it reaches the \" chord and not ⌘', and ⌘' and ⌥⌘' stay apart (Next and Previous Issue, Ignore Issue)") {
+        let log = KeyLog()
+        let h = try EditorHarness(plugins: [KeyboardPlugin(), CardsPlugin(), cardKey, Contributor(id: "keys") { r in
+            r.shortcut(KeyChord("'", .command), "Next", repeats: true) { _ in log.events.append("⌘'") }
+            r.shortcut(KeyChord("\"", .command), "Previous", repeats: true) { _ in log.events.append("⌘\"") }
+            r.shortcut(KeyChord("'", [.command, .option]), "Ignore") { _ in log.events.append("⌥⌘'") }
+        }])
+        h.hold(.command)
+        expect(h.key("'"))
+        expect(h.key("'", isRepeat: true), "held, it repeats")
+        h.hold([.shift, .command])
+        expect(h.key("\""))                            // ⇧⌘' on a US keyboard
+        expect(h.key("\"", isRepeat: true), "held, it repeats")
+        h.hold([.option, .command])
+        expect(h.key("'"))
+        h.hold([])
+        expect(!h.key("'"), "without ⌘ the key types")
+        expectEqual(log.events, ["⌘'", "⌘'", "⌘\"", "⌘\"", "⌥⌘'"])
+    },
     test("a digit's chord is its key on the number row, whatever the layout types with it: ⇧1 is the key that types \"!\" on a US keyboard") {
         let log = KeyLog()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), Contributor(id: "keys") { r in

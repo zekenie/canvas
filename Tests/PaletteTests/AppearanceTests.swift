@@ -10,6 +10,13 @@ import TestKit
     return RGB(Double(components.redComponent), Double(components.greenComponent), Double(components.blueComponent))
 }
 
+/// The opacity `appearance` resolves `color` to.
+@MainActor private func opacity(_ color: NSColor, in name: NSAppearance.Name) throws -> CGFloat {
+    var found: NSColor?
+    try require(NSAppearance(named: name)).performAsCurrentDrawingAppearance { found = color.usingColorSpace(.sRGB) }
+    return try require(found).alphaComponent
+}
+
 @MainActor let appearanceTests = Suite("Appearance", [
     test("the dark appearances are dark, vibrant and high-contrast ones too, and the light ones aren't") {
         for name in [NSAppearance.Name.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua, .accessibilityHighContrastVibrantDark] {
@@ -26,6 +33,24 @@ import TestKit
         expectClose(try resolved(color, in: .darkAqua), dark)
         expectClose(try resolved(NSColor(Tone(light: light, dark: dark)), in: .darkAqua), dark)
         expectClose(try resolved(NSColor(Tone(light)), in: .darkAqua), light)
+    },
+    test("a color faded is itself at that opacity in each appearance it's drawn in, whichever was current as it was made") {
+        let light = RGB(hex: 0x07933B), dark = RGB(hex: 0x2FD359)
+        for current in [NSAppearance.Name.aqua, .darkAqua] {
+            var made: (two: NSColor, system: NSColor)?
+            try require(NSAppearance(named: current)).performAsCurrentDrawingAppearance {
+                made = (NSColor(light: light, dark: dark).fading(to: 0.3), NSColor.labelColor.fading(to: 0.15))
+            }
+            let (two, system) = try require(made)
+            expectClose(try resolved(two, in: .aqua), light, "made in \(current.rawValue)")
+            expectClose(try resolved(two, in: .darkAqua), dark, "made in \(current.rawValue)")
+            expectClose(try resolved(system, in: .aqua), RGB(0, 0, 0), "a system color's own, dark on the light, made in \(current.rawValue)")
+            expectClose(try resolved(system, in: .darkAqua), RGB(1, 1, 1), "and light on the dark, made in \(current.rawValue)")
+            for name in [NSAppearance.Name.aqua, .darkAqua] {
+                expectClose(try opacity(two, in: name), 0.3)
+                expectClose(try opacity(system, in: name), 0.15)
+            }
+        }
     },
     test("a color made from sRGB components holds them, opaque, as an NSColor and as a CGColor") {
         let blue = RGB(hex: 0x4465E9)

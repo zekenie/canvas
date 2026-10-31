@@ -23,7 +23,7 @@ import QueryTranslation
 public enum QueryOutput {
     /// The most of a query's line a refusal quotes, in characters (`QueryError.located`): a line
     /// longer is quoted around what's wrong.
-    public static let quoted = 200
+    public static let quoted = AutomationError.queryQuoted
 
     /// A query's answer, built off the main actor, where `result`, handed over whole, is let go of
     /// too: however many rows, the main actor neither builds nor frees them.
@@ -103,18 +103,6 @@ public enum QueryOutput {
 
 // MARK: Refusals
 
-extension AutomationError {
-    /// A query's refusal as the command line reports it: its reason, message and hint, and where in
-    /// `text` (the query as sent) it is, the line as written there (at most `QueryOutput.quoted`
-    /// characters of it, around what's wrong, the column in what's quoted), so the caret `canvas`
-    /// draws under it by `column` lands on what's wrong; and every problem found, each where it is.
-    /// Nil `text`: a refusal of no part of a query (a deadline, a closed file).
-    init(_ error: QueryError, in text: String?, details: [String: JSON] = [:]) {
-        let place = text.flatMap { error.located(in: $0, quoting: QueryOutput.quoted) }
-        self.init(error.message, reason: error.reason.rawValue, hint: error.hint, line: place?.line, column: place?.column, length: place?.length,
-                  statement: place?.statement, errors: error.errors.map { AutomationError($0, in: text) }, details: details)
-    }
-}
 
 // MARK: query-vocabulary
 

@@ -18,6 +18,7 @@ import ShippedTesting
 import StickyNotes
 import SwiftUI
 import TestKit
+import Validation
 
 /// Boards as the app configures them, with the app's content less its toolbar, and their clipboard
 /// and Copy as Image's pasteboard on `pasteboard` (the test's own unless it passes one).
@@ -429,7 +430,13 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(find.items.map(\.keyEquivalent), ["f", "g", "g"])
         expectEqual(find.items.map(\.keyEquivalentModifierMask), [.command, .command, [.command, .shift]])
         let go = try require(menus.main.item(withTitle: "Go")?.submenu)
-        expectEqual(go.items.filter { !$0.isHidden }.map(\.title), ["Back", "Forward", "Enclosing Board", "Open Selection", "Go to Mention", "Show What Mentions", "", "Jump To…", "Board Path"], "Jump To follows Open Selection, after a separator, and Board Path follows it")
+        expectEqual(go.items.filter { !$0.isHidden }.map(\.title), ["Back", "Forward", "Enclosing Board", "Open Selection", "Go to Mention", "Show What Mentions", "", "Next Issue", "Previous Issue", "Issue List", "Ignore Issue", "End Issue Walk", "", "Jump To…", "Board Path"],
+                     "the issue walk's section follows Navigation's, Jump To follows it after a separator, and Board Path follows Jump To")
+        try command("Go", "Next Issue", .nextIssue, "'")
+        try command("Go", "Previous Issue", .previousIssue, "\"")
+        try command("Go", "Issue List", .issueList, "'", [.command, .control])
+        try command("Go", "Ignore Issue", .ignoreIssue, "'", [.command, .option])
+        try command("Go", "End Issue Walk", .endIssueWalk, "")
         expectEqual(go.items.filter(\.isHidden).map { "\($0.title) \(KeyboardShortcutSection.key(of: $0) ?? "")" }, ["Back ⌃-", "Forward ⌃_"],
                     "VS Code's keys, each a hidden item after the one it's another key of")
         try command("Go", "Jump To…", .jumpTo, "k")

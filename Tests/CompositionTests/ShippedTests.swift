@@ -7,6 +7,7 @@ import CanvasTesting
 import CanvasUI
 import Clipboard
 import CoreGraphics
+import DecisionModels
 import DetailPanel
 import Geometry
 import LanguageModels
@@ -29,27 +30,32 @@ import Validation
         let names = try require(ShippedList.names, "the build puts the list in an executable whose line ends + shipped")
         expectEqual(names.first, "Keyboard.KeyboardPlugin")
         expectEqual(Set(names).count, names.count, "each once")
-        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: ScriptedLanguageModel())])
+        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: ScriptedLanguageModel()),
+                                                          DecisionModelsPlugin(model: ScriptedDecisionModel())])
         expectEqual(plugins.map { String(reflecting: type(of: $0)) }, names, "every line a plugin of that type, in the list's order")
         expectEqual(ShippedPlugins.plugins(model: ScriptedLanguageModel()).map(\.id), plugins.map(\.id), "which is what every test here is given")
         _ = try Registry(plugins: plugins)
     },
-    test("nothing but the app is made of the plugins that reach outside the process: the list won't load without a pasteboard's and a model's of the caller's own") {
-        let outward = ["Clipboard.ClipboardPlugin", "LanguageModels.LanguageModelsPlugin"]
+    test("nothing but the app is made of the plugins that reach outside the process: the list won't load without a pasteboard's and two models' of the caller's own") {
+        let outward = ["Clipboard.ClipboardPlugin", "LanguageModels.LanguageModelsPlugin", "DecisionModels.DecisionModelsPlugin"]
+        let clipboard = ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard)
         expectThrows(ShippedListError.notSupplied(outward)) { _ = try ShippedList.plugins(supplying: []) }
-        expectThrows(ShippedListError.notSupplied([outward[1]])) { _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard)]) }
-        expectThrows(ShippedListError.notSupplied([outward[0]])) { _ = try ShippedList.plugins(supplying: [LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
-        // The model handed over is the one the editor asks: never the app's.
+        expectThrows(ShippedListError.notSupplied(Array(outward[1...]))) { _ = try ShippedList.plugins(supplying: [clipboard]) }
+        expectThrows(ShippedListError.notSupplied([outward[0], outward[2]])) { _ = try ShippedList.plugins(supplying: [LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
+        expectThrows(ShippedListError.notSupplied([outward[2]])) { _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: ScriptedLanguageModel())]) }
+        // The models handed over are the ones the editor asks: never the app's.
         let model = ScriptedLanguageModel()
-        let plugins = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: model)])
+        let decisions = ScriptedDecisionModel()
+        let plugins = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions)])
         let editor = CanvasEditor(registry: try Registry(plugins: plugins), document: CanvasDocument(), scheduler: ManualScheduler())
         expect(editor.languageModel as? ScriptedLanguageModel === model)
+        expect(editor.decisionModel as? ScriptedDecisionModel === decisions)
         // Any other listed plugin can be handed over too, and takes its place; one the list hasn't is refused.
         let asked = QueryTranslationPlugin(prompt: "Ask.", referenceRule: "")
-        let swapped = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: model), asked])
+        let swapped = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions), asked])
         expectEqual(swapped.map(\.id), plugins.map(\.id))
         expectThrows(ShippedListError.notInList(["CanvasTesting.Contributor"])) {
-            _ = try ShippedList.plugins(supplying: [ClipboardPlugin(pasteboard: ShippedPlugins.pasteboard), LanguageModelsPlugin(model: model), Contributor(id: "more") { _ in }])
+            _ = try ShippedList.plugins(supplying: [clipboard, LanguageModelsPlugin(model: model), DecisionModelsPlugin(model: decisions), Contributor(id: "more") { _ in }])
         }
     },
     test("a test that names no pasteboard copies to one of its own, never the user's: its editors share it, and it goes as the test ends") {
@@ -90,13 +96,13 @@ import Validation
         expectEqual(registry.windowSubtitle(for: editor), nil, "the root is the window's title's to name")
         expect(editor.showBoard(nest.sBoard))
         expectEqual(registry.windowSubtitle(for: editor), "Plans", "Boards' name for the board shown")
-        expectEqual(registry.settingsPanes.count, 0, "a scripted model signs in to nothing")
-        // The app's model brings the sign-in's pane (made only when Settings opens: nothing reads the key or runs claude here).
-        expectEqual(try Registry(plugins: [LanguageModelsPlugin()]).settingsPanes.map(\.title), ["Claude"])
+        expectEqual(registry.settingsPanes.count, 0, "scripted models sign in to nothing")
+        // The app's models bring their panes, the sign-in's first (made only when Settings opens: nothing reads a key or runs claude here).
+        expectEqual(try Registry(plugins: [LanguageModelsPlugin(), DecisionModelsPlugin()]).settingsPanes.map(\.title), ["Claude", "TypeSafe"])
     },
     test("and what the app takes besides is the plugins' too: every plugin's command for its server") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "capture", "kinds", "measure", "query", "query-vocabulary"])
+        expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "capture", "kinds", "measure", "query", "query-vocabulary", "decide"])
     },
     test("a plugin that can't ask for want of a sign-in asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -113,14 +119,25 @@ import Validation
         expectEqual(shipped.account.methodURL, AnthropicAccount.standard.methodURL)
         expectEqual(shipped.throughClaudeCode.claudeCode.configDirectory, ClaudeCode.standardConfigDirectory)
     },
+    test("the editor's decision model is the one passed, a scripted one unless a test says: the app's is Jev with the key from Settings") {
+        let decisions = ScriptedDecisionModel()
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel(), decisionModel: decisions)
+        expect(editor.decisionModel as? ScriptedDecisionModel === decisions)
+        expect(ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel()).decisionModel is ScriptedDecisionModel)
+        // Made from nothing, as the app's list makes it (never asked here: nothing reads the key or reaches the network).
+        let app = CanvasEditor(registry: try Registry(plugins: [DecisionModelsPlugin()]), document: CanvasDocument(), scheduler: ManualScheduler())
+        let shipped = try require(app.decisionModel as? JevModel)
+        expectEqual(shipped.model, JevModel.latest)
+        expectEqual(shipped.keys, .standard)
+    },
     test("the registry report: who contributes what") {
         expectEqual(try ShippedPlugins.registry(model: ScriptedLanguageModel()).report, """
         core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
         selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
         topology             service TopologyIndex · edge type stands-for
-        arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-        sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
+        arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+        sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
         subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
         framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
         references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
@@ -136,14 +153,16 @@ import Validation
         mention-slash-bar    slash bar field
         board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
         board-contents       contents heading
+        board-headings       board heading
         find-in-boards       service FindState · overlay FindOverlay · command find in FindSection · shortcut ⌘F → command find · command findNext in FindSection · shortcut ⌘G → command findNext · command findPrevious in FindSection · shortcut ⇧⌘G → command findPrevious
         find-panel           key hint ↩ or ⇧↩ in Find Next or Previous Hit · key hint ↑ or ↓ in Find Previous or Next Result · key hint ⌘↩ in Find Select Hit and Close · detail takeover
-        board-find           find heading
         title-find           findable title → every shape with a title
         mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
         jump-to              service JumpToState · command jumpTo first in PathSection · shortcut ⌘K → command jumpTo · host overlay
         transform            service TransformState
         validation-details   DetailStatuses in Issues after Style → every shape
+        issue-walk           service IssueWalk · command nextIssue in IssuesSection after NavigationSection · command previousIssue after nextIssue in IssuesSection after NavigationSection · shortcut ⌘' → command nextIssue · shortcut ⌘" → command previousIssue · command ignoreIssue after issueList in IssuesSection after NavigationSection · shortcut ⌥⌘' → command ignoreIssue · command endIssueWalk after ignoreIssue in IssuesSection after NavigationSection
+        issue-walk-panel     detail band · detail takeover · command issueList after previousIssue in IssuesSection after NavigationSection · shortcut ⌃⌘' → command issueList · service IssueLights · outlines
         validation-contents  ContentsMarks → every shape
         mention-validation   ValidationRules → every shape naming shapes
         path-validation      service PathIndex · ValidationRules → every shape with a title
@@ -154,6 +173,7 @@ import Validation
         types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
         type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
         type-details         ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding autofill · ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding endRule
+        issue-row-values     IssueRowValues → every shape holding fieldValues
         field-find           findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
         colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding color
         color-validation     service ColorWarnings · ValidationRules → every shape holding color
@@ -164,6 +184,10 @@ import Validation
         connect-menu         CanvasContextMenu in ShapeMenuGroup first
         arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · connects to itself → every shape holding schema · ArrowBindingRules
         language-models      service LanguageModelState
+        decision-models      service Decisions
+        language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
+        rule-validation      ValidationRules → every shape holding ignoredRules · IssueScopes · ValidationRules → every shape holding schema
+        rule-details         service RuleLights · outlines · ShapeDetails in Rules after Schema → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
         prose-maps           service ProseMapService · overlay ProseMapFrames
         draw-engine          draw engine · insertion spot
         automation           command line draw · command line show · command line capture · command line kinds · command line measure · host commands
@@ -176,16 +200,17 @@ import Validation
         color-names          draw text text/x-canvas-color
         group-draw           draw groups
         queries              service QueryState · query engine
-        query-translation    service QueryTranslator
+        query-translation    service QueryTranslator · service Interpretations
         title-queries        query names
         board-queries        query board names
         mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
         validation-queries   query word :invalid · query word :warned · query word :incomplete
-        type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · query path fieldValues
+        type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · ask fact connections · query path fieldValues
         color-queries        query text text/x-canvas-color
         group-queries        query word :grouped-with
         selection-queries    query word :selected
         query-commands       command line query · command line query-vocabulary
+        decision-commands    command line decide
         query-slash          /query → the command bar's target
         neighbors            service NeighborState · outlines
         arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
@@ -203,7 +228,7 @@ import Validation
         let end = try require(guide.range(of: "\n```", range: start..<guide.endIndex)).lowerBound
         expectEqual(String(guide[start..<end]), try ShippedPlugins.registry(model: ScriptedLanguageModel()).report)
     },
-    test("every placed kind has a panel: a note its header over the Connections and Style tabs, a subboard its Description tab before them, a frame and an arrow those two alone, a reference that tab alone; a type note its Schema tab between them; every nameable kind's header renames it") {
+    test("every placed kind has a panel: a note its header over the Connections and Style tabs, a subboard its Description tab before them, a frame and an arrow those two alone, a reference that tab alone; a type note its Schema and Rules tabs between them; every nameable kind's header renames it") {
         let h = EditorHarness { ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: $0, model: ScriptedLanguageModel()) }
         let state = try require(h.editor.detailPanel)
         var panels: [String] = []
@@ -233,7 +258,7 @@ import Validation
         let typeLayout = state.layout(for: try require(h.editor.document[type]))
         panels.append("\(typeLayout.headerText): \(typeLayout.tabs.map(\.title).joined(separator: ", "))")
         expectEqual(panels, ["(Note): Connections, Style", "(Untitled Subboard): Description, Connections, Style", "(Untitled Frame): Connections, Style", "Arrow: Connections, Style", "Reference: Connections",
-                         "(Note): Connections, Schema, Style"])
+                         "(Note): Connections, Schema, Rules, Style"])
     },
     test("the table of contents lists the sample board: each note by its text, each arrow under the note it starts from") {
         let editor = ShippedPlugins.makeEditor(scheduler: ManualScheduler(), model: ScriptedLanguageModel())

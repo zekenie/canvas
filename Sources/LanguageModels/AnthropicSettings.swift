@@ -10,13 +10,39 @@ extension Notification.Name {
     public static let languageModelSignInDidChange = Notification.Name("LanguageModels.signInDidChange")
 }
 
-/// What the Settings window's Anthropic key does, apart from its view (so tests drive it
-/// headlessly): save the key typed, remove the saved one, and test it with a tiny real call. Saving
-/// and removing post `languageModelSignInDidChange`. Its status speaks only of a test and of what
-/// failed: the field's prompt says whether a key is saved.
+/// A service whose API key a Settings pane keeps (`KeySettingsView`): what the pane calls it, how
+/// its keys start, where they're made, and what's posted when its key changes.
+public struct KeyService: Equatable, Sendable {
+    /// Its name: the field is "<name> API key".
+    public var name: String
+    /// The field's prompt while no key is saved: how the service's keys start.
+    public var placeholder: String
+    /// Where keys are made ("Get a key").
+    public var console: URL
+    /// Posted on the main thread when the key is saved, replaced or removed.
+    public var keyDidChange: Notification.Name
+
+    public init(name: String, placeholder: String, console: URL, keyDidChange: Notification.Name) {
+        self.name = name
+        self.placeholder = placeholder
+        self.console = console
+        self.keyDidChange = keyDidChange
+    }
+
+    /// Anthropic's: Claude, the language model.
+    public static let anthropic = KeyService(name: "Anthropic", placeholder: "sk-ant-…",
+                                             console: URL(string: "https://console.anthropic.com/settings/keys")!,
+                                             keyDidChange: .languageModelSignInDidChange)
+}
+
+/// What a Settings pane's key does, apart from its view (so tests drive it headlessly): save the key
+/// typed, remove the saved one, and test it with a tiny real call. Saving and removing post the
+/// service's `keyDidChange`. Its status speaks only of a test and of what failed: the field's prompt
+/// says whether a key is saved. One for every service with a key: Anthropic's
+/// (`AnthropicKeySettings`) and DecisionModels' TypeSafe's, each made with its own test.
 @MainActor
 @Observable
-public final class AnthropicKeySettings {
+public final class KeySettings {
     public enum Status: Equatable, Sendable {
         case idle
         /// Saved, or removed: said by the field (its prompt) and Remove (enabled or not), not by the
@@ -53,7 +79,7 @@ public final class AnthropicKeySettings {
 
     /// Says a status to whoever uses VoiceOver, as it changes (`statusText`): by default the app's
     /// announcement; a test sets it to hear what was said.
-    @ObservationIgnored public var announce: @MainActor (String) -> Void = AnthropicKeySettings.announceToVoiceOver
+    @ObservationIgnored public var announce: @MainActor (String) -> Void = KeySettings.announceToVoiceOver
 
     /// An announcement VoiceOver speaks at once.
     public static func announceToVoiceOver(_ text: String) {
@@ -61,24 +87,26 @@ public final class AnthropicKeySettings {
                              userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
+    /// Whose key it is.
+    public let service: KeyService
     /// Where the key is kept.
-    public let keys: AnthropicKeyStore
-    @ObservationIgnored private let model: any LanguageModel
+    public let keys: any KeyFile
+    /// Test's call: nil when it was answered, else what went wrong, in a fragment.
+    @ObservationIgnored private let check: @MainActor @Sendable () async -> String?
     @ObservationIgnored private var testing: Task<Void, Never>?
 
-    /// `model` is what Test asks: one that reads its key from `keys` (by default, Claude Haiku).
-    public init(keys: AnthropicKeyStore, model: (any LanguageModel)? = nil) {
+    /// The key of `service` in `keys`, tested by `test`: a tiny real call with the saved key, nil when
+    /// it's answered, else its failure's message.
+    public init(service: KeyService, keys: any KeyFile, test: @escaping @MainActor @Sendable () async -> String?) {
+        self.service = service
         self.keys = keys
-        self.model = model ?? AnthropicModel(keys: keys)
+        check = test
         hasKey = keys.hasKey
     }
 
-    /// The request Test sends: as small as a real call gets.
-    public static let testRequest = ModelRequest(messages: [.user("Reply with the word OK.")], maxTokens: 5)
-
     public var canSave: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     public var canTest: Bool { (hasKey || canSave) && status != .testing }
-    /// Not while a test runs: a key removed then can't be had back (Anthropic shows one only when
+    /// Not while a test runs: a key removed then can't be had back (a service shows one only when
     /// it's made).
     public var canRemove: Bool { hasKey && status != .testing }
 
@@ -94,7 +122,7 @@ public final class AnthropicKeySettings {
             status = .failed("Couldn’t save", detail: error.localizedDescription)
         }
         hasKey = keys.hasKey
-        if status == .saved { NotificationCenter.default.post(name: .languageModelSignInDidChange, object: self) }
+        if status == .saved { NotificationCenter.default.post(name: service.keyDidChange, object: self) }
     }
 
     /// Removes the saved key; nothing while a test runs (`canRemove`).
@@ -107,10 +135,10 @@ public final class AnthropicKeySettings {
             status = .failed("Couldn’t remove", detail: error.localizedDescription)
         }
         hasKey = keys.hasKey
-        if status == .removed { NotificationCenter.default.post(name: .languageModelSignInDidChange, object: self) }
+        if status == .removed { NotificationCenter.default.post(name: service.keyDidChange, object: self) }
     }
 
-    /// Saves what's typed, if anything, then asks the model something tiny with the saved key. A
+    /// Saves what's typed, if anything, then asks the service something tiny with the saved key. A
     /// save that fails stops it there: the failure stays, and the key saved before isn't tested in
     /// its place. Whether a key is saved is read again with the outcome: a test that finds none
     /// (its file removed while Settings was open) leaves the field and Remove saying so too.
@@ -121,17 +149,11 @@ public final class AnthropicKeySettings {
         }
         guard hasKey, status != .testing else { return }
         status = .testing
-        let model = model
+        let check = check
         testing = Task {
-            let outcome: Status
-            do throws(LanguageModelError) {
-                _ = try await model.respond(to: Self.testRequest)
-                outcome = .works
-            } catch {
-                outcome = .failed(error.message)
-            }
+            let failure = await check()
             guard !Task.isCancelled else { return }
-            status = outcome
+            status = failure.map { .failed($0) } ?? .works
             hasKey = keys.hasKey
             testing = nil
         }
@@ -159,5 +181,23 @@ public final class AnthropicKeySettings {
     public var statusHelp: String? {
         guard case let .failed(message, detail) = status else { return statusText }
         return detail ?? message
+    }
+}
+
+/// The Anthropic key's settings: `KeySettings` made for Anthropic, tested with a five-token call.
+public typealias AnthropicKeySettings = KeySettings
+
+extension KeySettings {
+    /// The Anthropic key in `keys`, tested with `model` (by default, Claude Haiku reading `keys`).
+    public convenience init(keys: AnthropicKeyStore, model: (any LanguageModel)? = nil) {
+        let model = model ?? AnthropicModel(keys: keys)
+        self.init(service: .anthropic, keys: keys) {
+            do throws(LanguageModelError) {
+                _ = try await model.respond(to: AnthropicSettingsView.testRequest)
+                return nil
+            } catch {
+                return error.message
+            }
+        }
     }
 }

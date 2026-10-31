@@ -3,6 +3,7 @@ import Canvas
 import Colors
 import Connections
 import Keyboard
+import LanguageRules
 import Mentions
 import Observation
 import Palette
@@ -95,6 +96,7 @@ public struct StickyNotesPlugin: ListedPlugin {
                 return made
             }
             note.colorable(default: .yellow)                   // a note has a color: its paper, yellow without one
+            note.checkedByRules()                              // a note of a type is checked against the type's rules
             note.tint(NoteStyle.tint)                          // its yellow, wherever it's listed by its kind
             note.createOnDoubleClick(place)                    // opts into the selection's double-click
             note.resizable(minimumSize: StickyNote.minimumSize) // and its handles, on the paper as it's laid out

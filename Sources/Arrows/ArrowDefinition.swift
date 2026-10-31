@@ -3,6 +3,7 @@ import Canvas
 import Colors
 import ContextMenus
 import Geometry
+import LanguageRules
 import Mentions
 import Publishing
 import Selection
@@ -385,6 +386,7 @@ public struct ArrowsPlugin: ListedPlugin {
             // It may have a color of its own (`ColorsPlugin`): its line, heads and label; with none it is
             // `ArrowStyle.color`, as it was.
             arrow.colorable()
+            arrow.checkedByRules()
             // And types: its label says what it is (`/is-a`), where it's drawn, and fits to nothing but
             // itself.
             arrow.typeWords(\.text, drawnIn: { arrow, shapes in

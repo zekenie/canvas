@@ -411,7 +411,7 @@ extension Drawing {
             // A value a property's writer joins with what the arrow holds (the connection as the maker left it).
             var settings = edgeSettings
             for (key, written) in edgeSettings {
-                if let writer = registry.drawValueWriters[key] { settings[key] = writer.merge(written, made.propertiesJSON?[key]) }
+                if let writer = registry.drawValueWriters[key] { settings[key] = writer.merge(written, made.propertiesJSON?[key], registry) }
             }
             do throws(ShapePropertiesError) {
                 made = try registry.shape(made, setting: settings)

@@ -385,6 +385,7 @@ private let idE = ShapeID(UUID(uuidString: "EEEEEEEE-1111-4222-8333-444444444444
         case .header(let words): "# \(words)"
         case .empty(let words): "- \(words)"
         case .candidate(let candidate): candidate.appearance.label
+        case .words(let words): "… \(words)"
         }
     } ?? []
 }

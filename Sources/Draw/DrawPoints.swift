@@ -425,7 +425,7 @@ extension DrawReports: KeyedExtensionPoint {
 public struct DrawValueWriting {
     let key: String
     let write: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue
-    let merge: @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue
+    let merge: @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue
 }
 
 /// What writes a property's values in `canvas draw`: at most one plugin for each property key.
@@ -508,6 +508,14 @@ extension PluginRegistrar {
     public mutating func drawValueWriter(for key: PropertyKey,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
+        drawValueWriter(for: key, write: write) { written, held, _ in merge(written, held) }
+    }
+
+    /// The same, `merge` handed the registry too, for a join that goes by what other plugins say (Types keeps every
+    /// directive plugins hold in a schema, `registry.heldDirectives`).
+    public mutating func drawValueWriter(for key: PropertyKey,
+                                         write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
+                                         merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue) {
         contribute(DrawValueWriting(key: key.rawValue, write: write, merge: merge), to: DrawValueWriters.self)
     }
 

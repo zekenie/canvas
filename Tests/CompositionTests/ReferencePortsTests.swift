@@ -10,6 +10,7 @@ import DetailPanel
 import Draw
 import Geometry
 import Keyboard
+import LanguageRules
 import Mentions
 import Publishing
 import Queries
@@ -73,7 +74,7 @@ private let targetNames = Contributor(id: "target-names") { registrar in
         KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), TilesPlugin(), LinksPlugin(), ContextMenusPlugin(),
         DetailPanelPlugin(), AdornmentsPlugin(), PortsPlugin(), SlashCommandsPlugin(), ValidationPlugin(), TitlesPlugin(), MentionsPlugin(),
         PublishingPlugin(), targetsPlugin, QueriesPlugin(), targetNames, ReferencesPlugin(), TableOfContentsPlugin(),
-        TypesPlugin(), ColorsPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin,
+        TypesPlugin(), ColorsPlugin(), LanguageRulesPlugin(), ArrowsPlugin(), ArrowPortsPlugin(), channelsPlugin,
     ] + (connecting ? [DrawPlugin(), PortEdgesPlugin()] : []))
     h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
     return h

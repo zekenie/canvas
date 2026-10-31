@@ -3,7 +3,7 @@ import Canvas
 /// Topology as it was at one instant, for any thread: the file's edges and containment when the
 /// snapshot was taken (`topology.snapshot()`, O(1)), answering every question about them the index
 /// answers, as it would have then (not what changed: `revision(of:)`, `touched`), and a few more that
-/// read the whole file (its shapes in file order). A query
+/// read the whole file (its shapes in file order, and in board order). A query
 /// that walks a whole component, or every mention, runs on it off the main actor, uninterrupted,
 /// whatever commits land meanwhile.
 ///
@@ -134,6 +134,19 @@ public struct TopologySnapshot: Sendable {
     /// Nil for a shape on a board the app can't show, or in no board of the file. O(its depth): for
     /// putting a few shapes in order without walking the file.
     public func fileOrderKey(of id: ShapeID) -> [Int]? { containment.fileOrderKey(of: id) }
+
+    /// The shapes of the board `scope` and every board under it, in board order, the order Find lists
+    /// and steps in: the scope board's own shapes in file order (what a frame holds right after the
+    /// frame), then each board under it, depth first, in the order of the shapes that own them, a
+    /// board's own shapes before the boards under it. (File order lists a board right after its
+    /// owner.) None when the app can't show `scope`. O(those shapes).
+    public func boardOrder(from scope: BoardID) -> [ShapeID] { containment.boardOrder(from: scope) }
+
+    /// Where a shape comes in `boardOrder(from: .root)`, as a key that sorts as that order does; the
+    /// relative order of any two shapes is the same in the order from any board both are under. Nil
+    /// for a shape on a board the app can't show, or in no board of the file. O(its depth): for
+    /// putting a few shapes in board order without walking the file.
+    public func boardOrderKey(of id: ShapeID) -> BoardOrderKey? { containment.boardOrderKey(of: id) }
 }
 
 extension TopologyIndex {

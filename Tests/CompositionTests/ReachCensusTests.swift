@@ -613,6 +613,28 @@ private struct PlantedFacePlugin: CanvasPlugin {
         b.walk.pending = planted.map { "\($0), reach-census" }
         b.walk.expectGaps(report.gaps)
     },
+    test("the issue walk's band, its count, its list and a warning line's “9 of 63” each have a menu item or a key (P1, P2, P10), with nothing pending") {
+        let b = try CensusBoard()
+        defer { b.close() }
+        // The band's ‹, › and Done are the commands of Previous Issue, Next Issue and End Issue Walk, its count and the list
+        // Issue List, and the list's Ignore Issue: items of the menu bar (Go), the first four with keys.
+        let reachable = b.reachableTitles()
+        for title in ["Previous Issue", "Next Issue", "Issue List", "Ignore Issue", "End Issue Walk"] {
+            expect(reachable.contains(title), "\(title) is in no menu bar menu: \(reachable.sorted())")
+        }
+        let keyed = Set(b.editor.registry.keyboardHelpRows.map(\.title))
+        for title in ["Previous Issue", "Next Issue", "Issue List", "Ignore Issue"] { expect(keyed.contains(title), "\(title) has no key in the Keyboard Shortcuts window") }
+        expect(!keyed.contains("End Issue Walk"), "End Issue Walk has no key: its item is in the menu bar (Done's twin)")
+        // A flagged listing's warning line says “1 of 4”, which begins the rule's walk: its menu way is Walk Flagged ▸, in the
+        // selection's menu (so the Shape menu), beside Ignore Rule ▸.
+        let scene = try ListWalk(boards: false)
+        scene.editor.selection = scene.mustang
+        scene.w.window.settle()
+        let menu = (scene.editor.menuForSelection(omitting: [])?.outline ?? []).joined(separator: "\n")
+        expect(menu.contains("Walk Flagged ▸"), "the shape's menu: \(menu)")
+        expect(menu.contains("Ignore Rule ▸"), "and Ignore Rule beside it: \(menu)")
+        expect(reachPending.isEmpty, "the census has no pending entry: \(reachPending)")
+    },
     test("every item of a shape's, a chip's and the canvas's menu is in the menu bar or has a key (P10)") {
         let b = try CensusBoard()
         defer { b.close() }

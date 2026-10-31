@@ -212,11 +212,15 @@ public final class TypeSync<Schema: SyncedSchema> {
     @ObservationIgnored private var spotObservers: [@MainActor (ShapeID) -> Void] = []
     /// The kinds that hold `Schema` and have words: every other shape is passed over at once.
     @ObservationIgnored private let kinds: Set<ShapeKind>
+    /// The directives the model is never sent and a change to which alone is no change: `$color`, `$autofill`
+    /// and what other plugins hold in a schema.
+    @ObservationIgnored private let held: HeldDirectives
     @ObservationIgnored nonisolated(unsafe) private var keyObserver: (any NSObjectProtocol)?
 
     init(editor: CanvasEditor) {
         self.editor = editor
         let registry = editor.registry
+        held = registry.heldDirectives
         kinds = Set(registry.kinds.filter { registry.properties(for: $0).contains(Schema.key) && registry.typeWords(of: $0) != nil })
         seeEveryShape(in: editor.file)
         keyObserver = NotificationCenter.default.addObserver(forName: .languageModelSignInDidChange, object: nil, queue: .main) { [weak self] _ in
@@ -384,7 +388,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         let named = Schema.namesTheShape && TypeNaming.title(of: now.schema) == nil
         // And never its `$color` or `$autofill`: what the shape holds is no business of the words'.
         func sent(_ schema: String) -> String {
-            let schema = HeldDirectives.stripped(schema)
+            let schema = held.stripped(schema)
             return names.modelSchema(name.flatMap { TypeNaming.titled(schema, $0) } ?? schema)
         }
         let request: ModelRequest, writes: TypeSide
@@ -392,7 +396,7 @@ public final class TypeSync<Schema: SyncedSchema> {
             request = Schema.prompts.toSchema(names.modelText(of: last.words).text, names.modelText(of: now.words).text, sent(now.schema), names.list,
                                               record[RelationshipProperty.self] == true)
             writes = .schema
-        } else if !Self.means(root, last.schema, ignoringTitle: Schema.namesTheShape) {
+        } else if !Self.means(root, last.schema, ignoringTitle: Schema.namesTheShape, held: held) {
             guard !(document.fields.isEmpty && words.isEmpty) else { return }
             // Words that are JSON are the schema, and never go as the prompt: the model writes the words from the schema.
             let prompt = TypeWordsSchema.schema(fromWords: now.words) == nil ? names.modelText(of: now.words).text : ""
@@ -434,7 +438,7 @@ public final class TypeSync<Schema: SyncedSchema> {
     /// the words (nothing, if the schema says nothing). One undo step ("Update Schema"), none if the
     /// schema already is these words.
     private func adopt(_ id: ShapeID, _ text: String, words: MentionText, schema: String) {
-        let text = HeldDirectives.carried(from: schema, into: text)
+        let text = held.carried(from: schema, into: text)
         let pair = TypeSyncSides(words: words, schema: "{}")
         if text != schema {
             write(id, .schema, inStep: pair) { $0.update(id) { $0[Schema.self] = SchemaText(text) } }
@@ -493,7 +497,7 @@ public final class TypeSync<Schema: SyncedSchema> {
         guard let editor, let record = editor.file.record(id), let now = sides(of: record), !editor.isReadOnly(inFile: id) else { return .idle }
         // The side it writes changed while it was out: the answer is to a question no longer asked. A
         // type given another color meanwhile (or told whether its notes fill) says what it said.
-        guard call.writes == .schema ? HeldDirectives.sameButHeld(now.schema, call.sent.schema) : now.words == call.sent.words
+        guard call.writes == .schema ? held.sameButHeld(now.schema, call.sent.schema) : now.words == call.sent.words
         else { return .idle }
         // The words a rewrite replaces, as a prompt: none for JSON, which was never sent as one.
         let replaced = call.direction == .toPrompt && TypeWordsSchema.schema(fromWords: call.sent.words) == nil ? call.names.modelText(of: call.sent.words).text : ""
@@ -513,7 +517,7 @@ public final class TypeSync<Schema: SyncedSchema> {
             switch call.writes {
             case .schema:
                 // With the type's `$color` and `$autofill`, which the model is never sent.
-                var schema = HeldDirectives.carried(from: now.schema, into: call.names.schema(fromModel: text))
+                var schema = held.carried(from: now.schema, into: call.names.schema(fromModel: text))
                 // The name went in as the root "title": it comes out, and names a shape that has none.
                 var title: String?
                 if call.named, let untitled = TypeNaming.untitled(schema) {
@@ -528,7 +532,7 @@ public final class TypeSync<Schema: SyncedSchema> {
             case .words:
                 let words = call.names.words(fromModel: text)
                 guard let typeWords = editor.registry.typeWords(of: record.kind) else { return .idle }
-                let answered = HeldDirectives.sameButHeld(now.schema, call.sent.schema) ? now.schema : call.sent.schema
+                let answered = held.sameButHeld(now.schema, call.sent.schema) ? now.schema : call.sent.schema
                 write(id, .words, inStep: TypeSyncSides(words: words, schema: answered)) { transaction in
                     if words != now.words { typeWords.write(&transaction, id, words) }
                 }
@@ -613,19 +617,19 @@ public final class TypeSync<Schema: SyncedSchema> {
     /// holds, nothing its words say), a root `properties` left empty being none; and,
     /// `ignoringTitle`, whatever either's root `"title"` says (a type's name is its shape's, so a title
     /// typed in the JSON changes nothing the words say).
-    private static func means(_ root: JSONNode, _ text: String, ignoringTitle: Bool) -> Bool {
+    private static func means(_ root: JSONNode, _ text: String, ignoringTitle: Bool, held: HeldDirectives) -> Bool {
         guard let other = try? JSONReader.read(text) else { return false }
-        return same(said(root, ignoringTitle: ignoringTitle), said(other, ignoringTitle: ignoringTitle))
+        return same(said(root, ignoringTitle: ignoringTitle, held: held), said(other, ignoringTitle: ignoringTitle, held: held))
     }
 
-    /// What a schema's root says to the words: without its `$color` and `$autofill`, a `properties` left with nothing,
-    /// or, `ignoringTitle`, its `"title"`.
-    private static func said(_ root: JSONNode, ignoringTitle: Bool) -> JSONNode {
+    /// What a schema's root says to the words: without the directives held aside (`$color`, `$autofill`, what other
+    /// plugins keep there), a `properties` left with nothing, or, `ignoringTitle`, its `"title"`.
+    private static func said(_ root: JSONNode, ignoringTitle: Bool, held: HeldDirectives) -> JSONNode {
         guard case let .object(members) = root.value else { return root }
         let kept = members.compactMap { member -> JSONMember? in
             if ignoringTitle, member.key == "title" { return nil }
             guard member.key == "properties", case let .object(properties) = member.value.value else { return member }
-            let fields = properties.filter { !HeldDirectives.isHeld($0.key) }
+            let fields = properties.filter { !held.isHeld($0.key) }
             guard !fields.isEmpty else { return nil }
             return JSONMember(key: member.key, keyRange: member.keyRange, value: JSONNode(.object(fields), range: member.value.range))
         }
@@ -720,7 +724,7 @@ extension TypeSync: EditorService {
                 // Unless the words are the schema (JSON words taken whole): then the schema is ahead,
                 // and the sync takes the words from it. The last sync is said to have had the words
                 // and an empty schema, which also undoes `see`'s blanking of an empty one's words.
-                if HeldDirectives.carried(from: now.schema, into: Self.trimmed(now.words)) == Self.trimmed(now.schema) {
+                if held.carried(from: now.schema, into: Self.trimmed(now.words)) == Self.trimmed(now.schema) {
                     synced[id] = TypeSyncSides(words: now.words, schema: "{}")
                 } else if record[RelationshipProperty.self] == true {
                     // A relationship type that has words for the first time (it was not synced while it had none, and its
@@ -744,7 +748,7 @@ extension TypeSync: EditorService {
         if changes.restoredStep {
             stop(id)
             restoring.insert(id)
-        } else if seen.words == now.words, HeldDirectives.sameButHeld(seen.schema, now.schema) {
+        } else if seen.words == now.words, held.sameButHeld(seen.schema, now.schema) {
             // A type given another color (its `$color`, written with its shape's color), or told whether its
             // notes fill (its `$autofill`), says what it said: nothing to follow, and the pair in step holds
             // the text as it is now.

@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CanvasTesting
 import CanvasUI
+import DecisionModels
 import Foundation
 import LanguageModels
 import SwiftUI
@@ -37,5 +38,30 @@ import TestKit
             expectEqual(window.frame, frame, "opening \(opening)")
             shown = window.contentViewController
         }
+    },
+    test("with the TypeSafe key's pane under the Claude pane, on the API key's way the window opens with the keyboard in the first field, and Tab goes down to the second") {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "SettingsWindowTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let account = AnthropicAccount(methodURL: directory.appending(path: "sign-in", directoryHint: .notDirectory),
+                                       keys: AnthropicKeyStore(url: directory.appending(path: "anthropic-api-key", directoryHint: .notDirectory)),
+                                       claudeCode: ClaudeCode(executable: directory.appending(path: "claude", directoryHint: .notDirectory),
+                                                              configDirectory: directory.appending(path: "claude-code", directoryHint: .isDirectory)))
+        try account.setMethod(.apiKey)
+        let typeSafe = TypeSafeKeyStore(url: directory.appending(path: "typesafe-api-key", directoryHint: .notDirectory))
+        let registry = try Registry(plugins: [LanguageModelsPlugin(model: SignedInModel(account: account)),
+                                              DecisionModelsPlugin(model: JevModel(keys: typeSafe))])
+        expectEqual(registry.settingsPanes.map(\.title), ["Claude", "TypeSafe"])
+        let window = SettingsWindow(registry: registry, autosaveName: nil).prepare()
+        defer { window.close() }
+        window.settle()
+        let fields = try require(window.contentViewController?.view.descendants(NSSecureTextField.self))
+        expectEqual(fields.count, 2)
+        let top = try require(fields.min { $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY })
+        let bottom = try require(fields.first { $0 !== top })
+        window.spin(until: { (window.firstResponder as? NSTextView)?.delegate === top })
+        _ = window.press(.tab)
+        window.spin(until: { (window.firstResponder as? NSTextView)?.delegate === bottom })
+        _ = window.press(.backTab)
+        window.spin(until: { (window.firstResponder as? NSTextView)?.delegate === top })
     },
 ])

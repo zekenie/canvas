@@ -160,7 +160,7 @@ import TestKit
             expectEqual(settings.status, .testing)
             expect(!settings.canTest, "not twice at once")
             spinRunLoop(until: { model.waiting == 1 })
-            expectEqual(model.lastRequest, AnthropicKeySettings.testRequest)
+            expectEqual(model.lastRequest, AnthropicSettingsView.testRequest)
             expectEqual(model.lastRequest?.maxTokens, 5)
             model.release()
             spinRunLoop(until: { settings.status != .testing })

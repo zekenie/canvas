@@ -56,6 +56,8 @@ maps one onto the other.
 - [Types](#types-shapes-that-hold-a-schema)
 - [Colors](#colors)
 - [Language models](#language-models)
+- [Decision models](#decision-models)
+- [Language rules](#language-rules)
 - [Prose maps](#prose-maps)
 - [Snapping](#snapping)
 - [Capabilities](#capabilities)
@@ -307,8 +309,8 @@ Once one plugin works, the question is which piece the next feature needs.
 | Make a kind's shapes open onto the boards they own: Open in its menu, ⌘↑ back up, and a name on the path | `x.opensBoard(placeholder:systemImage:)` (Boards), on a `BoardOwning` kind | [Boards](#boards) |
 | Show where you are in a file's boards, and go up | `BoardPath(editor:)`, over the canvas; `editor.goUp(to:)`, `editor.name(of:)` | [Boards](#boards) |
 | Put a view of yours over the window's canvas, before it as the sidebar, beside it as the inspector, a pane in Settings, or words in the window's subtitle or a tool's tip | `registrar.hostOverlay(alignment:coveredTop:) { editor, onExit in … }`, `hostSidebar`, `hostInspector`, `settingsPane`, `windowSubtitle`, `toolTips` | [Host slots](#host-slots) |
-| Show a view of yours in the detail panel in place of the selection's details while something of yours is open | `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }` | [The detail panel](#takeovers) |
-| Say what a board is called over another plugin's list of it | `registrar.contentsHeading { editor in … }` (the table of contents'), `registrar.findHeading { board, editor in … }` (Find's) | [Boards](#boards) |
+| Show a view of yours in the detail panel in place of the selection's details while something of yours is open, or over them | `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }`; `registrar.detailBand(isActive:onCancel:) { editor, onExit in … }` | [The detail panel](#takeovers) |
+| Say what a board is called over another plugin's list of it | `registrar.contentsHeading { editor in … }` (the table of contents'), `registrar.boardHeading { board, editor in … }` (the panel's lists grouped by board: Find's) | [Boards](#boards) |
 | Put a board inside the board | `SubboardsPlugin`: the Subboard tool (B) places a card that opens onto a board of its own | [Subboards](#subboards) |
 | Hold shapes in a region of the board that moves them with it, locks them with it and keeps what's put down from sitting across its edge | `ShapeContaining` on a box kind's definition, nothing to implement; `FramesPlugin`, whose Frame tool (F) draws one | [Frames](#frames), [Containers](#containers) |
 | Draw a kind's shape with a drag, from the press to the pointer, and still say what a click places (and `canvas draw`) | `x.tool(label:systemImage:shortcut:placing:_:)`, a tool of your own with the kind's placement; `editor.place(_:in:)` at the release | [Frames](#frames) |
@@ -341,6 +343,9 @@ Once one plugin works, the question is which piece the next feature needs.
 | Change where a drag puts the shapes it moves (snap them, keep them on a grid), and draw while it does | `registrar.translationAdjuster { editor, start in … }`, a `TranslationAdjuster`: Snapping claims it | [The translation adjuster](#the-cores-part-the-translation-adjuster) |
 | Change what box a drag of a resize handle gives a shape (snap its sides), and draw while it does | `registrar.resizeAdjuster { editor, start in … }`, a `ResizeAdjuster`: Snapping claims it | [The resize adjuster](#the-cores-part-the-resize-adjuster) |
 | Ask Claude something (and test it without the network) | `editor.languageModel?.respond(to: ModelRequest(...))`; `ScriptedLanguageModel` in tests | [Language models](#language-models) |
+| Ask yes-or-no questions of a state, each answered with a probability (and test it without the network) | `editor.decisions?.decide(DecisionRequest(state:preface:questions:))` (answered from memory what was asked today), `model.cutoffs.verdict(p)`; `ScriptedDecisionModel` in tests | [Decision models](#decision-models) |
+| Hold a member of another plugin's in every type's schema, out of the sync's sight | `registrar.typeDirective("rules")` (Types); `registry.heldDirectives` | [Language rules](#language-rules) |
+| Check a kind's shapes against their types' rules in English | `x.checkedByRules()` (LanguageRules); `editor.ruleChecks?.check(of:)` | [Language rules](#language-rules) |
 | Say which words of a text say which part of a lower-level text (a schema, code, a query), to highlight them | A `ProseTarget` (a name and a guide); `editor.proseMaps?.map(T.self, of:prose:target:askingIf:)` where the words are drawn | [Prose maps](#prose-maps) |
 | Keep what a kind's props are bound to right as shapes are deleted and copied (a connector) | `ShapeReferencing` | [Arrows](../Sources/Arrows/ArrowDefinition.swift) |
 | Let a kind's shapes be mentioned in text, as pills | `x.mentionable(untitled:symbol:…)` (Mentions), or `registrar.mentionable(K.self)` for another plugin's kind | [Mentions](#mentionable-kinds) |
@@ -438,12 +443,14 @@ holds three more groups, which are not interfaces a kind plugs into but are stil
   Titles: a point made only to change a module's place is the wrong fix.
 - **Engines**: what any plugin may run or ask. The query engine ([Queries](#queries)), the draw
   engine ([Draw](#draw)), the translation of English into a query (QueryTranslation), the language
-  model ([LanguageModels](#language-models)), prose maps (what words say of a lower-level text,
-  [ProseMaps](#prose-maps)) and the lights a hovered shape shows ([Neighbors](#neighbors)). An engine
+  model ([LanguageModels](#language-models)), the decision model ([DecisionModels](#decision-models)),
+  prose maps (what words say of a lower-level text, [ProseMaps](#prose-maps)) and the lights a hovered
+  shape shows ([Neighbors](#neighbors)). An engine
   knows no meaning a horizontal owns: the words a horizontal gives it come from the horizontal's own
   module, through the engine's points. And an engine may declare no point at all and only lend
-  something: LanguageModels lends every editor the model plugins ask, and ProseMaps what a text's
-  words say of a lower-level text, which it asks that model.
+  something: LanguageModels lends every editor the model plugins ask, DecisionModels the model they
+  ask yes-or-no questions of, and ProseMaps what a text's words say of a lower-level text, which it
+  asks the language model.
 - **What agents speak**: the [command line](#the-command-line) (Automation: `draw`, `show`, `capture`,
   `kinds` and `measure`) and `canvas query` (QueryCommands), whose words are the query language's and their
   owners'. The engines that answer a draw and a query are engines, not these, since every plugin may
@@ -469,7 +476,7 @@ Opting in goes in one of four directions:
   point's owner isn't installed, so a list with Validation and no panel installs `ValidationPlugin()`
   alone. One in the window shows itself on another the same way: Find's panel is the detail panel's
   takeover (`FindPanelPlugin`), and Boards heads the table of contents' list and Find's with a
-  board's name (`BoardContentsPlugin`, `BoardFindPlugin`).
+  board's name (`BoardContentsPlugin`, `BoardHeadingsPlugin`).
 - **A word in a language is given by the module that owns its meaning**, as a plugin value of its
   own, through the engine's points; when the owner sits below the engine, the engine's module
   gives it. The query engine is an engine, not what agents speak, so [queries](#queries)' points are
@@ -477,7 +484,7 @@ Opting in goes in one of four directions:
   Boards' `BoardQueriesPlugin` boards' names, Mentions' `MentionQueriesPlugin` `:mentions`,
   `:mentioned-by` and mention text as it reads, Validation's `ValidationQueriesPlugin` `:invalid`,
   `:warned` and `:incomplete`, Types' `TypeQueriesPlugin` `:is-a`, `:misfit`, a path into a note's values and
-  the `<fields>` and `<instances>` blocks `--ask` is told, and, Selection being below Queries, Queries' own `SelectionQueriesPlugin`
+  the `<fields>`, `<instances>` and `<connections>` blocks `--ask` is told, and, Selection being below Queries, Queries' own `SelectionQueriesPlugin`
   `:selected`. Queries has never heard of titles, boards, mentions, validity or types, so QueriesTests
   fill its points with words of their own, and a list without a horizontal leaves its words out.
 - **A horizontal fills the engine's points.** [`canvas draw`](#draw)'s engine (Draw) takes what
@@ -536,7 +543,7 @@ Modules sit on three rungs; each imports only from its own rung or those below i
 | Rung | What it is | May depend on | Modules |
 |---|---|---|---|
 | product | The verticals, shapes that hold something of their own; nothing imports one, so no kind knows another | core, platform | Arrows, StickyNotes, Subboards, Frames |
-| platform | What every shape gets, whatever its kind; its modules build on one another, grouped under headings nothing checks | core, platform | Horizontals in the window: Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Find. Horizontals that are shape traits: Topology, Validation, Titles, Locking, Connections, Mentions, Publishing, Boards, Transform, Colors, Types, References. Things you do: Clipboard, Snapping, JumpTo, Moving, Reordering. Engines: LanguageModels, ProseMaps, Queries, Draw, QueryTranslation, Neighbors. What agents speak: Automation, QueryCommands |
+| platform | What every shape gets, whatever its kind; its modules build on one another, grouped under headings nothing checks | core, platform | Horizontals in the window: Keyboard, Selection, DetailPanel, ContextMenus, SlashCommands, TableOfContents, Adornments, Find. Horizontals that are shape traits: Topology, Validation, Titles, Locking, Connections, Mentions, Publishing, Boards, Transform, Colors, Types, References. Things you do: Clipboard, Snapping, JumpTo, Moving, Reordering. Engines: LanguageModels, DecisionModels, ProseMaps, Queries, Draw, QueryTranslation, Neighbors. What agents speak: Automation, QueryCommands |
 | core | The canvas and plain libraries, which know no plugin | core | Geometry, Canvas (the core, which holds [what a window puts around its canvas](#host-slots), said by plugins and placed by the window, and so names SwiftUI's views and the wire's types for the commands the app's server runs), CanvasRPC (the wire: what the app and its [command line](#the-command-line) say to each other), and libraries beneath the plugins that know no plugin: DrawScript (the language [`canvas draw`](#draw) reads, its solver, and the grid its obstacles are filed in) and QueryLanguage (the language [`canvas query`](#query) reads), pure, TextEditing ([the text view and the caret list](#textediting) every editable text is built on), FuzzyMatching ([the matcher](#fuzzymatching) every list ranks typed text with, and Find and Jump To's) and Palette ([the color math](#palette): the roles one color is drawn in on the light canvas and the dark, and the one test for a dark appearance) |
 | core private | The window, the app and the command line: the core's own, which no plugin may import; only another private module and a test may | core | CanvasUI (the window: the AppKit view, the SwiftUI toolbar, the chrome around the canvas, `CanvasFocus`, the Settings window, and the command line's server), InfiniteCanvas (it names no plugin: its plugins are [the list's](#what-ships), linked in and made by name, `+ shipped`), CanvasQuickLook (`// layer: core private of InfiniteCanvas`: Quick Look's preview and thumbnail of a board file, [Boards on disk](#boards-on-disk), packaged into the app's bundle; `+ shipped`, as the app is) and CanvasCLI (`canvas`: it knows the wire, never the app) |
 | testsupport, test | What the tests stand on and the tests themselves, which see more of the graph than a plugin does; their tags say what kind of target a line is, not where it sits | (see Package.swift) | TestKit, CanvasTesting, ShippedTesting (the tests' way to the product's plugins), `*Tests` |
@@ -687,9 +694,10 @@ plugin after the ones whose points it fills.
   or the user's pasteboard by leaving an argument out. Any other listed plugin can be handed over
   the same way, and takes its place in the list.
 - **Tests** get the product's plugins from ShippedTesting's `ShippedPlugins`:
-  `plugins(pasteboard:model:)`, `registry(pasteboard:model:)` and
-  `makeEditor(document:scheduler:pasteboard:model:)`, the list with a clipboard on the test's
-  pasteboard and the test's model, whose `model` has no default. A test that passes no pasteboard
+  `plugins(pasteboard:model:decisionModel:)`, `registry(pasteboard:model:decisionModel:)` and
+  `makeEditor(document:scheduler:pasteboard:model:decisionModel:)`, the list with a clipboard on the test's
+  pasteboard, the test's model, whose `model` has no default, and a `ScriptedDecisionModel` unless the
+  test passes a decision model of its own. A test that passes no pasteboard
   gets its own (`ShippedPlugins.pasteboard`: made when the test first asks, shared by its editors,
   released as it ends, through TestKit's `afterThisTest`), never the user's.
 
@@ -1559,9 +1567,12 @@ The mechanics:
 - **Contracts should be pure.** Validation rules read the document only through
   `ValidationContext`: `shape(_:)`, a lookup the engine notes, so a change to a shape checks again
   only that shape and those whose rules looked it up; `registry`, which never changes, so
-  reading it (which kinds can hold names, which can be mentioned) is no lookup; and `service(_:)`,
+  reading it (which kinds can hold names, which can be mentioned) is no lookup; `service(_:)`,
   for a rule over what a plugin keeps across the file, which comes with the rule's `affected`,
-  naming what each commit changes there (below). Design your contexts the same way.
+  naming what each commit changes there (below); and `committedService(_:)`, for one that asks a
+  plugin what it knows of the file as committed even where shapes are checked with no editor
+  (whether a stored query reads: `canvas draw`'s check before it commits). Design your contexts the
+  same way.
 
 [Validation](../Sources/Validation/Validation.swift) is the full-size version of the same pattern:
 per-kind rules, rules for another plugin's kind, rules for the kinds that opted into a feature, rules
@@ -1668,8 +1679,8 @@ The engine asks it once every service has taken each commit in (`documentDidSett
 first when something asks what the commit affected; it checks those on the board shown again, and
 those on a board it keeps once that board is taken back. It runs on every commit, so it costs what
 the commit changed, never the board. `engine.affected(by: changes)` is what a commit may change the
-issues of beyond what it changed: whose rules looked one up (`dependents(of:)`) and what the rules
-named; given only what changed on other boards while the board shown wasn't (`elsewhere`), what they
+issues of beyond what it changed: whose rules looked one up (`dependents(on:)`, which for a shape the commit
+only moved counts only the rules that read where shapes are) and what the rules named; given only what changed on other boards while the board shown wasn't (`elsewhere`), what they
 named there meanwhile. Where shapes are checked without an editor (`validationIssues(of:in:)` given
 none: `canvas draw`'s checks), `service` is nil, and such a rule answers from the reading
 (`context.reading?.service(S.self)`, the service as committed, with `reading.isChanged` and
@@ -2850,6 +2861,55 @@ Each step is a selection change, a step back like any other only when it goes to
 person had, which it then brings into view. `canStepSelection` is false while a
 gesture runs or a shape is edited, and then the keys pass.
 
+### Walking shapes
+
+A walk goes through a list of places one stop at a time, across boards, and holds your place:
+Find's stepping from hit to hit, and any plugin's list of shapes to go through
+([Walking.swift](../Sources/Selection/Walking.swift)). The client lists **rows**, each a shape on a
+board with some number of stops (Find's hits in a shape; one for an issue, none once it no longer
+counts), through a pull protocol, so a client with a hundred thousand rows copies none; the walk
+holds the place and makes the moves.
+
+```swift
+extension Hits: ShapeWalkSource {                       // in an extension, with its walk made at init
+    var walkRowCount: Int { results.count }
+    func walkRow(at index: Int) -> WalkRow {            // key, shape, board, stops, rank
+        WalkRow(key: results[index].id, shape: results[index].id, board: results[index].board,
+                stops: results[index].hitCount, rank: results[index].rank)
+    }
+    func walkPlace(ofKey key: AnyHashable) -> Int? { places[key as! ShapeID] }
+    func walkStops(before index: Int) -> Int { offsets[index] }
+}
+let walk = ShapeWalk(editor: editor, arrival: .shows)   // or .selects
+walk.source = hits                                      // weak: the client owns the walk
+walk.begin()                                            // the start Back returns to
+walk.step(forward: true)                                // ⌘G
+```
+
+- **Places.** `walk.current` is a `WalkPosition` (a row and which of its stops), `walk.number` its
+  number among all (`walkStops(before:)` + the ordinal + 1), `walk.kept` and
+  `rowsDidChange(keeping:)` hold it across a change of rows: the same key, its stop clamped, else the
+  first row at or after its `rank` (ranks only grow down the rows), else the first. `land(at:)` puts
+  the walk at a stop without a step, as a client's own landing does.
+- **Moves.** `step(forward:)` goes stop by stop, wrapping, passing rows with no stops;
+  `move(by:)`, `moveBoard(by:)` (to a run of rows on one board: `boardRuns()`) and `pick(row:)`
+  reach any row, stops or none. Each counts in `stepCount`, which a client announces by. Each
+  does nothing mid-gesture or while shapes wait to be placed (`editor.isPlacingLater`). A client's
+  own enabled state asks the same (Find's `canStep`, behind ⌘G and ⇧⌘G, refuses both with Find open; closed, they only open it), so its
+  items are dimmed when the walker would refuse.
+- **Arriving** is the walk's `arrival`. `.shows` shows the stop's board and brings it into view only if
+  it is not (the selection stays: showing a board empties it). `.selects` is `editor.goTo`: selects
+  the shape if it can be and shows its board, and brings it into view unless it is readably in view;
+  then the stop's focus rect (`walkFocus(of:)`: a hit's, a part of the shape) into view if it is not.
+  A stop whose shape can't be selected, or whose board can't be shown, is still the current stop.
+- **One step back.** `begin(at:)` takes `editor.navigationStart`, and every move is made inside
+  `editor.navigate(from:)` of that start, never a later one: Back after a walk returns to where it
+  began, and ⌘] to the last stop. `begin(at:)` takes an entry too: `.first`, `.last`, `.shape(id)`, or
+  `.afterSelection(forward:)`, the first stop after the last selected shape in the walk's order
+  (`walkPlace(of:forward:)`, which a client that can order shapes it holds no row of overrides).
+  `end()` leaves the editor where it is; `finish(closing:)` ends the walk and selects the current
+  stop's shape in the same one step back.
+
 ### Parts of a shape
 
 What a shape draws that a click acts on (its chips and pills, buttons, handles, its arrows) is one
@@ -3350,7 +3410,12 @@ text, typed into a `MentionTextView` with the arrow as its owner.
   over (`frames(of:)` says where, in the view's coordinates; TextKit 2 only, as `caretFrame` is).
   It's how an owner marks text that means something to it, with nothing for a host to forward: the
   view redraws when they change, and lets go of them when it's made read-only. Pass a fill that
-  follows the surface the text is on, the text's own color at a low alpha, as a pill's does.
+  follows the surface the text is on, the text's own color at a low alpha, as a pill's does. One
+  with a `symbol` (a rule's chip's magnifier) reaches back over room the view makes before its text
+  with attributes alone (a kern on the character before it, an indent where it starts a line), so the
+  characters stay as they are; `highlighting` derives them from the text after every change, kept
+  while it's read-only (`refreshHighlights()` after showing text it was handed), and `onEnter` hears
+  the keyboard arrive and from which way, for a host whose text has stops of its own (the chips).
 - **TextKit 2.** AppKit gives a text view whose class overrides `draw(_:)` TextKit 1, so
   `EditingTextView` draws its placeholder in `drawBackground(in:)`, and a subclass that needs TextKit
   2 (pills are attachments, laid out as the canvas lays them out) keeps it. On TextKit 2 it also
@@ -3535,7 +3600,11 @@ TestKit alone.
   appearance it's drawn in, resolved as it's drawn (read its `cgColor` in the drawing, never ahead
   of it); `NSColor(rgb)` and `NSColor(tone)`; and `rgb.cgColor`, for a drawing that knows which
   appearance it's in. A dynamic color whose two values aren't opaque sRGB (a white at an alpha, a
-  system color) is still `NSColor(name: nil) { $0.isDark ? … : … }`.
+  system color) is still `NSColor(name: nil) { $0.isDark ? … : … }`. `color.fading(to:)` is a
+  color at an opacity that still follows the appearance: a system color's own
+  `withAlphaComponent` is fixed to the appearance current as it's made, so made while the app is
+  dark it is the dark's white, which is nothing on a light ground. `NSColor.resolved(in:_:)` makes
+  a color as it is in an appearance.
 
 tldraw's colors are the model: each of its named colors has fourteen hand-picked values in a light
 and a dark palette (`solid`, `semi`, `noteFill`, `frameFill` and the rest). The roles here are the
@@ -3568,7 +3637,7 @@ plugins ([What ships](#what-ships)).
 | The sidebar (`HostSidebars`, at most one) | `registrar.hostSidebar(keyboardEntry:) { editor, onExit in … }`: the view, and the view in it that takes the keyboard when the window gives the sidebar the keyboard | `registry.hostSidebar` | the table of contents' list, from `TableOfContentsPlugin`'s own `register` |
 | The inspector (`HostInspectors`, at most one) | `registrar.hostInspector(shownWhile:isRequested:onDismiss:keyboardEntry:) { editor, onExit in … }`: when it has something to show (always, by default), when it's wanted (never), what hiding it meanwhile does (nothing) | `registry.hostInspector` | the detail panel: something to show while shapes are selected, wanted while a takeover is active |
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
-| Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one |
+| Settings panes (`SettingsPanes`, in plugin order, a title once; the first takes the keyboard, `settingsPaneTakesFocus`) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one; the TypeSafe key's under it, when the decision model is Jev |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
 | The keys that run a command, as menus take them (`MenuKeys`, at most one) | `registrar.menuKeys { command, registry in … }`: `[MenuKey]`, each a menu's key equivalent and modifiers, the one an item shows first | `registry.menuKey(of:)`, the first, read by the menu bar's items and a context menu's that run a command; `registry.menuKeys(of:)`, all, whose others held with ⌘ or ⌃ the menu bar answers too (hidden items); none without one | Keyboard: every key that runs the command, in the order registered (Delete as Backspace's character) |
 | The Keyboard Shortcuts window's rows (`KeyboardHelp`, at most one) and key hints (`KeyHints`, any number) | `registrar.keyboardHelp { registry in … }`; `registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)` | `registry.keyboardHelp`: the one list's rows, then the hints, each row once | Keyboard: every key it registers; the hints of each plugin that reads a key no shortcut has |
@@ -4071,8 +4140,10 @@ public struct ValidationDetailsPlugin: ListedPlugin {
         // Every shape is checked (its schema, at least), so any may have issues.
         registrar.forEveryShape { every in
             every.detailStatus(in: IssuesTab.self) { shape, context in
-                (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? [])
-                    .map { DetailStatus($0.message, tone: DetailStatus.Tone($0.severity)) }
+                (context.service(ValidationEngine.self)?.result(for: shape.id)?.worstFirst ?? []).map { issue in
+                    DetailStatus(issue.message, tone: DetailStatus.Tone(issue.severity),
+                                 actions: issue.actions.map { DetailStatusAction($0.title, perform: $0.perform) })
+                }
             }
         }
     }
@@ -4092,13 +4163,200 @@ after every other, and the other tabs keep their places as it comes and goes, th
 strip shares its width among its tabs, and a kind with one tab (a reference's Connections) gains a
 strip with it. Any tab whose lines warn or err draws its worst tone's symbol before its title in
 the strip (`layout.alert(in:)`: the triangle or the octagon, in its color; no count), so from
-another tab it reads as a tab of problems, as the canvas's outline does. The tab is remembered per kind, as any is: once someone chooses Issues, the next
+another tab it reads as a tab of problems, as the canvas's outline does. What can be done about an
+issue is under its line, as buttons: a rule gives its issue `actions` (`IssueAction`, a title and
+what it does: Language rules' Ignore and Show Rule), which the line carries as a status's
+(`DetailStatus.actions`, the panel's `StatusList` drawing them as a `DetailStatusLine`'s). Two lines,
+and two issues, are the same when their words and their actions' titles are: what an action does is
+its issue's own. An issue may also say where it comes from (`ValidationIssue.source`, an `IssueSource` of its plugin and an opaque key), so a plugin's issues are found by key and never by matching their sentence, and an action what it is for (`IssueAction.role`, `.ignore`). The tab is remembered per kind, as any is: once someone chooses Issues, the next
 shape of that kind with issues opens on it, and one without opens on its first tab. A tab's lines
 lead it, above any sections another plugin puts there. A status contributor reads services through
 `DetailContext`, read-only. Status lines are re-read on every document change, so read a cached
 service, as this one reads validation's engine. Without Validation installed there's no engine,
 no lines, and no tab. So a note whose title runs past 80 characters has an Issues tab that says
 "Title is 90 characters long, and should be at most 80.", and StickyNotes didn't change.
+
+### Walking issues: Validation's issue walk
+
+A walk goes through a file's issues one at a time, across every board, and holds the place.
+Validation owns it, so the same walk covers any error or warning; a plugin that owns a source of
+issues only says which of them are its own. [`IssueWalk`](../Sources/Validation/IssueWalk.swift)
+(`editor.issueWalk`, made by `IssueWalkPlugin`, listed after `ValidationDetailsPlugin`) is a
+[`ShapeWalk`](#walking-shapes)'s source: one row to a stop, a stop one issue that shows (an error or a
+warning; what a shape still needs, and what a rule is unsure of, are never stops) that the walk's scope
+includes. A shape with two issues is two stops. Rows are listed in the order Find steps in
+(`boardOrderKey`, Topology's), and the walk arrives by selecting the stop's shape on its own board, the whole
+walk one step back. A row keeps its key, which holds places in the stack, so a commit that may have shifted
+them for shapes it did not name (`ChangeSet.mayHaveChangedBoardOrder`: shapes added, removed or restacked,
+another board reached, a shape put in another container) has every row's key taken again from one snapshot
+and the rows sorted again, the current stop kept (a row whose shape has no key now is taken out then, so a stale key is never compared with a fresh one, and the current stop's successor is found in the order from before the commit); a commit that only edits or moves costs the shapes it names.
+
+A scope is which issues a walk is about (`IssueScope`): `.all`, Validation's own, or one a plugin gives for the
+issues it owns, found by an issue's source (`IssueScopes`, `registrar.issueScopes { source, editor in … }`;
+`registry.issueScope(for:in:)`):
+
+```swift
+// LanguageRules' RuleValidationPlugin: a rule's warnings carry its RuleKey as their source
+registrar.issueScopes { source, editor in
+    RuleKey(source: source).flatMap { RuleValidationPlugin.walkScope(of: $0, in: editor) }   // nil for a rule that is gone
+}
+
+IssueScope(id: RuleScopeID(type: key.type, says: key.says),
+           includes: { $0.source == follow.key.source },                           // the warnings of this rule alone
+           label: { editor in IssueScopeLabel("Rule 2", owner: type) },           // nil once the rule is gone: the walk ends
+           candidates: { $0.ruleChecks?.flagged(by: follow.key) ?? [] },          // the shapes that may have one; else the query asks
+           isChanged: { _, editor in follow.follow(in: editor) },                 // reworded or moved: the walk follows in place
+           isSetAside: { shape, editor in ignoredRules(of: shape).contains(says) }) // a gone warning: ignored, or fixed (holds)
+```
+
+Why an issue is gone is the owner's to say: a row whose issue has left reads ignored when its source's scope says
+`isSetAside`, else holds (a fix), so a redone Ignore, Ignore Rule ▸ from a menu and the walk's own Ignore all read
+ignored, in an All Issues walk as in the rule's. A scope that gives none leaves it to the last Ignore the walk ran.
+
+A rule is named by its type and its sentence, and a reworded sentence is another key, so the scope follows
+the rule instead of its words (`RuleFollow`, [RuleWalk.swift](../Sources/LanguageRules/RuleWalk.swift)): the
+sentence wherever the type has moved it, else, with as many rules as before, the one now at its old place.
+Its closures read what it follows, so the same scope serves the rule through a reword, an undo of it, and a
+move among the type's rules (its label then says "Rule 2"); a rule deleted is `nil` and the walk ends.
+
+`begin(_:at:forward:)` starts a walk (a scope with candidates is read at once, any other waits for the
+query `:invalid, :warned`), `step(forward:)` goes on, wrapping, and with no walk running begins one through
+every issue from the stop after the selection; `ignoreCurrent()` runs the current stop's action whose role is
+`.ignore` (one undo step; the walk stays where it is), and `end()` gives each kind the tab it had. A stop that
+is gone keeps its row in place, with no stop in it, reading `.ignored` (the last action run on it had the role
+Ignore, from the walk or from its line in the Issues tab) or `.holds` (a fix), so the count drops and the place
+does not move; one that comes back (an undo) is a stop again; a stop that arrives (a rule's answers coming in,
+a `recheck` on a board not shown) joins in board order with the current stop still current. Arriving chooses
+the Issues tab for the stop's kind, and VoiceOver hears "Issue 12 of 63, Texas, Roger Williams → Laken Riley
+Act, In line with the member's record." (the board only when it changes).
+
+Go's items are in an `IssuesSection` placed `.after(NavigationSection.self)`: Next Issue (⌘') and Previous Issue
+(⇧⌘', registered as `KeyChord("\"", .command)`: ⇧ is what types the quote, as it types the `?` of ⌘?), which repeat
+while held, run between presses and neither run during a gesture nor while shapes wait to be placed; Ignore
+Issue (⌥⌘'), enabled on an open stop whose issue has an action with the role `.ignore`; Issue List (⌃⌘', between
+Previous Issue and Ignore Issue, declared by `IssueWalkPanelPlugin` since the list is the panel's); and End Issue Walk, which
+has no key. They are in Go because the Shape menu's keys are not live. A step with no walk running starts every
+issue at the first stop after the last of the selected shapes in walk order (before the first, going back).
+
+A rule's warning line says where its walk would begin: after the line's own buttons, "9 of 63", the shape's
+place among the shapes the rule flags. A line's issue gets it when its source has a scope that knows its
+candidates (`registry.issueScope(for:in:)`, `IssueScope.candidates`); a click begins that scope's walk at this
+shape (`begin(scope, at: .shape(id))`), or, with that scope's walk running, goes to the shape's stop; the walk's
+current stop has none (the band says it). The title carries the place and the count, since a `DetailStatus` is
+the same as another by its buttons' titles. With the walk running the place is the walk's (`place(of:source:)`);
+without, it is the shape's place among the candidates in board order (`boardOrderKey`), worked out once for a
+scope against the candidate set it was made from, and let go by a commit that may have changed board order
+(the same `ChangeSet.mayHaveChangedBoardOrder` the walk's rows go by).
+
+```swift
+// IssuesTab.swift: the extra button, after the issue's own
+if let more = walk?.lineAction(for: issue, of: shape.id) { actions.append(more) }
+```
+
+The views of a walk are a plugin value of their own, `IssueWalkPanelPlugin`, listed after `IssueWalkPlugin`
+(it needs the detail panel, whose band point it fills; a list without the panel refuses it). The band is one
+row over the panel: the scope's name (`IssueScopeLabel`: a title, "Rule 1", beside a chip a scope's owner
+gives as a name and a `Swatch`, drawn as a type's chip is in the Rules tab; "All Issues" alone), then ‹, the
+count, › and Done, and a spinner while the first answer is on its way.
+
+```swift
+registrar.detailBand(isActive: { $0.issueWalk?.isRunning ?? false }, onCancel: { $0.issueWalk?.end() }) { editor, _ in
+    IssueBand(editor: editor)
+}
+```
+
+‹, › and Done are the command buttons of Previous Issue, Next Issue and End Issue Walk (so each has its menu
+item and tooltip), and the count, "12 of 63", is a button whose click or Return runs Issue List (`editor.perform(.issueList)`, dimmed with the command as its neighbours are). Every button of the band is a `DetailCommandButton`, which is never disabled while it has the keyboard (its press does nothing while the command can't run, and it dims once the keyboard leaves it): a disabled button that has the keyboard hands it to the window mid-update (an AttributeGraph cycle), as End Issue Walk does turning off in the update that removes the band.
+While the current stop is not open (ignored, or holds) its number is kept and drawn dimmed, "12 of 62".
+Escape goes from the band to the canvas, the walk going on; ⌘. in the band, Done, and hiding the inspector
+end it.
+
+A rule's walk has three ways in, all of them LanguageRules' filling of Validation's points: the rule's count in its
+type's Rules tab (a click or Return begins the walk at its first stop and no longer selects; Select Flagged ▸ still
+does), "9 of 63" on a flagged shape's warning line (at that shape), and Shape › Walk Flagged ▸, beside Select Flagged ▸
+in a type's menu (each rule that flags, "… (5)", at its first stop) and beside Ignore Rule ▸ in a checked shape's
+(each rule that flags it, at this shape). The scope's label carries the type's chip from Types' look of the type, so the
+band draws "Rule 1" beside it in its color.
+
+```swift
+registrar.issueScopes { source, editor in RuleKey(source: source).flatMap { RuleValidationPlugin.walkScope(of: $0, in: editor) } }
+editor.ruleLights?.walk(key, at: .first)       // the count's click, and Walk Flagged ▸ on a type; `.shape(id)` from a shape's menu
+```
+
+The light is the walk's other stops on the board shown, outlined in `IssueWalkStyle.light` through the core's
+tinted outlines (`registrar.outlines`, `IssueLights`, one `Outlines` kept and the canvas asked to draw only
+when it changed), while the keyboard is in the band (`keyboardPlace` is `.band`, or `.takeover` while
+the list is on show, `isListShown`, which another takeover covering the list turns off). That place is read when asked and observed by nothing, so the light asks as it places: when the
+window's first responder moves (the band watches it), as the walk's rows, current stop or list change
+(observed, looked at a turn later) and as the board shown changes. The current stop is the selection and is not
+lit; nor is a row that is no stop, nor a stop on another board. `IssueWalkStyle.light` is also the color of the
+rules' light (LanguageRules' `RuleLights`), one cyan, and the rules' light yields while the walk's is lit.
+
+#### The list: stops by board under the band
+
+Issue List (⌃⌘', or the band's count) opens the walk's list over the panel; with no walk running it begins
+every issue with the list open. The list is a takeover (the panel's `registrar.detailTakeover`) in the same
+plugin value as the band, so a list without the panel has no Issue List, and it is a `DetailRowList` of the
+walk's rows by board over the current stop's Issues tab, drawn by `DetailTabView` so whatever other plugins
+put in that tab (a rule's Rules section, what the model was shown) is on the same screen as the band and the
+stops:
+
+```swift
+registrar.detailTakeover(isActive: { $0.issueWalk.map { $0.isRunning && $0.isListOpen } ?? false },
+                         onEscape: { $0.issueWalk?.closeListOnEscape() }) { editor, _ in IssueList(editor: editor) }
+registrar.command(.issueList, title: "Issue List", in: IssuesSection.self, placed: .after(.previousIssue),
+                  shortcut: KeyChord("'", [.command, .control]), runs: .betweenPresses,
+                  isEnabled: { $0.editor.issueWalk?.canToggleList ?? false }) { $0.editor.issueWalk?.toggleList() }
+```
+
+Heads and rows are built by the caller, as Neighbors' lists are: a head per board (`walk.boards`, found as the
+rows are set) titled by `editor.boardHeading(of:)` with its open stops ("Texas 9"), and rows only for the
+boards unfolded: as the list opens that is the current stop's alone, a step that reaches a folded board unfolds
+it (also a step to the stop the walk is at, whose board the person folded) and folds the board it leaves unless
+the person unfolded that one (← →, Return on a head, a click), so a walk through the file builds the rows of the
+board it is in and those the person opened, never the file's stops. A row is the kind's symbol in the
+shape's tint, the walk's name for the shape, and at its end its first value, or, for a row that is no stop,
+"ignored" or "holds", dimmed. A row reads the file unobserved (`editor.withoutObservingDocument`, as Neighbors'
+lines do) and is equatable by its stop, state, board, place and the walk's tint and text revisions, so it is drawn
+again as those say, never on every commit: a drag of a shape draws no row, and a commit that wrote more than
+moves bumps `textRevision` (broad on purpose: a row's name and first value can come from other shapes, an arrow's
+ends' titles, a type's fields), which makes the unfolded boards' items again and draws the rows in view. The first value is a point Validation declares and knows nothing of, scoped to
+the kinds an opt-in reaches, so a plugin gives one for its own shapes:
+
+```swift
+registrar.forShapes(holding: FieldValuesProperty.self) { notes in
+    notes.issueRowValue { record, editor in firstValue(of: record, in: editor) }   // asked for the rows drawn only
+}
+// IssueRowValues.swift: registry.issueRowValue(of: record, in: editor) is the first contribution that answers,
+// folded to one line and capped at 60 characters with an ellipsis (nil and empty give way to the next)
+```
+
+Types fills it (`IssueRowValuesPlugin`, a plugin value of its own listed right after `TypeDetailsPlugin`, so a
+list without Validation leaves it out) for the shapes that hold `fieldValues`: a note of a type gives the first
+text Find would find on it (`RowBook.findTexts(of:)`: its first field that holds a value, as its row shows it), an
+arrow of a relationship type the first of its values (`findTexts(ofRelationship:)`, so a Vote arrow's row reads
+"Nay"), and a shape with none gives none, so its row is its name alone (a text that is the shape's own title, as with a
+`$title` taken from the first field, is skipped for the next field's). The list draws the value with
+`DetailShapeRow(detailTruncation: .tail)`, keeping its start; the default `.head` is for paths. LanguageRules adds nothing to the list: a
+rule's walk is the same list with the rule's flagged shapes in it, and the evidence under it is the same Issues tab
+with LanguageRules' Rules and Shown sections in it.
+
+The list's highlight is the walk's current row, written from outside as the walk steps, so the list scrolls to
+it, and a list that opens on a stop deep in a long board scrolls to it as it takes the keyboard (`DetailListHandle.enter()`
+scrolls to the highlight). Under it the stop's evidence is keyed by the stop's shape, so each stop's starts at its
+top. A head the highlight was left on (`detour`) whose board has lost all its rows is dropped, so Page Up and Page
+Down go from a real board. The walk's rows hold one run a board, which the heads rely on (`setRows` leaves a board met
+again out of `walk.boards`, and a debug build stops). A key or click on a row that is a stop moves the walk (the stop's shape selected, its board shown, the walk
+still one step back); a head, or a row that is no stop, takes the highlight and moves nothing. Page Up and Page
+Down go to the first stop of the previous and next board (a named exception in the keyboard principles), ←
+and → fold a board, and Return closes the list on the current stop with the keyboard in the shape's panel while
+the band stays. Escape closes the list and gives the band the keyboard; ⌘. also ends the walk. Opening ends
+editing and writes a number being typed first, since a takeover removes the shape's panel as it stands, and
+⌃⌘' closes the list giving the keyboard back where it was when it opened (the band if that was a field of the
+panel the list replaced). The walk's list is below Find's panel in plugin order, so with Find open the list's view is
+gone: the list is closed then (`isListOpen` is true only while the list is the takeover that shows; the keyboard stays in
+Find's field), and Issue List, its key and the band's count are off until Find closes
+(`canToggleList`: an open list can always be closed; opening it needs `canStep` and `DetailPanelState.hasTakeover(over:)` of the walk's plugin false).
 
 ### The full showcase: a type's Schema tab
 
@@ -4331,7 +4589,9 @@ CanvasRepresentable(editor: editor, focus: canvasFocus)
 
 One point says what the panel shows in place of a shape's details (`DetailTakeovers`, a list in
 plugin order: the first that's active shows). It reads it from the editor's registry, and never
-learns what the view is. A plugin gives one with
+learns what the view is. A band (below) shows over a takeover or the shape's panel, and
+`BoardHeadings` (below) says what a board is called over its rows in a list that groups shapes by
+board. A plugin gives one with
 `registrar.detailTakeover(isActive:onEscape:) { editor, onExit in … }`: `isActive` (read in the
 panel's body, so on observable state: the panel redraws when it flips), `onEscape` and the view.
 While it's active the panel shows the view in place of everything else, every selection branch, in
@@ -4345,11 +4605,40 @@ without the panel leaves it out, and one with the contributor and no panel is re
 active the panel is wanted, so the window shows the inspector with nothing selected
 ([the inspector's rule](#host-slots)).
 
+Three more things belong to the panel:
+
+- **A band** (`DetailBands`, a list in plugin order: the first that's active shows) is
+  `registrar.detailBand(isActive:onCancel:) { editor, onExit in … }`: held over the panel, not in
+  place of it. While it's active its view shows above whatever the panel shows (a takeover or the
+  shape's panel), which are not rebuilt for it. It is first in the Tab ring, and it
+  keeps the inspector requested, as a takeover does. Escape in the panel is one level out: the
+  takeover's `onEscape`, then the keyboard goes to the band's first control, and from the band to
+  the canvas, the band staying. ⌘. is all the way: the takeover's `onEscape`, the band's
+  `onCancel`, then `onExit`; hiding the inspector runs `onCancel` too. `editor.detailPanel?.keyboardPlace`
+  says whether the keyboard is in the band, a takeover or the rest (nil outside the panel), and
+  `focusBand()` gives it to the band. A band with no control the keys reach lets Escape through to the
+  canvas. Its first shipped contributor is the [issue walk's](#walking-issues-validations-issue-walk)
+  (`IssueWalkPanelPlugin`): ‹ 12 of 63 › and Done, active while a walk runs, `onCancel` ending the walk.
+- **One tab on its own**: `DetailTabView(editor:shape:tab:)` draws a shape's tab, its status lines
+  then its sections, as the panel does and live, so a takeover or a band can show a tab (Validation's
+  Issues) under something of its own, without knowing what is in it. No scroll view or header: place it.
+- **A row list that keeps its highlight and pages**: `DetailRowList(highlight:pages:)` takes its
+  highlight as a binding of the caller's (never written nil as focus leaves or a row folds away) and
+  Page Up and Page Down as a closure that names the row to go to (true: Page Down).
+
 With no takeover active the panel shows what the selection calls for: several shapes, their
 header alone; one, its panel; and none, "No Selection", which only a panel hosted alone shows,
 since the window hides the inspector then. (data-canvas's details panel takes an `emptyView` and a
 `multiSelectView`, the table of contents; here that list is the window's sidebar, beside the canvas
 whatever is selected.)
+
+- **Board headings** (`BoardHeadings`, at most one: a second is a conflict) say what heads a board's
+  rows in a list that groups shapes by board (Find's), from the plugin that knows what a board is
+  called, so no list learns it: `registrar.boardHeading { board, editor in BoardHeading(…) }`, a
+  title and a symbol before it. A list reads them through `editor.boardHeading(of:)`, which is the
+  contributor's heading, else "Board" for the root and no name for any other board (in a body, it
+  observes what the contributor reads, so a renamed board's heading redraws). Boards gives the
+  path's names (`BoardHeadingsPlugin`, [Boards](#boards)).
 
 ### Performance
 
@@ -7285,7 +7574,11 @@ func textDidChange(_ notification: Notification) {
   move, Return and Tab pick, Escape (or ⌘.) closes, and so do the caret leaving the query, a line
   break, a query longer than 80 characters (a whole title can be typed), or a space after a query
   that matches nothing. A pick puts the pill in the query's place, then a space, one step of the text's
-  undo, which gives back the query as typed. Undo while it's open closes it: the text's, taking
+  undo, which gives back the query as typed. A host that takes words sets `onWords` (the picker
+  then ends with the words row, the words typed, `MentionPicker(at:wordsRow:search:)`, highlighted
+  once no shape matches, and picking it hands the host the words and their range), and one that puts
+  in something of its own for a shape `onShape` (the candidate and the range, no pill): a rule's box
+  does both, making chips. Undo while it's open closes it: the text's, taking
   back the `@` typed, or the board's, ending editing. While it's open, the highlighted shape is hovered on the canvas,
   and the text's spelling correction, text replacement, smart quotes and smart dashes are off
   (TextEditing's `CaretListSubstitutions`). VoiceOver hears its list change as the highlight moves (the row, or
@@ -8121,7 +8414,7 @@ once, with a rule over the target. `/query` takes time, so it answers later, a t
 
 ```swift
 // QuerySlashPlugin.register (QueryTranslation):
-registrar.selectionSlashCommand(SelectionSlashCommand("query", argument: "question", waiting: "Asking",
+registrar.selectionSlashCommand(SelectionSlashCommand("query", argument: "question", waiting: InterpretationWords.interpreting,
                                                       when: { target, editor in QuerySlash.offers(target, in: editor) }) { target, arguments, editor in
     QuerySlash.answer(target, arguments, in: editor)    // a Task<SlashAnswer, Never>: .done, or .failed("No matches")
 })
@@ -8133,7 +8426,7 @@ registrar.selectionSlashCommand(SelectionSlashCommand("query", argument: "questi
 - **Never run**, one that answers later: `SlashCommandState.answer(_:with:)` starts it, handing back its task; `run` refuses it.
   The typing hands it to the host in place of running it (`willAnswer`), its line left in the field.
 - **The bar waits**: the line stays, a spinner takes the label's place, VoiceOver hears `waiting`
-  ("Asking"). Done, the bar closes (if what the command did, a selection changed, hasn't closed it);
+  ("Interpreting…", the words every host of words says while one is asked). Done, the bar closes (if what the command did, a selection changed, hasn't closed it);
   failed, the label's place says why ("No matches", "Not signed in") and VoiceOver hears it, the field still
   the person's, Return asking again. An edit of the line stops the wait; so does every way the bar
   closes (Escape, the selection changing, another board), the task cancelled, and the editor going.
@@ -8363,7 +8656,7 @@ a list without Find leaves them out:
 - **Scope**: the board shown when the query last changed (or ⌘F opened Find), and every board under
   it. Stepping and rows don't scope again; typing does, and so does the scope's board no longer
   being showable (deleted, or a file put in place without it): scoped again to the board shown,
-  searched again, nothing retyped. **Order**: the scope board's shapes in file
+  searched again, nothing retyped. **Order** (Topology's `boardOrder(from:)`): the scope board's shapes in file
   order (what a frame holds after the frame), then each board under it, depth first, in file order.
   The count ("3 of 12") counts hits, exact and typos alike; rows are one per shape.
 - **Typing** makes current the first hit on the board shown that's in view, else its first,
@@ -8372,14 +8665,15 @@ a list without Find leaves them out:
   shapes in view (`paintOrder(in:)`) are looked up among the results, so thousands of hits out of
   view cost what's in view.
 - **Stepping** (Return and ⇧Return in the field, ⌘G and ⇧⌘G anywhere, the panel's buttons) goes hit
-  by hit, wrapping, showing a hit's board and bringing it into view unless it's there. A row's
+  by hit, wrapping, showing a hit's board and bringing it into view unless it's there (the moves are
+  Selection's [`ShapeWalk`](#walking-shapes), of which Find is the first client). A row's
   click makes its shape's first hit current, the same way, and leaves the keyboard in the field.
   With Find closed and something typed, ⌘G opens it and lands on the first hit in view, which is its
   step, and ⇧⌘G opens it, lands there and steps back.
 - **One step back.** Nothing Find does changes the selection (though showing another board empties
   it, as every switch does), and a session's way around is one step back: Selection's
-  `navigate(from:_:)`, from `navigationStart` taken as Find opens. Back after Find returns to where
-  it began.
+  `navigate(from:_:)`, from `navigationStart` taken as Find opens (`ShapeWalk.begin()`). Back after
+  Find returns to where it began.
 - **Edits keep the current hit**: its shape and which of its hits, clamped to those left, else the
   next shape's; the camera stays.
 
@@ -8413,13 +8707,13 @@ a shape under a device pixel its pixel, once. A hit under a shape in front shows
 `FindPanel(editor:onExit:)` is Find's panel: its own header (no Back): the field, with
 a spinner while the index is built; Done; the count with Previous and Next (tooltips from
 `registry.help(_:forCommand:)`: "Next (⌘G)"); and a row per shape with hits, the window of 200 around
-the current one in a lazy stack, under its board's heading (`FindState.heading(of:)`), each the kind's symbol in the kind's tint (`registry.label(of:)`), the text
+the current one in a lazy stack, under its board's heading (`editor.boardHeading(of:)`, the panel's: [Takeovers](#takeovers)), each the kind's symbol in the kind's tint (`registry.label(of:)`), the text
 around its first hit with its hits semibold (cut on whole characters, never inside a surrogate
 pair), and its count when it has more than one; "No matches". Return steps unless an input method is
 composing in the field.
-A board's heading is a plugin's to say (the `FindHeadings` point, at most one: a second is a
-conflict), `registrar.findHeading { board, editor in FindHeading(…) }`, a title and a symbol before
-it, so Find never learns what names a board: Boards' `BoardFindPlugin` gives the path's names
+A board's heading is a plugin's to say, and the detail panel's (its `BoardHeadings` point,
+read through `editor.boardHeading(of:)`: [Takeovers](#takeovers)), so
+Find never learns what names a board: Boards' `BoardHeadingsPlugin` gives the path's names
 ([Boards](#boards)); without one the root's rows are headed "Board" and another board's have no name.
 `FindPanelPlugin` (id `find-panel`), a plugin value of Find's own after `FindPlugin` and
 `DetailPanelPlugin`, gives the panel as the detail panel's [takeover](#takeovers) while
@@ -8744,8 +9038,10 @@ let settled = await topology.settled(timeout: .seconds(5))   // false if it ran 
 - **Settling.** A stand-in waiting for its answer leaves arrows at itself for a moment. Whoever
   provides registers a source (`keepsSettling(while:)`, a `SettleSource` token: a wait armed, a
   batch out, a stand-in asked and not answered), and says `settleSourceChanged()` when it goes idle
-  with no provide or commit to say so. `isSettling` is whether any source is busy, and
-  `settled(timeout:)` waits until none is: true then (at once if none is now), false when the
+  with no provide or commit to say so; a source whose answers are no edges (Language rules' checks)
+  registers with `edges: false`. `isSettling` is whether any source is busy, `isSettlingEdges`
+  whether a source of edges is, and `settled(timeout:edgesOnly:)` waits until none is (with
+  `edgesOnly`, no source of edges): true then (at once if none is now), false when the
   timeout runs out (on `editor.scheduler`, so tests run it by hand) or the task is cancelled. Every
   delivery, provide and source change or cancel wakes the waits. A reader that must see the
   settled graph (a query after a draw) waits on it: `QueryState.run` does, given `settle:`
@@ -8836,6 +9132,21 @@ Beside the index's questions, it reads the file whole:
   (for each shape it's inside, from the outermost down, then for itself, its place among what's
   directly inside the same shape: its index on its board); nil off the boards the app can show.
   O(its depth): for putting a few shapes in order without walking the file.
+- **`boardOrder(from:)`** and **`boardOrderKey(of:)`**: board order, the order [Find](#find) lists and
+  steps through a file in (and the order a plugin that walks the file's shapes one by one, as a
+  review of issues does, should go by): the board `scope`'s own shapes in file order (what a frame
+  holds right after the frame), then each board under it, depth first, in the order of the shapes that
+  own them, so a board's own shapes come before the boards under it, where file order lists a board
+  straight after its owner. `boardOrder(from:)` is the shapes, none when the app can't show the scope.
+  `BoardOrderKey` (`Comparable`) is where a shape comes in `boardOrder(from: .root)`, as a key that
+  sorts as it does and gives the same relative order inside any scope: a chain of per-board
+  segments, the place on each board of the shape that owns the next, then the shape's own; nil off
+  the boards the app can show. O(its depth), for putting a few shapes in board order. A key holds
+  places in the stack, so it goes stale when a commit shifts them for shapes it does not name: for a
+  plugin that keeps keys across commits, `ChangeSet.mayHaveChangedBoardOrder(in: file)` says when to take
+  them again (the document replaced; shapes added, removed or restacked; another board reached; a shape
+  put in another container, which moves every key inside it though nothing is restacked); an edit or a
+  move of a box is none of them.
 - **`topLevel`**, the shapes inside nothing (the root's in no container, in document order), and
   **`isTopLevel(_:)`**, O(1); **`descendants(of:)`**, every shape inside a shape at any depth, in file
   order (O(what's inside it)); and **`container(of:on:)`**, the container a record on a board is
@@ -8977,7 +9288,8 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   `:current-board`, a text read through a format that reads the editor), `readsOnlyTheFile` (none does: what
   it matches is a function of the file as the query takes it up, whoever asks, whatever they have
   selected or shown), and `readsEdges` (it has an edge word, so the edge view and a wait for answers
-  still arriving matter to it).
+  still arriving matter to it). It says whether it needs a shape bound to it too, `usesScope`
+  ([below](#many-at-once-edge-views-and-waiting)).
 
 ### What a query sees
 
@@ -9198,7 +9510,7 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   query` writes them member by member (`QueryOutput`), a stand-in untitled, so its end is its id
   alone. An arrow into a stand-in that stands for nothing yet stays at the stand-in, as drawn.
 - **A batch, ids only.** `queries.matches([QueryMatchRequest])` answers many queries
-  (`text`, `edges`, `limit`, `admitting`, `holdingBack`) in one go and returns, in order, each one's
+  (`text`, `scope`, `edges`, `limit`, `admitting`, `holdingBack`) in one go and returns, in order, each one's
   `Result<QueryMatches, QueryError>`: `canonical`, `ids` (the admitted matches in file order, at
   most `limit`), `count` (all admitted), `heldBack` (of the matches `admitting` turned away, how many
   `holdingBack` takes: what a step of the caller's could admit, so it can say what it left out; 0
@@ -9206,7 +9518,7 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   Topology in each view the requests ask for, and every request is evaluated in one evaluation that
   shares what it reads: the shapes walked, the title index, and the names, so a derived name (asked
   of the main actor in slices) is read **once per batch**, however many requests name titles. Each
-  text is checked once however many requests carry it, a query asked in two views among them (debug
+  text is checked once however many requests carry it, a query asked in two views or of many shapes among them (debug
   builds count `checks`), over the edge types read once.
   `admitting` is asked of each match off the main actor, before `limit`: the first match is the
   first one admitted, and `count` counts those; `holdingBack`, of each it turned away. No rows are built. A request the engine refuses
@@ -9216,6 +9528,34 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   (`unknown_title`, `unknown_id`, `cannot_contain`: what `run` does before it evaluates), with
   nothing evaluated and no rows, and takes up nothing for a plan that names no shape: what a plugin
   that translates English to a query checks, beside `check`, before it keeps one.
+- **Bound to a shape.** A phrase asked of many shapes (a rule's, on a type, for each shape it
+  checks) is one text in one batch, each request bound to its own: `QueryMatchRequest(text, scope:
+  id, …)`, right after the text. `:scope` is that shape (`#<id>`: itself, never forwarded through
+  a stand-in), `:scope-start` where the connection it carries starts (`:start-of(:scope)`) and
+  `:scope-end` where it ends (`:end-of(:scope)`), of every edge type, in the request's edge view
+  (what a stand-in at an end stands for, resolved; none for a shape that carries no connection).
+  Each is a compound's test (`sticky-note:is-a("Listing"):not(:scope)`, `arrow:starts-at(:scope-start)`)
+  or an edge word's anchor (`subboard:edge-from(:scope-start, arrow)`, `sticky-note:connected-to(:scope)`),
+  and the canonical form prints it as written, never the id. They are the engine's own words, in
+  no plugin's list and not the language's (`canvas query-vocabulary` and `--ask` don't list what
+  `canvas query` always refuses; a plugin can't add a word called so). A plan holds the word, not
+  the id, so a text asked of many shapes is checked once and evaluated for each, and a compound
+  starts from the shape's own edges and walks no shape. They read the file and the shape bound: no
+  `editorWords`, `readsOnlyTheFile`, and only the ends make a plan `readsEdges`. `check(_:binding:)`
+  and `checkStored(_:binding:)` take the `QueryBinding` the asker will bind (`.scope`; nil, what
+  every caller that never said binds, binds nothing): a query that uses a word nothing is bound to
+  is refused `unsupported`, “:scope-end” can’t be used here., a problem for each use where it
+  stands, hinted `` `:scope` is the shape a query is asked about, and this one is asked about none. ``
+  So `run`, `canvas query`, `--ask` and a reference's stored query refuse them; in a batch the
+  request that has no scope is refused alone, and one whose scope no shape the query ranges over
+  has (gone, kept aside, on a board the app can't show) is its `unknown_id`, as `#<id>` would be.
+
+  ```swift
+  // A rule's phrases, each asked about each shape the rule checks: one batch, a request for every pair.
+  let requests = shapes.flatMap { shape in phrases.map { QueryMatchRequest($0, scope: shape.id, edges: .recorded) } }
+  let answers = await editor.queries?.matches(requests)           // in order; each answer is its request's ids or its refusal
+  _ = try editor.queries?.checkStored(phrase, binding: .scope)    // keeping a phrase: says its shape will be bound
+  ```
 - **What a word reads** (`QueryReads`, `.file` or `.editor`) is said when it's added, and a plan
   reports it (above). `registrar.queryPseudoClass(…, reads: .file, prepare:, seeds:, matches:)`
   and `queryTextFormat(…, reads: .file, prepare:, read:)` take a `prepare` that is given a
@@ -9236,15 +9576,21 @@ the edges ([stand-ins](#stand-ins-forwarding), Topology's). All are generic: not
   query that searches note text (`[text*=…]`, `:contains`) reads only the file and a stand-in's
   own query may use it. The structural words, attributes, kinds, titles, text and the edge words,
   relations included, read the file.
-- **Settling.** `QueryRequest.settle` (a `Duration`, nil: don't wait) makes a query that reads edges
-  wait, before it takes up the file, while `topology.isSettling` (answers a stand-in asked for are
-  still arriving), at most that long (`QueryBudget.settleWait`, 2 s, what `canvas query` passes,
-  `--ask`'s query too). The wait holds no snapshot, and no other query waits for it; a plan with no
-  edge word never waits. It counts against the query's deadline (armed before the wait, so the
+- **Settling.** `QueryRequest.settle` (a `Duration`, nil: don't wait) makes a query that reads edges,
+  or holds a word that says it waits as they do (`queryPseudoClass(…, settles: true)`: Validation's
+  `:invalid`, `:warned` and `:incomplete`, whose verdicts a plugin may still be working out, as
+  [Language rules](#language-rules)' checks), wait, before it takes up the file, while
+  `topology.isSettling` (answers a stand-in asked for are still arriving, or a plugin keeping it
+  settling is busy; a plan that only reads edges, while `isSettlingEdges`, so a rule's verdict
+  holds up no query of edges), at most that long (`QueryBudget.settleWait`, 2 s, what `canvas query` passes,
+  `--ask`'s query too). The wait holds no snapshot, and no other query waits for it; a plan with
+  neither never waits (`QueryPlan.waitsForAnswers`). It counts against the query's deadline (armed before the wait, so the
   evaluation has what's left), which keeps a slow query inside `canvas`'s 10 s: it's refused
   `too_slow`, with its hint, not left to the client's timeout. If the time passes with answers
   still arriving the query runs anyway and adds `QueryWarning.pending(n)` (reason `pending`; `n` the
-  stand-ins asked and unanswered), saying that what it reads of edges may change. An agent that
+  stand-ins asked and unanswered), saying that what it reads of edges may change (of edges, and
+  counted, only when it waited for edges alone: `pending(_:ofEdges:)`; with a word that waits,
+  "Answers are still arriving"). An agent that
   draws and then queries reads the settled graph, or is told it didn't.
 
 ### What plugins add
@@ -9303,12 +9649,14 @@ registrar.queryTextFormat(mediaType: MentionTextFormat.mediaType, describes: "me
                           read: { stored, labels in MentionText(stored: stored).plainText { labels.label(of: $0) } })
 // MentionedNames: QueryFileFact, `current(in:)` is `editor.mentions?.labels`, a function of the records.
 
-// ValidationQueriesPlugin: :invalid, :warned and :incomplete, which only the main actor can say.
+// ValidationQueriesPlugin: :invalid, :warned and :incomplete, which only the main actor can say, and which a rule may
+// answer later than its commit (a language rule's model), so a query of one waits while answers are still arriving.
 registrar.queryPseudoClass(word.rawValue, summary, example: ":\(word.rawValue)",
                            prepare: { _ in () },
                            matches: { _, _ in .onMain },
                            onMain: { record, board, _, context in has(severity, record, on: board, context) },
-                           problems: problemClass.map { name in { record, board, _, context in /* each issue of the level as a ShapeProblem of class name */ } })
+                           problems: { record, board, _, context in /* each issue of the level as a ShapeProblem: wrong, warning, needed */ },
+                           settles: true)
 
 // SelectionQueriesPlugin: the person's selection, as the query takes up the file.
 registrar.querySelection(Word.selected.rawValue, "the person has it selected", example: ":selected") { $0.selectedShapeIDs }
@@ -9519,6 +9867,12 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   holding up no other query, cancelled waiting, the wait counting against the deadline), with `Working` as a source of busy work. QueryCommandsTests
   write a connection through a stand-in, and wait for answers on a `ManualScheduler`; CompositionTests'
   QueryShippedTests pin each shipped word's reads; BenchmarkTests' `referenceBatch`.
+- **Words bound to a request** (`:scope`, `:scope-start`, `:scope-end`) are held by ScopeTests on the
+  same fixtures (the wires, the relay's proxy and lens, the yard): `scopeBatchTests` ask one text of
+  every shape in one batch and compare each answer with the query with the id written in (`#id`,
+  `:start-of(#id)`, `:end-of(#id)`), in each edge view; `scopeRefusalTests` an unbound or unknown
+  scope refused alone, and `check`, `checkStored` and `run` refusing each use unbound; `scopePlanTests`
+  what a plan says of them. QueryCommandsTests: `canvas query ':scope'` is refused with that message and hint.
 - **What runs where** is held by `QueryState`'s debug counters (`liveSnapshots`, `captures`, `checks`,
   `mainSlices`, `recordsEncoded`, `derivedTitlesAsked`, `verdictsAsked`, `universeWalks`,
   `seededFromAnchors`) and `threadsPlugin` (a name, a text format's `read` and a word's `matches`,
@@ -9548,7 +9902,7 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
   and message (`QueryTranslationError`), no model or no queries, and the deadline in a model call;
   and `translate` (TranslateTests): the canonical query returned and nothing run, a wrong title and a
   word that reads the editor each repaired once (and refused twice an unusable answer), the 40 s mark,
-  the 55 s deadline, a cancelled task, and the `.reference` request (no selection, no word that reads
+  the 55 s deadline, a cancelled task, and the stored request (`.stored()`: no selection, no word that reads
   the editor, the rule line) against the `.person` one.
 - **QueryCommandsTests** run `query`, `query-vocabulary` and `--ask` as the server does (`start`,
   `finish`, `run`, `answered`, `refused`) over chores, pockets and links, captions naming them,
@@ -9680,9 +10034,10 @@ registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle
   board shown's crumb as a `ContentsHeading` with `up: .goUpBoard`, called Enclosing Board as
   the Go menu calls it, its tooltip the same, without a key (⌘↑ steps out of a group or a container
   first, so it is not always this button's step); on the root the file's name, as the
-  window and the path's root crumb have it, else "Board". `BoardFindPlugin` (id `board-find`)
-  heads each board's rows in [Find](#find)'s list (its `FindHeadings` point) with the board's name
-  and symbol. Boards imports TableOfContents and Find for them.
+  window and the path's root crumb have it, else "Board". `BoardHeadingsPlugin` (id `board-headings`)
+  heads each board's rows in the lists that group shapes by board ([Find](#find)'s; the detail
+  panel's `BoardHeadings` point) with the board's name
+  and symbol. Boards imports TableOfContents and DetailPanel for them.
 - **In the window** ([the host's slots](#host-slots), which `BoardsPlugin` fills): the window's subtitle names the board
   shown, nothing on the root, where the title is the file's name (`registrar.windowSubtitle`,
   the last crumb's title, which the window
@@ -11110,12 +11465,13 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   (`Editable.discardsWhenEditingEnds`), and unchanged text makes no step. A scope that admits few shapes
   ranks only its members (`MentionState` keeps each scope's members as entries are read), so a keystroke
   costs what matches, not the board.
-- **Natural language** (`ReferenceInterpreting.swift`, design 7.3, decision D9): live, once only the
-  words row is left (`ReferencePicker.isHandoff`) and the text has rested `ReferenceStyle.interpretDelay`
+- **Natural language** (`ReferenceInterpreting.swift`, design 7.3, decision D9), through the lifecycle every
+  host of words shares (`editor.interpretations`, [Language models](#language-models)): live, once only the
+  words row is left (`ReferencePicker.isHandoff`) and the text has rested `Interpretations.restDelay`
   (600 ms on `editor.scheduler`, every keystroke starting the wait again and cancelling a call that is out),
-  `editor.queryTranslator.translate(words, about: .reference)` is asked, so the query is one a reference
-  can run (reads only the file, titles right, repaired once). Its answer is the reference's **draft**
-  in `ReferenceState`, never in the document: the panel shows the words, the query, its status and its
+  `editor.queryTranslator.translate(words, about: .stored())` is asked, so the query is one a reference
+  can run (reads only the file, titles right, repaired once). Its answer is the reference's **draft**,
+  the lifecycle's, never in the document: the panel shows the words, the query, its status and its
   matches as they arrive (one extra `matches` request, which provides nothing, so nothing is forwarded);
   text that already reads as a query is a draft at once, with no model. At commit (Return on the words
   row, ⌥Return, or leaving with text) a draft that has landed for exactly these words is written in the
@@ -12200,8 +12556,11 @@ closed file's editor alive, and the caller that goes with the editor cancels the
    `Employment relates Person to Company: role (text); rows: Person "jobs" (only one)`), then
    `<instances>`, which shapes are of each type by title and the titled notes of none
    (`FileFields.instancesText(for:)`: `Pet: "Bubbles", "Finn", and 4 more`, then `Of no type: "Coach
-   Lee", "Sam"`), without which the model took every note for some type's. Nothing else leaves the
-   machine: never a shape's text or values.
+   Lee", "Sam"`), without which the model took every note for some type's; then `<connections>`, how
+   arrows join the file's shapes, a line for each pair of ends (`FileFields.connectionsText(for:)`:
+   `Person → Company: 2 Employment arrows`, each end's type, else its kind, then how many and their own
+   type), without which "the member's district" found nothing. Nothing else leaves the machine: never
+   a shape's text or values.
 3. **The answer** is read (`AskAnswer.parse`): trimmed and unwrapped (`ModelAnswer.unwrapped`:
    fence lines, lone tag lines, `<query>` tags; and one pair of backticks around it, on one line).
    A first word `UNANSWERABLE`, in any case, is `unanswerable`, with the reason after it; a refusal
@@ -12235,7 +12594,7 @@ about:)` is what the app asks when a query isn't run now but kept (a reference's
 `repaired`) for an answer, which differs from `ask` in what it validates and that it runs nothing.
 `--ask` repairs every refusal `run` raises, and the commonest model error, a wrong title, is raised
 only there (`check` leaves titles for `run`), so `translate` validates in two steps, each refusal
-going into the one second try: in the `.reference` context `checkStored`, the one gate of every
+going into the one second try: stored, `checkStored`, the one gate of every
 stored query (the plan reads only the file: `plan.editorWords` is empty, else a refusal naming the
 first word, “`:selected`” can’t be used here., `QueryError.cantBeUsed`, which a reference's own
 answers, draft and warning and `canvas draw`'s check say too), in `.person` `check`; and `checkNames`
@@ -12243,7 +12602,12 @@ answers, draft and warning and `canvas draw`'s check say too), in `.person` `che
 evaluated: the batch that follows the stored query is its first evaluation. `TranslationContext` is
 `.person` (`--ask`'s: the selection in `<board>`, every word in `<vocabulary>`), `.selection` (the
 command bar's `/query` on a selection: `.person`'s request, and `<board>` adds that the question picks
-out some of the selected shapes and only those the query matches are kept), or `.reference`: the
+out some of the selected shapes and only those the query matches are kept), or `.stored()`, a query
+stored and run later (a reference's; bound, `.stored(binding:sentence:)`, a rule's chip's, run for
+each shape of a type as `:scope`: the system prompt gains one more line, the product's
+`Shipped/ask-bound.txt` filled in, `BoundWords`, asking for the shapes the words name in the
+sentence they're in, the phrase in brackets, and the vocabulary the `:scope` words' lines; its
+answers checked with `checkStored(_:binding: .scope)`): the
 selection is left out of `<board>` (it is the pill being typed into), every word that reads the
 editor (`QueryVocabulary.textForStoredQueries`, from each word's `readsEditor`) is left out of
 `<vocabulary>`, and one line, `referenceRule` (the product's `Shipped/ask-rule.txt`, which the
@@ -12251,7 +12615,35 @@ plugin reads beside the prompt), is added to the system prompt. The prompt's own
 `:selected` and `:current-board` and are not edited for this context (it is `--ask`'s byte for
 byte), so the filtered vocabulary and the rule line keep the model off them and the gate's repair
 catches the rest; a QueryPromptTests case holds that the rule line and the filtered vocabulary are
-there for `.reference` and not for `.person`.
+there for `.stored()` and not for `.person`.
+
+**Words a person types: one lifecycle in every host.** What a reference's pill does with its words (and
+`/query`'s bar says in the same words) is QueryTranslation's `Interpretations`, `editor.interpretations`,
+an `EditorService` `QueryTranslationPlugin` installs, so a later host takes a few lines. A host adopts
+`InterpretationHost` (the `TranslationContext` to ask in; whether it still holds the words; how a draft's
+matches are asked; its own step for a query that came after editing; its Interpret; being told of a change)
+and keys its words by `InterpretationKey(shape:slot:)`:
+
+```swift
+// ReferenceState (References), as the pill's text changes:
+editor.interpretations?.typed(text, at: InterpretationKey(shape: id, slot: "reference"), interprets: picker.isHandoff, host: interpreter)
+```
+
+`typed` lets go of what was asked; words that `check` as a query are a draft at once, with no model;
+else they rest `Interpretations.restDelay` (600 ms on `editor.scheduler`) and are translated. An answer
+while the shape is edited is a draft (`state(at:)` is `.drafted(query:found:)`, its matches asked once
+with the host's request, which provides nothing; `draftQuery(at:words:)` is what a commit writes, no
+second call); `committed(words:at:host:)` notes words the host still had something else for;
+`editingEnded(at:)`, a scheduler hop later, asks about words typed or committed and lands a draft; an
+answer after editing lands at once. `retry(at:)` asks again live while edited, else through the host's
+Interpret; a key saved retries what failed for want of one; `drop`, a file put in place and the editor
+going cancel what's out. A person is told one set of words in every host (`InterpretationStatus(_:)` of
+a `QueryTranslationError`: `words`, `action`, `isBusy`): "Interpreting…", "Unavailable", "No API key"
+and "Key rejected" with Open Settings…, the model's own words ("Rate limited", "Can’t reach Anthropic",
+"Timed out") and "No query for these words" and "Unusable answer" with Retry. Its views are the panel's:
+`InterpretedQueryView` (the query, read-only, colored by `QueryColoring`), `FoundRows` (a row per
+`FoundRow` the host makes, then "and N more"; a click the host's, the pointer hovering a row's shape) and
+`InterpretationStatus.Action.button(retry:)`.
 
 - **`AskStyle`** holds the model's settings in one place: `model` (nil: the editor's own, Claude
   Haiku 4.5), `temperature`, `maxTokens`, `effort` and `fallbacks`, sent as the request's `model`,
@@ -12305,6 +12697,28 @@ there for `.reference` and not for `.person`.
   p50 0.64 s; about $0.003 a question), and Sonnet 5.5 at 192 of 192. Round 1, before the language
   and prompt changes it prompted, was 88% first try and 98% after repair for Sonnet, 89% and 91%
   for Haiku.
+
+### decide
+
+`canvas decide <query> "<question>"` (DecisionCommands, `DecisionCommandsPlugin`) asks one yes-or-no question of
+every shape a query finds, each on its own, with its state as a rule on a type sees it (`RuleChecks.states(of:)`,
+LanguageRules': the shape, its types and their words, where it is, what's beside it, its edges), through
+`editor.decisions`, and lists them by how likely each is a yes, highest first. Nothing is written and no step opens:
+it answers an agent's question, where a rule on a type is what a person keeps on the board.
+
+```swift
+let result = try await queries.run(QueryRequest(text, limit: params.limit, properties: .none, settle: QueryBudget.settleWait))
+let states = await editor.ruleChecks!.states(of: result.rows.map(\.id))
+// each: DecisionRequest(state: states[id]!, questions: [DecisionQuestion(id: "q", asks: "Judging from the state, " + question)])
+```
+
+- **Its answer**: `{board, query, question, count, model, rows: [{id, title, yes}], warnings?}`, the rows highest yes
+  first (to two places), equal ones in file order; at most `--limit` shapes (50, at most 500), the first the query
+  finds, and a `limited` warning when it found more. Eight are asked at once; the same question of the same shape
+  is answered from memory the rest of the day.
+- **Refused**: the query's own refusal with its place, a blank question (`invalid_params`), `no_queries`,
+  `no_model`, and the model's first failure, the others cancelled (`no_key` and `key_rejected` with where to save a
+  key, `model_failed` saying whether trying again may help).
 
 ### kinds
 
@@ -12559,9 +12973,10 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   `schema:`, or in words that are JSON) is its color, and taking it out takes the color away. One that
   isn't a color changes nothing and warns (`“$color” isn’t a color.`); a name the file lacks is held,
   and Colors warns of it. A schema written whole (draw's `schema:`, the model's) keeps the `$color` of
-  the one it replaces unless it says one (`HeldDirectives.carried`, which `$autofill` shares), so a script
-  run again changes nothing. The model is never sent it (`HeldDirectives.stripped`), and a color change alone
-  asks it nothing. It is the
+  the one it replaces unless it says one (`HeldDirectives.carried`, which `$autofill` shares, and every
+  directive another plugin holds in a schema, `registrar.typeDirective`: [Language rules](#language-rules)'
+  `$rules`; `registry.heldDirectives` is the list), so a script run again changes nothing. The model is
+  never sent it (`HeldDirectives.stripped`), and a color change alone asks it nothing. It is the
   type's own: a type built on it keeps its own color, and no note of the type holds anything for it.
 - **A type's color on its notes**: a shape of a type that holds no color of its own (a note's paper,
   a relationship type's arrow) is drawn in the color its type's note holds, never the one its id
@@ -12812,6 +13227,12 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   (a match inside a row with more in it marks the row, a folded one the fold). Its `affected` is
   `RowBook.reached(by:)`, asked once every service has the commit, so the type index has told the book which
   instances the commit reached.
+- **A row's first value in the issue walk's list.** Types' `IssueRowValuesPlugin` (a plugin value of its own, right
+  after `TypeDetailsPlugin`; the report's `IssueRowValues → every shape holding fieldValues`) fills Validation's
+  [list](#the-list-stops-by-board-under-the-band): a flagged note ends its row in the first thing it holds
+  (`RowBook.findTexts(of:)`), a flagged arrow of a relationship type in the first of its values
+  (`findTexts(ofRelationship:)`: "Nay"), a shape with no values in nothing. The same texts Find reads, from the
+  record and the types alone.
 - **For [Neighbors](#neighbors)**, `TypeLightsPlugin` (a plugin value of Types' own, after Neighbors, and after
   mentions' lights in the shipped list) gives two lights in one pink (`TypesStyle.instancesLight`), only while the
   hovered shape is a type: Instances (`TypesStyle.instances`), `:is-a(#id[schema]):not([schema])`, what is of it
@@ -13144,7 +13565,12 @@ do throws(LanguageModelError) {
   once. The key is `AnthropicKeyStore.standard`,
   `~/Library/Application Support/InfiniteCanvas/anthropic-api-key`: the key and nothing else, mode
   0600, written whole and renamed into place; a missing file is no key. Not the Keychain: the app
-  isn't signed, so each build would be a new app to it.
+  isn't signed, so each build would be a new app to it. What's done with the file is `KeyFile`'s, a
+  protocol every service's key store adopts (DecisionModels' `TypeSafeKeyStore` too), and a key's
+  rows are `KeyRows` over `KeySettings` (its logic, made for a `KeyService`: the name, the prompt,
+  where keys are made and what's posted when the key changes, with the service's own test): the
+  Claude pane's on the API key's way, and `KeySettingsView`'s, the pane of a service with a key
+  alone, so every key is set with one code.
 - **Through Claude Code.** `ClaudeCodeModel` asks through the person's own `claude`, on their
   Claude plan, the app never touching a token: each call is one `claude -p --output-format json`
   run with the request's model, effort and system prompt, no tools, MCP servers, skills or saved
@@ -13191,6 +13617,147 @@ do throws(LanguageModelError) {
   or the person's Claude Code, but for the two live evaluations, TypesTests' (`SCHEMA_LIVE=1`) and
   `--ask`'s (`QUERY_LIVE=1`), which `./test.sh` never sets; LanguageModelsTests stand a script in
   for `claude`, and read what Claude Code really printed from recordings.
+
+## Decision models
+
+DecisionModels ([`Sources/DecisionModels`](../Sources/DecisionModels)) is an engine beside the
+language model that declares no extension point: it lends every editor one decision model,
+`editor.decisionModel`, for any plugin to ask yes-or-no questions of a state, each answered with a
+probability, and knows nothing of what they ask about.
+
+```swift
+guard let model = editor.decisionModel else { return }      // nil without DecisionModelsPlugin
+let request = DecisionRequest(state: ["shape": shapeJSON], preface: rules,
+                              questions: [DecisionQuestion(id: "all", asks: "Read together, should it be flagged?",
+                                                           yes: "Flag it", no: "Don't flag it")])
+do throws(DecisionModelError) {
+    let answers = try await model.decide(request)           // answers.yes["all"], .model, .usage
+    let verdict = model.cutoffs.verdict(answers.yes["all"] ?? 0.5)   // .yes, .no, .unsure
+} catch {
+    status = error.message                                   // "No TypeSafe key"
+}
+```
+
+- **The protocol.** `DecisionModel` is one async call: a `DecisionRequest` (the `state`, any JSON;
+  a `preface` every question shares, said once; and the `DecisionQuestion`s, each an `id`, what it
+  `asks`, and what a `yes` and a `no` mean in a few words) in, `DecisionAnswers` (`model`, the
+  version that answered, which an answer kept is kept under; `yes`, each question's probability of
+  yes by its id, one left unanswered left out; `usage`) out, or a `DecisionModelError`: a `failure`
+  (no key, unauthorized, rate limited, overloaded, another status with the service's message, the
+  network, no answer in time, a malformed answer, cancelled) and the `provider` it names, so its
+  `message` says whose ("No TypeSafe key", "TypeSafe key rejected", "Can’t reach TypeSafe", "TypeSafe
+  error 500", "Rate limited", "Timed out", "Unusable answer"; a refused request is the service's
+  first sentence, the key taken out), `isTransient` (Retry) and `needsKey` (Open Settings…). A
+  model's `cutoffs` (`DecisionCutoffs`, `.standard` 0.7 and 0.3, where the prototype's answers
+  separated) turn a probability into a `DecisionVerdict`: yes, no or unsure.
+- **The app's model.** `JevModel`, TypeSafe's Jev: one `POST https://api.typesafe.ai/v1/systemone`
+  a call, the key as a bearer token, the state as it is, `jev-latest`, and each question a `noul`
+  whose instructions are the preface and what it asks and whose criteria are its yes and no; its
+  answer's `noul`s are the probabilities. It waits 30 s (Jev answers in a fifth of one), retries
+  nothing, and reads its key at every call from `TypeSafeKeyStore.standard`
+  (`~/Library/Application Support/InfiniteCanvas/typesafe-api-key`, a `KeyFile` as Anthropic's).
+  `DecisionModelsPlugin()`, made from nothing as the product's list makes it, takes it, so the
+  plugin is an `OutwardPlugin`, and gives the key's pane (`registrar.settingsPane("TypeSafe")`,
+  `TypeSafeSettingsView`: a `KeySettingsView`, the key's rows the Claude pane has, "TypeSafe API key", Test a one-question call,
+  Save and Remove posting `Notification.Name.decisionModelKeyDidChange`) only when its model is a
+  `JevModel`, over that model's key store; it lists after LanguageModels, so its pane is under
+  the Claude pane, and only the window's first pane takes the keyboard as it opens
+  (`EnvironmentValues.settingsPaneTakesFocus`). `TypeSafeSettingsView.showSettings()` opens Settings
+  as the Claude pane's does.
+- **Asking a language model.** `LanguageDecisionModel(model:)` asks a `LanguageModel` (Haiku 5.5,
+  effort `medium`, as the prototype judged rules) in one message: the state, the preface, then the
+  questions numbered, each with its two answers, to be answered word for word or "unsure", which it
+  reads as 1, 0 and 0.5. Words, not "yes" and "no": asked whether something fails, a bare "yes" was
+  read as "it holds". Its failures are said as Anthropic's ("No Anthropic key"). It proves the seam
+  isn't shaped around Jev; its prompt's live check is `scripts/language-rules/decide_eval.py`.
+- **Answers kept.** Plugins ask through `editor.decisions` (`Decisions.decide(_:)`), which answers
+  from its `DecisionMemory` what the model (by `name`) answered today to the same request (a hash
+  of its state, preface and questions), and asks the rest; the app's memory is a file in
+  Application Support, a test's in memory only.
+- **Tests** pass a `ScriptedDecisionModel` (a queue of answers and errors, `answerAll`, a
+  `fallback`, `holdsAnswers` and `release()`), which ShippedTesting's `ShippedPlugins` gives every
+  test unless it passes one (`decisionModel:`), so no test reaches TypeSafe; DecisionModelsTests stub
+  URLSession with a `URLProtocol`.
+
+## Language rules
+
+LanguageRules ([`Sources/LanguageRules`](../Sources/LanguageRules)) checks shapes against rules in
+English their types carry, by the decision model, and warns of the ones a rule flags. It knows no
+kind: a kind opts in with `checkedByRules()` (a note's and an arrow's do), which gives its shapes
+`ignoredRules`, the sentences a shape ignores.
+
+```swift
+// A type's schema holds its rules, a directive Types holds aside (the sync never sees it):
+//   "properties": {"$rules": {"const": [{"says": "The description mentions no damage or wear."}]}}
+registrar.typeDirective(RuleBook.directive)          // LanguageRulesPlugin: Types holds $rules as $color
+let rules = RuleBook.chain(for: shape, in: editor)   // its types' rules, the most general type's first
+switch editor.ruleChecks?.check(of: shape) {         // what the decision model last answered
+case .checked(let verdict)?: verdict.together         // how likely the rules read together flag it
+default: break
+}
+```
+
+- **Where a rule is kept**: `$rules` in a type's schema, which Types holds aside as it holds
+  `$color` (`registrar.typeDirective`, `registry.heldDirectives`): the sync is never sent it, a
+  schema written whole keeps it, a change to it alone is no change to the type's fields. Draw writes
+  it with `schema:`.
+- **What a rule sees** (`RuleContext`, built off the main actor from one snapshot): the shape, its
+  types and their words, where it is, what's beside it, its edges and an arrow's ends, under labels
+  that say how each relates, a group past forty counted by type. **The words** are the product's
+  (`Shipped/rule-prompt.txt`, `RulePrompts`): a question for the rules read together and one for
+  each, the prototype's evaluated wording.
+- **The checks** (`RuleChecks`): a commit marks the shapes it may change the check of (what it
+  wrote, the states that read it, a type's instances, a container's shapes), a pass runs once the
+  file is quiet (3 s) or editing ends, the board shown first, eight calls at once, through
+  `editor.decisions`; Topology settles while checks are out, so Validation's query words, which wait
+  for answers as edge words do, wait for them.
+- **The warnings** (`RuleValidationPlugin`): when the rules read together flag a shape, a warning for
+  each rule whose own answer flags it (else the highest), its sentence word for word, less those it
+  ignores: an orange ring, the Issues line, `:warned` and its rows' `problems`. Each issue carries
+  what can be done about it (`ValidationIssue.actions`, `IssueAction`): Ignore and Show Rule, the
+  buttons of its line (Ignore has the `.ignore` role). Each warning's `source` is its rule's key
+  (`RuleKey.source`, and `RuleKey(source:)` back), so `flagged(by:)` can be asked by a warning.
+- **In the panel** (`RuleDetailsPlugin`, a plugin value of its own after the panel and the menus): a
+  type's Rules tab (`RulesTab`, after Schema) lists its sentences, each a box that writes on Return
+  (`editor.ruleWriter.setRules(_:of:)`, one step, "Change Rules"), with the count of shapes it
+  flags (`RuleChecks.flagged(by:)`), which begins the rule's walk at its first stop (a click, or Return:
+  [Walking issues](#walking-issues-validations-issue-walk)) and lights them while it's under the pointer
+  or has the keyboard (`RuleLights`, the core's tinted outlines); then the rules it inherits, dimmed;
+  then a box that adds one. A checked shape's Issues tab has a Rules section: each rule of its chain
+  with what its check says (`RuleChecks.verdicts(of:)`: flags, holds, unsure, ignored, checking),
+  and Shown, what the model was shown group by group (`sent(for:)`), one list of rows. What the
+  buttons do is in the menus too (Ignore Rule ▸, Select Flagged ▸, Walk Flagged ▸, Retry Rules), so none of
+  it waits on Keyboard navigation.
+
+```swift
+editor.ruleWriter?.ignore(rule.says, on: listing)     // one step, "Ignore Rule": its warning goes
+editor.ruleChecks?.flagged(by: RuleKey(type: car, says: rule.says))   // the shapes it flags now
+```
+
+- **The type's chip** (`RulesChip`): "Rules 2" after a type's pill and the chips of what it builds on, how many
+  rules it holds itself, neutral and with nothing to click: each rule and what it flags are in its Rules tab.
+- **Chips** (`RuleChips`, `editor.ruleChips`): a phrase of a rule that finds shapes, kept in the
+  rule as `{"phrase": "…", "query": "…"}` under `find`, its query stored and bound to the shape
+  checked (`:scope`, an arrow's `:scope-start` and `:scope-end`: [Queries](#queries)). What each
+  finds for a shape is in what the model is sent, `found by "<phrase>"`, each container found
+  followed by what it holds, asked for every checked shape in one batch, each request bound to its
+  shape; a commit that writes anything asks the chips again, and only the shapes whose chips find
+  something else are checked again. In a rule's box `@` lists shapes and then the words typed
+  (Mentions' `onShape` and `onWords`): a shape picked is a chip whose query is its title, quoted
+  (else its id), nothing asked; words go to the model through the lifecycle every host of words
+  shares (`editor.interpretations`, [Language models](#language-models)), this service its host,
+  asked as `.stored(binding:sentence:)`: a draft while the box is typed, written with the rule, or
+  its own step, "Interpret", once the box is done. Chips are drawn as chips (TextEditing's derived
+  highlights with a symbol), Tab walks them, and the line under a rule (`QueryPreview`) says what
+  each found for a sample shape of the type, ‹ › between samples, its query edited in place. A chip the engine can't read
+  warns on its type, which `canvas draw` reports when it writes such a schema (the rule reads the
+  committed engine, `ValidationContext.committedService`).
+
+```swift
+// "Unusual for someone representing the member's district.", on the relationship type Vote:
+let found = await editor.queries!.matches(votes.map { QueryMatchRequest("subboard:edge-from(:scope-start, arrow)", scope: $0) })
+editor.ruleWriter?.setQuery(query, ofChip: "the member's district", in: says, of: vote, step: "Interpret")
+```
 
 ## Prose maps
 
@@ -14928,8 +15495,8 @@ core                 tool hand · command undo · command redo · command zoomIn
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
-arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
-sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
+arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
@@ -14945,14 +15512,16 @@ mentions             service MentionState · key hint @ Mention a Shape · edge 
 mention-slash-bar    slash bar field
 board-navigation     service BoardCrumbs · command enclosingBoard after goForward in NavigationSection · shortcut ⌘↑ → command enclosingBoard · command goUpBoard · command boardPath in PathSection · shortcut ⌥⌘P → command boardPath · host overlay · window subtitle
 board-contents       contents heading
+board-headings       board heading
 find-in-boards       service FindState · overlay FindOverlay · command find in FindSection · shortcut ⌘F → command find · command findNext in FindSection · shortcut ⌘G → command findNext · command findPrevious in FindSection · shortcut ⇧⌘G → command findPrevious
 find-panel           key hint ↩ or ⇧↩ in Find Next or Previous Hit · key hint ↑ or ↓ in Find Previous or Next Result · key hint ⌘↩ in Find Select Hit and Close · detail takeover
-board-find           find heading
 title-find           findable title → every shape with a title
 mention-find         findable mention text → every shape with mention text · findable mention text over the canvas → every shape with mention text
 jump-to              service JumpToState · command jumpTo first in PathSection · shortcut ⌘K → command jumpTo · host overlay
 transform            service TransformState
 validation-details   DetailStatuses in Issues after Style → every shape
+issue-walk           service IssueWalk · command nextIssue in IssuesSection after NavigationSection · command previousIssue after nextIssue in IssuesSection after NavigationSection · shortcut ⌘' → command nextIssue · shortcut ⌘" → command previousIssue · command ignoreIssue after issueList in IssuesSection after NavigationSection · shortcut ⌥⌘' → command ignoreIssue · command endIssueWalk after ignoreIssue in IssuesSection after NavigationSection
+issue-walk-panel     detail band · detail takeover · command issueList after previousIssue in IssuesSection after NavigationSection · shortcut ⌃⌘' → command issueList · service IssueLights · outlines
 validation-contents  ContentsMarks → every shape
 mention-validation   ValidationRules → every shape naming shapes
 path-validation      service PathIndex · ValidationRules → every shape with a title
@@ -14963,6 +15532,7 @@ publishing           property public · property public → every shape · publi
 types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
 type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
 type-details         ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding autofill · ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding endRule
+issue-row-values     IssueRowValues → every shape holding fieldValues
 field-find           findable field value → every shape showing field values · findable relationship type name → every shape holding relationship
 colors               property color · file property colors · service ColorBook · shape tints · /color → every shape holding color · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding color
 color-validation     service ColorWarnings · ValidationRules → every shape holding color
@@ -14973,6 +15543,10 @@ ports                property channel · service PortState · overlay PortOverla
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
 arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · connects to itself → every shape holding schema · ArrowBindingRules
 language-models      service LanguageModelState
+decision-models      service Decisions
+language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
+rule-validation      ValidationRules → every shape holding ignoredRules · IssueScopes · ValidationRules → every shape holding schema
+rule-details         service RuleLights · outlines · ShapeDetails in Rules after Schema → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
 prose-maps           service ProseMapService · overlay ProseMapFrames
 draw-engine          draw engine · insertion spot
 automation           command line draw · command line show · command line capture · command line kinds · command line measure · host commands
@@ -14985,16 +15559,17 @@ draw-field-values    draw value fieldValues · draw value endRule · draw report
 color-names          draw text text/x-canvas-color
 group-draw           draw groups
 queries              service QueryState · query engine
-query-translation    service QueryTranslator
+query-translation    service QueryTranslator · service Interpretations
 title-queries        query names
 board-queries        query board names
 mention-queries      query word :mentions · query word :mentioned-by · query text text/x-canvas-mentions
 validation-queries   query word :invalid · query word :warned · query word :incomplete
-type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · query path fieldValues
+type-queries         query word :is-a · query text text/x-canvas-type · query word :misfit · ask fact fields · ask fact instances · ask fact connections · query path fieldValues
 color-queries        query text text/x-canvas-color
 group-queries        query word :grouped-with
 selection-queries    query word :selected
 query-commands       command line query · command line query-vocabulary
+decision-commands    command line decide
 query-slash          /query → the command bar's target
 neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
@@ -15413,7 +15988,8 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
 - **The language model.** Two tests reach the network, and only when asked (`./test.sh` never
   asks): TypesTests' live smoke test (`SCHEMA_LIVE=1`) and `--ask`'s evaluation (`QUERY_LIVE=1`,
   [`--ask`](#--ask)). Every other shipped list a test builds gets a `ScriptedLanguageModel`
-  (`ShippedPlugins.makeEditor(model:)`, whose `model:` has no default so none can be forgotten),
+  (`ShippedPlugins.makeEditor(model:)`, whose `model:` has no default so none can be forgotten, and
+  a `ScriptedDecisionModel` unless it passes one, `decisionModel:`, so no test asks TypeSafe either),
   which keeps each request, answers from its queue, and holds its answers while `holdsAnswers`
   until `release()`. A call lands on the main actor, so a test turns the main run loop until it has
   (TestKit's `spinRunLoop(until:)`, `awaitResult { … }`). LanguageModelsTests stub the network

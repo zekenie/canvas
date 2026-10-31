@@ -57,11 +57,18 @@ final class SchemaReadings {
     /// text, which their parts are cut from.
     var shownRoot: JSONNode? { shown.isObject ? shown.root : nil }
     var shownText: String { showing?.text ?? text }
-    /// `shownText` as the model is sent it: without its `$color` and `$autofill` (`HeldDirectives.stripped`),
-    /// which are no business of the model's, so a type given another color asks it nothing again.
-    var shownModelText: String { showing?.modelText ?? modelText }
-    private lazy var modelText: String = HeldDirectives.all.allSatisfy { held in document.root.flatMap { held.member(in: $0) } == nil }
-        ? text : HeldDirectives.stripped(text)
+    /// `shownText` as the model is sent it: without the directives held aside (`held.stripped`: its `$color`,
+    /// `$autofill` and what other plugins keep there), which are no business of the model's, so a type given
+    /// another color asks it nothing again.
+    func shownModelText(holding held: HeldDirectives) -> String { showing?.modelText(holding: held) ?? modelText(holding: held) }
+    private var modelTexts: (keys: [String], text: String)?
+    private func modelText(holding held: HeldDirectives) -> String {
+        let keys = held.all.map(\.key)
+        if let kept = modelTexts, kept.keys == keys { return kept.text }
+        let made = held.isAbsent(from: document.root) ? text : held.stripped(text)
+        modelTexts = (keys, made)
+        return made
+    }
 
     /// Shows what `previous`, the shape's reading before this one, showed: its text, if that was a
     /// JSON object, else what it showed.

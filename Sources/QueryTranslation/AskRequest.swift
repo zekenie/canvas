@@ -80,7 +80,7 @@ public enum AskRequest {
     /// The first request.
     ///
     /// `selection` says whether the selected shapes are named in `<board>`: not for a query that is
-    /// stored and run later (`TranslationContext.reference`), where whatever is selected is the pill
+    /// stored and run later (`TranslationContext.stored`), where whatever is selected is the pill
     /// being typed into. `narrowing` says the question picks out some of them and only those are kept
     /// (`TranslationContext.selection`, `/query` on a selection).
     ///
