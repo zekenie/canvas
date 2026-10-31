@@ -4,7 +4,7 @@ import CoreGraphics
 import TestKit
 
 // The core's restacking of several shapes at once (`bringToFront`, `sendToBack`, `bringForward`,
-// `sendBackward`), over CanvasTesting's boxes and corrals, plus one anchored box kind (Banner)
+// `sendBackward`, and in front of or behind a shape, `bring(_:inFrontOf:)` and `send(_:behind:)`), over CanvasTesting's boxes and corrals, plus one anchored box kind (Banner)
 // declared in this file. Restacking on a board that isn't shown is in MovingOffBoardsTests.
 
 /// A box painted by anchor, as an arrow is: document order doesn't decide where it's drawn.
@@ -137,6 +137,65 @@ private struct SeededGenerator: RandomNumberGenerator {
         h.editor.transact("Back") { $0.sendToBack([locked, a]) }
         expectEqual(order(h), [a, locked, b], "a goes to the back, the locked shape stays")
         expectEqual(log.refusals.count, 3, "all but the step back from the back, which has nowhere to go")
+    },
+    test("in front of and behind a shape: those on the other side go just past it, keeping their order, those there already staying") {
+        let h = try EditorHarness(plugins: [FixturesPlugin()])
+        let a = h.add(Box(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let b = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
+        let c = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+        let d = h.add(Box(CGRect(x: 600, y: 0, width: 100, height: 100)))
+        h.editor.transact("In Front") { $0.bring([b, a], inFrontOf: c) }
+        expectEqual(order(h), [c, a, b, d], "just above c, a still below b")
+        h.editor.transact("Behind") { $0.send([d, b], behind: a) }
+        expectEqual(order(h), [c, b, d, a], "just below a, b still below d")
+        h.editor.transact("In Front") { $0.bring([c, d], inFrontOf: b) }
+        expectEqual(order(h), [b, c, d, a], "c just above b; d, above it already, stays")
+        let revision = h.editor.revision
+        h.editor.transact("In Front") { $0.bring([a, d], inFrontOf: b) }
+        h.editor.transact("Behind") { $0.send([b], behind: a) }
+        h.editor.transact("In Front") { $0.bring([b], inFrontOf: b) }
+        expectEqual(h.editor.revision, revision, "each on its side already, or the shape itself: nothing to do")
+    },
+    test("in front of and behind a shape take what a container holds along, and never put it below its container") {
+        let log = RefusalLog()
+        let h = try EditorHarness(plugins: [FixturesPlugin(), CorralsPlugin(), FreezingPlugin(log: log)])
+        let under = h.add(Box(CGRect(x: 500, y: 0, width: 100, height: 100)))
+        let corral = h.add(Corral(CGRect(x: 0, y: 0, width: 300, height: 200)))
+        let held = h.add(Box(CGRect(x: 20, y: 20, width: 100, height: 100)))
+        h.editor.put([held], in: corral)
+        let over = h.add(Box(CGRect(x: 250, y: 50, width: 100, height: 100)))
+        expectEqual(order(h), [under, corral, held, over])
+        h.editor.transact("Behind") { $0.send([held], behind: under) }
+        h.editor.transact("Behind") { $0.send([held], behind: corral) }
+        h.editor.transact("In Front") { $0.bring([corral], inFrontOf: held) }
+        expectEqual(order(h), [under, corral, held, over], "nothing goes below its container, nor past what it holds")
+        h.editor.transact("Behind") { $0.send([held], behind: over) }
+        expectEqual(order(h), [under, corral, held, over], "below over already")
+        h.editor.transact("In Front") { $0.bring([corral], inFrontOf: over) }
+        expectEqual(order(h), [under, over, corral, held], "the corral just above over, what it holds with it")
+        h.editor.transact("Behind") { $0.send([corral], behind: under) }
+        expectEqual(order(h), [corral, held, under, over], "and just below under")
+        h.editor.freeze([under])
+        h.editor.transact("In Front") { $0.bring([under], inFrontOf: over) }
+        expectEqual(order(h), [corral, held, under, over], "a read-only shape stays")
+        expectEqual(log.refusals, [[under]])
+    },
+    test("in front of a container is in front of what it holds too, and behind it is behind all of it") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), CorralsPlugin()])
+        let below = h.add(Box(CGRect(x: 500, y: 0, width: 100, height: 100)))
+        let corral = h.add(Corral(CGRect(x: 0, y: 0, width: 300, height: 200)))
+        let first = h.add(Box(CGRect(x: 20, y: 20, width: 100, height: 100)))
+        let between = h.add(Box(CGRect(x: 600, y: 0, width: 100, height: 100)))
+        let second = h.add(Box(CGRect(x: 150, y: 20, width: 100, height: 100)))
+        h.editor.put([first, second], in: corral)
+        expectEqual(order(h), [below, corral, first, between, second])
+        h.editor.transact("In Front") { $0.bring([below, between], inFrontOf: corral) }
+        expectEqual(order(h), [corral, first, second, below, between], "above all it holds, in their order, between too though it was above the corral")
+        let revision = h.editor.revision
+        h.editor.transact("In Front") { $0.bring([first, between], inFrontOf: corral) }
+        expectEqual(h.editor.revision, revision, "what it holds, and what's above all of that, stay")
+        h.editor.transact("Behind") { $0.send([below, between], behind: corral) }
+        expectEqual(order(h), [below, between, corral, first, second])
     },
     test("the list forms leave the board as their forms of one shape do in turn, keys and refusals too, over corrals, banners and frozen boxes") {
         for seed in 1...12 as ClosedRange<UInt64> {

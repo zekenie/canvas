@@ -4450,8 +4450,32 @@ text's ([keyboard](#keyboard-shortcuts)). The Arrange submenu stays in the conte
 running the same commands on the menu's shapes, and the selection's menu leaves it out, since Arrange
 has them. A list without Reordering (and Grouping) has no Arrange menu at all.
 
-The restacking is the core's: `bringToFront`, `sendToBack`, `bringForward` and `sendBackward` each
-take a list of shapes, which keep their order among themselves, and refuse read-only ones, as
+The same kinds get four [slash commands](#slash-commands), typed in a shape's text or the command bar:
+`/bring-to-front` and `/send-to-back` run those commands on the shapes, and `/bring-in-front-of @Milk`
+and `/send-behind @Milk` put them just above, or just below, the shape named, keeping their order
+among themselves, those already on that side staying; in front of a frame is in front of the notes it
+holds too, since they paint above it. The `@` picker on their line lists only shapes
+one of them would go past: on the board shown, painted in document order (never an arrow), not one
+of them or a shape that holds one, and, going behind, not below the container a shape is in, since
+what a container holds paints above it.
+
+```swift
+restackable.slashCommands {
+    // Run as the commands, not typed as them: their rule takes a locked shape (Arrange's item shakes
+    // it), so the bar would list a row that can only be refused there.
+    SlashCommand.together("bring-to-front") { ids, _, editor in editor.perform(.bringToFront, on: ids) }
+    SlashCommand.together("send-to-back") { ids, _, editor in editor.perform(.sendToBack, on: ids) }
+    SlashCommand.together("bring-in-front-of", kinds: { $0.restackableKinds },
+                          shapes: { target, owners, editor in editor.restacks(owners, inFrontOf: target) },
+                          step: "Bring in Front") { owners, arguments, editor in
+        guard let target = arguments.shapes.first else { return }
+        editor.transact("Bring in Front") { $0.bring(owners, inFrontOf: target) }
+    }                                                          // and /send-behind, send(_:behind:)
+}
+```
+
+The restacking is the core's: `bringToFront`, `sendToBack`, `bringForward`, `sendBackward`,
+`bring(_:inFrontOf:)` and `send(_:behind:)` each take a list of shapes, which keep their order among themselves, and refuse read-only ones, as
 `move(_:above:)` does. Bring Forward and Send Backward are tldraw's: each shape moves just past the
 nearest shape that overlaps it, in that direction, since moving past one it doesn't overlap would
 change nothing to see; never one a container holds, which goes with it (a frame steps past its
@@ -7393,7 +7417,7 @@ text view that reads the line says so. And `/` on the canvas, with shapes select
 [command bar](#the-command-bar) under them, where a command is typed for them all and run on them
 with Return: `/color blue` on two notes colors both, and frames, subboards and references, which have
 no text to type in, take commands too; with nothing selected it opens for every shape on the board, as
-if Select All had selected them. Titles' `/title`, Locking's `/lock` and `/unlock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), and [Moving](#moving)'s `/move-to` and `/move-near` are the commands that ship, and in the bar QueryTranslation's `/query`, a [command about the selection](#commands-about-the-selection-selectionslashcommand) that selects what a question in English finds.
+if Select All had selected them. Titles' `/title`, Locking's `/lock` and `/unlock`, Publishing's `/public` and `/private`, Transform's `/turn-into-…`, [Types](#types-shapes-that-hold-a-schema)' `/is-a` (the choice form: `/is-a Person` or `/is-a type`, in a note's text or an arrow's label), [Moving](#moving)'s `/move-to` and `/move-near`, and [Reordering](#many-kinds-reordering)'s `/bring-to-front`, `/send-to-back`, `/bring-in-front-of @Milk` and `/send-behind @Milk` are the commands that ship, and in the bar QueryTranslation's `/query`, a [command about the selection](#commands-about-the-selection-selectionslashcommand) that selects what a question in English finds.
 
 ```swift
 // In LockingPlugin.register, in its one scope:
@@ -8078,13 +8102,14 @@ following a mention shows it. VoiceOver hears how many, and how many more are on
   of two (`reach: .one`), run for one.
 - **CompositionTests' `slashCommandsShippedTests`** type `/lock`, `/title`, `/public` and
   `/private` into a note's editor in the app's canvas view: a slash mid-line is a slash, on a new
-  line it lists `title`, `lock`, `public`, `move-to` and `move-near`, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
+  line it lists `title`, `lock`, `public`, `is-a`, `color`, `move-to`, `move-near` and Reordering's four, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
   followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
   editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
   `/title → every shape holding title`, Locking's `/lock /unlock → every shape holding locked`, Publishing's
   `/public /private → every shape holding public`, Subboards' `/turn-into-subboard → every shape that
-  can turn into subboard` and Moving's `/move-to /move-near → every shape with a box`.
+  can turn into subboard`, Moving's `/move-to /move-near → every shape with a box` and Reordering's
+  `/bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order`.
 
 ## Find
 
@@ -14796,7 +14821,7 @@ mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover S
 type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
-reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order
+reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as

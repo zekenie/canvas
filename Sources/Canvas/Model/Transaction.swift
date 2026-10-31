@@ -574,6 +574,39 @@ public struct Transaction {
     /// count.
     public mutating func sendBackward(_ ids: [ShapeID]) { step(ids, forward: false) }
 
+    /// Paints each of the shapes that is below `other`, and what it holds, just above them, keeping
+    /// their order among themselves, each with what it holds just above it, as `move(_:above:)` puts
+    /// one: in front of a container is in front of its contents too, which paint above it. A shape
+    /// above them already stays, as do `other` itself, a shape it holds, a shape that holds it and a
+    /// read-only one. The topmost goes first, over a replay of the stack.
+    public mutating func bring(_ ids: [ShapeID], inFrontOf other: ShapeID) {
+        var replay = StackReplay(document.shapes)
+        guard let target = replay.place(of: other) else { return }
+        // Nothing moves into or out of the block, so its top stays its top.
+        let block = block(of: other, at: target, in: replay), top = block.places.last ?? target
+        for id in backToFront(ids).reversed() {
+            guard let place = replay.place(of: id), !block.has(place), replay.isBelow(place, top) else { continue }
+            move(id, above: replay.id(at: top), in: &replay)
+        }
+        finish(replay)
+    }
+
+    /// Paints each of the shapes that is above `other` just below it, keeping their order among
+    /// themselves, each with what it holds just above it, as `move(_:below:)` puts one. A shape below
+    /// `other` already stays, as do `other` itself, a shape that holds it, a read-only one and one in a
+    /// container `other` isn't above (what a container holds paints above it). The lowest goes first,
+    /// over a replay of the stack.
+    public mutating func send(_ ids: [ShapeID], behind other: ShapeID) {
+        var replay = StackReplay(document.shapes)
+        guard let target = replay.place(of: other) else { return }
+        for id in backToFront(ids) {
+            guard let place = replay.place(of: id), replay.isBelow(target, place) else { continue }
+            if let floor = floor(of: replay.stack[place], in: replay), !replay.isBelow(floor, target) { continue }
+            move(id, below: other, in: &replay)
+        }
+        finish(replay)
+    }
+
     /// So the shapes keep their order among themselves.
     private func backToFront(_ ids: [ShapeID]) -> [ShapeID] {
         ids.sorted { (document.index(of: $0) ?? 0) < (document.index(of: $1) ?? 0) }

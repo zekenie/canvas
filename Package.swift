@@ -308,7 +308,7 @@ let package = Package(
         // and the table of contents' drops that move shapes into a frame, onto a subboard's board or out of frames (`ContentsMoves`).
         .target(name: "Moving", dependencies: ["Boards", "Canvas", "ContextMenus", "Draw", "SlashCommands", "TableOfContents"]), // layer: platform
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
-        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard"], path: "Examples/Reordering"), // layer: platform
+        .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard", "SlashCommands"], path: "Examples/Reordering"), // layer: platform
         // Engines: what any plugin may run or ask.
         .target(name: "LanguageModels", dependencies: ["Canvas"]),                            // layer: platform
         .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: platform

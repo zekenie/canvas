@@ -106,7 +106,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
 - [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in, or the shapes selected (typed in the command bar) as one block, moved into a frame, onto a subboard's board or beside a shape, on any board; the table of contents' drops that move shapes; what each takes, where it lands (draw's solver), the commit.
 - [snapping](.claude/rules/snapping.md): what a drag, and a resize, snaps to, and its guides.
-- Reordering (`Examples/`) has no file of its own: it is in [context menus](.claude/rules/context-menus.md).
+- Reordering (`Examples/`) has no file of its own: Arrange is in [context menus](.claude/rules/context-menus.md), its slash commands in [slash commands](.claude/rules/slash-commands.md).
 
 **Platform**, engines (what any plugin may run or ask)
 - [language models](.claude/rules/language-models.md): the model plugins ask, its two ways of signing in to Claude (the person's Claude Code, in the app's own folder, and an Anthropic API key) and Settings, `--ask`'s model.

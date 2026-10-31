@@ -72,7 +72,7 @@ import Types
         s.slash()
         expect(s.bar?.isOpen == true, "nothing selected: every note")
         expectEqual(s.bar?.label, "All shapes")
-        expectEqual(s.listed, ["lock", "public", "is-a", "color", "move-to", "move-near", "bulk-create", "query"],
+        expectEqual(s.listed, ["lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind", "bulk-create", "query"],
                     "what three notes offer, then the commands about every shape: /bulk-create, /query")
         model.queue(#":contains("buy")"#)
         s.window.type("query the shopping")
@@ -100,7 +100,7 @@ import Types
         s.editor.selection = note
         s.slash()
         expect(s.bar?.isOpen == true)
-        expectEqual(s.listed, ["title", "lock", "public", "is-a", "color", "move-to", "move-near"], "Moving's two last, a pill naming the shape each takes")
+        expectEqual(s.listed, ["title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "Moving's two, then Reordering's four")
         s.window.type("col")
         s.window.pressReturn()
         expectEqual(s.field?.string, "/color ")

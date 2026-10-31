@@ -194,7 +194,7 @@ import Validation
         type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
         neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
         moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
-        reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order
+        reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
         """)
     },
     test("the guide shows the registry report as it is") {
