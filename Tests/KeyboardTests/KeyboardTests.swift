@@ -485,8 +485,12 @@ import TestKit
         expectEqual(registry.moment(of: "stamp"), .whenIdle)
         expectEqual(stamp.key, MenuKey(key: "s", modifiers: [.command, .option]), "the key the menu keys slot gives: Keyboard's first for it")
         expectEqual(registry.menuKey(of: "wipe"), MenuKey(key: "\u{8}", modifiers: []), "Delete is Backspace's character to a menu")
+        expectEqual(registry.menuKeys(of: "wipe"), [MenuKey(key: "\u{8}", modifiers: []), MenuKey(key: "\u{F728}", modifiers: [])],
+                    "every key that runs it, in the order registered, the one its items show first")
+        expectEqual(registry.menuKeys(of: "stamp"), [MenuKey(key: "s", modifiers: [.command, .option])])
         expectEqual(registry.command(answering: .delete), "wipe")
         expectEqual(registry.menuKey(of: "nobody"), nil)
+        expectEqual(registry.menuKeys(of: "nobody"), [])
         expectEqual(registry.shortcuts.filter { $0.commands == ["wipe"] }.map(\.chord), [.delete, .deleteForward])
     },
     test("one key for two commands that are never both possible runs the one that can, passes while neither can, shows on both, and is one row named as said") {

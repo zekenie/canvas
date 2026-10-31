@@ -346,20 +346,23 @@ extension EditorHarness {
         h.step(right)
         expectEqual(h.editor.selectedShapeIDs, [g1, g2])
     },
-    test("stepping is a step back: Back returns to the shape left") {
-        let h = try stepHarness()
-        let a = h.dot(50, 50), b = h.dot(250, 50)
+    test("stepping to a shape in view is no step back; to one out of view it is, and Back returns to the shape left") {
+        let h = try stepHarness(view: CGSize(width: 1000, height: 700))
+        let a = h.dot(50, 50), b = h.dot(250, 50), far = h.dot(5000, 50)
         h.editor.selectedShapeIDs = [a]
         h.tab()
         expectEqual(h.editor.selectedShapeIDs, [b])
+        expect(!h.editor.canGoBack, "b was in view")
+        h.tab()
+        expectEqual(h.editor.selectedShapeIDs, [far])
         h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [a])
+        expectEqual(h.editor.selectedShapeIDs, [b])
     },
-    test("Go › Forward (⌘]) undoes Back, step by step, until anything else changes the selection") {
-        let h = try stepHarness()
-        let a = h.dot(50, 50), b = h.dot(250, 50), c = h.dot(450, 50)
+    test("Go › Forward (⌘]) undoes Back, place by place, until the person goes somewhere new") {
+        let h = try stepHarness(view: CGSize(width: 1000, height: 700))
+        let a = h.dot(50, 50), b = h.dot(5050, 50), c = h.dot(10050, 50)
         h.editor.selectedShapeIDs = [a]
-        h.tabs(through: [b, c])
+        h.tabs(through: [b, c])                                  // each out of the view the one before was brought into
         expect(!h.editor.canGoForward, "nothing gone back from")
         h.hold(.command)
         expect(!h.key("]"), "the key passes, as the item is dimmed")
@@ -376,9 +379,9 @@ extension EditorHarness {
         expectEqual(h.editor.selectedShapeIDs, [b])
         expect(h.editor.canGoForward)
         h.editor.selectedShapeIDs = [a]
-        expect(!h.editor.canGoForward, "a new step lets the way forward go, as a browser's does")
+        expect(!h.editor.canGoForward, "a, out of view, is a new place, which lets the way forward go, as a browser's does")
         h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [b], "and Back is as it was")
+        expectEqual(h.editor.selectedShapeIDs, [b], "and Back is to where it was left from")
     },
     test("⇧Tab after Tab from several shapes selects them again, and Tab after ⇧Tab; a step of its own goes on from the first") {
         let h = try stepHarness()

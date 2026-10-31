@@ -384,7 +384,7 @@ extension OutlineDefinition: ShapeDefinition {
         observation.cancel()
     },
 
-    test("going to a shape is no step: undo after following a mention undoes the edit before it, putting its selection back, and Back returns to where the mention went") {
+    test("going to a shape is no step: undo after following a mention undoes the edit before it, putting its selection back, which is where the mention was followed from") {
         let b = try Board()
         b.editor.selection = b.jot
         b.editor.setText(b.jot, MentionText([.text("See "), .mention(b.groceries, label: "Groceries")]))
@@ -394,10 +394,7 @@ extension OutlineDefinition: ShapeDefinition {
         b.editor.undo()
         expectEqual(b.state.mentions(in: b.jot), [b.groceries, b.milk], "the text as it was")
         expectEqual(b.editor.selection, b.jot, "selected as when the edit was made")
-        b.editor.goBack()
-        expectEqual(b.editor.selection, b.groceries, "Back: what was selected before the undo")
-        b.editor.goBack()
-        expectEqual(b.editor.selection, b.jot)
+        expect(!b.editor.canGoBack, "the undo's selection, in view, is no step, and the jot is the place the mention was followed from")
     },
 
     test("hover sets the editor's hovered shape; endHover clears it only if it's still that target") {

@@ -800,6 +800,11 @@ public final class CanvasEditor {
         for service in serviceOrder { service.shapeTintsDidChange(in: self) }
     }
 
+    /// Services hear that a view kept while the view settled moved the camera (`keepViewAfterResize`).
+    func tellViewKept(from old: Camera, to new: Camera) {
+        for service in serviceOrder { service.viewWasKept(from: old, to: new, in: self) }
+    }
+
     /// Services hear that the canvas started or stopped drawing skeletons, if it did since they last
     /// heard: a comparison, as the camera changes on every event of a pinch.
     private func tellSkeletonLevel() {

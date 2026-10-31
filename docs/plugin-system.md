@@ -2264,7 +2264,7 @@ of a selection: Selection works through the same generic hooks any plugin can us
 | `registrar.defaultTool(.select)` | The editor starts in Select, Select leads the toolbar, and Escape and placing a shape come back to it. |
 | `registrar.outlines { ... }` | Each selected shape's outline, the box around several, and the hover's faint outline (the shape hovered, else the shape that holds the one hovered elsewhere). The core strokes every plugin's outlines and the hint in one pass, over the faint ones. |
 | `registrar.commandShapes { $0.selectedShapeIDs }` | What a command run from a key or the menu bar acts on: the selection ([Commands](#commands)). |
-| `registrar.command(.delete, …)`, `.selectAll`, `.goBack`, `.openSelection`, `.zoomToSelection` and `.smartMagnify`, Selection's own (with their keys, through Keyboard) | Delete, and Edit › Delete (AppKit's own item, which `.delete` answers; enabled while something's selected, a locked shape too, which refuses and shakes), deletes the selection; ⌘A, and Edit › Select All (enabled while the board has shapes), selects everything; ⌘[, and Go › Back (enabled while there's a step back), goes back to the previous selection, and ⌘], Go › Forward, undoes it; ⌘↓ (enabled while the only selected shape can be opened, or the selection is a group selected whole, or a container that neither opens nor edits, and nothing is being edited, as ⌘↓ is then the text's) opens it, or goes into the group or the container ([Moving between shapes](#moving-between-shapes)). Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. ⇧2, and View › Zoom to Selection (enabled while something's selected), reveals the selection; a trackpad's smart zoom (a two-finger double-tap) reveals the shape under the pointer, and the next goes back. The arrow keys (shortcuts of their own, repeating) nudge the selection a world unit, ten with ⇧ (`nudgeSelection(by:)`: a `translate`, "Move", with no snapping), while `canNudge`, settling into or out of a frame as the key is let go (`undoHistory.finishing`); with nothing selected they pan the view (`editor.pan`), and ⌥ with them resizes the selected box. A nudge and Delete bring a selection out of view into view first. |
+| `registrar.command(.delete, …)`, `.selectAll`, `.goBack`, `.openSelection`, `.zoomToSelection` and `.smartMagnify`, Selection's own (with their keys, through Keyboard) | Delete, and Edit › Delete (AppKit's own item, which `.delete` answers; enabled while something's selected, a locked shape too, which refuses and shakes), deletes the selection; ⌘A, and Edit › Select All (enabled while the board has shapes), selects everything; ⌘[ and ⌃-, and Go › Back (enabled while there's a step back), go back to the last place gone from, and ⌘] and ⌃⇧-, Go › Forward, undo it; ⌘↓ (enabled while the only selected shape can be opened, or the selection is a group selected whole, or a container that neither opens nor edits, and nothing is being edited, as ⌘↓ is then the text's) opens it, or goes into the group or the container ([Moving between shapes](#moving-between-shapes)). Return and Enter (shortcuts of their own, which always take the key) run `.openSelection` too. ⇧2, and View › Zoom to Selection (enabled while something's selected), reveals the selection; a trackpad's smart zoom (a two-finger double-tap) reveals the shape under the pointer, and the next goes back. The arrow keys (shortcuts of their own, repeating) nudge the selection a world unit, ten with ⇧ (`nudgeSelection(by:)`: a `translate`, "Move", with no snapping), while `canNudge`, settling into or out of a frame as the key is let go (`undoHistory.finishing`); with nothing selected they pan the view (`editor.pan`), and ⌥ with them resizes the selected box. A nudge and Delete bring a selection out of view into view first. |
 | `Tool.cancel` | Escape in Select, with nothing under way, goes out one level: a focused part to its shape, a group's part to the group, a frame's shapes to the frame, and at the board's own shapes deselects. It never leaves the board. |
 | `Tool.ignoresPress` | The rest of a double-click whose first click, on a face, went somewhere (changed the selection or moved the camera) is ignored, so the camera goes on and nothing is placed or edited where it's brought. |
 | `EditorService.documentDidChange`, `didPlace` | Drops shapes that are gone (or no longer selectable) from the selection and the hover; selects what was just placed (several, placed together). |
@@ -2309,14 +2309,32 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   session runs or on a selected shape. Where `hovered` is a shape too (the pointer has just moved
   from a row onto the canvas), that one alone is outlined. [Neighbors](#neighbors) lights what's
   connected to whichever is hovered.
-- `goBack()` and `canGoBack` are data-canvas's selection history. Each change of the selection
-  puts the selection it leaves on a stack, with its board and the camera as it is at that moment
-  (or, while it glides, `editor.cameraTarget`, where it's headed): a click, a row of the table of
-  contents, Escape, a deletion. Going back takes the last one off, selects its shapes (less any that
-  are gone) and animates the camera back over 200 ms, as data-canvas does. The detail panel's header
-  has the back button, and Go › Back (⌘[) works whatever has the keyboard, but not mid-gesture.
-  Go › Forward (⌘], `goForward()`, `canGoForward`) undoes Back, as a browser's Forward does, until
-  anything else changes the selection.
+- `goBack()` and `canGoBack` are VS Code's Go Back (⌃-) over data-canvas's selection history: a
+  stack of the places the person went from, each its board, what was selected there and the camera
+  they had. A place is left by going somewhere: following a link to shapes or picking a row of the
+  table of contents (`goTo`, `goInto`, `navigate(_:)`, which any plugin wraps what it selects and
+  reveals in, a way around such as Find's, below), however near they are, as VS Code's jumps and its
+  outline's picks are; showing another board; or selecting what wasn't in the view the person had where
+  they were, after a pan or a zoom of their own, or a key stepping to a shape out of view (VS Code's
+  selection more than 10 lines from the last one).
+  Selecting in view (a click, the marquee, Tab, Escape, a deletion, an undo) is no step: it only moves
+  where the person is, as VS Code replaces its current entry, so after following a link and looking
+  around where it led, one Back returns to where the link was followed from. Where the person is (the
+  selection state's `place`) is the board and the camera, where it was headed, as the selection last
+  settled: every change of the selection settles it, and so do Selection's bringing the selection
+  into view (`reveal`, `revealIfOffscreen` of what's selected: a row's zoom, Tab's; a Find hit's
+  moves the camera as a pan does), a way around as it ends, and Back
+  and Forward as they arrive; a pan or zoom of the person's own doesn't, so what they select after
+  one is judged against the view they left, and the place left keeps that view, not the pan's. The
+  place follows the camera when the core keeps that view as the inspector slides in (a fit fitted
+  again, the selection brought back into view: `viewWasKept`), the move being no one's. A
+  jump's place keeps the camera as it is when it's followed. Nothing is out of a view that has no
+  size yet. Going back takes the last place off, selects its shapes (less any that are gone) and
+  animates the camera back over 200 ms, as data-canvas does. The detail panel's header has the back
+  button, and Go › Back (⌘[, and ⌃-, a hidden item of Go's: [Keyboard shortcuts](#keyboard-shortcuts))
+  works whatever has the keyboard, text being typed included, but not mid-gesture. Go › Forward (⌘]
+  and ⌃⇧-, `goForward()`, `canGoForward`) undoes Back, as a browser's Forward does: selecting in view
+  after Back keeps the way forward, and going somewhere new lets it go.
   The stack holds 50 steps, skips a repeat of the step below, and going back skips a step that
   would change nothing: its shapes are all gone (unless it selected nothing, the board's list), or
   they're what's selected. `canGoBack` is true only when a step wouldn't be skipped, so after
@@ -2332,13 +2350,14 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   opening a shape's board comes back to the board it's on, with it selected, as Finder's ⌘[ comes
   back out of a folder. `showBoard(_:selecting:)` shows a board and selects there as one step (Back
   returns to the board left, not to the board shown with nothing selected); on the board shown, it
-  only selects. Two differences from data-canvas: a press of the select tool and its drag
-  are one step, so a marquee goes back to what was selected before the press, where data-canvas also
-  keeps the moment the press on empty canvas deselected; and a step keeps the camera as the
-  selection was left, not as it was made, so going back from a row's details returns to the list
-  as it was before the zoom. There's no forward.
+  only selects (a step only out of view, as any selection). Differences from data-canvas, whose
+  every change of the selection was a step and which had no forward: a selection in view is none; a
+  press of the select tool and its drag are one step at most, so a marquee goes back to what was
+  selected before the press, where data-canvas also keeps the moment the press on empty canvas
+  deselected; and a place keeps the camera the person had there, not the one a pan left.
 - `reveal(_:)` and `goTo(_:)` are the one way to bring shapes into view, for every plugin (the
-  table of contents' rows, a mention followed out of text). `reveal` only moves the camera: it
+  table of contents' rows, a mention followed out of text). `reveal` only moves the camera (and
+  settles where the person is, for Back: above): it
   centers the shapes' bounds (`shapeContext.bounds(of:)`) in the part of the view the host leaves
   clear (`editor.unobscuredViewport`: below the path over a subboard's canvas), zoomed to fit with
   100 points of margin in all but no closer than 120%, over 200 ms, as data-canvas's table of
@@ -2353,7 +2372,8 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   the gesture was first (host API `editor.pointerLocated(at:)`, which hovers nothing), since a
   gesture reaches a window that isn't key, where no move reached the canvas. `goTo` goes to shapes as following a link to them does: it ends editing, selects those that can
   be selected, and reveals them unless they're all in view already at a readable zoom. Selecting
-  them is a step back when it changes the selection, so ⌘[ returns, camera and all; going to
+  them is a step back when it changes the selection, however near they are (a jump: one step,
+  `asOneStep`), so ⌘[ returns, camera and all; going to
   what's selected already, or to shapes none of which can be selected, leaves the selection as it
   is, takes no step, and only moves the camera. Readable is 70% or closer
   (`SelectionStyle.readableZoom`: a note's 16-point text reads at 11.2 points there, just over
@@ -2691,7 +2711,7 @@ registrar.shapeFaces(at: { editor, shape, point in pills.pill(in: shape, at: poi
 - **A click** is a press released within the threshold: the shape is selected alone, and `click`
   runs. Escape before the release lets go of the press, and nothing is clicked. The press is over
   as `click` runs, so it may go to shapes (`editor.goTo`) or back, which do nothing mid-gesture, and
-  what it selects is a step back of its own. `click` isn't given the press, so a face that needs a
+  where it goes is a step back of its own. `click` isn't given the press, so a face that needs a
   point keeps where it is in its value: a pill edits its shape from there
   (`editor.beginEditing(id, at:)`, which the editing view reads as `EditContext.startPoint`).
 - **A read-only shape's face clicks too** (a locked note's pill): the press selects the shape, as
@@ -2826,7 +2846,8 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
   click selects, a locked shape among them; ⌘↑ steps out of several shapes in one container, not one
   alone; and the camera moves as above.
 
-Each step is a selection change, a step back like any other. `canStepSelection` is false while a
+Each step is a selection change, a step back like any other only when it goes to a shape out of the view the
+person had, which it then brings into view. `canStepSelection` is false while a
 gesture runs or a shape is edited, and then the keys pass.
 
 ### Parts of a shape
@@ -3018,7 +3039,7 @@ registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock,
 | `x.tool(label:systemImage:shortcut:placing:)` | A place tool, and the key that switches to it. |
 | `registrar.tool(descriptor, shortcut:) { ... }` | Any tool, and its key. |
 | `registrar.shortcut(chord, forTool:)` | A key for a tool registered elsewhere: Keyboard gives the core's Hand its H this way. |
-| `registrar.command(command, title:, in:, placed:, shortcut:, runs:, isEnabled:) { subject in ... }` | A [command](#commands), declared once with its keys (`shortcuts: [...]` for several), so the key, its menu items and its other surfaces do one thing. |
+| `registrar.command(command, title:, in:, placed:, shortcut:, runs:, isEnabled:) { subject in ... }` | A [command](#commands), declared once with its keys (`shortcuts: [...]` for several: Delete's ⌫ and ⌦, Back's ⌘[ and ⌃-), so the key, its menu items and its other surfaces do one thing. Its menu bar item shows the first; each other held with ⌘ or ⌃, which types nothing, is a hidden item after it, so the menu bar answers it wherever the item's own key works, text being typed included (`BoardMenus.addOtherKeys`); one held with neither is the canvas's alone (`-`, which zooms out again and again while held). |
 | `registrar.shortcut(chord, forCommand:, repeats:)` | A key for a command claimed elsewhere: Keyboard gives the core's undo and redo ⌘Z and ⇧⌘Z this way. |
 | `registrar.shortcut(chord, "Title", forCommands: [...])` | One key for several commands, never both possible: it runs the first that can (Locking's ⇧L, Lock or Unlock). |
 | `registrar.shortcut(chord, "Title", when:, repeats:) { editor in ... }` | A key that does something of its own. |
@@ -3033,8 +3054,8 @@ What the shipped app's keys do:
 | ⌫ and ⌦ | Deletes the selection, as Edit › Delete does (not while a part of it has the keyboard, ⌥⇥) | Selection |
 | ↩ (and ⌤), ⌘↓ | ↩ and ⌤ press the selected shape's focused part (⌥⇥), if one is; otherwise they, and ⌘↓, open the only selected shape: edits it, or its kind's own way (`ShapeOpening`); or, with a group selected whole, selects its first part, and, with a container that neither opens nor edits selected, the first shape in it; ↩ and ⌤ take the key even when there's nothing to open, ⌘↓ passes then | Selection |
 | ⌘A | Selects everything, as Edit › Select All does | Selection |
-| ⌘[ | Goes back to what was selected before, as Go › Back does (while there's somewhere to go) | Selection |
-| ⌘] | Undoes Back, as Go › Forward does (while Back has been gone) | Selection |
+| ⌘[, ⌃- | Goes back to the last place gone from, as Go › Back does (while there's somewhere to go) | Selection |
+| ⌘], ⌃⇧- | Undoes Back, as Go › Forward does (while Back has been gone) | Selection |
 | ⌘↑ | Steps out, as Go › Enclosing Board does, named for the step: selects the group the selection is inside, whole (Enclosing Group), else the container its shapes are in (Enclosing Frame), else goes up to the board above, with the shape whose board it left selected (Enclosing Board; off the root only) | Boards |
 | ⌥⌘P | Gives the path of crumbs over the canvas the keyboard, as Go › Board Path does (off the root only): ← and → walk the crumbs and "…", Return goes up, ↓ shows a crumb's menu whose rows ↑ ↓ → ← walk and Return picks, Escape backs out a level at a time | Boards |
 | ⌘X, ⌘C, ⌘V | Cuts, copies and pastes shapes, as Edit › Cut, Copy and Paste do | Clipboard |
@@ -3538,7 +3559,7 @@ plugins ([What ships](#what-ships)).
 | The window's subtitle (`WindowSubtitles`, at most one) | `registrar.windowSubtitle { editor in … }` | `registry.windowSubtitle(for:)` | Boards: the board shown's name, none on the root |
 | Settings panes (`SettingsPanes`, in plugin order, a title once) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
-| The key a menu item shows for a command (`MenuKeys`, at most one) | `registrar.menuKeys { command, registry in … }`: a `MenuKey`, a menu's key equivalent and modifiers | `registry.menuKey(of:)`, read by the menu bar's items and a context menu's that run a command; none without one | Keyboard: the first key that runs the command (Delete as Backspace's character) |
+| The keys that run a command, as menus take them (`MenuKeys`, at most one) | `registrar.menuKeys { command, registry in … }`: `[MenuKey]`, each a menu's key equivalent and modifiers, the one an item shows first | `registry.menuKey(of:)`, the first, read by the menu bar's items and a context menu's that run a command; `registry.menuKeys(of:)`, all, whose others held with ⌘ or ⌃ the menu bar answers too (hidden items); none without one | Keyboard: every key that runs the command, in the order registered (Delete as Backspace's character) |
 | The Keyboard Shortcuts window's rows (`KeyboardHelp`, at most one) and key hints (`KeyHints`, any number) | `registrar.keyboardHelp { registry in … }`; `registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)` | `registry.keyboardHelp`: the one list's rows, then the hints, each row once | Keyboard: every key it registers; the hints of each plugin that reads a key no shortcut has |
 | What Copy as Image draws (`ImageSources`, at most one) | `registrar.imageSource(isAvailable:) { editor in … }`: whether there is anything to draw, and the shapes of the board shown a picture of the selection (or the board, with nothing selected) shows | `registry.imageSource` | Clipboard: the shapes a copy would take (`editor.imageShapes()`) |
 | The commands (`HostCommands`, at most one) | `registrar.hostCommands(specs:run:)`, both handed the built registry | `registry.hostCommands`: the specs, and how to run one by name | Automation: every plugin's command |
@@ -4264,7 +4285,7 @@ public var body: some View {
 - **Zoom** (⌘=, ⌘-, ⌘0, and ⇧1 and ⇧2 except in text, where they type) works whatever has the
   keyboard: the board's window controller answers the View menu's zoom items with the core's
   zoom commands and Selection's Zoom to Selection. So does Go › Back
-  (⌘[).
+  (⌘[, and ⌃-, a hidden item's key: [Keyboard shortcuts](#keyboard-shortcuts)).
 
 The panel can't give the keyboard to the canvas itself (it can't import CanvasUI), so the host
 passes `onExit`. `CanvasFocus` (CanvasUI) is the handle: `CanvasRepresentable(editor:focus:)` fills
@@ -4963,10 +4984,11 @@ registrar.forEveryShape { every in   // every shape is checked (its schema, at l
   keyboard to the canvas, where Return opens the shape. The list stays on screen, so a double-click
   reaches it (the outline's `doubleAction`). A row walked to by keys stays in the list (below), so
   Return there is the list's.
-- **Going back.** A row's click is a step in Selection's history like any other change of the
-  selection, so the back button in the shape's header (or Go › Back, ⌘[) goes back to what was
-  selected before, nothing too, with the view as it was before the zoom, as data-canvas's back
-  button does.
+- **Going back.** A row's click is a step in Selection's history, as following a link is (Selection's
+  `editor.navigate`, however near its shape is), so the back button in the shape's header (or Go ›
+  Back, ⌘[ or ⌃-) goes back to what was selected before, nothing too, with the view as it was before
+  the zoom, as data-canvas's back button does. A walk by keys is one step, back to where it began
+  (`select(_:byKey:)`, `navigate(from:)`).
 - **The keyboard.** View › Focus Sidebar (⌥⌘S) gives the list the keyboard, showing the sidebar if
   it's hidden, and so does F6 coming round the panes; a click on a row, even one already selected,
   gives the canvas the keyboard instead, so the canvas's keys act on the shape picked at once. With
@@ -13598,7 +13620,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   and pans by as little as brings that back once the view leaves part of it out,
   `Style.keepInViewMargin` in from the edges, never while a press is under way. Either lets go once
   anything else moves the camera, another board is shown or its time is up, and a fit replaces the
-  rect kept, which is why the table of contents and `goTo` select before they reveal.
+  rect kept, which is why the table of contents and `goTo` select before they reveal. Services hear
+  each move it makes, from and to (`EditorService.viewWasKept(from:to:in:)`), so where Selection's
+  Back says the person is follows it.
 - **Zooming** is the core's commands, which View's items run (through
   the board's window controller, dimmed while they can't run) and Keyboard gives keys: `.zoomIn`
   and `.zoomOut` (⌘= and ⌘-) go to the next of the stops (`Camera.zoomStops`: 10, 25, 50, 100,
@@ -14537,7 +14561,8 @@ never moves, as in tldraw (a board shown for a step made on it has the camera it
 snapshot is taken as a step opens and as it closes, and undoing restores the first, redoing the
 second. Selection's is the selection, as tldraw's: undoing Delete brings the shapes back selected,
 undoing a move leaves them selected, undoing a paste selects what was before it. The restore is an
-ordinary change of the selection, so Go › Back returns to what was selected before the undo; on a
+ordinary change of the selection, so Go › Back returns to what was selected before the undo when the
+undo selects what's out of the view the person had (as any selection: [Selection](#selection)); on a
 board undo has just shown for its step, the switch and the restore are one step back, as
 `showBoard(_:selecting:)` makes them, so Go › Back returns to the board Undo was pressed on.
 A service that acts on edits tells a step put back from an edit by its change set's `restoredStep`,
@@ -14890,7 +14915,7 @@ and a test checks it loads and registers.
 ```
 core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
+selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → Add Note Beside · shape sticky-note v4 · tool sticky-note · shortcut N → tool sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row

@@ -283,9 +283,7 @@ extension ViewSquareDefinition: ShapeDefinition {
         h.editor.selectedShapeIDs = [boards.b, boards.q]
         expectEqual(h.editor.selectionBounds, CGRect(x: 0, y: 0, width: 300, height: 400))
         h.editor.goBack()
-        expectEqual(h.editor.selectionBounds, nil, "Back: the pocket's board as it arrived")
-        h.editor.goBack()
-        expectEqual(h.editor.board, .root)
+        expectEqual(h.editor.board, .root, "Back: the board left")
         expectEqual(h.editor.selectedShapeIDs, [boards.a, boards.c])
         expectEqual(h.editor.selectionBounds, CGRect(x: 0, y: 0, width: 500, height: 100))
     },

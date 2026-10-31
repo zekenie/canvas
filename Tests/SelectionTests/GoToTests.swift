@@ -72,8 +72,7 @@ private let far = CGRect(x: 3000, y: 2000, width: 100, height: 100)
         expectEqual(h.editor.selectedShapeIDs, [a])
         h.wait(200)
         expectEqual(h.editor.camera, revealed(far))
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [], "the step back is the one before the box")
+        expect(!h.editor.canGoBack, "no step: the box was selected in view, and going to the ghost took none")
     },
     test("going to several shapes selects those that can be, and brings them all into view") {
         let h = try goToHarness()
@@ -209,8 +208,7 @@ private let far = CGRect(x: 3000, y: 2000, width: 100, height: 100)
         expectEqual(h.editor.camera, revealed(far))
         h.editor.goBack()
         expectEqual(h.editor.selectedShapeIDs, [box], "back to the face's shape, which the press selected")
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [], "and to what was selected before the press")
+        expect(!h.editor.canGoBack, "the press selected it in view: no step of its own")
     },
     test("the rest of a double-click whose first click went to a shape is that click's: the camera goes on to the shape, and nothing is placed, edited or pressed where it's brought") {
         let log = FaceLog()

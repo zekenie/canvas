@@ -185,9 +185,7 @@ import TestKit
             expectEqual(board.h.editor.selectedShapeIDs, [board.c], outcome)
             expectEqual(board.h.editor.selectionRevision, revision, outcome)
             expectEqual(board.h.editor.currentToolID, .select, outcome)
-            board.h.editor.goBack()
-            expectEqual(board.h.editor.selectedShapeIDs, [], outcome)
-            expect(!board.h.editor.canGoBack, "only the step before C was selected: \(outcome)")
+            expect(!board.h.editor.canGoBack, "no step: the drag takes none, and C was selected in view: \(outcome)")
         }
     },
     test("a connection drawn with nothing selected leaves nothing to go back to") {

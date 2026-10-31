@@ -1,11 +1,12 @@
 import Canvas
 import Geometry
 
-/// The way back through the selections, and forward again, one per editor (data-canvas's selection
-/// history, with a browser's Forward): each time the selection changes, or another board is shown, the
-/// selection it leaves goes on the stack, with its board and the camera as it was at that moment, and
-/// going back (`editor.goBack()`) takes the last one off and restores it, putting where it was on the
-/// way forward (`editor.goForward()`), which goes back to it. A new step lets the way forward go.
+/// The way back through the places the person has been, and forward again, one per editor (VS Code's
+/// navigation history, over data-canvas's selection history, with a browser's Forward): each time they
+/// go somewhere (follow a link to shapes, show another board, select what wasn't in the view they had),
+/// the place they leave goes on the stack, its board, what was selected there and the camera they had,
+/// and going back (`editor.goBack()`) takes the last one off and restores it, putting where it was on the
+/// way forward (`editor.goForward()`), which goes back to it. A new place lets the way forward go.
 struct SelectionHistory {
     struct Entry: Equatable {
         let board: BoardID
@@ -13,7 +14,7 @@ struct SelectionHistory {
         let camera: Camera
     }
 
-    /// data-canvas's MAX_HISTORY_SIZE: past it, the oldest entry goes, each way.
+    /// data-canvas's MAX_HISTORY_SIZE, and VS Code's: past it, the oldest entry goes, each way.
     static let limit = 50
 
     private(set) var entries: [Entry] = []

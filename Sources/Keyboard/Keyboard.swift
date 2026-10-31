@@ -388,8 +388,9 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.service { KeyboardState(editor: $0) }
         // The toolbar's tips: a tool's label and the key that switches to it ("Note (N)").
         registrar.toolTips { tool, registry in registry.help(for: tool) }
-        // The key a menu item shows for a command, the menu bar's and a context menu's: the first that runs it.
-        registrar.menuKeys { command, registry in registry.menuKeys[command] }
+        // The keys that run a command, for the menu bar's items and a context menu's: the first is the one
+        // they show, and the menu bar answers the others too.
+        registrar.menuKeys { command, registry in registry.menuKeys[command] ?? [] }
         // The Keyboard Shortcuts window's rows: every key registered here, under what it does.
         registrar.keyboardHelp { $0.keyboardHelpRows }
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
@@ -427,13 +428,14 @@ public struct KeyboardPlugin: ListedPlugin {
 }
 
 extension Registry {
-    /// The key a menu shows for each command, the first shortcut that runs it (`shortcut(forCommand:)`):
-    /// asked for each command item a menu shows, so worked out once, as the registry never changes.
-    fileprivate var menuKeys: [CanvasCommand: MenuKey] {
+    /// The keys of each command, as menus take them, in the order they're registered: the first a menu
+    /// shows (`shortcut(forCommand:)`'s). Asked for each command item a menu shows, so worked out once,
+    /// as the registry never changes.
+    fileprivate var menuKeys: [CanvasCommand: [MenuKey]] {
         memo(MenuKeysOfCommands()) {
-            var keys: [CanvasCommand: MenuKey] = [:]
+            var keys: [CanvasCommand: [MenuKey]] = [:]
             for shortcut in shortcuts {
-                for command in shortcut.commands where keys[command] == nil { keys[command] = shortcut.chord.menuKey }
+                for command in shortcut.commands { keys[command, default: []].append(shortcut.chord.menuKey) }
             }
             return keys
         }

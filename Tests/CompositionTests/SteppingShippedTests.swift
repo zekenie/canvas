@@ -200,7 +200,7 @@ extension NestedWindow {
         let (first, second) = w.nest.notes(on: 2)
         let walk = w.walk(names: [first: "first", second: "second", w.nest.t: "T"])
         w.editor.selectedShapeIDs = [first]
-        walk.press(.tab)
+        w.editor.goTo([second])                                  // a link followed: a step back (Tab in view is none)
         expectEqual(walk.press(Chord("[", .command)).id, "canvas/first")
         expectEqual(walk.press(Chord("]", .command)).id, "canvas/second")
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)

@@ -120,7 +120,8 @@ public struct KeyboardShortcutSection: Equatable, Sendable {
             guard let submenu = top.submenu else { continue }
             var found: [Row?] = []
             func walk(_ menu: NSMenu) {
-                for item in menu.items where !item.isSeparatorItem {
+                // A hidden item is another key of the item before it (`BoardMenus.addOtherKeys`), listed in its row.
+                for item in menu.items where !item.isSeparatorItem && !item.isHidden {
                     if let submenu = item.submenu { walk(submenu); continue }
                     let own = MenuKeyText.written(item).map { [$0] } ?? []
                     if let command = BoardMenus.command(of: item), let help = commands[command] {

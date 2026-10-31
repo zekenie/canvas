@@ -48,7 +48,7 @@ extension SelectTool: Tool {
         // The pointer takes over from the keys: a part focused with ⌥Tab lets go, so what the press does (and Space,
         // Return and Delete after it) is the shape's, or what it presses, never the part's the pointer left.
         editor.selectionState?.clearPartFocus()
-        // Whatever this press does to the selection, through the end of its drag, is one step back.
+        // Whatever this press does to the selection, through the end of its drag, is one step back at most.
         editor.selectionState?.pressBegan()
         defer { editor.selectionState?.pressEnded() }
         if let hit = editor.buttonHit(atViewPoint: pointer.view) {

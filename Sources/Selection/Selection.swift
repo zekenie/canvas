@@ -4,7 +4,7 @@ import Geometry
 import Keyboard
 
 /// Selecting shapes, as a plugin: the selection itself (`editor.selection`,
-/// `editor.selectedShapeIDs`) and the way back through it (`editor.goBack()`), the Select tool and
+/// `editor.selectedShapeIDs`) and the way back through the places it was (`editor.goBack()`), the Select tool and
 /// its marquee, the handles of the one selected shape (its kind's own, and a resizable kind's eight:
 /// `ShapeResizing`, `x.resizable(minimumSize:)`), what Delete, Return, ⌘A and Back do (their
 /// keys are registered with Keyboard), what opening a shape does (`ShapeOpening`: a double-click,
@@ -25,9 +25,10 @@ extension CanvasCommand {
     public static let delete: CanvasCommand = "delete"
     /// Select All (⌘A; Edit › Select All): every shape of the board shown.
     public static let selectAll: CanvasCommand = "selectAll"
-    /// Go › Back (⌘[): what was selected before, wherever it was, whatever has the keyboard.
+    /// Go › Back (⌘[, and ⌃- as VS Code has it): the last place gone from, its board, selection and camera,
+    /// whatever has the keyboard.
     public static let goBack: CanvasCommand = "goBack"
-    /// Go › Forward (⌘]): what Back left, again.
+    /// Go › Forward (⌘], and ⌃⇧-): where Back left, again.
     public static let goForward: CanvasCommand = "goForward"
     /// Go › Open Selection (⌘↓): a shape alone opened (its board shown, or edited), or a group whole or
     /// a container alone gone into; the selection, or a context menu's shapes.
@@ -229,8 +230,9 @@ public struct SelectionPlugin: ListedPlugin {
         // Delete and Forward Delete, and Edit › Delete, delete the shapes, while there are some (a
         // locked one too, which shakes) and, from a key or the menu bar, no part of the shape has the keyboard
         // (⌥Tab: a chip focused is no shape to delete; a context menu's Delete deletes its shapes); ⌘A and Edit › Select All select everything, while the
-        // board has shapes; ⌘[ and Go › Back go back to what was selected before, when there's
-        // somewhere to go, and ⌘] and Go › Forward undo it; ⌘↓ opens the only selected shape, when it can be opened and isn't being
+        // board has shapes; ⌘[ (and VS Code's ⌃-) and Go › Back go back to the last place gone from, when
+        // there's somewhere to go, and ⌘] (and ⌃⇧-, which types ⌃_) and Go › Forward undo it, the menu bar
+        // answering each key wherever ⌘[ works; ⌘↓ opens the only selected shape, when it can be opened and isn't being
         // edited (⌘↓ is then the text's), and Return (and Enter) does too, but always takes the
         // key, as it did when it only edited; a group selected whole, or a container that is neither
         // opened nor edited (a frame), is gone into instead, selecting its first part, or the first
@@ -244,9 +246,10 @@ public struct SelectionPlugin: ListedPlugin {
         }
         registrar.command(.selectAll, title: "Select All", answering: .selectAll, shortcut: KeyChord("a", .command),
                           isEnabled: { !$0.editor.document.shapes.isEmpty }) { $0.editor.selectAll() }
-        registrar.command(.goBack, title: "Back", in: NavigationSection.self, shortcut: KeyChord("[", .command), runs: .betweenPresses,
-                          isEnabled: { $0.editor.canGoBack }) { $0.editor.goBack() }
-        registrar.command(.goForward, title: "Forward", in: NavigationSection.self, placed: .after(.goBack), shortcut: KeyChord("]", .command), runs: .betweenPresses,
+        registrar.command(.goBack, title: "Back", in: NavigationSection.self, shortcuts: [KeyChord("[", .command), KeyChord("-", .control)],
+                          runs: .betweenPresses, isEnabled: { $0.editor.canGoBack }) { $0.editor.goBack() }
+        registrar.command(.goForward, title: "Forward", in: NavigationSection.self, placed: .after(.goBack),
+                          shortcuts: [KeyChord("]", .command), KeyChord("_", .control)], runs: .betweenPresses,
                           isEnabled: { $0.editor.canGoForward }) { $0.editor.goForward() }
         // Return and Enter are keys of their own that always take the key, called as the command is, so
         // the Keyboard Shortcuts window lists them in its row.

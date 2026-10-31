@@ -126,7 +126,7 @@ struct UpPlugin: CanvasPlugin {
         expectEqual(editor.board, .root)
         expectEqual(editor.selectedShapeIDs, [pocket], "the row's shape, selected before it opened")
         editor.goBack()
-        expectEqual(editor.selectedShapeIDs, [b])
+        expectEqual(editor.selectedShapeIDs, [b], "a row picked is a step, as a link followed is")
     },
     test("the heading is what a plugin calls the board listed, else Board; two plugins naming it conflict") {
         let (file, pocket) = pocketFile(outside: ["A"], inside: ["C"])

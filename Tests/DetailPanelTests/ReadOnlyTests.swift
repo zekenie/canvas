@@ -55,7 +55,7 @@ struct GoButtonPlugin: CanvasPlugin {
         let card = editor.add(Card(gadgetFrame, text: "Hi"))
         editor.freeze([gadget, card])
         editor.selection = gadget
-        editor.selection = card                   // a step back, so the header has its button
+        editor.goTo([card])                       // a link followed: a step back, so the header has its button
         panel.window.spin { panel.headerField != nil && panel.backButton != nil }
         expect(!(try require(panel.headerField)).isEnabled)
         expect(try require(panel.backButton).isEnabled)

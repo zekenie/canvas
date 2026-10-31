@@ -50,6 +50,8 @@ import TestKit
         expectEqual(row("Edit", "Undo"), ["⌘Z"])
         expectEqual(row("Edit", "Find Previous"), ["⇧⌘G"], "a submenu's items in its menu")
         expectEqual(row("Go", "Open Selection"), ["⌘↓", "↩", "⌤", "⌥↩"], "Return and Enter open the selection too, and Return with ⌥ (what waiting shapes are laid out by)")
+        expectEqual(row("Go", "Back"), ["⌘[", "⌃-"], "the Mac's key, then VS Code's, which a hidden item of Go answers and no row lists twice")
+        expectEqual(row("Go", "Forward"), ["⌘]", "⌃_"], "⌃⇧- types ⌃_ on a US keyboard")
         expectEqual(row("View", "Zoom to Fit"), ["⇧1"])
         expectEqual(row("View", "Zoom In"), ["⌘=", "="], "the menu's key and the plain one, held to repeat")
         expectEqual(row("View", "Zoom Out"), ["⌘-", "-"])

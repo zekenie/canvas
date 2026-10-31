@@ -152,10 +152,10 @@ extension NSTableView {
     test("selecting one shape shows its details in the inspector, several their header; the list keeps every row") {
         let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
-        w.editor.selection = w.notes[0]
+        w.editor.goTo([w.notes[0]])                                    // links followed, so each is a way back
         w.window.spin { w.titleField != nil }
         expectEqual(w.rows, 6)
-        w.editor.selectedShapeIDs = [w.notes[1], w.notes[2]]
+        w.editor.goTo([w.notes[1], w.notes[2]])
         w.window.spin { w.titleField == nil && w.backButton != nil }        // the header of two, with a way back
         let header = try require(w.editor.detailPanel).selectionSummary(of: [w.notes[1], w.notes[2]].compactMap { w.editor.document[$0] })
         expectEqual(header.title, "2 Shapes")
@@ -216,8 +216,8 @@ extension NSTableView {
     test("the back button in several shapes' header goes back to one of them, and from it to nothing selected") {
         let w = try SampleWindow()
         w.window.spin { w.rows == 6 }
-        w.editor.selection = w.notes[0]
-        w.editor.selectedShapeIDs = [w.notes[1], w.notes[2]]
+        w.editor.goTo([w.notes[0]])                                    // links followed: each a step back
+        w.editor.goTo([w.notes[1], w.notes[2]])
         w.window.spin { w.titleField == nil && w.backButton != nil }
         try require(w.backButton).performClick(nil)
         expectEqual(w.editor.selectedShapeIDs, [w.notes[0]])
@@ -261,6 +261,9 @@ extension NSTableView {
         expectEqual(walked[2], walked[0], "↑ came back to the row ↓ left")
         expectEqual(w.editor.file, before, "no shape moved")
         expect(!w.editor.canUndo, "and no step opened")
+        w.editor.goBack()
+        expectEqual(w.editor.selectedShapeIDs, [], "the walk is one step back, to where it began")
+        expect(!w.editor.canGoBack)
     },
     test("held, ↓ walks on a row a press: its repeats are the list's, and move no shape") {
         let w = try SampleBoardWindow(sidebar: true)

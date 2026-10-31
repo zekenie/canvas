@@ -71,7 +71,7 @@ extension CanvasEditor {
     /// time isn't up and whose camera nothing else has moved since (where the camera is headed is where
     /// it was left), and which the view now leaves part of out, is kept in what is clear of it: a fit
     /// fitted again, a rect brought back into view, easing there while the camera's move is under way,
-    /// at once otherwise.
+    /// at once otherwise; services hear it (`viewWasKept`), the move being no one's.
     func keepViewAfterResize() {
         guard let kept = keptView else { return }
         guard scheduler.now < kept.until, cameraTarget == kept.camera else { return keptView = nil }
@@ -96,6 +96,7 @@ extension CanvasEditor {
         } else {
             camera = target
         }
+        tellViewKept(from: kept.camera, to: target)
     }
 
     /// Where the camera comes to rest: while an animation runs (`animateCamera`), its target;

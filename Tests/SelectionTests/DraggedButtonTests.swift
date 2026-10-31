@@ -348,11 +348,12 @@ struct Notch: Hashable, Sendable {
         h.release()
         expectEqual(pulls.started, [])
     },
-    test("a press on a dragged button is no step back, unless its session changes the selection, and then it's one step, however many changes") {
+    test("a press on a dragged button is no step back, unless its session selects what's out of view, and then it's one step, however many changes") {
         let pulls = Pulls()
         let h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), leverPlugin(pulls)])
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 700))
         let a = h.add(Box(CGRect(x: 200, y: 0, width: 100, height: 100)))
-        let b = h.add(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+        let b = h.add(Box(CGRect(x: 4000, y: 0, width: 100, height: 100)))      // out of view
         h.press(at: CGPoint(x: 50, y: 50))
         h.drag(to: CGPoint(x: 80, y: 50))
         h.release()
@@ -366,10 +367,7 @@ struct Notch: Hashable, Sendable {
         h.drag(to: CGPoint(x: 120, y: 50))
         h.release()
         expectEqual(h.editor.selectedShapeIDs, [b])
-        expect(h.editor.canGoBack)
-        h.editor.selection = a                                       // as a row of the table of contents does
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [b], "the row's change is a step of its own")
+        expect(h.editor.canGoBack, "b was out of view")
         h.editor.goBack()
         expectEqual(h.editor.selectedShapeIDs, [], "the drag's two changes were one step, back to what the press found")
         expect(!h.editor.canGoBack)

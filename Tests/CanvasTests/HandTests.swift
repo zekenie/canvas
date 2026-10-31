@@ -188,7 +188,44 @@ import TestKit
         expectEqual(h.editor.camera, Camera())
         expectEqual(h.scheduler.pendingCount, 0)
     },
+    test("services hear each move a kept view makes, from where the camera was headed to where it goes; nothing when it moves nothing") {
+        let log = KeptViews()
+        let h = try EditorHarness(plugins: [Contributor(id: "kept") { r in r.service { _ in KeptViewListener(log: log) } }])
+        let wide = CGSize(width: 1200, height: 800), narrow = CGSize(width: 900, height: 800)
+        let rect = CGRect(x: 1000, y: 300, width: 150, height: 100)
+        h.editor.viewportDidResize(to: wide)
+        h.editor.keepInViewWhileSettling(rect)
+        h.editor.viewportDidResize(to: narrow)
+        expectEqual(log.moves, [[Camera(), Camera(origin: CGPoint(x: 266, y: 0))]])
+        h.editor.viewportDidResize(to: wide)
+        expectEqual(log.moves.count, 1, "wider again, nothing moves and no one hears")
+        // A fit fitted again as the view narrows mid-move: from where it was headed.
+        h.editor.camera = Camera()
+        h.editor.animateCamera(toFit: rect, inset: 100, maxZoom: 1.2, duration: .milliseconds(200))
+        let headed = h.editor.cameraTarget
+        h.wait(64)
+        let cutting = CGSize(width: 600, height: 800)
+        h.editor.viewportDidResize(to: cutting)
+        expectEqual(log.moves.last, [headed, Camera(fitting: rect, in: CGRect(origin: .zero, size: cutting), inset: 100, maxZoom: 1.2)])
+        h.wait(400)
+        expectEqual(log.moves.count, 2)
+        expectEqual(h.scheduler.pendingCount, 0)
+    },
 ])
+
+/// The moves a kept view made (`viewWasKept`), each from and to.
+@MainActor final class KeptViews {
+    var moves: [[Camera]] = []
+}
+
+final class KeptViewListener {
+    let log: KeptViews
+    init(log: KeptViews) { self.log = log }
+}
+
+extension KeptViewListener: EditorService {
+    func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor) { log.moves.append([old, new]) }
+}
 
 @MainActor let handTests = Suite("Hand", [
     test("the core registers Hand, ahead of every plugin's tools, and starts in it (its key is the Keyboard plugin's)") {

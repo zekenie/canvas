@@ -4,7 +4,7 @@ import CoreGraphics
 import Geometry
 import Observation
 
-/// The selection, the way back through it, the hovered shape, the shape hovered where the canvas
+/// The selection, the way back through the places it was, the hovered shape, the shape hovered where the canvas
 /// doesn't show it, the hovered handle, and the canvas button hovered and pressed, one per editor.
 /// Plugins reach them through `CanvasEditor`'s members below. The selection and the hover only ever
 /// name selectable shapes in the document; the shape hovered elsewhere is one of the file's, on
@@ -46,8 +46,12 @@ final class SelectionState {
     /// click there would select (a whole group), rather than a plugin's (a row of a list), which
     /// outlines the shape alone.
     @ObservationIgnored var hoversCanvas = false
-    /// The selections to go back to (`editor.goBack()`).
+    /// The places to go back to (`editor.goBack()`).
     private(set) var history = SelectionHistory()
+    /// Where the person is: the board, and where the camera was headed as the selection last settled there
+    /// (`settle()`): the view a new selection is judged against, a place of its own only when it isn't in
+    /// that view (`isAway`). Nil on a board just shown, until something settles there.
+    @ObservationIgnored private var place: Place?
     /// The select tool's press under way, from the press until the session it starts ends.
     @ObservationIgnored private var press: Press?
     /// Going back or forward, which records nothing.
@@ -235,9 +239,10 @@ final class SelectionState {
     func isSelectable(id: ShapeID) -> Bool { editor.document[id].map(isSelectable) ?? false }
 
     /// Drops what isn't there or isn't selectable, and repeats. Does nothing if that's what's
-    /// selected already. Unless `recording` is false, the selection left is a step back. What the
-    /// selection is inside (`focus`) is worked out again, unless nothing is selected now. What is
-    /// selected, if it is all in view, is kept there while the view settles (`keepInViewWhileSettling`).
+    /// selected already. Unless `recording` is false, the place left is a step back when the selection
+    /// goes away from it (`record`). The person is where it is now (`settle()`). What the selection is
+    /// inside (`focus`) is worked out again, unless nothing is selected now. What is selected, if it is
+    /// all in view, is kept there while the view settles (`keepInViewWhileSettling`).
     func select(_ ids: [ShapeID], recording: Bool = true) {
         var seen = Set<ShapeID>()
         let kept = ids.filter { isSelectable(id: $0) && seen.insert($0).inserted }
@@ -249,6 +254,7 @@ final class SelectionState {
         let left = selectedIDs
         selectedIDs = kept
         selectedSet = seen
+        settle()
         if !kept.isEmpty { focus = focus(of: kept, selected: seen) }
         revision += 1
         let only = kept.count == 1 ? kept[0] : nil
@@ -276,13 +282,54 @@ final class SelectionState {
 
     // MARK: Going back
 
+    /// Where the person is (`place`): a board, and the camera as the selection last settled there.
+    private struct Place {
+        let board: BoardID
+        let camera: Camera
+    }
+
+    /// The person is where the editor is now: the board shown, with the camera where it's headed. Every
+    /// change of the selection settles, and so do Selection's bringing shapes into view (`reveal`,
+    /// `revealIfOffscreen`), a way around as it ends (`asOneStep`) and Back and Forward as they arrive; a
+    /// pan or a zoom of the person's own doesn't, so what they select after panning or zooming off is
+    /// judged against the view they left (`isAway`).
+    func settle() { place = Place(board: editor.board, camera: editor.cameraTarget) }
+
+    /// Whether `ids`, about to be selected, are somewhere else than `place`: on its board, with none of
+    /// their bounds touching the view it had (its camera, over the view as it's sized now). VS Code's
+    /// selection more than 10 lines from the last one. Nothing selected is nowhere else, nor are shapes
+    /// with no outline, and nothing is before the view has a size. Stops at the first shape in view, so
+    /// ⌘A costs a shape or two, not the board.
+    private func isAway(_ ids: [ShapeID], from place: Place) -> Bool {
+        guard place.board == editor.board else { return false }
+        let view = editor.unobscuredViewport
+        guard !view.isEmpty else { return false }
+        // A shape with a box is judged by the box it stores, so one just put down (a placement, a new type)
+        // isn't laid out here, ahead of the frame that would; one with none (an arrow) by its outline.
+        let seen = place.camera.toWorld(view), document = editor.document
+        var context: ShapeContext?
+        func outline(_ id: ShapeID) -> CGRect? {
+            if context == nil { context = editor.shapeContext }
+            return context?.bounds(of: CollectionOfOne(id))
+        }
+        var bounded = false
+        for id in ids {
+            guard let bounds = document[id]?.box ?? outline(id) else { continue }
+            if bounds.touches(seen) { return false }
+            bounded = true
+        }
+        return bounded
+    }
+
     /// A press of the select tool. Every selection change it makes, from the press through the
-    /// session it starts (the marquee's, a release that settles the selection), is one step back,
-    /// to the selection before the press. The press is over once its session is, which is noticed
-    /// at the next change.
+    /// session it starts (the marquee's, a release that settles the selection), is one step back at
+    /// most, to where the press began and what was selected then, once one of them goes away from
+    /// there. The press is over once its session is, which is noticed at the next change.
     private struct Press {
         /// The select tool is still handling the press, before it starts any session.
         var isPressing = true
+        /// Where the press's first change of the selection left, and what was selected there.
+        var left: (place: Place, selection: [ShapeID])?
         var isRecorded = false
     }
 
@@ -293,16 +340,26 @@ final class SelectionState {
     }
     func pressEnded() { press?.isPressing = false }
 
-    /// The selection is about to change from `previous` to `next`: `previous` goes on the stack,
-    /// with the camera as it is now (or, mid-animation, where it's headed), unless this is going
-    /// back or part of one step (`asOneStep`), it isn't the press's first change, or it only
-    /// reorders the shapes.
+    /// The selection is about to change from `previous` to `next`: where the person is goes on the stack,
+    /// with `previous` and the camera they had there (`place`; the view now, on a board where nothing has
+    /// settled since it was shown), when `next` is somewhere else (`isAway`: they panned or zoomed off to
+    /// it, or a key stepped to a shape out of view), as VS Code adds a place for a selection more
+    /// than 10 lines from the last one and lets a nearer one stand in for where it is. Nothing while going
+    /// back, nor inside one step (`asOneStep`), which takes its own; a press is one step at most; a
+    /// change that only reorders the shapes is none.
     private func record(leaving previous: [ShapeID], for next: [ShapeID]) {
         guard !isGoingBack, !isOneStep else { return }
         if let current = press, !current.isPressing, editor.session == nil { press = nil }
-        guard press?.isRecorded != true, Set(previous) != Set(next) else { return }
+        guard Set(previous) != Set(next) else { return }
+        let here = place.flatMap { $0.board == editor.board ? $0 : nil } ?? Place(board: editor.board, camera: editor.cameraTarget)
+        var left = (place: here, selection: previous)
+        if press != nil {
+            if let began = press?.left { left = began } else { press?.left = left }
+            guard press?.isRecorded == false else { return }
+        }
+        guard isAway(next, from: left.place) else { return }
         press?.isRecorded = true
-        history.push(SelectionHistory.Entry(board: editor.board, selection: previous, camera: editor.cameraTarget))
+        history.push(SelectionHistory.Entry(board: left.place.board, selection: left.selection, camera: left.place.camera))
     }
 
     /// What going back to `entry` selects: its shapes, less any that are gone or can no longer be
@@ -321,8 +378,9 @@ final class SelectionState {
     }
 
     /// Runs `body` as one step back, to the board and selection before it, with the camera as it
-    /// was (or where it was headed), however many selections and boards it goes through; none if it
-    /// leaves the board and the selection as they were.
+    /// was (or where it was headed), however many selections and boards it goes through, near or far
+    /// (going to shapes, VS Code's jump: always a place of its own); none if it leaves the board and the
+    /// selection as they were. The person is where it leaves them.
     func asOneStep(_ body: () -> Void) {
         guard !isOneStep else { return body() }
         let entry = SelectionHistory.Entry(board: editor.board, selection: selectedIDs, camera: editor.cameraTarget)
@@ -330,12 +388,14 @@ final class SelectionState {
         body()
         isOneStep = false
         if editor.board != entry.board || Set(selectedIDs) != Set(entry.selection) { history.push(entry) }
+        settle()
     }
 
     /// Runs `body` as part of one step back to `entry` (`editor.navigate(from:_:)`), recording
     /// nothing of its own; `entry` goes on the stack the first time `body` moves the board, the
     /// selection or the camera, and not again while it's on the stack (a click or a pan between two
-    /// calls adds no second copy; a call that moves nothing, after a pan, adds none).
+    /// calls adds no second copy; a call that moves nothing, after a pan, adds none). The person is
+    /// where a call that moves something leaves them.
     func asOneStep(from entry: SelectionHistory.Entry, _ body: () -> Void) {
         guard !isOneStep else { return body() }
         let board = editor.board, selection = Set(selectedIDs), camera = editor.cameraTarget
@@ -344,6 +404,7 @@ final class SelectionState {
         isOneStep = false
         guard editor.board != board || Set(selectedIDs) != selection || editor.cameraTarget != camera else { return }
         if !history.entries.contains(entry) { history.push(entry) }
+        settle()
     }
 
     /// Whether `goBack` would change the selection, or the board: some step on the stack would be
@@ -356,7 +417,8 @@ final class SelectionState {
     /// Takes steps off the stack until one would change the selection or the board, and restores
     /// it: on the board shown, its selection and its camera (animated); on another, shows that
     /// board, then selects there, with the camera where it was (set, not animated: gliding from
-    /// another board's camera means nothing). Where it was goes on the way forward.
+    /// another board's camera means nothing). Where it was goes on the way forward, and the person is
+    /// where it arrives.
     func goBack() { travel(back: true) }
 
     /// The same the other way: takes steps off the way forward until one would change the selection or
@@ -369,7 +431,10 @@ final class SelectionState {
             guard let kept = restoration(of: entry) else { continue }
             if back { history.wentBack(from: current) } else { history.wentForward(from: current) }
             isGoingBack = true
-            defer { isGoingBack = false }
+            defer {
+                isGoingBack = false
+                settle()
+            }
             guard entry.board != editor.board else {
                 select(kept)
                 editor.animateCamera(to: entry.camera, duration: SelectionStyle.goBackDuration)
@@ -431,13 +496,15 @@ extension SelectionState: EditorService {
     /// selected, so Back returns to that board), unless this is going back, part of one step
     /// (`asOneStep`: going into a shape), or a file put in place (opening one on the board left
     /// open, or a revert that took the board shown) came with the switch, which no one took;
-    /// nothing is selected on arrival, which isn't a step of its own; and the press, the hover, the
-    /// hover elsewhere, the handle and the canvas buttons, all the board left's, are let go.
-    /// Keeps no state per board, so the switch's change set is never worked out.
+    /// nothing is selected on arrival, which isn't a step of its own, and nothing has settled there
+    /// (`place`); and the press, the hover, the hover elsewhere, the handle and the canvas buttons, all
+    /// the board left's, are let go. Keeps no state per board, so the switch's change set is never
+    /// worked out.
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         if !isGoingBack && !isOneStep && !change.isFileReplaced {
             history.push(SelectionHistory.Entry(board: change.from, selection: selectedIDs, camera: change.leftCamera))
         }
+        place = nil
         // Going back arrives at a step of its own, what it selects there.
         hasJustArrived = !isGoingBack
         clearPointerState()
@@ -451,6 +518,14 @@ extension SelectionState: EditorService {
         onlySelectedID = nil
         revision += 1
         tellObservers(left: left)
+    }
+
+    /// The core kept a view as the view around it settled (the inspector sliding in): where the person
+    /// is follows it when it is that view, since they moved nothing. A view kept after the camera moved
+    /// off the place (a Find hit revealed, a pan) leaves the place where it was.
+    func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor) {
+        guard let place, place.board == editor.board, place.camera == old else { return }
+        self.place = Place(board: place.board, camera: new)
     }
 
     /// What the pointer was doing: the press, the hover (and the one elsewhere), the hovered handle
@@ -501,9 +576,10 @@ extension SelectionState: EditorService {
 
 /// The selection goes back and forth with undo, as tldraw's does: undoing a step selects what was
 /// selected as it began (the shapes a Delete took, back selected), and redoing it what was as it
-/// ended. It's an ordinary change of the selection, a step back like any other, except on a board
-/// just shown (the one undo shows for a step made there), where the switch and the selection are
-/// one step, as `showBoard(_:selecting:)` makes them: Back returns to the board left.
+/// ended. It's an ordinary change of the selection, a step back only when it's away from where the
+/// person is, as any other, except on a board just shown (the one undo shows for a step made there),
+/// where the switch and the selection are one step, as `showBoard(_:selecting:)` makes them: Back
+/// returns to the board left.
 extension SelectionState: UndoParticipant {
     func undoSnapshot(in editor: CanvasEditor) -> any Sendable { selectedIDs }
 
@@ -553,12 +629,13 @@ extension CanvasEditor {
 
     public func isSelected(_ id: ShapeID) -> Bool { selectedShapeIDs.contains(id) }
 
-    /// Whether going back (`goBack`) would change the selection: there's a step back whose shapes
-    /// aren't all gone, and aren't what's selected. Without the Selection plugin, false.
+    /// Whether going back (`goBack`) would change the selection: there's a place to go back to whose
+    /// shapes aren't all gone, and aren't what's selected, or that's on another board. Without the
+    /// Selection plugin, false.
     public var canGoBack: Bool { selectionState?.canGoBack ?? false }
 
-    /// Whether going forward (`goForward`) would change the selection: Back has been gone, and nothing has
-    /// changed the selection since but going back and forward. Without the Selection plugin, false.
+    /// Whether going forward (`goForward`) would change the selection: Back has been gone, and the person
+    /// has gone nowhere new since. Without the Selection plugin, false.
     public var canGoForward: Bool { selectionState?.canGoForward ?? false }
 
     /// Whether the shape is there and its kind's rule (`ShapeSelectability`) lets it be selected.
@@ -701,25 +778,30 @@ extension CanvasEditor {
         if let selection { beginEditing(selection) }
     }
 
-    /// Go › Back (⌘[; data-canvas's goBack): selects what was selected before the selection last
-    /// changed, and moves the camera back to where it was when that selection was left (where it
-    /// was headed, if it was moving), animated.
-    /// Each change of the selection is a step back, however it came (a click, a row of the table of
-    /// contents, Escape, a deletion), except that a press of the select tool and its drag are one
-    /// step, and going back isn't one. So is showing another board, even with nothing selected:
-    /// going back to a step on another board shows that board, then selects there, and puts the
-    /// camera where it was (not animated). The stack holds the last 50 steps, skips repeats, and
-    /// skips a selection whose shapes have all gone on the board shown, and a step on a board that
-    /// can't be shown (its owner deleted). Ends editing; does nothing mid-gesture.
+    /// Go › Back (⌘[ or ⌃-; VS Code's Go Back, over data-canvas's goBack): back to the last place the
+    /// person went from, its board, what was selected there and the camera they had (where it was
+    /// headed, if it was moving), animated on the board shown.
+    /// A place is left by going somewhere: following a link to shapes or picking a row of the table of
+    /// contents (`goTo`, `goInto`, `navigate(_:)`, a way around such as Find's, `navigate(from:_:)`),
+    /// showing another board, even with nothing selected, or selecting what wasn't in the view the
+    /// person had where they were, after a pan or a zoom of their own, or a key stepping to a shape out
+    /// of view (VS Code's selection more than 10 lines away). Selecting in view (a click, the marquee, Tab, Escape,
+    /// a deletion) only moves where they are, the place going back returns to; a press of the select
+    /// tool and its drag are one step at most, and going back isn't one. Going back to a place on
+    /// another board shows that board, then selects there, and puts the camera where it was (not
+    /// animated). The stack holds the last 50 places, skips repeats, and skips a selection whose
+    /// shapes have all gone on the board shown, and a place on a board that can't be shown (its owner
+    /// deleted). Ends editing; does nothing mid-gesture.
     public func goBack() {
         guard session == nil, let state = selectionState else { return }
         endEditing()
         state.goBack()
     }
 
-    /// Go › Forward (⌘]): undoes Back, a browser's Forward: selects what was selected before Back was last
-    /// gone, with the camera where it was then, animated, or on its board, as going back does. Back and
-    /// Forward walk the same steps both ways; any other change of the selection lets the way forward go.
+    /// Go › Forward (⌘] or ⌃⇧-): undoes Back, a browser's Forward: back to where Back was last gone
+    /// from, with the camera where it was then, animated, or on its board, as going back does. Back and
+    /// Forward walk the same places both ways; going somewhere new lets the way forward go, and
+    /// selecting in view keeps it, as VS Code's does.
     /// Ends editing; does nothing mid-gesture.
     public func goForward() {
         guard session == nil, let state = selectionState else { return }

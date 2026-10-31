@@ -186,9 +186,7 @@ import TestKit
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [start])
         expectEqual(h.editor.camera, camera)
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [], "one step: the next is the one before Find, the selection's")
-        expect(!h.editor.canGoBack)
+        expect(!h.editor.canGoBack, "one step: selecting the memo, in view, was none of its own")
     },
     test("a pan or a click between steps adds no second step back") {
         let pockets = PocketFile(root: ["plain"], inA: ["pear", "pear"], inA1: [], inB: ["pear"])
@@ -202,9 +200,7 @@ import TestKit
         expectEqual(h.editor.board, pockets.bBoard)
         find.close()
         h.editor.goBack()
-        expectEqual(h.editor.board, pockets.aBoard, "the click's step")
-        h.editor.goBack()
-        expectEqual(h.editor.board, .root, "where Find began, once")
+        expectEqual(h.editor.board, .root, "where Find began, once: the click, in view, was no step of its own")
         expect(!h.editor.canGoBack)
     },
     test("a step that moves nothing, after a pan, adds no step back: Back doesn't undo the pan") {
@@ -217,9 +213,8 @@ import TestKit
         expectEqual(find.currentNumber, 2)
         expectEqual(h.editor.camera, panned, "in view: nothing moved")
         h.editor.selection = ids[1]
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [])
-        expectEqual(h.editor.camera, panned, "the click's step, not Find's start")
+        expect(!h.editor.canGoBack, "nothing to undo the pan: Find's step moved nothing, and the click was in view")
+        expectEqual(h.editor.camera, panned)
     },
     test("a row picked: its shape's first hit, brought into view on its board") {
         let pockets = PocketFile(root: ["pear"], inA: ["pear"], inA1: [], inB: [])

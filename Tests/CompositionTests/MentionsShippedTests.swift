@@ -624,7 +624,7 @@ extension CanvasEditor {
         expectEqual([editor.row(note), editor.row(second)], ["Ask @Ship the beta first", "Ask @Ship the beta first"])
     },
 
-    test("in a board's window, a double-click on a pill in the text goes to the target, which is no step: Undo takes back the typing before it and selects the note, and Back returns to the target") {
+    test("in a board's window, a double-click on a pill in the text goes to the target, which is no step: Undo takes back the typing before it and selects the note, where the pill was followed from") {
         let b = try mentionWindow()
         defer { b.board.close() }
         let (note, target) = (b.note, b.target)
@@ -643,9 +643,7 @@ extension CanvasEditor {
         b.board.window.undo(nil)
         expectEqual(editor.noteText(note), original)
         expectEqual(editor.selection, note, "selected as when the typing began")
-        expect(editor.canGoBack)
-        editor.goBack()
-        expectEqual(editor.selection, target, "Back: where the pill went")
+        expect(!editor.canGoBack, "the undo's selection, in view, is no step, and the note is the place the pill was followed from")
     },
 ])
 

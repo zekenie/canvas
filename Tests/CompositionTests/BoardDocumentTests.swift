@@ -286,7 +286,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         window.spin { board.editor.camera.zoom == 1 }
         let back = commandItem(.goBack, title: "Back")
         expect(!controller.validateMenuItem(back), "nothing to go back to")
-        board.editor.selection = board.editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Here"))
+        board.editor.goTo([board.editor.add(StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: "Here"))])
         expect(controller.validateMenuItem(back))
         controller.runCommand(back)
         expectEqual(board.editor.selectedShapeIDs, [])
@@ -425,7 +425,9 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(find.items.map(\.keyEquivalent), ["f", "g", "g"])
         expectEqual(find.items.map(\.keyEquivalentModifierMask), [.command, .command, [.command, .shift]])
         let go = try require(menus.main.item(withTitle: "Go")?.submenu)
-        expectEqual(go.items.map(\.title), ["Back", "Forward", "Enclosing Board", "Open Selection", "Go to Mention", "Show What Mentions", "", "Jump To…", "Board Path"], "Jump To follows Open Selection, after a separator, and Board Path follows it")
+        expectEqual(go.items.filter { !$0.isHidden }.map(\.title), ["Back", "Forward", "Enclosing Board", "Open Selection", "Go to Mention", "Show What Mentions", "", "Jump To…", "Board Path"], "Jump To follows Open Selection, after a separator, and Board Path follows it")
+        expectEqual(go.items.filter(\.isHidden).map { "\($0.title) \(KeyboardShortcutSection.key(of: $0) ?? "")" }, ["Back ⌃-", "Forward ⌃_"],
+                    "VS Code's keys, each a hidden item after the one it's another key of")
         try command("Go", "Jump To…", .jumpTo, "k")
         try command("Go", "Back", .goBack, "[")
         try command("Go", "Forward", .goForward, "]")

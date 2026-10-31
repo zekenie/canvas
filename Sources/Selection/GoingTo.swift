@@ -67,11 +67,19 @@ extension CanvasEditor {
     /// sliding in beside the canvas, leaves them fitted in what's left. What selecting rows of the
     /// table of contents does, and Zoom to Selection. Only on the board shown (`goTo` goes to shapes
     /// on another). Does nothing before the view has a size, or when none of the shapes has bounds
-    /// (none is on the board shown).
+    /// (none is on the board shown). The person is where it takes them, as Back judges it (`settle`).
     public func reveal(_ ids: [ShapeID]) {
         guard let bounds = shapeContext.bounds(of: ids) else { return }
         animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: SelectionStyle.revealMaxZoom,
                       duration: SelectionStyle.revealDuration)
+        settleIfSelected(ids)
+    }
+
+    /// The person is where bringing `ids` into view took them, as Back judges it (`settle`), when what
+    /// it brought is selected: shapes revealed that aren't (a Find hit) move the camera alone, as a pan.
+    private func settleIfSelected(_ ids: [ShapeID]) {
+        guard let state = selectionState, ids.contains(where: state.selectedSet.contains) else { return }
+        state.settle()
     }
 
     /// Brings the shapes into view only if they are not all in it (tldraw's `zoomToSelectionIfOffscreen`,
@@ -81,21 +89,26 @@ extension CanvasEditor {
     /// `reveal` brings small shapes to). Does nothing before the view has a size, or when none of the
     /// shapes has bounds.
     public func revealIfOffscreen(_ ids: [ShapeID]) {
-        guard let bounds = shapeContext.bounds(of: ids) else { return }
-        revealIfOffscreen(rect: bounds)
+        guard let bounds = shapeContext.bounds(of: ids), revealIfOffscreen(rect: bounds, settling: false) else { return }
+        settleIfSelected(ids)
     }
 
-    /// The same for a rect in world units (a part of a shape, `ShapeParts`).
-    func revealIfOffscreen(rect bounds: CGRect) {
+    /// The same for a rect in world units (a part of the selected shape, `ShapeParts`, where the person
+    /// then is, `settling`), answering whether it moved the camera.
+    @discardableResult
+    func revealIfOffscreen(rect bounds: CGRect, settling: Bool = true) -> Bool {
         let view = unobscuredViewport, camera = cameraTarget
-        guard !view.isEmpty, !bounds.isNull, !camera.toWorld(view).contains(bounds) else { return }
+        guard !view.isEmpty, !bounds.isNull, !camera.toWorld(view).contains(bounds) else { return false }
         animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: camera.zoom, duration: SelectionStyle.revealDuration)
+        if settling { selectionState?.settle() }
+        return true
     }
 
     /// Goes to the shapes, as following a link to them does: ends editing, selects those that can
     /// be selected, and brings them into view (`reveal`) unless they're all in view already at a
-    /// readable zoom. Selecting them is a step back (`goBack`, ⌘[ returns, camera and all) when it
-    /// changes the selection; going to what's selected already, or to shapes none of which can be
+    /// readable zoom. Selecting them is a step back (`goBack`, ⌘[ and ⌃- return, camera and all) when it
+    /// changes the selection, however near they are (VS Code's jump: a place of its own, as one step,
+    /// `asOneStep`); going to what's selected already, or to shapes none of which can be
     /// selected, leaves the selection as it is and takes no step, so it only moves the camera.
     /// "Readable" is 70% or closer (where a note's text reads at about 11 points), or closer for a
     /// kind whose text is smaller (`ReadableZoom`: 11-point text's, 100%), the closest of the
@@ -115,13 +128,15 @@ extension CanvasEditor {
         guard session == nil, let target = ids.lazy.compactMap({ file.board(containing: $0) }).first(where: canShow) else { return }
         let here = ids.filter { file.board(containing: $0) == target }
         endEditing()
-        if target == board {
-            let selectable = here.filter(isSelectable)
-            if !selectable.isEmpty, Set(selectable) != Set(selectedShapeIDs) { selectedShapeIDs = selectable }
-        } else {
-            guard showBoard(target, selecting: here) else { return }
+        navigate { [self] in
+            if target == board {
+                let selectable = here.filter(isSelectable)
+                if !selectable.isEmpty, Set(selectable) != Set(selectedShapeIDs) { selectedShapeIDs = selectable }
+            } else {
+                guard showBoard(target, selecting: here) else { return }
+            }
+            if !isReadablyInView(here) { reveal(here) }
         }
-        if !isReadablyInView(here) { reveal(here) }
     }
 
     /// Goes into a shape, as following a link to a shape that's opened rather than looked at does (a
@@ -132,11 +147,20 @@ extension CanvasEditor {
     /// subboard's mention followed from inside it): it's gone into already.
     public func goInto(_ id: ShapeID) {
         guard session == nil, board != BoardID(owner: id) else { return }
-        let go = { [self] in
+        navigate { [self] in
             goTo([id])
             if canOpen(id) { open(id) }
         }
-        if let selectionState { selectionState.asOneStep(go) } else { go() }
+    }
+
+    /// Runs `body` (showing a board, selecting shapes, bringing them into view) as going somewhere, as
+    /// following a link does: one step back, to the board, the selection and the camera before it,
+    /// however near what it selects is (VS Code's jump, where a selection is judged by the view the
+    /// person had), and none if it leaves the board and the selection as they were; nothing inside
+    /// records a step of its own. What `goTo` and `goInto` are made of, and how a row of the table of
+    /// contents is picked. Without the Selection plugin it only runs `body`.
+    public func navigate(_ body: () -> Void) {
+        if let selectionState { selectionState.asOneStep(body) } else { body() }
     }
 
     /// Where the editor is now (its board, selection and camera, where it's headed), for a way

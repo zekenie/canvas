@@ -116,13 +116,21 @@ import TestKit
         h.editor.undo()
         expectEqual(h.editor.document[a]?.box?.origin, .zero)
     },
-    test("an undo's selection is an ordinary change of it: going back returns to what was selected before the undo") {
+    test("an undo's selection is an ordinary change of it: a step back when what it selects is out of the view the person had, to what was selected before the undo, and none when it's in view") {
         let (h, a, b) = try harness()
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 700))
         h.editor.selection = a
         h.editor.deleteSelection()
         h.editor.selection = b
         h.editor.undo()
         expectEqual(h.editor.selectedShapeIDs, [a])
+        expect(!h.editor.canGoBack, "a came back where the person could see it")
+
+        h.editor.deleteSelection()
+        h.editor.camera = Camera(origin: CGPoint(x: 5000, y: 5000))           // the person pans off…
+        h.editor.selection = b                                                // …and selects b as a row does, there
+        h.editor.undo()
+        expectEqual(h.editor.selectedShapeIDs, [a], "back, out of the view the person has now")
         h.editor.goBack()
         expectEqual(h.editor.selectedShapeIDs, [b])
     },

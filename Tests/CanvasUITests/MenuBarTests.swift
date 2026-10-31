@@ -13,6 +13,19 @@ import TestKit
     var asked: [Set<CanvasCommand>] = []
 }
 
+/// Stands in for a board window's controller: the commands its items ran, enabled while `enabled` says.
+@MainActor private final class CommandRuns: NSObject, NSMenuItemValidation {
+    var commands: [CanvasCommand] = []
+    var enabled = true
+    @objc func runCommand(_ sender: NSMenuItem) { BoardMenus.command(of: sender).map { commands.append($0) } }
+    func validateMenuItem(_ item: NSMenuItem) -> Bool { enabled }
+}
+
+/// A control of a panel's with the keyboard: no canvas, list or window, so a plain key is its own.
+private final class FocusableControl: NSView {
+    override var acceptsFirstResponder: Bool { true }
+}
+
 /// Commands in sections of their own and in the window's, a key for one of them, and one that answers
 /// the standard Delete, which the window's Delete runs, so an item placed beside it is placed beside Delete.
 @MainActor private let declared = Contributor(id: "declared") { r in
@@ -26,7 +39,7 @@ import TestKit
     r.command("brew", title: "Brew", in: BrewSection.self) { _ in }
     r.command("guide", title: "Guide", in: GuideSection.self) { _ in }
     r.command("wipe", title: "Wipe", answering: .delete) { _ in }
-    r.menuKeys { command, _ in command == "tidy" ? MenuKey(key: "t", modifiers: [.command, .option]) : nil }
+    r.menuKeys { command, _ in command == "tidy" ? [MenuKey(key: "t", modifiers: [.command, .option])] : [] }
 }
 
 /// Arrange's two: Tidy's, first met, and Stack's, which says it's first.
@@ -140,6 +153,60 @@ extension PeekSection: MenuBarSection {
         expectEqual(cut.action.map(NSStringFromSelector), "cut:")
         expectEqual(BoardMenus.command(of: cut), nil, "nothing answers Cut: a text field's still")
         expectEqual(cut.keyEquivalent, "x")
+    },
+    test("a command's other keys held with ⌘ or ⌃ are hidden items after its own, answering wherever its key does; a key held with neither is left to the canvas; the Keyboard Shortcuts window lists the item once") {
+        let registry = try Registry(plugins: [Contributor(id: "hops") { r in
+            r.command("hop", title: "Hop", in: TidySection.self) { _ in }
+            r.command("skip", title: "Skip", in: TidySection.self) { _ in }
+            r.menuKeys { command, _ in
+                command == "hop" ? [MenuKey(key: "[", modifiers: .command), MenuKey(key: "-", modifiers: .control), MenuKey(key: "h", modifiers: []),
+                                    MenuKey(key: "j", modifiers: [.command, .shift])] : []
+            }
+        }])
+        let menus = BoardMenus.make(appName: "Canvas", registry: registry)
+        let arrange = try require(menus.main.item(withTitle: "Arrange")?.submenu)
+        expectEqual(arrange.items.map(\.title), ["Hop", "Hop", "Hop", "Skip"], "one after it for each of ⌃- and ⇧⌘J; none for H")
+        expectEqual(arrange.items.map(\.isHidden), [false, true, true, false])
+        expectEqual(arrange.items.map(\.keyEquivalent), ["[", "-", "j", ""])
+        expectEqual(arrange.items.map(\.keyEquivalentModifierMask).prefix(3), [.command, .control, [.command, .shift]])
+        for item in arrange.items.prefix(3) {
+            expectEqual(BoardMenus.command(of: item), "hop")
+            expectEqual(item.action, #selector(BoardWindowController.runCommand(_:)))
+        }
+        expect(arrange.items[1].allowsKeyEquivalentWhenHidden && arrange.items[2].allowsKeyEquivalentWhenHidden, "AppKit answers a hidden item's key")
+        let rows = [KeyboardHelpRow(keys: ["⌘[", "⌃-", "H", "⇧⌘J"], title: "Hop", place: .command("hop"))]
+        let sections = KeyboardShortcutSection.sections(menu: menus.main, rows: rows)
+        let filed = try require(sections.first { $0.title == "Arrange" })
+        expectEqual(filed.rows.map(\.title), ["Hop"])
+        expectEqual(filed.rows.first?.keys, ["⌘[", "⌃-", "H", "⇧⌘J"])
+    },
+    test("a hidden item's key, held with ⌃, is answered with a panel's control focused, where the control keeps a plain key and a dimmed item's key goes on") {
+        let registry = try Registry(plugins: [Contributor(id: "hops") { r in
+            r.command("hop", title: "Hop", in: TidySection.self) { _ in }
+            r.command("tidy", title: "Tidy", in: TidySection.self) { _ in }
+            r.menuKeys { command, _ in
+                switch command {
+                case "hop": [MenuKey(key: "[", modifiers: .command), MenuKey(key: "-", modifiers: .control)]
+                case "tidy": [MenuKey(key: "]", modifiers: [])]
+                default: []
+                }
+            }
+        }])
+        let menus = BoardMenus.make(appName: "Canvas", registry: registry)
+        let runs = CommandRuns()
+        for item in try require(menus.main.item(withTitle: "Arrange")?.submenu).items { item.target = runs }
+        // Not deferred: its number is the key event's, which the menu bar reads the first responder through.
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let control = FocusableControl(frame: CGRect(x: 10, y: 10, width: 40, height: 20))
+        window.contentView?.addSubview(control)
+        expect(window.makeFirstResponder(control))
+        expect(menus.main.performKeyEquivalent(with: window.keyEvent("\u{1f}", ignoringModifiers: "-", modifiers: .control)), "⌃- reached Hop")
+        expect(!menus.main.performKeyEquivalent(with: window.keyEvent("]")), "] is the control's")
+        expectEqual(runs.commands, ["hop"])
+        runs.enabled = false
+        expect(!menus.main.performKeyEquivalent(with: window.keyEvent("\u{1f}", ignoringModifiers: "-", modifiers: .control)), "dimmed, the key goes on")
+        expectEqual(runs.commands, ["hop"])
     },
     test("the Shape menu leaves out every command the menu bar runs, its own items' and AppKit's") {
         let omitted = Omitted()

@@ -125,7 +125,9 @@ import TestKit
             r.command("hidden", title: "Hidden") { _ in }
         }
         let keys = Contributor(id: "keys") { r in
-            r.menuKeys { command, registry in command == "seek" ? MenuKey(key: "f", modifiers: [.command, .option]) : nil }
+            r.menuKeys { command, registry in
+                command == "seek" ? [MenuKey(key: "f", modifiers: [.command, .option]), MenuKey(key: "s", modifiers: .control)] : []
+            }
         }
         let registry = try Registry(plugins: [placed, keys])
         let bar = registry.menuBarCommands.filter { $0.menu.titles[0] != "View" }
@@ -135,10 +137,13 @@ import TestKit
         expectEqual(bar.map(\.placement), [.first, .natural])
         expectEqual(bar.map(\.key), [nil, MenuKey(key: "f", modifiers: [.command, .option])])
         expectEqual(registry.menuKey(of: "seek")?.modifierFlags, [.command, .option])
+        expectEqual(registry.menuKeys(of: "seek"), [MenuKey(key: "f", modifiers: [.command, .option]), MenuKey(key: "s", modifiers: .control)],
+                    "every key that runs it, the one its item shows first")
         expectEqual(try Registry(plugins: [placed]).menuKey(of: "seek"), nil, "no slot, no key")
+        expectEqual(try Registry(plugins: [placed]).menuKeys(of: "seek"), [])
         expectEqual(try Registry(plugins: []).menuBarCommands.map(\.title), ["Zoom In", "Zoom Out", "Actual Size", "Zoom to Fit"], "the core's own, in View")
         expectThrows(RegistryError.conflict(point: "MenuKeys", key: "menu keys", plugins: ["keys", "more"])) {
-            _ = try Registry(plugins: [keys, Contributor(id: "more") { $0.menuKeys { _, _ in nil } }])
+            _ = try Registry(plugins: [keys, Contributor(id: "more") { $0.menuKeys { _, _ in [] } }])
         }
         let report = registry.report
         expect(report.contains("command tidy first in TidySection · command seek in SeekSection · command hidden"), report)

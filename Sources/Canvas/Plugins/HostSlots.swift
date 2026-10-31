@@ -234,14 +234,15 @@ public enum KeyHintPlace: Sendable {
 
 // MARK: The menu bar
 
-/// The key a menu item shows for a command, from the plugin that keeps the keys (Keyboard: the first
-/// key registered to run it): the menu bar's item for a command (`registrar.command(… in: …)`), and a
-/// context menu's item that runs one. At most one: two are `RegistryError.conflict` at startup.
-/// Without one, no command's item shows a key.
+/// The keys that run a command, as menu items take them, from the plugin that keeps the keys (Keyboard:
+/// each key registered to run it, in the order registered): the first is the one the menu bar's item for
+/// a command (`registrar.command(… in: …)`) shows, and a context menu's item that runs one; the menu bar
+/// answers the rest too, wherever the first works (Go › Back's ⌃-, beside its ⌘[). At most one: two are
+/// `RegistryError.conflict` at startup. Without one, no command's item shows a key.
 public enum MenuKeys {}
 
 extension MenuKeys: KeyedExtensionPoint {
-    public typealias Contribution = @MainActor (CanvasCommand, Registry) -> MenuKey?
+    public typealias Contribution = @MainActor (CanvasCommand, Registry) -> [MenuKey]
     public static var owner: PluginID { .core }
     public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["menu keys"] }
     public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "menu keys" }
@@ -415,12 +416,14 @@ extension PluginRegistrar {
         contribute(KeyboardHelpRow(keys: [keys], title: title, place: place == .pointer ? .pointer : .text), to: KeyHints.self)
     }
 
-    /// The key a menu item shows for each command, given the command and the registry, nil for one with
-    /// none:
+    /// The keys that run each command, given the command and the registry, the one a menu item shows
+    /// first, none for a command with none:
     ///
-    ///     registrar.menuKeys { command, registry in registry.shortcut(forCommand: command)?.chord.menuKey }
-    public mutating func menuKeys(_ key: @escaping @MainActor (CanvasCommand, Registry) -> MenuKey?) {
-        contribute(key, to: MenuKeys.self)
+    ///     registrar.menuKeys { command, registry in
+    ///         registry.shortcuts.filter { $0.commands.contains(command) }.map(\.chord.menuKey)
+    ///     }
+    public mutating func menuKeys(_ keys: @escaping @MainActor (CanvasCommand, Registry) -> [MenuKey]) {
+        contribute(keys, to: MenuKeys.self)
     }
 
     /// What Edit › Copy as Image draws: `shapes`, those of the board shown a picture of the selection
@@ -488,9 +491,14 @@ extension Registry {
         return (registered + contributions(to: KeyHints.self).map(\.value)).filter { seen.insert($0).inserted }
     }
 
-    /// The key a menu item shows for a command, if the plugin that keeps the keys gives it one.
-    public func menuKey(of command: CanvasCommand) -> MenuKey? {
-        contributions(to: MenuKeys.self).first?.value(command, self)
+    /// The key a menu item shows for a command, if the plugin that keeps the keys gives it one: the first
+    /// of `menuKeys(of:)`.
+    public func menuKey(of command: CanvasCommand) -> MenuKey? { menuKeys(of: command).first }
+
+    /// Every key that runs a command, as the plugin that keeps the keys gives them, the one its items show
+    /// first; none without that plugin.
+    public func menuKeys(of command: CanvasCommand) -> [MenuKey] {
+        contributions(to: MenuKeys.self).first?.value(command, self) ?? []
     }
 
     /// Every command with an item in the menu bar (`registrar.command(… in: …)`), in plugin order: the

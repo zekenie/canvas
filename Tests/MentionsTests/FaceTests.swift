@@ -114,7 +114,8 @@ import TestKit
         expectEqual(board.editor.selection, idA)
         expectEqual(board.editor.editingShapeID, nil)
         board.editor.goBack()
-        expectEqual(board.editor.selection, nil, "the press and where it went are one step")
+        expectEqual(board.editor.selection, board.jot, "back to the jot it was followed from")
+        expect(!board.editor.canGoBack, "the press selected the jot in view: no step of its own")
     },
     test("a pill naming a shape that isn't there: a click edits the jot from it; on a read-only jot, a double-click does nothing") {
         let board = try FaceBoard()

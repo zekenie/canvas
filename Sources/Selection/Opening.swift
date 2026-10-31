@@ -106,8 +106,8 @@ extension CanvasEditor {
 
     /// Shows `board`, as `showBoard` does, and selects `ids` there, as one step back: going back
     /// returns to the board left, with what was selected there, not to the board shown with nothing
-    /// selected. On the board shown already, it only selects them (a step, as any selection change).
-    /// Returns whether the board is shown.
+    /// selected. On the board shown already, it only selects them (a step when they're out of the view
+    /// the person had, as any selection change). Returns whether the board is shown.
     @discardableResult
     public func showBoard(_ board: BoardID, selecting ids: [ShapeID]) -> Bool {
         guard board != self.board else {

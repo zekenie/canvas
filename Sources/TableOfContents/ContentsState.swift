@@ -253,6 +253,9 @@ public final class ContentsState {
     /// The list's outline, which takes the keyboard when the window gives the sidebar the keyboard
     /// (`HostSidebar.keyboardEntry`): the last list made, while it's around.
     @ObservationIgnored weak var keyboardEntry: NSView?
+    /// The walk by keys under way: where it began (`editor.navigationStart`), the one step back it is,
+    /// and the selection its last key made (`editor.selectionRevision`), which the next key goes on from.
+    @ObservationIgnored private var walk: (start: NavigationStart, selection: Int)?
     /// How many times a service has said rows changed outside a commit (`contentsDidChange(for:)`):
     /// read by `entries`, so whoever reads the list reads again.
     private var outsideChanges = 0
@@ -339,18 +342,32 @@ public final class ContentsState {
 
     /// What selecting rows does (a click, ⌘- and ⇧-clicks, the arrow keys): selects their shapes,
     /// in document order, and brings them into view, zoomed to fit (no closer than 120%; Selection's
-    /// `editor.reveal`). Selecting what's already selected moves nothing. A row of a board nested under its owner's (`nestedBoard`) is of a shape on another
+    /// `editor.reveal`), as going somewhere does (Selection's `editor.navigate`: one step back, however
+    /// near the shapes are, as an outline's pick is a place in VS Code's history; a walk by keys,
+    /// `byKey`, is one step, from where it began, `navigate(from:)`). Selecting what's already selected
+    /// moves nothing. A row of a board nested under its owner's (`nestedBoard`) is of a shape on another
     /// board, so selecting it goes there, as following a link does (Selection's `editor.goTo`: its
     /// board shown and it selected, one step back), and leaves the rest of the rows selected behind;
     /// but only when such rows are all a selection adds: a ⇧-click whose range passes over an open
     /// board's rows selects the board shown's rows in it, and no others.
-    public func select(_ ids: Set<ShapeID>) {
+    public func select(_ ids: Set<ShapeID>, byKey: Bool = false) {
         let away = elsewhere(ids)
         if !away.isEmpty, ids.subtracting(editor.selectedShapeIDs).isSubset(of: away) { return editor.goTo(Self.boardFirst(away, in: editor.file)) }
         let ordered = inDocumentOrder(ids)
         let isNew = Set(ordered) != Set(editor.selectedShapeIDs)
-        editor.selectedShapeIDs = ordered
-        if isNew { editor.reveal(editor.selectedShapeIDs) }
+        let pick = {
+            self.editor.selectedShapeIDs = ordered
+            if isNew { self.editor.reveal(self.editor.selectedShapeIDs) }
+        }
+        // A walk by keys is one step, back to where it began, as Find's stepping is: a row a key at a time
+        // would bury that place under every row walked. A key goes on from the last key's selection.
+        guard byKey else {
+            walk = nil
+            return editor.navigate(pick)
+        }
+        guard let start = walk.flatMap({ $0.selection == editor.selectionRevision ? $0.start : nil }) ?? editor.navigationStart else { return pick() }
+        editor.navigate(from: start, pick)
+        walk = (start: start, selection: editor.selectionRevision)
     }
 
     /// A row's primary action (a double-click or Return on it): opens its shape as Return on the

@@ -494,13 +494,13 @@ final class ContentsListController: NSObject {
     /// The person changed the outline's selection (a click, ⌘- and ⇧-clicks, a key): their shapes
     /// selected (`ContentsState.select`). A click's pick gives the canvas the keyboard, so its keys act
     /// on the shapes picked at once, a nudge or Delete; a key's keeps it in the list, for the next key to
-    /// walk on (the list has it by View ▸ Focus Sidebar).
+    /// walk on (the list has it by View ▸ Focus Sidebar), and a walk by keys is one step back.
     private func selectionChanged() {
         var ids: Set<ShapeID> = []
         for row in outline.selectedRowIndexes {
             if let item = outline.item(atRow: row) as? ContentsItem { ids.insert(item.id) }
         }
-        state.select(ids)
+        state.select(ids, byKey: keyArrived)
         listSelection = editor.selectionRevision
         if !keyArrived { giveCanvasTheKeyboardSoon() }
     }

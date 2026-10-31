@@ -44,9 +44,7 @@ extension ChangeSetWatcher: EditorService {
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [t.p])
         expectEqual(h.editor.camera, left, "set, not animated")
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [], "then the click's step, on the root")
-        expect(!h.editor.canGoBack)
+        expect(!h.editor.canGoBack, "the click on the root, in view, was no step of its own")
     },
     test("a file put in place on another board (opened on the board left open) is no step back") {
         let t = PocketBoards()
@@ -102,17 +100,15 @@ extension ChangeSetWatcher: EditorService {
     test("going back skips a step on a board that's gone with its owner") {
         let t = PocketBoards()
         let h = try pocketsHarness(t)
-        h.editor.selection = t.a                                 // steps: the root with nothing selected,
-        h.enter(t.p)                                             // the root with A,
-        h.editor.selection = t.b                                 // P's board with nothing selected,
+        h.editor.selection = t.a                                 // places: none here, in view;
+        h.enter(t.p)                                             // the root with A;
+        h.editor.selection = t.b                                 // none here;
         expect(h.editor.showBoard(.root))                        // and P's board with B
         h.editor.transact { $0.delete([t.p]) }
         expect(h.editor.canGoBack)
         h.editor.goBack()
         expectEqual(h.editor.board, .root)
-        expectEqual(h.editor.selectedShapeIDs, [t.a], "past both of P's board's steps")
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [])
+        expectEqual(h.editor.selectedShapeIDs, [t.a], "past P's board's place")
         expect(!h.editor.canGoBack)
     },
     test("showing a board and selecting there is one step: back returns to the board left and what was selected there") {
@@ -127,15 +123,11 @@ extension ChangeSetWatcher: EditorService {
         expect(h.editor.showBoard(.root, selecting: [t.c]), "on the board shown, it only selects")
         expectEqual(h.editor.selectedShapeIDs, [t.c])
         h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [t.p])
-        h.editor.goBack()
-        expectEqual(h.editor.board, t.pBoard)
+        expectEqual(h.editor.board, t.pBoard, "selecting C in view was no step: back past it, to P's board")
         expectEqual(h.editor.selectedShapeIDs, [t.b])
         h.editor.goBack()
         expectEqual(h.editor.board, .root)
         expectEqual(h.editor.selectedShapeIDs, [t.a])
-        h.editor.goBack()
-        expectEqual(h.editor.selectedShapeIDs, [])
         expect(!h.editor.canGoBack)
         expect(!h.editor.showBoard(BoardID(owner: t.a), selecting: [t.a]), "a box owns no board")
         expectEqual(h.editor.board, .root)

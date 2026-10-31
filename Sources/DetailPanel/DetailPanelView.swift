@@ -529,7 +529,7 @@ extension EnvironmentValues {
     }
 }
 
-/// Back to the previous selection, as data-canvas's details panel has: Selection's `.goBack`, Go › Back,
+/// Back to the last place gone from, as data-canvas's details panel has: Selection's `.goBack`, Go › Back,
 /// called and keyed as the command is ("Back (⌘[)"), shown while its rule says there's a step back (the
 /// rule alone, `canPerform(_:on:)`: a press on the canvas doesn't take the button away, and the command
 /// waits for it). Its own view, so a new step back redraws only it, not the panel it's in.

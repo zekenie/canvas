@@ -1,3 +1,5 @@
+import Geometry
+
 /// Per-editor plugin state (an engine, a timer, a selection), made when the editor is and found by
 /// type with `editor.service(S.self)`. The editor tells every service what it may need to follow,
 /// in the order the services were made: plugin order, except that a service another one's `make`
@@ -75,6 +77,12 @@ public protocol EditorService: AnyObject {
     /// symbol, or the tint of one, makes it again for the shapes it keeps. A commit to a shape says
     /// so itself.
     func shapeTintsDidChange(in editor: CanvasEditor)
+    /// The core moved the camera to keep a view as the view around it settled (the inspector a
+    /// selection shows sliding in beside the canvas: a fit fitted again, what was in view brought back
+    /// into it; `animateCamera(toFit:…)`, `keepInViewWhileSettling`), from where it was headed, `old`, to
+    /// `new`: no move of the person's. A service that keeps where the person is (Selection's Back)
+    /// follows it.
+    func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -89,4 +97,5 @@ extension EditorService {
     public func drawsSkeletonsDidChange(in editor: CanvasEditor) {}
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {}
     public func shapeTintsDidChange(in editor: CanvasEditor) {}
+    public func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor) {}
 }

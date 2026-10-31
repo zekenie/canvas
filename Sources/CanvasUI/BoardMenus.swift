@@ -175,7 +175,33 @@ public enum BoardMenus {
             main.addItem(submenu(title, menu))
         }
         shape.omitting = Set(Self.commands(in: main))
+        addOtherKeys(in: main, registry: registry)
         return Menus(main: main, services: services, windows: made["Window"]!, help: made["Help"]!)
+    }
+
+    /// Puts after each item that runs a command a hidden item for each other key that runs it (as the plugin
+    /// that keeps the keys gives them, `registry.menuKeys(of:)`) held with ⌘ or ⌃, which type nothing: the
+    /// same command, title and action, so AppKit's menus and `MenuBar` answer that key wherever the item's
+    /// own works (Go › Back's ⌃-, beside its ⌘[, with text being typed too), and the controller's validation
+    /// dims it with the item. A key held with neither types, and is the canvas's to answer (= and -, which
+    /// zoom again and again while held): no item takes it.
+    static func addOtherKeys(in menu: NSMenu, registry: Registry) {
+        for item in menu.items {
+            if let submenu = item.submenu {
+                addOtherKeys(in: submenu, registry: registry)
+                continue
+            }
+            guard item.action == #selector(BoardWindowController.runCommand(_:)), let command = command(of: item) else { continue }
+            var index = menu.index(of: item)
+            for key in registry.menuKeys(of: command).dropFirst() where !key.modifiers.isDisjoint(with: [.command, .control]) {
+                let other = Self.item(item.title, #selector(BoardWindowController.runCommand(_:)), key.key, key.modifierFlags)
+                other.representedObject = command
+                other.isHidden = true
+                other.allowsKeyEquivalentWhenHidden = true
+                index += 1
+                menu.insertItem(other, at: index)
+            }
+        }
     }
 
     /// The menus that come last, after every other, whatever names them.
@@ -426,7 +452,9 @@ final class ShapeMenu: NSMenu, NSMenuDelegate {
 /// `]`, and the rest: no ⌘, so ⇧, ⌥ or nothing held with the key, ⌃ too) never takes it from text,
 /// where it types ("!" on a US keyboard, a quote for ⌥]), and from a control of the panel (a checkbox), whose key it
 /// is; only the canvas, the window itself and a list (the table of contents) answer the key it names (a digit
-/// is the number row's key, whatever the layout types with it), and leaves it while it's disabled.
+/// is the number row's key, whatever the layout types with it), and leaves it while it's disabled. A
+/// hidden item's key (another key of the item before it, held with ⌘ or ⌃: `BoardMenus.addOtherKeys`)
+/// types nothing, and is answered wherever that item's own is, a panel's control and text included.
 /// A key held with fn (🌐) is AppKit's as ever, text or not: the items it adds for them (Edit ›
 /// Emoji & Symbols, 🌐E; Start Dictation, 🌐D; View › Enter Full Screen, 🌐F) answer only as key
 /// equivalents. A ⇧⌘ letter goes to the item that names ⇧ (Edit › Find › Find Previous, ⇧⌘G), never to
@@ -467,12 +495,14 @@ final class MenuBar: NSMenu {
             if inText { return modifiers.contains(.control) ? super.performKeyEquivalent(with: event) : false }
             if let (menu, index) = found {
                 // Only where the key is the board's: the canvas, the window itself, a list (the table of
-                // contents). A panel's checkbox or button with the keyboard types or presses its own.
+                // contents). A panel's checkbox or button with the keyboard types or presses its own; but
+                // a hidden item's key, another key of the item before it held with ⌃ (`addOtherKeys`),
+                // types nothing, and is answered wherever that item's own is (Go › Back's ⌃-).
                 let boards = MainActor.assumeIsolated {
                     let responder = (window ?? NSApp.keyWindow)?.firstResponder
                     return responder is CanvasView || responder is NSTableView || responder === (window ?? NSApp.keyWindow)
                 }
-                if !boards { return false }
+                if !boards, menu.item(at: index)?.isHidden != true { return false }
                 menu.update()
                 guard let item = menu.item(at: index), item.isEnabled else { return false }
                 if event.isARepeat { return true }
