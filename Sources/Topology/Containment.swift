@@ -279,6 +279,44 @@ struct Containment: Sendable {
     }
 }
 
+/// Whether each board can be shown (`CanvasFile.canShow`), asked once for many shapes (a board deleted or pasted, a chain of
+/// boards restored by an undo). A board can be shown when the board its owner is on can and the owner is of a kind that owns
+/// boards and not kept aside, so a board's answer is worked out from the board above's: a chain of boards is walked once, and
+/// a board whose parent was asked costs O(1), where `canShow` alone costs O(the board's depth) for each board. Every board
+/// gets the answer `canShow` gives it, those with an owner that isn't in the file, or whose owners hold each other's boards
+/// (never shown), too.
+struct ShowableBoards {
+    private var known: [BoardID: Bool] = [:]
+
+    mutating func canShow(_ board: BoardID, in file: CanvasFile, boardOwningKinds: Set<ShapeKind>) -> Bool {
+        if board.isRoot { return true }
+        if let answer = known[board] { return answer }
+        // The boards from `board` up to the first asked, the root, or the end of what leads anywhere.
+        var chain = [board], met: Set<BoardID> = [board]
+        var above = false
+        while let owner = chain[chain.count - 1].owner {
+            guard let parent = file.board(containing: owner) else { break }
+            if parent.isRoot {
+                above = true
+                break
+            }
+            if let answer = known[parent] {
+                above = answer
+                break
+            }
+            guard met.insert(parent).inserted else { break }
+            chain.append(parent)
+        }
+        var shown = above
+        for step in chain.reversed() {
+            let owns = step.owner.flatMap(file.record).map { !$0.isOpaque && boardOwningKinds.contains($0.kind) } ?? false
+            shown = shown && owns
+            known[step] = shown
+        }
+        return shown
+    }
+}
+
 extension Registry {
     /// The kinds whose shapes can contain others, as Topology has containment: those that own boards
     /// (`boardOwningKinds`: a subboard) and those that hold shapes on the board they're on

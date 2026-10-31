@@ -59,7 +59,7 @@ private enum Listed {
                 expectEqual(list.shown(in: Listed.mentionedBy).rows.count, mentioning, "every note that mentions the hub is listed, none cut")
                 expectEqual(list.total, mentioning)
                 var mains: [Double] = [], offs: [Double] = []
-                for _ in 0..<7 {
+                for _ in 0..<measuredRuns(7) {
                     list.unwatch(hub)
                     let (main, off) = try watch()
                     mains.append(main)
@@ -75,7 +75,7 @@ private enum Listed {
                 // Folded: counted, no row made.
                 for group in list.groups.indices { list.setFolded(group, true) }
                 var folded: [Double] = []
-                for _ in 0..<7 {
+                for _ in 0..<measuredRuns(7) {
                     list.unwatch(hub)
                     folded.append(try watch().main)
                 }

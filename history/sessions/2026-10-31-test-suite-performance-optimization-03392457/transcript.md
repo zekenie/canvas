@@ -1,6 +1,6 @@
 # Test suite performance optimization
 
-Claude Code session `03392457-3d35-4667-ae53-42a5c85ddd8c`, 2026-10-31 02:49 to 2026-10-31 12:36 UTC, on `claude/test-suite-performance-6ca20c`.
+Claude Code session `03392457-3d35-4667-ae53-42a5c85ddd8c`, 2026-10-31 02:49 to 2026-10-31 21:40 UTC, on `claude/test-suite-performance-6ca20c`, `main`, `test-speed-2`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -541,3 +541,640 @@ Merging main's one new commit into the branch, then squashing.
 
 [2026-10-31 12:36] GIT:
 git merge --no-edit main 2>&1 | tail -15
+
+[2026-10-31 12:36] ASSISTANT:
+Record written and checked; now squashing onto main with the commit message.
+
+[2026-10-31 12:36] COMMIT MESSAGE FILE commit-message.txt:
+The test suite runs in about half the time, and after an edit only what it could have changed runs
+
+Sessions working in parallel spent much of their time waiting on ./test.sh rather than on the
+model, and the owner asked for the tests to be much faster, 80-20, the benchmarks aside. A full run
+took 347 to 393 s (median 373, six runs) and every run reran all 60 executables, each one's tests in
+one process, so the run waited on its slowest executable (CompositionTests, TypesTests) whatever the
+edit touched.
+
+What the runner does now (test.sh, TestKit, build.sh):
+- Shares. An executable whose suites took long enough is split into several processes by suite,
+  dealt longest first by the seconds each suite took on its last whole run (TEST_SHARD=k/n,
+  TEST_WEIGHTS), the same deal in every process; a suite's tests keep their order. Duplicate suite
+  names are told apart as "name #k". BenchmarkTests' Scaling is a closing suite every share runs,
+  since it pairs lines its own share reported.
+- Budgets last. A test that holds a time budget measures the thread's CPU, and that time grows when
+  every core is busy (relationshipLanding: 71 ms alone, 75 two at once, 91 to 97 four at once, on
+  an M5's 4 performance and 6 efficiency cores). TestKit marks a suite that called threadCPUTime
+  while budgets are held ("\tbudget" in its record), and test.sh runs those suites after the rest,
+  at most half the performance cores at once (TEST_BUDGETS=skip|only). Raising the processes' QoS
+  was tried first and did nothing: their main threads already run user-interactive.
+- Skipping. An executable is not run again while its binary, the command line's, the git-visible
+  files outside Sources (history/ and Markdown no test reads aside) and the environment variables
+  tests read all match its last pass; TEST_ALL=1 runs everything, and the run says what it skipped.
+  The build makes the same bytes from the same inputs, so an edit to Frames leaves FramesTests and
+  BenchmarkTests byte-identical and reruns only what links Frames.
+- Focused runs. ./test.sh TARGET... builds (./build.sh tests TARGET...) and runs only those; CLAUDE.md
+  says to iterate with the targets a change reaches and run the whole suite before landing.
+- The build: BUILD_TIMES=1 reports each job's time; jobs start longest first by what each took last
+  time; Types' part checks run at once (17 s to 6.7 s after an edit); the audit's id and plugin
+  checks are one pass over the code each (16 s to 4.7 s after an edit). -g and DEBUG stay.
+
+The slowest tests, fixed by pattern with no assertion, seed, size or budget weakened (three agents,
+each in a scratch clone): long seeded runs split into suites of their own so shares run them at
+once (TypesTests' relationship agreement runs, 143 s for the longest, now suites of some 8.5 s;
+CanvasTests' spatial index and shape stack runs; ReferencesTests' rebuilds; the query fuzz over
+concurrentPerform); a registry shared where a test made one per step; the ingest and digest tests
+in suites (ingest in nine, by running time, so named "(1 of 9)"; canvas-digest's run.js takes K/N
+to run a slice), the census window drawn in 8-bit sRGB since it reads no pixels; bitmaps compared
+by their raw bytes where the format allows (CanvasTesting's Rendering, the minimap test 21 s to
+0.35 s; largestDifference moved there from StickyNotesTests); the minimap tests and the note-row
+walk settle on the manual scheduler instead of the run loop; InstallTests' hang waits 0.25 s.
+TypesTests alone went from 330 s to 115 s, CompositionTests sharded from 5:45 to 1:50.
+
+One production change: canvas draw found a duplicate edge by scanning every edge before it, which
+grew with the square of a script's edges; Sources/Draw/Drawing.swift looks it up by its two ends.
+Its behavior and messages are the same.
+
+Measured on a machine other sessions were loading (3 to 34), before and after alternated: full runs
+157, 195 and 220 s, all passing, budget tests included; a run with nothing changed 2.3 s; an edit
+to Frames then ./test.sh 86 s (439 before); to Types 219 s; ./test.sh FramesTests 6 s.
+
+Known limits: a new or renamed budget suite runs once among the rest before it is marked; budgets
+can still fail when other work saturates the machine, as they could before. Not done, proposed by
+the agents: TestKit's waits poll every 2 ms; the window tests' settle never stops early; the digest
+driver starts some 100 processes a run; Topology's undo on a 2,000-board chain is quadratic in its
+depth; canvas draw's delete edge scans as the duplicate check did.
+
+Session: history/sessions/2026-10-31-test-suite-performance-optimization-03392457/
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-31 12:36] COMMIT MESSAGE FILE commit-message.txt:
+the command line's, the git-visible
+  files that aren't Swift (history/ and Markdown no test names aside) and
+
+[2026-10-31 12:36] GIT:
+git reset --soft main && git add history/sessions/2026-10-31-test-suite-performance-optimization-03392457 && git commit -q -F /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-test-suite-performance-6ca20c/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/commit-message.txt && git log --oneline -2 && git status --short | head && git diff --stat main HEAD | tail -1
+
+[2026-10-31 12:37] COMMIT MESSAGE FILE commit-message.txt:
+files that aren't Swift (history/ and Markdown no test names aside) and
+
+[2026-10-31 12:37] GIT:
+git commit -q --amend -F /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-test-suite-performance-6ca20c/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/commit-message.txt && git log -1 --format='%h' && git log -1 --format=%B | grep -n "aren't Swift"
+
+[2026-10-31 12:37] ASSISTANT:
+Squashed into one commit; now fast-forwarding main in the main checkout.
+
+[2026-10-31 12:37] WRAP-UP:
+The test-suite speed-up is on main as b4230774, one commit with this session's record, and main's one newer commit merged in cleanly. The worktree, its branch and the helper agents' refs are removed. Main hasn't been pushed.
+Ask:
+
+[2026-10-31 12:37] ASSISTANT:
+It's on main as b4230774. Main hasn't been pushed.
+
+[2026-10-31 14:29] USER:
+/compact
+
+[2026-10-31 14:30] COMPACTED:
+(the context was summarized here)
+
+[2026-10-31 14:30] USER:
+do you think there is room for more optimization? if so, i would like to see it. but no degraded code quality or test quality.
+
+[2026-10-31 14:30] ASSISTANT:
+Reading what the last session measured, to find where a test run's time goes now; nothing is built or run yet.
+
+[2026-10-31 14:32] ASSISTANT:
+Checking which files force every test to rerun, and how the build compiles test targets; still nothing heavy running.
+
+[2026-10-31 14:34] ASSISTANT:
+Reading the test kit and the heaviest test target to size the remaining wins; a few more reads, then the proposal.
+
+[2026-10-31 14:37] ASSISTANT:
+Found one more cost worth checking: every new worktree builds and tests everything from scratch. Checking whether build outputs depend on the checkout's path.
+
+[2026-10-31 14:38] WRAP-UP:
+There's room for more speed-up, but less than last round, because a full run is now close to the machine's limit. Most of what's left is tests rerunning after edits they can't be affected by, plus slow compiles of the big test targets. Nothing is built or changed yet.
+Ask: Go ahead with the six steps?
+
+[2026-10-31 14:38] ASSISTANT:
+Yes, there's room, but less than last round. A full run is now close to the machine's limit: about 700 CPU-seconds spread over 10 cores, plus a tail of about 17 s where the CPU-time budget suites run two at a time. Most of what's left is waste in what reruns after an edit and in how the big test targets compile. These numbers come from last session's measurements; I haven't run anything today.
+
+**Where the time goes now**
+- **CompositionTests is about half of all test CPU.** It links every plugin, so it reruns after an edit to any of them. Some of its suites never touch the app, for example the digest tool's own unit tests under jsc (about 37 s of CPU).
+- **A guide edit reruns all 60 executables.** Only one test reads `docs/plugin-system.md`, but the skip key counts it for every executable. The guide changed in 53 of main's last 70 commits.
+- **The big test targets compile on one core.** TypesTests, CompositionTests and CanvasTests each take about 35 s to compile. So after editing one test file there, nothing runs for about 35 s.
+- **A budget suite runs whole in the tail.** If any test in a suite measures CPU time, the whole suite waits for the quiet tail.
+
+**The plan.** No assertion, seed, size or budget gets weakened.
+1. **Measure:** time each suite on the current main while the machine is quiet, about 10 minutes.
+2. **Count Markdown per executable:** a Markdown file only invalidates the executables whose sources name it. After a guide edit, only CompositionTests reruns.
+3. **Move app-free suites out of CompositionTests** into a test target that links no plugins (I'll pick its name). They still run on every skill change and every full run, but a Swift edit no longer reruns them.
+4. **Mark budgets per test instead of per suite,** so only the tests that measure CPU time wait for the tail.
+5. **Cut CPU in the heaviest suites** step 1 finds, the same way as last time. The leads are the digest driver's roughly 100 processes per run, ingest's Python runs and the window tests' fixed settle. This uses 2–3 agents in scratch clones.
+6. **Try compiling test targets in parallel and incrementally,** so a changed test file recompiles alone. I'll keep this only if measurement shows it's faster without much more CPU. `-g`, `DEBUG`, release builds and the app stay as they are.
+
+**What to expect**
+- After a plugin edit: roughly a third less to rerun.
+- After a guide edit: 1 executable instead of 60.
+- After a test-file edit in a big target: a few seconds of compile instead of about 35, if step 6 holds up.
+- A full run: maybe 10–20% faster.
+
+**Optional, your call:** let worktrees share passes. Right now a new worktree reruns everything on its first full run, even when most of its binaries match main's. This is a bigger change, and the gain is uncertain because any skill edit still reruns everything.
+
+**Not proposed:**
+- Sharing build outputs between worktrees: the debugger would show another checkout's files.
+- Building tests with optimization: the budgets were set against debug code.
+
+[2026-10-31 16:43] USER:
+Yeah let’s do it
+
+[2026-10-31 16:44] ASSISTANT:
+Measuring first. I'll add a temporary per-suite CPU log to TestKit (not to be committed), then do a cold build and two full runs while the machine is quiet.
+
+[2026-10-31 16:47] ASSISTANT:
+Cold build: 143 s wall, about 965 CPU-seconds. Its critical path is TypesTests compiling on one core for 90 s. Now the first full run in a fresh worktree, which has no timings to shard by yet.
+
+[2026-10-31 16:48] ASSISTANT:
+While that runs, I'm reading the budget tests: step 4 runs each one apart from the rest of its suite, so each must not lean on what earlier tests set up.
+
+[2026-10-31 16:49] ASSISTANT:
+Writing step 3 (Markdown counted per executable) into test.sh while the run goes; the run uses the measuring copy.
+
+[2026-10-31 16:50] ASSISTANT:
+The Markdown check works: only CompositionTests and CanvasCLITests now count docs, and the rest ignore guide edits. Waiting on the measuring run.
+
+[2026-10-31 16:52] ASSISTANT:
+Wrote the shared-timings fallback into test.sh; still waiting on the first measuring run (in its unsharded tail).
+
+[2026-10-31 16:53] ASSISTANT:
+Now step 4 in TestKit: budget marks per test. The `b` share runs only the tests that measure CPU time, and the rest of each suite runs with everything else.
+
+[2026-10-31 16:54] ASSISTANT:
+TestKit's per-test budget marks are written; fixing the last reference, then waiting on the measuring run.
+
+[2026-10-31 16:55] ASSISTANT:
+The first run in a fresh worktree took 438 s, more than twice a steady-state run: with no timings, CompositionTests ran as one 410 s process. Grouping CompositionTests' time by kind now.
+
+[2026-10-31 16:59] ASSISTANT:
+Per-test marks work: StickyNotesTests' budget work drops from a 7 s suite to one 0.18 s test, and MentionsTests' from about 9 s to 1.2 s. Checking that a budget share runs only the marked tests.
+
+[2026-10-31 16:59] GIT:
+git add test.sh Tests/TestKit/TestKit.swift CLAUDE.md && git commit -q -m "WIP: docs keyed per executable, budget marks per test, a first run dealt by the shared timings" && git log --oneline -1
+
+[2026-10-31 17:00] ASSISTANT:
+The audit puts no limits on a test target that isn't named after a module, so the app-free tests can move to a new target that depends on TestKit alone. Routing the three fixer agents through Jev.
+
+[2026-10-31 17:00] ASSISTANT:
+Jev picks Sonnet for all three. Setting up a scratch clone for each, with a copy-on-write copy of my build so none of them pays for a cold build.
+
+[2026-10-31 17:22] ASSISTANT:
+The copied clones build nothing, so the fixers start warm. Launching the three fixers now, each in its own clone and on its own files.
+
+[2026-10-31 17:23] AGENT Move app-free skill tests, cut digest/ingest CPU:
+You are making this repository's test suite faster without weakening it. Work ONLY in your scratch clone:
+/private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/fix-skills
+(a git clone, already built: `./build.sh tests TARGET` there builds incrementally). First run, as plain commands with that literal path: `cd /private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/fix-skills && git checkout -b fix-skills`. Commit your work there in small commits whose messages say why (no push, no other repository, never the main checkout at /Users/zekenie/code/native-canvas or any worktree). A shell hook may refuse complex commands: keep each command plain, with literal absolute paths, `cd <literal path> && <command>`.
+
+Read CLAUDE.md, .claude/rules/testing.md, .claude/rules/build.md (the audit, test targets), .claude/rules/digest.md and .claude/rules/ingest.md (their Testing parts) before changing anything.
+
+## Why
+The project's tests are plain executables (Tests/<Target>/main.swift calls TestKit's runTests). ./test.sh reruns an executable only when its binary (or the git-visible non-Swift files, .claude/skills included) changed. CompositionTests links every shipped plugin, so it reruns after an edit to ANY plugin module, and it is about 45% of all test CPU (442 of 990 CPU-seconds, measured on a quiet machine). Part of it never touches the app at all:
+- the canvas-digest tool's own unit te […4907 more chars]
+
+[2026-10-31 17:23] AGENT Cut CPU in TypesTests' slowest suites:
+You are making this repository's test suite faster without weakening it. Work ONLY in your scratch clone:
+/private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/fix-types
+(a git clone, already built: `./build.sh tests TypesTests` there builds incrementally). First run, as plain commands with that literal path: `cd /private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/fix-types && git checkout -b fix-types`. Commit your work there in small commits whose messages say why (no push, no other repository, never the main checkout at /Users/zekenie/code/native-canvas or any worktree). A shell hook may refuse complex commands: keep each command plain, with literal absolute paths, `cd <literal path> && <command>`.
+
+Read CLAUDE.md, .claude/rules/testing.md, .claude/rules/types.md and .claude/rules/relationships.md (their Testing parts) before changing anything.
+
+## Why
+Test runs are what parallel coding sessions here wait on. TypesTests is the second-largest test executable: 159 CPU-seconds of a full run's 990 (measured on a quiet machine), and it reruns after any edit to Types or what it builds on. ./test.sh already splits an executable into processes by suite (TestKit's TEST_SHARD), so cutting CPU is what's left. Per-suite and per-test numbers: /private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/m2/where-time-goes.txt (each test l […2411 more chars]
+
+[2026-10-31 17:23] AGENT Cut CPU in five other slow suites:
+You are making this repository's test suite faster without weakening it. Work ONLY in your scratch clone:
+/private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/fix-other
+(a git clone, already built: `./build.sh tests TARGET` there builds incrementally). First run, as plain commands with that literal path: `cd /private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/fix-other && git checkout -b fix-other`. Commit your work there in small commits whose messages say why (no push, no other repository, never the main checkout at /Users/zekenie/code/native-canvas or any worktree). A shell hook may refuse complex commands: keep each command plain, with literal absolute paths, `cd <literal path> && <command>`.
+
+Read CLAUDE.md, .claude/rules/testing.md and .claude/rules/benchmarks.md, and the Testing part of the topic file of each suite's subsystem, before changing anything.
+
+## Why
+Test runs are what parallel coding sessions here wait on. ./test.sh already splits each executable into processes by suite (TestKit's TEST_SHARD), so cutting CPU is what's left. A full run is 990 CPU-seconds (measured on a quiet machine). Per-suite and per-test numbers: /private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/m2/where-time-goes.txt (each test line appears twice there; halve sums). Your suites, heaviest first:
+1. BenchmarkTests (112 CPU-s in a […3122 more chars]
+
+[2026-10-31 17:23] ASSISTANT:
+Three fixers are running in their own clones. Meanwhile I'm taking step 7: compiling the big test targets across cores. TypesTests' 90 s single-core compile is the critical path of a cold build.
+
+[2026-10-31 17:33] WRITE /private/tmp/claude-501/-Users-zekenie-code-native-canvas/03392457-3d35-4667-ae53-42a5c85ddd8c/scratchpad/m2/design.py:
+"""The incremental design's costs for a test target (scratch): objects without the module, in batch
+mode with -j JOBS and -incremental, full and after one file changes, and the module alone, against
+build.sh's -wmo compile. usage: python3 design.py TARGET OUTDIR JOBS"""
+import json, os, resource, shlex, shutil, subprocess, sys, time
+
+target, out, jobs = sys.argv[1], os.path.abspath(sys.argv[2]), sys.argv[3]
+command = shlex.split(open(f'build/debug/{target}/.object').readline())
+srcs = [a for a in command if a.endswith('.swift')]
+i = command.index('-output-file-map')
+wmo = [a for a in command[:i] + command[i + 2:] if not a.endswith('.swift')]
+plain = [a for a in wmo if a != '-wmo']
+k = plain.index('-num-threads'); plain = plain[:k] + plain[k + 2:]
+k = plain.index('-emit-module'); plain = plain[:k] + plain[k + 3:]
+
+def run(label, args):
+    before = resource.getrusage(resource.RUSAGE_CHILDREN)
+    start = time.time()
+    done = subprocess.run(args, capture_output=True, text=True)
+    after = resource.getrusage(resource.RUSAGE_CHILDREN)
+    cpu = (after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)
+    print(f'  {label:44s} wall {time.time() - start:6.1f} s  cpu {cpu:6.1f} s  status {done.returncode}', flush=True)
+    if done.returncode:
+        print(done.stderr[-1500:])
+
+shutil.rmtree(out, ignore_errors=True); os.makedirs(f'{out}/wmo/module'); os.makedirs(f'{out}/inc')
+print(f'{target}: {len(srcs)} sources, load {os.getloadavg()[0]:.1f}', flush=True)
+json.du […1109 more chars]
+
+[2026-10-31 17:53] ASSISTANT:
+While it builds, I'm updating the build topic file to describe debug's incremental compiles.
+
+[2026-10-31 17:53] EDIT .claude/worktrees/test-speed-2/.claude/rules/build.md:
+A module's code compiles to an object per source at fixed paths (through an output file map), so the same inputs make the same bytes, and what comes out the same isn't replaced: an edit inside a function recompiles only its module and links the executables again, and a touch or a checkout that changes nothing links nothing. In release a module compiles whole (`-wmo`, `-num-threads 4`); in debug incrementally (the driver's `-incremental`, its record of each source kept in the module's `incremental` folder, each object named by its source's path), in one batch, so a source edited compiles again alone, with the sources that depend on what changed in it, and a library's edit is about a second where the whole module took 8 to 12 (Types). An executable's module for the debugger is a job of the driver's beside the batch, made whole whatever changed, as a test target's global suites can't be skipped (TypesTests' about 13 s): a test file edited there builds in about 19 s where the whole module took 41, and a full build costs what it did (two or four batches cost a third to a half more CPU, each reading every imported module).
+
+[2026-10-31 17:53] ASSISTANT:
+Waiting on the full rebuild; the three fixers are still working.
+
+[2026-10-31 17:53] ASSISTANT:
+The code reads right. Still waiting on the rebuild.
+
+[2026-10-31 17:54] WRAP-UP:
+Done so far on branch test-speed-2: shared timings, guide edits only rerunning their reader, and per-test budget marks, committed as WIP. Incremental debug compiles are written and rebuilding now. Three fixers are cutting CPU in their own clones. Nothing has landed yet.
+Ask:
+
+[2026-10-31 17:56] WRAP-UP:
+Committed as WIP on branch test-speed-2: shared timings, guide edits rerunning only their reader, and per-test budget marks. Incremental debug compiles are written; the worktree is cold-rebuilding after a check script of mine wiped its build folder. Three fixers are still working. Nothing has landed.
+Ask:
+
+[2026-10-31 17:56] ASSISTANT:
+Steps 2–4 are done and committed as WIP on branch `test-speed-2`; nothing has landed.
+
+- **Shared timings:** a new worktree's first run now shards using the timings other checkouts kept. Measured today, that first run took 438 s, because without timings CompositionTests ran as a single 410 s process.
+- **Docs counted per executable:** a guide edit now reruns only CompositionTests, the one executable that reads the guide, instead of all 60.
+- **Budgets marked per test:** only the tests that measure CPU time wait for the quiet tail at the end. StickyNotesTests' share of that tail drops from 7 s to 0.2 s, and MentionsTests' from about 9 s to 1.2 s.
+
+Step 7, incremental debug compiles, is written but not verified yet:
+
+| TypesTests compile | Before | After |
+|---|---|---|
+| Full rebuild | 41.5 s, 51 s of CPU | 37 s, 54 s of CPU |
+| One test file edited | 41 s | 19 s |
+| One library source edited | 8–12 s | about 1 s |
+
+Release builds still compile each module whole.
+
+A check script of mine ran `build.sh` from `/usr/bin/python3`, and that environment pointed it at the macOS 27 SDK. The compiler rejected that SDK, and `build.sh` wiped `build/debug` because its flags had changed. So the worktree is doing a cold rebuild before I re-run the checks. Nothing outside `build/debug` was touched.
+
+The three fixer agents are still running, each in its own clone. One is moving the tests that don't use the app out of CompositionTests, and two are cutting CPU in the heaviest suites. Once they report I'll merge their work, get it reviewed, and time before against after.
+
+[2026-10-31 18:01] NOTICE:
+background task completed: Background command "Cold-build the worktree again with incremental compiles" completed (exit code 0)
+
+[2026-10-31 18:06] ASSISTANT:
+All four checks pass, including the rename: changing a helper's name where it's declared makes the build fail in the files that use it. Committing step 7.
+
+[2026-10-31 18:06] GIT:
+rm measure-test.sh; git add build.sh test.sh .claude/rules/build.md && git commit -q -m "WIP: debug compiles incrementally, in one batch, the debugger's module beside it" && git log --oneline -2
+
+[2026-10-31 18:07] ASSISTANT:
+Step 7 is committed. While the fixers work, I'm building a clone of the base commit for the before/after timings.
+
+[2026-10-31 18:07] WRAP-UP:
+Incremental debug compiles pass every check and are committed as WIP on test-speed-2, with the shared timings, per-test budgets and docs-per-executable work. The base clone for timings is building. The three fixers are still running. Nothing has landed.
+Ask:
+
+[2026-10-31 18:07] ASSISTANT:
+Step 7, incremental debug compiles, passed every check and is committed as WIP on `test-speed-2`:
+
+- **Edit undone:** a one-file edit undone gives back byte-identical TypesTests, FramesTests and CompositionTests binaries.
+- **File added, then removed:** it leaves no stale object in the link.
+- **Helper renamed where declared:** the files that use it recompile and the build fails, as it should.
+- **Library edit:** a one-line change in Frames compiles in about a second.
+
+I'm building a clone of the base commit for the before/after timings. The three fixers are still working in their own clones. Nothing has landed.
+
+[2026-10-31 18:11] NOTICE:
+background task completed: Background command "Build the base clone's tests" completed (exit code 0)
+
+[2026-10-31 18:11] ASSISTANT:
+The base clone is built. Waiting on the three fixers before I merge their work, review it and time it.
+
+[2026-10-31 18:49] ASSISTANT:
+The skills fixer is done. Before merging, I'm checking one thing it reported: it got past the audit's id check by building some words from two parts and renaming test data, which may be gaming the check rather than fixing anything.
+
+[2026-10-31 18:50] GIT:
+git merge -q --no-edit fixers/fix-skills && git log --oneline -1 && git status --short
+
+[2026-10-31 18:50] ASSISTANT:
+Merged. Now restoring the original words. Reading the original versions of the renamed test data.
+
+[2026-10-31 18:51] ASSISTANT:
+Words restored and the `Word` enum deleted. Now the audit exemption: a named list in build.sh, with the reason, covering SkillToolsTests and its support module SkillTesting.
+
+[2026-10-31 18:51] EDIT .claude/worktrees/test-speed-2/.claude/rules/build.md:
+so no edit to a plugin relinks or reruns it ([testing](testing.md)). The id check doesn't read it or SkillTesting (`FORMAT_TESTS`): they speak the tools' formats, a digest's kinds (`sticky-note`, `subboard`) and keys (`title`, `fieldValues`) and a scan's visibility (`public`), the shipped kinds' and properties' ids as a file writes them, as the tools themselves, which the check doesn't read either, do.
+
+[2026-10-31 18:52] ASSISTANT:
+The audit passes with the exemption and the original words. Building the merged tree, then running SkillToolsTests and CompositionTests.
+
+[2026-10-31 18:52] ASSISTANT:
+While that runs, I'm reading the rest of the skills fixer's diff.
+
+[2026-10-31 18:52] ASSISTANT:
+The rest of the move reads well: helpers are shared, not duplicated, and the suites are sized for sharding. Waiting on the test run and the two remaining fixers.
+
+[2026-10-31 19:03] NOTICE:
+background task completed: Background command "Build the merge and run the two skill-test executables" completed (exit code 0)
+
+[2026-10-31 19:04] ASSISTANT:
+Both pass with the original words: SkillToolsTests 31 and CompositionTests 877, the 908 tests there were before. Committing the fix.
+
+[2026-10-31 19:04] GIT:
+git add -A Tests/SkillToolsTests Tests/SkillTesting build.sh .claude/rules/build.md && git status --short && git commit -q -m "The skills' tool tests write their formats' words as the formats do: the audit's id check doesn't read them, as it doesn't read the tools
+
+The move had spelled sticky-note, subboard, public, title and fieldValues in two parts, and renamed test data (ports, Core, types), only so the id check wouldn't see them. Those words are the digest's and the scan's, not uses of a plugin, and SkillToolsTests links no plugin by design; build.sh's FORMAT_TESTS says so where the check is." && git log --oneline -1
+
+[2026-10-31 19:04] ASSISTANT:
+The skills tests are merged and pass: 31 in the new SkillToolsTests and 877 left in CompositionTests, the same 908 as before. Plugin edits no longer rerun the 31 moved tests, which together cost about 190 CPU-seconds.
+
+I fixed one problem in that agent's work before merging it. To get past the audit's id check, it had built five format words from two halves (`"sticky" + "-note"`) and renamed some test data (`ports`, `Core`, `types`). I put every original word back, deleted the helper that split them, and instead added a named exemption to `build.sh`. It says why those words are allowed: they belong to the digest and scan file formats, and SkillToolsTests deliberately links no plugin. The build topic file, `.claude/rules/build.md`, says the same.
+
+The other two fixers are still working, one on TypesTests and one on five other heavy suites. Nothing has landed.
+
+[2026-10-31 19:23] ASSISTANT:
+The TypesTests fixer reports about 20% fewer instructions over a full run, with the same 1,397 tests. Reviewing its diff for anything that weakens a check before merging.
+
+[2026-10-31 19:23] GIT:
+git merge -q --no-edit fixers/fix-types && git log --oneline -1; grep -rn 'awaitPromptly' Tests | cut -c1-120; grep -rlE 'awaitResult|spinRunLoop' Tests | sed -E 's#Tests/([^/]+)/.*#\1#' | sort | uniq -c | sort -rn | head -15
+
+[2026-10-31 19:23] ASSISTANT:
+Before changing TestKit's wait loop, one risk to rule out: with nothing to wait on, `run(mode:before:)` could return at once and spin a core. Checking with a one-second wait.
+
+[2026-10-31 19:23] ASSISTANT:
+Safe: idle, it blocks (360 turns a second, no spinning), and with work pending it returns as soon as each piece is handled. Moving the fix into TestKit and dropping the private copy.
+
+[2026-10-31 19:24] EDIT .claude/worktrees/test-speed-2/.claude/rules/types.md:
+
+
+[2026-10-31 19:24] ASSISTANT:
+`awaitPromptly` is gone; its one caller uses TestKit's `awaitResult` again, which now waits as promptly. Building and running TypesTests on the merged tree.
+
+[2026-10-31 19:24] ASSISTANT:
+While that runs, I'm checking how `FreshReads` decides a step left the file unchanged, since that decides when a second editor is reused.
+
+[2026-10-31 19:24] ASSISTANT:
+`FreshReads` reuses an editor only when the whole `CanvasFile` value is equal, an exact comparison, so the oracle is unchanged. Waiting on the TypesTests run and the last fixer.
+
+[2026-10-31 19:26] NOTICE:
+background task completed: Background command "Build and run TypesTests on the merged tree" completed (exit code 0)
+
+[2026-10-31 19:26] ASSISTANT:
+Two new failures appeared, both "a call out when the file closes is cancelled". That smells like my TestKit wait change rather than load. Reading the test.
+
+[2026-10-31 19:27] ASSISTANT:
+Both pass now. The only TypesTests failures left are the two CPU-budget tests that also fail on the untouched base binary under this load; I'll recheck them when the machine is quieter. Committing.
+
+[2026-10-31 19:27] GIT:
+git add Tests/TestKit/TestKit.swift Tests/TypesTests/Support.swift Tests/TypesTests/RelationshipAgreementTests.swift Tests/TypesTests/SyncTests.swift Tests/TypesTests/FillTests.swift .claude/rules/types.md && git commit -q -m "TestKit's wait ends a turn once a source is handled, so an answer in after 300 µs isn't waited out for 2 ms
+
+The TypesTests pass had made a private copy of awaitResult for one hot loop; the fix belongs to every test that waits. Two tests had waited for a call to stop holding and then checked that it ended, which the old turn's leftover 2 ms covered; they now wait for what they check." && git log --oneline -1; uptime
+
+[2026-10-31 19:28] ASSISTANT:
+Running the full suite on the merged tree now, to catch any other test that leaned on the old wait's leftover time.
+
+[2026-10-31 19:28] ASSISTANT:
+Two of three fixers are merged:
+- **Skills fixer:** its move of the app-free tests is in, with the original words restored and a documented audit exemption replacing the split-string workaround.
+- **TypesTests fixer:** its changes cut about 20% of TypesTests' instructions, with all 1,397 tests unchanged.
+
+I also moved its faster wait into TestKit, so every test that waits gets it. That exposed two tests that had been passing only thanks to the old wait's leftover 2 ms; both now wait for what they then check. A full run of the merged tree is going now to find any more like them. The third fixer, working on BenchmarkTests and four other heavy suites, is still running.
+
+[2026-10-31 19:33] NOTICE:
+background task completed: Background command "Run the whole suite on the merged tree" completed (exit code 0)
+
+[2026-10-31 19:33] ASSISTANT:
+The other waits in the suite check exactly what they waited for, so this was the last of the pattern. Rerunning ProseMapsTests.
+
+[2026-10-31 19:33] GIT:
+./test.sh ProseMapsTests 2>&1 | tail -2; git add Tests/ProseMapsTests/ServiceTests.swift && git commit -q -m "ProseMapsTests' closing call waits for what it then checks, as the two in TypesTests now do" && git log --oneline -1
+
+[2026-10-31 19:33] ASSISTANT:
+Both suites hold only budget tests, so my change runs them exactly as before. The failures come from machine load, but I'll confirm with a direct comparison of the base and new binaries, alternating.
+
+[2026-10-31 19:34] ASSISTANT:
+Instructions retired: base 8.16 billion, new 8.27–8.30 billion, about 1.5% more. The new binary does a little more work, likely from the incremental build. The budget failures themselves come from load: under the same load the base binary also failed once, at 137 ms. I'll weigh that 1.5% in the final before/after totals. Waiting on the last fixer.
+
+[2026-10-31 19:37] ASSISTANT:
+The last fixer is done. Before merging, one item in its report needs fixing first: it says TestKit's release build fails at my WIP commit with `sending 'suites' risks causing data races`. That would break `./build.sh bench`. Reproducing it.
+
+[2026-10-31 19:37] ASSISTANT:
+Reproduced. Checking whether main's TestKit compiles in release, which tells me whether my change caused this.
+
+[2026-10-31 19:37] ASSISTANT:
+The fixed TestKit compiles in release. Merging the last fixer's branch.
+
+[2026-10-31 19:38] GIT:
+git add Tests/TestKit/TestKit.swift && git commit -q -m "TestKit compiles in release again: keep() is a loop, since a closure capturing the suites is refused there (./build.sh bench failed since b4230774)" && git merge -q --no-edit fixers/fix-other && git log --oneline -3 | cat; git status --short
+
+[2026-10-31 19:38] ASSISTANT:
+Merged. Reading the two changes from that branch I'm least sure of: the reach census sending ⌥Tab without a run-loop turn, and the production change in Topology.
+
+[2026-10-31 19:54] ASSISTANT:
+API Error: Your computer went to sleep mid-response. The response above may be incomplete.
+
+[2026-10-31 19:55] ASSISTANT:
+Jev picks Sonnet for all of them, at high effort for the two fixers' diffs and medium for the rest. Launching the review workflow; the reviewers read only, with no builds or test runs.
+
+[2026-10-31 19:55] WORKFLOW:
+Review the second test-speed branch by area, then try to refute each finding twice
+
+[2026-10-31 19:55] ASSISTANT:
+All three fixers are merged, and I fixed one problem in that work: TestKit didn't compile in release builds, so `./build.sh bench` has been failing on main since this morning's landing.
+
+Two things are running now:
+- **Full suite:** a run of the whole merged tree.
+- **Review:** a review workflow with seven area reviewers and two skeptics per finding.
+
+Once both finish I'll fix what holds up, then time the base clone against the branch. Nothing has landed.
+
+[2026-10-31 20:00] NOTICE:
+background task completed: Dynamic workflow "Review the second test-speed branch by area, then try to refute each finding twice" completed
+
+[2026-10-31 20:01] EDIT .claude/worktrees/test-speed-2/.claude/rules/digest.md:
+(nine suites, `digestSmallTests` to `digestRepeatTests`)
+
+[2026-10-31 20:01] EDIT .claude/worktrees/test-speed-2/.claude/rules/testing.md:
+The audit takes a quoted word that is a plugin's id for a use of that plugin, and these tests depend on none, so its id check doesn't read SkillToolsTests or SkillTesting (`FORMAT_TESTS`, [build](build.md)): a word of the digest or scan formats that is one (a node's kind `sticky-note` or `subboard`, a declaration's visibility `public`, a node's `title` and `fieldValues`) is written as the formats write it.
+
+[2026-10-31 20:01] GIT:
+git add build.sh Tests/CompositionTests/QueryCommandLineTests.swift Tests/ReferencesTests/ClosingTests.swift .claude/rules/testing.md .claude/rules/digest.md && git commit -q -m "The review's fixes: two more closing calls wait for what they check, testing.md says the audit's exemption rather than a Word enum, digest.md counts nine suites, build.sh's comments apart again" && git log --oneline -1
+
+[2026-10-31 20:01] ASSISTANT:
+The review's fixes are committed. Waiting for the merged tree's full run, then I'll rerun the two executables I just touched.
+
+[2026-10-31 20:05] NOTICE:
+background task completed: Background command "Build the merged tree and run the whole suite" completed (exit code 0)
+
+[2026-10-31 20:07] COMMIT MESSAGE FILE commit-message.txt:
+Tests rerun less after an edit, compile in seconds after one, and a new worktree's first run is dealt into shares
+
+The first pass (b4230774) took a full run from 373 s to about 160 to 220. The owner asked whether more
+was there, without degrading code or tests. Measured on a quiet machine, a full run was close to what
+the CPU could do (990 CPU-seconds), so what was left was waste in what reruns after an edit and in what
+a run costs before it starts:
+- a new worktree's first run had no timings to deal shares by, so each executable ran as one process,
+  CompositionTests alone for 410 s, its first full run 438 s, and the budget tests among the rest;
+- the guide, which most commits change, counted for all 60 executables, though one test reads it;
+- CompositionTests, rerun after any plugin's edit, held the digest tool's unit tests under jsc and the
+  ingest tests that start no app (about 120 CPU-seconds whose outcome no plugin can change);
+- a suite with one time budget waited whole in the quiet tail;
+- a test target compiled whole on one core: TypesTests 40 s, 90 s in a cold build's contention, after
+  any edit to one of its files.
+
+What changed, and why each is no weaker:
+- test.sh: a checkout with no timings of its own deals by the latest any checkout of the repository
+  kept, in the git common folder (test-times/<test>, written whole after each whole run); times and
+  budget marks only, never whether a test passed. Markdown outside .claude/skills and Tests counts for
+  the executables whose sources, or the test support's, name it, the rule it already had, per executable.
+- TestKit: a test that measures with threadCPUTime is marked itself ("seconds<TAB>suite<TAB>budget<TAB>
+  test"); the budget share runs those tests, the rest of their suites run with everything else. An old
+  three-field line marks a whole suite, so a checkout's first run after this keeps its budgets quiet.
+  spinRunLoop's turn ends once a source is handled (run(mode:before:)), where run(until:) waited out
+  2 ms after every answer; five tests that waited for a call to stop holding and then checked that it
+  ended, which the leftover 2 ms had covered, now wait for what they check. keep() is a loop: the maps
+  it was refused to compile in release ("sending 'suites' risks causing data races"), so ./build.sh
+  bench has failed since b4230774.
+- build.sh: debug compiles a module incrementally (the driver's -incremental, one batch, its record in
+  build/debug/<M>/incremental, each object named by its source's path), release whole as before, -g and
+  DEBUG kept and the debugger's module still made (a job of the driver's beside the batch). Checked: an
+  edit taken back gives byte-identical binaries, a file added then removed leaves no object, a helper
+  renamed where declared fails its users. Two or four batches cost a third to a half more CPU in a full
+  build, so one.
+- SkillToolsTests (new, TestKit, CanvasRPC and SkillTesting, which imports no plugin): the canvas-digest
+  tool's unit tests and the 23 ingest tests that need no app, moved whole from CompositionTests (908
+  tests before, 877 + 31 after). The audit's id check doesn't read the two (FORMAT_TESTS): their words
+  are the digest's and the scan's formats (sticky-note, subboard, public), written as the formats write
+  them. (The agent that moved them had spelled those words in two parts, and renamed test data, to get
+  past the check; that was put back.)
+- Fixers, each in a scratch clone, by pattern, with test counts unchanged: TypesTests (about 20% fewer
+  instructions: a second editor reused for a file a step left as one of the last three had it, compared
+  by CanvasFile's ==; one registry per plugin list that holds nothing of its own; the run fuzz's runs
+  made once for the three tests that read them; renders scanned a distinct pixel value at a time);
+  bitmap comparisons skip byte-equal rows (MentionsTests' Drawing 26 to 2 CPU-seconds, with a suite that
+  holds the helpers to getPixel); the reach census walks ⌥Tab without a window redraw after each key,
+  its reached and gap lists byte-identical; BenchmarkTests take at most 3 timings a figure in debug,
+  where every figure is only reported and Scaling has one size (release unchanged; its checks count the
+  runs made).
+- One production change: Topology's lookups asked CanvasFile.canShow per board, each walking to the
+  root, so a chain of 2,000 boards cost the sum of its depths; ShowableBoards answers each board from the
+  one above it, the same answers.
+
+Measured (alternating base and branch, load as it was):
+<TIMINGS>
+
+Known and not done: the budget tests at their edge (relationshipLanding, farPick, the unnamed listing)
+fail when other sessions saturate the machine, base and branch alike; debug code compiled incrementally
+retires about 1.5% more instructions (TypesTests' landing test, 8.16 G to 8.29 G); a test-file edit
+still waits about 13 s for the debugger's module of a big test target (its global suites are
+type-checked whole); a worktree's cold build is still a cold build (the build goes by modification
+times, and objects carry their checkout's paths).
+
+Session: history/sessions/<record>/
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-10-31 20:07] ASSISTANT:
+The draft is written; the numbers go in when the timings finish. Waiting on them.
+
+[2026-10-31 20:34] NOTICE:
+background task completed: Background command "Time base against branch across the scenarios" completed (exit code 0)
+
+[2026-10-31 20:34] ASSISTANT:
+The numbers are in but noisy: other sessions pushed the load anywhere from 2 to 59 between runs. Checking which executables each edit scenario actually ran before reading anything into them.
+
+[2026-10-31 20:34] ASSISTANT:
+Two more steady pairs are running (about 15 minutes), alternating branch and base, so the full-run number isn't a single draw.
+
+[2026-10-31 20:51] NOTICE:
+background task completed: Background command "Time two more steady full-run pairs" completed (exit code 0)
+
+[2026-10-31 20:52] COMMIT MESSAGE FILE commit-message.txt:
+Measured against a clone of main (2d94693c), alternating, on a machine other sessions loaded (load
+2 to 59, so single figures move; medians where there were several):
+- a new worktree's first full run: 425 s to 215 s;
+- a full run (TEST_ALL=1), three pairs: base 251, 373 and 237 s, branch 212, 209 and 207 s;
+- an edit to Frames, then ./test.sh: 150 s to 113 s (the branch also reran MentionsTests, whose
+  load-sensitive ratio had failed in the run before);
+- the build after an edit to a TypesTests file: 35 s to 20 s;
+- an edit to the guide, then ./test.sh: 2 executables rerun, not 61.
+Per suite, from the fixers' alternating runs (CPU, or instructions where load moved CPU): TypesTests
+1465 G to 1176 G instructions; MentionsTests 42.7 to 14.1 s; BenchmarkTests 112 to 36 s; the census 47
+to 27 s; TopologyTests 10.0 to 7.3 s; StickyNotesTests 11.4 to 6.6 s; ArrowsTests 9.5 to 6.4 s.
+
+[2026-10-31 20:52] ASSISTANT:
+The numbers are in the commit message. Waiting on the release build.
+
+[2026-10-31 20:52] ASSISTANT:
+The branch is clean: 29 commits, 54 files. Waiting on the release build to confirm `./build.sh bench` works again.
+
+[2026-10-31 20:54] NOTICE:
+background task completed: Background command "Build the benchmarks in release to check it compiles" completed (exit code 0)
+
+[2026-10-31 20:54] WRAP-UP:
+The second test speed-up is done and reviewed on branch test-speed-2 (29 commits): a new worktree's first full run takes 215 s instead of 425, a full run 208 s instead of about 251, and edits rerun and rebuild less. Every test still runs as strictly as before. Nothing has landed.
+Ask: Land it on main as one commit with its session record?
+
+[2026-10-31 20:54] ASSISTANT:
+The second round is done and reviewed on branch `test-speed-2`, and every test checks what it did before. I timed a clone of main against the branch, alternating, while other sessions were loading the machine:
+
+| | main | branch |
+|---|---|---|
+| A new worktree's first full run | 425 s | 215 s |
+| Full run (median of 3 pairs) | ~251 s | ~208 s |
+| Edit a plugin (Frames), then `./test.sh` | 150 s | 113 s |
+| Build after editing a TypesTests file | 35 s | 20 s |
+| Edit the guide, then `./test.sh` | reruns all 61 | reruns 2 |
+
+**What changed:**
+- **Fresh worktrees:** a new worktree's first run now splits test executables using the timings other checkouts saved. Before, it ran each executable as one process, and CompositionTests alone took 410 s. Only timings are shared between checkouts, never whether a test passed.
+- **Guide edits:** a change to `docs/plugin-system.md` now reruns only the two executables whose tests name it, not every executable.
+- **Time-budget tests:** only the tests that measure CPU time wait until the end of the run; the rest of their suites run with everything else.
+- **Incremental debug builds:** editing one source now recompiles that file alone. Release builds, `-g` and `DEBUG` are unchanged. An edit undone gives a byte-identical binary.
+- **SkillToolsTests:** 31 tests that never start the app moved out of CompositionTests into this new target, so a plugin edit no longer reruns them. The total is still 908.
+- **Heavy suites:** CPU cuts in TypesTests (about 20% fewer instructions), MentionsTests, BenchmarkTests, the reach census and Topology. Test counts are unchanged.
+- **One production change:** a Topology lookup that grew with the square of how deeply boards are nested. It gives the same answers.
+
+**Fixed along the way:**
+- `./build.sh bench` has failed on main since this morning's landing (b4230774). TestKit didn't compile in release; it does now, and the release build passes.
+- Five tests passed only because of a 2 ms delay that TestKit's wait used to add. They now wait for exactly what they check.
+- To get its words past the audit's id check, the agent that moved the skill tests had split them into two parts (like `"sticky" + "-note"`) and renamed some test data. I put every original word back, and the build script now says plainly why those two targets are exempt from that check.
+
+**Calls I made that you may want to know about:**
+- In debug runs, the benchmarks take at most 3 timings per figure. Those figures are only reported, never checked; release benchmarks are unchanged.
+- The reach census no longer redraws the window after every ⌥Tab. Its results were byte-identical to before.
+
+**Known limits:**
+- The time-budget tests that sit at their limit still fail when other sessions saturate the machine. That's equally true on main and the branch.
+- Debug code now runs about 1.5% more instructions, most likely because it's compiled one file at a time.
+- Editing a file in a big test target still waits about 13 s for the module the debugger reads.
+- A new worktree's first build is still a full build from scratch.
+
+The review went through every area of the change, with two skeptics per finding, and everything it upheld is fixed. The last full run passed except `relationshipLanding`, a time-budget test, while the machine's load was around 70.
+
+Shall I land it on main as one commit with its session record?
+
+[2026-10-31 21:39] USER:
+Yes, land it
+
+[2026-10-31 21:40] GIT:
+git log --oneline -1 main | cut -c1-100; git rev-list --count HEAD..main; git merge-base HEAD main | cut -c1-8
+
+[2026-10-31 21:40] ASSISTANT:
+Main hasn't moved since the branch was cut, so there's nothing to merge. Writing the session record.

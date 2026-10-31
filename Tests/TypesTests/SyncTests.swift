@@ -1107,7 +1107,7 @@ let pet = petSchema.replacingOccurrences(of: "  \"title\": \"Pet\",\n", with: ""
         b?.typeWords(waiting, "a car and who owns it")
         expectEqual(scheduler.pendingCount, before + 1, "the edit waits 3 s")
         b = nil
-        spinRunLoop(until: { model.waiting == 0 })
+        spinRunLoop(until: { model.waiting == 0 && model.answered == 1 })
         expect(closing == nil, "the editor went as its file closed")
         expectEqual(model.waiting, 0, "the call isn't left holding")
         expectEqual(model.answered, 1, "it ended: cancelled")

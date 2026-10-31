@@ -112,6 +112,8 @@ final class CensusBoard {
         // so it is drawn in 8 bits of sRGB, not the screen's half-floats (a third of the time of the census).
         m.window.colorSpace = .sRGB
         m.window.depthLimit = .twentyfourBitRGB
+        // And at a pixel a point, not the screen's two (a quarter of the pixels each turn's redraw blends).
+        m.canvas.layer?.contentsScale = 1
         start = editor.document
         startTool = editor.currentToolID
         startZoom = editor.camera.zoom
@@ -189,11 +191,15 @@ final class CensusBoard {
         return effect()
     }
 
-    /// ⌥Tab from the shape until its part `part` has the keyboard: whether it got there, at most once round.
+    /// ⌥Tab from the shape until its part `part` has the keyboard: whether it got there, at most once round. A ⌥Tab moves the focus
+    /// at once and sets nothing off that a turn of the run loop lands (the run loop's turn is a redraw of the whole window, most of
+    /// what the census costs), so the keys on the way land only what the scheduler has due, and the turn comes once, when the walk ends.
     func reach(_ part: ShapePart, of shape: ShapeID) -> Bool {
         let count = editor.shapeParts(of: shape).count
+        defer { settle() }
         for _ in 0...count {
-            press(.optionTab)
+            walk.driver.send(.optionTab)
+            m.h.scheduler.advance(by: .zero)
             if editor.focusedPart?.id == part.id { return true }
         }
         return false
@@ -342,9 +348,9 @@ extension CensusBoard {
                     }
                     continue
                 }
-                let clicked = click(at: at)
-                reset(selecting: shape)
+                // What the board is after a reset, before the click (a reset leaves it the same each time).
                 let unchanged = effect()
+                let clicked = click(at: at)
                 if clicked == unchanged {
                     report.reached.append("\(line): a click only selects the shape, which Tab does")
                     continue

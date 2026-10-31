@@ -571,9 +571,10 @@ private let holder = #"""
             guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return 0 }
             view.cacheDisplay(in: view.bounds, to: rep)
             var count = 0
+            let colors = PixelColors(rep, in: .sRGB)
             for y in 0..<rep.pixelsHigh {
                 for x in 0..<rep.pixelsWide {
-                    guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), color.alphaComponent > 0.2 else { continue }
+                    guard let color = colors[x, y], color.alphaComponent > 0.2 else { continue }
                     if color.redComponent > 0.7, color.greenComponent < 0.45, color.blueComponent < 0.45 { count += 1 }
                 }
             }

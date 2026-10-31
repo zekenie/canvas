@@ -368,7 +368,7 @@ final class FillBench {
         b?.typeWords(waiting, "about 3 days")
         expectEqual(scheduler.pendingCount, before + 1, "the edit waits 3 s")
         b = nil
-        spinRunLoop(until: { model.waiting == 0 })
+        spinRunLoop(until: { model.waiting == 0 && model.answered == 1 })
         expect(closing == nil, "the editor went as its file closed")
         expectEqual(model.answered, 1, "it ended: cancelled")
         expectEqual(scheduler.pendingCount, before, "the wait went with it")

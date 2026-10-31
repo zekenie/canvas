@@ -738,6 +738,11 @@ audit_sources() {
     # (`id_declaration`), and the product check, after, reads the same form for ShapeKind, through
     # `declarations`.
     ORDINARY_IDS=(color frame is schema)
+    # The tests of what agents run outside the app, the skills' tools, and their support, speak those
+    # tools' formats: a digest's kinds and keys and a scan's visibility, whose words are the shipped
+    # kinds' and properties' ids as a file writes them. They link no plugin, so that no edit to one
+    # reruns them, and the check doesn't read them, as it doesn't read the tools.
+    FORMAT_TESTS=(SkillTesting SkillToolsTests)
     id_declaration() {  # a regex for a declaration of an id of one of the types $1 (alternatives, in a group)
         print -r -- '((let|var)[[:space:]]+id|static[[:space:]]+(let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)[[:space:]]*(:[[:space:]]*('$1')[[:space:]]*(=|\{)|=[[:space:]]*('$1')\((rawValue:)?)[[:space:]]*"[^"\\]+"'
     }
@@ -767,7 +772,7 @@ audit_sources() {
     if (( ${#ID_OWNERS} )); then
         for id in ${(k)ID_OWNERS}; do print -r -- "id"$'\t'"$id"$'\t'"$ID_OWNERS[$id]"; done > $AUDIT/owners
         for name in $NAMES; do print -r -- "sees $name ${VISIBLE[$name]:-}"; done >> $AUDIT/owners
-        problems+=(${(f)"$(cat -- $AUDITED/modules/${^NAMES}.uses | awk -v owners=$AUDIT/owners -v q="'" '
+        problems+=(${(f)"$(cat -- $AUDITED/modules/${^${NAMES:|FORMAT_TESTS}}.uses | awk -v owners=$AUDIT/owners -v q="'" '
             BEGIN {
                 while ((getline line < owners) > 0) {
                     if (substr(line, 1, 3) == "id\t") { split(line, f, "\t"); owned[f[2]] = f[3] }
@@ -930,11 +935,14 @@ keep_changed() {
 #              other modules can inline only what it keeps of the module (public static lets'
 #              values), never what cross-module optimization makes of its functions: nothing is
 #              @inlinable, and the benchmarks measured no difference.
-#   object     its code, from the same, an object per source (LLVM's work on them spread over
-#              OBJECT_THREADS threads) at fixed paths, so the same inputs make the same bytes; a
-#              library's are archived (lib<name>.a), in the order of its sources. In debug an
-#              executable's job emits its module too, which its link names for the debugger (as
-#              swiftc -g does when it compiles and links at once).
+#   object     its code, from the same, an object per source at fixed paths, so the same inputs make
+#              the same bytes; a library's are archived (lib<name>.a), in the order of its sources.
+#              In release the module is compiled whole (LLVM's work spread over OBJECT_THREADS
+#              threads); in debug incrementally, so a source edited compiles again alone, with what
+#              depends on what changed in it (the driver's record of each source is kept in the
+#              module's folder, `incremental`). In debug an executable's job emits its module too,
+#              which its link names for the debugger (as swiftc -g does when it compiles and links at
+#              once).
 #   link       an executable, from its objects and every library it depends on, and, for one that
 #              is the product, the product's text files (SHIPPED_TEXTS).
 #   parts      for a module that has parts (Package.swift's table), each part type-checked with only
@@ -949,6 +957,12 @@ keep_changed() {
 # adds protocol conformances), so no code that nothing names is dropped (where `as? any Capability`
 # would then quietly fail). Each prints "compiled" or "linked" when it did.
 OBJECT_THREADS=4
+# Debug compiles what changed in one batch (the driver's one job, which reads each module imported
+# once: two or four batches cost a third to a half more CPU for a full build, as each reads them
+# all), and an executable's module for the debugger in a job beside it. TypesTests' 139 sources:
+# whole, 41.5 s for 51 s of CPU; incrementally, all of them 37 s for 54 s, one edited 19 s for 20 s,
+# which is the module, made whole whatever changed (its global suites can't be skipped); a library
+# has none, so one source edited is about a second.
 # Fails the job if module $1's sources ($2...) aren't as they were when this build began (READS): an
 # interface and an object compiled from different edits would link, and run wrong.
 as_begun() {
@@ -984,20 +998,50 @@ build_job() {
                 products+=($dir/$name.swiftmodule)
             fi
         fi
-        # Each source's object, named by its place in the list, so two sources of one name don't collide.
-        for src in $srcs; do objects+=$dir/object/$(( ${#objects} + 1 )).o; done
-        local compile=($SWIFTC $entry -c -num-threads $OBJECT_THREADS $module -module-name $name $includes
-                       -output-file-map $dir/object/objects.json $srcs)
+        local compile work=$dir/object deps=() n
+        if [[ $CONFIG == debug ]]; then
+            # In debug, incrementally (above), in a folder kept from build to build: each source's
+            # object named by its path, since the driver goes by what it compiled to before.
+            work=$dir/incremental
+            for src in $srcs; do
+                objects+=$work/${${src#$DIR[$name]/}//\//+}.o
+                deps+=$work/${${src#$DIR[$name]/}//\//+}.swiftdeps
+            done
+            [[ -n $module ]] && module=(-emit-module -emit-module-path $work/module/$name.swiftmodule)
+            compile=(${SWIFTC:#-wmo} $entry -c -incremental -enable-batch-mode -driver-batch-count 1 -j 2 $module
+                     -module-name $name $includes -output-file-map $work/objects.json $srcs)
+        else
+            # Each source's object, named by its place in the list, so two sources of one name don't collide.
+            for src in $srcs; do objects+=$dir/object/$(( ${#objects} + 1 )).o; done
+            compile=($SWIFTC $entry -c -num-threads $OBJECT_THREADS $module -module-name $name $includes
+                     -output-file-map $dir/object/objects.json $srcs)
+        fi
         STAMP=$dir/.object
         local product; for product in $products; do [[ -e $product ]] || rm -f -- $STAMP; done
         up_to_date $compile && return 0
-        rm -rf -- $dir/object; mkdir -p $dir/object
-        { print '{'; for src in $srcs; do print -r -- "  \"$src\": {\"object\": \"$objects[1]\"},"; shift objects; done; print '  "": {}'; print '}' } > $dir/object/objects.json
+        rm -rf -- $dir/object; mkdir -p $dir/object $work
+        (( ${#module} )) && mkdir -p ${module[-1]:h}
+        {
+            print '{'
+            for (( n = 1; n <= ${#srcs}; n++ )); do
+                print -rn -- "  \"$srcs[n]\": {\"object\": \"$objects[n]\""
+                (( ${#deps} )) && print -rn -- ", \"swift-dependencies\": \"$deps[n]\""
+                print '},'
+            done
+            (( ${#deps} )) && print -r -- "  \"\": {\"swift-dependencies\": \"$work/module.swiftdeps\"}" || print '  "": {}'
+            print '}'
+        } > $work/objects.json
         $compile || return 1
         as_begun $name $srcs || return 1
+        if [[ $work != $dir/object ]]; then
+            # The archive and the link take copies (copy-on-write) of the driver's objects, which it
+            # compiles over next time.
+            cp -c -- $objects $dir/object/ || return 1
+            objects=($dir/object/${^objects:t})
+            [[ -n $module ]] && { mkdir -p $dir/object/module && cp -c -- $work/module/*(N.) $dir/object/module/ || return 1 }
+        fi
         rm -f -- $dir/object/objects.json
         if [[ $KIND[$name] == target ]]; then
-            objects=($dir/object/*.o(Nn))
             libtool -static -o $dir/object/lib$name.a $objects || return 1
             rm -f -- $objects
             keep_changed $dir/object $dir

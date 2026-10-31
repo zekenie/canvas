@@ -351,13 +351,25 @@ extension Duration {
     var milliseconds: Double { Double(components.seconds) * 1000 + Double(components.attoseconds) / 1e15 }
 }
 
-/// The median of `runs` timings of `body`, in milliseconds, each after an untimed `prepare`: by the
+/// How many timings a benchmark takes: `runs` in a release build, which holds the budgets, and at most `debugRuns` (3)
+/// in a debug one (`./test.sh`), whose figures are only reported: it runs one small size, so Scaling compares none, and
+/// every run is some ten times slower there. An odd count keeps what a run that toggles something leaves as it was; a
+/// benchmark whose runs build on each other (a drag that must pass `Style.dragThreshold`) says how many it needs.
+func measuredRuns(_ runs: Int, debugRuns: Int = 3) -> Int {
+    #if DEBUG
+    min(runs, debugRuns)
+    #else
+    runs
+    #endif
+}
+
+/// The median of `runs` timings of `body` (`measuredRuns`), in milliseconds, each after an untimed `prepare`: by the
 /// wall clock, or with `onThread`, the thread's CPU time (what a budget is held to, since the wall
 /// clock counts whatever else the machine runs).
-@MainActor func median(runs: Int, prepare: () -> Void = {}, onThread: Bool = false, _ body: () throws -> Void) rethrows -> Double {
+@MainActor func median(runs: Int, debugRuns: Int = 3, prepare: () -> Void = {}, onThread: Bool = false, _ body: () throws -> Void) rethrows -> Double {
     let clock = ContinuousClock()
     var times: [Double] = []
-    for _ in 0..<runs {
+    for _ in 0..<measuredRuns(runs, debugRuns: debugRuns) {
         prepare()
         times.append(try (onThread ? threadCPUTime(body) : clock.measure(body)).milliseconds)
     }
@@ -497,7 +509,8 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             // Once ⌘, let go, no longer counts as held: a press with it would brush.
             h.press(at: center, after: 200)
             var nudge = 0.0
-            let all = median(runs: 11, prepare: {
+            // (The drag moves nothing until it is past `Style.dragThreshold`, 4 points, so a debug build takes all 11 runs: the later ones move.)
+            let all = median(runs: 11, debugRuns: 11, prepare: {
                 nudge += 1
                 h.drag(to: center + CGPoint(x: nudge, y: 0))
             }) { _ = h.editor.validation?.results }
@@ -748,7 +761,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                     draw(empty.editor, into: context, size: viewport)
                     // A frame of each in turn, so whatever else slows the machine meanwhile slows both.
                     var boards: [Double] = [], nones: [Double] = []
-                    for _ in 0..<21 {
+                    for _ in 0..<measuredRuns(21) {
                         boards.append(threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds)
                         nones.append(threadCPUTime { draw(empty.editor, into: context, size: viewport) }.milliseconds)
                     }
@@ -1095,7 +1108,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             let rowsOther = median(runs: 21, prepare: { rename(unmentioned) }) { rows = contents.entries }
             expectEqual(rowCount(rows), size)
             let first = try require(mentions.mentioners(of: mentioned).first)
-            expect(rows.first { $0.id == first }?.label?.text.contains("Renamed \(n - 21)") == true, "a mentioner's row names the subboard as it's called now")
+            expect(rows.first { $0.id == first }?.label?.text.contains("Renamed \(n - measuredRuns(21))") == true, "a mentioner's row names the subboard as it's called now")
             // Validation checks the mentioners again, as their rules looked the subboard up.
             var results = validation.results
             let validationMentioned = median(runs: 21, prepare: { rename(mentioned) }) { results = validation.results }
@@ -1342,7 +1355,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             }
             let commands = registry.hostCommands
             var result: JSON = [:], times: [Double] = []
-            for _ in 0..<5 {
+            for _ in 0..<measuredRuns(5) {
                 // The draw alone: it answers without suspending, so the clock reads nothing else.
                 let (drawn, time) = try awaitResult { () async throws -> (JSON, Double) in
                     let clock = ContinuousClock(), start = clock.now
@@ -1688,7 +1701,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             }
             let full = median(runs: 11, onThread: true) { rename(owner) }
             let bare = median(runs: 11, onThread: true) { rename(empty.id) }
-            expectEqual(index.keys[try require(inside.first).id]?.segments.first, "Area \(turn - 11)", "what's inside it is under its name")
+            expectEqual(index.keys[try require(inside.first).id]?.segments.first, "Area \(turn - measuredRuns(11))", "what's inside it is under its name")
             report(String(format: "%6d shapes on a subboard's board (%d titled): renaming it %5.2f ms, an empty one %5.2f, over it %5.2f (budget %.0f)",
                           size, inside.count, full, bare, full - bare, Budget.containerRename))
             if holdsToBudgets {

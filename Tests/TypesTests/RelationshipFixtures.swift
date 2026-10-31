@@ -248,6 +248,55 @@ extension CanvasEditor {
     }
 }
 
+/// A seeded run's second editors: each opened on the file as the run has it after a step, to be compared with the run's own editor, which
+/// keeps what it says by commits. What such an editor says is a function of the file it read (it is only read, never written, and the
+/// plugins that registered are the same each time), so a step that leaves the file as an earlier one did (a pick that found nothing, an
+/// undo with nothing to undo, an edit and its undo) is given the editor that read the file then, not a new one: it is as fresh a read of
+/// that file as any, and the comparison with the run's own editor is made at each step all the same. The last `capacity` files read are
+/// kept, and with each a `Memo`, for what a test works out of the fresh editor alone (a function of the file, too).
+@MainActor final class FreshReads<Memo> {
+    final class Read {
+        let file: CanvasFile
+        let editor: CanvasEditor
+        var memo: Memo
+        init(file: CanvasFile, editor: CanvasEditor, memo: Memo) {
+            self.file = file
+            self.editor = editor
+            self.memo = memo
+        }
+    }
+
+    private var reads: [Read] = []
+    private let capacity: Int
+    private let open: (CanvasFile) -> CanvasEditor
+    private let blank: () -> Memo
+
+    init(capacity: Int = 3, memo blank: @escaping () -> Memo, open: @escaping (CanvasFile) -> CanvasEditor) {
+        self.capacity = capacity
+        self.blank = blank
+        self.open = open
+    }
+
+    /// The editor that reads `file`, the most recently used first.
+    func read(_ file: CanvasFile) -> Read {
+        if let at = reads.firstIndex(where: { $0.file == file }) {
+            let read = reads.remove(at: at)
+            reads.insert(read, at: 0)
+            return read
+        }
+        let read = Read(file: file, editor: open(file), memo: blank())
+        reads.insert(read, at: 0)
+        if reads.count > capacity { reads.removeLast() }
+        return read
+    }
+}
+
+extension FreshReads where Memo == Void {
+    convenience init(capacity: Int = 3, open: @escaping (CanvasFile) -> CanvasEditor) {
+        self.init(capacity: capacity, memo: { () }, open: open)
+    }
+}
+
 /// A bond editor that `canvas draw` may draw on: names, Types' words, and a filler of Draw's edges that makes bonds.
 @MainActor func typeEditorWithDraw() throws -> CanvasEditor {
     let editor = try bondEditor(more: [DrawPlugin(), TitleNamesPlugin(), TypeNamesPlugin(), FieldValuesPlugin(), ValidationChecksPlugin(), BondEdgesPlugin()])

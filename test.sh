@@ -10,13 +10,15 @@
 # An executable that last ran whole and passed isn't run again while it, and what it reads as it
 # runs, are as they were then: its binary, the command line's, every file git sees but the Swift
 # sources (which reach a test through its binary), the session records and the Markdown outside
-# .claude/skills and Tests that no test names, and the environment variables tests read (every name
-# a test's source asks the environment for, and those of the commands they run, by their prefixes).
+# .claude/skills and Tests, the Markdown there that its own sources or the test support's name, and
+# the environment variables tests read (every name a test's source asks the environment for, and
+# those of the commands they run, by their prefixes).
 # It's named at the end as unchanged since it passed; TEST_ALL=1 runs it anyway.
 #
 # One that took long last time runs as several processes at once, each a share of its suites
-# (TestKit's TEST_SHARD), so none holds the run up long after the rest are done; the suites that
-# hold a time budget run after the rest, as many at once as half the machine's performance cores.
+# (TestKit's TEST_SHARD), so none holds the run up long after the rest are done; the tests that
+# hold a time budget run after the rest, as many at once as half the machine's performance cores. A
+# checkout's first run goes by the timings another checkout of the repository kept.
 #
 # TEST_FILTER=substring runs only the tests whose "Suite: test" name contains it, and fails if that's
 # none at all (a filtered run runs every executable it's given, each as one process). TEST_JOBS=N
@@ -56,17 +58,26 @@ binary_hash() {
 }
 for t in $tests build/debug/CanvasCLI(N:t); do binary_hash $t & done
 wait
-read_by_tests() {
-    local files=(${(0)"$(git ls-files -co --exclude-standard -z)"}) named file
-    files=(${files:#(Sources|Examples|Tests)/*.swift}); files=(${files:#history/*})
-    named=(${(f)"$(cat Tests/**/*.swift(N) | grep -oE '"[^"]+\.md"' | tr -d '"' | sort -u)"})
-    for file in $files; do
-        [[ -f $file ]] || continue
-        [[ $file == *.md && $file != (.claude/skills|Tests)/* ]] && (( ! ${named[(Ie)$file]} )) && continue
-        print -r -- $file
-    done
+read=() docs=()
+for file in ${(0)"$(git ls-files -co --exclude-standard -z)"}; do
+    [[ $file == ((Sources|Examples|Tests)/*.swift|history/*) || ! -f $file ]] && continue
+    [[ $file == *.md && $file != (.claude/skills|Tests)/* ]] && docs+=$file || read+=$file
+done
+# The Markdown elsewhere is the docs, and only a test that names a file reads it (one test reads the
+# guide, which most commits change): each counts for the executables whose sources name it, or whose
+# test support's do (every test folder that isn't an executable's).
+typeset -A named  # by test folder: the docs its sources name, one a line
+for line in ${(f)"$(grep -roE '"[^"]+\.md"' --include='*.swift' Tests)"}; do
+    folder=${${line#Tests/}%%/*} file=${${line#*:\"}%\"}
+    (( ${docs[(Ie)$file]} )) && named[$folder]+=$file$'\n'
+done
+support=(Tests/*(/N:t)); support=(${support:|every})
+typeset -A doc_hash
+(( ${#docs} )) && paste <(print -rl -- $docs) <(print -rl -- $docs | git hash-object --stdin-paths) | while IFS=$'\t' read -r file hash; do doc_hash[$file]=$hash; done
+docs_read() {  # the docs test $1 reads, and their hashes, as one hash
+    local file mine=(${(fu)"$(print -rn -- ${named[$1]:-}; for folder in $support; print -rn -- ${named[$folder]:-})"})
+    for file in ${(o)mine}; do print -r -- "$file $doc_hash[$file]"; done | md5 -q
 }
-read=(${(f)"$(read_by_tests)"})
 # Where to find things, which a test passes on to what it runs, and what test.sh sets itself, aren't
 # what a test judges.
 asked=(${(f)"$(cat Tests/**/*.swift(N) | grep -oE 'environment\["[A-Z][A-Z0-9_]*"\]' | sed -E 's/environment\["(.*)"\]/\1/' | sort -u)"})
@@ -79,7 +90,7 @@ inputs=$({
 typeset -A key skipped
 run=()
 for t in $tests; do
-    key[$t]="${$(<build/debug/$t/.hash)##* } $inputs"
+    key[$t]="${$(<build/debug/$t/.hash)##* } $inputs $(docs_read $t)"
     if [[ -z ${TEST_ALL:-} && -z ${TEST_FILTER:-} && -f build/debug/$t/passed && "$(head -n 1 build/debug/$t/passed)" == $key[$t] ]]; then
         skipped[$t]=1
     else
@@ -87,7 +98,7 @@ for t in $tests; do
     fi
 done
 
-# What each runs as. An executable with suites kept from a whole run runs as two parts: the suites
+# What each runs as. An executable with suites kept from a whole run runs as two parts: the tests
 # that hold a time budget (TestKit marks them, `b`) and the rest (`r`); one without, or a filtered
 # run, or one that opens real menus, as one (`a`, all of it, in one process). A part runs as about
 # as many shares as it took the time a core gets last time, every part of its kind at once (but none
@@ -109,15 +120,24 @@ float rest=0 budgets=0 share budgetShare
 # and a suite could run twice or not at all.
 tmp=$(mktemp -d -t tests)
 trap 'rm -rf -- "$tmp"' EXIT
+# Where an executable's suites aren't kept here yet (a checkout's first run, a test new to it), the
+# latest any checkout of the repository kept are, in the folder they share: without them a new
+# worktree's first run would run each executable as one process (CompositionTests alone for seven
+# minutes), the budgets among the rest. They're times and marks only: whether a test passed is never
+# taken from another checkout.
+shared=${$(git rev-parse --git-common-dir):A}/test-times
 for t in $run; do
     parts[$t]=a; took[$t.a]=0
     [[ -f build/debug/$t/took ]] && took[$t.a]=$(<build/debug/$t/took)
-    if [[ -z ${TEST_FILTER:-} && -z ${TEST_UI_MENUS:-} && -f build/debug/$t/suites ]]; then
-        cp build/debug/$t/suites $tmp/$t.weights
-        # Its lines are "seconds<TAB>suite", with "<TAB>budget" after one that held a time budget.
+    kept=build/debug/$t/suites
+    [[ -f $kept ]] || kept=$shared/$t
+    if [[ -z ${TEST_FILTER:-} && -z ${TEST_UI_MENUS:-} && -f $kept ]]; then
+        cp $kept $tmp/$t.weights
+        # Its lines are "seconds<TAB>suite", the suite's tests that hold no time budget, and
+        # "seconds<TAB>suite<TAB>budget<TAB>test" for each that does (TestKit's records).
         for part in r b; do
             took[$t.$part]=$(awk -F'\t' -v p=$part '($3 == "budget") == (p == "b") { s += $1 } END { print s + 0 }' $tmp/$t.weights)
-            suites[$t.$part]=$(( $(awk -F'\t' -v p=$part '($3 == "budget") == (p == "b")' $tmp/$t.weights | wc -l) ))
+            suites[$t.$part]=$(( $(awk -F'\t' -v p=$part '($3 == "budget") == (p == "b") && !seen[$2]++' $tmp/$t.weights | wc -l) ))
         done
         # The rest always, since a suite with no line yet (one added since) runs with them.
         parts[$t]=r
@@ -209,6 +229,9 @@ join_shares() {
         if (( whole )); then
             print -r -- $secs > build/debug/$t/took
             cp -f $tmp/$t.suites build/debug/$t/suites
+            # Whole, in one step, for a run in another checkout reading it meanwhile (and nothing
+            # said where that folder can't be written: a sandboxed run's).
+            { mkdir -p $shared && cp -f $tmp/$t.suites $shared/$t.$$ && mv -f $shared/$t.$$ $shared/$t } 2> /dev/null
             (( rc == 0 )) && print -r -- "$key[$t]" > build/debug/$t/passed
         fi
     fi

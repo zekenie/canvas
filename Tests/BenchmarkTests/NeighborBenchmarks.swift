@@ -134,7 +134,7 @@ private enum Light: Int {
                 let tints = h.editor.outlines.tinted.reduce(0) { $0 + $1.shapes.count }
                 expectEqual(tints, lights, "what is of the type, and nothing from an instance: its chips say what it is")
                 var mains: [Double] = [], offs: [Double] = []
-                for _ in 0..<11 {
+                for _ in 0..<measuredRuns(11) {
                     h.editor.hovered = nil
                     h.wait(0)
                     let (main, off) = try hover()
@@ -173,7 +173,7 @@ private enum Light: Int {
                 expectEqual(lit(h.editor, in: .mentionedBy), mentioning, "the notes that mention the hub are lit")
                 expectEqual(lit(h.editor, in: .pointsTo) + lit(h.editor, in: .pointedToBy) + lit(h.editor, in: .mentions), 0)
                 var mains: [Double] = [], offs: [Double] = []
-                for _ in 0..<11 {
+                for _ in 0..<measuredRuns(11) {
                     unhover()
                     let (main, off) = try hover()
                     mains.append(main)

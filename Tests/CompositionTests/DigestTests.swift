@@ -7,6 +7,7 @@ import Foundation
 import Publishing
 import References
 import ShippedTesting
+import SkillTesting
 import Subboards
 import TestKit
 import Titles
@@ -24,16 +25,7 @@ import Types
 /// Whether to print what `digest` said in each run (DIGEST_DUMP=1).
 private let dumpsDigest = ProcessInfo.processInfo.environment["DIGEST_DUMP"] == "1"
 
-private let jsc = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"
-
-/// The skill's folder, absolute (tests run from the repository's root).
-private func skillURL(_ path: String = "") -> URL {
-    URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest").appendingPathComponent(path)
-}
-
-private func fixture(_ name: String) -> URL { skillURL("tool/test/fixtures/\(name).digest.json") }
-
-private func json(_ url: URL) throws -> JSON { try JSON(text: String(contentsOf: url, encoding: .utf8)) }
+private func fixture(_ name: String) -> URL { digestSkill("tool/test/fixtures/\(name).digest.json") }
 
 /// What the driver prints and where it put its files.
 private struct DigestRun {
@@ -60,7 +52,7 @@ private struct DigestRun {
 /// `digest <command> <digest file>`, the same.
 @MainActor private func runDigest(_ command: String, file: URL, server: CommandServer, target: [String], extra: [String] = [],
                                out: URL, timeout: TimeInterval = 280) throws -> DigestRun {
-    let process = try run(skillURL("digest"), [command, file.path] + target + ["--out", out.path] + extra,
+    let process = try run(digestSkill("digest"), [command, file.path] + target + ["--out", out.path] + extra,
                           environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path], timeout: timeout)
     if dumpsDigest { print("── digest \(command) \(file.lastPathComponent)\n\(process.output)\(process.error)") }
     return DigestRun(process: process, out: out)
@@ -97,8 +89,8 @@ private func digestFile(_ name: String, _ text: String, in folder: URL) throws -
     try fileManager.createDirectory(at: home, withIntermediateDirectories: true)
     let driver = home.appendingPathComponent("digest")
     if !fileManager.fileExists(atPath: driver.path) {
-        try fileManager.copyItem(at: skillURL("digest"), to: driver)
-        try fileManager.createSymbolicLink(at: home.appendingPathComponent("tool"), withDestinationURL: skillURL("tool"))
+        try fileManager.copyItem(at: digestSkill("digest"), to: driver)
+        try fileManager.createSymbolicLink(at: home.appendingPathComponent("tool"), withDestinationURL: digestSkill("tool"))
         let bin = folder.appendingPathComponent("bin")
         try fileManager.createDirectory(at: bin, withIntermediateDirectories: true)
         if canvasOnPath { try fileManager.createSymbolicLink(at: bin.appendingPathComponent("canvas"), withDestinationURL: builtExecutable("CanvasCLI")) }
@@ -111,13 +103,7 @@ private func digestFile(_ name: String, _ text: String, in folder: URL) throws -
 
 /// The tool, as the driver runs it.
 @MainActor private func tool(_ arguments: [String], timeout: TimeInterval = 120) throws -> ProcessOutput {
-    try run(URL(fileURLWithPath: jsc), [skillURL("tool/main.js").path, "--"] + arguments, timeout: timeout)
-}
-
-private func scratchFolder(_ name: String) throws -> URL {
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("DigestTests-\(UUID().uuidString)-\(name)")
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    return folder
+    try run(URL(fileURLWithPath: jsc), [digestSkill("tool/main.js").path, "--"] + arguments, timeout: timeout)
 }
 
 /// Every shape, pill and arrow of the file as the tool's `verify` reads them, one JSON object a line:
@@ -278,34 +264,6 @@ private func isByDesign(_ message: String) -> Bool {
     let answer = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "10000", query])
     expectEqual(answer.status, 0, answer.error)
     return Int(try require(JSON(text: answer.output)["count"]?.numberValue))
-}
-
-/// The tool's unit tests (`tool/test/run.js`) run in parts, each its own suite, so that a run can deal them to processes side by side: part K of
-/// N runs every Nth test from the Kth (the script says how many of how many it ran), and the parts together are all of them.
-private let toolTestParts = 8
-
-@MainActor let digestToolTests: [Suite] = (0..<toolTestParts).map { part in
-    Suite("canvas-digest: the tool's unit tests under jsc, part \(part + 1) of \(toolTestParts)", [
-        test("the tool's unit tests pass under jsc") {
-            let result = try run(URL(fileURLWithPath: jsc), [skillURL("tool/test/run.js").path, "--", "\(part)/\(toolTestParts)"], timeout: 280)
-            expectEqual(result.status, 0, result.output + result.error)
-            let failures = result.output.split(separator: "\n").filter { $0.hasPrefix("FAIL") || $0.hasPrefix("ERROR") }
-            expectEqual(failures.map(String.init), [], "no test failed")
-            let tally = result.output.split(separator: "\n").last { $0.contains(" passed, ") }.map(String.init) ?? ""
-            expect(tally.hasSuffix(" passed, 0 failed"), "the tally: \(tally)")
-            // the part ran every Nth of the tests the script defines, and there are at least as many as before the parts were made
-            let said = result.output.split(separator: "\n").last { $0.hasPrefix("part ") }.map(String.init) ?? ""
-            let numbers = said.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }       // K, N, ran, defined
-            expectEqual(numbers.count, 4, "the part's own line: \(said)")
-            if numbers.count == 4 {
-                expectEqual(numbers[0], part)
-                expectEqual(numbers[1], toolTestParts)
-                expectEqual(numbers[2], (numbers[3] - part + toolTestParts - 1) / toolTestParts, "every Nth test: \(said)")
-                expectEqual(Int(tally.split(separator: " ").first ?? ""), numbers[2], "and each passed: \(tally)")
-                expect(numbers[3] >= 30, "the tests ran: \(said)")
-            }
-        },
-    ])
 }
 
 @MainActor let digestSmallTests = Suite("canvas-digest: digest all on Acme, a tree, arrows at frames and a spine", [
@@ -967,7 +925,7 @@ private let toolTestParts = 8
         // a digest of an unknown kind
         let bad = folder.appendingPathComponent("bad.digest.json")
         try #"{"title": "Bad", "nodes": [{"title": "A", "kind": "hexagon"}], "edges": []}"#.write(to: bad, atomically: true, encoding: .utf8)
-        let kind = try run(skillURL("digest"), ["check", bad.path, "--out", folder.appendingPathComponent("bad").path],
+        let kind = try run(digestSkill("digest"), ["check", bad.path, "--out", folder.appendingPathComponent("bad").path],
                            environment: ["CANVAS_CLI": builtExecutable("CanvasCLI").path, "CANVAS_SOCKET": server.path])
         expectEqual(kind.status, 1)
         expect(kind.output.contains("hexagon"), kind.output)
@@ -1189,7 +1147,7 @@ private let toolTestParts = 8
             let tiny = try digestFile("tiny", #"{"title": "Tiny", "nodes": [{"title": "Tiny A", "text": "a"}, {"title": "Tiny B", "text": "b"}], "edges": [{"from": "Tiny A", "to": "Tiny B"}]}"#, in: folder)
             var arguments = ["ready", tiny.path, "--board", "\(board.number)", "--replace", "--out", out.path]
             if let records { arguments += ["--records", records.path] }
-            return try run(skillURL("digest"), arguments, environment: ["CANVAS_CLI": counting.path, "CANVAS_SOCKET": server.path, "CANVAS_COUNT_LOG": log.path])
+            return try run(digestSkill("digest"), arguments, environment: ["CANVAS_CLI": counting.path, "CANVAS_SOCKET": server.path, "CANVAS_COUNT_LOG": log.path])
         }
 
         // drawn into a new file, with a record of its path; then strays in the folder: a file that is not JSON, and JSON that is no record
@@ -1264,7 +1222,7 @@ private let toolTestParts = 8
         let old = folder.appendingPathComponent("canvas-old")
         try "#!/bin/sh\nif [ \"$1\" = measure ]; then echo 'unknown command: measure' >&2; exit 2; fi\nexec \"\(builtExecutable("CanvasCLI").path)\" \"$@\"\n".write(to: old, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: old.path)
-        let stale = try run(skillURL("digest"), ["ready", fixture("tree").path, "--board", "front", "--replace", "--out", out.path],
+        let stale = try run(digestSkill("digest"), ["ready", fixture("tree").path, "--board", "front", "--replace", "--out", out.path],
                             environment: ["CANVAS_CLI": old.path, "CANVAS_SOCKET": server.path])
         expectEqual(stale.status, 1, stale.output)
         expect(stale.error.contains("older than this skill needs") && stale.error.contains("unknown command: measure"), stale.error)

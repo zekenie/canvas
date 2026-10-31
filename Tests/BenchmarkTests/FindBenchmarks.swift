@@ -82,7 +82,7 @@ extension Budget {
             // at every word.
             for query in ["n", "note 5", "somthing", "zzzzq"] {
                 var mains: [Double] = [], offs: [Double] = []
-                for _ in 0..<9 {
+                for _ in 0..<measuredRuns(9) {
                     find.query = ""
                     let run = try cpu { () async -> Int in
                         find.query = query

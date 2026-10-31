@@ -92,10 +92,11 @@ final class TypePanelWindow {
         let scale = CGFloat(image.pixelsWide) / hosting.bounds.width
         var marks: [StatusMark] = []
         var tones: [StatusMark: Int] = [:], top = 0
+        let colors = PixelColors(image, in: .deviceRGB)
         for y in Int(box.maxY * scale)..<image.pixelsHigh {
             var row: [StatusMark: Int] = [:]
             for x in 0..<Int(DetailStyle.idealWidth / 3 * scale) {
-                guard let color = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB), let tone = StatusMark(color) else { continue }
+                guard let color = colors[x, y], let tone = StatusMark(color) else { continue }
                 row[tone, default: 0] += 1
             }
             if !row.isEmpty {

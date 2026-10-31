@@ -109,10 +109,33 @@ struct MemosPlugin: CanvasPlugin {
      LanguageModelsPlugin(model: model), ProseMapsPlugin()]
 }
 
-@MainActor func typeEditor(scheduler: any Scheduler = ManualScheduler(), model: any LanguageModel = ScriptedLanguageModel(),
+/// An editor over `typePlugins` and `more`. With the model the plugins default to (a scripted one no test asks of) and plugins with
+/// nothing of their own to hold, the registry is the one every such editor of the executable is over (`typeRegistry`); a test that
+/// hands a model or a plugin with state of its own (a log, a probe, a switch) gets a registry of its own.
+@MainActor func typeEditor(scheduler: any Scheduler = ManualScheduler(), model: (any LanguageModel)? = nil,
                            document: CanvasDocument = CanvasDocument(), file: CanvasFile? = nil, more: [any CanvasPlugin] = []) throws -> CanvasEditor {
-    CanvasEditor(registry: try Registry(plugins: typePlugins(model: model) + more), file: file ?? CanvasFile(root: document), scheduler: scheduler)
+    CanvasEditor(registry: try typeRegistry(model: model, more: more), file: file ?? CanvasFile(root: document), scheduler: scheduler)
 }
+
+@MainActor private var sharedTypeRegistries: [String: Registry] = [:]
+
+/// The registry of `typePlugins(model:)` and `more`. A registry is frozen, so what one test's editors do cannot reach another's, and
+/// making one (every plugin registering, every schema compiled) costs some 10 ms in a debug build, more than the editor a test of a
+/// small board opens on it: so one is made for each list of plugins that are structs with no stored property, over the default model,
+/// and every editor asking for that list is over it. Any other plugin or model gets a registry made for it.
+@MainActor func typeRegistry(model: (any LanguageModel)? = nil, more: [any CanvasPlugin] = []) throws -> Registry {
+    let nothingOfTheirOwn = more.allSatisfy { plugin in
+        let mirror = Mirror(reflecting: plugin)
+        return mirror.displayStyle == .struct && mirror.children.isEmpty
+    }
+    guard model == nil, nothingOfTheirOwn else { return try Registry(plugins: typePlugins(model: model ?? ScriptedLanguageModel()) + more) }
+    let key = more.map { String(reflecting: type(of: $0)) }.joined(separator: ",")
+    if let known = sharedTypeRegistries[key] { return known }
+    let made = try Registry(plugins: typePlugins() + more)
+    sharedTypeRegistries[key] = made
+    return made
+}
+
 
 /// A memo at `origin`, `width` wide, saying `words`, as tall as they make it.
 @MainActor func memo(_ words: String = "", at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240) -> Memo {
@@ -181,6 +204,45 @@ extension CanvasEditor {
     func title(_ id: ShapeID) -> String? { document[id]?[TitleProperty.self] }
 
     func issues(_ id: ShapeID) -> [ValidationIssue] { validation?.result(for: id)?.issues ?? [] }
+}
+
+/// A bitmap's pixels as colors in `space`, exactly as `colorAt(x:y:)?.usingColorSpace(space)` gives them, but each distinct pixel
+/// value converted once (CanvasTesting's `DeviceRGBPixels` does that for device RGB, with no alpha): read that way pixel by pixel, a
+/// form's or a panel's render takes seconds, a color made and converted for each of its hundreds of thousands of pixels, of which
+/// only a few hundred values are distinct.
+@MainActor
+final class PixelColors {
+    private let rep: NSBitmapImageRep
+    private let space: NSColorSpace
+    /// The pixels, when they're whole bytes in one plane (else each is converted as it's read).
+    private let bytes: UnsafeMutablePointer<UInt8>?
+    private let bytesPerRow: Int, bytesPerPixel: Int
+    private var converted: [UInt64: NSColor?] = [:]
+
+    init(_ rep: NSBitmapImageRep, in space: NSColorSpace) {
+        self.rep = rep
+        self.space = space
+        // The data first: a rep backed by a CGImage makes its bitmap, and so its layout, as it's asked for it.
+        let data = rep.bitmapData
+        bytesPerRow = rep.bytesPerRow
+        bytesPerPixel = rep.bitsPerPixel / 8
+        bytes = !rep.isPlanar && rep.bitsPerPixel % 8 == 0 && (1...8).contains(bytesPerPixel) ? data : nil
+    }
+
+    /// The color of the pixel at column `x`, row `y` from the top; nil where `colorAt` has none.
+    subscript(x: Int, y: Int) -> NSColor? {
+        guard (0..<rep.pixelsWide).contains(x), (0..<rep.pixelsHigh).contains(y) else { return nil }
+        guard let bytes else { return convert(x, y) }
+        let pixel = UnsafeRawPointer(bytes + y * bytesPerRow + x * bytesPerPixel)
+        var value: UInt64 = 0
+        for i in 0..<bytesPerPixel { value = value << 8 | UInt64(pixel.load(fromByteOffset: i, as: UInt8.self)) }
+        if let known = converted[value] { return known }
+        let color = convert(x, y)
+        converted[value] = color
+        return color
+    }
+
+    private func convert(_ x: Int, _ y: Int) -> NSColor? { rep.colorAt(x: x, y: y)?.usingColorSpace(space) }
 }
 
 /// Whether any pixel in `rect` (view points) is about `color`.

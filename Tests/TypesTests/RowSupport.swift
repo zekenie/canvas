@@ -91,13 +91,13 @@ struct RowSlipsPlugin: CanvasPlugin {
 }
 
 /// `typeEditor` with slips.
-@MainActor func rowEditor(scheduler: any Scheduler = ManualScheduler(), model: any LanguageModel = ScriptedLanguageModel(),
+@MainActor func rowEditor(scheduler: any Scheduler = ManualScheduler(), model: (any LanguageModel)? = nil,
                           document: CanvasDocument = CanvasDocument(), file: CanvasFile? = nil, more: [any CanvasPlugin] = []) throws -> CanvasEditor {
     try typeEditor(scheduler: scheduler, model: model, document: document, file: file, more: [RowSlipsPlugin()] + more)
 }
 
 /// `rowEditor` with the shared types added as slips, Employee a Person.
-@MainActor func rowFieldEditor(scheduler: any Scheduler = ManualScheduler(), model: any LanguageModel = ScriptedLanguageModel(),
+@MainActor func rowFieldEditor(scheduler: any Scheduler = ManualScheduler(), model: (any LanguageModel)? = nil,
                                more: [any CanvasPlugin] = []) throws -> CanvasEditor {
     let editor = try rowEditor(scheduler: scheduler, model: model, more: more)
     editor.addFieldSlips([FieldFixtures.person, FieldFixtures.address, FieldFixtures.employee, FieldFixtures.order])

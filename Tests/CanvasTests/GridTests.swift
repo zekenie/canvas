@@ -102,10 +102,22 @@ private func difference(_ a: CGContext, _ b: CGContext) -> (bytes: Int, most: In
     let count = a.bytesPerRow * a.height
     let p = a.data!.assumingMemoryBound(to: UInt8.self), q = b.data!.assumingMemoryBound(to: UInt8.self)
     guard memcmp(p, q, count) != 0 else { return (0, 0) }
-    var bytes = 0, most = 0
-    for i in 0..<count where p[i] != q[i] {
-        bytes += 1
-        most = max(most, abs(Int(p[i]) - Int(q[i])))
+    // A row at a time, the rows alike passed with one memcmp, the others walked with plain loops (no iterator, no generic abs
+    // or max: the walk is of millions of bytes, in a build with no optimizer).
+    var bytes = 0, most = 0, row = 0
+    while row < a.height {
+        let start = row * a.bytesPerRow, end = start + a.bytesPerRow
+        row += 1
+        if memcmp(p + start, q + start, a.bytesPerRow) == 0 { continue }
+        var i = start
+        while i < end {
+            if p[i] != q[i] {
+                bytes += 1
+                let d = Int(p[i]) - Int(q[i]), size = d < 0 ? -d : d
+                if size > most { most = size }
+            }
+            i += 1
+        }
     }
     return (bytes, most)
 }
@@ -176,7 +188,12 @@ private func dots(in context: CGContext, camera: Camera, scale: CGFloat) -> [(ce
         expectEqual(h.editor.gridTilesMade - made, 1, "drawn from a tile, not as the path")
         let count = tiles.bytesPerRow * tiles.height / 2
         let p = try require(tiles.data).assumingMemoryBound(to: Float16.self), q = try require(reference.data).assumingMemoryBound(to: Float16.self)
-        let most = (0..<count).map { abs(Float(p[$0]) - Float(q[$0])) }.max() ?? 0
+        var most: Float = 0, i = 0
+        while i < count {
+            let off = abs(Float(p[i]) - Float(q[i]))
+            if off > most { most = off }
+            i += 1
+        }
         expect(most < 2 / 255, "a channel \(most) off")
     },
     test("where the dots are closest (70%, 35%) and at 10%, a whole number of dots spans whole pixels, and the grid is the path's to a level") {

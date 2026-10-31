@@ -491,7 +491,7 @@ func rowIDs(_ output: String) throws -> [String] {
         let gaveUp = try canvas(server, ["--timeout", "0.5", "query", "--ask", "Every note", "--board", "\(board.number)"])
         expectEqual(gaveUp.status, 3)
         expectEqual(try JSON(text: gaveUp.error)["error"]?["reason"], "timed_out")
-        spinRunLoop(until: { model.waiting == 0 }, timeout: 5)
+        spinRunLoop(until: { model.waiting == 0 && model.answered == 1 }, timeout: 5)
         expectEqual(model.answered, 1, "the call was cancelled")
         expectEqual(model.queued.count, 1, "and took no answer")
         expectEqual(board.editor.queries?.liveSnapshots, 0)

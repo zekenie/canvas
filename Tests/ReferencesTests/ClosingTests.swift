@@ -36,7 +36,7 @@ import TestKit
         spin(model.waiting == 1)
         expect(scheduler.pendingCount > 0, "the call's deadline is armed")
         h = nil
-        spin(model.waiting == 0 && scheduler.pendingCount == 0)
+        spin(model.waiting == 0 && model.answered == 1 && scheduler.pendingCount == 0)
         expect(closing == nil, "the editor went as its file closed")
         expectEqual(model.waiting, 0, "the call isn't left holding")
         expectEqual(model.answered, 1, "the call ended: cancelled")

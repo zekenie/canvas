@@ -350,6 +350,23 @@ private let views: [(name: String, view: EdgeView)] = [("resolved", .resolved), 
         try expectRebuilt(h, "the chain back")
     },
 
+    test("shapes on boards that can't be shown (owners that hold each other's boards, owners not in the file) are stood for by nothing, in a commit to them, as reading afresh") {
+        let a = ShapeID(), x = ShapeID(), y = ShapeID(), z = ShapeID(), p = ShapeID(), q = ShapeID(), lost = ShapeID(), r = ShapeID(), l = ShapeID()
+        // P's board holds Q's pocket and Q's holds P's, so neither is on a board below the root; LOST owns a board and is in no board.
+        let h = try standing(CanvasFile(root: board(box(a), proxy(r, [x, y, z]), link(l, a, r)),
+                                        children: [p: board(box(x), pocket(q)), q: board(box(y), pocket(p)), lost: board(box(z))]))
+        expectEqual(h.topology.forwards(of: r), [], "none of the three can be shown")
+        expectEqual(h.topology.edges(carriedBy: l), [edge(WireEdge.id, a, r, by: l)])
+        try expectRebuilt(h, "opened")
+        for owner in [p, q, lost] {
+            let target = owner == p ? x : owner == q ? y : z
+            h.editor.transact(on: BoardID(owner: owner), "Move") { $0.moveBox(target, to: CGPoint(x: 9, y: 9)) }
+            h.editor.transact(on: BoardID(owner: owner), "Add") { $0.insert(box(ShapeID())) }
+            expectEqual(h.topology.forwards(of: r), [], "still none, after commits to \(owner)'s board")
+            try expectRebuilt(h, "commits to a board that can't be shown")
+        }
+    },
+
     test("the tables keep what carriers emitted, whatever stands for what") {
         let tree = Nest(), r = ShapeID(), x = ShapeID()
         let h = try standing(tree.file)

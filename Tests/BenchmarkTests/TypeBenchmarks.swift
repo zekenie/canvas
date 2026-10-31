@@ -195,7 +195,7 @@ extension Budget {
             }
             let withInstances = median(runs: 21, onThread: true) { rename(first) }
             let withNone = median(runs: 21, onThread: true) { rename(alone) }
-            expectEqual(index.name(of: TypeLink(first)), .live("Renamed \(n - 21)"))
+            expectEqual(index.name(of: TypeLink(first)), .live("Renamed \(n - measuredRuns(21))"))
             let dragged = Set(instances)
             #if DEBUG
             let reads = index.recordsRead
@@ -520,7 +520,7 @@ extension Budget {
             }
             expect(writer.values(of: target).value(at: FieldPath(field: "f1")) == .string("Ann \(n)"), "the keystroke wrote")
             expectEqual(editor.document[target]?[TitleProperty.self], "Ann \(n)", "and the title")
-            expectEqual(editor.revision, revision + 21, "one commit each")
+            expectEqual(editor.revision, revision + measuredRuns(21), "one commit each")
             report(String(format: "%6d shapes, %d notes that are a Person: a keystroke in the row that titles one %5.2f ms (budget %.1f)",
                           size, instances.count, keystroke, Budget.titleRowKeystroke))
             if holdsToBudgets, size >= 10_000 {

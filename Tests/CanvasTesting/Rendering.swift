@@ -70,6 +70,8 @@ public func lineTops(_ rep: NSBitmapImageRep, over background: NSBitmapImageRep,
     var previous = Int.min
     let raw = RawPair(rep, background)
     for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+        // A row the two draw alike has no ink in it (one memcmp, not a call a pixel).
+        if let raw, Int(rect.maxX * scale) > Int(rect.minX * scale), raw.rowsEqual(y: y, from: Int(rect.minX * scale), to: Int(rect.maxX * scale)) { continue }
         let inked = (Int(rect.minX * scale)..<Int(rect.maxX * scale)).contains { x in
             if let raw { return raw.difference(atX: x, y: y) > 64 }
             rep.getPixel(&p, atX: x, y: y); background.getPixel(&q, atX: x, y: y)
@@ -97,12 +99,29 @@ private struct RawPair {
         (self.a, self.b, rowA, rowB, channels, bytesPerPixel) = (pa, pb, a.bytesPerRow, b.bytesPerRow, a.samplesPerPixel, a.bitsPerPixel / 8)
     }
 
-    /// The largest difference in any channel between the pixels at (x, y).
+    /// The largest difference in any channel between the pixels at (x, y). (Plain `while` and no generic calls: this is
+    /// run a pixel at a time, in a build with no optimizer.)
     func difference(atX x: Int, y: Int) -> Int {
         let p = a + y * rowA + x * bytesPerPixel, q = b + y * rowB + x * bytesPerPixel
-        var largest = 0
-        for c in 0..<channels { largest = max(largest, abs(Int(p[c]) - Int(q[c]))) }
+        var largest = 0, c = 0
+        while c < channels {
+            let d = Int(p[c]) - Int(q[c])
+            let size = d < 0 ? -d : d
+            if size > largest { largest = size }
+            c += 1
+        }
         return largest
+    }
+
+    /// Whether the pixels of columns `x0..<x1` of row `y` are the same bytes in both: every byte of a pixel is a sample, so
+    /// then every difference there is 0. One `memcmp`, where the answer is mostly yes (a picture mostly of paper).
+    func rowsEqual(y: Int, from x0: Int, to x1: Int) -> Bool {
+        memcmp(a + y * rowA + x0 * bytesPerPixel, b + y * rowB + x0 * bytesPerPixel, (x1 - x0) * bytesPerPixel) == 0
+    }
+
+    /// Whether the pixels at (x, y) are the same bytes in both (the same as `difference(atX:y:) == 0`).
+    func pixelsEqual(atX x: Int, y: Int) -> Bool {
+        memcmp(a + y * rowA + x * bytesPerPixel, b + y * rowB + x * bytesPerPixel, bytesPerPixel) == 0
     }
 }
 
@@ -116,6 +135,8 @@ public func largestDifference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in r
     let raw = RawPair(a, b)
     var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
     for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
+        // A row the two draw alike adds no difference, whatever is excluded.
+        if let raw, Int(rect.maxX * scale) > Int(rect.minX * scale), raw.rowsEqual(y: y, from: Int(rect.minX * scale), to: Int(rect.maxX * scale)) { continue }
         for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
             if !excluded.isEmpty {
                 let center = CGPoint(x: (CGFloat(x) + 0.5) / scale, y: (CGFloat(y) + 0.5) / scale)
@@ -135,7 +156,12 @@ public func differingPixelPositions(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep
     var found: [(x: Int, y: Int)] = []
     if let raw = RawPair(a, b) {
         for y in 0..<a.pixelsHigh {
-            for x in 0..<a.pixelsWide where raw.difference(atX: x, y: y) != 0 { found.append((x, y)) }
+            if a.pixelsWide > 0, raw.rowsEqual(y: y, from: 0, to: a.pixelsWide) { continue }
+            var x = 0
+            while x < a.pixelsWide {
+                if !raw.pixelsEqual(atX: x, y: y) { found.append((x, y)) }
+                x += 1
+            }
         }
         return found
     }
@@ -232,7 +258,26 @@ public final class DeviceRGBPixels {
 /// 1×, a point's first pixel stands for it).
 @MainActor
 public func changedPixels(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in rect: CGRect) -> Int {
-    stride(from: rect.minY, to: rect.maxY, by: 1).reduce(0) { count, y in
+    // Bitmaps of a pixel a point (as `renderBitmap` makes them), the rect inside both: a row the two draw alike changed nothing,
+    // one `memcmp`; in a row that differs, each point's pixel is read straight, as `pixel` would give it.
+    let rows = Array(stride(from: rect.minY, to: rect.maxY, by: 1)), columns = stride(from: rect.minX, to: rect.maxX, by: 1).reduce(0) { n, _ in n + 1 }
+    if a.size.width > 0, b.size.width > 0, CGFloat(a.pixelsWide) / a.size.width == 1, CGFloat(b.pixelsWide) / b.size.width == 1,
+       rect.minX >= 0, rect.minY >= 0, let raw = RawPair(a, b), let last = rows.last,
+       Int(rect.minX) + columns <= min(a.pixelsWide, b.pixelsWide), Int(last) < min(a.pixelsHigh, b.pixelsHigh) {
+        let x0 = Int(rect.minX)
+        var count = 0
+        for y in rows {
+            let row = Int(y)
+            if columns == 0 || raw.rowsEqual(y: row, from: x0, to: x0 + columns) { continue }
+            var x = x0
+            while x < x0 + columns {
+                if !raw.pixelsEqual(atX: x, y: row) { count += 1 }
+                x += 1
+            }
+        }
+        return count
+    }
+    return stride(from: rect.minY, to: rect.maxY, by: 1).reduce(0) { count, y in
         count + stride(from: rect.minX, to: rect.maxX, by: 1).count { x in pixel(a, at: CGPoint(x: x, y: y)) != pixel(b, at: CGPoint(x: x, y: y)) }
     }
 }

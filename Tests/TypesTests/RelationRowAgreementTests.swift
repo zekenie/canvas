@@ -35,11 +35,21 @@ private func short(_ id: ShapeID) -> String { String(id.rawValue.uuidString.pref
     }.joined(separator: "; ")
 }
 
+/// The editors that read a run's files afresh, each given again for a file it has read: a book made afresh from a file is the same
+/// book the second time it is asked for rows (a second editor opened on the same file would build the same one).
+@MainActor private func freshReads(pocket: ShapeID) throws -> FreshReads<Void> {
+    let registry = try sharedBondRegistry()
+    return FreshReads { file in
+        let fresh = bondEditor(registry: registry, file: file)
+        _ = fresh.showBoard(BoardID(owner: pocket))
+        _ = fresh.showBoard(.root)
+        return fresh
+    }
+}
+
 /// How the kept book differs from one made afresh from the same file; nil when it does not.
-@MainActor private func bookDifference(_ editor: CanvasEditor, pocket: ShapeID, watch: [ShapeID]) throws -> String? {
-    let fresh = bondEditor(registry: try sharedBondRegistry(), file: editor.file)
-    _ = fresh.showBoard(BoardID(owner: pocket))
-    _ = fresh.showBoard(.root)
+@MainActor private func bookDifference(_ editor: CanvasEditor, watch: [ShapeID], reads: FreshReads<Void>) throws -> String? {
+    let fresh = reads.read(editor.file).editor
     let kept = try require(editor.rowBook), made = try require(fresh.rowBook)
     for id in watch where editor.shape(inFile: id) != nil {
         let a = editor.frame(inFile: id), b = fresh.frame(inFile: id)
@@ -63,6 +73,7 @@ private let agreementSchemas = [
     let editor = bondEditor(registry: try sharedBondRegistry(), file: CanvasFile(root: CanvasDocument()))
     var types: [ShapeID] = [], rels: [ShapeID] = [], notes: [ShapeID] = [], pills: [ShapeID] = [], bonds: [ShapeID] = []
     let pocket = ShapeID()
+    let reads = try freshReads(pocket: pocket)
     editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 3000, width: 100, height: 100))))) }
     for i in 0..<3 {
         var record = slipTypeRecord(agreementSchemas[i], title: "T\(i)", at: CGPoint(x: 40 + Double(i) * 400, y: 40))
@@ -168,7 +179,7 @@ private let agreementSchemas = [
             }
         }
         if editor.board != .root { _ = editor.showBoard(.root) }
-        if let difference = try bookDifference(editor, pocket: pocket, watch: types + rels + notes) {
+        if let difference = try bookDifference(editor, watch: types + rels + notes, reads: reads) {
             return "seed \(seed) step \(step) after \(log.suffix(8)): \(difference)"
         }
     }

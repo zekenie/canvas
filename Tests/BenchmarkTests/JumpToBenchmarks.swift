@@ -197,7 +197,7 @@ extension Budget {
             #endif
             let afterRename = rename(a) - rename(b)
             #if DEBUG
-            expectEqual(state.entriesRead, read + 101, "a rename reads the one shape")
+            expectEqual(state.entriesRead, read + measuredRuns(101), "a rename reads the one shape")
             #endif
             report(String(format: "%6d shapes, a commit with Jump To over without: a move before ⌘K %6.3f ms, read %6.3f; a rename before %6.3f, read %6.3f (budget %.1f)",
                           size, beforeMove, afterMove, beforeRename, afterRename, Budget.jumpToUpkeep))

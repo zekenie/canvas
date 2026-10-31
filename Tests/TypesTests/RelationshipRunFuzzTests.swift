@@ -50,7 +50,32 @@ private func described(_ graph: RelationshipGraph) -> [String] {
     check.problems.map { "\($0.kind.word) \($0.placeName ?? "-") \($0.keyword)" }.sorted()
 }
 
-@MainActor private func fuzz(seed: UInt64, holds: Set<String>, manyStands: Bool) throws -> String? {
+/// What one seeded run came to, and what a fresh editor on the file it leaves says of the same: everything the comparisons below make,
+/// whichever of them a test holds. The writes of a seed come out of its generator alone (`manyStands` shapes them), so the tests that
+/// ask for a seed's run with the same `manyStands` ask for the same run, and one run is made for all of them.
+private struct Fuzzed {
+    let log: [String]
+    /// The run's graph, and a fresh compile's, as text.
+    let inRun: [String], expected: [String]
+    /// Whether the fresh editor's file has no relationship type (the run keeps the committed graph then).
+    let noRelationshipTypes: Bool
+    /// An arrow's check in the run, and a fresh editor's for those a run could have drawn (a loose end is no row of a run).
+    let checksInRun: [ShapeID: [String]], committedChecks: [ShapeID: [String]]
+    /// A shape's relations in the run, and a fresh editor's for those it keeps.
+    let relationsInRun: [ShapeID: [String]], committedRelations: [ShapeID: [String]]
+}
+
+@MainActor private var fuzzed: [String: Fuzzed] = [:]
+
+@MainActor private func ran(seed: UInt64, manyStands: Bool) throws -> Fuzzed {
+    let key = "\(seed) \(manyStands)"
+    if let known = fuzzed[key] { return known }
+    let made = try run(seed: seed, manyStands: manyStands)
+    fuzzed[key] = made
+    return made
+}
+
+@MainActor private func run(seed: UInt64, manyStands: Bool) throws -> Fuzzed {
     var rng = Mix(state: seed)
     let editor = bondEditor(registry: try sharedBondRegistry(), file: CanvasFile(root: CanvasDocument()))
     var shapes: [ShapeID] = []       // slips: types, relationship types, notes
@@ -167,10 +192,29 @@ private func described(_ graph: RelationshipGraph) -> [String] {
     }
     let fresh = bondEditor(registry: try sharedBondRegistry(), file: editor.file)
     let freshGraph = try require(fresh.relationships).graph
-    var expected = described(freshGraph)
+    let freshChecks = try require(fresh.fieldChecks), freshRelationships = try require(fresh.relationships)
+    var committedChecks: [ShapeID: [String]] = [:], committedRelations: [ShapeID: [String]] = [:]
+    for id in checksInRun {
+        // An arrow with no list (a loose end) is no row of a run: draw makes no free end.
+        guard let record = fresh.shape(inFile: id.key), !(record[IsAProperty.self] ?? []).isEmpty else { continue }
+        committedChecks[id.key] = verdict(freshChecks.fullCheck(of: record))
+    }
+    for id in relationsInRun.keys {
+        guard fresh.shape(inFile: id) != nil, fresh.types?.isType(id) != true else { continue }
+        committedRelations[id] = freshRelationships.relations(of: id).map { "\(short($0.arrow)) \(short($0.type)) \($0.side) \($0.far.reading)" }.sorted()
+    }
+    return Fuzzed(log: log, inRun: inRun, expected: described(freshGraph), noRelationshipTypes: freshGraph.types.relationshipTypes.isEmpty,
+                  checksInRun: checksInRun, committedChecks: committedChecks, relationsInRun: relationsInRun, committedRelations: committedRelations)
+}
+
+/// What the run of `seed` says against a fresh editor's, in the respects `holds` names; nil when they agree.
+@MainActor private func fuzz(seed: UInt64, holds: Set<String>, manyStands: Bool) throws -> String? {
+    let run = try ran(seed: seed, manyStands: manyStands)
+    var inRun = run.inRun, expected = run.expected
+    let log = run.log
     // With no relationship type in the file the run keeps the committed graph (its fast path): nothing of a relationship
     // reads the types then, so only the marks, the ends and the rows are held.
-    if freshGraph.types.relationshipTypes.isEmpty {
+    if run.noRelationshipTypes {
         func kept(_ lines: [String]) -> [String] { lines.filter { $0.hasPrefix("marked") || $0.hasPrefix("ends") || $0.hasPrefix("rows") } }
         expected = kept(expected)
         inRun = kept(inRun)
@@ -187,16 +231,12 @@ private func described(_ graph: RelationshipGraph) -> [String] {
         let differing = Set(inRun).symmetricDifference(expected).sorted()
         return "seed \(seed): the run's graph is not a fresh compile's.\n  differing lines (run and fresh): \(differing)\n  " + log.joined(separator: "\n  ")
     }
-    let freshChecks = try require(fresh.fieldChecks), freshRelationships = try require(fresh.relationships)
-    for (id, said) in checksInRun where holds.contains("check") {
-        // An arrow with no list (a loose end) is no row of a run: draw makes no free end.
-        guard let record = fresh.shape(inFile: id), !(record[IsAProperty.self] ?? []).isEmpty else { continue }
-        let committed = verdict(freshChecks.fullCheck(of: record))
+    for (id, said) in run.checksInRun where holds.contains("check") {
+        guard let committed = run.committedChecks[id] else { continue }
         if said != committed { return "seed \(seed): the check of \(short(id)) in the run says \(said), a fresh editor's \(committed)\n  " + log.joined(separator: "\n  ") }
     }
-    for (id, said) in relationsInRun where holds.contains("relations") {
-        guard fresh.shape(inFile: id) != nil, fresh.types?.isType(id) != true else { continue }
-        let committed = freshRelationships.relations(of: id).map { "\(short($0.arrow)) \(short($0.type)) \($0.side) \($0.far.reading)" }.sorted()
+    for (id, said) in run.relationsInRun where holds.contains("relations") {
+        guard let committed = run.committedRelations[id] else { continue }
         if said != committed { return "seed \(seed): the relations of \(short(id)) in the run are \(said), a fresh editor's \(committed)\n  " + log.joined(separator: "\n  ") }
     }
     return nil

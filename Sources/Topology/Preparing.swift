@@ -23,18 +23,11 @@ public struct ForwardingPreparer: Sendable {
     /// the rest, what each stand-in will stand for and what comes and goes. Pure, and reads each shape
     /// an answer names once (each board's showing asked once).
     public func prepare(_ answers: [ShapeID: ProvidedForwarding]) -> PreparedForwarding {
-        var showable: [BoardID: Bool] = [:]
+        var showable = ShowableBoards()
         func shape(_ id: ShapeID) -> AnyShapeRecord? {
             let file = containment.file
             guard let board = file.board(containing: id) else { return nil }
-            let canShow: Bool
-            if let known = showable[board] {
-                canShow = known
-            } else {
-                canShow = file.canShow(board, boardOwningKinds: containment.boardOwningKinds)
-                showable[board] = canShow
-            }
-            return canShow ? file[board][id] : nil
+            return showable.canShow(board, in: file, boardOwningKinds: containment.boardOwningKinds) ? file[board][id] : nil
         }
         var prepared: [ShapeID: PreparedAnswer] = [:]
         for (id, answer) in answers {

@@ -32,8 +32,12 @@ extension HeldDragging: Session {
     let feature: ShapeID, layer: ShapeID, rel: ShapeID
     let fromEnd: ShapeID, toEnd: ShapeID
     let foundation: ShapeID, ground: ShapeID
+    /// The editors that read the file afresh, one for each file the test asks of (every question of one step asks of the same file).
+    let reads: FreshReads<Void>
 
     init(rule: EndRule?, name: String = "layer", query: Bool = false) throws {
+        let registry = try sharedBondRegistry()
+        reads = FreshReads { bondEditor(registry: registry, file: $0) }
         editor = query ? try queryBondEditor() : try bondEditor()
         feature = editor.addSlipType(schema, words: "A feature", title: "Feature", at: CGPoint(x: 40, y: 40))
         layer = editor.addSlipType(schema, words: "A layer", title: "Layer", at: CGPoint(x: 440, y: 40))
@@ -50,12 +54,12 @@ extension HeldDragging: Session {
     func said(_ id: ShapeID) -> [String] { editor.fieldChecks!.fullCheck(of: editor.file.record(id)!).problems.map(\.message).sorted() }
     /// The errors a second editor opened on the same file holds of the shape.
     func fresh(_ id: ShapeID) throws -> [String] {
-        let other = try bondEditor(file: editor.file)
+        let other = reads.read(editor.file).editor
         return other.issues(id).filter { $0.severity == .error }.map(\.message).sorted()
     }
     /// What a second editor's check says of the shape.
     func freshSaid(_ id: ShapeID) throws -> [String] {
-        let other = try bondEditor(file: editor.file)
+        let other = reads.read(editor.file).editor
         return other.fieldChecks!.fullCheck(of: other.file.record(id)!).problems.map(\.message).sorted()
     }
 

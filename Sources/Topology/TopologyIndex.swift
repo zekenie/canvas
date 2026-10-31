@@ -952,25 +952,20 @@ private struct Lookup {
     let shown: BoardID
     let document: CanvasDocument
     let file: CanvasFile
-    var showable: [BoardID: Bool] = [:]
+    let boardOwningKinds: Set<ShapeKind>
+    var showable = ShowableBoards()
 
     init(_ editor: CanvasEditor) {
         self.editor = editor
         shown = editor.board
         document = editor.document
         file = editor.file
+        boardOwningKinds = editor.registry.boardOwningKinds
     }
 
     mutating func shape(_ id: ShapeID) -> AnyShapeRecord? {
         guard let board = file.board(containing: id) else { return nil }
         if board == shown { return document[id] }
-        let canShow: Bool
-        if let known = showable[board] {
-            canShow = known
-        } else {
-            canShow = editor.canShow(board)
-            showable[board] = canShow
-        }
-        return canShow ? file[board][id] : nil
+        return showable.canShow(board, in: file, boardOwningKinds: boardOwningKinds) ? file[board][id] : nil
     }
 }

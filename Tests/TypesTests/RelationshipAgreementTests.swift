@@ -81,9 +81,20 @@ private struct SplitMix: RandomNumberGenerator {
     return made
 }
 
-/// An editor opened on `file`, which reads it afresh.
-@MainActor private func readAfresh(_ file: CanvasFile) throws -> CanvasEditor {
-    bondEditor(registry: try registry(typed: false), file: file)
+/// What a file read afresh says, worked out once for each arrow and note of it: the pure verdicts are functions of the file.
+@MainActor private final class FreshVerdicts {
+    /// What the pure check says of an arrow (`expectedIssues`).
+    var arrows: [ShapeID: [String]] = [:]
+    /// What the check of the file read afresh says of a shape: its full check.
+    var checks: [ShapeID: FieldCheck] = [:]
+    /// What a note's ruled rows say of it (`noteVerdict`); the note has none to say when it is no note that draws rows.
+    var notes: [ShapeID: [FieldProblem]?] = [:]
+}
+
+/// The editors that read a run's files afresh, over the plain registry, each given again for a file it has read.
+@MainActor private func freshReads() throws -> FreshReads<FreshVerdicts> {
+    let registry = try registry(typed: false)
+    return FreshReads(memo: FreshVerdicts.init) { bondEditor(registry: registry, file: $0) }
 }
 
 /// How the kept index differs from the one of `reader`, an editor opened on the same file; nil when it does not.
@@ -150,14 +161,28 @@ private struct SplitMix: RandomNumberGenerator {
 
 /// Every arrow of the run: the check of a fresh read of the file is the pure verdict, and what the editor's
 /// Validation holds for an arrow on the board shown is the same.
-@MainActor private func verdictDifference(_ editor: CanvasEditor, bonds: [ShapeID], notes: [ShapeID], fresh: CanvasEditor) throws -> String? {
+@MainActor private func verdictDifference(_ editor: CanvasEditor, bonds: [ShapeID], notes: [ShapeID], read: FreshReads<FreshVerdicts>.Read) throws -> String? {
+    let fresh = read.editor
     let checks = try require(fresh.fieldChecks)
+    /// The full check of a shape of the file read afresh, worked out once.
+    func fullCheck(of record: AnyShapeRecord) -> FieldCheck {
+        if let known = read.memo.checks[record.id] { return known }
+        let made = checks.fullCheck(of: record)
+        read.memo.checks[record.id] = made
+        return made
+    }
     var misfits: Set<ShapeID> = []
     for id in bonds {
         guard let record = fresh.shape(inFile: id) else { continue }
-        let expected = try expectedIssues(of: id, in: fresh)
+        let expected: [String]
+        if let known = read.memo.arrows[id] {
+            expected = known
+        } else {
+            expected = try expectedIssues(of: id, in: fresh)
+            read.memo.arrows[id] = expected
+        }
         if expected.contains(where: { $0.hasPrefix("error ") }) { misfits.insert(id) }
-        let said = checks.fullCheck(of: record).problems.map { "\($0.kind == .wrong ? "error" : $0.kind == .needed ? "incomplete" : "warning") \($0.placeName ?? "-") \($0.message)" }.sorted()
+        let said = fullCheck(of: record).problems.map { "\($0.kind == .wrong ? "error" : $0.kind == .needed ? "incomplete" : "warning") \($0.placeName ?? "-") \($0.message)" }.sorted()
         if said != expected { return "the check of \(id.rawValue.uuidString.prefix(4)) says \(said), the pure verdict \(expected)" }
         guard editor.document[id] != nil else { continue }
         let kept = editor.issues(id).map(word).sorted()
@@ -167,9 +192,16 @@ private struct SplitMix: RandomNumberGenerator {
     var needy: Set<ShapeID> = []
     for id in notes {
         guard let record = fresh.shape(inFile: id) else { continue }
-        let expected = noteVerdict(fresh, id) ?? []
+        let verdict: [FieldProblem]?
+        if let known = read.memo.notes[id] {
+            verdict = known
+        } else {
+            verdict = noteVerdict(fresh, id)
+            read.memo.notes[id] = .some(verdict)
+        }
+        let expected = verdict ?? []
         if expected.contains(where: { $0.kind == .needed }) { needy.insert(id) }
-        let said = checks.fullCheck(of: record).problems.filter { if case .row = $0.locus { true } else { false } }
+        let said = fullCheck(of: record).problems.filter { if case .row = $0.locus { true } else { false } }
         if said != expected { return "the check of note \(id.rawValue.uuidString.prefix(4)) says \(said.map(\.message)), the pure verdict \(expected.map(\.message))" }
         guard editor.document[id] != nil else { continue }
         let errors = editor.issues(id).filter { $0.severity == .error }.map(\.message).sorted()
@@ -181,7 +213,7 @@ private struct SplitMix: RandomNumberGenerator {
     for record in editor.document.shapes {
         guard let freshRecord = fresh.shape(inFile: record.id) else { continue }
         let kept = editor.issues(record.id).filter { $0.severity == .incomplete }.map(\.message).sorted()
-        let needs = checks.fullCheck(of: freshRecord).problems.filter { $0.kind == .needed }.map(\.message).sorted()
+        let needs = fullCheck(of: freshRecord).problems.filter { $0.kind == .needed }.map(\.message).sorted()
         if !kept.isEmpty { needsKept += 1 }
         if kept != needs { return "Validation keeps \(kept) as what \(record.kind.rawValue) \(record.id.rawValue.uuidString.prefix(4)) still needs, the fresh check says \(needs)" }
     }
@@ -247,6 +279,8 @@ private func gained(_ before: [String], _ after: [String]) -> [String] {
 /// again takes anew.
 private func same(_ a: AnyShapeRecord?, _ b: AnyShapeRecord) -> Bool {
     guard let a else { return false }
+    // A record equal in everything, its place in the stack too, is one shape as a rule reads it, and says so without encoding its values.
+    if a == b { return true }
     return a.id == b.id && a.kind == b.kind && a.propertiesJSON == b.propertiesJSON && a.meta == b.meta && a.container == b.container
 }
 
@@ -349,6 +383,7 @@ extension Dragged: Session {
         notes.append(record.id)
     }
     let heard = RelationshipHeard(editor)
+    let reads = try freshReads()
     func live(_ ids: [ShapeID]) -> [ShapeID] { ids.filter { editor.shape(inFile: $0) != nil } }
     func pick<T>(_ items: [T]) -> T? { items.randomElement(using: &rng) }
     func reading() -> Reading { Reading(editor, bonds: bonds, notes: notes + types + rels, types: types + rels + notes, skippingTypes: typed) }
@@ -475,12 +510,12 @@ extension Dragged: Session {
             }
         }
         before = after
-        let fresh = try readAfresh(editor.file)
-        if let difference = try difference(editor, bonds: bonds, reader: fresh) {
+        let read = reads.read(editor.file)
+        if let difference = try difference(editor, bonds: bonds, reader: read.editor) {
             expect(false, "seed \(seed) step \(step) after \(log.suffix(10)): \(difference)")
             return
         }
-        if typed, let difference = try verdictDifference(editor, bonds: bonds, notes: notes, fresh: fresh) {
+        if typed, let difference = try verdictDifference(editor, bonds: bonds, notes: notes, read: read) {
             expect(false, "seed \(seed) step \(step) after \(log.suffix(10)): \(difference)")
             return
         }

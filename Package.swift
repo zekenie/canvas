@@ -338,6 +338,9 @@ let package = Package(
         .target(name: "CanvasTesting", dependencies: ["Canvas", "CanvasRPC", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport
         // The tests' way to the product's plugins: the list, with a pasteboard and a model of the test's own.
         .target(name: "ShippedTesting", dependencies: ["Canvas", "CanvasTesting", "TestKit"] + shipped, path: "Tests/ShippedTesting"), // layer: testsupport
+        // What the tests of the skills' tools share (canvas-digest, canvas-ingest): scratch git repositories, `ingest` and the lens
+        // runner as an agent runs them. It imports no plugin, so SkillToolsTests, which needs no app, is rerun by no edit to one.
+        .target(name: "SkillTesting", dependencies: ["CanvasRPC", "TestKit"], path: "Tests/SkillTesting"), // layer: testsupport
         .executableTarget(name: "CanvasTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Geometry", "TestKit"], path: "Tests/CanvasTests"), // layer: test
         .executableTarget(name: "CanvasRPCTests", dependencies: ["CanvasRPC", "TestKit"], path: "Tests/CanvasRPCTests"), // layer: test
         .executableTarget(name: "DrawScriptTests", dependencies: ["DrawScript", "Geometry", "TestKit"], path: "Tests/DrawScriptTests"), // layer: test
@@ -397,7 +400,9 @@ let package = Package(
         .executableTarget(name: "MentionTextsTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionTextsTests"), // layer: test of Mentions
         .executableTarget(name: "ValidationChecksTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Draw", "TestKit", "Validation"], path: "Tests/ValidationChecksTests"), // layer: test of Validation
         .executableTarget(name: "ExamplesTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "ContextMenus", "Keyboard", "Mentions", "Reordering", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ExamplesTests"), // layer: test
-        .executableTarget(name: "CompositionTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "DrawScript", "Geometry", "Palette", "QueryLanguage", "ShippedTesting", "TestKit", "TextEditing"] + shipped, path: "Tests/CompositionTests"), // layer: test
+        // The skills' tools where no app is needed: the canvas-digest tool's unit tests under jsc and the canvas-ingest tests that start no app.
+        .executableTarget(name: "SkillToolsTests", dependencies: ["CanvasRPC", "SkillTesting", "TestKit"], path: "Tests/SkillToolsTests"), // layer: test
+        .executableTarget(name: "CompositionTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "DrawScript", "Geometry", "Palette", "QueryLanguage", "ShippedTesting", "SkillTesting", "TestKit", "TextEditing"] + shipped, path: "Tests/CompositionTests"), // layer: test
         .executableTarget(name: "BenchmarkTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Geometry", "QueryLanguage", "ShippedTesting", "TestKit"] + shipped, path: "Tests/BenchmarkTests"), // layer: test
     ],
     swiftLanguageModes: [.v6]

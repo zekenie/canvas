@@ -45,13 +45,36 @@ private let bugSchema = #"{"type":"object","properties":{"severity":{"type":"str
 /// How many shapes the runs found still needing something, on either board.
 @MainActor private var needy = 0
 
-@MainActor private func difference(_ editor: CanvasEditor, pocket: ShapeID) throws -> String? {
-    let fresh = try typeEditor(file: editor.file, more: [PocketsPlugin()])
+/// The registry every editor of the runs is over, made once: the plugins' registering is the same each time, and what a fresh read tests
+/// is the editor's indexes made from the file.
+@MainActor private var runRegistry: Registry?
+
+@MainActor private func registry() throws -> Registry {
+    if let runRegistry { return runRegistry }
+    let made = try Registry(plugins: typePlugins() + [PocketsPlugin()])
+    runRegistry = made
+    return made
+}
+
+/// What a file read afresh says each shape needs: a function of the file, worked out once for each shape of it.
+@MainActor private final class FreshNeeds {
+    var needs: [ShapeID: [String]] = [:]
+}
+
+@MainActor private func difference(_ editor: CanvasEditor, pocket: ShapeID, reads: FreshReads<FreshNeeds>) throws -> String? {
+    let read = reads.read(editor.file)
+    let fresh = read.editor
     let checks = try require(fresh.fieldChecks)
+    func wanted(of freshRecord: AnyShapeRecord) -> [String] {
+        if let known = read.memo.needs[freshRecord.id] { return known }
+        let made = needs(checks.fullCheck(of: freshRecord))
+        read.memo.needs[freshRecord.id] = made
+        return made
+    }
     _ = editor.validation?.results
     for record in editor.document.shapes {
         guard let freshRecord = fresh.shape(inFile: record.id) else { continue }
-        let said = kept(editor.issues(record.id)), wanted = needs(checks.fullCheck(of: freshRecord))
+        let said = kept(editor.issues(record.id)), wanted = wanted(of: freshRecord)
         if said != wanted { return "Validation keeps \(said) of \(record.id.rawValue.uuidString.prefix(4)), the fresh check says \(wanted)" }
         if !wanted.isEmpty { needy += 1 }
         if editor.validation?.result(for: record.id)?.worst != nil, wanted.count == editor.issues(record.id).count {
@@ -62,7 +85,7 @@ private let bugSchema = #"{"type":"object","properties":{"severity":{"type":"str
     let board = editor.contents(of: BoardID(owner: pocket))
     for record in board.shapes {
         guard let freshRecord = fresh.shape(inFile: record.id) else { continue }
-        let said = kept(editor.registry.validationIssues(of: record, in: editor.shapeContext.over(board), editor: editor)), wanted = needs(checks.fullCheck(of: freshRecord))
+        let said = kept(editor.registry.validationIssues(of: record, in: editor.shapeContext.over(board), editor: editor)), wanted = wanted(of: freshRecord)
         if !wanted.isEmpty { needy += 1 }
         if said != wanted { return "the rules say \(said) of \(record.id.rawValue.uuidString.prefix(4)) on the other board, the fresh check says \(wanted)" }
     }
@@ -71,7 +94,9 @@ private let bugSchema = #"{"type":"object","properties":{"severity":{"type":"str
 
 @MainActor private func agree(seed: UInt64, steps: Int) throws {
     var rng = SplitMix(state: seed)
-    let editor = try typeEditor(more: [PocketsPlugin()])
+    let registry = try registry()
+    let editor = CanvasEditor(registry: registry, file: CanvasFile(root: CanvasDocument()), scheduler: ManualScheduler())
+    let reads = FreshReads(memo: FreshNeeds.init) { CanvasEditor(registry: registry, file: $0, scheduler: ManualScheduler()) }
     let ticket = editor.addType(ticketSchema(required: ["title"]), title: "Ticket", at: CGPoint(x: 40, y: 40))
     let bug = editor.addType(bugSchema, title: "Bug", at: CGPoint(x: 400, y: 40))
     let plain = editor.addType(#"{"type":"object","properties":{"note":{"type":"string"}}}"#, title: "Plain", at: CGPoint(x: 760, y: 40))
@@ -126,7 +151,7 @@ private let bugSchema = #"{"type":"object","properties":{"severity":{"type":"str
         case 10: editor.undo(); log.append("undo")
         default: editor.redo(); log.append("redo")
         }
-        if let found = try difference(editor, pocket: pocket) {
+        if let found = try difference(editor, pocket: pocket, reads: reads) {
             expect(false, "seed \(seed) step \(step) after \(log.suffix(6)): \(found)")
             return
         }

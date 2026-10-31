@@ -254,7 +254,7 @@ import TestKit
         spinRunLoop(until: { model.waiting == 1 })
         expectEqual(b?.maps.callsOut, 1, "the call is out")
         b = nil
-        spinRunLoop(until: { model.waiting == 0 })
+        spinRunLoop(until: { model.waiting == 0 && model.answered == 1 })
         expect(closing == nil, "the editor went as its file closed")
         expectEqual(model.waiting, 0, "the call isn't left holding")
         expectEqual(model.answered, 1, "it ended: cancelled")
