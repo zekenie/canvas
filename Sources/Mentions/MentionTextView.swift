@@ -121,7 +121,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         if let owner, let commands = mentions?.slashCommandState {
             slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands,
                                                arguments: { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) },
-                                               shapes: { [weak self] in self?.shapes(matching: $0, for: $1) ?? [] })
+                                               shapes: { [weak self] in self?.shapes(matching: $0) ?? [] })
         }
     }
 
@@ -592,7 +592,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         slashCommands = mentions?.slashCommandState.map { commands in
             SlashCommandTyping(over: self, target: target, commands: commands,
                                arguments: { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) },
-                               shapes: { [weak self] in self?.shapes(matching: $0, for: $1) ?? [] })
+                               shapes: { [weak self] in self?.shapes(matching: $0) ?? [] })
         }
         return slashCommands
     }
@@ -636,11 +636,12 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         }
     }
 
-    /// The shapes a slash command admits that what's typed after a `/` finds (`SlashShapeSearch`): those the
-    /// picker would list for it on the command's line, best first, each with where it is (else its kind).
-    private func shapes(matching query: String, for rule: SlashShapeRule) -> [SlashShapeMatch] {
+    /// The shapes what's typed after a `/` names (`SlashShapeSearch`): those the picker would list for it on a
+    /// plain line, best first, each with where it is (else its kind). No command's rule is asked here: the
+    /// slash list asks the commands of the best few alone.
+    private func shapes(matching query: String) -> [SlashShapeMatch] {
         guard let mentions else { return [] }
-        return mentions.candidates(matching: query, in: Scope.self, for: pickerOwners, kinds: rule.kinds, admitting: rule.rule).matches.map {
+        return mentions.candidates(matching: query, in: Scope.self, for: pickerOwners).matches.map {
             let appearance = $0.appearance
             return SlashShapeMatch($0.id, label: appearance.label, matched: $0.matched, detail: $0.place?.text ?? appearance.detail,
                                    detailTruncatesHead: $0.place != nil,

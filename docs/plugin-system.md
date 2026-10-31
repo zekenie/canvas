@@ -7690,10 +7690,14 @@ list is open, and one where the shape offers no command at all.
 - **What a command takes is found too**, so a person can start from the thing: `/idea` lists
   `is-a Idea` and `move-near Idea`, all that can be done with Idea. A choice command's rows are
   matched by their titles (`choices()`, asked once a list, when something is first typed; `otherwise`'s
-  row never), and a command that takes one shape gets the shapes its rule admits from the host
-  (`SlashShapeSearch`, given to `SlashCommandTyping` as `shapes:`: Mentions' `MentionTextView` hands
-  it the search its `@` picker would make on the command's line, with where each shape is), at most
-  three a command (`SlashCommandStyle.shapesPerCommand`). A command that takes words (`/title`) would
+  row never). Shapes are found by name, once a query, by the host (`SlashShapeSearch`, given to
+  `SlashCommandTyping` as `shapes:`: Mentions' `MentionTextView` hands it the search its `@` picker
+  makes on a plain line, with where each shape is); the best four (`SlashCommandStyle.shapesListed`)
+  are offered to each command that takes a shape, whose rule is asked of those alone, so a keystroke
+  costs one search and a few rules whatever the board holds (asking each command's rule of every shape
+  the letters matched took 29 seconds on 10,000 notes in the bar for every shape). Each shape's rows
+  are together, in the commands' order: `move-near Idea`, `send-behind Idea`, then the next shape's.
+  A command that takes words (`/title`) would
   match any query, so it lists nothing. Such a row (`SlashCommandPicker.Entry`, its `argument` a
   `.choice` or a `.shape`) reads as the line it stands for, `is-a Idea`, what's typed matched in the
   argument, its detail what the choice says ("2 of 3") or where the shape is, and how many it acts on
@@ -7828,8 +7832,8 @@ A text view takes part by making a `SlashCommandTyping(over:owner:commands:argum
 shape's text (`owner`, whose commands it asks: the target `.text(owner)`), over an
 `EditingTextView`, with `commands`, the service. It holds the view and the service weakly.
 `arguments` reads a range of the text as runs (the default reads it as plain text); `shapes`, a
-`SlashShapeSearch`, finds the shapes a command that takes one admits for what's typed after a `/`,
-so the list offers them (nil: none).
+`SlashShapeSearch`, finds shapes by name for what's typed after a `/`, best first, and the list asks
+the commands that take a shape about the best few (nil: none).
 `SlashCommandTyping(over:target:commands:arguments:shapes:takesShapes:)` types for any target (the command
 bar's field types for `.selection`); `takesShapes: false` leaves the commands that take a shape out
 of its lists, its marks and its Return (a field that can't name a shape could never give them one),

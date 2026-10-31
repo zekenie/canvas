@@ -3,9 +3,9 @@ import Canvas
 import FuzzyMatching
 import TextEditing
 
-/// A shape a command that takes one may be given, as the host found it for what's typed after a `/`
-/// (`SlashShapeSearch`): the list shows its label after the command's name ("move-near Groceries"), and
-/// a pick runs the command with it, as a pill on the command's line would.
+/// A shape a command that takes one may be given, as the host found it by its name for what's typed after
+/// a `/` (`SlashShapeSearch`): the list shows its label after the name of each command that admits it
+/// ("move-near Groceries"), and a pick runs the command with it, as a pill on the command's line would.
 public struct SlashShapeMatch: Equatable {
     public let id: ShapeID
     /// What the shape is called: shown, and the label the command is handed with it.
@@ -30,10 +30,12 @@ public struct SlashShapeMatch: Equatable {
     }
 }
 
-/// How a host that names shapes finds them for what's typed after a `/`: the shapes a command's rule
-/// admits (`SlashShapeRule`: those of its kinds, if it names any, that the rule says yes to), best
-/// first, as its `@` picker would list them for that query on the command's line (Mentions').
-public typealias SlashShapeSearch = @MainActor (_ query: String, _ rule: SlashShapeRule) -> [SlashShapeMatch]
+/// How a host that names shapes finds them for what's typed after a `/`: the shapes called so, best first,
+/// as its `@` picker would list them for that query on a plain line (Mentions'). Asked once a query, by name
+/// alone: the list keeps the best few (`SlashCommandStyle.shapesListed`) and asks each command that takes a
+/// shape whether it admits those, so a keystroke costs one search and a few of the commands' rules, however
+/// many shapes the board or the target has and however many a rule would refuse.
+public typealias SlashShapeSearch = @MainActor (_ query: String) -> [SlashShapeMatch]
 
 /// The list a text view shows at a `/`, while it's open: what's typed after the slash (the query),
 /// the commands that lists, and which is highlighted. It's the list's model, headless, built on
@@ -172,11 +174,12 @@ public final class SlashCommandPicker {
 
     /// Lists what the query finds, the first row highlighted: every command in the order it was
     /// offered for an empty query; else the names it matches and what the commands take that it
-    /// matches (the choices of those that take one, the shapes the host finds for those that take a
-    /// shape, at most `SlashCommandStyle.shapesPerCommand` a command), best tier first (`FuzzyRanking`),
-    /// a name before an argument, then in the order offered and the argument's own order; or the one
-    /// row that says nothing matches. A query that can't be a name (whitespace, punctuation) matches
-    /// arguments alone.
+    /// matches (the choices of those that take one; for those that take a shape, the best few shapes the
+    /// host finds by name, `SlashCommandStyle.shapesListed`, each with every command that admits it), best
+    /// tier first (`FuzzyRanking`), a name before an argument and a choice before a shape, the choices in
+    /// the order offered and then their own, the shapes in the host's order, each with its commands in the
+    /// order offered; or the one row that says nothing matches. A query that can't be a name (whitespace,
+    /// punctuation) matches arguments alone.
     private func setRows(for query: String) {
         self.query = query
         var found: [(entry: Entry, matched: [Range<Int>], score: Int, order: [Int])] = []
@@ -203,7 +206,9 @@ public final class SlashCommandPicker {
     }
 
     /// What the commands take that `words` matches, each with its match, its tier and its order: after
-    /// every name (`[1, …]`), by the command, then the argument's place in its own list.
+    /// every name (`[1, …]`), the choices by command and then their place (`[1, 0, command, place]`), then
+    /// the shapes one at a time (`[1, 1, place, command]`), so a shape's rows are together: `move-near Idea`,
+    /// `send-behind Idea`.
     private func arguments(matching words: String) -> [(entry: Entry, matched: [Range<Int>], score: Int, order: [Int])] {
         guard !words.isEmpty else { return [] }
         if choiceRows == nil {
@@ -213,16 +218,17 @@ public final class SlashCommandPicker {
         for (index, rows) in choiceRows ?? [] {
             for (position, match) in FuzzyMatcher.matches(words, in: rows.map(\.title)).enumerated() {
                 guard let match else { continue }
-                found.append((Entry(command: offered[index], argument: .choice(rows[position])), match.matched, match.score, [1, index, position]))
+                found.append((Entry(command: offered[index], argument: .choice(rows[position])), match.matched, match.score,
+                              [1, 0, index, position]))
             }
         }
-        guard let findShapes else { return found }
-        for (index, command) in offered.enumerated() {
-            guard let rule = command.shapeRule else { continue }
-            for (position, shape) in findShapes(words, rule).prefix(SlashCommandStyle.shapesPerCommand).enumerated() {
-                // Ranked as a choice is by its label; one the host found by its path or a typo ranks below every tier.
-                let score = FuzzyMatcher.match(words, in: shape.label)?.score ?? 0
-                found.append((Entry(command: command, argument: .shape(shape)), shape.matched, score, [1, index, position]))
+        let takers = offered.indices.filter { offered[$0].takesShape }
+        guard let findShapes, !takers.isEmpty else { return found }
+        for (position, shape) in findShapes(words).prefix(SlashCommandStyle.shapesListed).enumerated() {
+            // Ranked as a choice is by its label; one the host found by its path or a typo ranks below every tier.
+            let score = FuzzyMatcher.match(words, in: shape.label)?.score ?? 0
+            for index in takers where offered[index].admits(shape.id) {
+                found.append((Entry(command: offered[index], argument: .shape(shape)), shape.matched, score, [1, 1, position, index]))
             }
         }
         return found
@@ -255,8 +261,8 @@ enum SlashCommandStyle {
     /// The longest query that's typed to list by, in characters: a title's longest (Titles'), what an
     /// argument may be called.
     static let queryLimit = 80
-    /// The most shapes a command that takes one lists for a query.
-    static let shapesPerCommand = 3
+    /// How many of the shapes the host finds by name for a query the commands that take one are asked about.
+    static let shapesListed = 4
 
     /// A row: the name and its hint; or, for a command with what it takes, the line it stands for
     /// ("is-a Idea", what's typed matched in the argument) and what the argument says (a type's

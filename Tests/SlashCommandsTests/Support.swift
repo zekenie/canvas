@@ -205,18 +205,24 @@ struct TargetCommandsPlugin: CanvasPlugin {
     }
 }
 
-/// The host's search for the shapes a command takes, as a mention text view's would be (`SlashShapeSearch`):
-/// the shapes named here whose label holds what's typed (case aside), in this order, those the command
-/// admits, each said to be a disc.
-@MainActor func namedShapes(_ named: [(id: ShapeID, label: String)]) -> SlashShapeSearch {
-    { query, rule in
-        named.compactMap { id, label in
+/// The host's search for shapes by name, as a mention text view's would be (`SlashShapeSearch`): the shapes
+/// named here whose label holds what's typed (case aside), in this order, each said to be a disc, counting
+/// in `asked` each time it's asked.
+@MainActor func namedShapes(_ named: [(id: ShapeID, label: String)], asked: SearchCount? = nil) -> SlashShapeSearch {
+    { query in
+        asked?.count += 1
+        return named.compactMap { id, label in
             let folded = label.lowercased()
-            guard rule.admits(id), let found = folded.range(of: query.lowercased()) else { return nil }
+            guard let found = folded.range(of: query.lowercased()) else { return nil }
             let start = folded.distance(from: folded.startIndex, to: found.lowerBound)
             return SlashShapeMatch(id, label: label, matched: [start..<start + query.count], detail: "Disc", spoken: "a disc")
         }
     }
+}
+
+/// How many times a host's search was asked.
+@MainActor final class SearchCount {
+    var count = 0
 }
 
 /// What a mention text view reads after a command's name, as a test says a person picked it: `runs`

@@ -271,23 +271,23 @@ struct SlashFixturesPlugin: CanvasPlugin {
         expectEqual(token.string, "")
     },
 
-    test("what's typed after a slash finds the shapes a command takes as the @ picker on its line would: a row each, and Return runs the command with the shape") {
+    test("what's typed after a slash finds shapes by name as the @ picker on a plain line would, each with the commands that take it, and Return runs the first with its shape") {
         let log = SlashLog()
         let session = try EditedJot("", plugins: [SlashFixturesPlugin(log: log)], board: addShelf)
         session.type("/gro")
         let picker = try require(session.textView.slashCommands?.picker)
-        expectEqual(picker.rows.compactMap(\.item?.title), ["stack Groceries", "stack Grocery List", "shelve Grocery run", "shelve Groceries"],
-                    "the plates for stack; the token and the plate shelve's rule admits, not the endpoint by its kind; nothing for near, which takes shapes by accepts")
-        expectEqual(picker.rows.first?.item?.matched, [6..<9])
+        expectEqual(picker.rows.compactMap(\.item?.title), ["shelve Grocery run", "stack Groceries", "shelve Groceries", "stack Grocery List"],
+                    "the token, the plates and the endpoint in the picker's order: the token shelve's, each plate stack's and the one shelve's rule admits shelve's too, the endpoint no command's; nothing for near, which takes shapes by accepts")
+        expectEqual(picker.rows.first?.item?.matched, [7..<10])
         session.window.pressReturn()
-        expectEqual(log.runs, ["stack A @Groceries"])
+        expectEqual(log.runs, ["shelve C @Grocery run"])
         expectEqual(session.string, "")
 
-        let shelve = try EditedJot("", plugins: [SlashFixturesPlugin(log: log)], board: addShelf)
-        shelve.type("/run")
-        expectEqual(shelve.textView.slashCommands?.picker?.rows.compactMap(\.item?.title), ["shelve Grocery run"])
-        shelve.window.pressReturn()
-        expectEqual(log.runs.last, "shelve C @Grocery run")
+        let stack = try EditedJot("", plugins: [SlashFixturesPlugin(log: log)], board: addShelf)
+        stack.type("/list")
+        expectEqual(stack.textView.slashCommands?.picker?.rows.compactMap(\.item?.title), ["stack Grocery List"], "not shelve, whose rule refuses it")
+        stack.window.pressReturn()
+        expectEqual(log.runs.last, "stack B @Grocery List")
     },
 
     test("a line without the shape a command needs is a new line, pill or no pill; ⇧↩ doesn't run it") {

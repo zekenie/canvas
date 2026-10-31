@@ -268,4 +268,64 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         expectEqual(editor.undoHistory.undoName, "Move")
         window.pressEscape()
     },
+
+    test("a name typed after / on a board of 10,000 notes: the commands that take a shape are asked of the best few names alone, so a keystroke in a note, and in the bar for every shape, costs what a search does") {
+        var shapes: [AnyShapeRecord] = [typeNote(TypeSchemaProperty.starter, title: "Idea", frame: CGRect(x: 0, y: -400, width: 200, height: 160))]
+        for (index, name) in ["Ideas", "Backlog", "Done"].enumerated() {
+            var frame = ShapeRecord(Frame(frame: CGRect(x: CGFloat(index) * 700, y: -1200, width: 600, height: 500)))
+            frame[TitleProperty.self] = name
+            shapes.append(AnyShapeRecord(frame))
+        }
+        for n in 0..<10_000 {
+            var note = ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(n % 100) * 240, y: CGFloat(n / 100) * 240, width: 200, height: 200),
+                                              text: MentionText(plain: "words \(n)")))
+            note[TitleProperty.self] = n % 10 == 0 ? "Idea \(n)" : "Note \(n)"
+            shapes.append(AnyShapeRecord(note))
+        }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(shapes: shapes), scheduler: ManualScheduler(), pasteboard: pasteboard,
+                                               model: ScriptedLanguageModel())
+        let (window, canvas) = windowed(editor)
+        editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        @MainActor func slowest(_ typed: String) -> Double {
+            typed.map { character in
+                let took = threadCPUTime { window.type(String(character)) }.components
+                return Double(took.seconds) * 1000 + Double(took.attoseconds) / 1e15
+            }.max() ?? 0
+        }
+
+        let note = try require(editor.document.shapes.first { $0[TitleProperty.self] == "Note 1" }?.id)
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        window.pressReturn()
+        window.type("/")
+        let inNote = slowest("idea")
+        let typing = try require((window.firstResponder as? MentionTextView<AnyMentionable>)?.slashCommands)
+        expectEqual(typing.picker?.rows.prefix(3).compactMap(\.item?.title), ["is-a Idea", "move-near Idea", "send-behind Idea"])
+        window.pressEscape()
+        window.pressEscape()
+
+        editor.selectedShapeIDs = []
+        window.makeFirstResponder(canvas)
+        window.type("/")
+        let inBar = slowest("i")
+        expect(editor.slashBar?.typing?.picker?.rows.isEmpty == false)
+        print("  /idea on 10,000 notes: the slowest key in a note \(String(format: "%.1f", inNote)) ms (budget \(slashKeyBudget)), the first in the bar for every shape \(String(format: "%.1f", inBar)) ms (budget \(slashEverythingKeyBudget))")
+        expect(inNote < slashKeyBudget, "a key in a note took \(inNote) ms")
+        expect(inBar < slashEverythingKeyBudget, "the first key in the bar for every shape took \(inBar) ms")
+        window.pressEscape()
+        window.pressEscape()
+    },
 ])
+
+/// The most a key typed after a `/` in a note may take on a board of 10,000 notes, in milliseconds of the thread's CPU
+/// time, debug build: one search by name and a few of the commands' rules (some 25 ms). Before the search went by name a
+/// key there took 165 ms, each command searching the board and asking its rule until it had a few.
+private let slashKeyBudget = 60.0
+
+/// The same for the first key in the bar for every shape (some 570 ms): what a frame among the best few names costs
+/// `/move-to`'s rule, which asks whether all 10,000 can be dropped into it as one block (`Drop`, a pass over every shape),
+/// as the `@` picker on its line asks of each frame it lists. Before the search went by name it was 29 seconds, the rule
+/// asked of every shape the letter matched.
+private let slashEverythingKeyBudget = 1_500.0

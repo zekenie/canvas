@@ -63,6 +63,27 @@ private func given(_ entry: SlashCommandPicker.Entry) -> String? {
     }
 }
 
+/// The shapes `point`'s rule was asked of, in order.
+@MainActor private final class PointLog {
+    var shapes: [ShapeID] = []
+}
+
+/// `point`, for cards: takes one shape, any but the card itself, and logs each its rule is asked of.
+private struct PointPlugin: CanvasPlugin {
+    let log: PointLog
+    var id: PluginID { "point-command" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let log = log
+        registrar.slashCommands(Card.self) {
+            SlashCommand("point", shapes: { target, owner, _ in
+                log.shapes.append(target)
+                return target != owner
+            }) { _, _, _ in }
+        }
+    }
+}
+
 @MainActor private func session(_ text: String = "", board: (@MainActor (CanvasEditor) -> SlashShapeSearch?)? = nil) throws -> SlashSession {
     let log = CommandLog()
     return try SlashSession(text, plugins: [ChoicePlugin(log: log)], log: log, board: board)
@@ -97,16 +118,26 @@ private func given(_ entry: SlashCommandPicker.Entry) -> String? {
                     "an empty query lists the commands alone, as ever")
     },
 
-    test("the shapes are the host's, those the command's rule admits, in the host's order, at most three a command; with no host, none; a command that takes words lists nothing") {
-        let rig = try Rig()
-        for number in 1...4 { rig.shape("Moon \(number)") }
-        rig.shape("Moon box", box: true)
-        let picker = try rig.picker()
+    test("the host's search is asked once a query, by name, and its best four are offered to each command that takes a shape, each shape's rows together in the commands' order; with no host, none; a command that takes words lists nothing") {
+        let pointed = PointLog()
+        let rig = try Rig([PointPlugin(log: pointed)])
+        let moon1 = rig.shape("Moon 1"), box = rig.shape("Moon box", box: true), moon2 = rig.shape("Moon 2"), moon3 = rig.shape("Moon 3")
+        rig.shape("Moon 4")
+        let asked = SearchCount()
+        let picker = SlashCommandPicker(at: 0, offering: try require(rig.h.editor.slashCommands).commands(for: rig.card),
+                                        findingShapes: namedShapes(rig.named, asked: asked))
+        expectEqual(asked.count, 0, "nothing typed, nothing searched")
         type("moon", into: picker)
-        expectEqual(picker.rows.map(rowText), ["stack Moon 1 (Disc)", "stack Moon 2 (Disc)", "stack Moon 3 (Disc)"],
-                    "the discs, not the box `stack` refuses, and not `log` or `any`, which take words")
+        expectEqual(picker.rows.map(rowText), ["stack Moon 1 (Disc)", "point Moon 1 (Disc)", "point Moon box (Disc)", "stack Moon 2 (Disc)",
+                                               "point Moon 2 (Disc)", "stack Moon 3 (Disc)", "point Moon 3 (Disc)"],
+                    "the first four the host found, each with the commands that take it: not the box for stack, nothing of Moon 4, nothing for log or any, which take words")
+        expectEqual(asked.count, 1, "one search a query, whatever the commands")
+        expectEqual(Set(pointed.shapes), [moon1, box, moon2, moon3], "point's rule asked of the four alone")
         expectEqual(picker.rows.first?.item?.matched, [6..<10])
         expectEqual(picker.rows.first?.item?.spoken, "stack Moon 1, a disc")
+        type("moon 2", into: picker)
+        expectEqual(picker.rows.map(rowText), ["stack Moon 2 (Disc)", "point Moon 2 (Disc)"])
+        expectEqual(asked.count, 2)
         let none = try rig.picker(searching: false)
         type("moon", into: none)
         expectEqual(none.rows, [.empty("No matches")])
