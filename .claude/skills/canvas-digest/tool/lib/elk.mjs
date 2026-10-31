@@ -17,8 +17,10 @@ export function loadElk(io, base) {
 
 const SPACING = 64;   // between boxes: 64 below another keeps the row above clear for a title pill, and is over the 40 draw keeps beside
 
+// rectpacking packs plain rows (SIMPLE), not ELK's default COMPACTION: in elkjs 0.12.0 COMPACTION never returns on some boxes at some
+// aspect ratios (this repository's References board, 17 boxes, at 1.48, 1.5 and 1.6, but not 1.45 or 2), and `pack` takes the air out after
 export const ALGORITHMS = {
-  rectpacking: { 'elk.algorithm': 'rectpacking', 'elk.aspectRatio': '1.5', 'elk.spacing.nodeNode': String(SPACING), 'elk.padding': '[top=0,left=0,bottom=0,right=0]' },
+  rectpacking: { 'elk.algorithm': 'rectpacking', 'elk.rectpacking.packing.strategy': 'SIMPLE', 'elk.aspectRatio': '1.5','elk.spacing.nodeNode': String(SPACING), 'elk.padding': '[top=0,left=0,bottom=0,right=0]' },
   mrtree: { 'elk.algorithm': 'mrtree', 'elk.direction': 'DOWN', 'elk.spacing.nodeNode': String(SPACING), 'elk.padding': '[top=0,left=0,bottom=0,right=0]' },
   layered: {
     'elk.algorithm': 'layered', 'elk.direction': 'DOWN', 'elk.edgeRouting': 'POLYLINE', 'elk.spacing.nodeNode': String(SPACING),
