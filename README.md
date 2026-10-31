@@ -18,6 +18,11 @@ includes from 15 on). It builds each module separately, as many at once as there
 only what changed, and refuses to build if the code and the manifest disagree. `./build.sh graph` prints the module graph,
 and `./build.sh audit` checks it without compiling.
 
+The repository's commands are tasks in `mise.toml`, for [mise](https://mise.jdx.dev)
+(`brew install mise`): `mise tasks` lists them with what each does, `mise run TASK` runs one
+(`mise run open`, `mise run test Relationship`), and `mise run TASK --help` says what it takes. Each
+task runs the script it names, so the commands above work just as well without mise.
+
 ## Boards
 
 Each board is a file (`.canvasboard`, JSON) in its own window: File › New, Open, Open Recent, and Save,

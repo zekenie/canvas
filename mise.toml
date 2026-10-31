@@ -1,0 +1,243 @@
+# The commands this repository has, as tasks: `mise tasks` lists them, `mise run TASK` runs one (`mise run`
+# alone offers a picker), and `mise run TASK --help` says what it takes. Why it's built this way is in
+# .claude/rules/build.md ("The tasks"). Writing a task:
+# - It runs a script that stays the way to do it (build.sh, test.sh, scripts/, the skills) and does none of
+#   that script's work itself. A new script, or a new mode of build.sh, gets its task here in the same commit.
+# - Nothing that needs `mise trust`: no templates, [env], [settings], task templates or tools.
+# - It runs at the root of its checkout, so a path given to it is read from there.
+# - It depends on `guard`, directly or through another task, unless it acts on no checkout of its own (ingest).
+# - Its words go to its script as they are with `raw_args = true` (the script's --help is its own). A task
+#   with a step before its script (a build, a question) declares them instead, as `arg "[args]..."`, set
+#   back as the shell's with `eval "set -- ${usage_args:-}"`, so mise answers --help without the step.
+# - Each command one line, since mise shows a command's first line as it starts it.
+
+# Worktrees sit inside the main checkout, and mise reads every mise.toml above the folder it runs in: run in
+# a checkout without a mise.toml of its own, mise would run these tasks in this one. This refuses that.
+[tasks.guard]
+description = "Refuse to run a task in a checkout other than the one it belongs to"
+hide = true
+quiet = true
+run = '''top=$(git -C "$MISE_ORIGINAL_CWD" rev-parse --show-toplevel) && [ "$(cd "$top" && pwd -P)" = "$(pwd -P)" ] || { echo "mise: these are $PWD's tasks, and ${top:-$MISE_ORIGINAL_CWD} is another checkout with no mise.toml of its own: run its scripts, or bring it up to date with main" >&2; exit 1; }'''
+
+# --- The app ---------------------------------------------------------------------------------------
+
+[tasks.build]
+description = "Build build/InfiniteCanvas.app (release), with canvas, its Quick Look extensions and the skills for agents"
+depends = ["guard"]
+run = "./build.sh"
+
+[tasks.open]
+description = "Build, then open this checkout's app (a worktree's is a copy of its own), with any board files given"
+usage = 'arg "[file]..." help="Board files to open in this build"'
+depends = ["build"]
+run = 'eval "set -- ${usage_file:-}"; open -a build/InfiniteCanvas.app "$@"'
+
+[tasks."build:tests"]
+description = "Build every module but the app, the test executables included (debug), and run none"
+depends = ["guard"]
+run = "./build.sh tests"
+
+[tasks.agents]
+description = "Put the skills the app carries for agents in DIR, a Claude Code plugin marketplace (compiles nothing)"
+usage = 'arg "<dir>" help="Made, or emptied if it is an agents folder a build made; any other folder with files in it is refused"'
+depends = ["guard"]
+run = './build.sh agents "$usage_dir"'
+
+[tasks."agents:install"]
+description = "Put the skills of this checkout's app where agents read them, and its canvas on your PATH (canvas install)"
+usage = 'arg "[args]..." help="Passed to canvas install (build/canvas help install says what it takes)"'
+depends = ["build"]
+run = 'eval "set -- ${usage_args:-}"; build/canvas install "$@"'
+
+[tasks.canvas]
+description = "This checkout's canvas, the app's command line: status, boards, draw, query... (help lists them)"
+raw_args = true
+depends = ["guard"]
+run = "build/canvas"
+
+# --- Tests -----------------------------------------------------------------------------------------
+
+[tasks.test]
+description = "Build (debug) and run every test executable, TEST_JOBS at once (one a core)"
+usage = 'arg "[filter]" env="TEST_FILTER" help="Run only the tests whose \"Suite: test\" name contains it"'
+depends = ["guard"]
+run = 'TEST_FILTER="$usage_filter" ./test.sh'
+
+[tasks."test:menus"]
+description = "The tests with those that open real menus on screen (TEST_UI_MENUS=1), one executable at a time"
+usage = 'arg "[filter]" env="TEST_FILTER" help="Run only the tests whose \"Suite: test\" name contains it (\"on screen\": the menus alone)"'
+depends = ["guard"]
+run = 'TEST_UI_MENUS=1 TEST_FILTER="$usage_filter" ./test.sh'
+
+[tasks."test:digest"]
+description = "The canvas-digest tool's own tests, under the system's jsc and node at once"
+depends = ["test:digest:jsc", "test:digest:node"]
+
+# The digest driver's JSC; jsc takes no relative path from another folder.
+[tasks."test:digest:jsc"]
+description = "The canvas-digest tool's own tests under the system's jsc"
+hide = true
+depends = ["guard"]
+run = '"${JSC:-/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc}" "$PWD/.claude/skills/canvas-digest/tool/test/run.js"'
+
+[tasks."test:digest:node"]
+description = "The canvas-digest tool's own tests under node"
+hide = true
+depends = ["guard"]
+run = "node .claude/skills/canvas-digest/tool/test/run.js"
+
+[tasks.bench]
+description = "Build BenchmarkTests (release) and hold it to its budgets; BENCH_SIZES and BENCH_SUITE choose others"
+usage = 'arg "[filter]" env="TEST_FILTER" help="Run only the benchmarks whose \"Suite: test\" name contains it"'
+depends = ["guard"]
+run = 'TEST_FILTER="$usage_filter" ./build.sh bench'
+
+# --- The module graph ------------------------------------------------------------------------------
+
+[tasks.audit]
+description = "Check the module graph and every import against Package.swift, compiling nothing"
+depends = ["guard"]
+run = "./build.sh audit"
+
+[tasks.graph]
+description = "Print each module's layer, dependencies and dependents, then what ships"
+depends = ["guard"]
+run = "./build.sh graph"
+
+[tasks."graph:dot"]
+description = "Print the module graph for Graphviz"
+depends = ["guard"]
+run = "./build.sh dot"
+
+[tasks."graph:list"]
+description = "Print the names of a layer's modules (test.sh asks it for the test executables)"
+usage = 'arg "[layer]" default="test" help="core, platform, product, testsupport or test"'
+depends = ["guard"]
+run = './build.sh list "$usage_layer"'
+
+[tasks.api]
+description = "Print a module's public interface, its contract, once it and what it uses are built (debug)"
+usage = 'arg "<module>" help="The module, as Package.swift names it"'
+depends = ["guard"]
+run = './build.sh api "$usage_module"'
+
+# --- Prompts and what calls Claude --------------------------------------------------------------------
+
+# A task that calls Claude, over the network at a cost in tokens, asks before it does anything (a build
+# too): `mise run --yes TASK` answers, the flag before the task's name. test.sh runs none of them.
+[tasks."eval:query"]
+description = "Calls Claude: the --ask prompt over its cases; QUERY_VIA=claude-code, else the API key in Settings"
+confirm = "This calls Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = [
+  "./build.sh tests",
+  'QUERY_LIVE=1 TEST_FILTER="Query prompt, live" build/debug/CompositionTests/CompositionTests',
+]
+
+[tasks."eval:type-sync"]
+description = "Calls Claude: a type's words and schema kept in step through the app's own path; needs the API key in Settings"
+confirm = "This calls Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+run = [
+  "./build.sh tests",
+  'SCHEMA_LIVE=1 TEST_FILTER="Type sync, live" build/debug/TypesTests/TypesTests',
+]
+
+[tasks."eval:type-prompts"]
+description = "Calls Claude: the type sync prompts over their cases, a row each in results.csv (scripts/schema-prompts)"
+usage = 'arg "[args]..." help="Passed to evals.py, which takes --round N (scripts/schema-prompts/README.md)"'
+confirm = "This calls Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+dir = "scripts/schema-prompts"
+run = 'eval "set -- ${usage_args:-}"; python3 evals.py "$@"'
+
+[tasks."eval:highlights"]
+description = "Calls Claude: the highlights prompt over its cases (scripts/schema-prompts)"
+usage = 'arg "[args]..." help="Passed to highlight_evals.py (scripts/schema-prompts/README.md)"'
+confirm = "This calls Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+dir = "scripts/schema-prompts"
+run = 'eval "set -- ${usage_args:-}"; python3 highlight_evals.py "$@"'
+
+[tasks."eval:fill"]
+description = "Calls Claude: the prompt that fills a note's fields over its cases (scripts/schema-prompts)"
+usage = 'arg "[args]..." help="Passed to fill_evals.py (scripts/schema-prompts/README.md)"'
+confirm = "This calls Claude over the network, which costs tokens. Run it?"
+depends = ["guard"]
+dir = "scripts/schema-prompts"
+run = 'eval "set -- ${usage_args:-}"; python3 fill_evals.py "$@"'
+
+[tasks."eval:check"]
+description = "The three type prompt evals' self-tests: their prompts and settings read out of the Swift, and no call"
+depends = ["guard"]
+dir = "scripts/schema-prompts"
+run = [
+  "python3 evals.py --check",
+  "python3 highlight_evals.py --check",
+  "python3 fill_evals.py --check",
+]
+
+[tasks."eval:type-prompts:cases"]
+description = "Write cases.csv again from gen_cases.py, where the type sync prompts' cases are written"
+depends = ["guard"]
+dir = "scripts/schema-prompts"
+run = "python3 gen_cases.py"
+
+[tasks."query-prompt:copy"]
+description = "Copy --ask's prompt (Shipped/ask-prompt.txt) into the canvas skill's query-prompt.md; commit both"
+depends = ["guard"]
+run = "python3 scripts/query-prompts/copy_prompt.py"
+
+# --- Assets and fixtures ---------------------------------------------------------------------------
+
+[tasks.icon]
+description = "Make Icon/AppIcon.icns from the two SVGs with headless Google Chrome, or run another step of icon.py"
+usage = 'arg "[args]..." help="A step of Icon/tools/icon.py and its arguments, build when none (Icon/README.md)"'
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-build}"; python3 Icon/tools/icon.py "$@"'
+
+[tasks."fixtures:poc"]
+description = "Record the arrow fixtures again from the proof of concept; git status should show no change"
+depends = ["guard"]
+run = "scripts/record-poc-fixtures.sh"
+
+# --- Boards, agents and history ---------------------------------------------------------------------
+
+# The main checkout's ingest, on the main checkout as it is, from any checkout: run in a worktree, ingest
+# would draw through that worktree's own build, which isn't the app that's running (.claude/rules/ingest.md).
+# --commit names any branch, the worktrees sharing git's objects; HEAD is the main checkout's.
+[tasks.ingest]
+description = "Draw this repository as boards on the running app's board in front: the main checkout's ingest, from any checkout"
+raw_args = true
+run = 'common=$(git rev-parse --path-format=absolute --git-common-dir); main=${common%/.git}; CANVAS_CLI="${CANVAS_CLI:-$main/build/canvas}" "$main/.claude/skills/canvas-ingest/ingest" "$main"'
+
+[tasks.digest]
+description = "The canvas-digest driver, as its skill runs it: check, measure, plan, draw, verify, all, ready"
+raw_args = true
+depends = ["guard"]
+run = ".claude/skills/canvas-digest/digest"
+
+[tasks.jev-route]
+description = "Ask Jev which model and effort each subagent in a tasks file gets (the jev-route skill)"
+raw_args = true
+depends = ["guard"]
+run = "python3 .claude/skills/jev-route/route.py"
+
+[tasks."history:record"]
+description = "Write this Claude Code session's record to history/sessions/, for the commit that lands it"
+raw_args = true
+depends = ["guard"]
+run = "python3 .claude/skills/history/condense.py --self"
+
+[tasks."history:backfill"]
+description = "Make every record a folder and add the plans of sessions still on this machine (--dry-run)"
+raw_args = true
+depends = ["guard"]
+run = "python3 .claude/skills/history/backfill.py"
+
+[tasks."history:review"]
+description = "A step of the weekly review of main's commit messages (prepare, ...); the history skill says which"
+usage = 'arg "[args]..." help="The step and its arguments, passed to review.py"'
+confirm = "The review's land step rewrites main's history and force-pushes it, once the owner says so. Run this step?"
+depends = ["guard"]
+run = 'eval "set -- ${usage_args:-}"; python3 .claude/skills/history/review.py "$@"'
