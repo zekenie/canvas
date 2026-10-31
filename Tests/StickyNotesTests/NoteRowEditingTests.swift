@@ -128,12 +128,14 @@ private final class Bench {
 
 extension Bench {
     /// A key walk of the note being edited: the rows' stops are "note/<row>", the words' "words".
+    /// It settles on the scheduler's turns alone: the rows are AppKit and act at once on a key, so a turn of the run loop
+    /// after every key (ten milliseconds of waiting, twice) found nothing more to do.
     func walk(settle: KeyWalk.Settling? = nil) -> KeyWalk {
         let walk = KeyWalk(window, editor: editor, readers: [.custom("note") { [unowned self] window in
             if let row = self.rowsView?.focusedRow { return Focus.of(window, surface: "note", element: row) }
             if self.words_ != nil { return Focus.of(window, surface: "words", element: "") }
             return nil
-        }], settle: settle ?? .both(h.scheduler))
+        }], settle: settle ?? .manual(h.scheduler))
         walk.pending = ["words: the note's words have no accessibility label, accessibility-5"]
         return walk
     }

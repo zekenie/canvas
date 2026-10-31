@@ -108,6 +108,10 @@ final class CensusBoard {
         editor.selectedShapeIDs = []
         editor.undoHistory.seal()
         settle()
+        // Every key and click turns the run loop, which draws the whole 2400 x 1600 window; the census reads lookups and effects, never pixels,
+        // so it is drawn in 8 bits of sRGB, not the screen's half-floats (a third of the time of the census).
+        m.window.colorSpace = .sRGB
+        m.window.depthLimit = .twentyfourBitRGB
         start = editor.document
         startTool = editor.currentToolID
         startZoom = editor.camera.zoom

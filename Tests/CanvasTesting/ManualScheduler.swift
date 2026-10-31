@@ -39,4 +39,8 @@ public final class ManualScheduler: Scheduler {
     }
 
     public var pendingCount: Int { pending.count }
+
+    /// How many pending actions are due by now: what a `wait(0)` would fire. A timer set for later
+    /// counts in `pendingCount` but not here.
+    public var dueCount: Int { pending.filter { $0.due <= now }.count }
 }

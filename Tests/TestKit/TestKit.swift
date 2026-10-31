@@ -98,7 +98,11 @@ public func awaitResult<T>(timeout: TimeInterval = 5, file: StaticString = #file
 
 /// How long `body` kept this thread running: what a test holding code to a time budget measures,
 /// since wall time counts whatever else the machine runs (the other test executables, run at once).
+/// It marks the suite running now as one that holds a time budget, in a process that holds them
+/// (`runTests`' `holdsBudgets`), so test.sh runs it with little else running: the thread's own time
+/// is about half again as long with every core busy (the clocks slow, the caches are shared).
 public func threadCPUTime(_ body: () throws -> Void) rethrows -> Duration {
+    if budgetsHeld { measuredForBudget = true }
     let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
     try body()
     return .nanoseconds(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start)
@@ -149,15 +153,66 @@ public func runAsTest(_ body: @MainActor () throws -> Void, afterEach: @MainActo
 /// TEST_TIMES=1 writes each test's seconds to standard error ("0.123 Suite: test"). `afterEach` runs
 /// after each test, whatever it did, as part of it: what it expects there fails that test; then what
 /// the test asked to run as it ends (`afterThisTest`). Each test runs as `runAsTest` runs one.
+///
+/// test.sh runs a long executable as several processes at once, each running a share of its
+/// suites: TEST_SHARD=k/n runs the k-th of n (`shares`), then `closing`, which every share runs whole
+/// after its own (a suite that judges what the suites before it in the process reported, as
+/// BenchmarkTests' Scaling does). TEST_SUITE_TIMES=file writes each suite's seconds there as it ends
+/// ("seconds<TAB>suite", and "<TAB>budget" after one that measured with `threadCPUTime` while
+/// `holdsBudgets`), but for `closing`'s, which test.sh keeps for the next run's shares as TEST_WEIGHTS;
+/// TEST_BUDGETS=skip runs only the suites it doesn't mark so, and TEST_BUDGETS=only only those it
+/// does, before any share is dealt. A process whose measures are reports, not budgets (BenchmarkTests
+/// in a debug build) says `holdsBudgets: false`.
 @MainActor
-public func runTests(_ suites: [Suite], afterEach: @MainActor () -> Void = {}) -> Never {
+public func runTests(_ suites: [Suite], closing: [Suite] = [], holdsBudgets: Bool = true, afterEach: @MainActor () -> Void = {}) -> Never {
     // Line-buffered even into a file (test.sh sends this to one), so a crash doesn't swallow what came before.
     setvbuf(stdout, nil, _IOLBF, 0)
+    budgetsHeld = holdsBudgets
     let environment = ProcessInfo.processInfo.environment
     let filter = environment["TEST_FILTER"].flatMap { $0.isEmpty ? nil : $0 }
     let timed = environment["TEST_TIMES"] == "1"
+    let weights = environment["TEST_WEIGHTS"].flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? ""
+    var suites = suites
+    var keys = suiteKeys(suites), records = suiteRecords(weights, keys: suiteKeys(suites))
+    func keep(_ positions: [Int]) {
+        (suites, keys, records) = (positions.map { suites[$0] }, positions.map { keys[$0] }, positions.map { records[$0] })
+    }
+    if let budgets = environment["TEST_BUDGETS"], !budgets.isEmpty {
+        guard budgets == "skip" || budgets == "only" else {
+            print("TEST_BUDGETS is skip or only; not '\(budgets)'")
+            exit(2)
+        }
+        keep(suites.indices.filter { (records[$0]?.holdsBudget ?? false) == (budgets == "only") })
+    }
+    if let shard = environment["TEST_SHARD"], !shard.isEmpty {
+        let parts = shard.split(separator: "/", omittingEmptySubsequences: false).map { Int($0) }
+        guard parts.count == 2, let k = parts[0], let n = parts[1], n >= 1, (1...n).contains(k) else {
+            print("TEST_SHARD is k/n, the k-th of n shares (k from 1); not '\(shard)'")
+            exit(2)
+        }
+        // Past one share a suite, the rest are empty, so a count of millions deals no more than that.
+        let count = min(n, max(suites.count, 1))
+        keep(k <= count ? shares(suites, of: count, records: records)[k - 1] : [])
+    }
+    let dealt = suites.count
+    suites += closing
+    let times = environment["TEST_SUITE_TIMES"].flatMap { path -> FileHandle? in
+        FileManager.default.createFile(atPath: path, contents: nil)
+        return FileHandle(forWritingAtPath: path)
+    }
     var passed = 0, failed = 0
-    for suite in suites {
+    for (index, suite) in suites.enumerated() {
+        let began = Date()
+        var failedHere = false
+        measuredForBudget = false
+        defer {
+            if index < dealt {
+                // One that failed before it measured keeps the mark it had.
+                let budget = measuredForBudget || failedHere && records[index]?.holdsBudget == true
+                let line = String(format: "%.3f\t", Date().timeIntervalSince(began)) + keys[index] + (budget ? "\tbudget" : "")
+                times?.write(Data((line + "\n").utf8))
+            }
+        }
         for test in suite.tests {
             let name = "\(suite.name): \(test.name)"
             if let filter, !name.localizedCaseInsensitiveContains(filter) { continue }
@@ -168,6 +223,7 @@ public func runTests(_ suites: [Suite], afterEach: @MainActor () -> Void = {}) -
                 passed += 1
             } else {
                 failed += 1
+                failedHere = true
                 print("FAIL \(name)")
                 for failure in failures { print("     \(failure)") }
             }
@@ -175,4 +231,61 @@ public func runTests(_ suites: [Suite], afterEach: @MainActor () -> Void = {}) -
     }
     print("\(passed) passed, \(failed) failed")
     exit(failed == 0 ? 0 : 1)
+}
+
+/// Whether the suite running now measured a thread's time while its process holds budgets: the mark
+/// `runTests` writes after it. Set wherever `threadCPUTime` is called (a test on another thread
+/// writes it too, while the test thread waits for it) and read on the test thread as the suite ends.
+nonisolated(unsafe) private var measuredForBudget = false
+nonisolated(unsafe) private var budgetsHeld = true
+
+/// What a run kept of a suite: its seconds, and whether it held a time budget.
+struct SuiteRecord {
+    let seconds: Double
+    let holdsBudget: Bool
+}
+
+/// What each suite is called in what a run keeps: its name, and for one of a name that more than one
+/// suite has, which of them it is in the order given ("Drawing #2"), since the shares' lines are
+/// joined in no order of the suites'.
+func suiteKeys(_ suites: [Suite]) -> [String] {
+    var named: [String: Int] = [:], seen: [String: Int] = [:]
+    for suite in suites { named[suite.name, default: 0] += 1 }
+    return suites.map { suite in
+        guard named[suite.name, default: 0] > 1 else { return suite.name }
+        seen[suite.name, default: 0] += 1
+        return "\(suite.name) #\(seen[suite.name]!)"
+    }
+}
+
+/// Each suite's record in `weights` (lines of "seconds<TAB>suite", "<TAB>budget" after one that held
+/// a time budget), by its key (`suiteKeys`), nil for one with none.
+func suiteRecords(_ weights: String, keys: [String]) -> [SuiteRecord?] {
+    var kept: [String: SuiteRecord] = [:]
+    for line in weights.split(separator: "\n") {
+        let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+        guard fields.count == 2 || fields.count == 3, let value = Double(fields[0]) else { continue }
+        kept[String(fields[1])] = SuiteRecord(seconds: value, holdsBudget: fields.count == 3 && fields[2] == "budget")
+    }
+    return keys.map { kept[$0] }
+}
+
+/// Deals `suites` out into `count` shares, as the positions of each share's suites in the order
+/// given: heaviest first, each to the share with the least so far (the first such), so the shares
+/// take about as long as each other and every process dealing them deals them the same. A suite
+/// weighs its seconds in its record (`suiteRecords`), else its tests at the mean seconds a test took
+/// in the suites that have one (one each when none has).
+func shares(_ suites: [Suite], of count: Int, records: [SuiteRecord?]) -> [[Int]] {
+    let known = records.map { $0?.seconds }
+    let timed = zip(suites, known).filter { $0.1 != nil }
+    let tests = timed.reduce(0) { $0 + $1.0.tests.count }
+    let perTest = tests == 0 ? 1 : timed.reduce(0) { $0 + $1.1! } / Double(tests)
+    let weight = zip(suites, known).map { $0.1 ?? Double($0.0.tests.count) * perTest }
+    var dealt = Array(repeating: [Int](), count: count), load = Array(repeating: 0.0, count: count)
+    for index in suites.indices.sorted(by: { weight[$0] > weight[$1] || weight[$0] == weight[$1] && $0 < $1 }) {
+        let lightest = load.indices.min { load[$0] < load[$1] || load[$0] == load[$1] && $0 < $1 }!
+        dealt[lightest].append(index)
+        load[lightest] += weight[index]
+    }
+    return dealt.map { $0.sorted() }
 }

@@ -201,23 +201,35 @@ extension Seeded {
     }
 }
 
-@MainActor let spatialIndexTests = Suite("Spatial index", [
-    test("the shapes in a rect and under a point are the ones going through every shape finds, through a seeded run of changes to a board") {
-        for seed in 1...8 as ClosedRange<UInt64> {
-            var random = Seeded(seed: seed)
-            let h = try spatialHarness()
-            let side: CGFloat = [3_000, 12_000][Int(seed) % 2]
-            // Boards of 120, 260 and 500 shapes (a grid is made from 64).
-            var ids = addShapes([120, 260, 500][Int(seed) % 3], to: h, side: side, random: &random)
-            let area = CGRect(x: -500, y: -500, width: side + 1_500, height: side + 1_500)
-            expectSearchesAgree(h, area: area, random: &random, "seed \(seed), as made")
-            for step in 0..<70 {
-                let what = changeBoard(h, ids: &ids, side: side, random: &random)
-                expectSearchesAgree(h, area: area, random: &random, rects: 8, points: 8, "seed \(seed), step \(step), after it \(what)")
+/// The seeded run of changes to a board, for some of its seeds: each board is made and changed from its seed alone, so the seeds are
+/// split over suites that run side by side.
+@MainActor private func seededRun(_ seeds: ClosedRange<UInt64>) -> Suite {
+    Suite("Spatial index, seeds \(seeds.lowerBound) to \(seeds.upperBound)", [
+        test("the shapes in a rect and under a point are the ones going through every shape finds, through a seeded run of changes to a board") {
+            for seed in seeds {
+                var random = Seeded(seed: seed)
+                let h = try spatialHarness()
+                let side: CGFloat = [3_000, 12_000][Int(seed) % 2]
+                // Boards of 120, 260 and 500 shapes (a grid is made from 64).
+                var ids = addShapes([120, 260, 500][Int(seed) % 3], to: h, side: side, random: &random)
+                let area = CGRect(x: -500, y: -500, width: side + 1_500, height: side + 1_500)
+                expectSearchesAgree(h, area: area, random: &random, "seed \(seed), as made")
+                for step in 0..<70 {
+                    let what = changeBoard(h, ids: &ids, side: side, random: &random)
+                    expectSearchesAgree(h, area: area, random: &random, rects: 8, points: 8, "seed \(seed), step \(step), after it \(what)")
+                }
+                expectSearchesAgree(h, area: area, random: &random, "seed \(seed), at the end")
             }
-            expectSearchesAgree(h, area: area, random: &random, "seed \(seed), at the end")
-        }
-    },
+        },
+    ])
+}
+
+@MainActor let spatialIndexSeeds1Tests = seededRun(1...2)
+@MainActor let spatialIndexSeeds3Tests = seededRun(3...4)
+@MainActor let spatialIndexSeeds5Tests = seededRun(5...6)
+@MainActor let spatialIndexSeeds7Tests = seededRun(7...8)
+
+@MainActor let spatialIndexTests = Suite("Spatial index", [
     test("an extent touching a rect by an edge or a corner is found, one beside it is not, whatever the rect's size or sign") {
         // Boxes 100 across on a grid of 120, so the gaps are 20 and every edge is a whole number.
         let h = try spatialHarness()

@@ -164,6 +164,59 @@ func pseudos(in list: SelectorList) -> [PseudoClass] {
     }
 }
 
+/// What one edited text came to: whether it was refused, and what is wrong with how it was read or refused, if anything.
+struct EditOutcome: Sendable {
+    var refused = false
+    var failure: String?
+}
+
+/// The outcomes of the slices of texts read at once, each set by the slice that made it.
+final class Outcomes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var slices: [[EditOutcome]]
+    init(_ count: Int) { slices = Array(repeating: [], count: count) }
+    func set(_ slice: Int, _ outcomes: [EditOutcome]) { lock.withLock { slices[slice] = outcomes } }
+    var all: [[EditOutcome]] { lock.withLock { slices } }
+}
+
+/// Reads `text`, which an edit left as it is: what reads prints its own canonical form, and a refusal is inside the text.
+func editOutcome(_ text: String) -> EditOutcome {
+    let count = text.count
+    var outcome = EditOutcome()
+    do throws(QueryError) {
+        let read = try SelectorList(parsing: text)
+        let canonical = read.canonical
+        let again = try SelectorList(parsing: canonical)
+        let third = try SelectorList(parsing: again.canonical)
+        var outside = spans(of: read).filter { $0.offset < 0 || $0.length < 0 || $0.end > count }
+        for pseudo in pseudos(in: read) where pseudo.word == nil {
+            // A plugin's relation reads its argument; an invention is refused. Either says where, in this text.
+            do throws(QueryError) {
+                outside += spans(of: try SelectorList(argumentOf: pseudo)).filter { $0.offset < 0 || $0.length < 0 || $0.end > count }
+            } catch {
+                if let span = error.span, span.offset < 0 || span.length < 1 || span.end > count { outside.append(span) }
+            }
+            if let span = KnownInventions.error(for: pseudo)?.span, span.offset < 0 || span.length < 1 || span.end > count { outside.append(span) }
+        }
+        if again.canonical != canonical || third != again || !outside.isEmpty {
+            outcome.failure = "\(text.debugDescription) read, but its canonical form \(canonical.debugDescription) doesn't hold"
+        }
+    } catch {
+        outcome.refused = true
+        let inside: Bool = if let span = error.span {
+            span.offset >= 0 && span.length >= 1 && span.end <= count && error.located(in: text) != nil
+        } else {
+            error.reason == .emptyQuery
+        }
+        let syntactic: Set<QueryError.Reason> = [.emptyQuery, .syntax, .straySpace, .tooLong, .tooComplex, .unsupported, .notBuilt, .notAnID,
+                                                 .badArgument]
+        if !inside || !syntactic.contains(error.reason) || !error.errors.isEmpty {
+            outcome.failure = "\(text.debugDescription): \(error) at \(String(describing: error.span))"
+        }
+    }
+    return outcome
+}
+
 @MainActor let fuzzTests = Suite("Fuzz", [
     test("2,000 trees from the grammar print a form that reads back to them, and is its own canonical form") {
         var generator = QueryGenerator(seed: 0x7175_6572_7973)
@@ -191,8 +244,9 @@ func pseudos(in list: SelectorList) -> [PseudoClass] {
                        "=", "==", "!", "@", "&", "$", "\u{201C}", "é", "\u{301}", "👍🏽", "a", "0", "-", "i", "only ", ":not(", ":has(", ":has(>",
                        ":edge-to(", ":between(", ":contains(", ":dangling(", ":glows(", ":nth-child(", ":parent-of(", ":root", ":stacked( ",
                        "#00000000-0000-4000-8000-000000000011"]
-        var failures = 0
-        var refused = 0
+        // The edits are made in order from the one generator; each text is then read on its own, so the reading is spread over the cores.
+        var texts: [String] = []
+        texts.reserveCapacity(20_000)
         for round in 0..<20_000 {
             var characters = Array(round % 4 == 0 ? generator.list().canonical : generator.list().canonical.replacingOccurrences(of: "\"", with: "'"))
             for _ in 0..<generator.count(1...3) {
@@ -204,40 +258,20 @@ func pseudos(in list: SelectorList) -> [PseudoClass] {
                 default: characters.removeLast(min(characters.count - at, generator.count(0...3)))
                 }
             }
-            let text = String(characters)
-            let count = text.count
-            do throws(QueryError) {
-                let read = try SelectorList(parsing: text)
-                let canonical = read.canonical
-                let again = try SelectorList(parsing: canonical)
-                let third = try SelectorList(parsing: again.canonical)
-                var outside = spans(of: read).filter { $0.offset < 0 || $0.length < 0 || $0.end > count }
-                for pseudo in pseudos(in: read) where pseudo.word == nil {
-                    // A plugin's relation reads its argument; an invention is refused. Either says where, in this text.
-                    do throws(QueryError) {
-                        outside += spans(of: try SelectorList(argumentOf: pseudo)).filter { $0.offset < 0 || $0.length < 0 || $0.end > count }
-                    } catch {
-                        if let span = error.span, span.offset < 0 || span.length < 1 || span.end > count { outside.append(span) }
-                    }
-                    if let span = KnownInventions.error(for: pseudo)?.span, span.offset < 0 || span.length < 1 || span.end > count { outside.append(span) }
-                }
-                if again.canonical != canonical || third != again || !outside.isEmpty {
-                    failures += 1
-                    if failures < 4 { expect(false, "\(text.debugDescription) read, but its canonical form \(canonical.debugDescription) doesn't hold") }
-                }
-            } catch {
-                refused += 1
-                let inside: Bool = if let span = error.span {
-                    span.offset >= 0 && span.length >= 1 && span.end <= count && error.located(in: text) != nil
-                } else {
-                    error.reason == .emptyQuery
-                }
-                let syntactic: Set<QueryError.Reason> = [.emptyQuery, .syntax, .straySpace, .tooLong, .tooComplex, .unsupported, .notBuilt, .notAnID,
-                                                         .badArgument]
-                if !inside || !syntactic.contains(error.reason) || !error.errors.isEmpty {
-                    failures += 1
-                    if failures < 4 { expect(false, "\(text.debugDescription): \(error) at \(String(describing: error.span))") }
-                }
+            texts.append(String(characters))
+        }
+        let all = texts, slices = 64, per = (all.count + slices - 1) / slices
+        let outcomes = Outcomes(slices)
+        DispatchQueue.concurrentPerform(iterations: slices) { slice in
+            outcomes.set(slice, all[slice * per..<min((slice + 1) * per, all.count)].map(editOutcome))
+        }
+        var failures = 0
+        var refused = 0
+        for outcome in outcomes.all.joined() {
+            if outcome.refused { refused += 1 }
+            if let failure = outcome.failure {
+                failures += 1
+                if failures < 4 { expect(false, failure) }
             }
         }
         expectEqual(failures, 0)

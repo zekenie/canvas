@@ -372,7 +372,7 @@ private func claudeSequence(_ agents: String) -> [String] {
         // a hang
         try write("#!/bin/sh\nexec sleep 30\n", to: scene.tools.appendingPathComponent("claude"), executable: true)
         var environment = scene.environment
-        environment["CANVAS_INSTALL_CLAUDE_TIMEOUT"] = "1"
+        environment["CANVAS_INSTALL_CLAUDE_TIMEOUT"] = "0.25"          // every claude command hangs, so each waits it out
         let hung = try canvas(["install", "--from", agents.path, "--bin", scene.root.path], environment: environment)
         expectEqual(hung.status, 1, hung.output)
         let install = try require(step("claude plugin", in: hung))

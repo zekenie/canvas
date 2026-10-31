@@ -148,10 +148,12 @@ func centered(on point: CGPoint) -> CGPoint { CGPoint(x: point.x - 400, y: point
     return rep
 }
 
-/// The view once it has drawn all the frames it asked for.
+/// The view once it has drawn all the frames it asked for. Only the frames due now are waited for: a timer
+/// the board set for later is pending too, but no `wait(0)` fires it, and waiting on it
+/// drew the view a thousand times over.
 @MainActor func finished(_ view: NSView, _ h: EditorHarness) -> NSBitmapImageRep {
     var rep = drawn(view)
-    for _ in 0..<1000 where h.scheduler.pendingCount > 0 {
+    for _ in 0..<1000 where h.scheduler.dueCount > 0 {
         h.wait(0)
         rep = drawn(view)
     }

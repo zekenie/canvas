@@ -225,16 +225,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
 /// Every pixel that differs between two pictures of one size, as a rect of points.
 @MainActor private func differences(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> [CGRect] {
     let scale = CGFloat(a.pixelsWide) / pictureSize.width
-    var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
-    var found: [CGRect] = []
-    for y in 0..<a.pixelsHigh {
-        for x in 0..<a.pixelsWide {
-            a.getPixel(&p, atX: x, y: y)
-            b.getPixel(&q, atX: x, y: y)
-            if p != q { found.append(CGRect(x: CGFloat(x) / scale, y: CGFloat(y) / scale, width: 1 / scale, height: 1 / scale)) }
-        }
-    }
-    return found
+    return differingPixelPositions(a, b).map { CGRect(x: CGFloat($0.x) / scale, y: CGFloat($0.y) / scale, width: 1 / scale, height: 1 / scale) }
 }
 
 /// Holds each pill's drawn pixels (`drawn`, the pixels that differ where only pills do) to its

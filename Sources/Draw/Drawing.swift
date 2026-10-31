@@ -201,6 +201,14 @@ struct Drawing {
     /// The item of each board shape a statement restates, by id (named by its title or its id).
     private(set) var itemByID: [ShapeID: Int] = [:]
     private(set) var edges: [EdgeItem] = []
+    /// The places in `edges` of the edges that run from one shape to another (both ways for a two-headed one), so a statement
+    /// finds the earlier ones it could repeat without reading every edge before it: a script of thousands of edges was
+    /// quadratic in them.
+    private var edgesByEnds: [EdgeEnds: [Int]] = [:]
+    private struct EdgeEnds: Hashable {
+        let from: ShapeID
+        let to: ShapeID
+    }
     /// The group and ungroup statements, resolved, in script order (`DrawGroups.swift`).
     var groupings: [GroupItem] = []
     /// The line of the statement that named each shape a group or ungroup names: a run says a shape's group once.
@@ -1395,13 +1403,13 @@ struct Drawing {
         }
         let identity = identityKeys(connector).flatMap { EdgeIdentity(keys: $0, settings: settings) }
         let pairs = edge.bothHeads ? [(from, to), (to, from)] : [(from, to)]
-        if let earlier = edges.first(where: { other in
-            let theirs = other.edge.bothHeads ? [(other.from, other.to), (other.to, other.from)] : [(other.from, other.to)]
-            // Two statements for one pair are two edges only if both say which, and differently.
-            if let identity, let theirIdentity = other.identity, identity.differs(from: theirIdentity) { return false }
-            return pairs.contains { pair in theirs.contains { $0 == pair } }
+        // The first earlier edge that runs between the same pair of shapes, unless the two say which arrow they are about, and differently.
+        let sameEnds = pairs.flatMap { edgesByEnds[EdgeEnds(from: $0.0, to: $0.1)] ?? [] }.sorted()
+        if let place = sameEnds.first(where: { place in
+            if let identity, let theirIdentity = edges[place].identity, identity.differs(from: theirIdentity) { return false }
+            return true
         }) {
-            throw DrawError(statement, .duplicate, "\(written) is written twice, here and on line \(earlier.statement.line)",
+            throw DrawError(statement, .duplicate, "\(written) is written twice, here and on line \(edges[place].statement.line)",
                             hint: "say everything about one edge in one statement")
         }
         var item = EdgeItem(statement: statement, edge: edge, from: from, to: to, fromName: fromName, toName: toName, attributes: attributes,
@@ -1410,6 +1418,7 @@ struct Drawing {
             item.standIn = try routeEdge(edge, statement, written: written, from: fromFound, to: toFound, fromName: fromName, toName: toName, via: via,
                                          identity: identity)
         }
+        for (from, to) in edge.bothHeads ? [(from, to), (to, from)] : [(from, to)] { edgesByEnds[EdgeEnds(from: from, to: to), default: []].append(edges.count) }
         edges.append(item)
     }
 

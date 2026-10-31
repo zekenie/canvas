@@ -8,6 +8,8 @@
 #   ./build.sh              build build/InfiniteCanvas.app (release), with the command line in it
 #                           (build/canvas links to it) and its Quick Look extensions
 #   ./build.sh tests        build every module but the app, test executables included (debug)
+#   ./build.sh tests TEST...  build only those test executables, what they're made of, and the
+#                           command line (which tests run)
 #   ./build.sh agents DIR   put the skills the app carries for agents in DIR (the app's Contents/Resources/agents):
 #                           a Claude Code plugin marketplace holding them; compiles and audits nothing
 #   ./build.sh bench        build BenchmarkTests (release) and run it: the performance budgets
@@ -688,9 +690,14 @@ audit_sources() {
     # Every plugin that ships is a public struct of its module that can be made with no arguments
     # (a ListedPlugin, or an OutwardPlugin, which is one): the core makes it by its name, so a name
     # with nothing behind it would be found only when the product starts.
+    # (One read of the code for every such struct, then each plugin looked up among them.)
+    typeset -A LISTED       # a struct's name: the files that declare it so
+    for hit in ${(f)"$(matching '^[^:]*:[0-9]+:[[:space:]]*public[[:space:]]+struct[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*:[^{]*[^A-Za-z0-9_](ListedPlugin|OutwardPlugin)([^A-Za-z0-9_]|$)')"}; do
+        [[ ${hit#*:*:} =~ 'struct[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)' ]] && LISTED[$match[1]]+=" ${hit%%:*}"
+    done
     for plugin in $SHIPPED_PLUGINS; do
-        declared=$(matching "^$DIR[${plugin%%.*}]/[^:]*:[0-9]+:[[:space:]]*public[[:space:]]+struct[[:space:]]+${plugin#*.}[[:space:]]*:[^{]*[^A-Za-z0-9_](ListedPlugin|OutwardPlugin)([^A-Za-z0-9_]|\$)")
-        [[ -n $declared ]] || problems+="Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but ${plugin%%.*} declares no \`public struct ${plugin#*.}: ListedPlugin\` (a plugin made with no arguments)"
+        [[ " ${LISTED[${plugin#*.}]:-}" == *" $DIR[${plugin%%.*}]/"* ]] ||
+            problems+="Package.swift:$SHIPPED_AT[$plugin]: $plugin ships, but ${plugin%%.*} declares no \`public struct ${plugin#*.}: ListedPlugin\` (a plugin made with no arguments)"
     done
 
     SHADOWING="${(j:|:)NAMES}|${(j:|:)RESERVED_TYPE_NAMES}"
@@ -754,18 +761,35 @@ audit_sources() {
         id=${${fields[3]%\"}##*\"}
         (( ${ORDINARY_IDS[(Ie)$id]} )) || ID_OWNERS[$id]+=" $fields[1]"
     done
+    # An id holds no quote, so a line uses it where it's what stands between two quotes next to
+    # each other: one read of every line, each piece between quotes looked up. (An id may hold a
+    # space, so its line says it between tabs.)
     if (( ${#ID_OWNERS} )); then
-        print -rl -- \"${(k)^ID_OWNERS}\" > $AUDIT/ids
-        for hit in ${(f)"$(cat -- $AUDITED/modules/${^NAMES}.uses | grep -F -f $AUDIT/ids || true)"}; do
-            user=${${hit#*/}%%/*}
-            for id in ${(k)ID_OWNERS}; do
-                [[ ${hit#*:*:} == *\"$id\"* ]] || continue
-                for owner in ${=ID_OWNERS[$id]}; do
-                    [[ $owner == $user ]] || (( ${${(A)=VISIBLE[$user]}[(Ie)$owner]} )) ||
-                        problems+="$(at $hit): \"$id\" is $owner's id, but $user doesn't depend on $owner"
-                done
-            done
-        done
+        for id in ${(k)ID_OWNERS}; do print -r -- "id"$'\t'"$id"$'\t'"$ID_OWNERS[$id]"; done > $AUDIT/owners
+        for name in $NAMES; do print -r -- "sees $name ${VISIBLE[$name]:-}"; done >> $AUDIT/owners
+        problems+=(${(f)"$(cat -- $AUDITED/modules/${^NAMES}.uses | awk -v owners=$AUDIT/owners -v q="'" '
+            BEGIN {
+                while ((getline line < owners) > 0) {
+                    if (substr(line, 1, 3) == "id\t") { split(line, f, "\t"); owned[f[2]] = f[3] }
+                    else { n = split(line, f, " "); for (i = 3; i <= n; i++) seen[f[2], f[i]] = 1 }
+                }
+            }
+            {
+                first = index($0, ":"); rest = substr($0, first + 1); second = index(rest, ":")
+                file = substr($0, 1, first - 1); at = file ":" substr(rest, 1, second - 1)
+                split(file, path, "/"); user = path[2]
+                n = split(substr(rest, second + 1), piece, "\"")
+                delete done
+                for (k = 2; k < n; k++) {
+                    id = piece[k]
+                    if (!(id in owned) || (id in done)) continue
+                    done[id] = 1
+                    m = split(owned[id], who, " ")
+                    for (i = 1; i <= m; i++)
+                        if (who[i] != user && !((user, who[i]) in seen))
+                            print at ": \"" id "\" is " who[i] q "s id, but " user " doesn" q "t depend on " who[i]
+                }
+            }')"})
     fi
     # What a product is: a vertical, a shape that holds something of its own, so it declares a
     # ShapeKind (and nothing imports it: no layer but test may). The scan reads the form above, so a
@@ -801,7 +825,7 @@ audit_sources() {
     print -r -- "$PASSED" > $AUDITED/passed
 }
 # One audit at a time reads and writes build/audit; builds of other configurations can run beside it.
-zmodload zsh/system
+zmodload zsh/system zsh/datetime
 mkdir -p $AUDITED; : >> $AUDITED/.lock
 zsystem flock -f AUDIT_LOCK $AUDITED/.lock
 [[ -f $AUDITED/passed && "$(<$AUDITED/passed)" == "$PASSED" ]] || audit_sources
@@ -860,7 +884,15 @@ app)   WANTED=($APP_MODULE ${=CLOSURE[$APP_MODULE]})
        for name in $NAMES; do
            if [[ $name == $CLI_MODULE ]] || carried $name; then WANTED+=($name ${=CLOSURE[$name]}); fi
        done ;;
-tests) for name in $NAMES; do [[ $name == $APP_MODULE ]] || WANTED+=$name; done ;;
+tests) if (( $# > 1 )); then
+           for name in ${@:2}; do
+               [[ ${LAYER[$name]:-} == test ]] || die "no test executable $name (./build.sh list test names them)"
+               WANTED+=($name ${=CLOSURE[$name]})
+           done
+           WANTED+=($CLI_MODULE ${=CLOSURE[$CLI_MODULE]})
+       else
+           for name in $NAMES; do [[ $name == $APP_MODULE ]] || WANTED+=$name; done
+       fi ;;
 bench) WANTED=(BenchmarkTests ${=CLOSURE[BenchmarkTests]}) ;;
 api)   target=${2:?usage: build.sh api MODULE}; (( ${+DEPS[$target]} )) || die "no module $target"
        WANTED=($target ${=CLOSURE[$target]}) ;;
@@ -906,8 +938,8 @@ keep_changed() {
 #   link       an executable, from its objects and every library it depends on, and, for one that
 #              is the product, the product's text files (SHIPPED_TEXTS).
 #   parts      for a module that has parts (Package.swift's table), each part type-checked with only
-#              its own sources and those of the parts its line names, in the table's order, stopping
-#              at the first that fails: a part that names anything else of the module doesn't
+#              its own sources and those of the parts its line names, all at once, the first that
+#              fails in the table's order said: a part that names anything else of the module doesn't
 #              compile, as a module that names one it doesn't depend on doesn't. Nothing is made, and
 #              nothing waits for it; a part is checked again when a source it compiles with changed.
 # What comes out the same as before isn't replaced (keep_changed), so an edit that leaves a module's
@@ -977,7 +1009,8 @@ build_job() {
         print -r -- "$RAN_WITH" > $STAMP
         print compiled ;;
     parts)
-        local part used
+        local part used checking=()
+        local -A checked        # a part being checked: its process
         for part in ${=PARTS[$name]}; do
             local with=()
             for used in $part ${=PART_USES[$name/$part]}; do with+=($DIR[$name]/$used/**/*.swift(N)); done
@@ -985,13 +1018,23 @@ build_job() {
             local check=($SWIFTC -parse-as-library -typecheck -module-name $name $includes $with)
             STAMP=$dir/.part.$part
             up_to_date $check && continue
-            if ! $check; then
-                print -u2 "build.sh: $name/$part doesn't compile with only the parts it uses (${${PART_USES[$name/$part]:-none}// /, }): it names something of another part of $name, or of the sources beside the parts. Package.swift's table of parts says what each may use."
-                return 1
-            fi
-            as_begun $name $srcs || return 1
-            print -r -- "$RAN_WITH" > $STAMP
-        done ;;
+            print -r -- "$RAN_WITH" > $dir/.part.$part.ran
+            $check > $dir/.part.$part.out 2>&1 &
+            checked[$part]="$!"; checking+=$part
+        done
+        local failed=()
+        for part in $checking; do wait $checked[$part] || failed+=$part; done
+        (( ${#checking} )) || return 0
+        as_begun $name $srcs || return 1
+        # Each part that passed is checked, whichever failed beside it.
+        for part in ${checking:|failed}; do mv -f $dir/.part.$part.ran $dir/.part.$part; rm -f $dir/.part.$part.out; done
+        if (( ${#failed} )); then
+            part=$failed[1]
+            cat $dir/.part.$part.out >&2
+            print -u2 "build.sh: $name/$part doesn't compile with only the parts it uses (${${PART_USES[$name/$part]:-none}// /, }): it names something of another part of $name, or of the sources beside the parts. Package.swift's table of parts says what each may use."
+            return 1
+        fi
+        print checked ;;
     link)
         local libs=() objects=($dir/objects/*.o(Nn)) debugger=() entry=()
         # An app extension has no main: it starts in Foundation's NSExtensionMain, as Xcode links one.
@@ -1029,8 +1072,10 @@ build_job() {
 # an executable's link, its object and its dependencies' objects.
 typeset -A WAITING USERS     # a job: how many jobs it still waits for; the jobs that wait for it
 typeset -a READY=()
+typeset -A COST              # a job: the milliseconds it took the last time it did something
 add_job() {
-    local job=$1 dep; shift
+    local job=$1 dep took=$OUT/${1%:*}/.${1##*:}.took; shift
+    COST[$job]=0; [[ -f $took ]] && COST[$job]=$(<$took)
     WAITING[$job]=$#
     for dep; do USERS[$dep]+=" $job"; done
     (( $# )) || READY+=$job
@@ -1051,9 +1096,13 @@ for name in $ORDER; do
 done
 
 # Runs the jobs, as many at once as there are cores (BUILD_JOBS to change that), each as soon as
-# what it waits for is done, interfaces first (everything else waits for them). Each one's output is
+# what it waits for is done, interfaces first (everything else waits for them), then the longest by
+# what each took the last time it did something, so a long compile never waits for a slot behind
+# short ones (it was TypesTests', last of the tests to start and the last done). Each one's output is
 # printed once it's done; the first failure lets what's running finish, starts nothing more, and
-# fails the build.
+# fails the build. BUILD_TIMES=1 prints, at the end, each job that took a tenth of a second or more
+# (one that finds itself up to date takes less), slowest first, with when it began: where a build's
+# time goes.
 JOBS=${BUILD_JOBS:-$(sysctl -n hw.ncpu)}
 [[ $JOBS == <1-> ]] || die "BUILD_JOBS is how many jobs run at once, 1 or more; not '$JOBS'"
 mkfifo $AUDIT/done
@@ -1061,17 +1110,22 @@ exec {DONE}<>$AUDIT/done    # each job writes "job status" here as it ends
 typeset -a COMPILED=() LINKED=()
 typeset -aU FAILED=()
 typeset -A SHOWN            # a module: the output of its jobs last printed (two often say the same)
-integer running=0 finished=0
+typeset -A BEGAN TOOK       # a job: when it began, and how long it took
+BUILD_BEGAN=$EPOCHREALTIME
+integer running=0 finished=0 ms
+typeset -a ranked
 while true; do
     if (( ! ${#FAILED} )); then
-        for job in ${(M)READY:#*:interface} ${READY:#*:interface}; do
+        ranked=()
+        for job in ${READY:#*:interface}; do ranked+="${(l:10::0:)COST[$job]} $job"; done
+        for job in ${(M)READY:#*:interface} ${${(O)ranked}#* }; do
             (( running < JOBS )) || break
             READY=(${READY:#${(b)job}}); running+=1
             log=$OUT/${job%:*}/.${job##*:}; mkdir -p ${log:h}
             # With errexit and nounset off, and the job in a subshell of its own, so it always says
             # how it ended, even after an error zsh won't go on from.
             ( unsetopt err_exit no_unset; ( build_job $job > $log.did 2> $log.log ); print -r -- "$job $?" >&$DONE ) &
-            RUNNING[$job]="$!"
+            RUNNING[$job]="$!"; BEGAN[$job]=$EPOCHREALTIME
         done
     fi
     (( running )) || break
@@ -1081,7 +1135,7 @@ while true; do
         read -r -t 1 -u $DONE job rc && break
         die "${(j:, :)${(k)RUNNING}} ended without saying how (build.sh's own mistake)"
     done
-    running+=-1; finished+=1; unset "RUNNING[$job]"
+    running+=-1; finished+=1; unset "RUNNING[$job]"; TOOK[$job]=$(( EPOCHREALTIME - BEGAN[$job] ))
     log=$OUT/${job%:*}/.${job##*:}
     if [[ -s $log.log ]]; then
         text=$(<$log.log)
@@ -1096,12 +1150,20 @@ while true; do
     compiled) COMPILED+=${job%:*} ;;
     linked) LINKED+=${job%:*} ;;
     esac
+    if [[ -s $log.did ]]; then (( ms = TOOK[$job] * 1000 )); print -r -- $ms > $log.took; fi
     for user in ${=USERS[$job]:-}; do
         WAITING[$user]=$(( WAITING[$user] - 1 ))
         (( WAITING[$user] )) || READY+=$user
     done
 done
 exec {DONE}>&-
+if [[ ${BUILD_TIMES:-0} != 0 ]]; then
+    for job in ${(k)TOOK}; do
+        (( TOOK[$job] >= 0.1 )) || continue
+        printf '%7.2fs  at %6.2fs  %s\n' $TOOK[$job] $(( BEGAN[$job] - BUILD_BEGAN )) $job
+    done | sort -rn >&2
+    printf 'build took %.2fs\n' $(( EPOCHREALTIME - BUILD_BEGAN )) >&2
+fi
 (( ${#FAILED} )) && die "${(j:, :)FAILED} failed to build"
 (( finished == ${#WAITING} )) || die "$(( ${#WAITING} - finished )) jobs never ran (build.sh's own mistake)"
 COMPILED=(${ORDER:*COMPILED}); LINKED=(${ORDER:*LINKED})

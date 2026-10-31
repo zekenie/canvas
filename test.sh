@@ -1,15 +1,35 @@
 #!/bin/zsh
 # Builds every module but the app (debug), runs every test executable, as many at once as there are
 # cores (a failing one doesn't stop the others), and exits non-zero if any failed. Each one's output
-# is printed whole, in order, once it's done. TEST_FILTER=substring runs only the tests whose
-# "Suite: test" name contains it, and fails if that's none at all. TEST_JOBS=N runs N at once;
-# TEST_UI_MENUS=1 (tests that open real menus) runs them one at a time.
+# is printed whole, in order, once it's done.
+#
+#   ./test.sh               every test executable
+#   ./test.sh TARGET...     only these: builds only what they're made of (and the command line,
+#                           which tests run), and runs only them
+#
+# An executable that last ran whole and passed isn't run again while it, and what it reads as it
+# runs, are as they were then: its binary, the command line's, every file git sees but the Swift
+# sources (which reach a test through its binary), the session records and the Markdown outside
+# .claude/skills and Tests that no test names, and the environment variables tests read (every name
+# a test's source asks the environment for, and those of the commands they run, by their prefixes).
+# It's named at the end as unchanged since it passed; TEST_ALL=1 runs it anyway.
+#
+# One that took long last time runs as several processes at once, each a share of its suites
+# (TestKit's TEST_SHARD), so none holds the run up long after the rest are done; the suites that
+# hold a time budget run after the rest, as many at once as half the machine's performance cores.
+#
+# TEST_FILTER=substring runs only the tests whose "Suite: test" name contains it, and fails if that's
+# none at all (a filtered run runs every executable it's given, each as one process). TEST_JOBS=N
+# runs N at once; TEST_UI_MENUS=1 (tests that open real menus) runs them one at a time.
 set -uo pipefail
-zmodload zsh/datetime
+zmodload zsh/datetime zsh/mathfunc
 cd "${0:A:h}"
 [[ ${TEST_JOBS:-1} == <1-> ]] || { print -u2 "test.sh: TEST_JOBS is how many run at once, 1 or more; not '$TEST_JOBS'"; exit 2 }
-./build.sh tests || exit 1
-tests=(${(f)"$(./build.sh list test)"}) || exit 1
+every=(${(f)"$(./build.sh list test)"}) || exit 1
+tests=()
+for t in $every; do (( ! $# || ${argv[(Ie)$t]} )) && tests+=$t; done
+for t; do (( ${every[(Ie)$t]} )) || { print -u2 "test.sh: no test executable $t (./build.sh list test names them)"; exit 2 }; done
+./build.sh tests $@ || exit 1
 
 # A Suite runs only if its target's main.swift passes it to runTests, and Swift doesn't warn about
 # one that's left out, so check.
@@ -25,29 +45,180 @@ for t in $tests; do
 done
 (( ${#unregistered} )) && { print -u2 -l -- $unregistered; exit 1 }
 
-# The slowest first (by how long each took last time), so none of them starts last.
+# What an executable that passed is checked against (above): the hash of its binary, worked out
+# again only when the binary's size or time changed, and what every test reads beside it.
+binary_hash() {
+    local file=build/debug/$1/$1 memo=build/debug/$1/.hash stamp kept=
+    stamp=$(stat -f '%z %Fm' $file) || return 1
+    [[ -f $memo ]] && kept=$(<$memo)
+    [[ ${kept% *} == $stamp ]] || kept="$stamp $(md5 -q $file)"
+    print -r -- $kept > $memo
+}
+for t in $tests build/debug/CanvasCLI(N:t); do binary_hash $t & done
+wait
+read_by_tests() {
+    local files=(${(0)"$(git ls-files -co --exclude-standard -z)"}) named file
+    files=(${files:#(Sources|Examples|Tests)/*.swift}); files=(${files:#history/*})
+    named=(${(f)"$(cat Tests/**/*.swift(N) | grep -oE '"[^"]+\.md"' | tr -d '"' | sort -u)"})
+    for file in $files; do
+        [[ -f $file ]] || continue
+        [[ $file == *.md && $file != (.claude/skills|Tests)/* ]] && (( ! ${named[(Ie)$file]} )) && continue
+        print -r -- $file
+    done
+}
+read=(${(f)"$(read_by_tests)"})
+# Where to find things, which a test passes on to what it runs, and what test.sh sets itself, aren't
+# what a test judges.
+asked=(${(f)"$(cat Tests/**/*.swift(N) | grep -oE 'environment\["[A-Z][A-Z0-9_]*"\]' | sed -E 's/environment\["(.*)"\]/\1/' | sort -u)"})
+asked=(${asked:#(PATH|HOME|SHELL|TMPDIR|USER|TEST_(ALL|JOBS|SHARD|WEIGHTS|SUITE_TIMES))})
+inputs=$({
+    paste -d' ' <(print -rl -- $read) <(print -rl -- $read | git hash-object --stdin-paths)
+    [[ -f build/debug/CanvasCLI/.hash ]] && print -r -- "CanvasCLI $(<build/debug/CanvasCLI/.hash)"
+    env | grep -E "^((${(j:|:)asked})|(TEST|BENCH|QUERY|SCHEMA|DIGEST|SKILL|CANVAS)_[A-Z0-9_]*)=" | grep -vE '^TEST_(ALL|JOBS|SHARD|WEIGHTS|SUITE_TIMES)=' | sort
+} | md5 -q)
+typeset -A key skipped
+run=()
+for t in $tests; do
+    key[$t]="${$(<build/debug/$t/.hash)##* } $inputs"
+    if [[ -z ${TEST_ALL:-} && -z ${TEST_FILTER:-} && -f build/debug/$t/passed && "$(head -n 1 build/debug/$t/passed)" == $key[$t] ]]; then
+        skipped[$t]=1
+    else
+        run+=$t
+    fi
+done
+
+# What each runs as. An executable with suites kept from a whole run runs as two parts: the suites
+# that hold a time budget (TestKit marks them, `b`) and the rest (`r`); one without, or a filtered
+# run, or one that opens real menus, as one (`a`, all of it, in one process). A part runs as about
+# as many shares as it took the time a core gets last time, every part of its kind at once (but none
+# under four seconds: a share starts a process, and makes what its suites share, of its own), and no
+# more than it has suites. The budgets' shares come last, and while they run no more run at once than
+# half the machine's performance cores: a budget is the test thread's own time, which every core busy
+# makes about half again as long (the clocks slow, the caches are shared), and it was set with
+# little else running. (On an M5's four, TypesTests' budget suites took the same time two at once as
+# alone, and a third longer four at once.)
 integer jobs=${TEST_JOBS:-$(sysctl -n hw.ncpu)}
 [[ -n ${TEST_UI_MENUS:-} ]] && jobs=1
-typeset -A took
-for t in $tests; do [[ -f build/debug/$t/took ]] && took[$t]=$(<build/debug/$t/took) || took[$t]=0; done
-queue=(${(f)"$(for t in $tests; do print -r -- "$took[$t] $t"; done | sort -rn | cut -d' ' -f2)"})
-
-# Each test's output goes to this run's own file, so two runs at once don't read each other's, then
-# to build/debug/<test>/output.txt.
+integer quiet=$(( $(sysctl -n hw.perflevel0.physicalcpu 2> /dev/null || sysctl -n hw.physicalcpu) / 2 ))
+(( quiet < 1 )) && quiet=1
+(( quiet > jobs )) && quiet=jobs
+typeset -A took suites parts count left  # by "test.part": seconds and suites last time, its shares; by test: its parts, the shares left
+float rest=0 budgets=0 share budgetShare
+# The plan and every share read this run's copy of the suites kept, whatever another run writes
+# over build/debug/<test>/suites meanwhile: shares that read different ones would deal differently,
+# and a suite could run twice or not at all.
 tmp=$(mktemp -d -t tests)
-run_test() {
-    local t=$1 start=$EPOCHREALTIME
-    build/debug/$t/$t > $tmp/$t.out 2>&1
+trap 'rm -rf -- "$tmp"' EXIT
+for t in $run; do
+    parts[$t]=a; took[$t.a]=0
+    [[ -f build/debug/$t/took ]] && took[$t.a]=$(<build/debug/$t/took)
+    if [[ -z ${TEST_FILTER:-} && -z ${TEST_UI_MENUS:-} && -f build/debug/$t/suites ]]; then
+        cp build/debug/$t/suites $tmp/$t.weights
+        # Its lines are "seconds<TAB>suite", with "<TAB>budget" after one that held a time budget.
+        for part in r b; do
+            took[$t.$part]=$(awk -F'\t' -v p=$part '($3 == "budget") == (p == "b") { s += $1 } END { print s + 0 }' $tmp/$t.weights)
+            suites[$t.$part]=$(( $(awk -F'\t' -v p=$part '($3 == "budget") == (p == "b")' $tmp/$t.weights | wc -l) ))
+        done
+        # The rest always, since a suite with no line yet (one added since) runs with them.
+        parts[$t]=r
+        (( suites[$t.b] )) && parts[$t]="r b"
+    fi
+    for part in ${=parts[$t]}; do [[ $part == b ]] && budgets+=took[$t.b] || rest+=took[$t.$part]; done
+done
+(( share = rest / jobs, budgetShare = budgets / quiet ))
+(( share < 4 )) && share=4
+(( budgetShare < 4 )) && budgetShare=4
+for t in $run; do
+    left[$t]=0
+    for part in ${=parts[$t]}; do
+        integer n=1
+        case $part in
+        r) (( n = ceil(took[$t.r] / share), n > jobs ? (n = jobs) : 0 )) ;;
+        b) (( n = ceil(took[$t.b] / budgetShare), n > quiet ? (n = quiet) : 0 )) ;;
+        esac
+        (( n > ${suites[$t.$part]:-1} )) && n=${suites[$t.$part]:-1}
+        (( n < 1 )) && n=1      # the rest with no suite kept: one share, for those added since
+        count[$t.$part]=$n; left[$t]=$(( left[$t] + n ))
+    done
+done
+# The longest shares first (by how long each took last time), so none of them starts last; those of
+# the budgets after all the rest.
+typeset -F 3 each   # fixed, as sort -n reads it (zsh's float is 4.1e+02)
+queued() {  # every share of the parts $1 matches, "test part<k>", longest first
+    local t part k
+    for t in $run; do
+        for part in ${=parts[$t]}; do
+            [[ $part == $~1 ]] || continue
+            (( each = took[$t.$part] / count[$t.$part] ))
+            for k in {1..$count[$t.$part]}; do print -r -- "$each $t $part$k"; done
+        done
+    done | sort -rn | cut -d' ' -f2-
+}
+queue=(${(f)"$(queued '[ar]')"} ${(f)"$(queued b)"})
+
+# Each share's output goes to this run's own file, so two runs at once don't read each other's,
+# then, all of an executable's shares joined, to build/debug/<test>/output.txt.
+run_share() {  # runs share $2 of test $1: its part and its number, r2
+    local t=$1 job=$2 start=$EPOCHREALTIME given=()
+    local part=${job[1]} k=${job[2,-1]}
+    case $part in
+    r) given=(TEST_WEIGHTS=$tmp/$t.weights TEST_BUDGETS=skip) ;;
+    b) given=(TEST_WEIGHTS=$tmp/$t.weights TEST_BUDGETS=only) ;;
+    esac
+    (( count[$t.$part] > 1 )) && given+=TEST_SHARD=$k/$count[$t.$part]
+    env $given TEST_SUITE_TIMES=$tmp/$t.$job.suites build/debug/$t/$t > $tmp/$t.$job.out 2>&1
     local rc=$?
-    print -r -- $(( EPOCHREALTIME - start )) > build/debug/$t/took
+    print -r -- $(( EPOCHREALTIME - start )) > $tmp/$t.$job.took
+    return $rc
+}
+typeset -A finished running status_of  # a test that ended: its status; a share running: its process; a share that ended: its status
+# Joins test $1's shares' output, each but for its count, and the counts added up, in one; and
+# keeps, from a whole run, how long it took, its suites' times and, if it passed, what it passed as.
+# A share that ends before its count (a crash, an exit in a test) fails the test, whatever its status.
+join_shares() {
+    local t=$1 part k job last rc=0 whole=1 which
+    integer passed=0 failed=0
+    typeset -F 3 secs=0
+    : > $tmp/$t.out; : > $tmp/$t.suites
+    for part in ${=parts[$t]}; do
+        for k in {1..$count[$t.$part]}; do
+            job=$part$k
+            (( status_of[$t.$job] )) && rc=1
+            secs+=$(<$tmp/$t.$job.took)
+            last=$(tail -n 1 $tmp/$t.$job.out)
+            if [[ $last =~ '^([0-9]+) passed, ([0-9]+) failed$' ]]; then
+                passed+=match[1]; failed+=match[2]
+                sed '$d' $tmp/$t.$job.out >> $tmp/$t.out
+            else
+                whole=0 rc=1
+                cat $tmp/$t.$job.out >> $tmp/$t.out
+                case $part in
+                a) which=$t ;;
+                r) which="share $k of $count[$t.r] of $t's suites that hold no time budget" ;;
+                b) which="share $k of $count[$t.b] of $t's suites that hold a time budget" ;;
+                esac
+                print -r -- "test.sh: $which ended (status $status_of[$t.$job]) before its count" >> $tmp/$t.out
+            fi
+            cat $tmp/$t.$job.suites >> $tmp/$t.suites 2> /dev/null
+        done
+    done
+    (( whole )) && print -r -- "$passed passed, $failed failed" >> $tmp/$t.out
     cp -f $tmp/$t.out build/debug/$t/output.txt
+    if [[ -z ${TEST_FILTER:-} ]]; then
+        rm -f build/debug/$t/passed
+        if (( whole )); then
+            print -r -- $secs > build/debug/$t/took
+            cp -f $tmp/$t.suites build/debug/$t/suites
+            (( rc == 0 )) && print -r -- "$key[$t]" > build/debug/$t/passed
+        fi
+    fi
     return $rc
 }
 
-typeset -A finished running  # a test that ended: its status; one running: its process
-failed=()
+failed=() unchanged=()
 integer ran=0 shown=0
 show() {  # prints test $1's output under its name, and counts what it ran
+    (( ${+skipped[$1]} )) && { unchanged+=$1; return }
     print -P "%B── $1%b"
     cat $tmp/$1.out
     (( finished[$1] == 0 )) || failed+=$1
@@ -64,39 +235,49 @@ stop_tree() {  # a process and every process under it
 # didn't are named, with where their output so far is.
 interrupted() {
     setopt local_options no_err_exit
-    local t pid
+    local t pid outs
     for pid in ${(v)running}; do stop_tree $pid; done 2> /dev/null
     for t in ${tests[shown+1,-1]}; do
         if (( ${+finished[$t]} )); then
             show $t
-        elif [[ -e $tmp/$t.out ]]; then
-            cp -f $tmp/$t.out build/debug/$t/output.txt
+        elif outs=($tmp/$t.*.out(Nn)); (( ${#outs} )); then
+            cat $outs > build/debug/$t/output.txt
             print -u2 "test.sh: $t was stopped; its output so far is in build/debug/$t/output.txt"
         fi
     done
     exit 130
 }
-trap 'rm -rf -- "$tmp"' EXIT
 trap interrupted INT TERM HUP
 
+for t in ${(k)skipped}; do finished[$t]=0; done
 mkfifo $tmp/done
-exec {done}<>$tmp/done      # each test writes "name status" here as it ends
+exec {done}<>$tmp/done      # each share writes "name share status" here as it ends
 while (( shown < ${#tests} )); do
-    while (( ${#running} < jobs && ${#queue} )); do
+    while (( ${#queue} )); do
+        t=${queue[1]% *}; job=${queue[1]#* }
+        # A budget's share waits until fewer than `quiet` run (above).
+        room=$jobs; [[ $job == b* ]] && room=$quiet
+        (( ${#running} < room )) || break
         # A job started with & ignores ^C, and so would the test it runs: give it back.
-        ( trap - INT QUIT; run_test $queue[1]; print -r -- "$queue[1] $?" >&$done ) &
-        running[$queue[1]]="$!"
+        ( trap - INT QUIT; run_share $t $job; print -r -- "$t $job $?" >&$done ) &
+        running[$t.$job]="$!"
         shift queue
     done
-    read -r -u $done t rc
-    unset "running[$t]"; finished[$t]=$rc
+    if (( ${#running} )); then
+        read -r -u $done t job rc
+        unset "running[$t.$job]"; status_of[$t.$job]=$rc
+        left[$t]=$(( left[$t] - 1 ))
+        if (( ! left[$t] )); then join_shares $t; finished[$t]=$?; fi
+    fi
     # Print, in order, every test that's done up to the first that isn't.
     while (( shown < ${#tests} )) && (( ${+finished[${tests[shown+1]}]} )); do
         shown+=1
         show ${tests[shown]}
     done
+    (( ${#running} || ${#queue} || shown == ${#tests} )) || { print -u2 "test.sh: ${tests[shown+1]} never ran (test.sh's own mistake)"; exit 1 }
 done
 exec {done}>&-
+(( ${#unchanged} )) && print "unchanged since they passed, so not run (TEST_ALL=1 runs them): ${(j:, :)unchanged}"
 (( ${#failed} )) && print -u2 "FAILED: ${(j:, :)failed}"
 [[ -n ${TEST_FILTER:-} ]] && (( ran == 0 )) && { print -u2 "TEST_FILTER=$TEST_FILTER matched no tests"; exit 1 }
 (( ${#failed} )) && exit 1

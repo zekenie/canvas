@@ -37,7 +37,7 @@ private func short(_ id: ShapeID) -> String { String(id.rawValue.uuidString.pref
 
 /// How the kept book differs from one made afresh from the same file; nil when it does not.
 @MainActor private func bookDifference(_ editor: CanvasEditor, pocket: ShapeID, watch: [ShapeID]) throws -> String? {
-    let fresh = try bondEditor(file: editor.file)
+    let fresh = bondEditor(registry: try sharedBondRegistry(), file: editor.file)
     _ = fresh.showBoard(BoardID(owner: pocket))
     _ = fresh.showBoard(.root)
     let kept = try require(editor.rowBook), made = try require(fresh.rowBook)
@@ -60,7 +60,7 @@ private let agreementSchemas = [
 
 @MainActor private func agree(seed: UInt64, steps: Int, privatePills: Bool, only: Set<Int>? = nil, skipping: Set<Int> = []) throws -> String? {
     var rng = SplitMix(state: seed)
-    let editor = try bondEditor()
+    let editor = bondEditor(registry: try sharedBondRegistry(), file: CanvasFile(root: CanvasDocument()))
     var types: [ShapeID] = [], rels: [ShapeID] = [], notes: [ShapeID] = [], pills: [ShapeID] = [], bonds: [ShapeID] = []
     let pocket = ShapeID()
     editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 3000, width: 100, height: 100))))) }
@@ -175,31 +175,50 @@ private let agreementSchemas = [
     return nil
 }
 
+/// The seeds' runs, each failure said once the seeds are done.
+@MainActor private func agreeing(_ seeds: ClosedRange<UInt64>, steps: Int, privatePills: Bool, only: Set<Int>? = nil, skipping: Set<Int> = []) throws {
+    var failures: [String] = []
+    for seed in seeds { if let failure = try agree(seed: seed, steps: steps, privatePills: privatePills, only: only, skipping: skipping) { failures.append(failure) } }
+    for failure in failures { expect(false, failure) }
+}
+
+// The two long runs are in two suites each, half the seeds in each, so they run at once.
+private let endsOnly: Set<Int> = [0, 1, 2, 5, 11, 12, 13, 14, 16, 17, 19, 21]
+private let withDeletes: Set<Int> = [0, 1, 2, 6, 7, 11, 12, 13, 16, 21]
+
 @MainActor let relationAgreementTests = Suite("relation rows kept against the file", [
     test("after every edit and undo of a seeded run, pills open, kept frames and rows are a fresh editor's") {
-        var failures: [String] = []
-        for seed: UInt64 in 1...12 { if let failure = try agree(seed: seed, steps: 100, privatePills: false) { failures.append(failure) } }
-        for failure in failures { expect(false, failure) }
+        try agreeing(1...12, steps: 100, privatePills: false)
     },
     test("the same with pills that are not admitted") {
-        var failures: [String] = []
-        for seed: UInt64 in 101...108 { if let failure = try agree(seed: seed, steps: 100, privatePills: true) { failures.append(failure) } }
-        for failure in failures { expect(false, failure) }
-    },
-    test("the same, ends, lineage, marks and lists only, no type deleted or un-typed") {
-        var failures: [String] = []
-        for seed: UInt64 in 201...230 { if let failure = try agree(seed: seed, steps: 120, privatePills: false, only: [0, 1, 2, 5, 11, 12, 13, 14, 16, 17, 19, 21]) { failures.append(failure) } }
-        for failure in failures { expect(false, failure) }
-    },
-    test("the same, with types deleted and un-typed among ends and lineage") {
-        var failures: [String] = []
-        for seed: UInt64 in 301...330 { if let failure = try agree(seed: seed, steps: 120, privatePills: false, only: [0, 1, 2, 6, 7, 11, 12, 13, 16, 21]) { failures.append(failure) } }
-        for failure in failures { expect(false, failure) }
+        try agreeing(101...108, steps: 100, privatePills: true)
     },
     test("the same with pills that are not admitted and never re-pointed") {
-        var failures: [String] = []
-        for seed: UInt64 in 101...116 { if let failure = try agree(seed: seed, steps: 100, privatePills: true, skipping: [9]) { failures.append(failure) } }
-        for failure in failures { expect(false, failure) }
+        try agreeing(101...116, steps: 100, privatePills: true, skipping: [9])
+    },
+])
+
+@MainActor let relationAgreementEndsTests = Suite("relation rows kept against the file, ends, lineage, marks and lists", [
+    test("the same, ends, lineage, marks and lists only, no type deleted or un-typed: seeds 201 to 215") {
+        try agreeing(201...215, steps: 120, privatePills: false, only: endsOnly)
+    },
+])
+
+@MainActor let relationAgreementEndsMoreTests = Suite("relation rows kept against the file, ends, lineage, marks and lists (more)", [
+    test("the same, ends, lineage, marks and lists only, no type deleted or un-typed: seeds 216 to 230") {
+        try agreeing(216...230, steps: 120, privatePills: false, only: endsOnly)
+    },
+])
+
+@MainActor let relationAgreementDeletesTests = Suite("relation rows kept against the file, types deleted and un-typed", [
+    test("the same, with types deleted and un-typed among ends and lineage: seeds 301 to 315") {
+        try agreeing(301...315, steps: 120, privatePills: false, only: withDeletes)
+    },
+])
+
+@MainActor let relationAgreementDeletesMoreTests = Suite("relation rows kept against the file, types deleted and un-typed (more)", [
+    test("the same, with types deleted and un-typed among ends and lineage: seeds 316 to 330") {
+        try agreeing(316...330, steps: 120, privatePills: false, only: withDeletes)
     },
 ])
 

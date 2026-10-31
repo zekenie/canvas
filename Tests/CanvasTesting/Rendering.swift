@@ -68,8 +68,10 @@ public func lineTops(_ rep: NSBitmapImageRep, over background: NSBitmapImageRep,
     var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
     var tops: [CGFloat] = []
     var previous = Int.min
+    let raw = RawPair(rep, background)
     for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
         let inked = (Int(rect.minX * scale)..<Int(rect.maxX * scale)).contains { x in
+            if let raw { return raw.difference(atX: x, y: y) > 64 }
             rep.getPixel(&p, atX: x, y: y); background.getPixel(&q, atX: x, y: y)
             return zip(p, q).contains { abs($0 - $1) > 64 }
         }
@@ -80,20 +82,72 @@ public func lineTops(_ rep: NSBitmapImageRep, over background: NSBitmapImageRep,
     return tops
 }
 
+/// Two bitmaps' samples read straight from their data, when both are whole bytes in one plane laid
+/// out alike and every byte of a pixel is a sample: what `getPixel` gives, without a call and two
+/// arrays for every pixel. (A pixel with a byte that is no sample, as one drawn with its first byte
+/// skipped has, puts its samples where getPixel knows and this doesn't: getPixel reads it.)
+private struct RawPair {
+    let a: UnsafeMutablePointer<UInt8>, b: UnsafeMutablePointer<UInt8>
+    let rowA: Int, rowB: Int, channels: Int, bytesPerPixel: Int
+
+    init?(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) {
+        guard !a.isPlanar, !b.isPlanar, a.bitsPerSample == 8, b.bitsPerSample == 8, a.samplesPerPixel == b.samplesPerPixel,
+              a.bitsPerPixel == b.bitsPerPixel, a.samplesPerPixel * 8 == a.bitsPerPixel,
+              let pa = a.bitmapData, let pb = b.bitmapData else { return nil }
+        (self.a, self.b, rowA, rowB, channels, bytesPerPixel) = (pa, pb, a.bytesPerRow, b.bytesPerRow, a.samplesPerPixel, a.bitsPerPixel / 8)
+    }
+
+    /// The largest difference in any channel between the pixels at (x, y).
+    func difference(atX x: Int, y: Int) -> Int {
+        let p = a + y * rowA + x * bytesPerPixel, q = b + y * rowB + x * bytesPerPixel
+        var largest = 0
+        for c in 0..<channels { largest = max(largest, abs(Int(p[c]) - Int(q[c]))) }
+        return largest
+    }
+}
+
 /// The largest difference in any channel (0...255) between two bitmaps of one size, over every
-/// pixel within a rect of view points (`scale` as for `pixel`).
+/// pixel within a rect of view points (`scale` as for `pixel`), but for the pixels whose centers are
+/// in `excluded`.
 @MainActor
-public func largestDifference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in rect: CGRect, scale: CGFloat? = nil) -> Int {
+public func largestDifference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in rect: CGRect, excluding excluded: [CGRect] = [], scale: CGFloat? = nil) -> Int {
     let scale = scale ?? CGFloat(a.pixelsWide) / a.size.width
-    var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
     var largest = 0
+    let raw = RawPair(a, b)
+    var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
     for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
         for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
+            if !excluded.isEmpty {
+                let center = CGPoint(x: (CGFloat(x) + 0.5) / scale, y: (CGFloat(y) + 0.5) / scale)
+                guard !excluded.contains(where: { $0.contains(center) }) else { continue }
+            }
+            if let raw { largest = max(largest, raw.difference(atX: x, y: y)); continue }
             a.getPixel(&p, atX: x, y: y); b.getPixel(&q, atX: x, y: y)
             largest = max(largest, zip(p, q).map { abs($0 - $1) }.max() ?? 0)
         }
     }
     return largest
+}
+
+/// Every pixel at which two bitmaps of one size differ in any channel, as (x, y) in pixels, row by row.
+@MainActor
+public func differingPixelPositions(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> [(x: Int, y: Int)] {
+    var found: [(x: Int, y: Int)] = []
+    if let raw = RawPair(a, b) {
+        for y in 0..<a.pixelsHigh {
+            for x in 0..<a.pixelsWide where raw.difference(atX: x, y: y) != 0 { found.append((x, y)) }
+        }
+        return found
+    }
+    var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
+    for y in 0..<a.pixelsHigh {
+        for x in 0..<a.pixelsWide {
+            a.getPixel(&p, atX: x, y: y)
+            b.getPixel(&q, atX: x, y: y)
+            if p != q { found.append((x, y)) }
+        }
+    }
+    return found
 }
 
 /// Draws a view as it is now, in its window (unshown will do), at the window's scale, with its

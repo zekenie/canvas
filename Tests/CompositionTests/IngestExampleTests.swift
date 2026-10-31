@@ -209,6 +209,133 @@ private struct ReadmeQuery {
             if let count = question.count { expectEqual(answer.count, count, question.query) }
         }
     },
+    test("the orders lens passes over what its conventions don't read and says so where it can: a serverless.yml that is no mapping, SQL words that are no tables, a proxy made in a helper, a multi-line JSDoc, a service outside services/") {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("IngestExampleTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let repo = folder.appendingPathComponent("shop")
+        func put(_ text: String, _ path: String) throws {
+            let url = repo.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        try put("CREATE TABLE payments (id text PRIMARY KEY);\nCREATE TABLE orders (id text PRIMARY KEY);\n", "db/migrations/001_init.sql")
+        // line 8 is the workflow: a JSDoc of several lines over it, and its calls through a namespace
+        try put("""
+            import { proxyActivities } from "@temporalio/workflow";
+            const acts = proxyActivities<any>({ startToCloseTimeout: "1 minute" });
+
+            /**
+             * Pays an order through the provider. The rest of the comment
+             * is for people reading the code.
+             */
+            export async function payWorkflow(): Promise<void> {
+              await acts.pay();
+              await acts.audit();
+            }
+
+            """, "services/shop/src/workflows/pay.ts")
+        // the SDK imported as a namespace (`wf.proxyActivities`), as half of Temporal's own samples do: read
+        try put("""
+            import * as wf from "@temporalio/workflow";
+            const { pay } = wf.proxyActivities<any>({});
+
+            export async function nsWorkflow(): Promise<void> {
+              await pay();
+            }
+
+            """, "services/shop/src/workflows/ns.ts")
+        // a form the lens doesn't read: the proxy is made in a helper
+        try put("""
+            import { proxyActivities } from "@temporalio/workflow";
+            function make() { return proxyActivities<any>({}); }
+            const acts = make();
+
+            export async function lostWorkflow(): Promise<void> {
+              await acts.pay();
+            }
+
+            """, "services/shop/src/workflows/lost.ts")
+        // words that are no tables: EXTRACT(.. FROM ..), prose, a WITH's name, FOR UPDATE OF
+        try put("""
+            /** Takes the money. */
+            export async function pay(): Promise<void> {
+              await query(`SELECT EXTRACT(epoch FROM created_at) FROM payments`);
+              await query("cannot read from stream");
+              await query(`WITH recent AS (SELECT id FROM orders) SELECT id FROM recent`);
+              await query(`SELECT id FROM orders WHERE id = $1 FOR UPDATE OF orders`);
+            }
+
+            /** Logs. */
+            export async function audit(): Promise<void> {}
+
+            /** An exported helper no workflow runs. */
+            export async function helper(): Promise<void> {}
+
+            """, "services/shop/src/activities/pay.ts")
+        try put("functions: ${file(./functions.yml)}\n", "services/shop/serverless.yml")
+        try put("- a\n- b\n", "apps/legacy/serverless.yml")
+        try put("export async function oldWorkflow(): Promise<void> {}\n", "apps/legacy/src/workflows/old.ts")
+        try put(try String(contentsOf: example(".canvas/lens.py"), encoding: .utf8), ".canvas/lens.py")
+        try git(repo, ["init", "-q"])
+        try git(repo, ["add", "-A"])
+        try git(repo, ["commit", "-q", "-m", "a service outside the example's conventions"])
+        let sha = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        func file(_ module: String, _ rel: String, _ path: String, decls: [(String, String, String, Int)]) -> String {
+            let decls = decls.map { #"{"name": "\#($0.0)", "kind": "\#($0.1)", "visibility": "\#($0.2)", "line": \#($0.3)}"# }.joined(separator: ", ")
+            return #"{"module": "\#(module)", "rel": "\#(rel)", "path": "\#(path)", "lines": 12, "doc": null, "api": true, "decls": [\#(decls)]}"#
+        }
+        let scan = """
+            {"language": "typescript", "name": "shop",
+             "modules": [
+              {"name": "@shop/shop", "path": "services/shop/src", "deps": [], "test": false, "layer": null, "lines": 40, "doc": null, "folders": {},
+               "files": ["workflows/pay.ts", "workflows/ns.ts", "workflows/lost.ts", "activities/pay.ts"]},
+              {"name": "@shop/legacy", "path": "apps/legacy/src", "deps": [], "test": false, "layer": null, "lines": 1, "doc": null, "folders": {}, "files": ["workflows/old.ts"]}],
+             "files": [
+              \(file("@shop/shop", "workflows/pay.ts", "services/shop/src/workflows/pay.ts", decls: [("acts", "value", "private", 2), ("payWorkflow", "function", "public", 8)])),
+              \(file("@shop/shop", "workflows/ns.ts", "services/shop/src/workflows/ns.ts", decls: [("nsWorkflow", "function", "public", 4)])),
+              \(file("@shop/shop", "workflows/lost.ts", "services/shop/src/workflows/lost.ts", decls: [("make", "function", "private", 2), ("acts", "value", "private", 3), ("lostWorkflow", "function", "public", 5)])),
+              \(file("@shop/shop", "activities/pay.ts", "services/shop/src/activities/pay.ts", decls: [("pay", "function", "public", 2), ("audit", "function", "public", 10), ("helper", "function", "public", 13)])),
+              \(file("@shop/legacy", "workflows/old.ts", "apps/legacy/src/workflows/old.ts", decls: [("oldWorkflow", "function", "public", 1)]))],
+             "uses": []}
+            """
+        try scan.write(to: folder.appendingPathComponent("scan.json"), atomically: true, encoding: .utf8)
+        let runner = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-ingest/runner/run.py")
+        let digestFile = folder.appendingPathComponent("digest.json")
+        let made = try run(URL(fileURLWithPath: "/usr/bin/python3"), [runner.path, repo.path, folder.appendingPathComponent("scan.json").path, digestFile.path,
+                                                                    "--lens", repo.appendingPathComponent(".canvas/lens.py").path, "--commit", sha], timeout: 120)
+        expectEqual(made.status, 0, made.output + made.error)
+        let said = made.error
+        // what it can tell it says, naming the file
+        expect(said.contains("services/shop/serverless.yml: functions is not a mapping here"), said)
+        expect(said.contains("apps/legacy/serverless.yml is not a mapping at its top level"), said)
+        expect(said.contains("services/shop/src/workflows/lost.ts mentions proxyActivities and none of its workflows runs an activity"), said)
+        expect(said.contains("@shop/legacy (apps/legacy/src) has a workflows/ or activities/ folder but is not under services/"), said)
+        expect(!said.contains("which no migration makes"), "words that are no tables are not tables: \(said)")
+        expect(!said.contains("payWorkflow") && !said.contains("ns.ts"), "the namespace forms are read: \(said)")
+        let digest = try json(digestFile)
+        let nodes = digest["nodes"]?.arrayValue ?? [], edges = digest["edges"]?.arrayValue ?? []
+        func targets(_ relation: String, from: String) -> [String] {
+            edges.filter { $0["is"] == .string(relation) && $0["from"] == .string(from) }.compactMap { $0["to"]?.stringValue }.sorted()
+        }
+        // the namespace forms give runs, with their steps; the SQL words give the reads they should, and no write
+        expectEqual(targets("runs", from: "payWorkflow"), ["audit", "pay"])
+        expectEqual(targets("runs", from: "nsWorkflow"), ["pay"])
+        expectEqual(edges.first { $0["is"] == "runs" && $0["to"] == "pay" }?["fieldValues"]?["step"]?.numberValue, 1)
+        expectEqual(targets("runs", from: "lostWorkflow"), [])
+        expectEqual(targets("reads", from: "pay"), ["orders", "payments"])
+        expectEqual(targets("writes", from: "pay"), [])
+        // a multi-line JSDoc gives its first sentence
+        expectEqual(nodes.first { $0["title"] == "payWorkflow" }?["text"], "Pays an order through the provider.")
+        expectEqual(nodes.first { $0["title"] == "pay" }?["text"], "Takes the money.")
+        // an exported helper in activities/ that no workflow runs is a note nothing runs: :incomplete in the drawing
+        expect(nodes.contains { $0["title"] == "helper" && $0["is"] == "Activity" } && !edges.contains { $0["is"] == "runs" && $0["to"] == "helper" })
+        // no Lambda was drawn from a config the reader took for a string
+        expectEqual(nodes.filter { $0["is"] == "Lambda" }.count, 0)
+    },
+])
+
+@MainActor let ingestExampleTests2 = Suite("canvas-ingest's worked examples, the bookshelf and the orders lens's names", [
     test("the bookshelf example is drawn the usual way, the default lens's packages and files with every file a File, checks and verifies with nothing said, and canvas query answers its questions as drawn") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -363,129 +490,5 @@ private struct ReadmeQuery {
         expectEqual(said(try ask(#":end-of(arrow:is-a("runs"):starts-at("@shop/orders" > "Workflows" > "syncWorkflow"))"#)), ["notify in Services > @shop/orders > Activities"],
                     "what orders' workflow runs, asked for by its path")
         expectEqual(said(try ask(":incomplete")), [], "every notify is run by a workflow")
-    },
-    test("the orders lens passes over what its conventions don't read and says so where it can: a serverless.yml that is no mapping, SQL words that are no tables, a proxy made in a helper, a multi-line JSDoc, a service outside services/") {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("IngestExampleTests-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = folder.appendingPathComponent("shop")
-        func put(_ text: String, _ path: String) throws {
-            let url = repo.appendingPathComponent(path)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try text.write(to: url, atomically: true, encoding: .utf8)
-        }
-        try put("CREATE TABLE payments (id text PRIMARY KEY);\nCREATE TABLE orders (id text PRIMARY KEY);\n", "db/migrations/001_init.sql")
-        // line 8 is the workflow: a JSDoc of several lines over it, and its calls through a namespace
-        try put("""
-            import { proxyActivities } from "@temporalio/workflow";
-            const acts = proxyActivities<any>({ startToCloseTimeout: "1 minute" });
-
-            /**
-             * Pays an order through the provider. The rest of the comment
-             * is for people reading the code.
-             */
-            export async function payWorkflow(): Promise<void> {
-              await acts.pay();
-              await acts.audit();
-            }
-
-            """, "services/shop/src/workflows/pay.ts")
-        // the SDK imported as a namespace (`wf.proxyActivities`), as half of Temporal's own samples do: read
-        try put("""
-            import * as wf from "@temporalio/workflow";
-            const { pay } = wf.proxyActivities<any>({});
-
-            export async function nsWorkflow(): Promise<void> {
-              await pay();
-            }
-
-            """, "services/shop/src/workflows/ns.ts")
-        // a form the lens doesn't read: the proxy is made in a helper
-        try put("""
-            import { proxyActivities } from "@temporalio/workflow";
-            function make() { return proxyActivities<any>({}); }
-            const acts = make();
-
-            export async function lostWorkflow(): Promise<void> {
-              await acts.pay();
-            }
-
-            """, "services/shop/src/workflows/lost.ts")
-        // words that are no tables: EXTRACT(.. FROM ..), prose, a WITH's name, FOR UPDATE OF
-        try put("""
-            /** Takes the money. */
-            export async function pay(): Promise<void> {
-              await query(`SELECT EXTRACT(epoch FROM created_at) FROM payments`);
-              await query("cannot read from stream");
-              await query(`WITH recent AS (SELECT id FROM orders) SELECT id FROM recent`);
-              await query(`SELECT id FROM orders WHERE id = $1 FOR UPDATE OF orders`);
-            }
-
-            /** Logs. */
-            export async function audit(): Promise<void> {}
-
-            /** An exported helper no workflow runs. */
-            export async function helper(): Promise<void> {}
-
-            """, "services/shop/src/activities/pay.ts")
-        try put("functions: ${file(./functions.yml)}\n", "services/shop/serverless.yml")
-        try put("- a\n- b\n", "apps/legacy/serverless.yml")
-        try put("export async function oldWorkflow(): Promise<void> {}\n", "apps/legacy/src/workflows/old.ts")
-        try put(try String(contentsOf: example(".canvas/lens.py"), encoding: .utf8), ".canvas/lens.py")
-        try git(repo, ["init", "-q"])
-        try git(repo, ["add", "-A"])
-        try git(repo, ["commit", "-q", "-m", "a service outside the example's conventions"])
-        let sha = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        func file(_ module: String, _ rel: String, _ path: String, decls: [(String, String, String, Int)]) -> String {
-            let decls = decls.map { #"{"name": "\#($0.0)", "kind": "\#($0.1)", "visibility": "\#($0.2)", "line": \#($0.3)}"# }.joined(separator: ", ")
-            return #"{"module": "\#(module)", "rel": "\#(rel)", "path": "\#(path)", "lines": 12, "doc": null, "api": true, "decls": [\#(decls)]}"#
-        }
-        let scan = """
-            {"language": "typescript", "name": "shop",
-             "modules": [
-              {"name": "@shop/shop", "path": "services/shop/src", "deps": [], "test": false, "layer": null, "lines": 40, "doc": null, "folders": {},
-               "files": ["workflows/pay.ts", "workflows/ns.ts", "workflows/lost.ts", "activities/pay.ts"]},
-              {"name": "@shop/legacy", "path": "apps/legacy/src", "deps": [], "test": false, "layer": null, "lines": 1, "doc": null, "folders": {}, "files": ["workflows/old.ts"]}],
-             "files": [
-              \(file("@shop/shop", "workflows/pay.ts", "services/shop/src/workflows/pay.ts", decls: [("acts", "value", "private", 2), ("payWorkflow", "function", "public", 8)])),
-              \(file("@shop/shop", "workflows/ns.ts", "services/shop/src/workflows/ns.ts", decls: [("nsWorkflow", "function", "public", 4)])),
-              \(file("@shop/shop", "workflows/lost.ts", "services/shop/src/workflows/lost.ts", decls: [("make", "function", "private", 2), ("acts", "value", "private", 3), ("lostWorkflow", "function", "public", 5)])),
-              \(file("@shop/shop", "activities/pay.ts", "services/shop/src/activities/pay.ts", decls: [("pay", "function", "public", 2), ("audit", "function", "public", 10), ("helper", "function", "public", 13)])),
-              \(file("@shop/legacy", "workflows/old.ts", "apps/legacy/src/workflows/old.ts", decls: [("oldWorkflow", "function", "public", 1)]))],
-             "uses": []}
-            """
-        try scan.write(to: folder.appendingPathComponent("scan.json"), atomically: true, encoding: .utf8)
-        let runner = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-ingest/runner/run.py")
-        let digestFile = folder.appendingPathComponent("digest.json")
-        let made = try run(URL(fileURLWithPath: "/usr/bin/python3"), [runner.path, repo.path, folder.appendingPathComponent("scan.json").path, digestFile.path,
-                                                                    "--lens", repo.appendingPathComponent(".canvas/lens.py").path, "--commit", sha], timeout: 120)
-        expectEqual(made.status, 0, made.output + made.error)
-        let said = made.error
-        // what it can tell it says, naming the file
-        expect(said.contains("services/shop/serverless.yml: functions is not a mapping here"), said)
-        expect(said.contains("apps/legacy/serverless.yml is not a mapping at its top level"), said)
-        expect(said.contains("services/shop/src/workflows/lost.ts mentions proxyActivities and none of its workflows runs an activity"), said)
-        expect(said.contains("@shop/legacy (apps/legacy/src) has a workflows/ or activities/ folder but is not under services/"), said)
-        expect(!said.contains("which no migration makes"), "words that are no tables are not tables: \(said)")
-        expect(!said.contains("payWorkflow") && !said.contains("ns.ts"), "the namespace forms are read: \(said)")
-        let digest = try json(digestFile)
-        let nodes = digest["nodes"]?.arrayValue ?? [], edges = digest["edges"]?.arrayValue ?? []
-        func targets(_ relation: String, from: String) -> [String] {
-            edges.filter { $0["is"] == .string(relation) && $0["from"] == .string(from) }.compactMap { $0["to"]?.stringValue }.sorted()
-        }
-        // the namespace forms give runs, with their steps; the SQL words give the reads they should, and no write
-        expectEqual(targets("runs", from: "payWorkflow"), ["audit", "pay"])
-        expectEqual(targets("runs", from: "nsWorkflow"), ["pay"])
-        expectEqual(edges.first { $0["is"] == "runs" && $0["to"] == "pay" }?["fieldValues"]?["step"]?.numberValue, 1)
-        expectEqual(targets("runs", from: "lostWorkflow"), [])
-        expectEqual(targets("reads", from: "pay"), ["orders", "payments"])
-        expectEqual(targets("writes", from: "pay"), [])
-        // a multi-line JSDoc gives its first sentence
-        expectEqual(nodes.first { $0["title"] == "payWorkflow" }?["text"], "Pays an order through the provider.")
-        expectEqual(nodes.first { $0["title"] == "pay" }?["text"], "Takes the money.")
-        // an exported helper in activities/ that no workflow runs is a note nothing runs: :incomplete in the drawing
-        expect(nodes.contains { $0["title"] == "helper" && $0["is"] == "Activity" } && !edges.contains { $0["is"] == "runs" && $0["to"] == "helper" })
-        // no Lambda was drawn from a config the reader took for a string
-        expectEqual(nodes.filter { $0["is"] == "Lambda" }.count, 0)
     },
 ])

@@ -175,9 +175,34 @@ struct RelaysPlugin: CanvasPlugin {
     }
 }
 
-/// An editor with bonds, and relays, and pockets (boards a bond may be drawn on), on `file`.
+/// An editor with bonds, and relays, and pockets (boards a bond may be drawn on), on `file`. With no more plugins it is over the
+/// registry `sharedBondRegistry` keeps.
 @MainActor func bondEditor(file: CanvasFile? = nil, more: [any CanvasPlugin] = []) throws -> CanvasEditor {
-    try rowEditor(file: file, more: [BondsPlugin(), RelaysPlugin(), PocketsPlugin()] + more)
+    if more.isEmpty { return bondEditor(registry: try sharedBondRegistry(), file: file ?? CanvasFile(root: CanvasDocument())) }
+    return try rowEditor(file: file, more: [BondsPlugin(), RelaysPlugin(), PocketsPlugin()] + more)
+}
+
+/// The registry `bondEditor` puts an editor over, made once for a test that opens the same plugins over many files: the app
+/// hands one registry to each window's editor, and making it (every plugin registering, every schema compiled) costs far more than
+/// an editor reading a small board does.
+@MainActor func bondRegistry(more: [any CanvasPlugin] = []) throws -> Registry {
+    try Registry(plugins: typePlugins() + [RowSlipsPlugin(), BondsPlugin(), RelaysPlugin(), PocketsPlugin()] + more)
+}
+
+@MainActor private var sharedRegistry: Registry?
+
+/// `bondRegistry()` made once for all the tests of this executable that ask for it: a registry is frozen, so what one test's editors
+/// do cannot reach another's.
+@MainActor func sharedBondRegistry() throws -> Registry {
+    if let sharedRegistry { return sharedRegistry }
+    let made = try bondRegistry()
+    sharedRegistry = made
+    return made
+}
+
+/// An editor over `registry` (from `bondRegistry`, or another editor's `registry`) on `file`, with a scheduler of its own.
+@MainActor func bondEditor(registry: Registry, file: CanvasFile) -> CanvasEditor {
+    CanvasEditor(registry: registry, file: file, scheduler: ManualScheduler())
 }
 
 extension CanvasEditor {

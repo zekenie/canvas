@@ -162,7 +162,7 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
     return ((report["problems"]?.arrayValue ?? []).compactMap(\.stringValue), (report["rules"]?.objectValue ?? [:]).compactMapValues(\.intValue))
 }
 
-@MainActor let ingestTests = Suite("canvas-ingest: a repository drawn as boards by `ingest`", [
+@MainActor let ingestTests = Suite("canvas-ingest: a repository drawn as boards by `ingest` (1 of 9)", [
     test("ingest draws a codebase from its scan in one command, a lens.py of overrides for the default lens, and a rerun draws it again in place") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -343,6 +343,107 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         }
     },
 
+    test("repo reads the commit and never the working tree; the lens is the checkout's, never the commit's; and a spec.py is refused") {
+        let folder = try scratchFolder("repo")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let repo = try makeRepository("repo", in: folder, files: ["notes.txt": "committed\n", "src/a.txt": "a", "src/deep/b.txt": "b", "src/deep/c.md": "c", "x y/space.txt": "s"])
+        func lens(_ title: String) -> String {
+            """
+            import json
+            def digest(scan, repo):
+                seen = {"notes": repo.read("notes.txt"), "all": repo.files(), "deep": repo.files("src/**/*.txt"), "top": repo.files("*.txt"),
+                        "any": repo.files("**/*.md"), "one": repo.files("src/*"), "gone": repo.exists("src/a.txt"), "new": repo.exists("untracked.txt"),
+                        "bytes": len(repo.read_bytes("notes.txt")), "sha": len(repo.commit)}
+                try:
+                    repo.read("untracked.txt")
+                except FileNotFoundError:
+                    seen["missing"] = True
+                return {"title": "\(title)", "seen": json.dumps(seen), "nodes": [], "edges": []}
+            """
+        }
+        let lensFile = repo.appendingPathComponent(".canvas/lens.py")
+        try write(lens("committed lens"), to: lensFile)
+        try git(repo, ["add", "-A"])
+        try git(repo, ["commit", "-q", "-m", "a lens"])
+        let kept = try cacheFolder(of: repo, cache: cache, with: script)
+        try putScan(tinyModel, in: kept)
+        // edits no commit holds: a file changed, one added, one removed, and the lens itself
+        try write("edited\n", to: repo.appendingPathComponent("notes.txt"))
+        try write("new", to: repo.appendingPathComponent("untracked.txt"))
+        try FileManager.default.removeItem(at: repo.appendingPathComponent("src/a.txt"))
+        try write(lens("working lens"), to: lensFile)
+        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
+        let ran = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+        expectEqual(ran.status, 0, ran.output + ran.error)
+        let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
+        expectEqual(digest["title"], "working lens", "the lens is the checkout's, whatever the commit holds")
+        let seen = try JSON(text: digest["seen"]?.stringValue ?? "{}")
+        expectEqual(seen["notes"], "committed\n", "the file as committed, not as edited")
+        expectEqual(seen["gone"], true, "a file removed from the working tree is still in the commit")
+        expectEqual(seen["new"], false, "and one that was never committed is not")
+        expectEqual(seen["bytes"], 10)
+        expectEqual(seen["sha"], 40)
+        expectEqual(seen["missing"], true, "reading what the commit lacks raises FileNotFoundError")
+        let paths = (seen["all"]?.arrayValue ?? []).compactMap(\.stringValue)
+        expectEqual(paths, [".canvas/lens.py", "README.md", "notes.txt", "src/a.txt", "src/deep/b.txt", "src/deep/c.md", "x y/space.txt"], "the commit's paths, sorted")
+        expectEqual((seen["deep"]?.arrayValue ?? []).compactMap(\.stringValue), ["src/a.txt", "src/deep/b.txt"], "** crosses folders, and matches none")
+        expectEqual((seen["top"]?.arrayValue ?? []).compactMap(\.stringValue), ["notes.txt"], "* stays in a folder")
+        expectEqual((seen["any"]?.arrayValue ?? []).compactMap(\.stringValue), ["README.md", "src/deep/c.md"])
+        expectEqual((seen["one"]?.arrayValue ?? []).compactMap(\.stringValue), ["src/a.txt"])
+
+        // a spec.py is the old way: refused before anything is asked of the app, saying where its names go
+        try write("TITLE = 'x'\n", to: repo.appendingPathComponent(".canvas/spec.py"))
+        let calls = driverCalls(log).count
+        let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+        expectEqual(refused.status, 1, refused.output)
+        expect(refused.error.contains("spec.py") && refused.error.contains(".canvas/lens.py") && refused.error.contains("lenskit.default.digest"), refused.error)
+        expectEqual(driverCalls(log).count, calls, "the driver was not asked")
+    },
+
+    test("the SQL and YAML readers on the words, strings and shapes that used to fool them, and a chain of modules a recursion could not hold") {
+        let folder = try scratchFolder("readers-gaps")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let script = folder.appendingPathComponent("gaps.py")
+        try write(gapsScript(skill: ingestSkill().path), to: script)
+        let done = try run(URL(fileURLWithPath: python), ["-s", "-B", script.path], timeout: 60)
+        expectEqual(done.status, 0, done.output + done.error)
+        let out = try JSON(text: done.output)
+        func strings(_ key: String) -> [String] { (out[key]?.arrayValue ?? []).compactMap(\.stringValue) }
+        // a column named for a word that can start a constraint is a column
+        expectEqual(strings("key_columns"), ["key:text:not null:pk", "value:text:null"], "key text PRIMARY KEY")
+        expectEqual(strings("soft_words"), ["index:int:null", "period:text:null", "exclude:bool:null", "fulltext:text:null", "like:varchar(9):null"], "and the constraints beside them are none")
+        expectEqual(strings("alter_key"), ["a:int:null", "key:text:null", "index:int:null"], "ADD key text, ADD COLUMN index int; ADD INDEX and ADD KEY are none")
+        // a string is read before a comment
+        expectEqual(strings("dashes"), ["a:text:null", "b:int:not null"], "DEFAULT '--' keeps the rest of its line")
+        expectEqual(strings("slash"), ["t", "u"], "DEFAULT '/*' with a real comment after it: both tables")
+        expectEqual(strings("dollar"), ["t", "u"], "DEFAULT '$$' and a real $$ body")
+        expectEqual(strings("dollar_columns"), ["a:text:null", "b:int:null"])
+        expectEqual(strings("comments"), ["a:text:null", "b:int:null"], "comments between the pieces of a definition")
+        // what says a column is not null
+        expectEqual(strings("check"), ["x:int:null", "y:int:not null", "z:int:null"], "CHECK (x IS NOT NULL) says nothing of x; NOT NULL does")
+        expectEqual(strings("alter_column"), ["x:bigint:not null", "y:text:not null:pk"], "ALTER COLUMN SET NOT NULL, TYPE (USING), SET DATA TYPE, and DROP NOT NULL on a primary key")
+        expectEqual(strings("t_sql"), ["x:varchar(10):not null"], "T-SQL's ALTER COLUMN x varchar(10) NOT NULL")
+        expectEqual(strings("unicode"), ["naïve:int:null", "größe:text:null"], "letters outside ASCII stay in a name")
+        expectEqual(out["unicode_table"], true)
+        expectEqual(strings("after"), ["a:int:null", "b:int:null", "c:text:null"], "AFTER x and FIRST are no part of a type")
+        expectEqual(strings("temp"), ["d"], "a temporary table is none")
+        expectEqual(strings("modify"), ["a:bigint:not null", "c:text:null"], "MODIFY and CHANGE define a column again, in its place")
+        // YAML
+        expectEqual(out["bom"], ["key": 1, "other": 2], "a byte order mark is no part of the first key")
+        expectEqual(out["keep"], ["a": "x\n\n\n", "b": "y\n", "c": "z", "d": 1], "|+ keeps the blank lines, | clips them, |- strips the line break")
+        expectEqual(out["keep_end"], ["a": "x\n\n"], "and at the end of the text")
+        expect(out["escape"]?.stringValue?.hasPrefix("line 1: ") == true && out["escape"]?.stringValue?.contains("U00110000") == true, "an escape that is no character is a YamlError naming its line: \(out["escape"] ?? .null)")
+        expectEqual(out["surrogate"]?.stringValue?.hasPrefix("line 1: "), true)
+        // a chain of 500 modules, the first the deepest user: a level for each, with no recursion
+        expectEqual(out["chain"], [499, 0], "levels of a reverse-ordered chain")
+        expectEqual(out["levels"], ["A": 1, "B": 1, "C": 0, "D": 2], "a cycle shares a level")
+    },
+
+])
+
+@MainActor let ingestTests2 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (2 of 9)", [
     test("the default lens draws a codebase whose folders repeat names: each board keeps the names of its folders and files, the digest tells them apart by id, and the app has each by where it is") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -390,61 +491,6 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(again.status, 0, again.output + again.error)
         expect(again.output.contains("replace: took back the last drawing") && again.output.contains("verify ok"), again.output)
         expectEqual(board.editor.file.shapeCount, shapes, "drawn again in its place, once")
-    },
-
-    test("lenskit's Digest gives a title out once in its container, lets a name repeat in another, and names nodes by an id where a title repeats; the same under another hash seed") {
-        let folder = try scratchFolder("builder")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let script = folder.appendingPathComponent("builder.py")
-        try write(builderScript(skill: ingestSkill().path), to: script)
-        let seeds = try ["1", "2"].map { try run(URL(fileURLWithPath: python), ["-s", "-B", script.path], environment: ["PYTHONHASHSEED": $0], timeout: 60) }
-        for seed in seeds { expectEqual(seed.status, 0, seed.output + seed.error) }
-        expectEqual(seeds[0].output, seeds[1].output, "the same digest and words under another hash seed")
-        let out = try JSON(text: seeds[0].output)
-        func strings(_ key: String) -> [String] { (out[key]?.arrayValue ?? []).compactMap(\.stringValue) }
-        // a title is given out once in its container (spaces folded, case aside), and may repeat in another
-        expectEqual(strings("container"), ["index.ts", "index.ts", "Index.ts (2)", "other.ts"])
-        expectEqual(strings("container_said"), ["z is titled \"Index.ts (2)\": \"Index.ts\" is another shape's title in \"A\" too",
-                                                "w is titled \"other.ts\": \"  index.ts \" is another shape's title in \"A\" too"])
-        // with no container there is one scope for the whole digest, as there always was
-        expectEqual(strings("whole"), ["Core", "core (layer)", "CORE (2)", "Core (3)"])
-        expectEqual(strings("whole_taken"), ["core", "core (2)", "core (3)", "core (layer)"])
-        expectEqual(strings("whole_said").first, "y is titled \"core (layer)\": \"core\" is another shape's title too")
-        // alone: no other shape has the title, in any container, whichever came first
-        expectEqual(strings("alone"), ["Core", "core (layer)", "x", "Core (2)"])
-        expectEqual(strings("alone_said").first, "band is titled \"core (layer)\": \"core\" is the card Core's title, which no other shape may have")
-        expectEqual(strings("alone_after"), ["Shared", "shared (card)"])
-        // type: unique among types in any container, shared with a note that is no type
-        expectEqual(strings("types"), ["Table", "Table", "TABLE (type)"])
-        expectEqual(strings("types_said"), ["t2 is titled \"TABLE (type)\": \"TABLE\" is another type's title too"])
-        // within a title names the one node that has it
-        expectEqual(strings("by_title"), ["x", "x", "x (2)"])
-        expect(out["unknown"]?.stringValue?.contains("no node has that title") == true, "\(out["unknown"] ?? .null)")
-        expect(out["ambiguous"]?.stringValue?.contains("2 nodes have that title") == true, "\(out["ambiguous"] ?? .null)")
-        // a digest of titles that are all unique comes out as it was written, strings and nodes alike, with no id
-        expectEqual(out["plain"], ["title": "plain", "nodes": [["title": "F", "kind": "frame", "rank": 0], ["title": "N", "kind": "sticky-note", "in": "F", "text": "words", "source": "n.py"],
-                                                              ["title": "M", "kind": "sticky-note", "in": "F"]],
-                                   "edges": [["from": "N", "to": "F"], ["from": "M", "to": "N", "weight": 2]], "warnings": []])
-        // a title two nodes have: an id for each, the title then the containers (the digest's own way to tell them apart), and every
-        // reference to either is its id; a node whose title is unique is still named by it, as a string or as a node
-        let shop = try require(out["digest"])
-        let ids = (shop["nodes"]?.arrayValue ?? []).map { $0["id"]?.stringValue ?? "-" }
-        expectEqual(ids, ["-", "-", "-", "index.ts  in Top > app", "index.ts  in Top > lib", "-"])
-        expectEqual((shop["edges"]?.arrayValue ?? []).map { "\($0["from"]?.stringValue ?? "?") > \($0["to"]?.stringValue ?? "?")" },
-                    ["index.ts  in Top > app > index.ts  in Top > lib", "index.ts  in Top > lib > Only", "Only > index.ts  in Top > app", "Only > lib"])
-        expectEqual((shop["nodes"]?.arrayValue ?? []).first { $0["id"] == "index.ts  in Top > app" }?.objectValue?.keys.sorted(), ["id", "in", "kind", "source", "text", "title"])
-        expectEqual((shop["nodes"]?.arrayValue ?? []).compactMap { $0["in"]?.stringValue }, ["Top", "Top", "app", "lib", "lib"], "a container is named by its title where that is its own")
-        expectEqual(out["again"], true, "and finishing again changes nothing")
-        // what is refused: a string that names several nodes, a node of another digest, and two types of one title
-        expect(out["ambiguous_ref"]?.stringValue?.contains("\"Same\" is the title of 2 nodes") == true && out["ambiguous_ref"]?.stringValue?.contains("give the nodes ids") == true, "\(out["ambiguous_ref"] ?? .null)")
-        expect(out["foreign"]?.stringValue?.contains("a node this digest doesn't have") == true, "\(out["foreign"] ?? .null)")
-        expect(out["two_types"]?.stringValue?.contains("2 types are called \"Table\"") == true && out["two_types"]?.stringValue?.contains("type=True") == true, "\(out["two_types"] ?? .null)")
-        // an id the lens gave stays; a title that is another node's id gets an id, so it is named by it; two ids that would be one get a number
-        expectEqual((out["ids"]?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " | ") },
-                    ["P", "Q", "X | mine | P", "X | X  in Q | Q", "mine | mine  in Q | Q", "Y | Y  in P | Q", "Y | Y  in P (2) | P"])
-        expectEqual((out["id_edges"]?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " > ") },
-                    ["mine > X  in Q", "mine  in Q > Y  in P", "X  in Q > Y  in P (2)"])
-        expectEqual(out["order_broken"], 0, "ids sort as titles do: no two titles, over 2,400 random ones, come out of order by key")
     },
 
     test("a module called what its band is, with folder boards that mention it, is drawn: the band gives way to the card, whose title a mention names alone") {
@@ -592,40 +638,92 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expect(!FileManager.default.fileExists(atPath: repo.appendingPathComponent(".index").path) && !FileManager.default.fileExists(atPath: repo.appendingPathComponent("model.json").path), "and nothing of ingest's is in the repository")
     },
 
-    test("a package whose product is a list of plugins, as this one is: a line that ends + shipped type-checks against the plugins' modules, and the scan keeps the line's own dependencies") {
-        let folder = try scratchFolder("shipped")
+    test("a repository's long command is stopped with the run: a signal frees the lock at once, and nothing it started is left running") {
+        let folder = try scratchFolder("stopped")
         defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = folder.appendingPathComponent("repo"), scratch = folder.appendingPathComponent("index"), model = folder.appendingPathComponent("scan.json")
-        func put(_ path: String, _ text: String) throws { try write(text, to: repo.appendingPathComponent(path)) }
-        // App names no plugin and is made of the list; its tests call Kit, which their line doesn't write
-        try put("Package.swift", listedPackage(testsShip: true))
-        try put("Sources/Core/Core.swift", "public func core() -> Int { 1 }\n")
-        try put("Sources/Kit/Kit.swift", "import Core\n\npublic struct KitPlugin {\n    public init() {}\n    public var count: Int { core() + 1 }\n}\n")
-        try put("Sources/App/main.swift", "import Core\n\nprint(core())\n")
-        try put("Tests/AppTests/AppTests.swift", "import Core\nimport Kit\n\nfunc both() -> Int { core() + KitPlugin().count }\n")
-        let scanners = ingestSkill("scanners")
-        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        @MainActor func scanner(_ script: String, _ arguments: [String]) throws -> ProcessOutput {
-            try run(URL(fileURLWithPath: python), [scanners.appendingPathComponent(script).path] + arguments,
-                    environment: sdk.map { ["SDKROOT": $0] } ?? [:], timeout: 280)
-        }
-        let built = try scanner("swift_index_build.py", [repo.path, scratch.path])
-        expectEqual(built.status, 0, built.output + built.error)
-        expect(built.output.contains("interfaces: made 2 of 2 (Core, Kit)\n") && built.output.contains("indexes: made 4 of 4 (App, AppTests, Core, Kit)\n"), built.output)
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let repo = try makeRepository("repo", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache, with: script)
+        let begun = folder.appendingPathComponent("begun")
+        try write(#"{"scanner": "scip", "scip": "echo made > {index}", "prepare": "echo begun > \#(begun.path); sleep 47"}"#, to: repo.appendingPathComponent(".canvas/ingest.json"))
+        let slow = Process()
+        slow.executableURL = script
+        slow.arguments = [repo.path]
+        slow.environment = ProcessInfo.processInfo.environment.merging(environment(cache: cache, extra: ["STUB_LOG": log.path])) { _, new in new }
+        try slow.run()
+        defer { if slow.isRunning { slow.terminate() } }
+        let waitUntil = Date(timeIntervalSinceNow: 90)
+        while !FileManager.default.fileExists(atPath: begun.path), Date() < waitUntil { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+        expect(FileManager.default.fileExists(atPath: begun.path), "prepare began")
+        expect(FileManager.default.fileExists(atPath: kept.appendingPathComponent("lock").path), "the lock is held while it runs")
+        let signalled = Date()
+        // the signal goes to ingest alone (Process.terminate reaches what it waits for too, as a terminal's does)
+        _ = try run(URL(fileURLWithPath: "/bin/kill"), ["-TERM", "\(slow.processIdentifier)"])
+        let deadline = Date(timeIntervalSinceNow: 30)
+        while slow.isRunning, Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
+        expect(!slow.isRunning && Date().timeIntervalSince(signalled) < 15, "ingest ended at the signal, not when prepare did: \(Date().timeIntervalSince(signalled)) s")
+        if !slow.isRunning { expectEqual(slow.terminationStatus, 143) }
+        expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("lock").path), "the lock is freed")
+        let left = try run(URL(fileURLWithPath: "/usr/bin/pgrep"), ["-f", "sleep 47"])
+        expectEqual(left.status, 1, "the sleep prepare started is gone: \(left.output)")
+    },
+])
 
-        // what the board draws its arrows from is what each line writes: the app's card points at Core, never at every plugin
-        let analyzed = try scanner("swift_analyze.py", [repo.path, model.path])
-        expectEqual(analyzed.status, 0, analyzed.output + analyzed.error)
-        let modules = try json(model)["modules"]?.arrayValue ?? []
-        func deps(_ name: String) -> [String] { (modules.first { $0["name"] == .string(name) }?["deps"]?.arrayValue ?? []).compactMap(\.stringValue) }
-        expectEqual(deps("App"), ["Core"])
-        expectEqual(deps("AppTests"), ["Core"])
-        expectEqual(deps("Kit"), ["Core"])
-
-        // without + shipped, a line's own dependencies are all a compile of it reads
-        try put("Package.swift", listedPackage(testsShip: false))
-        let undeclared = try scanner("swift_index_build.py", [repo.path, scratch.path])
-        expect(undeclared.status != 0 && undeclared.output.contains("index AppTests: failed") && undeclared.output.contains("no such module 'Kit'"), undeclared.output + undeclared.error)
+@MainActor let ingestTests3 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (3 of 9)", [
+    test("lenskit's Digest gives a title out once in its container, lets a name repeat in another, and names nodes by an id where a title repeats; the same under another hash seed") {
+        let folder = try scratchFolder("builder")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let script = folder.appendingPathComponent("builder.py")
+        try write(builderScript(skill: ingestSkill().path), to: script)
+        let seeds = try ["1", "2"].map { try run(URL(fileURLWithPath: python), ["-s", "-B", script.path], environment: ["PYTHONHASHSEED": $0], timeout: 60) }
+        for seed in seeds { expectEqual(seed.status, 0, seed.output + seed.error) }
+        expectEqual(seeds[0].output, seeds[1].output, "the same digest and words under another hash seed")
+        let out = try JSON(text: seeds[0].output)
+        func strings(_ key: String) -> [String] { (out[key]?.arrayValue ?? []).compactMap(\.stringValue) }
+        // a title is given out once in its container (spaces folded, case aside), and may repeat in another
+        expectEqual(strings("container"), ["index.ts", "index.ts", "Index.ts (2)", "other.ts"])
+        expectEqual(strings("container_said"), ["z is titled \"Index.ts (2)\": \"Index.ts\" is another shape's title in \"A\" too",
+                                                "w is titled \"other.ts\": \"  index.ts \" is another shape's title in \"A\" too"])
+        // with no container there is one scope for the whole digest, as there always was
+        expectEqual(strings("whole"), ["Core", "core (layer)", "CORE (2)", "Core (3)"])
+        expectEqual(strings("whole_taken"), ["core", "core (2)", "core (3)", "core (layer)"])
+        expectEqual(strings("whole_said").first, "y is titled \"core (layer)\": \"core\" is another shape's title too")
+        // alone: no other shape has the title, in any container, whichever came first
+        expectEqual(strings("alone"), ["Core", "core (layer)", "x", "Core (2)"])
+        expectEqual(strings("alone_said").first, "band is titled \"core (layer)\": \"core\" is the card Core's title, which no other shape may have")
+        expectEqual(strings("alone_after"), ["Shared", "shared (card)"])
+        // type: unique among types in any container, shared with a note that is no type
+        expectEqual(strings("types"), ["Table", "Table", "TABLE (type)"])
+        expectEqual(strings("types_said"), ["t2 is titled \"TABLE (type)\": \"TABLE\" is another type's title too"])
+        // within a title names the one node that has it
+        expectEqual(strings("by_title"), ["x", "x", "x (2)"])
+        expect(out["unknown"]?.stringValue?.contains("no node has that title") == true, "\(out["unknown"] ?? .null)")
+        expect(out["ambiguous"]?.stringValue?.contains("2 nodes have that title") == true, "\(out["ambiguous"] ?? .null)")
+        // a digest of titles that are all unique comes out as it was written, strings and nodes alike, with no id
+        expectEqual(out["plain"], ["title": "plain", "nodes": [["title": "F", "kind": "frame", "rank": 0], ["title": "N", "kind": "sticky-note", "in": "F", "text": "words", "source": "n.py"],
+                                                              ["title": "M", "kind": "sticky-note", "in": "F"]],
+                                   "edges": [["from": "N", "to": "F"], ["from": "M", "to": "N", "weight": 2]], "warnings": []])
+        // a title two nodes have: an id for each, the title then the containers (the digest's own way to tell them apart), and every
+        // reference to either is its id; a node whose title is unique is still named by it, as a string or as a node
+        let shop = try require(out["digest"])
+        let ids = (shop["nodes"]?.arrayValue ?? []).map { $0["id"]?.stringValue ?? "-" }
+        expectEqual(ids, ["-", "-", "-", "index.ts  in Top > app", "index.ts  in Top > lib", "-"])
+        expectEqual((shop["edges"]?.arrayValue ?? []).map { "\($0["from"]?.stringValue ?? "?") > \($0["to"]?.stringValue ?? "?")" },
+                    ["index.ts  in Top > app > index.ts  in Top > lib", "index.ts  in Top > lib > Only", "Only > index.ts  in Top > app", "Only > lib"])
+        expectEqual((shop["nodes"]?.arrayValue ?? []).first { $0["id"] == "index.ts  in Top > app" }?.objectValue?.keys.sorted(), ["id", "in", "kind", "source", "text", "title"])
+        expectEqual((shop["nodes"]?.arrayValue ?? []).compactMap { $0["in"]?.stringValue }, ["Top", "Top", "app", "lib", "lib"], "a container is named by its title where that is its own")
+        expectEqual(out["again"], true, "and finishing again changes nothing")
+        // what is refused: a string that names several nodes, a node of another digest, and two types of one title
+        expect(out["ambiguous_ref"]?.stringValue?.contains("\"Same\" is the title of 2 nodes") == true && out["ambiguous_ref"]?.stringValue?.contains("give the nodes ids") == true, "\(out["ambiguous_ref"] ?? .null)")
+        expect(out["foreign"]?.stringValue?.contains("a node this digest doesn't have") == true, "\(out["foreign"] ?? .null)")
+        expect(out["two_types"]?.stringValue?.contains("2 types are called \"Table\"") == true && out["two_types"]?.stringValue?.contains("type=True") == true, "\(out["two_types"] ?? .null)")
+        // an id the lens gave stays; a title that is another node's id gets an id, so it is named by it; two ids that would be one get a number
+        expectEqual((out["ids"]?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " | ") },
+                    ["P", "Q", "X | mine | P", "X | X  in Q | Q", "mine | mine  in Q | Q", "Y | Y  in P | Q", "Y | Y  in P (2) | P"])
+        expectEqual((out["id_edges"]?.arrayValue ?? []).map { ($0.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " > ") },
+                    ["mine > X  in Q", "mine  in Q > Y  in P", "X  in Q > Y  in P (2)"])
+        expectEqual(out["order_broken"], 0, "ids sort as titles do: no two titles, over 2,400 random ones, come out of order by key")
     },
 
     test("the settings: keys read and handed to the driver, each beaten by its option, an unknown key warned, a bad value refused naming its key") {
@@ -693,6 +791,404 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(driverCalls(log).count, calls, "none of them got as far as the driver")
     },
 
+    test("the default lens makes the digest its fixtures hold but for how it names nodes: every fixture scan, and the overrides a spec.py gave") {
+        // the digests and words are checked in (Fixtures/ingest-lens), first the old lens's, then the default lens's once the About note went,
+        // when it gave every title out once in the whole digest. It gives each out once in its container now, so a file is titled by its
+        // name, however many others have it. The new digest is the fixture's: the same nodes in the same order with every field the same but
+        // the title, the id (a node whose title another has gets one) and the container, as the same node; the same edges, naming the
+        // same nodes; and a title changed only by one of three rules (namingReport), each said where it was used
+        let folder = try scratchFolder("parity")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let repo = try makeRepository("project", in: folder)
+        let long = "@my-company/" + String(repeating: "very-long-package-name-", count: 4) + "x"
+        let scans = ["tiny": tinyModel, "awkward": awkwardModel(long: long, big: false), "awkward-big": awkwardModel(long: long, big: true)]
+        // the rules a title may change by are three (namingReport); the fixtures use two: a band that a module has the name of, and a frame that
+        // a module's card has the name of, still give way to the card, whose title is the digest's alone (the third rule, "a (…) fallback
+        // gone", would be one of them taking its own name)
+        let byName = "a file's name in place of a longer end of its path", byNumber = "a number gone"
+        let changed: [String: [String: Int]] = ["tiny": [:], "awkward": [byName: 5, byNumber: 1], "awkward-big": [byName: 7, byNumber: 1]]
+        for (name, scan) in scans.sorted(by: { $0.key < $1.key }) {
+            let scanFile = folder.appendingPathComponent("\(name).scan.json")
+            try write(scan, to: scanFile)
+            let after = try lensRunner(repo, scan: scanFile, digest: folder.appendingPathComponent("\(name).new.json"))
+            expectEqual(after.status, 0, after.output + after.error)
+            let report = try namingReport(folder.appendingPathComponent("\(name).new.json"), against: lensFixture(name, "digest.json"))
+            expectEqual(report.problems, [], "\(name): the digest differs from its fixture's but by titles, ids and the references that name them")
+            expectEqual(report.rules, changed[name], "\(name): the titles that changed, by the rule that explains each")
+            // what it said of the code on standard error, it says still, but for the titles it reworded
+            for line in try String(contentsOf: lensFixture(name, "said"), encoding: .utf8).split(separator: "\n") where line.hasPrefix("lens: ") && !line.contains(" is titled \"") {
+                expect(after.error.contains(line), "\(name): \(line) is said by the lens: \(after.error)")
+            }
+        }
+        // a spec.py's names (BANDS, GROUPS, PURPOSES, FOLDER_BOARDS, BY_MODULE, LAYER_NAMES and TITLE, as the old lens read them), as the
+        // arguments of default.digest
+        let scanFile = folder.appendingPathComponent("tiny.scan.json")
+        let specRepo = try makeRepository("spec", in: folder)
+        try write("""
+            from lenskit import default
+
+            def digest(scan, repo):
+                return default.digest(scan, repo, bands=[("Apps", ["App", "Ghost"]), ("Foundations", ["Core"])],
+                                      groups={"App": [("Screens", ["Screen.swift"], [])]},
+                                      purposes={"App": "Draws the screens @[x]", "Core": "Keeps the models", "Nowhere": "x"},
+                                      folder_boards={"Core": ["Hidden"]}, by_module=[("Core", "Store.swift")],
+                                      layer_names={"x": "y"}, title="Spec title")
+            """, to: specRepo.appendingPathComponent(".canvas/lens.py"))
+        let lensed = try lensRunner(specRepo, scan: scanFile, digest: folder.appendingPathComponent("spec.new.json"),
+                                    lens: specRepo.appendingPathComponent(".canvas/lens.py"))
+        expectEqual(lensed.status, 0, lensed.output + lensed.error)
+        let specReport = try namingReport(folder.appendingPathComponent("spec.new.json"), against: lensFixture("spec", "digest.json"))
+        expectEqual(specReport.problems, [], "the overrides make the same digest")
+        expectEqual(specReport.rules, [:], "and name every node as it was named")
+        let specified = try String(contentsOf: lensFixture("spec", "said"), encoding: .utf8)
+        for said in ["Ghost", "Nowhere", "Hidden", "leave out Main.swift"] {
+            expect(lensed.error.contains(said) && specified.contains(said), "said by both: \(said)\n\(specified)\n\(lensed.error)")
+        }
+        // an argument the default lens has not got is a TypeError that says which are
+        try write("from lenskit import default\n\ndef digest(scan, repo):\n    return default.digest(scan, repo, colour='red')\n", to: specRepo.appendingPathComponent(".canvas/typo.py"))
+        let typo = try lensRunner(specRepo, scan: scanFile, digest: folder.appendingPathComponent("typo.json"), lens: specRepo.appendingPathComponent(".canvas/typo.py"))
+        expectEqual(typo.status, 1, typo.output)
+        expect(typo.error.contains("colour") && typo.error.contains("bands, purposes"), typo.error)
+    },
+
+    test("a lens that gives two digests is refused, naming where they differ and the usual causes: a set of strings, the clock, the environment") {
+        let folder = try scratchFolder("refused")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let repo = try makeRepository("repo", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache, with: script)
+        try putScan(tinyModel, in: kept)
+        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
+        let lens = repo.appendingPathComponent(".canvas/lens.py")
+        let cases: [(name: String, lens: String, says: [String])] = [
+            ("a set of strings", """
+                def digest(scan, repo):
+                    names = {"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu"}
+                    return {"title": "T", "nodes": [{"title": n} for n in names], "edges": []}
+                """, ["two different digests", "node that differs is number 1", "a set"]),
+            ("the clock", """
+                import time
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": str(int(time.time()))}], "edges": []}
+                """, ["two different digests", "\"made\"", "the clock"]),
+            ("the date", """
+                import datetime
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": str(datetime.date.today())}], "edges": []}
+                """, ["two different digests", "the clock"]),
+            ("datetime.now", """
+                from datetime import datetime
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [], "edges": [{"from": "a", "to": "b", "text": datetime.now().isoformat()}]}
+                """, ["two different digests", "first edge that differs is number 1"]),
+            ("strftime without a time", """
+                import time
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": time.strftime("%Y")}], "edges": []}
+                """, ["two different digests", "the clock"]),
+            ("asctime", """
+                import time
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": time.asctime()}], "edges": []}
+                """, ["two different digests", "the clock"]),
+            ("ctime", """
+                import time
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": time.ctime()}], "edges": []}
+                """, ["two different digests", "the clock"]),
+            ("localtime", """
+                import time
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": str(time.localtime().tm_year)}], "edges": []}
+                """, ["two different digests", "the clock"]),
+            ("gmtime", """
+                import time
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": str(time.gmtime().tm_year)}], "edges": []}
+                """, ["two different digests", "the clock"]),
+            ("the real-time clock", """
+                import time
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "made", "text": str(int(time.clock_gettime(time.CLOCK_REALTIME)))}], "edges": []}
+                """, ["two different digests", "the clock"]),
+            ("the environment", """
+                import os
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "home", "text": os.environ["HOME"]}], "edges": []}
+                """, ["two different digests", "the environment", "HOME"]),
+            ("the current folder", """
+                import os
+                def digest(scan, repo):
+                    return {"title": "T", "nodes": [{"title": "here", "text": os.getcwd()}], "edges": []}
+                """, ["two different digests"]),
+        ]
+        for (name, text, says) in cases {
+            try write(text, to: lens)
+            let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+            expectEqual(refused.status, 1, "\(name): \(refused.output)")
+            for word in says { expect(refused.error.contains(word), "\(name) is refused saying \(word): \(refused.error)") }
+            expect(!driverCalls(log).contains { $0.hasPrefix("all ") }, "\(name): nothing was drawn")
+            expect(!FileManager.default.fileExists(atPath: try lastRun(in: kept).appendingPathComponent("digest.json").path), "\(name): no digest was kept")
+        }
+        // the same lens with its set sorted is accepted, and writes the digest the run keeps
+        try write("""
+            def digest(scan, repo):
+                names = {"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu"}
+                return {"title": "T", "nodes": [{"title": n} for n in sorted(names)], "edges": []}
+            """, to: lens)
+        let accepted = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+        expectEqual(accepted.status, 0, accepted.output + accepted.error)
+        expectEqual(try json(lastRun(in: kept).appendingPathComponent("digest.json"))["nodes"]?.arrayValue?.count, 12)
+        // a digest without its basic shape is refused before anything is drawn
+        for (text, says) in [("def digest(scan, repo):\n    return [1]\n", "not a dict"), ("def digest(scan, repo):\n    return {\"nodes\": [], \"edges\": []}\n", "\"title\""),
+                             ("def digest(scan, repo):\n    return {\"title\": \"T\", \"nodes\": {}, \"edges\": []}\n", "\"nodes\""),
+                             ("def digest(scan, repo):\n    return {\"title\": \"T\", \"nodes\": [{\"title\": \"a\", \"x\": {1}}], \"edges\": []}\n", "JSON"),
+                             ("x = 1\n", "no function digest")] {
+            try write(text, to: lens)
+            let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+            expectEqual(refused.status, 1, refused.output)
+            expect(refused.error.contains(says), "\(text) is refused saying \(says): \(refused.error)")
+        }
+        expect(!driverCalls(log).contains { $0.hasPrefix("all ") && $0.contains("--mess") && false }, "")
+    },
+
+])
+
+@MainActor let ingestTests4 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (4 of 9)", [
+    test("a package whose product is a list of plugins, as this one is: a line that ends + shipped type-checks against the plugins' modules, and the scan keeps the line's own dependencies") {
+        let folder = try scratchFolder("shipped")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let repo = folder.appendingPathComponent("repo"), scratch = folder.appendingPathComponent("index"), model = folder.appendingPathComponent("scan.json")
+        func put(_ path: String, _ text: String) throws { try write(text, to: repo.appendingPathComponent(path)) }
+        // App names no plugin and is made of the list; its tests call Kit, which their line doesn't write
+        try put("Package.swift", listedPackage(testsShip: true))
+        try put("Sources/Core/Core.swift", "public func core() -> Int { 1 }\n")
+        try put("Sources/Kit/Kit.swift", "import Core\n\npublic struct KitPlugin {\n    public init() {}\n    public var count: Int { core() + 1 }\n}\n")
+        try put("Sources/App/main.swift", "import Core\n\nprint(core())\n")
+        try put("Tests/AppTests/AppTests.swift", "import Core\nimport Kit\n\nfunc both() -> Int { core() + KitPlugin().count }\n")
+        let scanners = ingestSkill("scanners")
+        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        @MainActor func scanner(_ script: String, _ arguments: [String]) throws -> ProcessOutput {
+            try run(URL(fileURLWithPath: python), [scanners.appendingPathComponent(script).path] + arguments,
+                    environment: sdk.map { ["SDKROOT": $0] } ?? [:], timeout: 280)
+        }
+        let built = try scanner("swift_index_build.py", [repo.path, scratch.path])
+        expectEqual(built.status, 0, built.output + built.error)
+        expect(built.output.contains("interfaces: made 2 of 2 (Core, Kit)\n") && built.output.contains("indexes: made 4 of 4 (App, AppTests, Core, Kit)\n"), built.output)
+
+        // what the board draws its arrows from is what each line writes: the app's card points at Core, never at every plugin
+        let analyzed = try scanner("swift_analyze.py", [repo.path, model.path])
+        expectEqual(analyzed.status, 0, analyzed.output + analyzed.error)
+        let modules = try json(model)["modules"]?.arrayValue ?? []
+        func deps(_ name: String) -> [String] { (modules.first { $0["name"] == .string(name) }?["deps"]?.arrayValue ?? []).compactMap(\.stringValue) }
+        expectEqual(deps("App"), ["Core"])
+        expectEqual(deps("AppTests"), ["Core"])
+        expectEqual(deps("Kit"), ["Core"])
+
+        // without + shipped, a line's own dependencies are all a compile of it reads
+        try put("Package.swift", listedPackage(testsShip: false))
+        let undeclared = try scanner("swift_index_build.py", [repo.path, scratch.path])
+        expect(undeclared.status != 0 && undeclared.output.contains("index AppTests: failed") && undeclared.output.contains("no such module 'Kit'"), undeclared.output + undeclared.error)
+    },
+
+    test("one ingest a repository at a time: a lock held by a live process refuses a second run at once, a dead process's is taken over, and it is held for the whole run and freed on any exit") {
+        let folder = try scratchFolder("lock")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let repo = try makeRepository("repo", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache, with: script)
+        try putScan(tinyModel, in: kept)
+        let lock = kept.appendingPathComponent("lock")
+        let env = environment(cache: cache, extra: ["STUB_LOG": log.path, "STUB_LOCK": lock.path])
+
+        // held by a live process (this one): refused, naming it, and the lock is still its own
+        try write("\(getpid())\n", to: lock.appendingPathComponent("pid"))
+        let started = Date()
+        let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+        expectEqual(refused.status, 1, refused.output)
+        expect(refused.error.contains("pid \(getpid())"), "it names the holder: \(refused.error)")
+        expect(Date().timeIntervalSince(started) < 10, "and refuses at once")
+        expect(driverCalls(log).isEmpty && runFolders(in: kept).isEmpty, "before it asked the app or made anything")
+        expectEqual(try String(contentsOf: lock.appendingPathComponent("pid"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), "\(getpid())", "the holder's lock is left alone")
+
+        // held by a process that is gone: taken over, held while the run draws, and freed when it ends
+        let gone = Process()
+        gone.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try gone.run()
+        gone.waitUntilExit()
+        try write("\(gone.processIdentifier)\n", to: lock.appendingPathComponent("pid"))
+        let taken = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+        expectEqual(taken.status, 0, taken.output + taken.error)
+        let held = driverCalls(log).filter { $0.hasPrefix("held ") }
+        expectEqual(held.count, 2, "asked twice, with the lock held both times: \(driverCalls(log))")
+        for line in held {
+            let words = line.split(separator: " ").map(String.init)
+            expect(words.count == 4 && words[1] == words[3] && words[1] != "\(gone.processIdentifier)", "the lock is the run's own, not the dead process's: \(line)")
+        }
+        expect(!FileManager.default.fileExists(atPath: lock.path), "freed when the run ended")
+
+        // freed on any exit: a driver that refuses (as an app that isn't running does), and a stop by a signal
+        let failing = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: environment(cache: cache, extra: ["STUB_LOG": log.path, "STUB_LOCK": lock.path, "STUB_FAIL": "1"]))
+        expectEqual(failing.status, 1, failing.output)
+        expect(!FileManager.default.fileExists(atPath: lock.path), "freed when the driver refused")
+        expect(runFolders(in: kept).count == 1, "and the refused run left no folder: \(runFolders(in: kept))")
+        try write("#!/bin/sh\necho started >> \"$STUB_LOG\"\nexec sleep 30\n", to: script.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("canvas-digest/digest"))
+        let slow = Process()
+        slow.executableURL = script
+        slow.arguments = [repo.path, "--scan", handScan(kept)]
+        slow.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
+        try slow.run()
+        defer { if slow.isRunning { slow.terminate() } }
+        let begun = Date(timeIntervalSinceNow: 60)
+        while !driverCalls(log).contains("started"), Date() < begun { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+        expect(FileManager.default.fileExists(atPath: lock.path), "held while the run is under way")
+        let second = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
+        expectEqual(second.status, 1, second.output)
+        expect(second.error.contains("pid \(slow.processIdentifier)"), "a run under way is the holder: \(second.error)")
+        // stopped as a terminal stops a run: the signal goes to the run, and to what it waits for (which the run, a shell, sees first)
+        slow.terminate()
+        let pause = Date(timeIntervalSinceNow: 0.5)
+        while Date() < pause { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+        _ = try run(URL(fileURLWithPath: "/usr/bin/pkill"), ["-TERM", "-P", "\(slow.processIdentifier)"])
+        let deadline = Date(timeIntervalSinceNow: 30)
+        while slow.isRunning, Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
+        expect(!FileManager.default.fileExists(atPath: lock.path), "freed when the run was stopped")
+    },
+
+    test("prepare runs in the checkout when a lockfile of the commit, or the command, has changed, and not for any other move") {
+        let folder = try scratchFolder("prepare")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let counter = folder.appendingPathComponent("prepare.count"), ready = folder.appendingPathComponent("ready")
+        let repo = try makeRepository("repo", in: folder, files: ["package-lock.json": "{\"v\": 1}\n", "web/app.js": "1\n"])
+        @MainActor func commit(_ files: [String: String]) throws -> String {
+            for (path, text) in files { try write(text, to: repo.appendingPathComponent(path)); try git(repo, ["add", path]) }
+            try git(repo, ["commit", "-q", "-m", files.keys.sorted().joined(separator: " ")])
+            return try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let kept = try cacheFolder(of: repo, cache: cache, with: script)
+        let settings = repo.appendingPathComponent(".canvas/ingest.json")
+        // the counter is outside the checkout: what git doesn't know is removed with each move
+        func configure(_ prepare: String) throws {
+            try write(#"{"scanner": "scip", "scip": "echo made > {index}", "prepare": "\#(prepare)"}"#, to: settings)
+        }
+        try configure("echo run >> \(counter.path)")
+        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
+        func runs() -> Int { ((try? String(contentsOf: counter, encoding: .utf8)) ?? "").split(separator: "\n").count }
+        @MainActor func ingestIt(_ more: [String] = [], status: Int32 = 0) throws -> ProcessOutput {
+            let done = try ingest([repo.path] + more, with: script, environment: env)
+            expectEqual(done.status, status, done.output + done.error)
+            return done
+        }
+        func prepared() -> Bool { FileManager.default.fileExists(atPath: kept.appendingPathComponent("checkout.prepared").path) }
+
+        _ = try ingestIt()
+        expectEqual(runs(), 1, "the first time")
+        expect(prepared(), "and the stamp is beside the checkout")
+        _ = try commit(["web/app.js": "2\n"])
+        let quiet = try ingestIt()
+        expectEqual(runs(), 1, "a commit that changes no lockfile")
+        expect(quiet.output.contains("not preparing"), quiet.output)
+        _ = try commit(["package-lock.json": "{\"v\": 2}\n"])
+        _ = try ingestIt()
+        expectEqual(runs(), 2, "a lockfile changed")
+        _ = try commit(["web/yarn.lock": "# yarn\n"])
+        _ = try ingestIt()
+        expectEqual(runs(), 3, "a lockfile at depth, added")
+        _ = try commit(["api/requirements-dev.txt": "requests==1\n"])
+        _ = try ingestIt()
+        expectEqual(runs(), 4, "requirements*.txt at depth")
+        _ = try commit(["go.mod": "module x\n", "notes/lock.txt": "x\n", "web/package-lock.json.bak": "x\n"])
+        _ = try ingestIt()
+        expectEqual(runs(), 4, "files that are not lockfiles")
+        let sameCommit = try ingestIt(["--rescan"])
+        expectEqual(runs(), 4, "the same commit scanned again: nothing it reads has changed. \(sameCommit.output)")
+
+        // the command is part of it
+        try configure("echo run again >> \(counter.path)")
+        _ = try ingestIt(["--rescan"])
+        expectEqual(runs(), 5, "another command")
+        // a prepare that fails stops the run and leaves no stamp, so the next run tries it again though no lockfile has changed since
+        try configure("echo failing >> \(counter.path); [ -f \(ready.path) ]")
+        _ = try commit(["package-lock.json": "{\"v\": 3}\n"])
+        let failed = try ingestIt(status: 1)
+        expect(failed.error.contains("prepare"), failed.error)
+        expectEqual(runs(), 6)
+        try write("", to: ready)
+        _ = try ingestIt()
+        expectEqual(runs(), 7, "tried again")
+        _ = try ingestIt(["--rescan"])
+        expectEqual(runs(), 7, "and then it holds")
+        // a checkout made again has nothing prepared in it
+        try FileManager.default.removeItem(at: kept.appendingPathComponent("checkout/.git/HEAD"))
+        _ = try ingestIt(["--rescan"])
+        expectEqual(runs(), 8, "a new checkout is prepared")
+    },
+
+    test("a repository's lens regroups its files as it likes, and is drawn; the digest it makes is the repository's own picture") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("regroup")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let repo = try makeRepository("project", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache)
+        try putScan(tinyModel, in: kept)
+        // by a naming convention: the files that end in Screen, Store or Model are views and data, wherever they are, in frames of
+        // their module's board; each note says what its file was made from
+        try write("""
+            from lenskit import Digest, text
+
+            GROUPS = [("Screen", "Views"), ("Store", "Data"), ("Model", "Data")]
+
+            def digest(scan, repo):
+                d = Digest(scan.name + " by convention")
+                cards, frames, titles = {}, {}, {}
+                for m in scan.production:
+                    cards[m] = d.claim("the module " + m, m)
+                    d.subboard(cards[m], text=text.as_text(scan.module(m)["doc"]), source=scan.module(m)["path"])
+                for (m, rel), f in sorted(scan.files.items()):
+                    group = next((g for suffix, g in GROUPS if rel.endswith(suffix + ".swift")), "Entry points")
+                    if (m, group) not in frames:
+                        frames[(m, group)] = d.claim("the frame " + group, group + " (" + m + ")")
+                        d.frame(frames[(m, group)], cards[m])
+                    titles[(m, rel)] = d.claim(rel, rel)
+                    d.note(titles[(m, rel)], frames[(m, group)], text.file_text(f, scan.language), source=f["path"])
+                for a, b, names in scan.uses:
+                    if a in scan.files and b in scan.files and a != b:
+                        d.edge(titles[a], titles[b], weight=len(names))
+                return d.finish()
+            """, to: repo.appendingPathComponent(".canvas/lens.py"))
+        let drawn = try ingest([repo.path, "--scan", handScan(kept)], environment: environment(cache: cache, server: server))
+        expectEqual(drawn.status, 0, drawn.output + drawn.error)
+        expect(drawn.output.contains("verify ok"), drawn.output)
+        let editor = board.editor
+        let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
+        expect(titles.isSuperset(of: ["App", "Core"]), "the boards the lens made: \(titles.sorted())")
+        let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
+        let nodes = digest["nodes"]?.arrayValue ?? []
+        expectEqual(nodes.first { $0["title"] == "Screen.swift" }?["in"], "Views (App)")
+        expectEqual(nodes.first { $0["title"] == "Main.swift" }?["in"], "Entry points (App)")
+        expectEqual(Set(nodes.filter { $0["in"] == "Data (Core)" }.compactMap { $0["title"]?.stringValue }), ["Store.swift", "Model.swift"], "files by what they are called")
+        expectEqual(nodes.first { $0["title"] == "Store.swift" }?["source"], "Sources/Core/Store.swift")
+        expect(digest["warnings"] == nil, "warnings are said, never kept in the digest")
+        // a rerun draws it in place of the last
+        let again = try ingest([repo.path, "--scan", handScan(kept)], environment: environment(cache: cache, server: server))
+        expectEqual(again.status, 0, again.output + again.error)
+        expect(again.output.contains("replace: took back the last drawing") && again.output.contains("verify ok"), again.output)
+    },
+
+])
+
+@MainActor let ingestTests5 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (5 of 9)", [
     test("what to scan with: a Package.swift is Swift's without settings, anything else is refused with what to write, scip runs its command at the checkout's root, and prepare runs first") {
         let folder = try scratchFolder("scanner")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -768,246 +1264,6 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(prepared.status, 1, prepared.output)
         expect(prepared.error.contains("prepare"), prepared.error)
         expect(FileManager.default.fileExists(atPath: checkout.appendingPathComponent("prepared.txt").path) && !FileManager.default.fileExists(atPath: checkout.appendingPathComponent("scanned.txt").path), "prepare ran, and the scanner did not")
-    },
-
-    test("one cache a repository, whatever worktree it is run from: two worktrees of a repository share its scan, its runs and its records, and the last five runs are kept") {
-        let folder = try scratchFolder("worktrees")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let (script, log) = try stubbedSkill(in: folder)
-        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
-        let repo = try makeRepository("repo", in: folder)
-        let worktree = folder.appendingPathComponent("worktree")
-        try git(repo, ["worktree", "add", "-q", worktree.path, "-b", "elsewhere"])
-        let again = try makeRepository("again", in: folder)
-
-        let main = try cacheFolder(of: repo, cache: cache, with: script)
-        let other = try cacheFolder(of: worktree, cache: cache, with: script)
-        expectEqual(other.path, main.path, "a worktree of the repository keeps what it makes where the repository does")
-        let digest = SHA256.hash(data: Data(realPath(repo.appendingPathComponent(".git")).utf8)).map { String(format: "%02x", $0) }.joined().prefix(12)
-        expectEqual(main.lastPathComponent, "repo-\(digest)", "named for the folder the git directory is in, and a hash of its path")
-        expectEqual(realPath(main.deletingLastPathComponent()), realPath(cache))
-        expect(try cacheFolder(of: again, cache: cache, with: script).path != main.path, "and another repository has its own")
-        let inside = try run(URL(fileURLWithPath: "/bin/sh"), ["-c", #"mkdir -p "$0/Sources/deep" && cd "$0/Sources/deep" && exec "$@""#, worktree.path, script.path, "--where"], environment: env)
-        expectEqual(inside.output.trimmingCharacters(in: .whitespacesAndNewlines), main.path, "from inside a folder of the worktree, without naming it")
-        expect(!FileManager.default.fileExists(atPath: worktree.appendingPathComponent(".canvas").path) && !FileManager.default.fileExists(atPath: repo.appendingPathComponent(".canvas").path), "ingest writes nothing into either")
-
-        // a scan the repository's own checkout made is the worktree's to draw from, and a run from the worktree is the repository's
-        try putScan(tinyModel, in: main)
-        let drawn = try run(URL(fileURLWithPath: "/bin/sh"), ["-c", #"cd "$0" && exec "$@""#, worktree.path, script.path, "--scan", handScan(main)], environment: env)
-        expectEqual(drawn.status, 0, drawn.output + drawn.error)
-        let digestFile = try lastRun(in: main).appendingPathComponent("digest.json")
-        expectEqual(try json(digestFile)["title"], "TinyPackage")
-        expect(driverCalls(log).contains { $0.hasPrefix("all ") && $0.contains("--records \(main.path)/drawn") }, "drawn with the repository's records: \(driverCalls(log))")
-
-        // the last five runs are kept
-        for number in 1...6 { try write("{}", to: main.appendingPathComponent("runs/2020010\(number)-000000-1/digest.json")) }
-        let more = try ingest([repo.path, "--scan", handScan(main)], with: script, environment: env)
-        expectEqual(more.status, 0, more.output + more.error)
-        let names = runFolders(in: main).map(\.lastPathComponent)
-        expectEqual(names.count, 5, "\(names)")
-        expect(!names.contains("20200101-000000-1") && !names.contains("20200102-000000-1") && names.contains("20200106-000000-1"), "the oldest went: \(names)")
-        expect(names.last?.hasPrefix("20200106") == false, "and the newest is this run's: \(names)")
-    },
-
-    test("one ingest a repository at a time: a lock held by a live process refuses a second run at once, a dead process's is taken over, and it is held for the whole run and freed on any exit") {
-        let folder = try scratchFolder("lock")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let (script, log) = try stubbedSkill(in: folder)
-        let repo = try makeRepository("repo", in: folder)
-        let kept = try cacheFolder(of: repo, cache: cache, with: script)
-        try putScan(tinyModel, in: kept)
-        let lock = kept.appendingPathComponent("lock")
-        let env = environment(cache: cache, extra: ["STUB_LOG": log.path, "STUB_LOCK": lock.path])
-
-        // held by a live process (this one): refused, naming it, and the lock is still its own
-        try write("\(getpid())\n", to: lock.appendingPathComponent("pid"))
-        let started = Date()
-        let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-        expectEqual(refused.status, 1, refused.output)
-        expect(refused.error.contains("pid \(getpid())"), "it names the holder: \(refused.error)")
-        expect(Date().timeIntervalSince(started) < 10, "and refuses at once")
-        expect(driverCalls(log).isEmpty && runFolders(in: kept).isEmpty, "before it asked the app or made anything")
-        expectEqual(try String(contentsOf: lock.appendingPathComponent("pid"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), "\(getpid())", "the holder's lock is left alone")
-
-        // held by a process that is gone: taken over, held while the run draws, and freed when it ends
-        let gone = Process()
-        gone.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try gone.run()
-        gone.waitUntilExit()
-        try write("\(gone.processIdentifier)\n", to: lock.appendingPathComponent("pid"))
-        let taken = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-        expectEqual(taken.status, 0, taken.output + taken.error)
-        let held = driverCalls(log).filter { $0.hasPrefix("held ") }
-        expectEqual(held.count, 2, "asked twice, with the lock held both times: \(driverCalls(log))")
-        for line in held {
-            let words = line.split(separator: " ").map(String.init)
-            expect(words.count == 4 && words[1] == words[3] && words[1] != "\(gone.processIdentifier)", "the lock is the run's own, not the dead process's: \(line)")
-        }
-        expect(!FileManager.default.fileExists(atPath: lock.path), "freed when the run ended")
-
-        // freed on any exit: a driver that refuses (as an app that isn't running does), and a stop by a signal
-        let failing = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: environment(cache: cache, extra: ["STUB_LOG": log.path, "STUB_LOCK": lock.path, "STUB_FAIL": "1"]))
-        expectEqual(failing.status, 1, failing.output)
-        expect(!FileManager.default.fileExists(atPath: lock.path), "freed when the driver refused")
-        expect(runFolders(in: kept).count == 1, "and the refused run left no folder: \(runFolders(in: kept))")
-        try write("#!/bin/sh\necho started >> \"$STUB_LOG\"\nexec sleep 30\n", to: script.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("canvas-digest/digest"))
-        let slow = Process()
-        slow.executableURL = script
-        slow.arguments = [repo.path, "--scan", handScan(kept)]
-        slow.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
-        try slow.run()
-        defer { if slow.isRunning { slow.terminate() } }
-        let begun = Date(timeIntervalSinceNow: 60)
-        while !driverCalls(log).contains("started"), Date() < begun { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
-        expect(FileManager.default.fileExists(atPath: lock.path), "held while the run is under way")
-        let second = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-        expectEqual(second.status, 1, second.output)
-        expect(second.error.contains("pid \(slow.processIdentifier)"), "a run under way is the holder: \(second.error)")
-        // stopped as a terminal stops a run: the signal goes to the run, and to what it waits for (which the run, a shell, sees first)
-        slow.terminate()
-        let pause = Date(timeIntervalSinceNow: 0.5)
-        while Date() < pause { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
-        _ = try run(URL(fileURLWithPath: "/usr/bin/pkill"), ["-TERM", "-P", "\(slow.processIdentifier)"])
-        let deadline = Date(timeIntervalSinceNow: 30)
-        while slow.isRunning, Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
-        expect(!FileManager.default.fileExists(atPath: lock.path), "freed when the run was stopped")
-    },
-
-    test("drawing records are kept for each file drawn in: a proposal drawn into a new file leaves the board in front's record alone, and each board is drawn again in place of its own last drawing") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        try configureBoards(pasteboard: pasteboard)
-        let front = windowedBoard()
-        defer { front.close() }
-        let opened = Opened()
-        defer { for board in opened.boards { board.close() } }
-        let commands = try require(BoardDocument.configuration).registry.hostCommands
-        // the board in front stays the first one: a new file opens beside it
-        let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
-                                   boards: { [front] + opened.boards }, frontmost: { front }, show: { opened.boards.append($0) })
-        try server.start()
-        defer { server.stop() }
-        let folder = try scratchFolder("records")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let repo = try makeRepository("repo", in: folder)
-        let kept = try cacheFolder(of: repo, cache: cache)
-        try putScan(tinyModel, in: kept)
-        let env = environment(cache: cache, server: server)
-        let records = kept.appendingPathComponent("drawn")
-        func recordNames() -> [String] { ((try? FileManager.default.contentsOfDirectory(atPath: records.path)) ?? []).filter { $0.hasSuffix(".json") }.sorted() }
-
-        // the board in front, drawn as it
-        let first = try ingest([repo.path, "--scan", handScan(kept)], environment: env)
-        expectEqual(first.status, 0, first.output + first.error)
-        let drawn = front.editor.file.shapeCount
-        expect(drawn > 0 && recordNames().count == 1, "one drawing, one record: \(recordNames())")
-
-        // a proposal, drawn into a new file: another record, and the board in front is as it was
-        let proposal = folder.appendingPathComponent("Proposal.canvasboard")
-        let second = try ingest([repo.path, "--scan", handScan(kept), "--new-file", proposal.path], environment: env)
-        expectEqual(second.status, 0, second.output + second.error)
-        let board = try require(opened.boards.first, "the new file is open")
-        expect(second.output.contains("verify ok") && board.editor.file.shapeCount > 0, second.output)
-        expectEqual(recordNames().count, 2, "one record for each file: \(recordNames())")
-        expectEqual(front.editor.file.shapeCount, drawn, "the board in front was not touched")
-
-        // the board in front again: it is drawn in place of its own last drawing, which the proposal's record did not replace
-        let third = try ingest([repo.path, "--scan", handScan(kept)], environment: env)
-        expectEqual(third.status, 0, third.output + third.error)
-        expect(third.output.contains("replace: took back the last drawing") && third.output.contains("verify ok"), third.output)
-        expectEqual(front.editor.file.shapeCount, drawn, "the same drawing, once")
-        // ... and the proposal's board, in place of the proposal, from a run of its own
-        let proposalShapes = board.editor.file.shapeCount
-        let fourth = try ingest([repo.path, "--scan", handScan(kept), "--board", "\(board.number)"], environment: env)
-        expectEqual(fourth.status, 0, fourth.output + fourth.error)
-        expect(fourth.output.contains("replace: took back the last drawing") && fourth.output.contains("verify ok"), fourth.output)
-        expectEqual(board.editor.file.shapeCount, proposalShapes, "the proposal drawn again in its place")
-        expectEqual(front.editor.file.shapeCount, drawn, "the board in front is as it was")
-        expectEqual(recordNames().count, 2, "still one record for each file: \(recordNames())")
-        let paths = try recordNames().map { try json(records.appendingPathComponent($0))["path"]?.stringValue }
-        expect(paths.filter { $0?.hasSuffix("Proposal.canvasboard") == true }.count == 1, "the proposal's record is of its file: \(paths)")
-
-        // a record that is no board's file's does not stop a board that is empty: a file with a record of its own that is gone
-        let empty = windowedBoard()
-        opened.boards.append(empty)
-        let fifth = try ingest([repo.path, "--scan", handScan(kept), "--board", "\(empty.number)"], environment: env)
-        expectEqual(fifth.status, 0, fifth.output + fifth.error)
-        expectEqual(recordNames().count, 3, "a third file, a third record: \(recordNames())")
-    },
-    test("a commit is what is drawn, never the working tree: each commit its own board, one drawn twice the same plan and scripts, the second commit type-checks only the module that changed, the code scanned once") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        try configureBoards(pasteboard: pasteboard)
-        let board = windowedBoard()
-        defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board)
-        defer { server.stop() }
-        let folder = try scratchFolder("commits")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let kit = "import Core\n\npublic func kit() -> Int {\n    core() + 1\n}\n"
-        let repo = try makeRepository("pkg", in: folder, files: [
-            "Package.swift": tinyPackage(loose: false), "Sources/Core/Core.swift": "public func core() -> Int { 1 }\n",
-            "Sources/Kit/Kit.swift": kit, "Tests/KitTests/KitTests.swift": "import Kit\n\nfunc twice() -> Int { kit() * 2 }\n",
-        ])
-        let first = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        // the second commit changes a function's body in Kit, so Kit's interface is as it was: no other module is made again
-        try write("import Core\n\npublic func kit() -> Int {\n    let more = 2\n    return core() + more\n}\n", to: repo.appendingPathComponent("Sources/Kit/Kit.swift"))
-        try git(repo, ["commit", "-q", "-a", "-m", "a longer body"])
-        let second = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        let kept = try cacheFolder(of: repo, cache: cache)
-        // the SDK build.sh chose for this build, so the index build needn't ask the compiler about one it rejects (ten seconds)
-        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let env = environment(cache: cache, server: server, extra: sdk.map { ["SDKROOT": $0] } ?? [:])
-        @MainActor func draw(_ commit: String, _ more: [String] = []) throws -> (process: ProcessOutput, run: URL) {
-            let done = try ingest([repo.path, "--commit", commit] + more, environment: env)
-            expectEqual(done.status, 0, done.output + done.error)
-            expect(done.output.contains("verify ok"), done.output)
-            return (done, try lastRun(in: kept))
-        }
-        @MainActor func noteText(_ folder: URL, _ title: String) throws -> String? {
-            let digest = try json(folder.appendingPathComponent("digest.json"))
-            return (digest["nodes"]?.arrayValue ?? []).first { $0["title"] == .string(title) }?["text"]?.stringValue
-        }
-
-        let one = try draw(first)
-        expect(one.process.output.contains("checking out \(first.prefix(12))") && one.process.output.contains("ingest: type-checked 3 of 3 modules"), "everything, the first time: \(one.process.output)")
-        let oneFiles = try drawing(one.run), oneKit = try noteText(one.run, "Kit.swift")
-        let digestOne = try String(contentsOf: one.run.appendingPathComponent("digest.json"), encoding: .utf8)
-
-        // the next commit: its own board, and only the module that changed is type-checked (its interface is as it was, so the others
-        // aren't), though the same checkout is moved to it: the index's marks hold the sources' paths, which don't change
-        let two = try draw(second)
-        expect(two.process.output.contains("ingest: type-checked 1 of 3 modules"), two.process.output)
-        expect(try String(contentsOf: two.run.appendingPathComponent("index.log"), encoding: .utf8).contains("indexes: made 1 of 3 (Kit)"), "Kit alone")
-        let twoKit = try noteText(two.run, "Kit.swift")
-        expect(twoKit != oneKit, "Kit.swift is longer in the second commit: \(oneKit ?? "") / \(twoKit ?? "")")
-        let twoFiles = try drawing(two.run)
-        expect(twoFiles != oneFiles, "the plan differs between commits")
-
-        // an edit in the working tree, and a file git doesn't know, never show: the commit is drawn, and a scan made already isn't made again
-        try write("import Core\n\npublic func kit() -> Int {\n    let more = 3\n    let dirty = more * 2\n    return core() + dirty\n}\n", to: repo.appendingPathComponent("Sources/Kit/Kit.swift"))
-        try write("public func working() {}\n", to: repo.appendingPathComponent("Sources/Kit/Working.swift"))
-        let again = try draw(second)
-        expect(again.process.output.contains("the scan of \(second.prefix(12)) is kept") && !again.process.output.contains("type-checked") && !again.process.output.contains("checking out"),
-               "a second run on a commit goes straight to the lens: \(again.process.output)")
-        expectEqual(try drawing(again.run), twoFiles, "the same commit, the same plan and scripts, whatever the working tree holds")
-        expectEqual(try String(contentsOf: again.run.appendingPathComponent("digest.json"), encoding: .utf8), try String(contentsOf: two.run.appendingPathComponent("digest.json"), encoding: .utf8))
-        // ... and scanned again, from the checkout, it is the same too: nothing of the working tree is in the checkout
-        let rescanned = try draw(second, ["--rescan"])
-        expect(rescanned.process.output.contains("ingest: no module changed: none of the 3 type-checked"), "the index is as the commit's code is: \(rescanned.process.output)")
-        expectEqual(try drawing(rescanned.run), twoFiles, "scanned again, the same")
-        expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("checkout/Sources/Kit/Working.swift").path), "a file git doesn't know is not in the checkout")
-
-        // back to the first commit: the board is of it as it was the first time
-        let back = try draw(first)
-        expectEqual(try drawing(back.run), oneFiles, "the first commit again, the first plan")
-        expectEqual(try String(contentsOf: back.run.appendingPathComponent("digest.json"), encoding: .utf8), digestOne)
-        expect(back.process.output.contains("is kept"), back.process.output)
-        expect(try git(repo, ["worktree", "list"]).output.split(separator: "\n").count == 1, "the user's own worktree list is as it was")
     },
 
     test("a board from a scan given by hand: the same commit draws the same plan and scripts whether the lens is committed or not, or the working tree has edits") {
@@ -1178,6 +1434,66 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(driverCalls(log).count, calls, "refused before the driver was asked")
     },
 
+    test("a lens that raises stops the run with its traceback, before anything is drawn") {
+        let folder = try scratchFolder("raises")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let repo = try makeRepository("repo", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache, with: script)
+        try putScan(tinyModel, in: kept)
+        try write("def digest(scan, repo):\n    raise ValueError('the lens broke on ' + scan.name)\n", to: repo.appendingPathComponent(".canvas/lens.py"))
+        let broken = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: environment(cache: cache, extra: ["STUB_LOG": log.path]))
+        expectEqual(broken.status, 1, broken.output)
+        expect(broken.error.contains("Traceback") && broken.error.contains("ValueError: the lens broke on TinyPackage") && broken.error.contains("lens.py"), broken.error)
+        expect(!driverCalls(log).contains { $0.hasPrefix("all ") }, "nothing was drawn: \(driverCalls(log))")
+        expect(!FileManager.default.fileExists(atPath: try lastRun(in: kept).appendingPathComponent("digest.json").path), "and no digest was written")
+        expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("lock").path), "the lock is freed")
+    },
+
+])
+
+@MainActor let ingestTests6 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (6 of 9)", [
+    test("one cache a repository, whatever worktree it is run from: two worktrees of a repository share its scan, its runs and its records, and the last five runs are kept") {
+        let folder = try scratchFolder("worktrees")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
+        let repo = try makeRepository("repo", in: folder)
+        let worktree = folder.appendingPathComponent("worktree")
+        try git(repo, ["worktree", "add", "-q", worktree.path, "-b", "elsewhere"])
+        let again = try makeRepository("again", in: folder)
+
+        let main = try cacheFolder(of: repo, cache: cache, with: script)
+        let other = try cacheFolder(of: worktree, cache: cache, with: script)
+        expectEqual(other.path, main.path, "a worktree of the repository keeps what it makes where the repository does")
+        let digest = SHA256.hash(data: Data(realPath(repo.appendingPathComponent(".git")).utf8)).map { String(format: "%02x", $0) }.joined().prefix(12)
+        expectEqual(main.lastPathComponent, "repo-\(digest)", "named for the folder the git directory is in, and a hash of its path")
+        expectEqual(realPath(main.deletingLastPathComponent()), realPath(cache))
+        expect(try cacheFolder(of: again, cache: cache, with: script).path != main.path, "and another repository has its own")
+        let inside = try run(URL(fileURLWithPath: "/bin/sh"), ["-c", #"mkdir -p "$0/Sources/deep" && cd "$0/Sources/deep" && exec "$@""#, worktree.path, script.path, "--where"], environment: env)
+        expectEqual(inside.output.trimmingCharacters(in: .whitespacesAndNewlines), main.path, "from inside a folder of the worktree, without naming it")
+        expect(!FileManager.default.fileExists(atPath: worktree.appendingPathComponent(".canvas").path) && !FileManager.default.fileExists(atPath: repo.appendingPathComponent(".canvas").path), "ingest writes nothing into either")
+
+        // a scan the repository's own checkout made is the worktree's to draw from, and a run from the worktree is the repository's
+        try putScan(tinyModel, in: main)
+        let drawn = try run(URL(fileURLWithPath: "/bin/sh"), ["-c", #"cd "$0" && exec "$@""#, worktree.path, script.path, "--scan", handScan(main)], environment: env)
+        expectEqual(drawn.status, 0, drawn.output + drawn.error)
+        let digestFile = try lastRun(in: main).appendingPathComponent("digest.json")
+        expectEqual(try json(digestFile)["title"], "TinyPackage")
+        expect(driverCalls(log).contains { $0.hasPrefix("all ") && $0.contains("--records \(main.path)/drawn") }, "drawn with the repository's records: \(driverCalls(log))")
+
+        // the last five runs are kept
+        for number in 1...6 { try write("{}", to: main.appendingPathComponent("runs/2020010\(number)-000000-1/digest.json")) }
+        let more = try ingest([repo.path, "--scan", handScan(main)], with: script, environment: env)
+        expectEqual(more.status, 0, more.output + more.error)
+        let names = runFolders(in: main).map(\.lastPathComponent)
+        expectEqual(names.count, 5, "\(names)")
+        expect(!names.contains("20200101-000000-1") && !names.contains("20200102-000000-1") && names.contains("20200106-000000-1"), "the oldest went: \(names)")
+        expect(names.last?.hasPrefix("20200106") == false, "and the newest is this run's: \(names)")
+    },
+
     test("a partial clone draws a commit whose files it hasn't fetched (what the commit lacks is fetched from its remote first, as git fetches it), and a shallow clone refuses a commit it doesn't have, saying it is shallow") {
         let folder = try scratchFolder("clones")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -1236,6 +1552,199 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(driverCalls(log).count, calls, "refused before the driver was asked")
     },
 
+    test("prepare runs in the checkout for each of the other lockfiles and manifests, and a path that git would quote (a space, a quote, letters outside ASCII), added and changed") {
+        let folder = try scratchFolder("prepare")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let (script, log) = try stubbedSkill(in: folder)
+        let counter = folder.appendingPathComponent("prepare.count")
+        let repo = try makeRepository("repo", in: folder, files: ["package-lock.json": "{\"v\": 1}\n", "web/app.js": "1\n"])
+        @MainActor func commit(_ files: [String: String]) throws -> String {
+            for (path, text) in files { try write(text, to: repo.appendingPathComponent(path)); try git(repo, ["add", path]) }
+            try git(repo, ["commit", "-q", "-m", files.keys.sorted().joined(separator: " ")])
+            return try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        _ = try cacheFolder(of: repo, cache: cache, with: script)
+        let settings = repo.appendingPathComponent(".canvas/ingest.json")
+        // the counter is outside the checkout: what git doesn't know is removed with each move
+        func configure(_ prepare: String) throws {
+            try write(#"{"scanner": "scip", "scip": "echo made > {index}", "prepare": "\#(prepare)"}"#, to: settings)
+        }
+        try configure("echo run >> \(counter.path)")
+        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
+        func runs() -> Int { ((try? String(contentsOf: counter, encoding: .utf8)) ?? "").split(separator: "\n").count }
+        @MainActor func ingestIt(_ more: [String] = [], status: Int32 = 0) throws -> ProcessOutput {
+            let done = try ingest([repo.path] + more, with: script, environment: env)
+            expectEqual(done.status, status, done.output + done.error)
+            return done
+        }
+
+        _ = try ingestIt()
+        var most = 1
+        expectEqual(runs(), most, "the first time")
+        for path in ["package.json", "api/Cargo.lock", "go.sum", "php/composer.lock", "py/Pipfile.lock", "jvm/gradle.lockfile", "bun/bun.lock",
+                     "we b/ünï \"quoted\"/Gemfile.lock"] {
+            _ = try commit([path: "one\n"])
+            _ = try ingestIt()
+            most += 1
+            expectEqual(runs(), most, "\(path) is a file prepare reads")
+            _ = try commit([path: "two\n"])
+            _ = try ingestIt()
+            most += 1
+            expectEqual(runs(), most, "and \(path), changed, has it run again")
+        }
+    },
+
+    test("lenskit's readers: YAML (block and flow, quoted, comments, block scalars; refusing anchors, tags, documents) and SQL (CREATE TABLE and ALTER TABLE, skipping the rest)") {
+        let folder = try scratchFolder("readers")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let script = folder.appendingPathComponent("readers.py")
+        try write(readersScript(skill: ingestSkill().path), to: script)
+        let done = try run(URL(fileURLWithPath: python), ["-s", "-B", script.path], timeout: 60)
+        expectEqual(done.status, 0, done.output + done.error)
+        let out = try JSON(text: done.output)
+        let compose = try require(out["compose"], done.output)
+        expectEqual(compose["version"], "3.8", "a quoted string stays text")
+        expectEqual(compose["services"]?["web"]?["image"], "nginx:1.2", "a trailing comment is not the value")
+        expectEqual(compose["services"]?["web"]?["ports"], ["80:80", 443], "a quoted number is text, a plain one a number")
+        expectEqual(compose["services"]?["web"]?["environment"]?.arrayValue?.last, ["B": "two", "C": [1, 2, ["x": "y"]]], "a mapping in a list, a flow list and mapping inside it")
+        expectEqual(compose["services"]?["web"]?["command"], "echo hi\necho there\n", "a literal block scalar")
+        expectEqual(compose["services"]?["web"]?["note"], "one two three\n", "a folded one")
+        expectEqual(compose["services"]?["web"]?["flag"], true)
+        expectEqual(compose["services"]?["web"]?["empty"], .null)
+        expectEqual(compose["services"]?["web"]?["words"], ["yes", "on", "no"], "yes and on are text, as in YAML 1.2")
+        expectEqual(compose["services"]?["db"], ["image": "pg", "size": 3.5, "quoted": "it's # not a comment"], "a flow mapping, a float, a # inside quotes")
+        expectEqual(compose["list"], ["a", "b", ["nested"], .null], "a list at its key's indent, a nested list, an empty item")
+        expectEqual(compose["after"], "last", "and a key after a block scalar")
+        for label in ["anchor", "alias", "tag", "documents", "flow", "twice", "tab", "indent", "complex", "merge", "plain"] {
+            expect(out["refused"]?[label]?.stringValue?.hasPrefix("line ") == true, "\(label) is refused, naming its line: \(out["refused"]?[label] ?? .null)")
+        }
+        expect(out["refused"]?["anchor"]?.stringValue?.contains("anchor") == true && out["refused"]?["documents"]?.stringValue?.contains("more than one document") == true)
+        expectEqual(out["single_document"], ["a": 1], "one document with its --- is read")
+
+        let tables = try require(out["tables"], done.output)
+        expectEqual(tables["users"]?["columns"]?.arrayValue?.compactMap { $0["name"]?.stringValue }, ["id", "email", "created", "tags", "name", "age"], "CREATE TABLE's columns, then ALTER TABLE ... ADD COLUMN's")
+        expectEqual(tables["users"]?["columns"]?.arrayValue?.compactMap { $0["type"]?.stringValue }, ["bigserial", "character varying(255)", "timestamp with time zone", "text[]", "text", "int"])
+        expectEqual(tables["users"]?["columns"]?.arrayValue?.compactMap { $0["nullable"]?.boolValue }, [false, false, true, true, false, true], "NOT NULL and PRIMARY KEY say not null")
+        expectEqual(tables["users"]?["columns"]?.arrayValue?.first?["primary_key"], true)
+        expectEqual(tables["orders"]?["columns"]?.arrayValue?.compactMap { $0["name"]?.stringValue }, ["id", "uid"], "a column dropped, one renamed")
+        expectEqual(tables["orders"]?["columns"]?.arrayValue?.first?["primary_key"], true, "a table-level PRIMARY KEY (id)")
+        expectEqual(tables["app.audit"]?["columns"]?.arrayValue?.count, 1, "a schema before the name is kept (public. is none)")
+        expectEqual(out["table_names"], ["users", "orders", "app.audit", "renamed"], "tables in the order created; dropped ones gone, a rename kept")
+    },
+
+    test("a lens's own modules come first and the skill's are not importable by name; the clock a lens reads keeps isinstance true and every reading of it moves; Repo keeps no root to read") {
+        let folder = try scratchFolder("lens-imports")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let repo = try makeRepository("repo", in: folder)
+        let scan = folder.appendingPathComponent("scan.json"), digest = folder.appendingPathComponent("digest.json")
+        try write(tinyModel, to: scan)
+        let lens = folder.appendingPathComponent("lens/lens.py")
+        try write("WHO = \"the lens's own settings\"\n", to: folder.appendingPathComponent("lens/settings.py"))
+        try write("""
+            import datetime, importlib.util, json, settings
+            from lenskit import default
+
+            def digest(scan, repo):
+                d = default.digest(scan, repo)
+                said = {
+                    "who": settings.WHO,
+                    "skill_modules": [name for name in ("stamp", "run", "child", "ingest", "scanners") if importlib.util.find_spec(name) is not None],
+                    "has_root": hasattr(repo, "root"),
+                    "now_is_date": isinstance(datetime.datetime.now(), datetime.date),
+                    "today_is_date": isinstance(datetime.date.today(), datetime.date),
+                    "today_is_datetime": isinstance(datetime.date.today(), datetime.datetime),
+                    "made_is_datetime": isinstance(datetime.datetime(2020, 1, 2), datetime.datetime),
+                    "made_is_date": isinstance(datetime.datetime(2020, 1, 2), datetime.date),
+                    "sum_is_datetime": isinstance(datetime.datetime.now() + datetime.timedelta(days=1), datetime.datetime),
+                    "subclass": issubclass(datetime.datetime, datetime.date),
+                    "json": json.dumps({"t": datetime.datetime(2020, 1, 2, 3, 4, 5)}, default=lambda o: o.isoformat() if isinstance(o, datetime.date) else None),
+                }
+                d["said"] = json.dumps(said, sort_keys=True)
+                return d
+            """, to: lens)
+        let made = try lensRunner(repo, scan: scan, digest: digest, lens: lens)
+        expectEqual(made.status, 0, made.output + made.error)
+        let said = try JSON(text: try require(try json(digest)["said"]?.stringValue, "what the lens said"))
+        expectEqual(said["who"], "the lens's own settings", "a helper beside the lens, named as one of the skill's, is the lens's")
+        expectEqual(said["skill_modules"], [], "and none of the skill's is importable by its name")
+        expectEqual(said["has_root"], false, "Repo has no root to read")
+        for key in ["now_is_date", "today_is_date", "made_is_datetime", "made_is_date", "sum_is_datetime", "subclass"] {
+            expectEqual(said[key], true, "\(key)")
+        }
+        expectEqual(said["today_is_datetime"], false)
+        expectEqual(said["json"], #"{"t": "2020-01-02T03:04:05"}"#, "a default= hook that asks isinstance(x, datetime.date) is called")
+        // settings.py is a program, not a module: importing it runs nothing
+        let imported = try run(URL(fileURLWithPath: python), ["-s", "-B", "-c", "import sys; sys.path.insert(0, \(pythonString(ingestSkill().path))); import settings; print(settings.KEYS[0])"])
+        expectEqual(imported.status, 0, imported.output + imported.error)
+        expectEqual(imported.output.trimmingCharacters(in: .whitespacesAndNewlines), "scanner")
+    },
+
+])
+
+@MainActor let ingestTests7 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (7 of 9)", [
+    test("drawing records are kept for each file drawn in: a proposal drawn into a new file leaves the board in front's record alone, and each board is drawn again in place of its own last drawing") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let front = windowedBoard()
+        defer { front.close() }
+        let opened = Opened()
+        defer { for board in opened.boards { board.close() } }
+        let commands = try require(BoardDocument.configuration).registry.hostCommands
+        // the board in front stays the first one: a new file opens beside it
+        let server = CommandServer(path: temporarySocketPath(), commands: CommandServer.Commands(specs: commands.specs, run: commands.run),
+                                   boards: { [front] + opened.boards }, frontmost: { front }, show: { opened.boards.append($0) })
+        try server.start()
+        defer { server.stop() }
+        let folder = try scratchFolder("records")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let repo = try makeRepository("repo", in: folder)
+        let kept = try cacheFolder(of: repo, cache: cache)
+        try putScan(tinyModel, in: kept)
+        let env = environment(cache: cache, server: server)
+        let records = kept.appendingPathComponent("drawn")
+        func recordNames() -> [String] { ((try? FileManager.default.contentsOfDirectory(atPath: records.path)) ?? []).filter { $0.hasSuffix(".json") }.sorted() }
+
+        // the board in front, drawn as it
+        let first = try ingest([repo.path, "--scan", handScan(kept)], environment: env)
+        expectEqual(first.status, 0, first.output + first.error)
+        let drawn = front.editor.file.shapeCount
+        expect(drawn > 0 && recordNames().count == 1, "one drawing, one record: \(recordNames())")
+
+        // a proposal, drawn into a new file: another record, and the board in front is as it was
+        let proposal = folder.appendingPathComponent("Proposal.canvasboard")
+        let second = try ingest([repo.path, "--scan", handScan(kept), "--new-file", proposal.path], environment: env)
+        expectEqual(second.status, 0, second.output + second.error)
+        let board = try require(opened.boards.first, "the new file is open")
+        expect(second.output.contains("verify ok") && board.editor.file.shapeCount > 0, second.output)
+        expectEqual(recordNames().count, 2, "one record for each file: \(recordNames())")
+        expectEqual(front.editor.file.shapeCount, drawn, "the board in front was not touched")
+
+        // the board in front again: it is drawn in place of its own last drawing, which the proposal's record did not replace
+        let third = try ingest([repo.path, "--scan", handScan(kept)], environment: env)
+        expectEqual(third.status, 0, third.output + third.error)
+        expect(third.output.contains("replace: took back the last drawing") && third.output.contains("verify ok"), third.output)
+        expectEqual(front.editor.file.shapeCount, drawn, "the same drawing, once")
+        // ... and the proposal's board, in place of the proposal, from a run of its own
+        let proposalShapes = board.editor.file.shapeCount
+        let fourth = try ingest([repo.path, "--scan", handScan(kept), "--board", "\(board.number)"], environment: env)
+        expectEqual(fourth.status, 0, fourth.output + fourth.error)
+        expect(fourth.output.contains("replace: took back the last drawing") && fourth.output.contains("verify ok"), fourth.output)
+        expectEqual(board.editor.file.shapeCount, proposalShapes, "the proposal drawn again in its place")
+        expectEqual(front.editor.file.shapeCount, drawn, "the board in front is as it was")
+        expectEqual(recordNames().count, 2, "still one record for each file: \(recordNames())")
+        let paths = try recordNames().map { try json(records.appendingPathComponent($0))["path"]?.stringValue }
+        expect(paths.filter { $0?.hasSuffix("Proposal.canvasboard") == true }.count == 1, "the proposal's record is of its file: \(paths)")
+
+        // a record that is no board's file's does not stop a board that is empty: a file with a record of its own that is gone
+        let empty = windowedBoard()
+        opened.boards.append(empty)
+        let fifth = try ingest([repo.path, "--scan", handScan(kept), "--board", "\(empty.number)"], environment: env)
+        expectEqual(fifth.status, 0, fifth.output + fifth.error)
+        expectEqual(recordNames().count, 3, "a third file, a third record: \(recordNames())")
+    },
     test("what a run's commands say is kept, not said: prepare's and the indexer's output go to the run's folder, said only when they fail (their end), a lens's warnings past twenty go to a file, and the scan says what the index left out") {
         let folder = try scratchFolder("quiet")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -1299,6 +1808,145 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(lines.last, "None", "a fifth of them used is enough")
     },
 
+    test("a codebase of 30,000 files in 2,000 modules is drawn in the time a person waits: no board looks at every file or every module to find its own") {
+        let folder = try scratchFolder("many-modules")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let repo = try makeRepository("repo", in: folder)
+        let scan = folder.appendingPathComponent("scan.json"), digest = folder.appendingPathComponent("digest.json")
+        try write(bigScan(modules: 2000, folders: 1, subfolders: 1, files: 15), to: scan)
+        let made = try lensRunner(repo, scan: scan, digest: digest)
+        expectEqual(made.status, 0, made.output + made.error)
+        expectEqual(try json(digest)["nodes"]?.arrayValue?.filter { $0["kind"] == "subboard" }.count, 2000, "a card for each module")
+        let cpu = made.output.range(of: #"[0-9.]+(?= s of cpu)"#, options: .regularExpression).flatMap { Double(made.output[$0]) }
+        expect((cpu ?? 1000) < 12, "the lens ran twice in \(cpu.map { "\($0)" } ?? "an unknown time") s of cpu (it took ten times that, a run, when each module looked through every file): \(made.output)")
+    },
+
+])
+
+@MainActor let ingestTests8 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (8 of 9)", [
+    test("a commit is what is drawn, never the working tree: each commit its own board, one drawn twice the same plan and scripts, the second commit type-checks only the module that changed, the code scanned once") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("commits")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appendingPathComponent("cache")
+        let kit = "import Core\n\npublic func kit() -> Int {\n    core() + 1\n}\n"
+        let repo = try makeRepository("pkg", in: folder, files: [
+            "Package.swift": tinyPackage(loose: false), "Sources/Core/Core.swift": "public func core() -> Int { 1 }\n",
+            "Sources/Kit/Kit.swift": kit, "Tests/KitTests/KitTests.swift": "import Kit\n\nfunc twice() -> Int { kit() * 2 }\n",
+        ])
+        let first = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        // the second commit changes a function's body in Kit, so Kit's interface is as it was: no other module is made again
+        try write("import Core\n\npublic func kit() -> Int {\n    let more = 2\n    return core() + more\n}\n", to: repo.appendingPathComponent("Sources/Kit/Kit.swift"))
+        try git(repo, ["commit", "-q", "-a", "-m", "a longer body"])
+        let second = try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kept = try cacheFolder(of: repo, cache: cache)
+        // the SDK build.sh chose for this build, so the index build needn't ask the compiler about one it rejects (ten seconds)
+        let sdk = (try? String(contentsOfFile: "build/.sdk", encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let env = environment(cache: cache, server: server, extra: sdk.map { ["SDKROOT": $0] } ?? [:])
+        @MainActor func draw(_ commit: String, _ more: [String] = []) throws -> (process: ProcessOutput, run: URL) {
+            let done = try ingest([repo.path, "--commit", commit] + more, environment: env)
+            expectEqual(done.status, 0, done.output + done.error)
+            expect(done.output.contains("verify ok"), done.output)
+            return (done, try lastRun(in: kept))
+        }
+        @MainActor func noteText(_ folder: URL, _ title: String) throws -> String? {
+            let digest = try json(folder.appendingPathComponent("digest.json"))
+            return (digest["nodes"]?.arrayValue ?? []).first { $0["title"] == .string(title) }?["text"]?.stringValue
+        }
+
+        let one = try draw(first)
+        expect(one.process.output.contains("checking out \(first.prefix(12))") && one.process.output.contains("ingest: type-checked 3 of 3 modules"), "everything, the first time: \(one.process.output)")
+        let oneFiles = try drawing(one.run), oneKit = try noteText(one.run, "Kit.swift")
+        let digestOne = try String(contentsOf: one.run.appendingPathComponent("digest.json"), encoding: .utf8)
+
+        // the next commit: its own board, and only the module that changed is type-checked (its interface is as it was, so the others
+        // aren't), though the same checkout is moved to it: the index's marks hold the sources' paths, which don't change
+        let two = try draw(second)
+        expect(two.process.output.contains("ingest: type-checked 1 of 3 modules"), two.process.output)
+        expect(try String(contentsOf: two.run.appendingPathComponent("index.log"), encoding: .utf8).contains("indexes: made 1 of 3 (Kit)"), "Kit alone")
+        let twoKit = try noteText(two.run, "Kit.swift")
+        expect(twoKit != oneKit, "Kit.swift is longer in the second commit: \(oneKit ?? "") / \(twoKit ?? "")")
+        let twoFiles = try drawing(two.run)
+        expect(twoFiles != oneFiles, "the plan differs between commits")
+
+        // an edit in the working tree, and a file git doesn't know, never show: the commit is drawn, and a scan made already isn't made again
+        try write("import Core\n\npublic func kit() -> Int {\n    let more = 3\n    let dirty = more * 2\n    return core() + dirty\n}\n", to: repo.appendingPathComponent("Sources/Kit/Kit.swift"))
+        try write("public func working() {}\n", to: repo.appendingPathComponent("Sources/Kit/Working.swift"))
+        let again = try draw(second)
+        expect(again.process.output.contains("the scan of \(second.prefix(12)) is kept") && !again.process.output.contains("type-checked") && !again.process.output.contains("checking out"),
+               "a second run on a commit goes straight to the lens: \(again.process.output)")
+        expectEqual(try drawing(again.run), twoFiles, "the same commit, the same plan and scripts, whatever the working tree holds")
+        expectEqual(try String(contentsOf: again.run.appendingPathComponent("digest.json"), encoding: .utf8), try String(contentsOf: two.run.appendingPathComponent("digest.json"), encoding: .utf8))
+        // ... and scanned again, from the checkout, it is the same too: nothing of the working tree is in the checkout
+        let rescanned = try draw(second, ["--rescan"])
+        expect(rescanned.process.output.contains("ingest: no module changed: none of the 3 type-checked"), "the index is as the commit's code is: \(rescanned.process.output)")
+        expectEqual(try drawing(rescanned.run), twoFiles, "scanned again, the same")
+        expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("checkout/Sources/Kit/Working.swift").path), "a file git doesn't know is not in the checkout")
+
+        // back to the first commit: the board is of it as it was the first time
+        let back = try draw(first)
+        expectEqual(try drawing(back.run), oneFiles, "the first commit again, the first plan")
+        expectEqual(try String(contentsOf: back.run.appendingPathComponent("digest.json"), encoding: .utf8), digestOne)
+        expect(back.process.output.contains("is kept"), back.process.output)
+        expect(try git(repo, ["worktree", "list"]).output.split(separator: "\n").count == 1, "the user's own worktree list is as it was")
+    },
+
+    test("a codebase of 5,000 files is drawn as at most 4,000 notes: folders are collapsed deepest first, then biggest, then by path, their edges merged up to weight 4") {
+        let folder = try scratchFolder("scale")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let repo = try makeRepository("repo", in: folder)
+        let scan = folder.appendingPathComponent("scan.json"), digest = folder.appendingPathComponent("digest.json")
+        try write(bigScan(modules: 50, folders: 5, subfolders: 4, files: 5), to: scan)
+        let made = try lensRunner(repo, scan: scan, digest: digest)
+        expectEqual(made.status, 0, made.output + made.error)
+        let json = try json(digest)
+        let nodes = json["nodes"]?.arrayValue ?? [], edges = json["edges"]?.arrayValue ?? []
+        let notes = nodes.filter { $0["kind"] == "sticky-note" }
+        expectEqual(notes.count, 4000, "5,000 files, 250 folders of five collapsed to a note each")
+        expect(made.error.contains("250 folders were collapsed"), "the warning says how many: \(made.error)")
+        let titles = Set(notes.compactMap { $0["title"]?.stringValue })
+        expect(titles.contains("Mod00/d0/s0/"), "the first folders by path are collapsed, titled for the folder: \(titles.sorted().prefix(3))")
+        expect(titles.contains("Mod12/d2/s1/") && !titles.contains("Mod12/d2/s2/"), "250 folders end in Mod12's tenth: \(titles.filter { $0.hasPrefix("Mod12/") }.sorted())")
+        expect(notes.contains { $0["source"] == "src/Mod12/d2/s2/File0.ts" } && notes.contains { $0["source"] == "src/Mod49/d4/s3/File4.ts" }, "and the files of the rest are notes of their own")
+        let collapsed = try require(notes.first { $0["title"] == "Mod00/d0/s0/" }, "a collapsed folder's note")
+        let text = collapsed["text"]?.stringValue ?? ""
+        expect(text.hasPrefix("5 files, 50 lines") && text.contains("File3.ts: Thing3"), "its text lists its files and what each declares: \(text)")
+        expectEqual(collapsed["source"], "src/Mod00/d0/s0", "and says what it was made from")
+        expect(edges.allSatisfy { ($0["weight"]?.intValue ?? 1) >= 1 && ($0["weight"]?.intValue ?? 1) <= 4 }, "merged weights stop at 4")
+        expect(edges.contains { $0["weight"]?.intValue == 4 }, "and reach it")
+        // a title is given out once in its container: File0.ts is in every folder, and its note is told apart by an id, which names it in an edge
+        let naming = try namingReport(digest)
+        expectEqual(naming.problems, [], "every title is its container's alone, an id is where a title repeats, and every edge has its ends")
+        expect(notes.filter { $0["id"] != nil }.count > 3000, "the files of one name in many folders have ids: \(notes.filter { $0["id"] != nil }.count)")
+        expect(notes.filter { $0["title"] == "File0.ts" }.count > 500, "and keep the name they have in their folder")
+        let pairs = edges.map { "\($0["from"]?.stringValue ?? "") > \($0["to"]?.stringValue ?? "")" }
+        expectEqual(Set(pairs).count, pairs.count, "and one edge to a pair of ends")
+        // canvas-digest's own check finds nothing wrong
+        let checked = try run(URL(fileURLWithPath: "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"),
+                              [URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest/tool/main.js").path, "--", "check", digest.path],
+                              timeout: 240)
+        expectEqual(checked.status, 0, String(checked.output.prefix(2000)) + checked.error)
+        expectEqual(try JSON(text: checked.output)["errors"], .array([]), "check finds nothing wrong")
+        // the lens's CPU time, the two runs and git's, is held to a budget: the processes' own, never the wall clock
+        let cpu = made.output.range(of: #"[0-9.]+(?= s of cpu)"#, options: .regularExpression).flatMap { Double(made.output[$0]) }
+        expect((cpu ?? 1000) < 8, "the lens ran twice in \(cpu.map { "\($0)" } ?? "an unknown time") s of cpu: \(made.output)")
+        // a scan that fits is not touched
+        let small = folder.appendingPathComponent("small.json")
+        try write(bigScan(modules: 4, folders: 2, subfolders: 2, files: 3), to: small)
+        let kept = try lensRunner(repo, scan: small, digest: folder.appendingPathComponent("small.digest.json"))
+        expectEqual(kept.status, 0, kept.output + kept.error)
+        expect(!kept.error.contains("collapsed"), kept.error)
+    },
+
+])
+
+@MainActor let ingestTests9 = Suite("canvas-ingest: a repository drawn as boards by `ingest` (9 of 9)", [
     test("a scan is kept by the commit's code, .canvas left out: a commit that changes only the lens or the settings scans nothing and draws the new lens's picture, and a commit that changes code scans again") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -1405,471 +2053,6 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(count(counter), 3)
     },
 
-    test("prepare runs in the checkout when a lockfile of the commit, or the command, has changed, and not for any other move") {
-        let folder = try scratchFolder("prepare")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let (script, log) = try stubbedSkill(in: folder)
-        let counter = folder.appendingPathComponent("prepare.count"), ready = folder.appendingPathComponent("ready")
-        let repo = try makeRepository("repo", in: folder, files: ["package-lock.json": "{\"v\": 1}\n", "web/app.js": "1\n"])
-        @MainActor func commit(_ files: [String: String]) throws -> String {
-            for (path, text) in files { try write(text, to: repo.appendingPathComponent(path)); try git(repo, ["add", path]) }
-            try git(repo, ["commit", "-q", "-m", files.keys.sorted().joined(separator: " ")])
-            return try git(repo, ["rev-parse", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        let kept = try cacheFolder(of: repo, cache: cache, with: script)
-        let settings = repo.appendingPathComponent(".canvas/ingest.json")
-        // the counter is outside the checkout: what git doesn't know is removed with each move
-        func configure(_ prepare: String) throws {
-            try write(#"{"scanner": "scip", "scip": "echo made > {index}", "prepare": "\#(prepare)"}"#, to: settings)
-        }
-        try configure("echo run >> \(counter.path)")
-        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
-        func runs() -> Int { ((try? String(contentsOf: counter, encoding: .utf8)) ?? "").split(separator: "\n").count }
-        @MainActor func ingestIt(_ more: [String] = [], status: Int32 = 0) throws -> ProcessOutput {
-            let done = try ingest([repo.path] + more, with: script, environment: env)
-            expectEqual(done.status, status, done.output + done.error)
-            return done
-        }
-        func prepared() -> Bool { FileManager.default.fileExists(atPath: kept.appendingPathComponent("checkout.prepared").path) }
-
-        _ = try ingestIt()
-        expectEqual(runs(), 1, "the first time")
-        expect(prepared(), "and the stamp is beside the checkout")
-        _ = try commit(["web/app.js": "2\n"])
-        let quiet = try ingestIt()
-        expectEqual(runs(), 1, "a commit that changes no lockfile")
-        expect(quiet.output.contains("not preparing"), quiet.output)
-        _ = try commit(["package-lock.json": "{\"v\": 2}\n"])
-        _ = try ingestIt()
-        expectEqual(runs(), 2, "a lockfile changed")
-        _ = try commit(["web/yarn.lock": "# yarn\n"])
-        _ = try ingestIt()
-        expectEqual(runs(), 3, "a lockfile at depth, added")
-        _ = try commit(["api/requirements-dev.txt": "requests==1\n"])
-        _ = try ingestIt()
-        expectEqual(runs(), 4, "requirements*.txt at depth")
-        _ = try commit(["go.mod": "module x\n", "notes/lock.txt": "x\n", "web/package-lock.json.bak": "x\n"])
-        _ = try ingestIt()
-        expectEqual(runs(), 4, "files that are not lockfiles")
-        let sameCommit = try ingestIt(["--rescan"])
-        expectEqual(runs(), 4, "the same commit scanned again: nothing it reads has changed. \(sameCommit.output)")
-
-        // the command is part of it
-        try configure("echo run again >> \(counter.path)")
-        _ = try ingestIt(["--rescan"])
-        expectEqual(runs(), 5, "another command")
-        // a prepare that fails stops the run and leaves no stamp, so the next run tries it again though no lockfile has changed since
-        try configure("echo failing >> \(counter.path); [ -f \(ready.path) ]")
-        _ = try commit(["package-lock.json": "{\"v\": 3}\n"])
-        let failed = try ingestIt(status: 1)
-        expect(failed.error.contains("prepare"), failed.error)
-        expectEqual(runs(), 6)
-        try write("", to: ready)
-        _ = try ingestIt()
-        expectEqual(runs(), 7, "tried again")
-        _ = try ingestIt(["--rescan"])
-        expectEqual(runs(), 7, "and then it holds")
-        // a checkout made again has nothing prepared in it
-        try FileManager.default.removeItem(at: kept.appendingPathComponent("checkout/.git/HEAD"))
-        _ = try ingestIt(["--rescan"])
-        expectEqual(runs(), 8, "a new checkout is prepared")
-        // the other lockfiles and manifests, and a path that git would quote (a space, a quote, letters outside ASCII)
-        var most = 8
-        for path in ["package.json", "api/Cargo.lock", "go.sum", "php/composer.lock", "py/Pipfile.lock", "jvm/gradle.lockfile", "bun/bun.lock",
-                     "we b/ünï \"quoted\"/Gemfile.lock"] {
-            _ = try commit([path: "one\n"])
-            _ = try ingestIt()
-            most += 1
-            expectEqual(runs(), most, "\(path) is a file prepare reads")
-            _ = try commit([path: "two\n"])
-            _ = try ingestIt()
-            most += 1
-            expectEqual(runs(), most, "and \(path), changed, has it run again")
-        }
-    },
-
-    test("the default lens makes the digest its fixtures hold but for how it names nodes: every fixture scan, and the overrides a spec.py gave") {
-        // the digests and words are checked in (Fixtures/ingest-lens), first the old lens's, then the default lens's once the About note went,
-        // when it gave every title out once in the whole digest. It gives each out once in its container now, so a file is titled by its
-        // name, however many others have it. The new digest is the fixture's: the same nodes in the same order with every field the same but
-        // the title, the id (a node whose title another has gets one) and the container, as the same node; the same edges, naming the
-        // same nodes; and a title changed only by one of three rules (namingReport), each said where it was used
-        let folder = try scratchFolder("parity")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = try makeRepository("project", in: folder)
-        let long = "@my-company/" + String(repeating: "very-long-package-name-", count: 4) + "x"
-        let scans = ["tiny": tinyModel, "awkward": awkwardModel(long: long, big: false), "awkward-big": awkwardModel(long: long, big: true)]
-        // the rules a title may change by are three (namingReport); the fixtures use two: a band that a module has the name of, and a frame that
-        // a module's card has the name of, still give way to the card, whose title is the digest's alone (the third rule, "a (…) fallback
-        // gone", would be one of them taking its own name)
-        let byName = "a file's name in place of a longer end of its path", byNumber = "a number gone"
-        let changed: [String: [String: Int]] = ["tiny": [:], "awkward": [byName: 5, byNumber: 1], "awkward-big": [byName: 7, byNumber: 1]]
-        for (name, scan) in scans.sorted(by: { $0.key < $1.key }) {
-            let scanFile = folder.appendingPathComponent("\(name).scan.json")
-            try write(scan, to: scanFile)
-            let after = try lensRunner(repo, scan: scanFile, digest: folder.appendingPathComponent("\(name).new.json"))
-            expectEqual(after.status, 0, after.output + after.error)
-            let report = try namingReport(folder.appendingPathComponent("\(name).new.json"), against: lensFixture(name, "digest.json"))
-            expectEqual(report.problems, [], "\(name): the digest differs from its fixture's but by titles, ids and the references that name them")
-            expectEqual(report.rules, changed[name], "\(name): the titles that changed, by the rule that explains each")
-            // what it said of the code on standard error, it says still, but for the titles it reworded
-            for line in try String(contentsOf: lensFixture(name, "said"), encoding: .utf8).split(separator: "\n") where line.hasPrefix("lens: ") && !line.contains(" is titled \"") {
-                expect(after.error.contains(line), "\(name): \(line) is said by the lens: \(after.error)")
-            }
-        }
-        // a spec.py's names (BANDS, GROUPS, PURPOSES, FOLDER_BOARDS, BY_MODULE, LAYER_NAMES and TITLE, as the old lens read them), as the
-        // arguments of default.digest
-        let scanFile = folder.appendingPathComponent("tiny.scan.json")
-        let specRepo = try makeRepository("spec", in: folder)
-        try write("""
-            from lenskit import default
-
-            def digest(scan, repo):
-                return default.digest(scan, repo, bands=[("Apps", ["App", "Ghost"]), ("Foundations", ["Core"])],
-                                      groups={"App": [("Screens", ["Screen.swift"], [])]},
-                                      purposes={"App": "Draws the screens @[x]", "Core": "Keeps the models", "Nowhere": "x"},
-                                      folder_boards={"Core": ["Hidden"]}, by_module=[("Core", "Store.swift")],
-                                      layer_names={"x": "y"}, title="Spec title")
-            """, to: specRepo.appendingPathComponent(".canvas/lens.py"))
-        let lensed = try lensRunner(specRepo, scan: scanFile, digest: folder.appendingPathComponent("spec.new.json"),
-                                    lens: specRepo.appendingPathComponent(".canvas/lens.py"))
-        expectEqual(lensed.status, 0, lensed.output + lensed.error)
-        let specReport = try namingReport(folder.appendingPathComponent("spec.new.json"), against: lensFixture("spec", "digest.json"))
-        expectEqual(specReport.problems, [], "the overrides make the same digest")
-        expectEqual(specReport.rules, [:], "and name every node as it was named")
-        let specified = try String(contentsOf: lensFixture("spec", "said"), encoding: .utf8)
-        for said in ["Ghost", "Nowhere", "Hidden", "leave out Main.swift"] {
-            expect(lensed.error.contains(said) && specified.contains(said), "said by both: \(said)\n\(specified)\n\(lensed.error)")
-        }
-        // an argument the default lens has not got is a TypeError that says which are
-        try write("from lenskit import default\n\ndef digest(scan, repo):\n    return default.digest(scan, repo, colour='red')\n", to: specRepo.appendingPathComponent(".canvas/typo.py"))
-        let typo = try lensRunner(specRepo, scan: scanFile, digest: folder.appendingPathComponent("typo.json"), lens: specRepo.appendingPathComponent(".canvas/typo.py"))
-        expectEqual(typo.status, 1, typo.output)
-        expect(typo.error.contains("colour") && typo.error.contains("bands, purposes"), typo.error)
-    },
-
-    test("a repository's lens regroups its files as it likes, and is drawn; the digest it makes is the repository's own picture") {
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        try configureBoards(pasteboard: pasteboard)
-        let board = windowedBoard()
-        defer { board.close() }
-        let server = try startCommandServer(boards: [board], frontmost: board)
-        defer { server.stop() }
-        let folder = try scratchFolder("regroup")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let repo = try makeRepository("project", in: folder)
-        let kept = try cacheFolder(of: repo, cache: cache)
-        try putScan(tinyModel, in: kept)
-        // by a naming convention: the files that end in Screen, Store or Model are views and data, wherever they are, in frames of
-        // their module's board; each note says what its file was made from
-        try write("""
-            from lenskit import Digest, text
-
-            GROUPS = [("Screen", "Views"), ("Store", "Data"), ("Model", "Data")]
-
-            def digest(scan, repo):
-                d = Digest(scan.name + " by convention")
-                cards, frames, titles = {}, {}, {}
-                for m in scan.production:
-                    cards[m] = d.claim("the module " + m, m)
-                    d.subboard(cards[m], text=text.as_text(scan.module(m)["doc"]), source=scan.module(m)["path"])
-                for (m, rel), f in sorted(scan.files.items()):
-                    group = next((g for suffix, g in GROUPS if rel.endswith(suffix + ".swift")), "Entry points")
-                    if (m, group) not in frames:
-                        frames[(m, group)] = d.claim("the frame " + group, group + " (" + m + ")")
-                        d.frame(frames[(m, group)], cards[m])
-                    titles[(m, rel)] = d.claim(rel, rel)
-                    d.note(titles[(m, rel)], frames[(m, group)], text.file_text(f, scan.language), source=f["path"])
-                for a, b, names in scan.uses:
-                    if a in scan.files and b in scan.files and a != b:
-                        d.edge(titles[a], titles[b], weight=len(names))
-                return d.finish()
-            """, to: repo.appendingPathComponent(".canvas/lens.py"))
-        let drawn = try ingest([repo.path, "--scan", handScan(kept)], environment: environment(cache: cache, server: server))
-        expectEqual(drawn.status, 0, drawn.output + drawn.error)
-        expect(drawn.output.contains("verify ok"), drawn.output)
-        let editor = board.editor
-        let titles = Set(editor.document.shapes.compactMap { editor.registry.title(of: $0) })
-        expect(titles.isSuperset(of: ["App", "Core"]), "the boards the lens made: \(titles.sorted())")
-        let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
-        let nodes = digest["nodes"]?.arrayValue ?? []
-        expectEqual(nodes.first { $0["title"] == "Screen.swift" }?["in"], "Views (App)")
-        expectEqual(nodes.first { $0["title"] == "Main.swift" }?["in"], "Entry points (App)")
-        expectEqual(Set(nodes.filter { $0["in"] == "Data (Core)" }.compactMap { $0["title"]?.stringValue }), ["Store.swift", "Model.swift"], "files by what they are called")
-        expectEqual(nodes.first { $0["title"] == "Store.swift" }?["source"], "Sources/Core/Store.swift")
-        expect(digest["warnings"] == nil, "warnings are said, never kept in the digest")
-        // a rerun draws it in place of the last
-        let again = try ingest([repo.path, "--scan", handScan(kept)], environment: environment(cache: cache, server: server))
-        expectEqual(again.status, 0, again.output + again.error)
-        expect(again.output.contains("replace: took back the last drawing") && again.output.contains("verify ok"), again.output)
-    },
-
-    test("a lens that gives two digests is refused, naming where they differ and the usual causes: a set of strings, the clock, the environment") {
-        let folder = try scratchFolder("refused")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let (script, log) = try stubbedSkill(in: folder)
-        let repo = try makeRepository("repo", in: folder)
-        let kept = try cacheFolder(of: repo, cache: cache, with: script)
-        try putScan(tinyModel, in: kept)
-        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
-        let lens = repo.appendingPathComponent(".canvas/lens.py")
-        let cases: [(name: String, lens: String, says: [String])] = [
-            ("a set of strings", """
-                def digest(scan, repo):
-                    names = {"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu"}
-                    return {"title": "T", "nodes": [{"title": n} for n in names], "edges": []}
-                """, ["two different digests", "node that differs is number 1", "a set"]),
-            ("the clock", """
-                import time
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": str(int(time.time()))}], "edges": []}
-                """, ["two different digests", "\"made\"", "the clock"]),
-            ("the date", """
-                import datetime
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": str(datetime.date.today())}], "edges": []}
-                """, ["two different digests", "the clock"]),
-            ("datetime.now", """
-                from datetime import datetime
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [], "edges": [{"from": "a", "to": "b", "text": datetime.now().isoformat()}]}
-                """, ["two different digests", "first edge that differs is number 1"]),
-            ("strftime without a time", """
-                import time
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": time.strftime("%Y")}], "edges": []}
-                """, ["two different digests", "the clock"]),
-            ("asctime", """
-                import time
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": time.asctime()}], "edges": []}
-                """, ["two different digests", "the clock"]),
-            ("ctime", """
-                import time
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": time.ctime()}], "edges": []}
-                """, ["two different digests", "the clock"]),
-            ("localtime", """
-                import time
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": str(time.localtime().tm_year)}], "edges": []}
-                """, ["two different digests", "the clock"]),
-            ("gmtime", """
-                import time
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": str(time.gmtime().tm_year)}], "edges": []}
-                """, ["two different digests", "the clock"]),
-            ("the real-time clock", """
-                import time
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "made", "text": str(int(time.clock_gettime(time.CLOCK_REALTIME)))}], "edges": []}
-                """, ["two different digests", "the clock"]),
-            ("the environment", """
-                import os
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "home", "text": os.environ["HOME"]}], "edges": []}
-                """, ["two different digests", "the environment", "HOME"]),
-            ("the current folder", """
-                import os
-                def digest(scan, repo):
-                    return {"title": "T", "nodes": [{"title": "here", "text": os.getcwd()}], "edges": []}
-                """, ["two different digests"]),
-        ]
-        for (name, text, says) in cases {
-            try write(text, to: lens)
-            let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-            expectEqual(refused.status, 1, "\(name): \(refused.output)")
-            for word in says { expect(refused.error.contains(word), "\(name) is refused saying \(word): \(refused.error)") }
-            expect(!driverCalls(log).contains { $0.hasPrefix("all ") }, "\(name): nothing was drawn")
-            expect(!FileManager.default.fileExists(atPath: try lastRun(in: kept).appendingPathComponent("digest.json").path), "\(name): no digest was kept")
-        }
-        // the same lens with its set sorted is accepted, and writes the digest the run keeps
-        try write("""
-            def digest(scan, repo):
-                names = {"alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "mu"}
-                return {"title": "T", "nodes": [{"title": n} for n in sorted(names)], "edges": []}
-            """, to: lens)
-        let accepted = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-        expectEqual(accepted.status, 0, accepted.output + accepted.error)
-        expectEqual(try json(lastRun(in: kept).appendingPathComponent("digest.json"))["nodes"]?.arrayValue?.count, 12)
-        // a digest without its basic shape is refused before anything is drawn
-        for (text, says) in [("def digest(scan, repo):\n    return [1]\n", "not a dict"), ("def digest(scan, repo):\n    return {\"nodes\": [], \"edges\": []}\n", "\"title\""),
-                             ("def digest(scan, repo):\n    return {\"title\": \"T\", \"nodes\": {}, \"edges\": []}\n", "\"nodes\""),
-                             ("def digest(scan, repo):\n    return {\"title\": \"T\", \"nodes\": [{\"title\": \"a\", \"x\": {1}}], \"edges\": []}\n", "JSON"),
-                             ("x = 1\n", "no function digest")] {
-            try write(text, to: lens)
-            let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-            expectEqual(refused.status, 1, refused.output)
-            expect(refused.error.contains(says), "\(text) is refused saying \(says): \(refused.error)")
-        }
-        expect(!driverCalls(log).contains { $0.hasPrefix("all ") && $0.contains("--mess") && false }, "")
-    },
-
-    test("a lens that raises stops the run with its traceback, before anything is drawn") {
-        let folder = try scratchFolder("raises")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let (script, log) = try stubbedSkill(in: folder)
-        let repo = try makeRepository("repo", in: folder)
-        let kept = try cacheFolder(of: repo, cache: cache, with: script)
-        try putScan(tinyModel, in: kept)
-        try write("def digest(scan, repo):\n    raise ValueError('the lens broke on ' + scan.name)\n", to: repo.appendingPathComponent(".canvas/lens.py"))
-        let broken = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: environment(cache: cache, extra: ["STUB_LOG": log.path]))
-        expectEqual(broken.status, 1, broken.output)
-        expect(broken.error.contains("Traceback") && broken.error.contains("ValueError: the lens broke on TinyPackage") && broken.error.contains("lens.py"), broken.error)
-        expect(!driverCalls(log).contains { $0.hasPrefix("all ") }, "nothing was drawn: \(driverCalls(log))")
-        expect(!FileManager.default.fileExists(atPath: try lastRun(in: kept).appendingPathComponent("digest.json").path), "and no digest was written")
-        expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("lock").path), "the lock is freed")
-    },
-
-    test("repo reads the commit and never the working tree; the lens is the checkout's, never the commit's; and a spec.py is refused") {
-        let folder = try scratchFolder("repo")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let (script, log) = try stubbedSkill(in: folder)
-        let repo = try makeRepository("repo", in: folder, files: ["notes.txt": "committed\n", "src/a.txt": "a", "src/deep/b.txt": "b", "src/deep/c.md": "c", "x y/space.txt": "s"])
-        func lens(_ title: String) -> String {
-            """
-            import json
-            def digest(scan, repo):
-                seen = {"notes": repo.read("notes.txt"), "all": repo.files(), "deep": repo.files("src/**/*.txt"), "top": repo.files("*.txt"),
-                        "any": repo.files("**/*.md"), "one": repo.files("src/*"), "gone": repo.exists("src/a.txt"), "new": repo.exists("untracked.txt"),
-                        "bytes": len(repo.read_bytes("notes.txt")), "sha": len(repo.commit)}
-                try:
-                    repo.read("untracked.txt")
-                except FileNotFoundError:
-                    seen["missing"] = True
-                return {"title": "\(title)", "seen": json.dumps(seen), "nodes": [], "edges": []}
-            """
-        }
-        let lensFile = repo.appendingPathComponent(".canvas/lens.py")
-        try write(lens("committed lens"), to: lensFile)
-        try git(repo, ["add", "-A"])
-        try git(repo, ["commit", "-q", "-m", "a lens"])
-        let kept = try cacheFolder(of: repo, cache: cache, with: script)
-        try putScan(tinyModel, in: kept)
-        // edits no commit holds: a file changed, one added, one removed, and the lens itself
-        try write("edited\n", to: repo.appendingPathComponent("notes.txt"))
-        try write("new", to: repo.appendingPathComponent("untracked.txt"))
-        try FileManager.default.removeItem(at: repo.appendingPathComponent("src/a.txt"))
-        try write(lens("working lens"), to: lensFile)
-        let env = environment(cache: cache, extra: ["STUB_LOG": log.path])
-        let ran = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-        expectEqual(ran.status, 0, ran.output + ran.error)
-        let digest = try json(lastRun(in: kept).appendingPathComponent("digest.json"))
-        expectEqual(digest["title"], "working lens", "the lens is the checkout's, whatever the commit holds")
-        let seen = try JSON(text: digest["seen"]?.stringValue ?? "{}")
-        expectEqual(seen["notes"], "committed\n", "the file as committed, not as edited")
-        expectEqual(seen["gone"], true, "a file removed from the working tree is still in the commit")
-        expectEqual(seen["new"], false, "and one that was never committed is not")
-        expectEqual(seen["bytes"], 10)
-        expectEqual(seen["sha"], 40)
-        expectEqual(seen["missing"], true, "reading what the commit lacks raises FileNotFoundError")
-        let paths = (seen["all"]?.arrayValue ?? []).compactMap(\.stringValue)
-        expectEqual(paths, [".canvas/lens.py", "README.md", "notes.txt", "src/a.txt", "src/deep/b.txt", "src/deep/c.md", "x y/space.txt"], "the commit's paths, sorted")
-        expectEqual((seen["deep"]?.arrayValue ?? []).compactMap(\.stringValue), ["src/a.txt", "src/deep/b.txt"], "** crosses folders, and matches none")
-        expectEqual((seen["top"]?.arrayValue ?? []).compactMap(\.stringValue), ["notes.txt"], "* stays in a folder")
-        expectEqual((seen["any"]?.arrayValue ?? []).compactMap(\.stringValue), ["README.md", "src/deep/c.md"])
-        expectEqual((seen["one"]?.arrayValue ?? []).compactMap(\.stringValue), ["src/a.txt"])
-
-        // a spec.py is the old way: refused before anything is asked of the app, saying where its names go
-        try write("TITLE = 'x'\n", to: repo.appendingPathComponent(".canvas/spec.py"))
-        let calls = driverCalls(log).count
-        let refused = try ingest([repo.path, "--scan", handScan(kept)], with: script, environment: env)
-        expectEqual(refused.status, 1, refused.output)
-        expect(refused.error.contains("spec.py") && refused.error.contains(".canvas/lens.py") && refused.error.contains("lenskit.default.digest"), refused.error)
-        expectEqual(driverCalls(log).count, calls, "the driver was not asked")
-    },
-
-    test("lenskit's readers: YAML (block and flow, quoted, comments, block scalars; refusing anchors, tags, documents) and SQL (CREATE TABLE and ALTER TABLE, skipping the rest)") {
-        let folder = try scratchFolder("readers")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let script = folder.appendingPathComponent("readers.py")
-        try write(readersScript(skill: ingestSkill().path), to: script)
-        let done = try run(URL(fileURLWithPath: python), ["-s", "-B", script.path], timeout: 60)
-        expectEqual(done.status, 0, done.output + done.error)
-        let out = try JSON(text: done.output)
-        let compose = try require(out["compose"], done.output)
-        expectEqual(compose["version"], "3.8", "a quoted string stays text")
-        expectEqual(compose["services"]?["web"]?["image"], "nginx:1.2", "a trailing comment is not the value")
-        expectEqual(compose["services"]?["web"]?["ports"], ["80:80", 443], "a quoted number is text, a plain one a number")
-        expectEqual(compose["services"]?["web"]?["environment"]?.arrayValue?.last, ["B": "two", "C": [1, 2, ["x": "y"]]], "a mapping in a list, a flow list and mapping inside it")
-        expectEqual(compose["services"]?["web"]?["command"], "echo hi\necho there\n", "a literal block scalar")
-        expectEqual(compose["services"]?["web"]?["note"], "one two three\n", "a folded one")
-        expectEqual(compose["services"]?["web"]?["flag"], true)
-        expectEqual(compose["services"]?["web"]?["empty"], .null)
-        expectEqual(compose["services"]?["web"]?["words"], ["yes", "on", "no"], "yes and on are text, as in YAML 1.2")
-        expectEqual(compose["services"]?["db"], ["image": "pg", "size": 3.5, "quoted": "it's # not a comment"], "a flow mapping, a float, a # inside quotes")
-        expectEqual(compose["list"], ["a", "b", ["nested"], .null], "a list at its key's indent, a nested list, an empty item")
-        expectEqual(compose["after"], "last", "and a key after a block scalar")
-        for label in ["anchor", "alias", "tag", "documents", "flow", "twice", "tab", "indent", "complex", "merge", "plain"] {
-            expect(out["refused"]?[label]?.stringValue?.hasPrefix("line ") == true, "\(label) is refused, naming its line: \(out["refused"]?[label] ?? .null)")
-        }
-        expect(out["refused"]?["anchor"]?.stringValue?.contains("anchor") == true && out["refused"]?["documents"]?.stringValue?.contains("more than one document") == true)
-        expectEqual(out["single_document"], ["a": 1], "one document with its --- is read")
-
-        let tables = try require(out["tables"], done.output)
-        expectEqual(tables["users"]?["columns"]?.arrayValue?.compactMap { $0["name"]?.stringValue }, ["id", "email", "created", "tags", "name", "age"], "CREATE TABLE's columns, then ALTER TABLE ... ADD COLUMN's")
-        expectEqual(tables["users"]?["columns"]?.arrayValue?.compactMap { $0["type"]?.stringValue }, ["bigserial", "character varying(255)", "timestamp with time zone", "text[]", "text", "int"])
-        expectEqual(tables["users"]?["columns"]?.arrayValue?.compactMap { $0["nullable"]?.boolValue }, [false, false, true, true, false, true], "NOT NULL and PRIMARY KEY say not null")
-        expectEqual(tables["users"]?["columns"]?.arrayValue?.first?["primary_key"], true)
-        expectEqual(tables["orders"]?["columns"]?.arrayValue?.compactMap { $0["name"]?.stringValue }, ["id", "uid"], "a column dropped, one renamed")
-        expectEqual(tables["orders"]?["columns"]?.arrayValue?.first?["primary_key"], true, "a table-level PRIMARY KEY (id)")
-        expectEqual(tables["app.audit"]?["columns"]?.arrayValue?.count, 1, "a schema before the name is kept (public. is none)")
-        expectEqual(out["table_names"], ["users", "orders", "app.audit", "renamed"], "tables in the order created; dropped ones gone, a rename kept")
-    },
-
-    test("a codebase of 5,000 files is drawn as at most 4,000 notes: folders are collapsed deepest first, then biggest, then by path, their edges merged up to weight 4") {
-        let folder = try scratchFolder("scale")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = try makeRepository("repo", in: folder)
-        let scan = folder.appendingPathComponent("scan.json"), digest = folder.appendingPathComponent("digest.json")
-        try write(bigScan(modules: 50, folders: 5, subfolders: 4, files: 5), to: scan)
-        let made = try lensRunner(repo, scan: scan, digest: digest)
-        expectEqual(made.status, 0, made.output + made.error)
-        let json = try json(digest)
-        let nodes = json["nodes"]?.arrayValue ?? [], edges = json["edges"]?.arrayValue ?? []
-        let notes = nodes.filter { $0["kind"] == "sticky-note" }
-        expectEqual(notes.count, 4000, "5,000 files, 250 folders of five collapsed to a note each")
-        expect(made.error.contains("250 folders were collapsed"), "the warning says how many: \(made.error)")
-        let titles = Set(notes.compactMap { $0["title"]?.stringValue })
-        expect(titles.contains("Mod00/d0/s0/"), "the first folders by path are collapsed, titled for the folder: \(titles.sorted().prefix(3))")
-        expect(titles.contains("Mod12/d2/s1/") && !titles.contains("Mod12/d2/s2/"), "250 folders end in Mod12's tenth: \(titles.filter { $0.hasPrefix("Mod12/") }.sorted())")
-        expect(notes.contains { $0["source"] == "src/Mod12/d2/s2/File0.ts" } && notes.contains { $0["source"] == "src/Mod49/d4/s3/File4.ts" }, "and the files of the rest are notes of their own")
-        let collapsed = try require(notes.first { $0["title"] == "Mod00/d0/s0/" }, "a collapsed folder's note")
-        let text = collapsed["text"]?.stringValue ?? ""
-        expect(text.hasPrefix("5 files, 50 lines") && text.contains("File3.ts: Thing3"), "its text lists its files and what each declares: \(text)")
-        expectEqual(collapsed["source"], "src/Mod00/d0/s0", "and says what it was made from")
-        expect(edges.allSatisfy { ($0["weight"]?.intValue ?? 1) >= 1 && ($0["weight"]?.intValue ?? 1) <= 4 }, "merged weights stop at 4")
-        expect(edges.contains { $0["weight"]?.intValue == 4 }, "and reach it")
-        // a title is given out once in its container: File0.ts is in every folder, and its note is told apart by an id, which names it in an edge
-        let naming = try namingReport(digest)
-        expectEqual(naming.problems, [], "every title is its container's alone, an id is where a title repeats, and every edge has its ends")
-        expect(notes.filter { $0["id"] != nil }.count > 3000, "the files of one name in many folders have ids: \(notes.filter { $0["id"] != nil }.count)")
-        expect(notes.filter { $0["title"] == "File0.ts" }.count > 500, "and keep the name they have in their folder")
-        let pairs = edges.map { "\($0["from"]?.stringValue ?? "") > \($0["to"]?.stringValue ?? "")" }
-        expectEqual(Set(pairs).count, pairs.count, "and one edge to a pair of ends")
-        // canvas-digest's own check finds nothing wrong
-        let checked = try run(URL(fileURLWithPath: "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"),
-                              [URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest/tool/main.js").path, "--", "check", digest.path],
-                              timeout: 240)
-        expectEqual(checked.status, 0, String(checked.output.prefix(2000)) + checked.error)
-        expectEqual(try JSON(text: checked.output)["errors"], .array([]), "check finds nothing wrong")
-        // the lens's CPU time, the two runs and git's, is held to a budget: the processes' own, never the wall clock
-        let cpu = made.output.range(of: #"[0-9.]+(?= s of cpu)"#, options: .regularExpression).flatMap { Double(made.output[$0]) }
-        expect((cpu ?? 1000) < 8, "the lens ran twice in \(cpu.map { "\($0)" } ?? "an unknown time") s of cpu: \(made.output)")
-        // a scan that fits is not touched
-        let small = folder.appendingPathComponent("small.json")
-        try write(bigScan(modules: 4, folders: 2, subfolders: 2, files: 3), to: small)
-        let kept = try lensRunner(repo, scan: small, digest: folder.appendingPathComponent("small.digest.json"))
-        expectEqual(kept.status, 0, kept.output + kept.error)
-        expect(!kept.error.contains("collapsed"), kept.error)
-    },
-
     test("the collapse rule: folders of two files or more, the deepest first, then the biggest, then by path, until at most the most are left") {
         let folder = try scratchFolder("collapse")
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -1901,135 +2084,6 @@ private func lensFixture(_ name: String, _ kind: String) -> URL {
         expectEqual(folders("1"), ["A:x/y", "A:p", "A:x", "B:q", "A:"], "and when that is not enough, all of them (a folder of one file saves nothing)")
     },
 
-    test("the SQL and YAML readers on the words, strings and shapes that used to fool them, and a chain of modules a recursion could not hold") {
-        let folder = try scratchFolder("readers-gaps")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let script = folder.appendingPathComponent("gaps.py")
-        try write(gapsScript(skill: ingestSkill().path), to: script)
-        let done = try run(URL(fileURLWithPath: python), ["-s", "-B", script.path], timeout: 60)
-        expectEqual(done.status, 0, done.output + done.error)
-        let out = try JSON(text: done.output)
-        func strings(_ key: String) -> [String] { (out[key]?.arrayValue ?? []).compactMap(\.stringValue) }
-        // a column named for a word that can start a constraint is a column
-        expectEqual(strings("key_columns"), ["key:text:not null:pk", "value:text:null"], "key text PRIMARY KEY")
-        expectEqual(strings("soft_words"), ["index:int:null", "period:text:null", "exclude:bool:null", "fulltext:text:null", "like:varchar(9):null"], "and the constraints beside them are none")
-        expectEqual(strings("alter_key"), ["a:int:null", "key:text:null", "index:int:null"], "ADD key text, ADD COLUMN index int; ADD INDEX and ADD KEY are none")
-        // a string is read before a comment
-        expectEqual(strings("dashes"), ["a:text:null", "b:int:not null"], "DEFAULT '--' keeps the rest of its line")
-        expectEqual(strings("slash"), ["t", "u"], "DEFAULT '/*' with a real comment after it: both tables")
-        expectEqual(strings("dollar"), ["t", "u"], "DEFAULT '$$' and a real $$ body")
-        expectEqual(strings("dollar_columns"), ["a:text:null", "b:int:null"])
-        expectEqual(strings("comments"), ["a:text:null", "b:int:null"], "comments between the pieces of a definition")
-        // what says a column is not null
-        expectEqual(strings("check"), ["x:int:null", "y:int:not null", "z:int:null"], "CHECK (x IS NOT NULL) says nothing of x; NOT NULL does")
-        expectEqual(strings("alter_column"), ["x:bigint:not null", "y:text:not null:pk"], "ALTER COLUMN SET NOT NULL, TYPE (USING), SET DATA TYPE, and DROP NOT NULL on a primary key")
-        expectEqual(strings("t_sql"), ["x:varchar(10):not null"], "T-SQL's ALTER COLUMN x varchar(10) NOT NULL")
-        expectEqual(strings("unicode"), ["naïve:int:null", "größe:text:null"], "letters outside ASCII stay in a name")
-        expectEqual(out["unicode_table"], true)
-        expectEqual(strings("after"), ["a:int:null", "b:int:null", "c:text:null"], "AFTER x and FIRST are no part of a type")
-        expectEqual(strings("temp"), ["d"], "a temporary table is none")
-        expectEqual(strings("modify"), ["a:bigint:not null", "c:text:null"], "MODIFY and CHANGE define a column again, in its place")
-        // YAML
-        expectEqual(out["bom"], ["key": 1, "other": 2], "a byte order mark is no part of the first key")
-        expectEqual(out["keep"], ["a": "x\n\n\n", "b": "y\n", "c": "z", "d": 1], "|+ keeps the blank lines, | clips them, |- strips the line break")
-        expectEqual(out["keep_end"], ["a": "x\n\n"], "and at the end of the text")
-        expect(out["escape"]?.stringValue?.hasPrefix("line 1: ") == true && out["escape"]?.stringValue?.contains("U00110000") == true, "an escape that is no character is a YamlError naming its line: \(out["escape"] ?? .null)")
-        expectEqual(out["surrogate"]?.stringValue?.hasPrefix("line 1: "), true)
-        // a chain of 500 modules, the first the deepest user: a level for each, with no recursion
-        expectEqual(out["chain"], [499, 0], "levels of a reverse-ordered chain")
-        expectEqual(out["levels"], ["A": 1, "B": 1, "C": 0, "D": 2], "a cycle shares a level")
-    },
-
-    test("a lens's own modules come first and the skill's are not importable by name; the clock a lens reads keeps isinstance true and every reading of it moves; Repo keeps no root to read") {
-        let folder = try scratchFolder("lens-imports")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = try makeRepository("repo", in: folder)
-        let scan = folder.appendingPathComponent("scan.json"), digest = folder.appendingPathComponent("digest.json")
-        try write(tinyModel, to: scan)
-        let lens = folder.appendingPathComponent("lens/lens.py")
-        try write("WHO = \"the lens's own settings\"\n", to: folder.appendingPathComponent("lens/settings.py"))
-        try write("""
-            import datetime, importlib.util, json, settings
-            from lenskit import default
-
-            def digest(scan, repo):
-                d = default.digest(scan, repo)
-                said = {
-                    "who": settings.WHO,
-                    "skill_modules": [name for name in ("stamp", "run", "child", "ingest", "scanners") if importlib.util.find_spec(name) is not None],
-                    "has_root": hasattr(repo, "root"),
-                    "now_is_date": isinstance(datetime.datetime.now(), datetime.date),
-                    "today_is_date": isinstance(datetime.date.today(), datetime.date),
-                    "today_is_datetime": isinstance(datetime.date.today(), datetime.datetime),
-                    "made_is_datetime": isinstance(datetime.datetime(2020, 1, 2), datetime.datetime),
-                    "made_is_date": isinstance(datetime.datetime(2020, 1, 2), datetime.date),
-                    "sum_is_datetime": isinstance(datetime.datetime.now() + datetime.timedelta(days=1), datetime.datetime),
-                    "subclass": issubclass(datetime.datetime, datetime.date),
-                    "json": json.dumps({"t": datetime.datetime(2020, 1, 2, 3, 4, 5)}, default=lambda o: o.isoformat() if isinstance(o, datetime.date) else None),
-                }
-                d["said"] = json.dumps(said, sort_keys=True)
-                return d
-            """, to: lens)
-        let made = try lensRunner(repo, scan: scan, digest: digest, lens: lens)
-        expectEqual(made.status, 0, made.output + made.error)
-        let said = try JSON(text: try require(try json(digest)["said"]?.stringValue, "what the lens said"))
-        expectEqual(said["who"], "the lens's own settings", "a helper beside the lens, named as one of the skill's, is the lens's")
-        expectEqual(said["skill_modules"], [], "and none of the skill's is importable by its name")
-        expectEqual(said["has_root"], false, "Repo has no root to read")
-        for key in ["now_is_date", "today_is_date", "made_is_datetime", "made_is_date", "sum_is_datetime", "subclass"] {
-            expectEqual(said[key], true, "\(key)")
-        }
-        expectEqual(said["today_is_datetime"], false)
-        expectEqual(said["json"], #"{"t": "2020-01-02T03:04:05"}"#, "a default= hook that asks isinstance(x, datetime.date) is called")
-        // settings.py is a program, not a module: importing it runs nothing
-        let imported = try run(URL(fileURLWithPath: python), ["-s", "-B", "-c", "import sys; sys.path.insert(0, \(pythonString(ingestSkill().path))); import settings; print(settings.KEYS[0])"])
-        expectEqual(imported.status, 0, imported.output + imported.error)
-        expectEqual(imported.output.trimmingCharacters(in: .whitespacesAndNewlines), "scanner")
-    },
-
-    test("a codebase of 30,000 files in 2,000 modules is drawn in the time a person waits: no board looks at every file or every module to find its own") {
-        let folder = try scratchFolder("many-modules")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let repo = try makeRepository("repo", in: folder)
-        let scan = folder.appendingPathComponent("scan.json"), digest = folder.appendingPathComponent("digest.json")
-        try write(bigScan(modules: 2000, folders: 1, subfolders: 1, files: 15), to: scan)
-        let made = try lensRunner(repo, scan: scan, digest: digest)
-        expectEqual(made.status, 0, made.output + made.error)
-        expectEqual(try json(digest)["nodes"]?.arrayValue?.filter { $0["kind"] == "subboard" }.count, 2000, "a card for each module")
-        let cpu = made.output.range(of: #"[0-9.]+(?= s of cpu)"#, options: .regularExpression).flatMap { Double(made.output[$0]) }
-        expect((cpu ?? 1000) < 12, "the lens ran twice in \(cpu.map { "\($0)" } ?? "an unknown time") s of cpu (it took ten times that, a run, when each module looked through every file): \(made.output)")
-    },
-
-    test("a repository's long command is stopped with the run: a signal frees the lock at once, and nothing it started is left running") {
-        let folder = try scratchFolder("stopped")
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let cache = folder.appendingPathComponent("cache")
-        let (script, log) = try stubbedSkill(in: folder)
-        let repo = try makeRepository("repo", in: folder)
-        let kept = try cacheFolder(of: repo, cache: cache, with: script)
-        let begun = folder.appendingPathComponent("begun")
-        try write(#"{"scanner": "scip", "scip": "echo made > {index}", "prepare": "echo begun > \#(begun.path); sleep 47"}"#, to: repo.appendingPathComponent(".canvas/ingest.json"))
-        let slow = Process()
-        slow.executableURL = script
-        slow.arguments = [repo.path]
-        slow.environment = ProcessInfo.processInfo.environment.merging(environment(cache: cache, extra: ["STUB_LOG": log.path])) { _, new in new }
-        try slow.run()
-        defer { if slow.isRunning { slow.terminate() } }
-        let waitUntil = Date(timeIntervalSinceNow: 90)
-        while !FileManager.default.fileExists(atPath: begun.path), Date() < waitUntil { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
-        expect(FileManager.default.fileExists(atPath: begun.path), "prepare began")
-        expect(FileManager.default.fileExists(atPath: kept.appendingPathComponent("lock").path), "the lock is held while it runs")
-        let signalled = Date()
-        // the signal goes to ingest alone (Process.terminate reaches what it waits for too, as a terminal's does)
-        _ = try run(URL(fileURLWithPath: "/bin/kill"), ["-TERM", "\(slow.processIdentifier)"])
-        let deadline = Date(timeIntervalSinceNow: 30)
-        while slow.isRunning, Date() < deadline { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02)) }
-        expect(!slow.isRunning && Date().timeIntervalSince(signalled) < 15, "ingest ended at the signal, not when prepare did: \(Date().timeIntervalSince(signalled)) s")
-        if !slow.isRunning { expectEqual(slow.terminationStatus, 143) }
-        expect(!FileManager.default.fileExists(atPath: kept.appendingPathComponent("lock").path), "the lock is freed")
-        let left = try run(URL(fileURLWithPath: "/usr/bin/pgrep"), ["-f", "sleep 47"])
-        expectEqual(left.status, 1, "the sleep prepare started is gone: \(left.output)")
-    },
 ])
 
 /// A package whose product is a list of plugins, written as this repository's is: the table of what ships, a module a plugin is in

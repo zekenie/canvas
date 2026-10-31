@@ -13,9 +13,14 @@ import Validation
 // `:misfit`, in Types: an arrow whose ends do not fit its relationship type, from the one `fit` the check calls.
 // Over bonds.
 
-/// An editor with bonds and the query engine.
+@MainActor private var sharedQueryRegistry: Registry?
+
+/// An editor with bonds and the query engine. With no more plugins it is over one registry for them all, as `bondEditor` is.
 @MainActor func queryBondEditor(file: CanvasFile? = nil, more: [any CanvasPlugin] = []) throws -> CanvasEditor {
-    try bondEditor(file: file, more: [QueriesPlugin(), TitleQueriesPlugin(), ValidationQueriesPlugin(), TypeQueriesPlugin()] + more)
+    let queries: [any CanvasPlugin] = [QueriesPlugin(), TitleQueriesPlugin(), ValidationQueriesPlugin(), TypeQueriesPlugin()]
+    guard more.isEmpty else { return try bondEditor(file: file, more: queries + more) }
+    if sharedQueryRegistry == nil { sharedQueryRegistry = try bondRegistry(more: queries) }
+    return bondEditor(registry: try require(sharedQueryRegistry), file: file ?? CanvasFile(root: CanvasDocument()))
 }
 
 /// The shapes a query matches, as a set.

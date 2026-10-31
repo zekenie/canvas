@@ -56,22 +56,6 @@ let pillAntiAliasing = 64
     return frames
 }
 
-/// The largest difference in any channel between two bitmaps within a rect of view points, but
-/// for the pixels in `excluded`.
-@MainActor func largestDifference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in rect: CGRect, excluding excluded: [CGRect], scale: CGFloat) -> Int {
-    var p = [Int](repeating: 0, count: 4), q = [Int](repeating: 0, count: 4)
-    var largest = 0
-    for y in Int(rect.minY * scale)..<Int(rect.maxY * scale) {
-        for x in Int(rect.minX * scale)..<Int(rect.maxX * scale) {
-            let point = CGPoint(x: (CGFloat(x) + 0.5) / scale, y: (CGFloat(y) + 0.5) / scale)
-            guard !excluded.contains(where: { $0.contains(point) }) else { continue }
-            a.getPixel(&p, atX: x, y: y); b.getPixel(&q, atX: x, y: y)
-            largest = max(largest, zip(p, q).map { abs($0 - $1) }.max() ?? 0)
-        }
-    }
-    return largest
-}
-
 /// Whether two rects are the same to within `tolerance` points on every edge.
 func isClose(_ a: CGRect, _ b: CGRect, within tolerance: CGFloat) -> Bool {
     abs(a.minX - b.minX) <= tolerance && abs(a.maxX - b.maxX) <= tolerance

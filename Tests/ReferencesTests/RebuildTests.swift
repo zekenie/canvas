@@ -60,9 +60,9 @@ private func answerOf(_ status: ReferenceStatus?) -> String {
     }
 }
 
-@MainActor let rebuildTests = Suite("Answers kept as commits come", [
+/// The seeded run of commits, for some of its seeds: each seed makes and changes its own editor, so they are split over suites that run side by side.
+@MainActor private func seededRun(_ seeds: [UInt64]) -> TestCase {
     test("seeded commits, undo, redo and boards: once settled, the graph and every answer equal an editor's that works them out afresh") {
-        let seeds: [UInt64] = [1, 2, 3, 5, 8, 13]
         for seed in seeds {
             var random = Seeded(state: seed)
             let h = try referenceHarness([PocketsPlugin(), pocketTitles])
@@ -147,5 +147,9 @@ private func answerOf(_ status: ReferenceStatus?) -> String {
                 try compare(h, seed: seed, step: step, what: what)
             }
         }
-    },
-])
+    }
+}
+
+@MainActor let rebuildSeeds1Tests = Suite("Answers kept as commits come, seeds 1 and 2", [seededRun([1, 2])])
+@MainActor let rebuildSeeds3Tests = Suite("Answers kept as commits come, seeds 3 and 5", [seededRun([3, 5])])
+@MainActor let rebuildSeeds8Tests = Suite("Answers kept as commits come, seeds 8 and 13", [seededRun([8, 13])])

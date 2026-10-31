@@ -59,33 +59,11 @@ private func box(_ x: Int) -> AnyShapeRecord {
     for (place, record) in list.enumerated() { expectEqual(made.index(of: record.id), place, "\(note): made again, \(place)") }
 }
 
-@MainActor let shapeStackTests = Suite("Shape stack", [
-    test("a board of any size, around the edges between chunks, reads as the list it was made from") {
-        for count in 0...41 {
-            let list = (0..<count).map(box)
-            let document = CanvasDocument(shapes: list)
-            expectEqual(document.shapes.map(\.id), list.map(\.id), "\(count) shapes")
-            expectReadsAsList(document, "\(count) shapes")
-            expectEqual(document.index(of: ShapeID()), nil)
-            expectEqual(document[ShapeID()], nil)
-            expect(document == CanvasDocument(shapes: list), "\(count) shapes, equal to another made of them")
-            if count > 1 {
-                var swapped = list
-                swapped.swapAt(0, count - 1)
-                expect(document != CanvasDocument(shapes: swapped), "\(count) shapes, not equal to a board in another order")
-                expect(document != CanvasDocument(shapes: Array(list.dropLast())), "\(count) shapes, not equal to one with fewer")
-            }
-            if count > 0 {
-                var changed = list
-                changed[count / 2].box = CGRect(x: 1, y: 2, width: 3, height: 4)
-                expect(document != CanvasDocument(shapes: changed), "\(count) shapes, not equal to one with a shape changed")
-            }
-            // The stack the document keeps, made again from itself, keeps its keys and its places.
-            expectEqual(CanvasDocument(shapes: document.shapes), document, "\(count) shapes made from the stack")
-        }
-    },
+/// The random run of commits, for some of its seeds (each with the number of shapes its board starts with): a seed makes and changes its
+/// own board, so they are split over suites that run side by side.
+@MainActor private func randomRun(_ runs: [(UInt64, Int)]) -> TestCase {
     test("a random run of commits leaves the board a plain list, and each undo and redo puts it back exactly") {
-        for (seed, start) in [(1, 0), (2, 1), (3, 4), (4, 5), (5, 9), (6, 30)] as [(UInt64, Int)] {
+        for (seed, start) in runs {
             var random = SeededGenerator(seed: seed)
             let h = try EditorHarness(plugins: [FixturesPlugin()], document: CanvasDocument(shapes: (0..<start).map(box)))
             var gone: Set<ShapeID> = []
@@ -187,6 +165,37 @@ private func box(_ x: Int) -> AnyShapeRecord {
             while h.editor.canRedo { h.editor.redo() }
             expectEqual(records(), last, "seed \(seed): everything redone")
             expectReadsAsList(h.editor.document, "seed \(seed): the end")
+        }
+    }
+}
+
+@MainActor let shapeStackSeeds1Tests = Suite("Shape stack, seeds 1 and 2", [randomRun([(1, 0), (2, 1)])])
+@MainActor let shapeStackSeeds3Tests = Suite("Shape stack, seeds 3 and 4", [randomRun([(3, 4), (4, 5)])])
+@MainActor let shapeStackSeeds5Tests = Suite("Shape stack, seeds 5 and 6", [randomRun([(5, 9), (6, 30)])])
+
+@MainActor let shapeStackTests = Suite("Shape stack", [
+    test("a board of any size, around the edges between chunks, reads as the list it was made from") {
+        for count in 0...41 {
+            let list = (0..<count).map(box)
+            let document = CanvasDocument(shapes: list)
+            expectEqual(document.shapes.map(\.id), list.map(\.id), "\(count) shapes")
+            expectReadsAsList(document, "\(count) shapes")
+            expectEqual(document.index(of: ShapeID()), nil)
+            expectEqual(document[ShapeID()], nil)
+            expect(document == CanvasDocument(shapes: list), "\(count) shapes, equal to another made of them")
+            if count > 1 {
+                var swapped = list
+                swapped.swapAt(0, count - 1)
+                expect(document != CanvasDocument(shapes: swapped), "\(count) shapes, not equal to a board in another order")
+                expect(document != CanvasDocument(shapes: Array(list.dropLast())), "\(count) shapes, not equal to one with fewer")
+            }
+            if count > 0 {
+                var changed = list
+                changed[count / 2].box = CGRect(x: 1, y: 2, width: 3, height: 4)
+                expect(document != CanvasDocument(shapes: changed), "\(count) shapes, not equal to one with a shape changed")
+            }
+            // The stack the document keeps, made again from itself, keeps its keys and its places.
+            expectEqual(CanvasDocument(shapes: document.shapes), document, "\(count) shapes made from the stack")
         }
     },
     test("a copy of a board is not changed by a commit to the board, and holds the board as it was") {

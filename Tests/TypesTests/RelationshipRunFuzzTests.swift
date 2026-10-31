@@ -52,7 +52,7 @@ private func described(_ graph: RelationshipGraph) -> [String] {
 
 @MainActor private func fuzz(seed: UInt64, holds: Set<String>, manyStands: Bool) throws -> String? {
     var rng = Mix(state: seed)
-    let editor = try bondEditor()
+    let editor = bondEditor(registry: try sharedBondRegistry(), file: CanvasFile(root: CanvasDocument()))
     var shapes: [ShapeID] = []       // slips: types, relationship types, notes
     var relays: [ShapeID] = []
     var bonds: [ShapeID] = []
@@ -165,7 +165,7 @@ private func described(_ graph: RelationshipGraph) -> [String] {
             relationsInRun[id] = relationships.relations(of: id, in: reading).map { "\(short($0.arrow)) \(short($0.type)) \($0.side) \($0.far.reading)" }.sorted()
         }
     }
-    let fresh = try bondEditor(file: editor.file)
+    let fresh = bondEditor(registry: try sharedBondRegistry(), file: editor.file)
     let freshGraph = try require(fresh.relationships).graph
     var expected = described(freshGraph)
     // With no relationship type in the file the run keeps the committed graph (its fast path): nothing of a relationship

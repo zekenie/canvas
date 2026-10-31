@@ -15042,8 +15042,10 @@ command is an anchor of nothing (`arranged` takes a nil one, a thing of its own)
 ## Testing plugins
 
 Tests are plain executables built on a small macro-free kit (swift-testing's macros don't work with
-this toolchain, and there's no XCTest). `./test.sh` builds and runs them all. `TEST_FILTER=substring
-./test.sh` runs the matching tests. A test that would open a real menu (which shows on screen, even
+this toolchain, and there's no XCTest). `./test.sh` builds and runs them all, a long executable
+as several processes that each run a share of its suites, and leaves out one that passed while it
+and what it reads are as they were (`TEST_ALL=1` runs it); `./test.sh PatchesTests` builds and runs
+only that target. `TEST_FILTER=substring ./test.sh` runs the matching tests. A test that would open a real menu (which shows on screen, even
 from an unshown window) is opt-in: `TEST_UI_MENUS=1 ./test.sh`. There are two: BoardsTests' check of
 the path's "…" menu, and CompositionTests' check that AppKit gives a Control-click to the context
 menu before `mouseDown`. [Your first plugin](#your-first-plugin) sets up a test target. A test that

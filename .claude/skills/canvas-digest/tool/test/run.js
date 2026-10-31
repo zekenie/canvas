@@ -1,6 +1,7 @@
 // Unit tests:  jsc test/run.js     or     node test/run.js
 // Classic script (import() finds ../lib from here in both engines). No app, no sockets, no pasteboard, no network.
 var isNode = typeof process !== 'undefined' && process.versions && process.versions.node;
+var RUN_ARGS = typeof arguments !== 'undefined' ? Array.prototype.slice.call(arguments) : [];   // jsc's, after `--`
 var fsr = isNode ? require('fs') : null;
 var io = {
   readText: function (p) { return isNode ? fsr.readFileSync(p, 'utf8') : readFile(p); },
@@ -11,7 +12,15 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   var base = util.TOOL_DIR;
   var elk = await elkm.loadElk(io, base);
   var results = [], failed = 0;
+  // `jsc test/run.js -- K/N` runs the tests dealt to part K of N (the Kth, the K+Nth, ... of them in order, counting from 0), so a caller can run the parts side by side;
+  // the part's last line says how many of how many it ran. Without it, every test runs.
+  var partArg = isNode ? process.argv[2] : RUN_ARGS[0];
+  var part = partArg ? { k: Number(partArg.split('/')[0]), n: Number(partArg.split('/')[1]) } : null;
+  var defined = 0;
   async function test(name, fn) {
+    var mine = !part || defined % part.n === part.k;
+    defined++;
+    if (!mine) return;
     try { await fn(); io.print('ok   ' + name); results.push(name); }
     catch (e) { failed++; io.print('FAIL ' + name + ': ' + (e && e.message ? e.message : e)); }
   }
@@ -2238,19 +2247,20 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     for (var i = 0; i < text.length; i++) { var c = text.charCodeAt(i); a = Math.imul(a ^ c, 0x01000193) >>> 0; b = Math.imul(b ^ c, 0x85ebca6b) >>> 0; }
     return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0');
   };
-  await test('a digest whose titles are all unique and that has no ids is planned as it was: the same plan and the same scripts, byte for byte, on every fixture', async function () {
-    var names = Object.keys(BEFORE);
-    for (var i = 0; i < names.length; i++) {
-      var d = fixture(names[i]);
-      eq(hashOf(sizes.measureScript(model.buildModel(d))), BEFORE[names[i]].measure, names[i] + ': the measure script');
+  // one test for each fixture, so the parts a run is dealt into (below) can run them apart
+  var BEFORE_NAMES = Object.keys(BEFORE);
+  for (var bi = 0; bi < BEFORE_NAMES.length; bi++) {
+    await test('a digest whose titles are all unique and that has no ids is planned as it was: the same plan and the same scripts, byte for byte, on every fixture (' + BEFORE_NAMES[bi] + ')', async function () {
+      var name = BEFORE_NAMES[bi], d = fixture(name);
+      eq(hashOf(sizes.measureScript(model.buildModel(d))), BEFORE[name].measure, name + ': the measure script');
       var sets = { plain: {}, into: { into: 'Map' }, off: { promote: false } };
       for (var set in sets) {
         var r = await planOf(d, sets[set]), text = JSON.stringify(r.plan, null, 1);
         r.runs.slice().sort(function (x, y) { return x.name < y.name ? -1 : 1; }).forEach(function (run) { text += '\u0000' + run.name + '\u0000' + run.text; });
-        eq(hashOf(text), BEFORE[names[i]][set], names[i] + ' (' + set + '): plan.json and the scripts');
+        eq(hashOf(text), BEFORE[name][set], name + ' (' + set + '): plan.json and the scripts');
       }
-    }
-  });
+    });
+  }
 
   await test('check: a title is unique among the nodes in one container, and may repeat in two; an id is unique; a reference names one node by its id, or by its title when only one has it', async function () {
     var node = function (title, extra) { return Object.assign({ title: title }, extra || {}); };
@@ -2664,6 +2674,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(both.takes.length, 13, 'the subboard, and the shapes of the last');
   });
 
+  if (part) io.print('part ' + part.k + ' of ' + part.n + ': ' + (results.length + failed) + ' of ' + defined + ' tests');
   io.print(results.length + ' passed, ' + failed + ' failed');
   if (failed) throw new Error('tests failed');
 }).catch(function (e) { io.print('ERROR ' + (e && e.stack ? e.stack : e)); setTimeout(function () { throw e; }, 0); });

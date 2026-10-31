@@ -280,17 +280,35 @@ private func isByDesign(_ message: String) -> Bool {
     return Int(try require(JSON(text: answer.output)["count"]?.numberValue))
 }
 
-@MainActor let digestTests = Suite("canvas-digest: the skill's tool under jsc, and `digest all` against the app's command server", [
-    test("the tool's unit tests pass under jsc") {
-        let result = try run(URL(fileURLWithPath: jsc), [skillURL("tool/test/run.js").path], timeout: 280)
-        expectEqual(result.status, 0, result.output + result.error)
-        let failures = result.output.split(separator: "\n").filter { $0.hasPrefix("FAIL") || $0.hasPrefix("ERROR") }
-        expectEqual(failures.map(String.init), [], "no test failed")
-        let tally = result.output.split(separator: "\n").last { $0.contains(" passed, ") }.map(String.init) ?? ""
-        expect(tally.hasSuffix(" passed, 0 failed"), "the tally: \(tally)")
-        expect((Int(tally.split(separator: " ").first ?? "") ?? 0) >= 30, "the tests ran: \(tally)")
-    },
+/// The tool's unit tests (`tool/test/run.js`) run in parts, each its own suite, so that a run can deal them to processes side by side: part K of
+/// N runs every Nth test from the Kth (the script says how many of how many it ran), and the parts together are all of them.
+private let toolTestParts = 8
 
+@MainActor let digestToolTests: [Suite] = (0..<toolTestParts).map { part in
+    Suite("canvas-digest: the tool's unit tests under jsc, part \(part + 1) of \(toolTestParts)", [
+        test("the tool's unit tests pass under jsc") {
+            let result = try run(URL(fileURLWithPath: jsc), [skillURL("tool/test/run.js").path, "--", "\(part)/\(toolTestParts)"], timeout: 280)
+            expectEqual(result.status, 0, result.output + result.error)
+            let failures = result.output.split(separator: "\n").filter { $0.hasPrefix("FAIL") || $0.hasPrefix("ERROR") }
+            expectEqual(failures.map(String.init), [], "no test failed")
+            let tally = result.output.split(separator: "\n").last { $0.contains(" passed, ") }.map(String.init) ?? ""
+            expect(tally.hasSuffix(" passed, 0 failed"), "the tally: \(tally)")
+            // the part ran every Nth of the tests the script defines, and there are at least as many as before the parts were made
+            let said = result.output.split(separator: "\n").last { $0.hasPrefix("part ") }.map(String.init) ?? ""
+            let numbers = said.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }       // K, N, ran, defined
+            expectEqual(numbers.count, 4, "the part's own line: \(said)")
+            if numbers.count == 4 {
+                expectEqual(numbers[0], part)
+                expectEqual(numbers[1], toolTestParts)
+                expectEqual(numbers[2], (numbers[3] - part + toolTestParts - 1) / toolTestParts, "every Nth test: \(said)")
+                expectEqual(Int(tally.split(separator: " ").first ?? ""), numbers[2], "and each passed: \(tally)")
+                expect(numbers[3] >= 30, "the tests ran: \(said)")
+            }
+        },
+    ])
+}
+
+@MainActor let digestSmallTests = Suite("canvas-digest: digest all on Acme, a tree, arrows at frames and a spine", [
     test("digest all on Acme: into a subboard of an open board, every shape and pill on its plan, nothing warned, only what the run made public, and what points at a hub answers as it does with nothing promoted") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -451,6 +469,9 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(publicTitles(in: board.editor, digestRoot: "Spine map"), Set(report["public"]?.arrayValue?.compactMap(\.stringValue) ?? []))
     },
 
+])
+
+@MainActor let digestFlatTests = Suite("canvas-digest: digest all on a flat graph of 60 notes", [
     test("digest all on a flat graph of 60 notes, into a new file: packed, hubs promoted, every shape and pill on its plan") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -490,6 +511,9 @@ private func isByDesign(_ message: String) -> Bool {
         }
     },
 
+])
+
+@MainActor let digestTypedTests = Suite("canvas-digest: digests of types", [
     test("digest all on a typed digest: types and their ends in one script, the notes of a type after it, every arrow the relationship it is; warnings a typed drawing gives are reported and fail nothing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -746,6 +770,9 @@ private func isByDesign(_ message: String) -> Bool {
         expect((sizes["Workflow"]?.last ?? 0) > 200, "a type with fields and ends grows past the least: \(sizes)")
     },
 
+])
+
+@MainActor let digestRefusalTests = Suite("canvas-digest: what the driver refuses or stops on before it draws", [
     test("a script that is not the plan stops the run before it draws, naming the shape; what was drawn before it stays") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -946,6 +973,9 @@ private func isByDesign(_ message: String) -> Bool {
         expect(kind.output.contains("hexagon"), kind.output)
     },
 
+])
+
+@MainActor let digestReplaceTests = Suite("canvas-digest: drawn as the board in front, then again in its place", [
     test("digest drawn as the empty board in front, then again in its place (--replace), never among shapes it didn't make") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -1025,7 +1055,36 @@ private func isByDesign(_ message: String) -> Bool {
         let removed = try canvas(server, ["draw", #"delete edge "Runbook" -> "Web app""#, "--board", "\(board.number)"])
         expectEqual(removed.status, 0, removed.error)
         try drawnAgain("over the last drawing, undone back")
+    },
+])
 
+@MainActor let digestReadyTests = Suite("canvas-digest: ready on a board holding the drawing", [
+    test("digest ready on a board holding the drawing: what the take-back would be refused for, a window inside the drawing, a title the file has, a folder that is not there") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("replace")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let out = folder.appendingPathComponent("tree")
+
+        // the board in front is empty: the digest is drawn as it
+        let first = try runDigest("all", "tree", server: server, target: ["--board", "front", "--replace"], out: out)
+        expectEqual(first.process.status, 0, first.process.output + first.process.error)
+        let drawn = board.editor.file.shapeCount
+        expect(drawn > 0, "drawn")
+
+        @MainActor func drawnAgain(_ label: String) throws {
+            let again = try runDigest("all", "tree", server: server, target: ["--board", "front", "--replace"], out: out)
+            expectEqual(again.process.status, 0, "\(label): \(again.process.output)\(again.process.error)")
+            expect(again.process.output.contains("replace: took back the last drawing") && again.process.output.contains("verify ok"), "\(label): \(again.process.output)")
+            expectEqual(board.editor.file.shapeCount, drawn, "\(label): the same drawing, once")
+            expectEqual(try json(out.appendingPathComponent("drawn.json"))["shapes"]?.intValue, drawn, "\(label): a whole drawing's record has its count again")
+            expect(!FileManager.default.fileExists(atPath: out.appendingPathComponent("drawn.prev.json").path), "\(label): and the last one's record is let go")
+        }
         // ready says before any work what the take-back would be refused for: a shape of the drawing the user locked
         let locked = try canvas(server, ["draw", #"sticky-note "Gateway" locked: true"#, "--board", "\(board.number)"])
         expectEqual(locked.status, 0, locked.error)
@@ -1044,33 +1103,6 @@ private func isByDesign(_ message: String) -> Bool {
         expect(ready.process.output.contains("shows the board's root now") && ready.process.output.contains("which the new one replaces"), ready.process.output)
         expectEqual(board.editor.file.shapeCount, drawn, "ready takes nothing back")
         try drawnAgain("from a board inside the drawing")
-        // a canvas, or an app, from before the skill's newest command is said by ready, not at the measuring step: here a canvas
-        // that answers everything but measure
-        let old = folder.appendingPathComponent("canvas-old")
-        try "#!/bin/sh\nif [ \"$1\" = measure ]; then echo 'unknown command: measure' >&2; exit 2; fi\nexec \"\(builtExecutable("CanvasCLI").path)\" \"$@\"\n".write(to: old, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: old.path)
-        let stale = try run(skillURL("digest"), ["ready", fixture("tree").path, "--board", "front", "--replace", "--out", out.path],
-                            environment: ["CANVAS_CLI": old.path, "CANVAS_SOCKET": server.path])
-        expectEqual(stale.status, 1, stale.output)
-        expect(stale.error.contains("older than this skill needs") && stale.error.contains("unknown command: measure"), stale.error)
-        // a drawing into a subboard is drawn again in its place too, from a window that shows the subboard's own board: the app deletes
-        // no shape that holds the board shown, and the subboard is on the root, so the root is shown first
-        do {
-            let second = windowedBoard()
-            defer { second.close() }
-            let other = try startCommandServer(boards: [second], frontmost: second)
-            defer { other.stop() }
-            let into = folder.appendingPathComponent("into")
-            let made = try runDigest("all", "tree", server: other, target: ["--board", "front", "--into", "Map", "--replace"], out: into)
-            expectEqual(made.process.status, 0, made.process.output + made.process.error)
-            let held = second.editor.file.shapeCount
-            let opened = try canvas(other, ["show", "Map", "--board", "\(second.number)"])
-            expectEqual(opened.status, 0, opened.error)
-            let remade = try runDigest("all", "tree", server: other, target: ["--board", "front", "--into", "Map", "--replace"], out: into)
-            expectEqual(remade.process.status, 0, remade.process.output + remade.process.error)
-            expect(remade.process.output.contains("shows the board's root now") && remade.process.output.contains("replace: took back the last drawing") && remade.process.output.contains("verify ok"), remade.process.output)
-            expectEqual(second.editor.file.shapeCount, held, "the same drawing, once")
-        }
         // a subboard titled as a shape of the file, and a new file in a folder that isn't there, are said by ready too
         let titled = try runDigest("ready", "tree", server: server, target: ["--board", "\(board.number)", "--into", "gateway"], out: folder.appendingPathComponent("titled"))
         expectEqual(titled.process.status, 1, titled.process.output)
@@ -1078,6 +1110,27 @@ private func isByDesign(_ message: String) -> Bool {
         let nowhere = try runDigest("ready", "tree", server: server, target: ["--new-file", folder.appendingPathComponent("no/such/board").path], out: folder.appendingPathComponent("nowhere"))
         expectEqual(nowhere.process.status, 1, nowhere.process.output)
         expect(nowhere.process.error.contains("there's no folder"), nowhere.process.error)
+    },
+])
+
+@MainActor let digestCrowdedTests = Suite("canvas-digest: a drawing is not replaced over what the user drew", [
+    test("a drawing is not replaced over what the user drew on its board: an arrow between its notes, a shape titled as one of them but for its case, and a board that isn't empty without --replace") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("replace")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let out = folder.appendingPathComponent("tree")
+
+        // the board in front is empty: the digest is drawn as it
+        let first = try runDigest("all", "tree", server: server, target: ["--board", "front", "--replace"], out: out)
+        expectEqual(first.process.status, 0, first.process.output + first.process.error)
+        let drawn = board.editor.file.shapeCount
+        expect(drawn > 0, "drawn")
 
         // an arrow the user drew between two of the digest's notes: a shape more than the drawing made, so nothing is taken back or drawn
         let arrow = try canvas(server, ["draw", #"edge "Runbook" -> "Web app""#, "--board", "\(board.number)"])
@@ -1105,6 +1158,9 @@ private func isByDesign(_ message: String) -> Bool {
         expect(bare.process.error.contains("isn't empty") && bare.process.error.contains("--into TITLE"), bare.process.error)
         expectEqual(board.editor.file.shapeCount, withMine, "nothing drawn")
     },
+])
+
+@MainActor let digestRecordTests = Suite("canvas-digest: drawing records, and a drawing replaced from a subboard's window", [
     test("drawing records (--records): a file in the folder that is no record is said once and skipped, and the file's titles are asked for only when the path does not tell the record") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -1193,6 +1249,54 @@ private func isByDesign(_ message: String) -> Bool {
         }
     },
 
+    test("a canvas, or an app, from before the skill's newest command is said by ready, not at the measuring step") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("stale")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let out = folder.appendingPathComponent("tree")
+        // here a canvas that answers everything but measure
+        let old = folder.appendingPathComponent("canvas-old")
+        try "#!/bin/sh\nif [ \"$1\" = measure ]; then echo 'unknown command: measure' >&2; exit 2; fi\nexec \"\(builtExecutable("CanvasCLI").path)\" \"$@\"\n".write(to: old, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: old.path)
+        let stale = try run(skillURL("digest"), ["ready", fixture("tree").path, "--board", "front", "--replace", "--out", out.path],
+                            environment: ["CANVAS_CLI": old.path, "CANVAS_SOCKET": server.path])
+        expectEqual(stale.status, 1, stale.output)
+        expect(stale.error.contains("older than this skill needs") && stale.error.contains("unknown command: measure"), stale.error)
+    },
+    test("a drawing into a subboard is drawn again in its place, from a window that shows the subboard's own board") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let folder = try scratchFolder("replace-into")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // a drawing into a subboard is drawn again in its place too, from a window that shows the subboard's own board: the app deletes
+        // no shape that holds the board shown, and the subboard is on the root, so the root is shown first
+        do {
+            let second = windowedBoard()
+            defer { second.close() }
+            let other = try startCommandServer(boards: [second], frontmost: second)
+            defer { other.stop() }
+            let into = folder.appendingPathComponent("into")
+            let made = try runDigest("all", "tree", server: other, target: ["--board", "front", "--into", "Map", "--replace"], out: into)
+            expectEqual(made.process.status, 0, made.process.output + made.process.error)
+            let held = second.editor.file.shapeCount
+            let opened = try canvas(other, ["show", "Map", "--board", "\(second.number)"])
+            expectEqual(opened.status, 0, opened.error)
+            let remade = try runDigest("all", "tree", server: other, target: ["--board", "front", "--into", "Map", "--replace"], out: into)
+            expectEqual(remade.process.status, 0, remade.process.output + remade.process.error)
+            expect(remade.process.output.contains("shows the board's root now") && remade.process.output.contains("replace: took back the last drawing") && remade.process.output.contains("verify ok"), remade.process.output)
+            expectEqual(second.editor.file.shapeCount, held, "the same drawing, once")
+        }
+    },
+])
+
+@MainActor let digestRepeatTests = Suite("canvas-digest: a digest whose titles repeat", [
     test("a digest whose titles repeat, drawn into a subboard of a board that already holds shapes with those titles: every shape and pill on its plan, the board's own shapes untouched, each shape found by its path; drawn again in its place") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -1363,3 +1467,4 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(board.editor.file.shapeCount, drawn + 1, "nothing was taken back")
     },
 ])
+

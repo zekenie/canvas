@@ -68,9 +68,27 @@ private struct SplitMix: RandomNumberGenerator {
     return RelationChecks.note(rows: index.ruledRows(for: list.map(\.shape)), count: { index.relations(of: id, in: $0).count }, graph: index.graph)
 }
 
-/// How the kept index differs from one read afresh from the same file; nil when it does not.
-@MainActor private func difference(_ editor: CanvasEditor, bonds: [ShapeID]) throws -> String? {
-    let fresh = try require(try bondEditor(file: editor.file).relationships), kept = try require(editor.relationships)
+/// The registries the runs put their editors over, each made once for every step of every run: what a fresh read tests is the
+/// editor's indexes made from the file, and the plugins' registering is the same each time. The plain one is the editors that read
+/// a file afresh (and the runs that don't ask queries); the typed one adds the queries and the lock the typed runs use.
+@MainActor private var registries: [Bool: Registry] = [:]
+
+@MainActor private func registry(typed: Bool) throws -> Registry {
+    if !typed { return try sharedBondRegistry() }
+    if let known = registries[typed] { return known }
+    let made = try bondRegistry(more: typed ? [QueriesPlugin(), TitleQueriesPlugin(), ValidationQueriesPlugin(), TypeQueriesPlugin(), FreezingPlugin()] : [])
+    registries[typed] = made
+    return made
+}
+
+/// An editor opened on `file`, which reads it afresh.
+@MainActor private func readAfresh(_ file: CanvasFile) throws -> CanvasEditor {
+    bondEditor(registry: try registry(typed: false), file: file)
+}
+
+/// How the kept index differs from the one of `reader`, an editor opened on the same file; nil when it does not.
+@MainActor private func difference(_ editor: CanvasEditor, bonds: [ShapeID], reader: CanvasEditor) throws -> String? {
+    let fresh = try require(reader.relationships), kept = try require(editor.relationships)
     if kept.isActive != fresh.isActive { return "isActive \(kept.isActive) against \(fresh.isActive)" }
     for type in editor.types?.graph.relationshipTypes ?? [] where kept.graph.sides(of: type) != fresh.graph.sides(of: type) {
         return "the sides of \(type.rawValue.uuidString.prefix(4)): kept \(kept.graph.sides(of: type)) against fresh \(fresh.graph.sides(of: type))"
@@ -132,8 +150,7 @@ private struct SplitMix: RandomNumberGenerator {
 
 /// Every arrow of the run: the check of a fresh read of the file is the pure verdict, and what the editor's
 /// Validation holds for an arrow on the board shown is the same.
-@MainActor private func verdictDifference(_ editor: CanvasEditor, bonds: [ShapeID], notes: [ShapeID]) throws -> String? {
-    let fresh = try bondEditor(file: editor.file)
+@MainActor private func verdictDifference(_ editor: CanvasEditor, bonds: [ShapeID], notes: [ShapeID], fresh: CanvasEditor) throws -> String? {
     let checks = try require(fresh.fieldChecks)
     var misfits: Set<ShapeID> = []
     for id in bonds {
@@ -168,16 +185,24 @@ private struct SplitMix: RandomNumberGenerator {
         if !kept.isEmpty { needsKept += 1 }
         if kept != needs { return "Validation keeps \(kept) as what \(record.kind.rawValue) \(record.id.rawValue.uuidString.prefix(4)) still needs, the fresh check says \(needs)" }
     }
-    if editor.queries != nil {
-        let listed = Set(try queried(":incomplete", on: editor).rows.map(\.id)).intersection(notes)
+    // Both queries are asked at once: each waits a turn or two of the run loop for its answer.
+    let answers = try editor.queries.map { queries in
+        try awaitResult {
+            async let incomplete = queries.run(QueryRequest(":incomplete", limit: QueryRequest.every, properties: .none))
+            async let misfit = queries.run(QueryRequest("bond:misfit", limit: QueryRequest.every, properties: .none))
+            return try await (incomplete, misfit)
+        }
+    }
+    if let answers {
+        let listed = Set(answers.0.rows.map(\.id)).intersection(notes)
         let expected = needy
         if listed != expected {
             return ":incomplete lists \(listed.map { String($0.rawValue.uuidString.prefix(4)) }.sorted()), the pure verdict \(expected.map { String($0.rawValue.uuidString.prefix(4)) }.sorted())"
         }
     }
     // And the query: `:misfit` lists exactly the arrows the verdict calls a misfit, in the whole file.
-    if editor.queries != nil {
-        let listed = Set(try queried("bond:misfit", on: editor).rows.map(\.id)).intersection(bonds)
+    if let answers {
+        let listed = Set(answers.1.rows.map(\.id)).intersection(bonds)
         if listed != misfits {
             return ":misfit lists \(listed.map { String($0.rawValue.uuidString.prefix(4)) }.sorted()), the pure verdict \(misfits.map { String($0.rawValue.uuidString.prefix(4)) }.sorted())" }
     }
@@ -235,7 +260,7 @@ private func same(_ a: AnyShapeRecord?, _ b: AnyShapeRecord) -> Bool {
     let after = editor.file
     guard before.children == after.children, before.root != after.root else { return nil }
     let was = before.root, now = after.root
-    let shadow = try queryBondEditor(file: before, more: [FreezingPlugin()])
+    let shadow = bondEditor(registry: editor.registry, file: before)
     _ = shadow.validation?.results
     let registry = shadow.registry
     var outcome: (warned: Set<ShapeID>, rewritten: Set<ShapeID>)?
@@ -300,9 +325,12 @@ extension Dragged: Session {
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {}
 }
 
-@MainActor private func agree(seed: UInt64, steps: Int, privatePills: Bool, linking: Bool, typed: Bool = false, replaying: Bool = false) throws {
+/// One seeded run. With `checking` false the run makes its steps and counts what Validation keeps of what a shape still needs
+/// (`needsKept`) and compares nothing: the steps of a seed come out of its generator alone, so they are the steps a checking run
+/// of the same seed makes, and a count over many seeds can be made apart from the comparisons of each.
+@MainActor private func agree(seed: UInt64, steps: Int, privatePills: Bool, linking: Bool, typed: Bool = false, replaying: Bool = false, checking: Bool = true) throws {
     var rng = SplitMix(state: seed)
-    let editor = typed ? try queryBondEditor(more: [FreezingPlugin()]) : try bondEditor()
+    let editor = bondEditor(registry: try registry(typed: typed), file: CanvasFile(root: CanvasDocument()))
     var types: [ShapeID] = [], rels: [ShapeID] = [], notes: [ShapeID] = [], pills: [ShapeID] = [], bonds: [ShapeID] = []
     let pocket = ShapeID()
     editor.transact { $0.insert(AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 0, y: 3000, width: 100, height: 100))))) }
@@ -424,6 +452,10 @@ extension Dragged: Session {
                 log.append("rename")
             }
         }
+        if !checking {
+            for record in editor.document.shapes where editor.issues(record.id).contains(where: { $0.severity == .incomplete }) { needsKept += 1 }
+            continue
+        }
         let after = reading()
         let told = heard.changes[heardBefore...]
         if !told.contains(where: \.everything) {
@@ -443,11 +475,12 @@ extension Dragged: Session {
             }
         }
         before = after
-        if let difference = try difference(editor, bonds: bonds) {
+        let fresh = try readAfresh(editor.file)
+        if let difference = try difference(editor, bonds: bonds, reader: fresh) {
             expect(false, "seed \(seed) step \(step) after \(log.suffix(10)): \(difference)")
             return
         }
-        if typed, let difference = try verdictDifference(editor, bonds: bonds, notes: notes) {
+        if typed, let difference = try verdictDifference(editor, bonds: bonds, notes: notes, fresh: fresh) {
             expect(false, "seed \(seed) step \(step) after \(log.suffix(10)): \(difference)")
             return
         }
@@ -471,19 +504,9 @@ extension Dragged: Session {
     test("arrows of relationship types, through mark flips and their undo, lineage edits, a relationship type moved alone and moves across boards: Validation's kept issues are the pure verdict after every step, and what a run of the step's writes would warn of is what the commit broke") {
         for seed: UInt64 in [41, 42, 43, 44] { try agree(seed: seed, steps: 150, privatePills: false, linking: seed % 2 == 0, typed: true, replaying: true) }
     },
-    test("rules set and cleared on ends, end labels merged and split: a note's Needed and Only one rows, what the check, Validation's kept issues and `:incomplete` hold of them are the pure verdict of the file read afresh after every step, and a verdict that moved with the note as it was was named") {
-        // The first eight are also made again as runs: each step's writes, not yet committed, would warn of exactly the shapes
-        // it does not write whose kept issues gained one.
-        stepsReplayed = 0
-        stepsThatBroke = 0
-        needsKept = 0
-        for seed: UInt64 in ([61, 62, 63, 64, 65, 66, 67, 68] + (900..<930).map { UInt64($0) }) {
-            try agree(seed: seed, steps: 200, privatePills: seed % 3 == 0, linking: seed % 2 == 0, typed: true, replaying: seed < 70)
-        }
-        expect(stepsReplayed > 600, "\(stepsReplayed) steps were made again as a run")
-        expect(stepsThatBroke > 15, "\(stepsThatBroke) of them brought an issue to a shape they did not write")
-        expect(needsKept > 15, "\(needsKept) times Validation kept what a shape still needs")
-    },
+])
+
+@MainActor let relationshipAgreementPillsTests = Suite("The relationship index against the file, pills and deletions", [
     test("the same with pills that are not admitted, which the arrows read as an orange end") {
         for seed: UInt64 in [51, 52, 53] { try agree(seed: seed, steps: 150, privatePills: true, linking: seed == 52, typed: true, replaying: true) }
     },
@@ -491,5 +514,54 @@ extension Dragged: Session {
         leftBehind = 0
         for seed: UInt64 in [61, 62, 63, 64, 65, 66] { try agree(seed: seed, steps: 150, privatePills: false, linking: seed % 2 == 0, typed: true) }
         expect(leftBehind > 0, "a run judged an arrow its relationship type was taken from")
+    },
+])
+
+// The runs of rules set and cleared on ends and end labels merged and split: a note's Needed and Only one rows, what the check,
+// Validation's kept issues and `:incomplete` hold of them are the pure verdict of the file read afresh after every step, and a
+// verdict that moved with the note as it was was named. Thirty-eight seeds of 200 steps, in suites of their own so that they run
+// at once: the first eight are also made again as runs (each step's writes, not yet committed, would warn of exactly the shapes it
+// does not write whose kept issues gained one), the rest are compared alone, and what the three counts below say of the seeds
+// together is held by the tests at the end of each: the replays' by the eight that make them, and Validation's by a run of all
+// thirty-eight that compares nothing, since a count over seeds cannot be made across the suites a run is split into.
+
+private let replayedRuleSeeds: [UInt64] = Array(61...68)
+private let otherRuleSeeds: [UInt64] = (900..<930).map { UInt64($0) }
+
+@MainActor private func ruleRuns(_ seeds: [UInt64]) throws {
+    for seed in seeds {
+        try agree(seed: seed, steps: 200, privatePills: seed % 3 == 0, linking: seed % 2 == 0, typed: true, replaying: seed < 70)
+    }
+}
+
+@MainActor let relationshipRuleReplayTests = Suite("The relationship index against the file, rules replayed as runs", [
+    test("rules set and cleared on ends, end labels merged and split: a note's Needed and Only one rows, what the check, Validation's kept issues and `:incomplete` hold of them are the pure verdict of the file read afresh after every step, and a verdict that moved with the note as it was was named; each step is also made again as a run") {
+        stepsReplayed = 0
+        stepsThatBroke = 0
+        try ruleRuns(replayedRuleSeeds)
+        expect(stepsReplayed > 600, "\(stepsReplayed) steps were made again as a run")
+        expect(stepsThatBroke > 15, "\(stepsThatBroke) of them brought an issue to a shape they did not write")
+    },
+])
+
+@MainActor let relationshipRuleFirstTests = Suite("The relationship index against the file, rules, seeds 900 to 909", [
+    test("the same for seeds 900 to 909") { try ruleRuns(Array(otherRuleSeeds[0..<10])) },
+])
+
+@MainActor let relationshipRuleSecondTests = Suite("The relationship index against the file, rules, seeds 910 to 919", [
+    test("the same for seeds 910 to 919") { try ruleRuns(Array(otherRuleSeeds[10..<20])) },
+])
+
+@MainActor let relationshipRuleThirdTests = Suite("The relationship index against the file, rules, seeds 920 to 929", [
+    test("the same for seeds 920 to 929") { try ruleRuns(Array(otherRuleSeeds[20..<30])) },
+])
+
+@MainActor let relationshipRuleKeptTests = Suite("What Validation keeps a shape still needs, over the rules' seeds", [
+    test("over all thirty-eight seeds of the rules' runs, Validation kept what a shape still needs, for the comparisons not to be empty") {
+        needsKept = 0
+        for seed in replayedRuleSeeds + otherRuleSeeds {
+            try agree(seed: seed, steps: 200, privatePills: seed % 3 == 0, linking: seed % 2 == 0, typed: true, replaying: false, checking: false)
+        }
+        expect(needsKept > 15, "\(needsKept) times Validation kept what a shape still needs")
     },
 ])
