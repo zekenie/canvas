@@ -7658,26 +7658,43 @@ list is open, and one where the shape offers no command at all.
   list](#a-list-at-the-caret): a `CaretList` shown in a `CaretListWindow`, a child window that never
   takes the keyboard, under the `/` (240 wide, rows 24 tall, 8 shown, 4 below, "Commands" to
   VoiceOver). What's typed after the `/` is the query. An empty one lists every command the shape
-  offers, in the order offered; else the commands whose names it matches, ranked with
-  `FuzzyMatcher` (best tier first, then as offered), the matched characters in semibold; one
-  row, "No matches", when none does, with nothing highlighted. Each row is the command's name, with
-  its `argument` as the detail (VoiceOver reads "width, takes points"). The first is
+  offers, in the order offered; else the commands whose names it matches and what the commands take
+  that it matches, ranked with `FuzzyMatcher` (best tier first; a name before an argument of the same
+  tier; then as offered, and an argument in its own list's order), the matched characters in
+  semibold; one row, "No matches", when none does, with nothing highlighted. A command's row is its
+  name, with its `argument` as the detail (VoiceOver reads "width, takes points"). The first is
   highlighted.
-- **It closes** when the caret leaves the name (before the `/`, past what was typed, or a
-  selection), the `/` is deleted, what's typed holds what a name can't (whitespace, which ends the
-  name, a line break, a pill, punctuation: a name is ASCII letters, digits and hyphens, matched
-  folded) or is past 40 characters (`SlashCommandPicker.Closing`, what `read` says); and on Escape
-  or ⌘., or when the keyboard or the window goes, as every caret list does. The `/` stays as typed,
-  and nothing opens again until another is typed. While it's open the text's spelling correction,
-  text replacement, smart quotes and smart dashes are off, and put back as they were when it
-  closes (TextEditing's `CaretListSubstitutions`, which Mentions' picker uses too).
+- **What a command takes is found too**, so a person can start from the thing: `/idea` lists
+  `is-a Idea` and `move-near Idea`, all that can be done with Idea. A choice command's rows are
+  matched by their titles (`choices()`, asked once a list, when something is first typed; `otherwise`'s
+  row never), and a command that takes one shape gets the shapes its rule admits from the host
+  (`SlashShapeSearch`, given to `SlashCommandTyping` as `shapes:`: Mentions' `MentionTextView` hands
+  it the search its `@` picker would make on the command's line, with where each shape is), at most
+  three a command (`SlashCommandStyle.shapesPerCommand`). A command that takes words (`/title`) would
+  match any query, so it lists nothing. Such a row (`SlashCommandPicker.Entry`, its `argument` a
+  `.choice` or a `.shape`) reads as the line it stands for, `is-a Idea`, what's typed matched in the
+  argument, its detail what the choice says ("2 of 3") or where the shape is, and how many it acts on
+  where that's fewer than the target's shapes.
+- **It closes** when the caret leaves the query (before the `/`, past what was typed, or a
+  selection), the `/` is deleted, what's typed holds a line break or a pill, or what a name can't
+  hold (whitespace, punctuation: a name is ASCII letters, digits and hyphens, matched folded) while
+  nothing matches it as an argument (so `/big idea` stays open while Big Idea matches), or is a
+  command's name and whitespace after it (the line is that command's: a choice command's own list
+  opens there), or is past 80 characters, a title's longest (`SlashCommandPicker.Closing`, what
+  `read` says); and on Escape or ⌘., or when the keyboard or the window goes, as every caret list
+  does. The `/` stays as typed, and nothing opens again until another is typed. While it's open the
+  text's spelling correction, text replacement, smart quotes and smart dashes are off, and put back
+  as they were when it closes (TextEditing's `CaretListSubstitutions`, which Mentions' picker uses too).
 - **Keys** are every caret list's: ↑ ↓ ⌃P ⌃N and Page Up and Down move (one at a time they wrap,
   a page stops at the ends), Tab picks, Escape and ⌘. close. Return is this list's own, below.
-- **A pick completes, and runs nothing.** Tab, or a click on a row, replaces the `/` and the
-  name token it is in (the caret may be in the middle of one: `/gr|ow`) with `/` and the command's
-  name, and a space if it takes an argument and no whitespace follows on its line (a line break
-  doesn't count: the argument is typed on the line, not run into the one below), the caret after,
-  as one step of the text's undo. Typing the argument is then the person's.
+- **A pick of a name completes, and runs nothing.** Tab, or a click on a command's row, replaces the
+  `/` and the name token it is in (the caret may be in the middle of one: `/gr|ow`) with `/` and the
+  command's name, and a space if it takes an argument and no whitespace follows on its line (a line
+  break doesn't count: the argument is typed on the line, not run into the one below), the caret
+  after, as one step of the text's undo. Typing the argument is then the person's.
+- **A pick of what a command takes runs it.** Tab, Return or a click on a row like `is-a Idea` takes
+  the line (from its `/` to its end) out of the text and runs the command with the choice, as a pick
+  of its own list does, or with the shape, as a Return on its line with the shape's pill does.
 
 ### Return, and what runs
 
@@ -7689,6 +7706,7 @@ a command line's are the same key, and one object decides which it is, before th
 |---|---|
 | With the list open, on a highlighted command that takes nothing, with only whitespace after its name on the line | Runs it at once: the line goes, the command runs. |
 | With the list open, on any other highlighted command | Completes it, as Tab does, so its argument can be typed. |
+| With the list open, on a highlighted row with what its command takes (`is-a Idea`) | Runs it with that at once: the line goes, the command runs. |
 | With the list open, with nothing highlighted ("No matches") | A new line, which closes the list. |
 | With the list closed, no selection and the caret after the `/`, on a line that is `/name` and what follows, where the shape offers a command of that name now and it accepts what follows | Takes the line out of the text and runs the command. |
 | Anything else: not a command, one the shape doesn't offer, arguments it doesn't accept, a selection, the caret before the `/` | Return as ever: a new line, or what the host does with it (a box's commit). |
@@ -7786,8 +7804,10 @@ asks it).
 A text view takes part by making a `SlashCommandTyping(over:owner:commands:arguments:)`: for one
 shape's text (`owner`, whose commands it asks: the target `.text(owner)`), over an
 `EditingTextView`, with `commands`, the service. It holds the view and the service weakly.
-`arguments` reads a range of the text as runs (the default reads it as plain text).
-`SlashCommandTyping(over:target:commands:arguments:takesShapes:)` types for any target (the command
+`arguments` reads a range of the text as runs (the default reads it as plain text); `shapes`, a
+`SlashShapeSearch`, finds the shapes a command that takes one admits for what's typed after a `/`,
+so the list offers them (nil: none).
+`SlashCommandTyping(over:target:commands:arguments:shapes:takesShapes:)` types for any target (the command
 bar's field types for `.selection`); `takesShapes: false` leaves the commands that take a shape out
 of its lists, its marks and its Return (a field that can't name a shape could never give them one),
 and `willRun`, called once a command's line is out of the text and before the command runs, lets the
@@ -7796,7 +7816,9 @@ has an owner and its editor has the service (`slashCommands`; else nil, and a sl
 and calls it where a text view's events are ([Editing: `MentionTextView`](#editing-mentiontextview)):
 
 ```swift
-slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands) { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) }
+slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands,
+                                   arguments: { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) },
+                                   shapes: { [weak self] in self?.shapes(matching: $0, for: $1) ?? [] })   // the @ picker's search
 
 override var caretListWindow: CaretListWindow? { pickerWindow ?? slashCommands?.window }   // its list is the view's own
 override func insertText(_ string: Any, replacementRange: NSRange) {                      // what a person typed, not composed

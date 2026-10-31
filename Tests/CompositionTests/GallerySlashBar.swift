@@ -15,13 +15,15 @@ import Subboards
 import TestKit
 import TextEditing
 import Titles
+import Types
 
 // The command bar: the states of one track, added to `galleryStates` (GalleryTypesLook.swift) as `slashBarStates`,
 // one for each wireframe of its plan (`docs/plans/slash-on-selection/wireframes`): `/` on a selected note, `/color`'s
 // choices and the note after the pick, a mixed selection's counted rows, a frame's list and a locked note's, `/move-to @`
 // naming a frame for three notes, a note's own `/` while it is edited, and the bar over a selection at the window's
 // bottom and among skeletons zoomed out; then `/` with nothing selected, the bar at the top for every shape, and
-// `/query`: its list, the bar waiting for the model, what it finds selected, and No matches.
+// `/query`: its list, the bar waiting for the model, what it finds selected, and No matches; and a thing's name typed
+// after the `/`, in a note and in the bar: what the commands can do with it.
 
 private let barStage = CGSize(width: 560, height: 460)
 private let lowStage = CGSize(width: 560, height: 360)
@@ -184,6 +186,22 @@ extension GalleryStage {
         _ = try require(stage.editor.selectedShapeIDs == [notes[0]] ? true : nil, "narrowed to Buy milk")
         return .image(stage.render(at: .zero))
     },
+    GalleryState("Name1-in-a-note", "a note being edited, `/idea` typed on a new line: what can be done with Idea, the type and the note, and with the frame Idea Backlog", size: barStage) { stage in
+        stage.ideaBoard()
+        let note = stage.editor.barNote("Ship the beta", title: "Launch", at: CGPoint(x: 40, y: 40), width: 220, height: 140)
+        let view = try stage.edit(note)
+        stage.typeLine("/idea")
+        stage.window.settle()
+        let slash = try require(view.slashCommands?.picker?.location, "the list")
+        let screen = view.firstRect(forCharacterRange: NSRange(location: slash, length: 1), actualRange: nil)
+        return .image(try stage.pictureWithList(stage.listRows(of: view), below: stage.window.convertFromScreen(screen)))
+    },
+    GalleryState("Name2-in-the-bar", "two notes selected, `/idea` in the bar: the same for both, `2 shapes` at the right", size: barStage) { stage in
+        stage.ideaBoard()
+        let one = stage.editor.barNote("Ship the beta", title: "Launch", at: CGPoint(x: 30, y: 40), width: 120, height: 100)
+        let two = stage.editor.barNote("Tell the team", title: "Announce", at: CGPoint(x: 160, y: 40), width: 120, height: 100)
+        return .image(try stage.pictureWithBarList(try stage.openBar(on: [one, two], typing: "idea")))
+    },
     GalleryState("Bar9-query-no-matches", answers: "9", "a question its query finds nothing for: `No matches` where `All shapes` was, the line still there to change", size: barStage) { stage in
         _ = stage.shoppingNotes()
         stage.model.queue(#":contains("zebra")"#)
@@ -196,6 +214,12 @@ extension GalleryStage {
 ]
 
 extension GalleryStage {
+    /// A type called Idea at the right, and below it a frame called Idea Backlog.
+    fileprivate func ideaBoard() {
+        _ = editor.addTypeNote(TypeSchemaProperty.starter, title: "Idea", frame: CGRect(x: 340, y: 30, width: 180, height: 110))
+        _ = editor.add(Frame(frame: CGRect(x: 320, y: 220, width: 220, height: 200)), title: "Idea Backlog")
+    }
+
     /// Three notes in a row: Buy milk, Buy eggs, Call Sam.
     fileprivate func shoppingNotes() -> [ShapeID] {
         ["Buy milk", "Buy eggs", "Call Sam"].enumerated().map { index, text in

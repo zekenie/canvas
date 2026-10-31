@@ -67,6 +67,8 @@ public struct SlashCommandLine: Equatable, Sendable {
     }
 
     static let slash: unichar = 0x2F
+    /// What a mention's pill is in the text (U+FFFC): never a name, nor what the list matches.
+    static let pill: unichar = 0xFFFC
 
     static func isWhitespace(_ character: unichar) -> Bool {
         Unicode.Scalar(character)?.properties.isWhitespace ?? false

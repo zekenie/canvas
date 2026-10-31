@@ -119,7 +119,9 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         reported = mentionText
         observeTargets()
         if let owner, let commands = mentions?.slashCommandState {
-            slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands) { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) }
+            slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands,
+                                               arguments: { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) },
+                                               shapes: { [weak self] in self?.shapes(matching: $0, for: $1) ?? [] })
         }
     }
 
@@ -589,7 +591,8 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         slashCommands?.close()
         slashCommands = mentions?.slashCommandState.map { commands in
             SlashCommandTyping(over: self, target: target, commands: commands,
-                               arguments: { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) })
+                               arguments: { [weak self] in self?.arguments(in: $0) ?? SlashArguments([]) },
+                               shapes: { [weak self] in self?.shapes(matching: $0, for: $1) ?? [] })
         }
         return slashCommands
     }
@@ -608,15 +611,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         guard let mentions, style != nil, isEditable else { return }
         slashCommands?.close()
         let shapes = slashCommands?.admittedShapes(at: location)
-        // Listed for the shapes its commands type for (the owner, or the bar's selection), else the owner. For
-        // every shape on the board (the bar with nothing selected) for none: near all of them is near nothing.
-        let owners: [ShapeID]
-        switch slashCommands?.target {
-        case .everything?: owners = []
-        case let target?: owners = target.shapes
-        case nil: owners = owner.map { [$0] } ?? []
-        }
-        let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owners: owners,
+        let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owners: pickerOwners,
                                    kinds: shapes?.kinds, admitting: shapes?.rule)
         self.picker = picker
         substitutions = CaretListSubstitutions(of: self)
@@ -629,6 +624,28 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         picker.onChange = { [weak self] in self?.pickerDidChange() }
         readPicker(isEdit: true)
         if self.picker != nil { pickerDidChange() }
+    }
+
+    /// What the picker lists for: the shapes its commands type for (the owner, or the bar's selection), else the
+    /// owner. For every shape on the board (the bar with nothing selected), none: near all of them is near nothing.
+    private var pickerOwners: [ShapeID] {
+        switch slashCommands?.target {
+        case .everything?: []
+        case let target?: target.shapes
+        case nil: owner.map { [$0] } ?? []
+        }
+    }
+
+    /// The shapes a slash command admits that what's typed after a `/` finds (`SlashShapeSearch`): those the
+    /// picker would list for it on the command's line, best first, each with where it is (else its kind).
+    private func shapes(matching query: String, for rule: SlashShapeRule) -> [SlashShapeMatch] {
+        guard let mentions else { return [] }
+        return mentions.candidates(matching: query, in: Scope.self, for: pickerOwners, kinds: rule.kinds, admitting: rule.rule).matches.map {
+            let appearance = $0.appearance
+            return SlashShapeMatch($0.id, label: appearance.label, matched: $0.matched, detail: $0.place?.text ?? appearance.detail,
+                                   detailTruncatesHead: $0.place != nil,
+                                   spoken: ([appearance.kindName] + ($0.place.map { [$0.spoken] } ?? [])).joined(separator: ", "))
+        }
     }
 
     /// Where the picker goes: under its `@`, while it's in the text.

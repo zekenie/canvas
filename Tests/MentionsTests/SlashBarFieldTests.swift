@@ -117,6 +117,19 @@ private let endpoint = ShapeID(UUID(uuidString: "E0E0E0E0-1111-4222-8333-4444444
         expectEqual(rig.editor.selectedShapeIDs, rig.jots, "the selection kept")
     },
 
+    test("a name typed after the / lists the shapes the commands take for the three, as the @ picker would; Return runs the first on all three, the bar gone first") {
+        let rig = try BarField()
+        rig.slash()
+        rig.type("gro")
+        expectEqual(rig.bar?.typing?.picker?.rows.compactMap(\.item?.title),
+                    ["stack Grocery List", "stack Groceries", "shelve Groceries", "shelve Grocery run"],
+                    "the plates for stack, Bob's first; for shelve the plate its rule admits and the token, never the endpoint")
+        rig.window.pressReturn()
+        expectEqual(rig.log.runs, ["stack B @Grocery List"])
+        expectEqual(rig.log.owners, [rig.jots], "handed the three, once")
+        expect(!rig.isOpen, "the bar closed before it ran")
+    },
+
     test("the @ picker lists for the three: none of them is listed, though they're nearest, and nearness is measured from their middle") {
         let rig = try BarField()
         rig.slash()

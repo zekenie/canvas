@@ -17,9 +17,11 @@ import Subboards
 import TestKit
 import TextEditing
 import Titles
+import Types
 
 // Slash commands as shipped: Titles' `/title`, Locking's `/lock` and Publishing's `/public` and `/private`, typed
-// in a note's editor in the app's canvas view (Moving's `/move-to` and `/move-near` are MovingShippedTests').
+// in a note's editor in the app's canvas view (Moving's `/move-to` and `/move-near` are MovingShippedTests'), and a
+// thing's name typed after the `/`, which lists what the commands can do with it.
 
 private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
 
@@ -227,6 +229,43 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         expectEqual(editor.undoHistory.undoName, "Make Private")
         editor.undo()
         expect(isPublic(), "undone")
+        window.pressEscape()
+    },
+
+    test("/idea typed on a new line of a note lists what can be done with Idea: is-a Idea, the type, and move-near and send-behind Idea, the note; Return runs the first, and once the note is an Idea the list has the note's rows alone") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
+        let (window, _) = windowed(editor)
+        let idea = editor.addTypeNote(TypeSchemaProperty.starter, title: "Idea", frame: CGRect(x: 900, y: 100, width: 200, height: 200))
+        let note = editor.add(StickyNote(frame: noteFrame, text: "keep"))
+        @MainActor func text() -> String? { editor.document[note]?.typed(as: StickyNote.self)?.props.text.plainText() }
+        @MainActor func view() throws -> MentionTextView<AnyMentionable> {
+            try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
+        }
+        editor.selection = note
+        expect(editor.beginEditing(note))
+        let editing = try view()
+        editing.setSelectedRange(NSRange(location: 4, length: 0))
+        window.pressReturn()
+        window.type("/idea")
+        let list = try require(editing.slashCommands?.picker, "the list")
+        expectEqual(list.rows.compactMap(\.item?.title), ["is-a Idea", "move-near Idea", "send-behind Idea"],
+                    "the type, then the note it is, in the commands' order; not bring-in-front-of, since the note is in front already")
+        window.pressReturn()
+        window.settle()
+        expectEqual(editor.document[note]?[IsAProperty.self]?.map(\.shape), [idea], "an Idea")
+        expectEqual(editor.undoHistory.undoName, "Add Type")
+        expectEqual(editor.editingShapeID, note, "editing goes on")
+        expectEqual(text(), "keep\n", "the line is gone from its text")
+
+        window.type("/idea")
+        expectEqual(editing.slashCommands?.picker?.rows.compactMap(\.item?.title), ["move-near Idea", "send-behind Idea"], "a note is never twice a type")
+        let before = editor.document[note]?.box
+        window.pressReturn()
+        window.settle()
+        expect(editor.document[note]?.box != before, "moved beside Idea")
+        expectEqual(editor.undoHistory.undoName, "Move")
         window.pressEscape()
     },
 ])

@@ -20,6 +20,10 @@ import TextEditing
 ///   undo. Return is the list's own: a highlighted command that runs with nothing after it runs at
 ///   once, and any other completes, so its argument can be typed; with nothing highlighted it's a
 ///   new line, which closes the list.
+/// - What's typed after the `/` finds what the commands take too (`SlashCommandPicker`): a choice of a
+///   choice command's list, and, where the host finds shapes (`shapes`, a `SlashShapeSearch`), a shape
+///   a command that takes one admits. Such a row is a whole command: Return, Tab or a click takes the
+///   line out of the text and runs it with the choice or the shape, as a pick of the choices' list does.
 /// - Return with the list closed, on a line that's a command the shape offers, with arguments the
 ///   command accepts, takes the line's text (from its `/` to its end) out of the text, as an edit
 ///   of the person's, leaving the caret on the now empty line, and runs the command. Anything else
@@ -81,6 +85,9 @@ public final class SlashCommandTyping {
     private weak var view: EditingTextView?
     private weak var commands: SlashCommandState?
     private let readArguments: (@MainActor (NSRange) -> SlashArguments)?
+    /// How the host finds the shapes a command admits for what's typed after a `/`; nil: the list
+    /// finds none.
+    private let findShapes: SlashShapeSearch?
     /// Whether what's typed can name a shape: without, the commands that take one are left out of the
     /// lists, the marks and Return (a field that can't name a shape could never give them one).
     private let takesShapes: Bool
@@ -88,21 +95,23 @@ public final class SlashCommandTyping {
     private var substitutions: CaretListSubstitutions?
     private var isWriting = false
 
-    /// For a line of one shape's text: `init(over:target:commands:arguments:)` with `.text(owner)`.
+    /// For a line of one shape's text: `init(over:target:commands:arguments:shapes:)` with `.text(owner)`.
     public convenience init(over view: EditingTextView, owner: ShapeID, commands: SlashCommandState,
-                            arguments: (@MainActor (NSRange) -> SlashArguments)? = nil) {
-        self.init(over: view, target: .text(owner), commands: commands, arguments: arguments)
+                            arguments: (@MainActor (NSRange) -> SlashArguments)? = nil, shapes: SlashShapeSearch? = nil) {
+        self.init(over: view, target: .text(owner), commands: commands, arguments: arguments, shapes: shapes)
     }
 
     /// `arguments` reads what's typed in a range as runs (a mention text view's pills as shapes);
-    /// the default reads it as plain text. `takesShapes` false leaves out the commands that take a
-    /// shape, for a field that can't name one.
+    /// the default reads it as plain text. `shapes` finds the shapes a command admits for what's typed
+    /// after a `/`, so the list offers them (a mention text view's `@` picker's search); nil, it offers
+    /// none. `takesShapes` false leaves out the commands that take a shape, for a field that can't name one.
     public init(over view: EditingTextView, target: SlashTarget, commands: SlashCommandState,
-                arguments: (@MainActor (NSRange) -> SlashArguments)? = nil, takesShapes: Bool = true) {
+                arguments: (@MainActor (NSRange) -> SlashArguments)? = nil, shapes: SlashShapeSearch? = nil, takesShapes: Bool = true) {
         self.view = view
         self.target = target
         self.commands = commands
         readArguments = arguments
+        findShapes = takesShapes ? shapes : nil
         self.takesShapes = takesShapes
     }
 
@@ -166,7 +175,7 @@ public final class SlashCommandTyping {
     }
 
     private func open(at location: Int, offering offered: [OfferedSlashCommand], over view: EditingTextView) {
-        let picker = SlashCommandPicker(at: location, offering: offered)
+        let picker = SlashCommandPicker(at: location, offering: offered, findingShapes: findShapes)
         self.picker = picker
         substitutions = CaretListSubstitutions(of: view)
         CaretListSubstitutions.off.apply(to: view)
@@ -237,15 +246,18 @@ public final class SlashCommandTyping {
     }
 
     /// A plain Return: whether it took it. With the list open, the highlighted command runs if it
-    /// runs with nothing after it and nothing else is on the line, else it completes; with nothing
-    /// highlighted, Return isn't taken. With the list closed, a command line runs (see the type).
+    /// runs with nothing after it and nothing else is on the line, else it completes; a highlighted
+    /// command with what it takes runs with it; with nothing highlighted, Return isn't taken. With the
+    /// list closed, a command line runs (see the type).
     public func takesReturn() -> Bool {
         guard !isWriting, let view, let commands, view.isEditable, !view.hasMarkedText(), let storage = view.textStorage else { return false }
         let text = storage.string as NSString
         // The choices' list has the key: Return is the caret list's own, a pick or a new line.
         if choices != nil { return false }
         if let picker {
-            guard window != nil, let command = picker.highlightedCommand else { return false }
+            guard window != nil, let entry = picker.highlightedEntry else { return false }
+            if let argument = entry.argument { return take(argument, of: entry.command, line: picker.location) }
+            let command = entry.command
             let name = picker.nameRange
             close()
             var start = 0, end = 0, contentsEnd = 0
@@ -276,15 +288,36 @@ public final class SlashCommandTyping {
 
     // MARK: Completing and running
 
-    /// A click on a row of the list completes its command.
+    /// A click on a row of the list (or Tab) completes its command, or runs a command with what it takes.
     private func pick(row index: Int) {
         if let choices {
             guard choices.listed.indices.contains(index) else { return }
             _ = choose(choices.listed[index], of: choices.command, line: choices.nameRange.location)
             return
         }
-        guard let picker, picker.listed.indices.contains(index) else { return }
-        _ = complete(picker.listed[index], replacing: picker.nameRange)
+        guard let picker, picker.entries.indices.contains(index) else { return }
+        let entry = picker.entries[index]
+        if let argument = entry.argument {
+            _ = take(argument, of: entry.command, line: picker.location)
+        } else {
+            _ = complete(entry.command, replacing: picker.nameRange)
+        }
+    }
+
+    /// Runs a row of the names' list that has what its command takes: the line (from its `/` to its end)
+    /// out of the text, then the command with the choice, as a pick of the choices' list does, or with the
+    /// shape, as a Return on a line with its pill does.
+    private func take(_ argument: SlashCommandPicker.Argument, of command: OfferedSlashCommand, line location: Int) -> Bool {
+        switch argument {
+        case .choice(let choice):
+            return choose(choice, of: command, line: location)
+        case .shape(let shape):
+            guard let storage = view?.textStorage, location < storage.length else { return false }
+            var start = 0, end = 0, contentsEnd = 0
+            (storage.string as NSString).getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+            return run(command, with: SlashArguments([.shape(shape.id, label: shape.label)]),
+                       removing: NSRange(location: location, length: contentsEnd - location))
+        }
     }
 
     /// Takes the line (from its `/` to its end) out of the text and runs the command with the
@@ -422,7 +455,7 @@ public final class SlashCommandTyping {
     private func marks(over view: EditingTextView) -> [TextHighlight] {
         guard view.isEditable, let storage = view.textStorage else { return [] }
         if let picker {
-            guard !picker.listed.isEmpty, NSMaxRange(picker.nameRange) <= storage.length else { return [] }
+            guard !picker.entries.isEmpty, NSMaxRange(picker.nameRange) <= storage.length else { return [] }
             return [mark(picker.nameRange, SlashCommandStyle.commandFill, over: view)]
         }
         if let choices {

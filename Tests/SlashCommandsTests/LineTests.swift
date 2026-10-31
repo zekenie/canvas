@@ -167,9 +167,9 @@ private func rowText(_ row: CaretListRow) -> String {
         expectEqual(read("/gr.", 4, true, 0), .nameEnded, "punctuation")
         expectEqual(read("/gr_", 4, true, 0), .nameEnded)
         expectEqual(read("/Gr-1", 5, true, 0), nil, "letters in either case, digits and hyphens")
-        let long = "/" + String(repeating: "g", count: 40)
-        expectEqual(read(long, 41, true, 0), nil, "a name of the longest length")
-        expectEqual(read(long + "g", 42, true, 0), .tooLong)
+        let long = "/" + String(repeating: "g", count: 80)
+        expectEqual(read(long, 81, true, 0), nil, "a query of the longest length, a title's")
+        expectEqual(read(long + "g", 82, true, 0), .tooLong)
     },
 
     test("an empty query lists every command as it was offered, name and hint; the first is highlighted") {

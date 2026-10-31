@@ -205,6 +205,20 @@ struct TargetCommandsPlugin: CanvasPlugin {
     }
 }
 
+/// The host's search for the shapes a command takes, as a mention text view's would be (`SlashShapeSearch`):
+/// the shapes named here whose label holds what's typed (case aside), in this order, those the command
+/// admits, each said to be a disc.
+@MainActor func namedShapes(_ named: [(id: ShapeID, label: String)]) -> SlashShapeSearch {
+    { query, rule in
+        named.compactMap { id, label in
+            let folded = label.lowercased()
+            guard rule.admits(id), let found = folded.range(of: query.lowercased()) else { return nil }
+            let start = folded.distance(from: folded.startIndex, to: found.lowerBound)
+            return SlashShapeMatch(id, label: label, matched: [start..<start + query.count], detail: "Disc", spoken: "a disc")
+        }
+    }
+}
+
 /// What a mention text view reads after a command's name, as a test says a person picked it: `runs`
 /// once anything is typed there (the pills of the line), nothing before. `SlashSession`'s `arguments`.
 @MainActor final class PickedShapes {
@@ -233,20 +247,21 @@ final class SlashTextView: EditingTextView {
     /// Between `shouldChangeText` and `didChangeText`: the selection moving then is the edit's.
     private var isChangingText = false
 
-    init(frame: CGRect, owner: ShapeID, commands: SlashCommandState, arguments: (@MainActor (NSRange) -> SlashArguments)? = nil) {
+    init(frame: CGRect, owner: ShapeID, commands: SlashCommandState, arguments: (@MainActor (NSRange) -> SlashArguments)? = nil,
+         shapes: SlashShapeSearch? = nil) {
         super.init(frame: frame)
         isRichText = false
         allowsUndo = true
-        slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands, arguments: arguments)
+        slashCommands = SlashCommandTyping(over: self, owner: owner, commands: commands, arguments: arguments, shapes: shapes)
     }
 
     /// A line typed for any target (the shapes selected, as the command bar's field types for them),
     /// writing to no shape.
-    init(frame: CGRect, target: SlashTarget, commands: SlashCommandState, takesShapes: Bool = true) {
+    init(frame: CGRect, target: SlashTarget, commands: SlashCommandState, shapes: SlashShapeSearch? = nil, takesShapes: Bool = true) {
         super.init(frame: frame)
         isRichText = false
         allowsUndo = true
-        slashCommands = SlashCommandTyping(over: self, target: target, commands: commands, takesShapes: takesShapes)
+        slashCommands = SlashCommandTyping(over: self, target: target, commands: commands, shapes: shapes, takesShapes: takesShapes)
     }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
@@ -319,16 +334,19 @@ final class SlashSession {
     let view: SlashTextView
     let host: SlashHost
 
-    /// `offering` false leaves the card commandless (`CardCommandsPlugin` isn't installed).
+    /// `offering` false leaves the card commandless (`CardCommandsPlugin` isn't installed). `board` puts
+    /// shapes on the board before the card is edited, and gives the host's shape search (`shapes`) if any.
     init(_ text: String = "", offering: Bool = true, plugins more: [any CanvasPlugin] = [], log: CommandLog? = nil,
-         arguments: (@MainActor (NSRange) -> SlashArguments)? = nil) throws {
+         arguments: (@MainActor (NSRange) -> SlashArguments)? = nil,
+         board: (@MainActor (CanvasEditor) -> SlashShapeSearch?)? = nil) throws {
         self.log = log ?? CommandLog()
         h = try slashHarness((offering ? [CardCommandsPlugin(log: self.log)] : []) + more)
+        let shapes = board?(h.editor)
         card = h.editor.add(Card(CGRect(x: 0, y: 0, width: 100, height: 60), text: text))
         expect(h.editor.beginEditing(card))
         let field = try require(h.editor.makeEditingView()?.view as? CardField)
         view = SlashTextView(frame: CGRect(x: 0, y: 0, width: 300, height: 200), owner: card, commands: try require(h.editor.slashCommands),
-                             arguments: arguments)
+                             arguments: arguments, shapes: shapes)
         host = SlashHost(context: field.context)
         host.view = view
         view.delegate = host

@@ -142,7 +142,8 @@ import TextEditing
 
     test("the rows are asked for once while the list is open, however much is typed") {
         let s = try session()
-        s.type("/pick ")
+        s.set("/pick")
+        s.type(" ")
         expectEqual(s.log.choicesAsked, 1)
         s.type("gam")
         s.window.pressDelete()
@@ -381,7 +382,8 @@ import TextEditing
 
     test("with the list closed, Return on the line typed whole runs the row of that title; on anything else it is a new line; the rows are asked for at Return only") {
         let s = try session()
-        s.type("/pick ")
+        s.set("/pick")
+        s.type(" ")
         s.pressEscapeKey()
         s.type("bEta")
         expectEqual(s.log.choicesAsked, 1, "once, when it opened")
