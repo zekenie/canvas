@@ -163,7 +163,7 @@ import Validation
         snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
         connect-menu         CanvasContextMenu in ShapeMenuGroup first
-        arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
+        arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · connects to itself → every shape holding schema · ArrowBindingRules
         language-models      service LanguageModelState
         prose-maps           service ProseMapService · overlay ProseMapFrames
         draw-engine          draw engine

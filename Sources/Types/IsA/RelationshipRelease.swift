@@ -40,7 +40,8 @@ extension CanvasEditor {
     /// - several taken: the list opens at the arrow, which is selected while it is open (`.offered`);
     /// - none taken, or only open ones (an open type is offered in `/is-a`'s list and Is a ▸, never taken alone): plain;
     /// - between a type and a relationship type: an end, and nothing else;
-    /// - between two types: `newRelationshipType`.
+    /// - between two types: `newRelationshipType`, and from a type back to itself (`canRelateToItself`) a relationship type
+    ///   from it to itself, with two arrows.
     ///
     /// An arrow that already holds a type, or is not bound at both ends, or is not of a kind that relates, is left
     /// alone, and so is one drawn against a type's direction. Whatever the outcome, the relationships then count the
@@ -73,6 +74,13 @@ extension CanvasEditor {
                 return .offered(taken: taken, open: open)
             }
         }
+    }
+
+    /// Whether a port's drag from `shape` released back on it is made something of: a type that is no relationship type
+    /// is related to itself (`connectionDrawn`, as between two types). What lets the drag end where it starts, since an
+    /// arrow from a shape to itself is never kept.
+    public func canRelateToItself(_ shape: AnyShapeRecord) -> Bool {
+        relationships != nil && ArrowRole.of(from: shape, to: shape, registry: registry) == .betweenTypes
     }
 
     /// The list at an arrow: the taken types, the open ones, a rule, a gray `Plain arrow`, under the arrow's adornment

@@ -231,6 +231,71 @@ extension Minute {
         expectEqual(editor.validation?.result(for: there.id)?.issues.map(\.message) ?? [], [])
         expect(m.model.requests.isEmpty, "the model was never asked")
     },
+    test("a port's drag from Feature back onto Feature: the same two arrows bowed apart through a new relationship type, its name typed in its pill, no arrow from Feature to itself, one step; a second drag makes a second") {
+        let m = try Minute()
+        defer { m.close() }
+        let editor = m.editor
+        let start = try m.bytes()
+        let known = Set(editor.document.shapes.map(\.id))
+        try m.drag(from: m.feature, to: m.feature)
+        let type = try require(editor.document.shapes.first { !known.contains($0.id) && $0[RelationshipProperty.self] == true }).id
+        expectEqual(editor.selectedShapeIDs, [type])
+        expectEqual(editor.editingShapeID, type, "its name is typed in the pill")
+        let out = try require(m.arrows(from: m.feature, to: type).first).id, back = try require(m.arrows(from: type, to: m.feature).first).id
+        try m.expectTwoArrows((out, back), type: type, "dragged")
+        expect(m.arrows(from: m.feature, to: m.feature).isEmpty, "no arrow from Feature to itself")
+        expectEqual(m.names(of: m.featureNote), ["purpose", "feature"])
+        let field = try require(m.pillField)
+        field.insertText(friends, replacementRange: NSRange(location: 0, length: 0))
+        field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        expectEqual(editor.document[type]?[TitleProperty.self], friends)
+        expectEqual(editor.undoHistory.undoName, TypesStyle.newRelationshipType)
+        try m.drag(from: m.feature, to: m.feature)
+        try require(m.pillField).doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(editor.relationships?.graph.relationshipTypes(joining: m.feature, and: m.feature).count, 2, "a second")
+        expectEqual(m.arrows.count, 4)
+        editor.undo()
+        editor.undo()
+        expect(try m.bytes() == start, "two Undos return the bytes")
+        expect(m.model.requests.isEmpty, "no step asked the model")
+    },
+    test("Feature in a locked frame, dragged onto itself: nothing can be made, so nothing is left, no arrow from Feature to itself, and no step") {
+        let m = try Minute()
+        defer { m.close() }
+        _ = m.frameAround(locked: true)
+        let before = m.editor.document
+        let steps = m.editor.undoHistory.undoName
+        try m.drag(from: m.feature, to: m.feature)
+        expectEqual(m.editor.document, before)
+        expectEqual(m.editor.undoHistory.undoName, steps)
+        expect(m.editor.card == nil)
+        #if DEBUG
+        expectEqual(m.editor.relationships?.heldConnections, [])
+        #endif
+    },
+    test("Relate to ▸ on a type whose words name nothing lists the type itself, the drag by keys: a pick relates it to itself, and it stays listed for another") {
+        let m = try Minute()
+        defer { m.close() }
+        let editor = m.editor
+        editor.selection = m.feature
+        let menu = try require(editor.menuForSelection(omitting: []))
+        let relate = try require(menu.item(withTitle: TypesStyle.relateTo)?.submenu, "\(menu.outline)")
+        expectEqual(relate.items.map(\.title), ["Feature"])
+        try menu.choose(TypesStyle.relateTo, "Feature")
+        editor.endEditing()
+        let graph = try require(editor.relationships?.graph)
+        let type = try require(graph.relationshipTypes(joining: m.feature, and: m.feature).first)
+        let out = try require(m.arrows(from: m.feature, to: type).first).id, back = try require(m.arrows(from: type, to: m.feature).first).id
+        try m.expectTwoArrows((out, back), type: type, "picked")
+        expectEqual(editor.undoHistory.undoName, TypesStyle.newRelationshipType)
+        editor.selection = m.feature
+        let again = try require(editor.menuForSelection(omitting: []))
+        expectEqual(again.item(withTitle: TypesStyle.relateTo)?.submenu?.items.map(\.title), ["Feature"], "still listed")
+        editor.selection = type
+        expectEqual(try require(editor.menuForSelection(omitting: [])).item(withTitle: TypesStyle.relateTo), nil, "not on the relationship type")
+        editor.selection = m.featureNote
+        expectEqual(try require(editor.menuForSelection(omitting: [])).item(withTitle: TypesStyle.relateTo), nil, "nor on a note that is no type")
+    },
     test("a note related to itself: a port's drag never ends on its own note, a row's pick refuses it, and what a script's arrow from a note to itself does is pinned") {
         let m = try Minute()
         defer { m.close() }

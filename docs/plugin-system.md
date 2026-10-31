@@ -6335,6 +6335,29 @@ and a rule may not read what a dynamic reference is given. References works it o
 literal edges and `registry.accepts`, once per revision of the reference's edges
 (`ReferenceState.channelMismatch(of:)`).
 
+### A drag back onto where it starts
+
+A port's drag never ends where it starts, but a plugin may let one end on the shape it started
+from, for that drag's release to make something else of it
+([SelfConnections.swift](../Sources/Connections/SelfConnections.swift)). It says so for the shapes of
+the kinds its scope reaches, of each shape, whenever the drag asks of the one it started from (as
+the pointer moves over it, and on each frame the faint outlines are drawn), so the test is cheap:
+
+```swift
+registrar.forShapes(holding: TypeSchemaProperty.self) { types in
+    types.connectsToItself { shape, editor in editor.canRelateToItself(shape) }
+}
+```
+
+That's `ArrowPortsPlugin`'s: a type dragged back onto itself is related to itself, and the release
+(`ArrowConnecting.finished`, Types' `connectionDrawn`) replaces the arrow with a relationship type
+and an arrow into it and one out of it. `editor.channel(of:endingAt:)` answers for the start then,
+on the channels the shape takes, so the faint outline and the hint show it as any other end. Such
+a connection is never kept: the connector takes back whatever the release leaves joining the shape
+to itself, in the press's step, so a release that makes nothing of it leaves no step. Connect (⌘L)
+and `canvas draw` are untouched: one takes two shapes, and the other refuses an edge on a channel
+from a shape to itself.
+
 ### The dots and the select tool
 
 The dots are canvas buttons, dragged rather than clicked (`PortDot`: a shape and a side, what
@@ -14812,7 +14835,7 @@ type-colors          inherited color → every shape holding is
 snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
-arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
+arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · connects to itself → every shape holding schema · ArrowBindingRules
 language-models      service LanguageModelState
 prose-maps           service ProseMapService · overlay ProseMapFrames
 draw-engine          draw engine

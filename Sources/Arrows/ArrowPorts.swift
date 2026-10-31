@@ -61,6 +61,10 @@ public struct ArrowPortsPlugin: ListedPlugin {
         }
         // Connect (⌘L) gives the arrow it made the release a drag gives: the same wiring, in its step.
         registrar.connectionMade { connection, editor in editor.connectionDrawn(connection) }
+        // A type's drag may end on the type itself, which the release relates to itself: what is left joining it to itself goes.
+        registrar.forShapes(holding: TypeSchemaProperty.self) { types in
+            types.connectsToItself { shape, editor in editor.canRelateToItself(shape) }
+        }
         registrar.arrowBindingRule { query in
             // Never a container and what it holds, either way round, whatever the arrow's channel: Connections' rule.
             if let other = query.arrow.typed(as: Arrow.self)?.props[query.end.opposite].binding?.shapeID,

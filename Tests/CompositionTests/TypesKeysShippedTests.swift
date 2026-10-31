@@ -135,7 +135,7 @@ extension Minute {
         expectEqual(after.first?.id, before.first?.id)
         expect(after.first?.rect != before.first?.rect, "the pill moved with it")
     },
-    test("Relate to ▸ in the selection's menu lists the offers in the selected type's words, and a pick relates the two") {
+    test("Relate to ▸ in the selection's menu lists the offers in the selected type's words, then the type itself, and a pick relates the two") {
         let m = try Minute()
         defer { m.close() }
         let editor = m.editor
@@ -143,7 +143,7 @@ extension Minute {
         editor.selection = m.feature
         let menu = try require(editor.menuForSelection(omitting: []))
         let relate = try require(menu.item(withTitle: TypesStyle.relateTo)?.submenu, "\(menu.outline)")
-        expectEqual(relate.items.map(\.title), ["Layer"])
+        expectEqual(relate.items.map(\.title), ["Layer", "Feature"])
         try menu.choose(TypesStyle.relateTo, "Layer")
         editor.endEditing()
         expectEqual(editor.relationships?.graph.relationshipTypes(joining: m.feature, and: m.layer).count, 1)

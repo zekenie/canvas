@@ -62,7 +62,9 @@ extension ArrowHandleDragSession: Session {
     }
 
     /// An arrow drawn for a port's drag: bound, it's finished by `ArrowPortsPlugin` and told (`finished`, still in
-    /// the press, so what it does is the press's step); free, it's deleted, so nothing is drawn. The selection is
+    /// the press, so what it does is the press's step); free, it's deleted, so nothing is drawn. One bound back to the
+    /// shape it starts from (a shape that takes a connection from itself: Connections' `SelfConnections`) is there for
+    /// `finished` to make something else of, and what it leaves joining the shape to itself is deleted too. The selection is
     /// left as it was. However it ends, the relationships are told the drag is over (`connectionReleased`): the
     /// arrow was bound and unbound at every hover and counted only now.
     private func finish(_ connecting: ArrowConnecting, in editor: CanvasEditor) {
@@ -73,6 +75,9 @@ extension ArrowHandleDragSession: Session {
         }
         editor.transact { $0.update(arrowID) { connecting.complete(&$0, target) } }
         if let finished = connecting.finished { finished(arrowID) } else { editor.connectionReleased(arrowID) }
+        if let arrow = targeting.arrow(arrowID), arrow[end.opposite].binding?.shapeID == target {
+            editor.transact { $0.delete([arrowID]) }
+        }
     }
 
     /// Escape while drawing an arrow for a port's drag deletes it, leaving the selection

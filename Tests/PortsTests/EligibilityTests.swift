@@ -66,6 +66,27 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
         expectEqual(try board.channel(connection, endingAt: board.disc), nil, "discs take the pipe")
         expectEqual(try board.channel(connection, endingAt: tag), nil)
     },
+    test("where it starts, on a shape a plugin says takes one from itself (`SelfConnections`), for the shapes its scope reaches: there, on the channel the shape takes, and outlined as the rest are") {
+        let connections = ConnectionLog()
+        let loops = Contributor(id: "loops") { registrar in
+            registrar.declare(Looped.self)
+            registrar.optIn(Box.self, to: Looped.self)
+            registrar.forShapes(holding: Looped.self) { boxes in boxes.connectsToItself { shape, _ in shape[Looped.self] == true } }
+        }
+        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
+                                                                channelsPlugin(), connectorPlugin(connections), loops])
+        let h = board.h
+        let plain = render(h)
+        let connection = try board.startConnecting()
+        expectEqual(try board.channel(connection, endingAt: board.start), nil, "not while the box says nothing")
+        h.release()
+        h.editor.transact { $0.update(board.start) { $0[Looped.self] = true } }
+        let looped = try board.startConnecting()
+        expectEqual(try board.channel(looped, endingAt: board.start), Wire.id)
+        expectEqual(try board.channel(looped, endingAt: board.above), Wire.id, "the others as ever")
+        expect(changedPixels(plain, render(h), in: topEdge(of: boxFrame)) > 100, "outlined")
+        expect(h.editor.registry.report.contains("connects to itself → every shape holding looped"), "the report names the scope")
+    },
     test("a kind whose ports only start connections takes none") {
         let board = try EligibilityBoard(boxRole: .source)
         let connection = try board.startConnecting()

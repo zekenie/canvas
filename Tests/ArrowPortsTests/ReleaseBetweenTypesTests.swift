@@ -93,13 +93,52 @@ import Types
         expect(try w.bytes() == namedBytes, "redo bytes")
         expectEqual(w.h.editor.selectedShapeIDs, [made])
     },
-    test("a type dragged onto itself makes nothing and leaves no step") {
+    test("a type dragged onto itself is related to itself: a relationship type, an arrow into it and one out of it bent apart, no arrow from the type to itself, one step; one Undo returns the bytes") {
         let w = try ReleaseBoard()
-        let before = w.h.editor.document
+        let editor = w.h.editor
+        let start = try w.bytes()
+        let known = Set(editor.document.shapes.map(\.id))
         w.drag(from: ReleaseBoard.personFrame, to: w.center(ReleaseBoard.personFrame))
-        expectEqual(w.h.editor.document, before, "nothing is made")
-        expectEqual(w.h.editor.undoHistory.undoName, nil, "and no step")
-        expect(w.h.editor.card == nil)
+        let made = try require(editor.document.shapes.first { !known.contains($0.id) && $0[RelationshipProperty.self] == true }).id
+        let arrows = w.arrows.filter { !known.contains($0.id) }
+        expectEqual(arrows.count, 2, "two arrows, never one from Person to itself")
+        let out = try require(arrows.first { $0.props.start.binding?.shapeID == w.person })
+        let back = try require(arrows.first { $0.props.end.binding?.shapeID == w.person })
+        expectEqual(out.props.end.binding?.shapeID, made)
+        expectEqual(back.props.start.binding?.shapeID, made)
+        expect(out.props.bend != back.props.bend, "bent apart")
+        expectEqual(editor.relationships?.graph.relationshipTypes(joining: w.person, and: w.person), [made])
+        expectEqual(editor.selectedShapeIDs, [made])
+        expectEqual(editor.undoHistory.undoName, TypesStyle.newRelationshipType)
+        editor.undo()
+        expect(try w.bytes() == start, "one Undo returns the bytes")
+        expect(!editor.canUndo)
+    },
+    test("a relationship type, or a note that is no type, dragged onto itself makes nothing and leaves no step") {
+        for frame in [ReleaseBoard.employmentFrame, ReleaseBoard.annFrame] {
+            let w = try ReleaseBoard()
+            let before = w.h.editor.document
+            w.drag(from: frame, to: w.center(frame))
+            expectEqual(w.h.editor.document, before, "nothing is made from \(frame)")
+            expectEqual(w.h.editor.undoHistory.undoName, nil, "and no step")
+            expect(w.h.editor.card == nil)
+        }
+    },
+    test("a drag from a type that passes over the type itself, binding there, and goes on to another type relates the two, not the type to itself") {
+        let w = try ReleaseBoard(ends: false)
+        let editor = w.h.editor
+        let known = Set(editor.document.shapes.map(\.id))
+        w.drag(from: ReleaseBoard.personFrame, to: w.center(ReleaseBoard.personFrame), release: false)
+        w.h.wait(400)
+        expectEqual(editor.hintedShapeID, w.person, "bound back to Person, and held there past the precise timer")
+        w.h.drag(to: w.center(ReleaseBoard.companyFrame), speed: fast)
+        expectEqual(editor.hintedShapeID, w.company)
+        w.h.release()
+        let made = try require(editor.document.shapes.first { !known.contains($0.id) && $0[RelationshipProperty.self] == true }).id
+        let graph = try require(editor.relationships?.graph)
+        expectEqual(graph.relationshipTypes(joining: w.person, and: w.company), [made])
+        expectEqual(graph.relationshipTypes(joining: w.person, and: w.person), [], "Person is not related to itself")
+        expectEqual(w.arrows.filter { !known.contains($0.id) }.count, 2)
     },
     test("an end re-aimed from one relationship type to another: the old loses it and the new gains it at the release only") {
         let h = try EditorHarness(plugins: PortBoard.plugins(more: [DetailPanelPlugin(), DrawPlugin(), PortEdgesPlugin(), SlabsPlugin()]))

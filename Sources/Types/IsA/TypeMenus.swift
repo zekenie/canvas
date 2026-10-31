@@ -73,17 +73,25 @@ struct IsAMenu {
 @MainActor
 func registerTypeMenus(into registrar: inout PluginRegistrar) {
     // The offers in a type's words (`RelateOffers`): Relate to ▸, a type for each, the same pick the click on a pill opens, so the
-    // selection's menu (the Shape menu) and a right-click anywhere on the type have them with no pointer on the pill.
+    // selection's menu (the Shape menu) and a right-click anywhere on the type have them with no pointer on the pill. Then the
+    // type itself, unless its words offer it already: the drag from it back onto it, by keys.
     registrar.contextMenuForCanvas {
         MenuItems(in: ShapeMenuGroup.self, id: "relate") { subject in
             if subject.shapes.count == 1, let id = subject.shapes.first, let record = subject.editor.document[id] {
                 let offers = RelateOffers.offers(on: record, in: subject.editor)
-                if !offers.isEmpty {
+                let itself = !offers.contains { $0.target == id } && RelateOffers.offersItself(record, in: subject.editor)
+                if !offers.isEmpty || itself {
                     Submenu(TypesStyle.relateTo, in: ShapeMenuGroup.self, id: "relate") {
                         for face in offers {
                             MenuItem(RelateOffers.name(of: face.target, in: subject.editor), in: ShapeMenuGroup.self, id: "relate-\(face.target.rawValue.uuidString)",
                                      stepName: TypesStyle.newRelationshipType) { _, editor in
                                 editor.acceptRelateOffer(face)
+                            }
+                        }
+                        if itself {
+                            MenuItem(RelateOffers.name(of: id, in: subject.editor), in: ShapeMenuGroup.self, id: "relate-\(id.rawValue.uuidString)",
+                                     stepName: TypesStyle.newRelationshipType) { _, editor in
+                                editor.relateToItself(id)
                             }
                         }
                     }

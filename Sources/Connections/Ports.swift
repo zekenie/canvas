@@ -341,12 +341,14 @@ extension CanvasEditor {
     /// The channel `connection` would be drawn on if it ended at `shape`: the first of its channels
     /// that `shape` takes as a target (as `registry.takes(_:_:as:)` has it for its kind; for a
     /// shape that stands for others, a reference, what it stands for now: `ports(of:)`); nil if it
-    /// takes none (or it's where the connection starts, as a connection never ends where it starts,
-    /// or it holds where the connection starts or is held by it: `mayConnect`, or it's kept aside).
-    /// Cheap enough to ask of each shape under the pointer: it reads the port table the editor
-    /// keeps, a stand-in's, kept until what it stands for changes, and the two shapes' containers.
+    /// takes none (or it's where the connection starts, as a port's drag never ends where it starts
+    /// but on a shape a plugin says may take one from itself, `SelfConnections`, for its release to
+    /// make something else of, or it holds where the connection starts or is held by it:
+    /// `mayConnect`, or it's kept aside). Cheap enough to ask of each shape under the pointer: it
+    /// reads the port table the editor keeps, a stand-in's, kept until what it stands for changes,
+    /// and the two shapes' containers.
     public func channel(of connection: Connection, endingAt shape: AnyShapeRecord) -> ChannelID? {
-        guard shape.id != connection.shape, !shape.isOpaque, shapeContext.mayConnect(shape.id, connection.shape),
+        guard shape.id != connection.shape || connectsToItself(shape), !shape.isOpaque, shapeContext.mayConnect(shape.id, connection.shape),
               let ports = service(PortState.self)?.ports(of: shape) else { return nil }
         return connection.channels.first { ports.roles[$0]?.allows(.target) == true }
     }

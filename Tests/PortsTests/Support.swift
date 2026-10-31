@@ -11,6 +11,14 @@ import Topology
 // Fixtures only (CanvasTesting's boxes, discs and tags), so every test here shows the horizontal
 // knows no real kind, and no arrow: connections are tags, drawn by a connector that only records.
 
+/// Whether a box takes a port's drag from itself (`SelfConnections`): an added true|false a test sets.
+enum Looped {}
+
+extension Looped: ShapeProperty {
+    static let key: PropertyKey = "looped"
+    static var defaultValue: Bool? { nil }
+}
+
 /// Two channels, as a plugin that owns what they mean would declare them.
 enum Wire {}
 extension Wire: Channel {

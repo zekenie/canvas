@@ -54,6 +54,13 @@ enum RelateOffers {
         }
     }
 
+    /// Whether Relate to ▸ lists `record` itself, which no words need to name: the drag from a type back onto it, by keys, as
+    /// often as it is asked (a type may be related to itself more than once, as a drag makes another each time). Not while its
+    /// words are edited, when its words' offers are not listed either.
+    static func offersItself(_ record: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
+        editor.editingShapeID != record.id && editor.canRelateToItself(record) && canOffer(on: record, in: editor)
+    }
+
     /// Whether `record`, a type, offers anything: a board that can change, the index and relationships, and no relationship type
     /// (its pills name its ends, which are arrows; it relates to nothing).
     private static func canOffer(on record: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
@@ -112,6 +119,18 @@ extension CanvasEditor {
               relationships.graph.relationshipTypes(joining: face.shape, and: face.target).isEmpty else { return false }
         guard newRelationshipType(from: face.shape, to: face.target) != nil else {
             refuseChanges(to: [face.shape])
+            return false
+        }
+        return true
+    }
+
+    /// The drag from a type back onto it, by keys (Relate to ▸ and its own name): a relationship type from it to itself, with
+    /// two arrows, however many it has already. A refusal shakes the type; one that stopped being a type changes nothing.
+    @discardableResult
+    func relateToItself(_ type: ShapeID) -> Bool {
+        guard let record = document[type], canRelateToItself(record) else { return false }
+        guard newRelationshipType(from: type, to: type) != nil else {
+            refuseChanges(to: [type])
             return false
         }
         return true
