@@ -127,6 +127,9 @@ enum ReferenceStyle {
 
     /// What an empty pill says, dimmed.
     static let placeholder = "Reference"
+    /// The table of contents' row its rows gather under at each level (`ContentsSections`), so a frame's
+    /// many pills don't crowd out what it holds.
+    static let sectionTitle = "References"
 
     // MARK: Strengths
 

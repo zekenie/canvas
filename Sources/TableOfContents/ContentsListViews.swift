@@ -172,6 +172,15 @@ final class ContentsTableRow: NSTableRowView {
         look()
     }
 
+    /// Shows a section's row: its title names its triangle; it has no shape to tint, nor to drop on.
+    func show(section: ContentsSectionItem) {
+        spokenName = section.key.section.title
+        nameTriangle()
+        guard shape != nil else { return }
+        shape = nil
+        look()
+    }
+
     /// Reads the row's hover and drop, and is told once either changes, to read them again then.
     private func look() {
         looks += 1
@@ -276,14 +285,14 @@ final class ContentsDropLineView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// A row's cell: the row as its kind drew it, with its marks (`ContentsRowView`), hosted in SwiftUI,
-/// reused for the rows that come into view; in white on a selected row of a list with the keyboard,
-/// as a source list's text is.
+/// A row's cell: the row as its kind drew it, with its marks (`ContentsRowView`), or a section's row
+/// (`ContentsSectionLabel`), hosted in SwiftUI, reused for the rows that come into view; in white on a
+/// selected row of a list with the keyboard, as a source list's text is.
 @MainActor
 final class ContentsCell: NSTableCellView {
     static let identifier = NSUserInterfaceItemIdentifier("ContentsCell")
-    private let hosting = NSHostingView(rootView: ContentsCellContent(entry: nil, isEmphasized: false, size: .medium))
-    private var entry: ContentsEntry?
+    private let hosting = NSHostingView(rootView: ContentsCellContent(shown: nil, isEmphasized: false, size: .medium))
+    private var shown: ContentsCellContent.Shown?
     private var size: NSTableView.RowSizeStyle = .medium
 
     init() {
@@ -299,7 +308,14 @@ final class ContentsCell: NSTableCellView {
     required init?(coder: NSCoder) { fatalError("not from a nib") }
 
     func show(_ entry: ContentsEntry, size: NSTableView.RowSizeStyle) {
-        self.entry = entry
+        shown = .row(entry)
+        self.size = size
+        refresh()
+    }
+
+    /// Shows a section's row: its title and symbol, and how many rows it holds.
+    func show(_ section: ContentsSection, count: Int, size: NSTableView.RowSizeStyle) {
+        shown = .section(section, count: count)
         self.size = size
         refresh()
     }
@@ -309,26 +325,38 @@ final class ContentsCell: NSTableCellView {
     }
 
     private func refresh() {
-        hosting.rootView = ContentsCellContent(entry: entry, isEmphasized: backgroundStyle == .emphasized, size: size)
+        hosting.rootView = ContentsCellContent(shown: shown, isEmphasized: backgroundStyle == .emphasized, size: size)
     }
 }
 
-/// What a row's cell shows: the row, laid out as a source list's (its symbol in a column of its own,
-/// in the accent color unless the row colors it), at the sidebar's size for its rows.
+/// What a row's cell shows: the row, or a section's row, laid out as a source list's (its symbol in a
+/// column of its own, in the accent color unless the row colors it), at the sidebar's size for its rows.
 struct ContentsCellContent: View {
-    let entry: ContentsEntry?
+    /// A shape's row, or a section's, with how many rows it holds.
+    enum Shown {
+        case row(ContentsEntry)
+        case section(ContentsSection, count: Int)
+    }
+
+    let shown: Shown?
     let isEmphasized: Bool
     let size: NSTableView.RowSizeStyle
 
     var body: some View {
-        if let entry {
-            ContentsRowView(entry: entry)
-                .equatable()
+        if let shown {
+            content(shown)
                 .labelStyle(ContentsRowLabelStyle())
                 .font(.system(size: ContentsStyle.rowFontSize(size)))
                 .environment(\.sidebarRowSize, ContentsStyle.sidebarRowSize(size))
                 .environment(\.backgroundProminence, isEmphasized ? .increased : .standard)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private func content(_ shown: Shown) -> some View {
+        switch shown {
+        case .row(let entry): ContentsRowView(entry: entry).equatable()
+        case .section(let section, let count): ContentsSectionLabel(section: section, count: count)
         }
     }
 }

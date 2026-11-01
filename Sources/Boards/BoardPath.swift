@@ -535,6 +535,9 @@ struct PathKeys: NSViewRepresentable {
             if let row = menu.row {
                 crumbs.pick(row)
                 onExit()
+            } else {
+                // A section's row has no shape to go to: it opens or closes.
+                menu.press(.activate)
             }
         case .escape: crumbs.closeMenuToCrumb()
         case .tab: leave()

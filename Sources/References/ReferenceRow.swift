@@ -15,7 +15,9 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
     /// boards the shape is inside and the reference isn't (`ReferenceState.rowPath(of:to:)`), so rows
     /// for shapes from the same place read alike. A change to the shape it names, or to a shape its
     /// path was read from, remakes its row (`affected`: `rowsAffected(by:)`), and an answer arriving
-    /// remakes a dynamic one's (`contentsDidChange(for:)`, from `ReferenceState`).
+    /// remakes a dynamic one's (`contentsDidChange(for:)`, from `ReferenceState`). The rows gather at
+    /// each level under one "References" row (`contentsSection`), closed until it's opened, so a frame
+    /// whose shapes many pills stand beside lists its shapes first and the pills under one row.
     mutating func referenceRow() {
         contentsRow(affected: { changes, context in context.service(ReferenceState.self)?.rowsAffected(by: changes) ?? [] }) { shape, context in
             let state = context.service(ReferenceState.self)
@@ -43,5 +45,6 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
                 ContentsLabel(text, systemImage: ReferenceStyle.dynamicSymbol, badge: found.all ? ReferenceStyle.badge(found.count) : nil)
             }
         }
+        contentsSection(ContentsSection(ReferenceStyle.sectionTitle, systemImage: ReferenceStyle.systemImage))
     }
 }

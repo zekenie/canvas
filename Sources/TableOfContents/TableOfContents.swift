@@ -54,6 +54,51 @@ extension ContentsTitles: KeyedExtensionPoint {
     public static func uniqueKeys(of _: Contribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
+/// Where a kind's rows go in the list, when they'd crowd out the rest: gathered, at each level they're
+/// listed at (the board, what a frame holds, a subboard's board under its row), under one row of
+/// their own after the level's other rows (`ContentsSection`), which says how many it holds and starts
+/// closed (References gathers its pills' rows so, under "References"). At most one per kind: two are
+/// `RegistryError.conflict` at startup. Rows of kinds that name the same section gather under one row;
+/// sections come in the order their contributions do (plugin order).
+public enum ContentsSections {}
+
+extension ContentsSections: KeyedExtensionPoint {
+    public typealias Contribution = ContentsSection
+    public static var owner: PluginID { .tableOfContents }
+    public static func uniqueKeys(of _: ContentsSection, for target: ShapeTarget) -> [AnyHashable] { [target] }
+}
+
+/// A section of the list (`ContentsSections`): what its row says, a title after a symbol, with how many
+/// rows it holds at the trailing end, where a row's badge is.
+public struct ContentsSection: Hashable, Sendable {
+    public let title: String
+    public let systemImage: String
+
+    public init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+}
+
+/// A level of the list: a board's top-level rows, or the rows nested under a shape's (what a frame
+/// holds, a subboard's board under its row, the arrows from a note).
+public enum ContentsLevel: Hashable, Sendable {
+    case top(BoardID)
+    case under(ShapeID)
+}
+
+/// A section at one level of the list (`ContentsSections`), which is open or closed on its own
+/// (`ContentsState.isExpanded(_:)`).
+public struct ContentsSectionKey: Hashable, Sendable {
+    public let section: ContentsSection
+    public let level: ContentsLevel
+
+    public init(_ section: ContentsSection, at level: ContentsLevel) {
+        self.section = section
+        self.level = level
+    }
+}
+
 /// Marks at the trailing end of a shape's row, from any plugin: a state worth seeing at a glance down
 /// the list (Validation marks a shape with issues with a red or orange dot, Locking a locked
 /// one with a lock). A list: the kind's contributions, then those whose scope reaches it (a lock on the
@@ -329,6 +374,15 @@ extension ShapeRegistrar {
     public mutating func contentsTitle(_ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
         contribute({ $0.typed(as: Definition.Props.self).flatMap(make) }, to: ContentsTitles.self)
     }
+
+    /// Where this kind's rows go: gathered at each level under one row of the section's, after the
+    /// level's other rows, closed until it's opened, with how many it holds (`ContentsSections`), so a
+    /// kind whose shapes are many and say little leaves the rest of the list in view:
+    ///
+    ///     reference.contentsSection(ContentsSection("References", systemImage: "arrow.turn.up.right"))
+    public mutating func contentsSection(_ section: ContentsSection) {
+        contribute(section, to: ContentsSections.self)
+    }
 }
 
 extension PluginRegistrar {
@@ -358,6 +412,12 @@ extension PluginRegistrar {
     /// What the rows of a kind another plugin registers are called, as above.
     public mutating func contentsTitle<P: ShapeProps>(_: P.Type, _ make: @escaping @MainActor (ShapeRecord<P>) -> String?) {
         contribute({ $0.typed(as: P.self).flatMap(make) }, to: ContentsTitles.self, for: .kind(P.kind))
+    }
+
+    /// The section the rows of a kind another plugin registers gather in, as `ShapeRegistrar`'s
+    /// `contentsSection(_:)`.
+    public mutating func contentsSection<P: ShapeProps>(_: P.Type, _ section: ContentsSection) {
+        contribute(section, to: ContentsSections.self, for: .kind(P.kind))
     }
 
     /// What moves shapes dropped in the list somewhere they aren't (`ContentsMoves`): `admits`, asked
@@ -526,6 +586,29 @@ public struct ContentsLabel: View {
         } else {
             Image(systemName: systemImage ?? kindSymbol)
         }
+    }
+}
+
+/// A section's row (`ContentsSections`): its symbol and title, then how many rows it holds, at the
+/// trailing end, where a row's badge is. Its symbol is the list's accent dimmed (the secondary level),
+/// in no kind's color: it stands for rows, not a shape. VoiceOver says "References, 30".
+struct ContentsSectionLabel: View {
+    let section: ContentsSection
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: ContentsStyle.badgeSpacing) {
+            Label {
+                Text(section.title)
+            } icon: {
+                Image(systemName: section.systemImage).foregroundStyle(.secondary)
+            }
+            .accessibilityValue(ContentsStyle.sectionCount(count))
+            Spacer(minLength: 0)
+            Text(ContentsStyle.sectionCount(count)).foregroundStyle(.secondary).monospacedDigit()
+                .accessibilityHidden(true)
+        }
+        .lineLimit(1)
     }
 }
 
@@ -798,6 +881,8 @@ enum ContentsStyle {
     /// as a stand-in's arrow is): a few letters and "…".
     static let pathNameFloor: CGFloat = 34
     static func pathSpoken(_ title: String, in path: [String]) -> String { "\(title), in \(path.joined(separator: pathSeparator))" }
+    /// How many rows a section's row says it holds (`ContentsSectionLabel`), shown and said.
+    static func sectionCount(_ count: Int) -> String { count.formatted() }
     /// A hovered row's tint, in the selection highlight's place: inset from the row's sides, with
     /// its corners.
     static let hoverOpacity: CGFloat = 0.14

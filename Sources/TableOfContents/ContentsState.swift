@@ -36,6 +36,10 @@ public struct ContentsEntry: Identifiable {
     /// starts collapsed (the arrows that start from a shape, a subboard's board). What the person
     /// turns its disclosure triangle to holds after that (`ContentsState.isExpanded(_:)`).
     public var startsExpanded: Bool { row.startsExpanded }
+    /// The section its kind's rows gather in at each level (`ContentsSections`), nil for none: the
+    /// list shows the row under the section's row, after the level's other rows. Where the row is
+    /// listed, and what's nested under it, are as for any row.
+    public var section: ContentsSection? { row.section }
     /// The shape's row, as its kind made it for the shape as listed, with its marks: the same
     /// object until the shape changes other than by moving, or its marks change.
     var row: ShapeRow
@@ -74,14 +78,17 @@ final class ShapeRow {
     /// Whether the row starts expanded: a container's (`registry.isContainer`) that owns no board,
     /// whose nested rows are of what it holds on the board shown.
     let startsExpanded: Bool
+    /// The section its kind's rows gather in (`ContentsSections`).
+    let section: ContentsSection?
 
-    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, ownsBoard: Bool, startsExpanded: Bool, row: ResolvedRow, symbol: String,
-         kindName: String, marks: [ContentsMark]) {
+    init(record: AnyShapeRecord, isListed: Bool, parent: ShapeID?, ownsBoard: Bool, startsExpanded: Bool, section: ContentsSection?,
+         row: ResolvedRow, symbol: String, kindName: String, marks: [ContentsMark]) {
         self.record = record
         self.isListed = isListed
         self.parent = parent
         self.ownsBoard = ownsBoard
         self.startsExpanded = startsExpanded
+        self.section = section
         view = row.view
         label = row.label
         self.symbol = symbol
@@ -98,6 +105,7 @@ final class ShapeRow {
         parent = row.parent
         ownsBoard = row.ownsBoard
         startsExpanded = row.startsExpanded
+        section = row.section
         if let resolved {
             view = resolved.view
             label = resolved.label
@@ -163,6 +171,8 @@ public final class ContentsState {
         let title: ContentsTitles.Contribution?
         /// What marks its rows (`ContentsMarks`): the kind's own, then every kind's.
         let marks: [ContentsMarkContribution]
+        /// The section its rows gather in (`ContentsSections`).
+        let section: ContentsSection?
         /// The kind's label and symbol (`registry.label(of:)`), a dashed square for a kind without one.
         let name: String
         let symbol: String
@@ -223,6 +233,11 @@ public final class ContentsState {
     /// The rows whose disclosure triangle the person turned from how it starts
     /// (`ContentsEntry.startsExpanded`): observed per row, through `isExpanded(_:)`.
     @ObservationIgnored private var turned: Set<ShapeID> = []
+    /// The sections the person opened, each at its level (a section starts closed): observed per
+    /// section, through `isExpanded(_:)`.
+    @ObservationIgnored private var openSections: Set<ContentsSectionKey> = []
+    /// Where each section comes among a level's (`ContentsSections`' order: plugin order).
+    @ObservationIgnored private let sectionRanks: [ContentsSection: Int]
     /// The lists showing the rows, told of each row turned wherever it was turned (spring-loading,
     /// a headless turn), so each opens or closes it.
     @ObservationIgnored private var turnWatchers: [WeakTurnWatcher] = []
@@ -275,6 +290,11 @@ public final class ContentsState {
         rowAffected = editor.registry.contributions(to: ContentsRows.self).compactMap(\.value.affected)
         markAffected = editor.registry.contributions(to: ContentsMarks.self).compactMap(\.value.affected)
         namedHeading = editor.registry.contributions(to: ContentsHeadings.self).first?.value
+        var ranks: [ContentsSection: Int] = [:]
+        for contribution in editor.registry.contributions(to: ContentsSections.self) where ranks[contribution.value] == nil {
+            ranks[contribution.value] = ranks.count
+        }
+        sectionRanks = ranks
     }
 
     // MARK: What's listed
@@ -481,24 +501,73 @@ public final class ContentsState {
         turnWatchers.append(WeakTurnWatcher(watcher: watcher))
     }
 
-    /// Whether the board shown's row of a shape shows in the list as it's listed now: listed, and every
-    /// row it's nested under open. A dragged selected row takes only the selected rows that show, as the
-    /// list's table drags only those.
+    /// Whether a section's row shows the rows gathered in it at its level (`ContentsSections`): closed
+    /// until the person opens it, then as they left it, kept by section and level for the editor's
+    /// life, whatever's listed, as a row's disclosure is. Observing it hears only this section's
+    /// turning.
+    public func isExpanded(_ section: ContentsSectionKey) -> Bool {
+        access(keyPath: \.[open: section])
+        return openSections.contains(section)
+    }
+
+    /// The person opened or closed a section's row (a click on its triangle, → or ←, Return on it).
+    public func setExpanded(_ section: ContentsSectionKey, _ isExpanded: Bool) {
+        guard isExpanded != openSections.contains(section) else { return }
+        withMutation(keyPath: \.[open: section]) {
+            if isExpanded { openSections.insert(section) } else { openSections.remove(section) }
+        }
+        turns += 1
+        turnWatchers.removeAll { $0.watcher == nil }
+        for watcher in turnWatchers { watcher.watcher?.sectionTurned(section) }
+    }
+
+    /// Whether the board shown's row of a shape shows in the list as it's listed now: listed, every
+    /// row it's nested under open, and the section it and each of those is gathered in. A dragged
+    /// selected row takes only the selected rows that show, as the list's table drags only those.
     func showsRow(of id: ShapeID) -> Bool {
         guard let listing = board else { return true }
         guard listing.lists(id) else { return false }
-        var next = listing.parent(of: id), steps = 0
-        while let parent = next, steps <= rows.count {
+        var current = id, steps = 0
+        while true {
+            let parent = listing.parent(of: current)
+            if let section = listing.row(of: current)?.section,
+               !openSections.contains(ContentsSectionKey(section, at: parent.map { .under($0) } ?? .top(editor.board))) { return false }
+            guard let parent, steps <= rows.count else { return true }
             guard let row = rows[parent], row.startsExpanded != turned.contains(parent) else { return false }
-            next = listing.parent(of: parent)
+            current = parent
             steps += 1
         }
-        return true
     }
 
     /// Only a key: one key path per shape, under which Observation keeps the observers of each row's
     /// disclosure apart.
     private subscript(turned id: ShapeID) -> Bool { turned.contains(id) }
+
+    /// Only a key, as `turned` is: one key path per section at its level.
+    private subscript(open section: ContentsSectionKey) -> Bool { openSections.contains(section) }
+
+    // MARK: Sections
+
+    /// A level's rows as listed (back to front) as the list shows them, front to back: the rows in no
+    /// section, then each section with its rows (`ContentsSections`), in the sections' order. A pass
+    /// over the level; the rows as they are without a section declared.
+    func gathered(_ level: [ContentsEntry]) -> ContentsGathering {
+        var gathering = ContentsGathering()
+        guard !sectionRanks.isEmpty else {
+            gathering.rows = level.reversed()
+            return gathering
+        }
+        var sections: [ContentsSection: [ContentsEntry]] = [:]
+        for entry in level.reversed() {
+            if let section = entry.section { sections[section, default: []].append(entry) } else { gathering.rows.append(entry) }
+        }
+        gathering.sections = sections.map { ContentsGathering.Section(section: $0.key, rank: rank(of: $0.key), rows: $0.value) }
+            .sorted { $0.rank < $1.rank }
+        return gathering
+    }
+
+    /// Where a section comes among a level's.
+    func rank(of section: ContentsSection) -> Int { sectionRanks[section] ?? sectionRanks.count }
 
     // MARK: Another board
 
@@ -653,7 +722,7 @@ public final class ContentsState {
         #endif
         return ShapeRow(record: record, isListed: isListed,
                         parent: contribution?.parent?(record, ContentsContext(editor: editor)) ?? registry.container(of: record, in: document),
-                        ownsBoard: ownsBoard, startsExpanded: !ownsBoard && registry.isContainer(record),
+                        ownsBoard: ownsBoard, startsExpanded: !ownsBoard && registry.isContainer(record), section: kind.section,
                         row: resolvedRow(of: record, kind: kind), symbol: kind.symbol, kindName: kind.name,
                         marks: marked ? marks(of: record, isListed: isListed, kind: kind) : [])
     }
@@ -704,6 +773,7 @@ public final class ContentsState {
         let found = KindRows(contribution: registry.contributions(to: ContentsRows.self, for: kind).first,
                              title: registry.contributions(to: ContentsTitles.self, for: kind).first,
                              marks: registry.contributions(to: ContentsMarks.self, for: kind),
+                             section: registry.contributions(to: ContentsSections.self, for: kind).first,
                              name: label.name, symbol: label.systemImage ?? ContentsSymbolKey.defaultValue)
         kinds[kind] = found
         return found
@@ -879,10 +949,38 @@ extension ContentsState: EditorService {
     }
 }
 
-/// What hears of each row turned (`ContentsState.setExpanded`): a list showing the rows.
+/// What hears of each row and section turned (`ContentsState.setExpanded`): a list showing the rows.
 @MainActor
 protocol ContentsTurnWatcher: AnyObject {
     func rowTurned(_ id: ShapeID)
+    func sectionTurned(_ section: ContentsSectionKey)
+}
+
+/// A level of the list's rows as it shows them, front to back: those in no section, then each
+/// section's (`ContentsSections`), in the sections' order (`ContentsState.gathered(_:)`).
+struct ContentsGathering {
+    struct Section {
+        let section: ContentsSection
+        let rank: Int
+        var rows: [ContentsEntry]
+    }
+
+    var rows: [ContentsEntry] = []
+    var sections: [Section] = []
+
+    /// `other` after this, as one level: its rows after these, and each of its sections' rows after
+    /// those this has of the section (a board's rows under its owner's, then those nested under the
+    /// owner where it is).
+    mutating func append(_ other: ContentsGathering) {
+        rows += other.rows
+        for section in other.sections {
+            if let index = sections.firstIndex(where: { $0.section == section.section }) {
+                sections[index].rows += section.rows
+            } else {
+                sections.insert(section, at: sections.firstIndex { $0.rank > section.rank } ?? sections.count)
+            }
+        }
+    }
 }
 
 /// A list told of turns, held weakly: the state is the editor's, and outlives the list.

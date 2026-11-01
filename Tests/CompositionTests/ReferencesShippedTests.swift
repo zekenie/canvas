@@ -18,6 +18,7 @@ import Selection
 import ShippedTesting
 import StickyNotes
 import Subboards
+import SwiftUI
 import TableOfContents
 import TestKit
 import Topology
@@ -454,5 +455,32 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let issues = try require(h.editor.validation?.result(for: pill)).issues
         expectEqual(issues.map(\.severity), [.warning])
         expectEqual(issues.first?.field, "query")
+    },
+    test("in the sidebar, a frame lists the shapes it holds, then its pills' rows under one closed \"References\" row with their count") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let originals = ["Canvas", "Geometry", "Selection"].enumerated().map { note(h, $1, at: CGPoint(x: 1000, y: 300 * $0), isPublic: true) }
+        let layer = frameShape(h, "Product layer", at: .zero)
+        let held = [subboard(h, "Arrows", at: CGPoint(x: 20, y: 20)), subboard(h, "Frames", at: CGPoint(x: 300, y: 20))]
+            + zip(originals, ["Canvas", "Geometry", "Selection"]).enumerated().map { reference(h, to: $1.0, label: $1.1, at: CGPoint(x: 600, y: 40 * $0)) }
+        h.editor.put(held, in: layer)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+        let hosting = NSHostingView(rootView: TableOfContentsView(editor: h.editor))
+        hosting.frame = CGRect(x: 0, y: 0, width: 300, height: 600)
+        window.contentView = hosting
+        window.settle()
+        /// The list's rows, less its header, each indented two spaces a level.
+        @MainActor func shown() -> [String] {
+            guard let outline = hosting.descendants(NSOutlineView.self).first, outline.numberOfRows > 1 else { return [] }
+            return (1..<outline.numberOfRows).map { String(repeating: "  ", count: outline.level(forRow: $0)) + String(describing: outline.item(atRow: $0)!) }
+        }
+        window.spin { shown().count == 7 }
+        expectEqual(shown(), ["Product layer", "  Frames", "  Arrows", "  References · 3", "Selection", "Geometry", "Canvas"])
+        let outline = try require(hosting.descendants(NSOutlineView.self).first)
+        outline.expandItem(outline.item(atRow: 4))
+        window.spin { shown().count == 10 }
+        expectEqual(shown(), ["Product layer", "  Frames", "  Arrows", "  References · 3", "    Selection", "    Geometry", "    Canvas",
+                              "Selection", "Geometry", "Canvas"])
     },
 ])

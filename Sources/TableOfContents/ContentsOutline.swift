@@ -12,15 +12,19 @@ import SwiftUI
 /// what picking does is the host's. It reads the rows through `ContentsState.outline(of:)`, so it
 /// follows the file while it shows, and makes the views of only the rows in view. As tall as its
 /// rows, up to `maxHeight`, past which it scrolls; it opens at the top. Nothing without the table
-/// of contents' plugin, or for a board with no rows.
+/// of contents' plugin, or for a board with no rows. The rows of a kind that gathers them in a
+/// section (`ContentsSections`) are under the section's row, after their level's other rows, as in
+/// the list, closed until it's opened (open from the start where it holds the highlighted row); a
+/// click on it opens or closes it, since it has no shape to pick.
 ///
 /// With a `keyboard` its rows take the keyboard, as a source list's do, from the host's key view
 /// (`OutlineKeyboard.press`): Up and Down walk them (stopping at the ends), Right opens a row's
 /// disclosure, or goes on to its first nested row once it is open, Left closes it, or goes to the row
 /// it is nested under. Return, Space and Escape are the host's (the row in focus is
-/// `OutlineKeyboard.row`). The row in focus is outlined and kept in view. Every row is named for
-/// assistive apps, the disclosure by its row ("Checkout, expand"), and the highlighted row carries
-/// the value "current path" (`ContentsStyle.outlineCurrentPath`).
+/// `OutlineKeyboard.row`), but on a section's row, which `.activate` opens or closes. The row in
+/// focus is outlined and kept in view. Every row is named for assistive apps, the disclosure by its
+/// row ("Checkout, expand"), and the highlighted row carries the value "current path"
+/// (`ContentsStyle.outlineCurrentPath`).
 public struct ContentsOutline: View {
     let editor: CanvasEditor
     let board: BoardID
@@ -43,16 +47,18 @@ public struct ContentsOutline: View {
         if let state = editor.tableOfContents {
             let entries = state.outline(of: board)
             if !entries.isEmpty {
-                OutlineRows(state: state, entries: entries, highlighted: highlighted, maxHeight: maxHeight, keyboard: keyboard, onPick: onPick)
+                OutlineRows(state: state, board: board, entries: entries, highlighted: highlighted, maxHeight: maxHeight, keyboard: keyboard,
+                            onPick: onPick)
                     .id(board)          // another board's rows start afresh, at the top
             }
         }
     }
 }
 
-/// A key an outline answers (`OutlineKeyboard.press`).
+/// A key an outline answers (`OutlineKeyboard.press`): the arrows, and `activate` (Return or Space),
+/// which opens or closes a section's row, and leaves a row's to the host, which picks its shape.
 public enum OutlineKey: Sendable {
-    case up, down, left, right
+    case up, down, left, right, activate
 }
 
 /// How a host gives an outline the keyboard (`ContentsOutline`): the host owns the key view and
@@ -62,10 +68,16 @@ public enum OutlineKey: Sendable {
 @MainActor
 @Observable
 public final class OutlineKeyboard {
-    /// The row that has the keyboard, and what it is called (as assistive apps read it).
-    public internal(set) var row: ShapeID? {
-        didSet { if row == nil { rowName = nil } }
+    /// The line that has the keyboard: a row, or a section's row.
+    var line: OutlineLineID? {
+        didSet { if line == nil { rowName = nil } }
     }
+    /// The shape of the row that has the keyboard: nil on a section's row, or with none.
+    public var row: ShapeID? {
+        guard case .row(let id)? = line else { return nil }
+        return id
+    }
+    /// What the line that has the keyboard is called (as assistive apps read it).
     public internal(set) var rowName: String?
     /// Whether the keyboard was asked for and no row has taken it yet.
     public internal(set) var isWaiting = false
@@ -79,61 +91,85 @@ public final class OutlineKeyboard {
     /// The keyboard is given up.
     public func reset() {
         isWaiting = false
-        if row != nil { row = nil }
+        if line != nil { line = nil }
     }
 
     /// Whether the outline has the keyboard, or is about to.
-    public var isTaken: Bool { isWaiting || row != nil }
+    public var isTaken: Bool { isWaiting || line != nil }
 
     /// A key, answered by the outline if it shows.
     public func press(_ key: OutlineKey) { step?(key) }
 }
 
-/// A row of the outline as shown: its entry, how deep it's nested, whether rows are, and whether
-/// they show.
+/// What a line of the outline is: a shape's row, or the row of a section at its level.
+enum OutlineLineID: Hashable {
+    case row(ShapeID)
+    case section(ContentsSectionKey)
+}
+
+/// A line of the outline as shown: a row (its entry) or a section's row (the section, and how many
+/// rows it holds), how deep it's nested, whether rows are, and whether they show.
 struct OutlineLine: Identifiable {
-    let entry: ContentsEntry
+    enum Shows {
+        case row(ContentsEntry)
+        case section(ContentsSection, count: Int)
+    }
+
+    let id: OutlineLineID
+    let shows: Shows
     let depth: Int
     let isExpandable: Bool
     let isExpanded: Bool
-    var id: ShapeID { entry.id }
+
+    /// The row's shape; nil for a section's row.
+    var shape: ShapeID? {
+        guard case .row(let id) = id else { return nil }
+        return id
+    }
 }
 
 extension OutlineLine {
-    /// What the row is called to assistive apps: the list's name for it (`ContentsEntry.spokenName`),
-    /// so a row is said alike in both.
+    /// What the line is called to assistive apps: the list's name for a row
+    /// (`ContentsEntry.spokenName`), so a row is said alike in both; a section's title.
     @MainActor
-    var name: String { entry.spokenName }
+    var name: String {
+        switch shows {
+        case .row(let entry): entry.spokenName
+        case .section(let section, _): section.title
+        }
+    }
 }
 
 /// The rows in view, flattened: each row, then, while it's expanded, the rows nested under it.
 struct OutlineRows: View {
     let state: ContentsState
+    let board: BoardID
     let entries: [ContentsEntry]
     let highlighted: ShapeID?
     let maxHeight: CGFloat
     let keyboard: OutlineKeyboard?
     let onPick: @MainActor (ShapeID) -> Void
-    /// The rows turned from how they start (`ContentsEntry.startsExpanded`), here.
-    @State private var turned: Set<ShapeID> = []
+    /// The lines turned from how they start (`ContentsEntry.startsExpanded`; a section's row closed,
+    /// but one holding the highlighted row), here.
+    @State private var turned: Set<OutlineLineID> = []
 
     var body: some View {
-        let lines = Self.lines(of: entries, turned: turned, state: state)
+        let lines = Self.lines(of: entries, board: board, highlighted: highlighted, turned: turned, state: state)
         // It opens at the top, as data-canvas's menus do: scrolling a lazy stack to a row far down
         // lays out the rows before it (some 70 ms to the last of 10,000).
         ScrollViewReader { scroll in
             ScrollView(.vertical) {
                 LazyVStack(spacing: 0) {
                     ForEach(lines) { line in
-                        OutlineRow(line: line, isExpanded: line.isExpanded, isHighlighted: line.id == highlighted,
-                                   hasKeyboard: keyboard?.row == line.id, takesKeyboard: keyboard != nil,
-                                   toggle: { toggle(line.id) }, pick: { onPick(line.id) })
+                        OutlineRow(line: line, isExpanded: line.isExpanded, isHighlighted: line.shape != nil && line.shape == highlighted,
+                                   hasKeyboard: keyboard?.line == line.id, takesKeyboard: keyboard != nil,
+                                   toggle: { toggle(line.id) }, pick: { if let shape = line.shape { onPick(shape) } else { toggle(line.id) } })
                             .id(line.id)
                     }
                 }
             }
-            .onChange(of: keyboard?.row) { _, row in
-                if let row { scroll.scrollTo(row) }
+            .onChange(of: keyboard?.line) { _, line in
+                if let line { scroll.scrollTo(line) }
             }
         }
         .frame(height: min(CGFloat(lines.count) * ContentsStyle.outlineRowHeight, maxHeight))
@@ -147,16 +183,16 @@ struct OutlineRows: View {
         guard let keyboard else { return }
         keyboard.step = { key in Self.step(key, in: lines, keyboard: keyboard, toggle: toggle) }
         if keyboard.isWaiting, !lines.isEmpty {
-            let first = lines.first { $0.id == highlighted } ?? lines.first
-            keyboard.row = first?.id
+            let first = lines.first { $0.shape != nil && $0.shape == highlighted } ?? lines.first
+            keyboard.line = first?.id
             keyboard.rowName = first?.name
             keyboard.isWaiting = false
         }
     }
 
-    /// A key on the row with the keyboard.
-    private static func step(_ key: OutlineKey, in lines: [OutlineLine], keyboard: OutlineKeyboard, toggle: (ShapeID) -> Void) {
-        guard let row = keyboard.row, let index = lines.firstIndex(where: { $0.id == row }) else { return }
+    /// A key on the line with the keyboard.
+    private static func step(_ key: OutlineKey, in lines: [OutlineLine], keyboard: OutlineKeyboard, toggle: (OutlineLineID) -> Void) {
+        guard let focused = keyboard.line, let index = lines.firstIndex(where: { $0.id == focused }) else { return }
         let line = lines[index]
         var next: OutlineLine?
         switch key {
@@ -170,42 +206,61 @@ struct OutlineRows: View {
         case .left:
             if line.isExpanded { toggle(line.id) }
             else { next = lines[..<index].last(where: { $0.depth < line.depth }) }
+        case .activate:
+            // A row's is the host's to pick; a section's row opens or closes.
+            if line.shape == nil, line.isExpandable { toggle(line.id) }
         }
         if let next {
-            keyboard.row = next.id
+            keyboard.line = next.id
             keyboard.rowName = next.name
         }
     }
 
-    private func toggle(_ id: ShapeID) {
+    private func toggle(_ id: OutlineLineID) {
         if turned.remove(id) == nil { turned.insert(id) }
     }
 
-    /// The rows shown: every top-level row, and under each row expanded (a container's, unless it's
+    /// The lines shown: every top-level row, and under each row expanded (a container's, unless it's
     /// in `turned`; any other row, if it is) the rows nested under it, the rows of the board its
     /// shape owns first (`nestedBoard`), each level front to back (entries, in document order, the
-    /// other way round), as in the list.
-    static func lines(of entries: [ContentsEntry], turned: Set<ShapeID>, state: ContentsState) -> [OutlineLine] {
+    /// other way round), as in the list; each level's sections after its rows, closed unless turned
+    /// (open, unless turned, where it holds the highlighted row, the way you came), as in the list.
+    static func lines(of entries: [ContentsEntry], board: BoardID, highlighted: ShapeID?, turned: Set<OutlineLineID>,
+                      state: ContentsState) -> [OutlineLine] {
         var lines: [OutlineLine] = []
         lines.reserveCapacity(entries.count)
-        func add(_ entries: [ContentsEntry], depth: Int) {
-            for entry in entries.reversed() {
-                let board = state.boardToOpen(under: entry)
-                let isExpandable = board != nil || entry.children != nil
-                let isExpanded = isExpandable && entry.startsExpanded != turned.contains(entry.id)
-                lines.append(OutlineLine(entry: entry, depth: depth, isExpandable: isExpandable, isExpanded: isExpanded))
+        /// A level's rows (as listed, back to front), under `parent`'s row (nil: the board's top level).
+        func add(_ level: [ContentsEntry], under parent: ShapeID?, depth: Int) {
+            let gathered = state.gathered(level)
+            for entry in gathered.rows { add(entry, depth: depth) }
+            for section in gathered.sections {
+                let id = OutlineLineID.section(ContentsSectionKey(section.section, at: parent.map { .under($0) } ?? .top(board)))
+                let holdsHighlighted = highlighted.map { highlighted in section.rows.contains { $0.id == highlighted } } ?? false
+                let isExpanded = holdsHighlighted != turned.contains(id)
+                lines.append(OutlineLine(id: id, shows: .section(section.section, count: section.rows.count), depth: depth,
+                                         isExpandable: true, isExpanded: isExpanded))
                 guard isExpanded else { continue }
-                if let board { add(state.outline(of: board), depth: depth + 1) }
-                if let children = entry.children { add(children, depth: depth + 1) }
+                for entry in section.rows { add(entry, depth: depth + 1) }
             }
         }
-        add(entries, depth: 0)
+        func add(_ entry: ContentsEntry, depth: Int) {
+            let board = state.boardToOpen(under: entry)
+            let isExpandable = board != nil || entry.children != nil
+            let isExpanded = isExpandable && entry.startsExpanded != turned.contains(.row(entry.id))
+            lines.append(OutlineLine(id: .row(entry.id), shows: .row(entry), depth: depth, isExpandable: isExpandable, isExpanded: isExpanded))
+            guard isExpanded else { return }
+            // The rows of the board it owns, then those nested under it where it is: one level, as listed
+            // (back to front), so its sections gather both.
+            add((entry.children ?? []) + (board.map { state.outline(of: $0) } ?? []), under: entry.id, depth: depth + 1)
+        }
+        add(entries, under: nil, depth: 0)
         return lines
     }
 }
 
 /// One row: indented as deep as it's nested, a disclosure triangle when rows are nested under it,
-/// and the row as its kind drew it, a button that picks its shape.
+/// and the row as its kind drew it, a button that picks its shape; or a section's row, a button that
+/// opens or closes it.
 struct OutlineRow: View {
     let line: OutlineLine
     let isExpanded: Bool
@@ -259,12 +314,12 @@ struct OutlineRow: View {
         .onHover { isHovered = $0 }
     }
 
-    /// The row's button: a click picks its shape, the keyboard on the row too.
+    /// The row's button: a click picks its shape (a section's row: opens or closes it), the keyboard on
+    /// the row too.
     @ViewBuilder
     private var row: some View {
         let button = Button(action: pick) {
-            // The list's row, so the two never differ (an outline's rows have no marks).
-            ContentsRowView(entry: line.entry)
+            label
                 .labelStyle(OutlineLabelStyle())
                 // The row's colors, as in the list: a borderless button's label is dimmed.
                 .foregroundStyle(Color.primary)
@@ -273,15 +328,32 @@ struct OutlineRow: View {
         }
         .buttonStyle(.borderless)
         .accessibilityLabel(name)
-        .accessibilityValue(isHighlighted ? ContentsStyle.outlineCurrentPath : "")
-        if takesKeyboard {
-            // The host's key view has the keyboard, and gives it back once a row is picked.
+        .accessibilityValue(value)
+        if takesKeyboard, line.shape != nil {
+            // The host's key view has the keyboard, and gives it back once a row is picked. A section's
+            // row picks nothing (the menu stays), so its click never takes the keyboard (below).
             button
         } else {
             // With no keyboard to take, a click never takes it (with Full Keyboard Access on, a
             // button's would, and it would fall to the window once the panel closes).
             button.focusable(false)
         }
+    }
+
+    /// The list's row, so the two never differ (an outline's rows have no marks), or a section's.
+    @ViewBuilder
+    private var label: some View {
+        switch line.shows {
+        case .row(let entry): ContentsRowView(entry: entry)
+        case .section(let section, let count): ContentsSectionLabel(section: section, count: count)
+        }
+    }
+
+    /// What assistive apps read after the row's name: "current path" on the way you came; a section's
+    /// row, how many rows it holds.
+    private var value: String {
+        if case .section(_, let count) = line.shows { return ContentsStyle.sectionCount(count) }
+        return isHighlighted ? ContentsStyle.outlineCurrentPath : ""
     }
 
     private func highlight(_ color: Color) -> some View {

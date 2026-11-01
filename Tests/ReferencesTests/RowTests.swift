@@ -53,6 +53,15 @@ import Titles
         expect(empty.isPlaceholder)
         expect(!empty.standsIn)
     },
+    test("every reference's row, whatever it stands for, gathers under \"References\" at its level; the shapes it stands for don't") {
+        let h = try referenceHarness()
+        let box = h.addBox("shapes")
+        let references = ContentsSection("References", systemImage: "arrow.turn.up.right")
+        let ids = [h.addReference(to: box, label: "shapes"), h.addReference(to: ShapeID(), label: "Old roadmap", at: CGPoint(x: 400, y: 400)),
+                   h.addReference(words: "blocked work", at: CGPoint(x: 400, y: 600)), h.addEmptyReference(at: CGPoint(x: 600, y: 650))]
+        for id in ids { expectEqual(try row(h, id).section, references) }
+        expectEqual(try row(h, box).section, nil)
+    },
     test("a rename, a change of publicness and a deletion of the shape it names remake its row, and no other, as they happen") {
         let h = try referenceHarness()
         let box = h.addBox("shapes"), other = h.addBox("other", at: CGRect(x: 100, y: 400, width: 100, height: 100))

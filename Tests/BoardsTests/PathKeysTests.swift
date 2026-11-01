@@ -61,8 +61,8 @@ final class KeyedPath {
         guard let crumbs = editor.boardCrumbs, let responder = window.firstResponder as? NSView,
               responder === hosting || responder.isDescendant(of: hosting) else { return nil }
         let element: String, label: String
-        if crumbs.menuKeyboard.row != nil {
-            label = crumbs.menuKeyboard.rowName ?? "row"
+        if let name = crumbs.menuKeyboard.rowName {
+            label = name
             element = "row:\(label)"
         } else if let stop = crumbs.focus {
             switch stop {
@@ -198,6 +198,35 @@ final class KeyedPath {
         expectEqual(editor.board, .root)
         expectEqual(editor.selectedShapeIDs, [nest.a], "A, gone to")
         expectEqual(crumbs.openMenu, nil)
+        expect(path.window.firstResponder === path.canvas)
+    },
+    test("a section's row in a crumb's menu takes the keyboard as a row does, with no shape; Return and Right open it, Return on a row in it picks") {
+        let nest = Nest()
+        let boxes = Contributor(id: "box-sections") { $0.contentsSection(Box.self, ContentsSection("Boxes", systemImage: "shippingbox")) }
+        let editor = try windowEditor(nest.file, [TableOfContentsPlugin(), boxes])
+        let path = KeyedPath(editor)
+        expect(editor.showBoard(nest.dBoard))
+        path.window.settle()
+        let crumbs = try require(editor.boardCrumbs)
+        path.boardPath()
+        path.walk.go("path/crumb:Plans", by: .left)
+        let first = path.walk.press(.down).id
+        expectEqual(crumbs.menuKeyboard.row, nest.d, "D's row first")
+        expectEqual(path.walk.press(.down).id, "path/row:Boxes", "A's row gathered under Boxes, after D's")
+        expectEqual(crumbs.menuKeyboard.row, nil, "no shape to pick")
+        expectEqual(path.walk.press(.return).id, "path/row:Boxes", "Return opens it, keeping the keyboard")
+        expectEqual(crumbs.openMenu, .root, "the menu stays")
+        expectEqual(path.walk.press(.down).id, "path/row:box", "A, in it")
+        expectEqual(path.walk.press(.up).id, "path/row:Boxes")
+        path.walk.press(.return)
+        expectEqual(path.walk.press(.down).id, "path/row:Boxes", "closed: nothing after it")
+        expectEqual(path.walk.press(.up).id, first)
+        path.walk.press(.down)
+        path.walk.press(.right)
+        expectEqual(path.walk.press(.right).id, "path/row:box", "Right opens it, then goes in")
+        path.walk.press(.return)
+        expectEqual(editor.board, .root)
+        expectEqual(editor.selectedShapeIDs, [nest.a], "A, gone to")
         expect(path.window.firstResponder === path.canvas)
     },
     test("Escape closes the menu onto its crumb, a second returns the keyboard to the canvas, keeping what was selected") {
