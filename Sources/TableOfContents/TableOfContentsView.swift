@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Chrome
 import Selection
 import SwiftUI
 import TextEditing
@@ -17,8 +18,10 @@ import TextEditing
 /// Selection's `editor.open`); and Escape calls `onExit`, which gives the keyboard back to the canvas,
 /// as ⌘↑ and ⌘↩ do. So does hiding the list while a row has the keyboard.
 ///
-/// Its header names the board listed: a plugin says how (`ContentsHeadings`), else it's "Board".
-/// The list doesn't know what a board is called; the plugin that names boards does.
+/// Its header names the board listed: a plugin says how (`ContentsHeadings`), else it's "Board". It
+/// stays at the top as the rows scroll under it, and looks as the inspector's does (the window's
+/// chrome's, `ChromeStyle`), on an empty board too. The list doesn't know what a board is called; the
+/// plugin that names boards does.
 public struct TableOfContentsView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
@@ -30,16 +33,22 @@ public struct TableOfContentsView: View {
 
     public var body: some View {
         if let state = editor.tableOfContents {
-            let entries = state.entries
-            if entries.isEmpty {
-                ContentUnavailableView("No Shapes", systemImage: "square.on.square.dashed",
-                                       description: Text("Shapes on the board are listed here."))
-            } else {
-                // Read after `entries`, which brings the listing up to date: what the list shows, so
-                // SwiftUI hands the list each change of it (a commit, the selection, another board).
-                ContentsList(state: state, editor: editor, onExit: onExit,
-                             shown: ContentsShown(board: editor.board, listing: state.listedSerial, version: state.listedVersion,
-                                                  revision: editor.revision, selection: editor.selectedShapeIDs))
+            VStack(spacing: 0) {
+                ContentsHeader(state: state, editor: editor)
+                    .frame(height: ChromeStyle.headerHeight)
+                Rectangle().fill(Color(nsColor: ChromeStyle.hairline)).frame(height: ChromeStyle.hairlineWidth)
+                let entries = state.entries
+                if entries.isEmpty {
+                    ContentUnavailableView("No Shapes", systemImage: "square.on.square.dashed",
+                                           description: Text("Shapes on the board are listed here."))
+                        .frame(maxHeight: .infinity)
+                } else {
+                    // Read after `entries`, which brings the listing up to date: what the list shows, so
+                    // SwiftUI hands the list each change of it (a commit, the selection, another board).
+                    ContentsList(state: state, editor: editor, onExit: onExit,
+                                 shown: ContentsShown(board: editor.board, listing: state.listedSerial, version: state.listedVersion,
+                                                      revision: editor.revision, selection: editor.selectedShapeIDs))
+                }
             }
         } else {
             ContentUnavailableView("No Contents", systemImage: "list.bullet.indent")
@@ -66,19 +75,17 @@ public struct ContentsHeading {
 }
 
 /// The board's heading (`ContentsState.heading`: a plugin's, else "Board"), with a button up from it
-/// while it can go up. Its own view, so what the heading reads redraws only the header.
+/// while it can go up: the pane's header, as the inspector's is (its symbol dimmed in its column, its
+/// title in the header's type). Its own view, so what the heading reads redraws only the header.
 struct ContentsHeader: View {
     let state: ContentsState
     let editor: CanvasEditor
 
     var body: some View {
-        HStack(spacing: ContentsStyle.headerSpacing) {
+        HStack(spacing: ChromeStyle.headerSpacing) {
             content
         }
-        // As a sidebar's section header: small, bold and dimmed, in line with the rows' symbols.
-        .font(ContentsStyle.headerFont)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, ContentsStyle.headerInset)
+        .padding(.horizontal, ChromeStyle.headerInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
@@ -87,8 +94,9 @@ struct ContentsHeader: View {
         if let up = heading.up, editor.canPerform(up) {
             let upTitle = editor.registry.title(of: up) ?? up.rawValue
             Button { editor.perform(up) } label: {
-                // Not a chevron: in a list's disclosure column, one reads as collapsing.
+                // Not a chevron: beside a list, one reads as collapsing.
                 Image(systemName: ContentsStyle.upSymbol)
+                    .font(ContentsStyle.upFont)
                     .frame(width: ContentsStyle.upWidth)
                     .contentShape(Rectangle())
             }
@@ -98,10 +106,13 @@ struct ContentsHeader: View {
         }
         if let symbol = heading.systemImage {
             Image(systemName: symbol)
+                .font(ChromeStyle.headerSymbol)
+                .foregroundStyle(.secondary)
+                .frame(width: ChromeStyle.headerSymbolWidth)
         }
-        Text(heading.title).lineLimit(1)
+        Text(heading.title).font(ChromeStyle.headerTitle).lineLimit(1)
             .accessibilityAddTraits(.isHeader)
-        Spacer()
+        Spacer(minLength: 0)
     }
 }
 

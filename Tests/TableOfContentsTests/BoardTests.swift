@@ -155,7 +155,7 @@ struct UpPlugin: CanvasPlugin {
 extension ContentsWindow {
     /// How many of the list's header's pixels differ from `other`'s (which lists the same board).
     func headerDiffers(from other: ContentsWindow) throws -> Int {
-        let header = try rect(ofRow: 0)
+        let header = headerRect
         return changedPixels(snapshot(hosting), snapshot(other.hosting), in: header)
     }
 }
@@ -167,7 +167,7 @@ extension ContentsWindow {
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 2 }
         expectEqual(w.headerButtons.count, 0, "nothing above the root")
-        let root = snapshot(w.hosting), header = try w.rect(ofRow: 0)
+        let root = snapshot(w.hosting), header = w.headerRect
         editor.showBoard(BoardID(owner: pocket))
         w.window.spin { w.rows == 1 && w.headerButtons.count == 1 }
         expect(changedPixels(root, snapshot(w.hosting), in: header) > 0, "another title")
@@ -185,7 +185,7 @@ extension ContentsWindow {
         expectEqual(try windows[0].headerDiffers(from: windows[1]), 0, "no heading is \"Board\"")
         expect(try windows[0].headerDiffers(from: windows[2]) > 0, "a symbol shows before the title")
         expect(try windows[0].headerDiffers(from: windows[3]) > 0, "another title")
-        let plain = snapshot(windows[3].hosting), header = try windows[3].rect(ofRow: 0)
+        let plain = snapshot(windows[3].hosting), header = windows[3].headerRect
         windows[3].editor.selectedShapeIDs = [windows[3].editor.document.shapes[0].id]
         windows[3].window.spin { windows[3].table?.selectedRowIndexes.count == 1 }
         expectEqual(windows[3].rows, 2)

@@ -111,7 +111,7 @@ struct PocketsInPockets {
 extension ContentsWindow {
     var outline: NSOutlineView? { table as? NSOutlineView }
 
-    /// Whether the row at `row` (the header is 0) has a disclosure triangle.
+    /// Whether the row at `row` (the first is 0) has a disclosure triangle.
     func isExpandable(_ row: Int) throws -> Bool {
         let outline = try require(outline, "no outline")
         return outline.isExpandable(outline.item(atRow: row))
@@ -133,15 +133,15 @@ extension ContentsWindow {
         w.window.spin { w.rows == 3 }
         w.window.settle()
         expectEqual(editor.contents.rowsMade, 4, "the board shown's rows alone: P's board, collapsed, costs none")
-        expectEqual(try [1, 2, 3].map(w.isExpandable), [false, true, false], "front to back: E, which holds none; P, which holds shapes; and A")
-        try w.expand(2)
+        expectEqual(try [0, 1, 2].map(w.isExpandable), [false, true, false], "front to back: E, which holds none; P, which holds shapes; and A")
+        try w.expand(1)
         w.window.spin { w.rows == 7 }
         // E; P, then Q, D and C from P's board and the pin on P from the root; A.
         expectEqual(editor.contents.rowsMade, 4 + 4, "P's board's rows, made as it opened")
-        expectEqual(try [3, 4, 5, 6, 7].map(w.isExpandable), [true, false, true, false, false], "C has its pin; Q its board")
-        try w.expand(5)
+        expectEqual(try [2, 3, 4, 5, 6].map(w.isExpandable), [true, false, true, false, false], "C has its pin; Q its board")
+        try w.expand(4)
         w.window.spin { w.rows == 8 }
-        try w.expand(3)
+        try w.expand(2)
         w.window.spin { w.rows == 9 }
         expectEqual(editor.contents.rowsMade, 4 + 4 + 1, "F's, as Q opened; C's pin's was made with P's board")
     },
@@ -150,25 +150,25 @@ extension ContentsWindow {
         let editor = try contentsEditor([PocketsPlugin()], file: nest.file(), scheduler: TaskScheduler())
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        try w.expand(2)
+        try w.expand(1)
         w.window.spin { w.rows == 7 }
         editor.transact(on: nest.pBoard, "Add") { $0.insert(ShapeRecord(Widget(widgetFrame, name: "G"))) }
         w.window.spin { w.rows == 8 }
         editor.transact(on: nest.pBoard, "Delete") { $0.delete([nest.c, nest.d]) }
         w.window.spin { w.rows == 7 }                           // E; P, then G, Q and the pin on C, at the top now, and the pin on P; A
-        expect(!(try w.isExpandable(1)))
+        expect(!(try w.isExpandable(0)))
         editor.transact(on: BoardID(owner: nest.e), "Add") { $0.insert(ShapeRecord(Widget(widgetFrame, name: "H"))) }
-        w.window.spin { (try? w.isExpandable(1)) == true }      // E holds a shape now
+        w.window.spin { (try? w.isExpandable(0)) == true }      // E holds a shape now
     },
     test("a click on a nested board's row goes to its shape there, its rows replacing the list's with no reentrant update; Back returns to the board") {
         let nest = PocketsInPockets()
         let editor = try contentsEditor([PocketsPlugin()], file: nest.file(), scheduler: TaskScheduler())
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        try w.expand(2)
+        try w.expand(1)
         w.window.spin { w.rows == 7 }
         let log = try standardError {
-            try require(w.table).selectRowIndexes([4], byExtendingSelection: false)      // D
+            try require(w.table).selectRowIndexes([3], byExtendingSelection: false)      // D
             w.window.spin { editor.board == nest.pBoard && w.rows == 3 }  // the list lists that board: C, D and the pocket
             w.window.settle()
         }
@@ -184,7 +184,7 @@ extension ContentsWindow {
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
         let log = try standardError {
-            try w.expand(2)
+            try w.expand(1)
             w.window.spin { w.rows == 257 }
             w.window.settle()
         }

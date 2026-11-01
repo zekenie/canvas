@@ -195,7 +195,7 @@ extension CanvasEditor {
         hosting.frame = CGRect(x: 0, y: 0, width: 300, height: 600)
         window.contentView = hosting
         let contents = try require(h.editor.tableOfContents)
-        window.spin { (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) == 6 }
+        window.spin { (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) == 5 }
         window.settle()
         let before = contents.rowsRedrawn
         h.editor.transact { $0.update(target) { $0[TitleProperty.self] = "Launch" } }

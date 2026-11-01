@@ -43,14 +43,20 @@ final class ContentsWindow {
     }
 
     var table: NSTableView? { hosting.descendants(NSTableView.self).first }
-    /// The list's rows, less its header.
-    var rows: Int { max(0, (table?.numberOfRows ?? 0) - 1) }
+    /// The list's rows (its header is above it, not one of them).
+    var rows: Int { table?.numberOfRows ?? 0 }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
-    /// The buttons in the list's header (its first row).
+    /// The buttons in the list's header (above its rows: those that aren't the rows' own).
     var headerButtons: [NSButton] {
-        guard let table, table.numberOfRows > 0 else { return [] }
-        let header = table.rect(ofRow: 0)
-        return table.descendants(NSButton.self).filter { header.contains($0.convert($0.bounds, to: table)) }
+        hosting.descendants(NSButton.self).filter { button in table.map { !button.isDescendant(of: $0) } ?? true }
+    }
+
+    /// The list's header, in the hosting view's points: the part above the rows' scroll view (the
+    /// heading, and the hairline under it), or the whole view with no list.
+    var headerRect: CGRect {
+        guard let scroll = table?.enclosingScrollView else { return hosting.bounds }
+        let rows = scroll.convert(scroll.bounds, to: hosting)
+        return CGRect(x: 0, y: 0, width: hosting.bounds.width, height: hosting.isFlipped ? rows.minY : hosting.bounds.height - rows.maxY)
     }
 
     /// Gives the list the keyboard, as View ▸ Focus Sidebar does.
@@ -60,7 +66,7 @@ final class ContentsWindow {
         window.settle()
     }
 
-    /// Picks row `row` (the header is 0) as a click does: the outline's own selection, with no key, the
+    /// Picks row `row` (the first, the front shape's, is 0) as a click does: the outline's own selection, with no key, the
     /// outline having the keyboard (a click gives it it first). A synthesized click doesn't reach a table
     /// in an unshown window.
     func click(row: Int) throws {
@@ -85,10 +91,10 @@ final class ContentsWindow {
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
         editor.selectedShapeIDs = [b]
-        w.window.spin { w.table?.selectedRowIndexes == [2] }        // front to back: C, B, A, under the header
+        w.window.spin { w.table?.selectedRowIndexes == [1] }        // front to back: C, B, A
         expectEqual(w.rows, 3)
         editor.selectedShapeIDs = [a, b]
-        w.window.spin { w.table?.selectedRowIndexes == [2, 3] }
+        w.window.spin { w.table?.selectedRowIndexes == [1, 2] }
         editor.selectedShapeIDs = []
         w.window.spin { w.table?.selectedRowIndexes.isEmpty == true }
         expectEqual(w.rows, 3)
@@ -102,11 +108,11 @@ final class ContentsWindow {
         let rows = try require(w.outline).rows(in: try require(w.outline).visibleRect)
         let log = standardError {
             editor.selectedShapeIDs = [b]
-            w.window.spin { w.table?.selectedRowIndexes == [2] }
+            w.window.spin { w.table?.selectedRowIndexes == [1] }
             editor.selectedShapeIDs = []
             w.window.spin { w.table?.selectedRowIndexes.isEmpty == true }
             editor.selectedShapeIDs = [a]
-            w.window.spin { w.table?.selectedRowIndexes == [3] }
+            w.window.spin { w.table?.selectedRowIndexes == [2] }
         }
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
         expectEqual(try require(w.outline).rows(in: try require(w.outline).visibleRect), rows, "the same rows in view")
@@ -218,7 +224,7 @@ final class ContentsWindow {
         w.window.spin { w.rows == ids.count }
         w.window.settle()
         let outline = try require(w.outline)
-        let inView = outline.rows(in: outline.visibleRect).length - 1         // less the header
+        let inView = outline.rows(in: outline.visibleRect).length
         let shown = contents.rowsRedrawn - before
         expect(shown >= inView && shown < 4 * inView, "first shown: \(shown) rows drawn of \(ids.count), \(inView) in view")
         let replacing = contents.rowsRedrawn
@@ -229,11 +235,11 @@ final class ContentsWindow {
         expect(replaced >= inView && replaced < 4 * inView, "replaced: \(replaced) rows drawn of 2500")
         let selecting = contents.rowsRedrawn
         editor.contents.select([ids[0]])                            // the last row, selected and scrolled to: the rows there drawn
-        w.window.spin { w.table?.selectedRow == 2500 }
+        w.window.spin { w.table?.selectedRow == 2499 }
         w.window.settle()
         let drawn = contents.rowsRedrawn - selecting
         expect(drawn < 2 * inView, "\(drawn) rows drawn for a selection out of view, scrolled to")
-        expect(outline.visibleRect.intersects(outline.rect(ofRow: 2500)), "the row in view")
+        expect(outline.visibleRect.intersects(outline.rect(ofRow: 2499)), "the row in view")
     },
     test("the list shows the selection as selected rows") {
         let editor = try contentsEditor(scheduler: TaskScheduler())
@@ -243,7 +249,7 @@ final class ContentsWindow {
         editor.contents.select([b])             // as a click on its row does: the list stays whole
         w.window.spin { w.table?.selectedRowIndexes.count == 1 }
         expectEqual(w.rows, 3)
-        expectEqual(w.table?.selectedRow, 2, "B, under the header")
+        expectEqual(w.table?.selectedRow, 1, "B, under C")
     },
     test("the canvas view tells the editor its size") {
         let w = ContentsWindow(try contentsEditor(scheduler: TaskScheduler()))
@@ -298,7 +304,7 @@ final class ContentsWindow {
         keys.send(.down)
         expectEqual(editor.selectedShapeIDs, [c], "front to back: C first")
         expect(w.window.firstResponder === w.table, "↓ walks the rows, in the list")
-        try w.click(row: 2)
+        try w.click(row: 1)
         expectEqual(editor.selectedShapeIDs, [b])
         w.window.spin { w.canvasHasKeyboard }
         expectEqual(w.exits, 1, "the click handed the keyboard to the canvas")
@@ -330,7 +336,7 @@ final class ContentsWindow {
         outline.scroll(CGPoint(x: 0, y: 0))
         w.window.settle()
         let shown = outline.visibleRect
-        try w.click(row: 2)
+        try w.click(row: 1)
         expectEqual(editor.selectedShapeIDs.count, 1)
         expectEqual(outline.visibleRect, shown, "a row picked in the list scrolls nothing")
         // Several selected on the canvas open nothing (⌘A would open every row): only one does.
@@ -394,7 +400,7 @@ final class ContentsWindow {
                 .map { $0.cell.map(AccessibilityProbe.label(of:)) ?? nil }
         }
         w.window.spin { triangles() == ["Unnamed", "A"] }
-        try w.expand(1)
+        try w.expand(0)
         w.window.spin { w.rows == 5 }
         w.window.settle()
         expectEqual(triangles(), ["Unnamed", "A"], "turned, still named")

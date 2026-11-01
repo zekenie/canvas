@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import Chrome
 import Geometry
 import Palette
 
@@ -56,7 +57,7 @@ public final class MinimapView: NSView {
         pictureBoard = editor.board
         super.init(frame: .zero)
         wantsLayer = true
-        shadow = MinimapStyle.shadow
+        shadow = MinimapStyle.shadow(in: effectiveAppearance)
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.cursorUpdate, .activeInKeyWindow, .inVisibleRect], owner: self))
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
@@ -111,6 +112,7 @@ public final class MinimapView: NSView {
 
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        shadow = MinimapStyle.shadow(in: effectiveAppearance)
         picture?.invalidate()
         for kept in keptPictures { kept.picture.invalidate() }
         needsDisplay = true
@@ -151,7 +153,7 @@ public final class MinimapView: NSView {
 
     /// Where the board goes in the minimap now.
     private var layoutNow: MinimapLayout {
-        MinimapLayout(board: editor.shapeBounds, viewport: viewport, area: bounds.insetBy(dx: MinimapStyle.padding, dy: MinimapStyle.padding))
+        MinimapLayout(board: editor.shapeBounds, viewport: viewport, area: MinimapStyle.boardArea(in: bounds))
     }
 
     /// The part of the board the canvas shows, in world units; null before the canvas has a size.
@@ -166,13 +168,16 @@ public final class MinimapView: NSView {
         guard let cg = NSGraphicsContext.current?.cgContext else { return }
         boardDidChange()
         let layout = layoutNow
-        let panel = MinimapStyle.panel(bounds)
-        cg.addPath(panel)
+        cg.addPath(MinimapStyle.panel(bounds))
+        cg.setFillColor(MinimapStyle.surface.cgColor)
+        cg.fillPath()
+        let wellRect = MinimapStyle.well(in: bounds), well = MinimapStyle.wellPath(wellRect)
+        cg.addPath(well)
         cg.setFillColor(MinimapStyle.background.cgColor)
         cg.fillPath()
 
         cg.saveGState()
-        cg.addPath(panel)
+        cg.addPath(well)
         cg.clip()
         if updatePicture(board: editor.shapeBounds, needed: layout.boardZoom * pixelsPerPoint), nextFrame == nil {
             nextFrame = editor.scheduler.schedule(after: .zero) { [weak self] in
@@ -196,7 +201,7 @@ public final class MinimapView: NSView {
         let lit = !outlines.tinted.isEmpty
         if lit {
             cg.setFillColor(MinimapStyle.background.withAlphaComponent(MinimapStyle.litDim).cgColor)
-            cg.fill(bounds)
+            cg.fill(wellRect)
         } else {
             drawOutlinedShapes(outlines, in: cg, layout: layout)
         }
@@ -204,7 +209,7 @@ public final class MinimapView: NSView {
         let viewport = viewport
         let frame = viewport.isNull ? nil : viewportFrame(layout.toMinimap(viewport))
         if let frame {
-            cg.addRect(bounds)
+            cg.addRect(wellRect)
             cg.addPath(frame)
             cg.setFillColor(MinimapStyle.veil.cgColor)
             cg.fillPath(using: .evenOdd)
@@ -479,11 +484,28 @@ enum MinimapStyle {
     static let widths: ClosedRange<CGFloat> = 120...200
     static let heights: ClosedRange<CGFloat> = 72...150
     static let widthFraction: CGFloat = 0.25
-    /// From the canvas's bottom-left corner.
+    /// From the bottom-left corner of the part of the canvas left clear.
     static let margin: CGFloat = 12
-    static let cornerRadius: CGFloat = 8
-    /// Between its edge and the board.
-    static let padding: CGFloat = 6
+    /// It floats over the board as the window's chrome does: on the chrome's surface, its corners a
+    /// float's (`ChromeStyle`), the board in a well of the canvas's own color `wellInset` in, its corners
+    /// concentric with the minimap's.
+    static let cornerRadius = ChromeStyle.floatCorner
+    static let wellInset: CGFloat = 3
+    /// Between the well's edge and the board: so the board is fitted 6 points in from the minimap's
+    /// edge, as it was before the well (a kept picture is held, pixel for pixel, to a fresh one at that
+    /// fit).
+    static let padding: CGFloat = 3
+    /// Where the board is fitted in a minimap of `bounds`: in its well, `padding` in.
+    static func boardArea(in bounds: CGRect) -> CGRect { well(in: bounds).insetBy(dx: padding, dy: padding) }
+    static func well(in bounds: CGRect) -> CGRect { bounds.insetBy(dx: wellInset, dy: wellInset) }
+
+    /// Where it goes: in the bottom-left corner of the part of the canvas the host's chrome leaves
+    /// clear (`clear`, in the canvas's points: right of the sidebar, above the window's bottom), sized
+    /// by that part.
+    static func frame(in clear: CGRect) -> CGRect {
+        let size = size(in: clear.size)
+        return CGRect(x: clear.minX + margin, y: clear.maxY - margin - size.height, width: size.width, height: size.height)
+    }
 
     static func size(in canvas: CGSize) -> CGSize {
         let width = min(max(canvas.width * widthFraction, widths.lowerBound), widths.upperBound)
@@ -494,24 +516,33 @@ enum MinimapStyle {
     /// Before the minimap is in a window.
     static let pixelsPerPointOffscreen: CGFloat = 2
 
+    /// Its outline, and the zoom's (a capsule, as short as it is: `ChromeStyle.floatCorner(height:)`).
     static func panel(_ rect: CGRect) -> CGPath {
-        CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        let radius = ChromeStyle.floatCorner(height: rect.height)
+        return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    /// The canvas's own, so the part the canvas shows looks as it does there, and the rest as it
-    /// would under the veil.
+    /// The well's outline.
+    static func wellPath(_ rect: CGRect) -> CGPath {
+        let radius = max(cornerRadius - wellInset, 0)
+        return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
+    /// Its frame's, and the zoom's: the chrome's.
+    static let surface = ChromeStyle.surface
+    /// The well's: the canvas's own, so the part the canvas shows looks as it does there, and the rest as
+    /// it would under the veil.
     static let background = NSColor(name: nil) {
         $0.isDark ? NSColor(white: 0.11, alpha: 1) : NSColor(white: 0.965, alpha: 1)
     }
-    static let border = NSColor(name: nil) {
-        $0.isDark ? NSColor(white: 1, alpha: 0.14) : NSColor(white: 0, alpha: 0.12)
-    }
-    static let borderWidth: CGFloat = 1
-    static var shadow: NSShadow {
+    static let border = ChromeStyle.hairline
+    static let borderWidth = ChromeStyle.hairlineWidth
+    /// The float's shadow, in the appearance it's drawn in.
+    static func shadow(in appearance: NSAppearance) -> NSShadow {
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor(white: 0, alpha: 0.18)
-        shadow.shadowBlurRadius = 6
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        appearance.performAsCurrentDrawingAppearance { shadow.shadowColor = NSColor(cgColor: ChromeStyle.floatShadow.cgColor) }
+        shadow.shadowBlurRadius = ChromeStyle.floatShadowBlur
+        shadow.shadowOffset = NSSize(width: 0, height: -ChromeStyle.floatShadowY)
         return shadow
     }
     /// Every shape's silhouette (tldraw's minimap shape fill: its third text color).

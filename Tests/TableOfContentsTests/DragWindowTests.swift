@@ -51,14 +51,14 @@ final class RowDrag: NSObject, NSDraggingInfo {
 }
 
 extension ContentsWindow {
-    /// What the list's table puts on the pasteboard for the row at `row` (the header is 0), as it does as
+    /// What the list's table puts on the pasteboard for the row at `row` (the first is 0), as it does as
     /// a drag of the row begins; nil for a row it wouldn't drag.
     func writer(ofRow row: Int) throws -> (any NSPasteboardWriting)? {
         let outline = try require(outline, "no outline")
         return outline.dataSource?.outlineView?(outline, pasteboardWriterForItem: try require(outline.item(atRow: row)))
     }
 
-    /// A drag of the rows at `rows` (the header is 0), as their writers begin one, at `fraction` of the way
+    /// A drag of the rows at `rows` (the first is 0), as their writers begin one, at `fraction` of the way
     /// down the row at `row`: what the view AppKit hands it to hears (the outline, registered for what a row
     /// carries), and the drag.
     func drag(rows: [Int], over row: Int, at fraction: CGFloat) throws -> (target: NSView, drag: RowDrag) {
@@ -86,9 +86,9 @@ private let lineReach: CGFloat = 5
         editor.freeze([b])
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        expect(try w.writer(ofRow: 1) != nil)                   // front to back: C, B, A
+        expect(try w.writer(ofRow: 0) != nil)                   // front to back: C, B, A
         expectEqual(editor.contents.dragShapes, [c])
-        expect(try w.writer(ofRow: 2) == nil, "B is frozen")
+        expect(try w.writer(ofRow: 1) == nil, "B is frozen")
         expectEqual(editor.contents.dragShapes, [c], "the drag under way as it was")
     },
     test("dropped through the list: the row's own target takes the drag, points where on the row it is, and drops there; one step, Reorder") {
@@ -96,7 +96,7 @@ private let lineReach: CGFloat = 5
         let (a, b, c) = threeWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        let (target, drag) = try w.drag(rows: [3], over: 1, at: 0.2)           // A, over C's top
+        let (target, drag) = try w.drag(rows: [2], over: 0, at: 0.2)           // A, over C's top
         defer { drag.pasteboard.releaseGlobally() }
         expectEqual(target.draggingEntered(drag), .move)
         expectEqual(target.draggingUpdated(drag), .move)
@@ -115,7 +115,7 @@ private let lineReach: CGFloat = 5
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
         let step = editor.undoHistory.undoName
-        let (target, drag) = try w.drag(rows: [3], over: 3, at: 0.2)           // A, over its own row
+        let (target, drag) = try w.drag(rows: [2], over: 2, at: 0.2)           // A, over its own row
         defer { drag.pasteboard.releaseGlobally() }
         _ = target.draggingEntered(drag)
         expectEqual(target.draggingUpdated(drag), [])
@@ -133,7 +133,7 @@ private let lineReach: CGFloat = 5
         w.window.settle()
         let plain = snapshot(w.hosting)
         let state = editor.contents
-        let rowB = try w.rect(ofRow: 3), rowF = try w.rect(ofRow: 1)       // front to back: the corral, C, B, A
+        let rowB = try w.rect(ofRow: 2), rowF = try w.rect(ofRow: 0)       // front to back: the corral, C, B, A
         expect(state.beginDrag(from: a))
         state.dragMoved(over: try require(state.row(b)), at: 0.2)
         w.window.spin { changedPixels(plain, snapshot(w.hosting), in: rowB) > 0 }

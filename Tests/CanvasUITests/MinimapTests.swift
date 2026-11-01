@@ -105,8 +105,8 @@ extension ProbeTool: Tool {
 }
 
 /// Where a world point shows in the minimap, as tldraw's minimap puts it: the board and the part
-/// the canvas shows together, fitted to the minimap less 6 points of padding, centered. Worked out
-/// here afresh, as a check on the view's own.
+/// the canvas shows together, fitted to the minimap less 6 points (its frame, the well the board is drawn
+/// in 3 points in, and 3 of padding), centered. Worked out here afresh, as a check on the view's own.
 @MainActor func onMinimap(_ world: CGPoint, _ minimap: MinimapView) -> CGPoint {
     let editor = minimap.editor
     let viewport = editor.camera.toWorld(CGRect(origin: .zero, size: editor.viewportSize))

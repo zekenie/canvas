@@ -1,15 +1,17 @@
 import AppKit
 import Canvas
+import Chrome
 import Observation
 import Selection
 import SwiftUI
 
 // The table of contents' list's views (`ContentsList`): the outline and its scroll view, a row's view
-// (its hover's tint, a drop's ring and line, its triangle's name), and the cells that host a row's view
-// and the header in SwiftUI.
+// (its selection's highlight, its hover's tint, a drop's ring and line, its triangle's name), and the
+// cell that hosts a row's view in SwiftUI.
 
 /// The list's view: the outline in its scroll view, on the sidebar's background. It tells the list
-/// when it's hidden (it, or a view it's in, like the sidebar), which SwiftUI doesn't say.
+/// when it's hidden (it, or a view it's in) or taken out of its window (the sidebar hidden), which
+/// SwiftUI doesn't say.
 @MainActor
 final class ContentsListView: NSView {
     let scrollView = NSScrollView()
@@ -60,6 +62,16 @@ final class ContentsListView: NSView {
     override func viewDidHide() {
         super.viewDidHide()
         onHide?()
+    }
+
+    /// Taken out of its window with the keyboard in its outline (the sidebar hidden): the list hands the
+    /// canvas the keyboard (`onLeave`), which would fall to the window. Asked as it goes, of the window it
+    /// leaves, which it keeps no hold of: a window going away takes its views out too.
+    var onLeave: (@MainActor () -> Void)?
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, let window, window.firstResponder === outline { onLeave?() }
+        super.viewWillMove(toWindow: newWindow)
     }
 }
 
@@ -217,6 +229,14 @@ final class ContentsTableRow: NSTableRowView {
     /// Where a selected row's highlight is drawn, which the hover's tint and a drop's ring take.
     private var highlightRect: CGRect { bounds.insetBy(dx: ContentsStyle.highlightInset, dy: 0) }
 
+    /// A selected row's highlight, rounded as the window's chrome rounds an item (the inspector's tabs
+    /// too): the accent while the list has the keyboard, else the chrome's quiet fill.
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        (isEmphasized ? NSColor.selectedContentBackgroundColor : ChromeStyle.selectedFill).setFill()
+        NSBezierPath(roundedRect: highlightRect, xRadius: ContentsStyle.highlightRadius, yRadius: ContentsStyle.highlightRadius).fill()
+    }
+
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         guard isTinted || zone == .on else { return }
@@ -372,21 +392,4 @@ struct ContentsRowLabelStyle: LabelStyle {
             configuration.title
         }
     }
-}
-
-/// The header's cell, the group row's: the heading, in SwiftUI, which redraws it as what it reads
-/// changes (`ContentsHeader`).
-@MainActor
-final class ContentsHeaderCell: NSTableCellView {
-    init(state: ContentsState, editor: CanvasEditor) {
-        super.init(frame: .zero)
-        let hosting = NSHostingView(rootView: ContentsHeader(state: state, editor: editor))
-        hosting.sizingOptions = []
-        hosting.frame = bounds
-        hosting.autoresizingMask = [.width, .height]
-        addSubview(hosting)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not from a nib") }
 }

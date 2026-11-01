@@ -1,4 +1,5 @@
 import AppKit
+import Chrome
 import SwiftUI
 
 /// Find's look and its budgets.
@@ -62,7 +63,7 @@ public enum FindStyle {
     static let rowHeight: CGFloat = 36
     static let rowSpacing: CGFloat = 2
     static let rowSymbolWidth: CGFloat = 16
-    static let rowCorner: CGFloat = 5
+    static let rowCorner = ChromeStyle.itemCorner
     static let rowSelected = Color.accentColor.opacity(0.18)
     static let headerHeight: CGFloat = 24
     static let fieldSpacing: CGFloat = 6

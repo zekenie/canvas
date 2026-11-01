@@ -35,6 +35,9 @@ public protocol CanvasEditorDelegate: AnyObject {
     /// A commit, settled, added shapes to the board shown or took some off it (never one that only
     /// changed shapes): what an assistive app is told its elements changed by.
     func editorShapesDidComeOrGo(_ editor: CanvasEditor, added: Set<ShapeID>, removed: Set<ShapeID>)
+    /// What the host's chrome covers of the canvas's edges changed (`coveredEdges`): lay out again
+    /// what the canvas hosts in the part left clear (the minimap, in its corner).
+    func editorCoveredEdgesDidChange(_ editor: CanvasEditor)
 }
 
 @_spi(Host) extension CanvasEditorDelegate {
@@ -46,6 +49,7 @@ public protocol CanvasEditorDelegate: AnyObject {
     public func editorMenuToPopUpDidChange(_ editor: CanvasEditor) {}
     public func editorCardDidChange(_ editor: CanvasEditor) {}
     public func editorEditingSelectedText(_ editor: CanvasEditor) -> String? { nil }
+    public func editorCoveredEdgesDidChange(_ editor: CanvasEditor) {}
 }
 
 /// The canvas's brain, with no view: document, camera, tools, sessions and input.
@@ -152,20 +156,48 @@ public final class CanvasEditor {
     @ObservationIgnored public internal(set) var viewportSize: CGSize = .zero
 
     /// How far down over the canvas the host's own views reach on a board, in view points, from the
-    /// view's top edge (the path's pill inside a subboard): what fitting shapes into view leaves
-    /// clear. None unless the host says (`unobscuredViewport`).
+    /// top of the part its chrome leaves clear (`coveredEdges`; the path's pill inside a subboard):
+    /// what fitting shapes into view leaves clear. None unless the host says (`unobscuredViewport`).
     @_spi(Host) @ObservationIgnored public var coveredTop: @MainActor (BoardID) -> CGFloat = { _ in 0 }
 
+    /// What the host's own chrome covers of the canvas along its edges, in view points, on every
+    /// board: the window's title bar along the top, and the sidebar and the inspector along the sides
+    /// while they show, over a canvas that fills the window, so that showing or hiding one moves
+    /// nothing on the board. None unless the host says (`unobscuredViewport`). A change keeps a view
+    /// kept while the view settles in what is clear then, as a change of the view's size does
+    /// (`keepInViewWhileSettling`: a shape just selected that the inspector comes in over is panned
+    /// clear), lets go of a card it covers, and tells the host (`editorCoveredEdgesDidChange`).
+    @_spi(Host) @ObservationIgnored public var coveredEdges = CoveredEdges() {
+        didSet {
+            guard coveredEdges != oldValue else { return }
+            // Eased as a pane slides in or out; at once as one is resized, following the drag.
+            keepViewAfterViewChange(easing: coveredEdges.hasSameSides(as: oldValue) ? nil : Style.coveredEdgesDuration)
+            cardFollowsCamera()
+            delegate?.editorCoveredEdgesDidChange(self)
+        }
+    }
+
+    /// How far down the host's views over the canvas reach on the board shown, in view points, from the top
+    /// of the part its chrome leaves clear (`coveredTop`: the path's pill inside a subboard): where a view
+    /// the host places in that part (a plugin's, `registrar.hostOverlay`) goes to stay clear of them. None
+    /// unless the host says.
+    public var hostViewsReach: CGFloat { max(coveredTop(board), 0) }
+
     /// The part of the view nothing the host puts over the canvas covers, on the board shown, in view
-    /// points: the view, less the top the host covers there (`coveredTop`). What a fit fits shapes
-    /// into: a board's first visit, Zoom to Fit, Selection's `reveal`. Empty before the view has a
-    /// size.
+    /// points: the view, less what the host's chrome covers along its edges (`coveredEdges`) and,
+    /// under the top's, what its views over the canvas cover there (`coveredTop`). What a fit fits
+    /// shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`. Empty before the view
+    /// has a size; at least a point either way however much is covered.
     public var unobscuredViewport: CGRect { unobscuredViewport(on: board) }
 
     func unobscuredViewport(on target: BoardID) -> CGRect {
         guard viewportSize.width > 0, viewportSize.height > 0 else { return .zero }
-        let top = min(max(coveredTop(target), 0), viewportSize.height - 1)
-        return CGRect(x: 0, y: top, width: viewportSize.width, height: viewportSize.height - top)
+        let edges = coveredEdges
+        let left = min(max(edges.left, 0), viewportSize.width - 1)
+        let right = min(max(edges.right, 0), viewportSize.width - 1 - left)
+        let top = min(max(edges.top + max(coveredTop(target), 0), 0), viewportSize.height - 1)
+        let bottom = min(max(edges.bottom, 0), viewportSize.height - 1 - top)
+        return CGRect(x: left, y: top, width: viewportSize.width - left - right, height: viewportSize.height - top - bottom)
     }
 
     /// What the root board is called: the file's name, which only the host knows (a board's window
@@ -800,7 +832,7 @@ public final class CanvasEditor {
         for service in serviceOrder { service.shapeTintsDidChange(in: self) }
     }
 
-    /// Services hear that a view kept while the view settled moved the camera (`keepViewAfterResize`).
+    /// Services hear that a view kept while the view settled moved the camera (`keepViewAfterViewChange`).
     func tellViewKept(from old: Camera, to new: Camera) {
         for service in serviceOrder { service.viewWasKept(from: old, to: new, in: self) }
     }

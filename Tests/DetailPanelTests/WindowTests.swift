@@ -661,7 +661,7 @@ extension ListTab: DetailTab { static var title: String { "List" } }
         editor.selection = editor.add(Card(gadgetFrame, text: "Hi"))
         panel.window.spin { panel.headerField != nil }
         let field = try require(panel.headerField)
-        expectEqual(field.font, NSFont.systemFont(ofSize: 12, weight: .semibold), "the header's title")
+        expectEqual(field.font, NSFont.systemFont(ofSize: 13, weight: .semibold), "the header's title, as the table of contents' header's")
         expect(!field.isBordered && !field.isBezeled && !field.drawsBackground && field.focusRingType == .none, "borderless")
         expect(field.usesSingleLineMode && field.cell?.isScrollable == true && field.cell?.wraps == false && field.lineBreakMode == .byClipping,
                "one line, clipped, scrolling sideways while it's typed in")

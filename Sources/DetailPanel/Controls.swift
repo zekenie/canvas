@@ -1,29 +1,31 @@
 import AppKit
 import Canvas
+import Chrome
 import CoreGraphics
 import Foundation
 import Keyboard
 import SwiftUI
 
-/// The panel's metrics, after Keynote's inspector. Points.
+/// The panel's metrics, after Keynote's inspector, its header, tabs and fields the window's chrome's
+/// (`ChromeStyle`, which the table of contents' header and rows share). Points.
 @MainActor
 public enum DetailStyle {
     public static let minWidth: CGFloat = 248
     public static let idealWidth: CGFloat = 260
     public static let maxWidth: CGFloat = 340
-    public static let inset: CGFloat = 16
+    public static let inset: CGFloat = ChromeStyle.headerInset
     /// What heads the root board's rows in a list when no plugin names boards (`BoardHeadings`).
     static let rootBoardHeading = "Board"
-    public static let headerHeight: CGFloat = 44
-    static let headerSymbolWidth: CGFloat = 20
+    public static let headerHeight: CGFloat = ChromeStyle.headerHeight
+    static let headerSymbolWidth: CGFloat = ChromeStyle.headerSymbolWidth
     static let backWidth: CGFloat = 20
     static let stripInset: CGFloat = 10
     static let stripBottom: CGFloat = 6
     static let tabHeight: CGFloat = 22
     static let tabSpacing: CGFloat = 2
     static let tabPadding: CGFloat = 5
-    static let tabCorner: CGFloat = 5
-    static let tabFill = Color.primary.opacity(0.08)
+    static let tabCorner: CGFloat = ChromeStyle.itemCorner
+    static let tabFill = Color(nsColor: ChromeStyle.selectedFill)
     /// A tab whose status lines warn or err: its worst tone's symbol before its title, and between them.
     static let tabAlert = Font.system(size: 9)
     static let tabAlertSpacing: CGFloat = 3
@@ -56,9 +58,11 @@ public enum DetailStyle {
     /// How far down a text box its first line's baseline is, from the box's top edge: its padding
     /// and the font's baseline in its line. A row's label lines up on it (`DetailRowStyle`), since an
     /// AppKit text view tells SwiftUI no baseline of its own.
-    static let textBaseline = fieldCorner + NSLayoutManager().defaultBaselineOffset(for: textFont)
-    static let codeBaseline = fieldCorner + NSLayoutManager().defaultBaselineOffset(for: codeFont)
-    static let fieldCorner: CGFloat = 4
+    static let textBaseline = fieldPadding + NSLayoutManager().defaultBaselineOffset(for: textFont)
+    static let codeBaseline = fieldPadding + NSLayoutManager().defaultBaselineOffset(for: codeFont)
+    /// A text box's padding round its text, and its corners (an item's, as the chrome rounds them).
+    static let fieldPadding: CGFloat = 4
+    static let fieldCorner: CGFloat = ChromeStyle.itemCorner
     /// Where a text view's text starts, from its edge (its line fragment padding).
     static let textInset: CGFloat = 5
     static let listRowHeight: CGFloat = 22
@@ -84,10 +88,10 @@ public enum DetailStyle {
     static let tab = Font.system(size: 11)
     static let tabSelected = Font.system(size: 11, weight: .semibold)
     static let sectionTitle = Font.system(size: 11, weight: .bold)
-    static let headerTitle = Font.system(size: 12, weight: .semibold)
+    static let headerTitle = ChromeStyle.headerTitle
     /// `headerTitle`, for the header's field, which AppKit draws (`HeaderTitleField`).
-    static let headerTitleFont = NSFont.systemFont(ofSize: 12, weight: .semibold)
-    static let headerSymbol = Font.system(size: 15)
+    static let headerTitleFont = ChromeStyle.headerTitleFont
+    static let headerSymbol = ChromeStyle.headerSymbol
     static let backSymbol = Font.system(size: 13, weight: .semibold)
     static let disclosure = Font.system(size: 8, weight: .bold)
     static let placeholder = Font.system(size: 13)

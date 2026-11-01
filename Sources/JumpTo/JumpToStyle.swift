@@ -1,4 +1,5 @@
 import AppKit
+import Chrome
 import TextEditing
 
 /// Jump To's constants: the palette's size and place, what its list shows, and how its catalog is
@@ -7,19 +8,17 @@ import TextEditing
 enum JumpToStyle {
     // MARK: The palette
 
-    /// The capsule's width, which its list is as wide as, and its height.
+    /// The field's width, which its list is as wide as, its height, and its corners: it floats over the
+    /// board as the window's chrome does (`floatingSurface`).
     static let width: CGFloat = 560
     static let fieldHeight: CGFloat = 40
-    /// Between the capsule's edge and the text.
+    static let corner = ChromeStyle.floatCorner(height: fieldHeight)
+    /// Between the field's edge and the text.
     static let horizontalPadding: CGFloat = 16
     static let fieldFont = NSFont.systemFont(ofSize: 16)
     /// From the part of the canvas the host leaves clear (below the path over a subboard) to the
-    /// capsule: fixed once the palette opens.
+    /// field: fixed once the palette opens.
     static let topOffset: CGFloat = 12
-    /// The capsule's shadow, as the path's menus have: soft, a little below.
-    static let shadowRadius: CGFloat = 9
-    static let shadowY: CGFloat = 4
-    static let shadowOpacity: Double = 0.14
     static let placeholder = "Jump To"
     /// What VoiceOver calls the palette's field and its list.
     static let accessibilityLabel = "Jump To"
@@ -28,7 +27,7 @@ enum JumpToStyle {
 
     static let rowHeight: CGFloat = 28
     static let rowsShown = 10
-    /// Between the capsule and its list.
+    /// Between the field and its list.
     static let listOffset: CGFloat = 6
     static let metrics = CaretListMetrics(width: width, rowHeight: rowHeight, rowsShown: rowsShown, offset: listOffset)
     /// A path's names are separated by this.

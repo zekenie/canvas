@@ -259,7 +259,7 @@ extension SampleBoardWindow {
         let surface = KeySurface("The table of contents", axes: .vertical, overrides: [
             .init(.right, [.acted, .none], exception: "outline-arrows"), .init(.left, [.acted, .none], exception: "outline-arrows"),
         ])
-        walk.expectMeanings(of: surface, stops: (1...6).map { "toc/\($0)" }, at: 2, depth: { _ in w.depth() },
+        walk.expectMeanings(of: surface, stops: (0...5).map { "toc/\($0)" }, at: 2, depth: { _ in w.depth() },
                             acted: { w.listHasKeyboard && w.rows != rowsBefore }, reset: {
             w.restore(start)
             w.window.makeFirstResponder(w.canvas)

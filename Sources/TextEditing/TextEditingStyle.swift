@@ -1,4 +1,5 @@
 import AppKit
+import Chrome
 
 /// The metrics of the text view and the caret list. Points.
 @MainActor
@@ -30,10 +31,10 @@ enum TextEditingStyle {
     static let caretListTextInset: CGFloat = 7
     static let caretListSymbolWidth: CGFloat = 16
     static let caretListGap: CGFloat = 6
-    static let caretListHighlightRadius: CGFloat = 4
+    static let caretListHighlightRadius = ChromeStyle.itemCorner
     /// The line that sets a `separated` row off from the one above: one point thick, in from the row's text.
     static let caretListSeparatorHeight: CGFloat = 1
-    static let caretListCornerRadius: CGFloat = 8
+    static let caretListCornerRadius = ChromeStyle.floatCorner
     static let caretListLabelSize: CGFloat = 13
     /// A chip row (`CaretListItem.chip`): the capsule's height, its text, its symbol, and between its ends
     /// and what is in it. The highlight behind it is the accent at this strength.

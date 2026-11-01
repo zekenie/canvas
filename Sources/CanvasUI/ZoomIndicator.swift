@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import Chrome
 
 /// The zoom in whole percent ("44%", where the camera's headed: `editor.zoomPercentage`), above the
 /// minimap, while it changes: it shows at once as the zoom changes on the board shown (a pinch, a
@@ -28,7 +29,7 @@ public final class ZoomIndicator: NSView {
         labelSize = Self.size(of: text)
         super.init(frame: .zero)
         wantsLayer = true
-        shadow = MinimapStyle.shadow
+        shadow = MinimapStyle.shadow(in: effectiveAppearance)
         alphaValue = 0
         isHidden = true
         setAccessibilityRole(.staticText)
@@ -120,13 +121,14 @@ public final class ZoomIndicator: NSView {
 
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
+        shadow = MinimapStyle.shadow(in: effectiveAppearance)
         needsDisplay = true
     }
 
     public override func draw(_ dirtyRect: NSRect) {
         guard let cg = NSGraphicsContext.current?.cgContext else { return }
         cg.addPath(MinimapStyle.panel(bounds))
-        cg.setFillColor(MinimapStyle.background.cgColor)
+        cg.setFillColor(MinimapStyle.surface.cgColor)
         cg.fillPath()
         let border = MinimapStyle.borderWidth
         cg.addPath(MinimapStyle.panel(bounds.insetBy(dx: border / 2, dy: border / 2)))
@@ -138,8 +140,8 @@ public final class ZoomIndicator: NSView {
     }
 }
 
-/// The zoom's label's constants, in view points. It looks as the minimap does (`MinimapStyle`'s
-/// panel, colors and shadow).
+/// The zoom's label's constants, in view points. It looks as the minimap's frame does, a capsule as
+/// short as it is (`MinimapStyle`'s panel, surface, border and shadow).
 @MainActor
 enum ZoomIndicatorStyle {
     static let height: CGFloat = 22
@@ -155,10 +157,10 @@ enum ZoomIndicatorStyle {
     /// What VoiceOver hears once the zoom settles: "Zoom 50%".
     static func announcement(_ zoom: String) -> String { "Zoom \(zoom)" }
 
-    /// Where it goes in a canvas of `size`: above the minimap (`minimap`, its frame while it shows,
-    /// else nil), their left edges in line; with none, in its corner.
-    static func frame(_ indicator: CGSize, in size: CGSize, above minimap: CGRect?) -> CGRect {
-        let bottom = minimap.map { $0.minY - gap } ?? size.height - MinimapStyle.margin
-        return CGRect(x: MinimapStyle.margin, y: bottom - indicator.height, width: indicator.width, height: indicator.height)
+    /// Where it goes in the part of the canvas left clear (`clear`, as the minimap's): above the minimap
+    /// (`minimap`, its frame while it shows, else nil), their left edges in line; with none, in its corner.
+    static func frame(_ indicator: CGSize, in clear: CGRect, above minimap: CGRect?) -> CGRect {
+        let bottom = minimap.map { $0.minY - gap } ?? clear.maxY - MinimapStyle.margin
+        return CGRect(x: clear.minX + MinimapStyle.margin, y: bottom - indicator.height, width: indicator.width, height: indicator.height)
     }
 }

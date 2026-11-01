@@ -3336,7 +3336,8 @@ What the shipped app's keys do:
 
 TextEditing ([`Sources/TextEditing`](../Sources/TextEditing)) is the text under every editable text
 in the app, and the one list shown at a caret. It's a core module that depends on no other
-module of the project, so it knows no canvas, registry, plugin or panel, and a plugin that types
+module of the project but Chrome (the window's look, its caret list's corners), so it knows no
+canvas, registry, plugin or panel, and a plugin that types
 into text imports it without importing the inspector: Arrows for an arrow's label, StickyNotes for its editor on the canvas, DetailPanel for its text boxes, Mentions for its text view
 and its picker, SlashCommands for its list at a slash. It holds `EditingTextView`, how the app
 checks the spelling of what's typed (`Spelling`), the caret list (`CaretList` and
@@ -3652,18 +3653,25 @@ window's views.
 
 The window's side is CanvasUI's, and knows no plugin:
 
-- **`BoardChrome(editor:showsSidebar:showsInspector:onExit:)`**, a view modifier the app applies to
-  its canvas (`CanvasRepresentable`, after its frame and toolbar): each registered view over the
-  canvas, in plugin order, then the registered inspector in an `.inspector` on the canvas, with the
-  toolbar button that shows and hides it (Inspector; its tooltip "Show Inspector" or "Hide
-  Inspector", as View › Show Inspector is titled). With a sidebar registered the canvas, with its
-  views and its inspector, is the detail column of SwiftUI's `NavigationSplitView(columnVisibility:)`
-  and the sidebar's view the sidebar column, shown while `showsSidebar`, with a toolbar button at
-  the toolbar's leading end (Sidebar; its tooltip "Show Sidebar" or "Hide Sidebar", as View › Show
-  Sidebar is titled), where it stays while the sidebar is hidden. A registry with no sidebar gets
-  no split view, and one with no inspector no `.inspector`. The window keeps whether the sidebar
-  shows and whether the person has the details shown (`BoardViewState`'s `showsSidebar` and
-  `showsDetails`, which the app binds), per file.
+- **`BoardChrome(editor:showsSidebar:showsInspector:sidebarWidth:inspectorWidth:onExit:)`**, a view
+  modifier the app applies to its canvas (`CanvasRepresentable`, after its frame and toolbar), in a
+  window whose content runs under its title bar. The canvas fills the window, so that nothing on the
+  board moves as anything around it comes or goes. Over it, the registered sidebar along its leading
+  edge while `showsSidebar` and the registered inspector along its trailing edge by its rule (below),
+  each a sheet flush to the window's side, top and bottom, of one surface, a hairline and a shade
+  where it meets the board, coming in from its edge over the board and going back out, as wide as
+  the person left it (a drag of its inner edge, within the slot's `PaneWidth`); each view over the
+  canvas, in plugin order, in the part the title bar and the sheets leave clear. Each pane has its
+  toolbar button: Sidebar at the toolbar's leading end (its tooltip "Show Sidebar" or "Hide
+  Sidebar", as View › Show Sidebar is titled), where it stays while the sidebar is hidden, and
+  Inspector at its trailing end ("Show Inspector" or "Hide Inspector"). A registry with no sidebar
+  gets none, and one with no inspector none. The editor is told what the chrome covers
+  (`editor.coveredEdges`), so fits and reveals land in the clear part. The window keeps whether the
+  sidebar shows, whether the person has the details shown and how wide each pane was left
+  (`BoardViewState`'s `showsSidebar`, `showsDetails`, `sidebarWidth` and `inspectorWidth`, which the
+  app binds), per file. The look the sheets and every float over the board share is Chrome's
+  (`ChromeStyle`: one surface, a hairline, one corner rule, items 6 points and floats 12, a pane's
+  header the same in both).
 - **The inspector's rule.** An inspector says when it has something to show (`shownWhile`, read in
   a view's body, so on observable state; always, by default: the detail panel's, while shapes are
   selected), when it's wanted whether or not the person has it shown (`isRequested`: a takeover is
@@ -3680,9 +3688,10 @@ The window's side is CanvasUI's, and knows no plugin:
   inspector, closing Find returns it to what the person chose, and hiding the inspector closes
   Find, though the window has never heard of Find.
 - **What the canvas covers.** A view over the canvas says how far down it reaches on a board
-  (`coveredTop`: the path's pill, about 35 points inside a subboard). The window tells each board's
-  editor the most any says (`BoardDocument` sets `editor.coveredTop` from
-  `registry.hostCoveredTop(on:)`), so a fit leaves it clear. A headless editor is told nothing, and
+  (`coveredTop`: the path's pill and its shadow, about 43 points inside a subboard), measured from
+  under the title bar's row. The window tells each board's editor the most any says (`BoardDocument`
+  sets `editor.coveredTop` from `registry.hostCoveredTop(on:)`), and what its own chrome covers along
+  the edges (`coveredEdges`), so a fit leaves both clear. A headless editor is told nothing, and
   covers nothing.
 - **The subtitle** is read observed by `BoardWindowController`, so it follows a switch of board or
   a rename.
@@ -3699,7 +3708,7 @@ The window's side is CanvasUI's, and knows no plugin:
   it does next, and is dimmed in a window with none. **View › Focus Sidebar** (⌥⌘S, `focusSidebar:`)
   is the controller's too: it shows the sidebar if it's hidden, then gives the keyboard to the view
   the sidebar says takes it (`keyboardEntry`: the table of contents' list), else to the topmost list,
-  table or text field in the window's content before the canvas, else its topmost control, trying
+  table or text field on the sidebar's sheet, else its topmost control, trying
   again for a few turns while a sidebar just shown has no views. With nothing in it that takes the
   keyboard (the list of an empty board) it leaves the keyboard where it is. Escape in
   the sidebar gives it back to the canvas (`onExit`), and so does hiding the sidebar while a view
@@ -3709,13 +3718,14 @@ The window's side is CanvasUI's, and knows no plugin:
   (`focusInspector:`), dimmed likewise: it shows the inspector if it isn't shown (the person's
   choice becomes showing it), then gives the keyboard to the view the inspector says takes it
   (`keyboardEntry`: the detail panel's header field), else to the topmost list, table or text field
-  in the window's content after the canvas, else its topmost control, trying again for a few turns
+  on the inspector's sheet, else its topmost control, trying again for a few turns
   while a view just shown has none; never to the sidebar's list.
 - **View › Focus Next Pane and Focus Previous Pane** (F6, ⇧F6) move the keyboard round the panes
   shown: the canvas, the inspector while it's shown, the toolbar while it has a view that takes the
   keyboard, the sidebar while it's shown, and round; ⇧F6 is the exact inverse. The window tells
-  which pane the keyboard is in by where its view is: in the canvas's frame, the canvas's; before
-  it, the sidebar's; after it, the inspector's.
+  which pane the keyboard is in by where its view is: on the sidebar's sheet, the sidebar's; on the
+  inspector's, the inspector's; else the canvas's (each sheet has a marker behind it whose frame the
+  window reads, since the sheets lie over the canvas).
 - **`CommandServer.Commands(registry:)`** is the commands the server runs beyond its own
   ([The command line](#the-command-line)): none where the list has no command line.
 
@@ -3727,7 +3737,8 @@ most covered, one sidebar and the keyboard entry it names, one inspector and whe
 to show, one subtitle, a pane's title once, a tip's default, what Copy as Image
 draws, the commands read off the built registry and none without a contributor); CanvasUITests' `chromeTests` the chrome over a real canvas in an
 unshown window (each view where it says, no split view without a sidebar or an inspector, the
-sidebar before the canvas and the inspector after it, the inspector's rule with a fixture that has
+sidebar and the inspector over the canvas's two edges with the canvas never moving, a pane's width,
+the inspector's rule with a fixture that has
 something to show and is wanted while a model says) and `toolPickerTests` the tips; each plugin's
 own tests what it gives; and CompositionTests the shipped six (ShippedTests), the window's behavior
 with Find (`findShippedTests`) and the keys that give the sidebar, the inspector and the panes the
@@ -4575,10 +4586,10 @@ registrar.hostInspector(shownWhile: { !$0.selectedShapeIDs.isEmpty },
 ```
 
 and [the app](../Sources/InfiniteCanvas/InfiniteCanvasApp.swift) applies CanvasUI's `BoardChrome` to
-its canvas, which puts the registered inspector in an `.inspector` (resizing, collapsing in narrow
-windows, and View › Show Inspector, ⌃⌘I) with its toolbar button, the registered sidebar (the
-table of contents) before the canvas, and the views plugins gave over the canvas (the path,
-[Jump To's](#jump-to) palette):
+its canvas, which puts the registered inspector in a sheet over the canvas's trailing edge (as
+wide as `width` says, which the person may drag, and View › Show Inspector, ⌃⌘I) with its toolbar
+button, the registered sidebar (the table of contents) in one over its leading edge, and the views
+plugins gave over the canvas (the path, [Jump To's](#jump-to) palette) in the part they leave clear:
 
 ```swift
 CanvasRepresentable(editor: editor, focus: canvasFocus)
@@ -5340,8 +5351,9 @@ shows, cost more).
   made a self-sizing list log a reentrant update). A row's cell hosts its view in SwiftUI
   (`ContentsRowView`: the kind's row and its marks), reused as rows scroll into view; its symbol in a
   column, the text white on a selected row of a list with the keyboard, as a source list's.
-- **The header** is the outline's first row, a group row (the board's heading: "Board", or what a
-  plugin calls it), which tests read so.
+- **The header** is above the outline, pinned while the rows scroll under it (the board's heading:
+  "Board", or what a plugin calls it), the pane's header as the inspector's is: the window's look,
+  `ChromeStyle`. The outline's first row is the first shape's.
 - **Kept up row by row.** The view's body reads `entries` and hands the list which listing it is
   (`ContentsListing.serial`), how often it changed, the editor's revision and the selection. A new
   listing (another board, one listed afresh) is shown whole. The one shown is
@@ -5474,7 +5486,7 @@ ContentsOutline(editor: editor, board: board, highlighted: next, maxHeight: 348)
 (The app's window wraps the canvas in CanvasUI's `BoardChrome(editor:showsSidebar:showsInspector:onExit:)`,
 a view modifier that places what the plugins gave [the host's slots](#host-slots): the path, Jump To's
 palette (`JumpToPalette`, over the canvas, given `onExit` to give the keyboard back), this list in
-the sidebar before the canvas, with the toolbar button that shows and hides it, and the inspector
+the sidebar's sheet over the canvas's leading edge, with the toolbar button that shows and hides it, and the inspector
 with the detail panel, shown by its rule (while shapes are selected and the person has it shown,
 or while something wants it: Find, open); CompositionTests' `InspectorHost` applies the same
 modifier. The toolbar and the frame stay the app's.)
@@ -5485,10 +5497,10 @@ what ships names `TableOfContentsPlugin` alone:
 
 ```swift
 registrar.service { ContentsState(editor: $0) }
-registrar.hostSidebar(keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
+registrar.hostSidebar(width: PaneWidth(min: ContentsStyle.sidebarMinWidth, ideal: ContentsStyle.sidebarWidth,
+                                       max: ContentsStyle.sidebarMaxWidth),
+                      keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
     TableOfContentsView(editor: editor, onExit: onExit)
-        .navigationSplitViewColumnWidth(min: ContentsStyle.sidebarMinWidth, ideal: ContentsStyle.sidebarWidth,
-                                        max: ContentsStyle.sidebarMaxWidth)
 }
 ```
 
@@ -10071,11 +10083,14 @@ registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle
 ### The path
 
 `BoardPath(editor:)` is where you are, as data-canvas shows it: a small capsule of
-crumbs over the top middle of the canvas, root first, the board shown last, in a material pill 8
-points below the canvas's top edge (`BoardsStyle`). The host places it over the whole canvas, with
-`.overlay(alignment: .top)`, so a crumb's menu can stay inside it; only the pill and the menu take
-clicks. It shows nothing on the root. `BoardPath.coveredHeight(on:)` is how far down it reaches on
-a board (to the pill's bottom, about 35 points; none on the root), which the window tells the editor
+crumbs over the top middle of the canvas, root first, the board shown last, in a pill on the
+window's floating surface (Chrome's `floatingSurface`: the chrome's tone, a hairline and the
+float's shadow, as the minimap and Jump To float) 8 points under the title bar's row
+(`BoardsStyle`). The host places it over the part of the canvas the title bar and the sheets leave
+clear, with `.overlay(alignment: .top)`, so a crumb's menu can stay inside it; only the pill and the
+menu take clicks. It shows nothing on the root. `BoardPath.coveredHeight(on:)` is how far down it
+reaches on a board (to the bottom of the pill's shadow, about 41 points under the title bar's row;
+none on the root), which the window tells the editor
 (the path's overlay says it, `coveredTop`, and the window hands the most any view over the canvas
 says to the editor's `coveredTop`), so a board's first visit, Zoom to
 Fit and `reveal` fit shapes below it, where their titles' pills aren't under it.
@@ -10163,8 +10178,9 @@ the board above instead, VS Code's siblings; the owner chose what's in the crumb
   `pointerEntered(crumb:)`, `pointerExited(crumb:)`, `pointerEnteredMenu()`,
   `pointerExitedMenu()`, `closeMenu()` and `pick(_:)`, and a test headlessly.
 - **The panel** is 300 points wide, as tall as its rows up to 360 before it scrolls, 6 points below
-  the crumb, on a thick material with data-canvas's shadow, and kept 8 points inside the canvas
-  (moved left, and shorter, where the canvas is small). data-canvas's is as wide as its rows,
+  the crumb, on the window's floating surface, rounded as what floats is (`ChromeStyle.floatCorner`),
+  and kept 8 points inside the part of the canvas left clear (moved left, and shorter, where that
+  is small). data-canvas's is as wide as its rows,
   from 260 to 380; a lazy list can't measure the rows it hasn't made, so here the width is fixed.
   It opens at the top of its rows. A menu showing or closing redraws only the menu (`CrumbMenuLayer` reads `openMenu`, the pill
   never does), and the menu reads its board's rows, as they are while it shows.
@@ -10864,8 +10880,9 @@ untinted.
 - **The palette** is `JumpToPalette(editor:onExit:)`, which the window places over
   the canvas (`JumpToPlugin` gives it to [the host's slot](#host-slots) for views over the canvas,
   after Boards', so it's over the path): closed it's nothing; open, a scrim (a clear button, so a click lands on it, closes the
-  palette and isn't the canvas's), and a capsule below the part of the canvas the host leaves clear,
-  taken as it opened (so below the path over a subboard), with an `EditingTextView` in one line. Its
+  palette and isn't the canvas's), and a capsule in the part of the canvas the host's chrome leaves
+  clear, below the host's other views there, taken as it opened (`editor.hostViewsReach`: below the
+  path over a subboard), with an `EditingTextView` in one line. Its
   list is the app's one caret list (`CaretList` in a `CaretListWindow` made with `anchorRect:`,
   [TextEditing](#a-list-at-the-caret)). ↑ ↓ ⌃P ⌃N and Page Up and Down move, Return and Tab pick,
   Escape and ⌘. close; the keyboard goes back to the canvas as the person closes it, and the palette
@@ -14198,15 +14215,18 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   remember a view as mid-motion (Selection's steps back do).
   `editor.viewportSize` is the view's size in view points, zero until it has one, and
   `editor.unobscuredViewport` the part of it nothing the host puts over the canvas covers (the view
-  less `coveredTop`, host API, how far down the host's views reach on a board: the path's pill
+  less `coveredEdges`, host API, what the host's chrome covers along its edges: the title bar's row
+  and the sidebar and the inspector while they show; and less `coveredTop`, host API, how far down
+  the host's views reach on a board under the title bar's row: the path's pill
   inside a subboard, `BoardPath.coveredHeight(on:)`, which a board's window tells it from [the host's slots](#host-slots)), what
   a fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`, and `canvas
   draw`'s `--reveal`, whose `view` is that part of it too.
-- **A view kept while the view settles.** The inspector slides in beside the canvas as a shape is
-  selected, narrowing it, so what the camera was just asked to show is kept shown for a moment
+- **A view kept while the view settles.** The inspector comes in over the canvas's trailing edge as a
+  shape is selected, covering it, so what the camera was just asked to show is kept shown for a moment
   (`Style.viewSettle`, 600 ms, on the scheduler's clock, no timer): `editor.animateCamera(toFit:
   inset:maxZoom:duration:)` (Selection's `reveal`) fits its rect again into what is clear of the
-  view after a change of the view's size that leaves part of it out (one wider again moves
+  view after a change of the view's clear part that leaves part of it out (its size, or what the
+  host's chrome covers, `coveredEdges`, eased with the pane over 200 ms; one wider again moves
   nothing), easing there while its move is under way; and
   `editor.keepInViewWhileSettling(_:)` (what Selection does with the selection as it changes)
   keeps what of the rect is in view, all of it or the part a rect cut by the view's edge shows,

@@ -48,9 +48,9 @@ public struct HostOverlay {
 
 // MARK: The sidebar
 
-/// The view a window shows before its canvas, in a sidebar the person shows and hides (the table of
-/// contents). At most one: two are `RegistryError.conflict` at startup. Without one the window has no
-/// sidebar.
+/// The view a window shows along its canvas's leading edge, in a sidebar the person shows and hides
+/// (the table of contents). At most one: two are `RegistryError.conflict` at startup. Without one the
+/// window has no sidebar.
 public enum HostSidebars {}
 
 extension HostSidebars: KeyedExtensionPoint {
@@ -60,10 +60,13 @@ extension HostSidebars: KeyedExtensionPoint {
     public static func summary(of _: HostSidebar, for _: ShapeTarget) -> String { "host sidebar" }
 }
 
-/// What `HostSidebars` stores: the sidebar's view, and the view in it that takes the keyboard. Only
-/// the sugar makes one.
+/// What `HostSidebars` stores: the sidebar's view, how wide it may be, and the view in it that takes the
+/// keyboard. Only the sugar makes one.
 @MainActor
 public struct HostSidebar {
+    /// How wide the window makes it: the width it starts at, and the narrowest and widest a drag
+    /// of its edge takes it to.
+    public let width: PaneWidth
     /// Where the keyboard goes when the window gives the sidebar the keyboard (View ▸ Focus Sidebar,
     /// Focus Next Pane): the view the plugin says takes it now, nil when it names none (the window then
     /// looks for a list, field or control in the sidebar itself).
@@ -76,8 +79,8 @@ public struct HostSidebar {
 
 // MARK: The inspector
 
-/// The view a window shows beside its canvas, in its inspector (the detail panel). At most one: two
-/// are `RegistryError.conflict` at startup. Without one the window has no inspector.
+/// The view a window shows along its canvas's trailing edge, in its inspector (the detail panel). At
+/// most one: two are `RegistryError.conflict` at startup. Without one the window has no inspector.
 public enum HostInspectors {}
 
 extension HostInspectors: KeyedExtensionPoint {
@@ -96,6 +99,8 @@ extension HostInspectors: KeyedExtensionPoint {
 /// the person while wanted, it's dismissed (`onDismiss`), and the keyboard goes back to the canvas.
 @MainActor
 public struct HostInspector {
+    /// How wide the window makes it, as the sidebar's (`HostSidebar.width`).
+    public let width: PaneWidth
     /// Whether the inspector has something to show now (the detail panel: while shapes are selected),
     /// so the person having it shown shows it. Read in a view's body, so it reads observable state.
     public let shownWhile: @MainActor (CanvasEditor) -> Bool
@@ -113,6 +118,27 @@ public struct HostInspector {
 
     /// The view, for a window's inspector.
     public func view(for editor: CanvasEditor, onExit: @escaping @MainActor () -> Void) -> AnyView { content(editor, onExit) }
+}
+
+/// How wide a pane the window shows along an edge of its canvas is, in points: the width it starts at
+/// (`ideal`), and the narrowest and the widest a drag of its inner edge takes it to.
+public struct PaneWidth: Equatable, Sendable {
+    public var min: CGFloat
+    public var ideal: CGFloat
+    public var max: CGFloat
+
+    /// `max` under `min` is taken as `min`: a pane is never narrower than it says.
+    public init(min: CGFloat, ideal: CGFloat, max: CGFloat) {
+        self.min = min
+        self.max = Swift.max(max, min)
+        self.ideal = Swift.min(Swift.max(ideal, min), self.max)
+    }
+
+    /// A width the person left it at (nil for none: the ideal), kept within the narrowest and the widest.
+    public func clamped(_ width: CGFloat?) -> CGFloat { Swift.min(Swift.max(width ?? ideal, min), max) }
+
+    /// What a pane says nothing of starts at.
+    public static let standard = PaneWidth(min: 200, ideal: 260, max: 400)
 }
 
 // MARK: The window's subtitle
@@ -360,20 +386,22 @@ extension PluginRegistrar {
         contribute(HostOverlay(alignment: alignment, coveredTop: coveredTop, content: { AnyView(content($0, $1)) }), to: HostOverlays.self)
     }
 
-    /// The window's sidebar, before its canvas, and `keyboardEntry` the view that takes the keyboard
-    /// when the window gives the sidebar the keyboard:
+    /// The window's sidebar, along its canvas's leading edge, `width` how wide it is, and `keyboardEntry`
+    /// the view that takes the keyboard when the window gives the sidebar the keyboard:
     ///
-    ///     registrar.hostSidebar(keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
+    ///     registrar.hostSidebar(width: PaneWidth(min: 180, ideal: 240, max: 400),
+    ///                           keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
     ///         TableOfContentsView(editor: editor, onExit: onExit)
     ///     }
     public mutating func hostSidebar<Content: View>(
-        keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)? = nil,
+        width: PaneWidth = .standard, keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)? = nil,
         @ViewBuilder _ content: @escaping @MainActor (_ editor: CanvasEditor, _ onExit: @escaping @MainActor () -> Void) -> Content
     ) {
-        contribute(HostSidebar(keyboardEntry: keyboardEntry, content: { AnyView(content($0, $1)) }), to: HostSidebars.self)
+        contribute(HostSidebar(width: width, keyboardEntry: keyboardEntry, content: { AnyView(content($0, $1)) }), to: HostSidebars.self)
     }
 
-    /// The window's inspector. `shownWhile` says when it has something to show (read in a view's body:
+    /// The window's inspector, along its canvas's trailing edge. `width` says how wide it is (as the
+    /// sidebar's), `shownWhile` when it has something to show (read in a view's body:
     /// observable state; always, by default), `isRequested` when it's wanted whether or not it's shown,
     /// and `onDismiss` ends what wanted it, when the person hides the inspector meanwhile, and
     /// `keyboardEntry` the view that takes the keyboard when the window gives the inspector the keyboard:
@@ -384,12 +412,12 @@ extension PluginRegistrar {
     ///         DetailPanelView(editor: editor, onExit: onExit)
     ///     }
     public mutating func hostInspector<Content: View>(
-        shownWhile: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
+        width: PaneWidth = .standard, shownWhile: @escaping @MainActor (CanvasEditor) -> Bool = { _ in true },
         isRequested: @escaping @MainActor (CanvasEditor) -> Bool = { _ in false }, onDismiss: @escaping @MainActor (CanvasEditor) -> Void = { _ in },
         keyboardEntry: (@MainActor (CanvasEditor) -> NSView?)? = nil,
         @ViewBuilder _ content: @escaping @MainActor (_ editor: CanvasEditor, _ onExit: @escaping @MainActor () -> Void) -> Content
     ) {
-        contribute(HostInspector(shownWhile: shownWhile, isRequested: isRequested, onDismiss: onDismiss, keyboardEntry: keyboardEntry,
+        contribute(HostInspector(width: width, shownWhile: shownWhile, isRequested: isRequested, onDismiss: onDismiss, keyboardEntry: keyboardEntry,
                                  content: { AnyView(content($0, $1)) }), to: HostInspectors.self)
     }
 

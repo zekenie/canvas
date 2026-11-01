@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Chrome
 import SwiftUI
 
 /// The table of contents, as a plugin: an outline of the board's shapes, one row each, in the
@@ -800,10 +801,10 @@ public struct TableOfContentsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { ContentsState(editor: $0) }
-        registrar.hostSidebar(keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
+        registrar.hostSidebar(width: PaneWidth(min: ContentsStyle.sidebarMinWidth, ideal: ContentsStyle.sidebarWidth,
+                                               max: ContentsStyle.sidebarMaxWidth),
+                              keyboardEntry: { $0.tableOfContents?.keyboardEntry }) { editor, onExit in
             TableOfContentsView(editor: editor, onExit: onExit)
-                .navigationSplitViewColumnWidth(min: ContentsStyle.sidebarMinWidth, ideal: ContentsStyle.sidebarWidth,
-                                                max: ContentsStyle.sidebarMaxWidth)
         }
     }
 }
@@ -814,8 +815,7 @@ enum ContentsStyle {
     /// The most of a row's text its tooltip shows (`ContentsLabel.help`): enough to tell apart rows
     /// that begin alike.
     static let helpLength = 200
-    /// The header's: what it calls the board listed when no plugin says (`ContentsHeadings`); between
-    /// the up button, the heading's symbol and its title; the up button's width.
+    /// The header's: what it calls the board listed when no plugin says (`ContentsHeadings`).
     static let heading = "Board"
     /// The sidebar the list is in: its narrowest, the width it starts at, and its widest.
     static let sidebarMinWidth: CGFloat = 180
@@ -823,11 +823,9 @@ enum ContentsStyle {
     static let sidebarMaxWidth: CGFloat = 400
     /// What ⇧Tab types: the back-tab character, which the list takes as ↑.
     static let backTab = "\u{19}"
-    static let headerSpacing: CGFloat = 4
-    static let upWidth: CGFloat = 16
-    /// The header's text, as a sidebar's section header's, and how far in from the row's edges it is.
-    static let headerFont = Font.system(size: 11, weight: .semibold)
-    static let headerInset: CGFloat = 8
+    /// The up button's width, as the inspector's back button's, and its arrow's size.
+    static let upWidth: CGFloat = 20
+    static let upFont = Font.system(size: 13, weight: .semibold)
     /// The list's rows (`ContentsCell`): a symbol's column and from it to the title, as a source
     /// list's; the text's size at each of the sidebar's row sizes (System Settings' sidebar icon
     /// size), and that size as SwiftUI names it (a stand-in's arrow and a path's names scale with it).
@@ -883,11 +881,11 @@ enum ContentsStyle {
     static func pathSpoken(_ title: String, in path: [String]) -> String { "\(title), in \(path.joined(separator: pathSeparator))" }
     /// How many rows a section's row says it holds (`ContentsSectionLabel`), shown and said.
     static func sectionCount(_ count: Int) -> String { count.formatted() }
-    /// A hovered row's tint, in the selection highlight's place: inset from the row's sides, with
-    /// its corners.
+    /// A selected row's highlight, which the list draws as the window's chrome rounds an item, inset
+    /// from the sheet's sides as the inspector's are; and a hovered row's tint in its place.
     static let hoverOpacity: CGFloat = 0.14
-    static let highlightInset: CGFloat = 10
-    static let highlightRadius: CGFloat = 8
+    static let highlightInset: CGFloat = ChromeStyle.rowHighlightInset
+    static let highlightRadius: CGFloat = ChromeStyle.itemCorner
     /// The outline's (`ContentsOutline`): its rows, all of one height; how far each level of nesting
     /// goes in, and the disclosure triangle's column; the row under the pointer's light, and the
     /// corners of it and of the highlight; the symbol's column, and from it to the title.

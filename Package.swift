@@ -271,13 +271,14 @@ let package = Package(
         .target(name: "Geometry", dependencies: []),                                          // layer: core
         .target(name: "DrawScript", dependencies: ["FuzzyMatching", "Geometry"]),             // layer: core
         .target(name: "QueryLanguage", dependencies: []),                                     // layer: core
-        .target(name: "TextEditing", dependencies: []),                                       // layer: core
+        .target(name: "TextEditing", dependencies: ["Chrome"]),                               // layer: core
         .target(name: "FuzzyMatching", dependencies: []),                                     // layer: core
         .target(name: "Palette", dependencies: []),                                           // layer: core
+        .target(name: "Chrome", dependencies: ["Palette"]),                                   // layer: core
         .target(name: "Canvas", dependencies: ["CanvasRPC", "Geometry", "Palette"]),          // layer: core
         .target(name: "CanvasRPC", dependencies: []),                                         // layer: core
         // Private to the core: the window and the programs. No plugin may import them.
-        .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "FuzzyMatching", "Geometry", "Palette"]), // layer: core private
+        .target(name: "CanvasUI", dependencies: ["Canvas", "CanvasRPC", "Chrome", "FuzzyMatching", "Geometry", "Palette"]), // layer: core private
         .executableTarget(name: "InfiniteCanvas", dependencies: ["Canvas", "CanvasUI"] + shipped),               // layer: core private
         .executableTarget(name: "CanvasQuickLook", dependencies: ["Canvas"] + shipped),                          // layer: core private of InfiniteCanvas
         .executableTarget(name: "CanvasCLI", dependencies: ["CanvasRPC"]),                                        // layer: core private
@@ -286,12 +287,12 @@ let package = Package(
         // Horizontals, in the window: the interfaces verticals plug into that a shape shows up on.
         .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard", "Palette"]), // layer: platform
-        .target(name: "DetailPanel", dependencies: ["Canvas", "FuzzyMatching", "Keyboard", "Selection", "TextEditing"]), // layer: platform
+        .target(name: "DetailPanel", dependencies: ["Canvas", "Chrome", "FuzzyMatching", "Keyboard", "Selection", "TextEditing"]), // layer: platform
         .target(name: "ContextMenus", dependencies: ["Canvas", "Keyboard", "Selection"]),                 // layer: platform
         .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "TextEditing"]), // layer: platform
-        .target(name: "TableOfContents", dependencies: ["Canvas", "Selection", "TextEditing"]), // layer: platform
+        .target(name: "TableOfContents", dependencies: ["Canvas", "Chrome", "Selection", "TextEditing"]), // layer: platform
         .target(name: "Adornments", dependencies: ["Canvas", "Geometry", "Palette", "Selection"]),       // layer: platform
-        .target(name: "Find", dependencies: ["Canvas", "DetailPanel", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: platform
+        .target(name: "Find", dependencies: ["Canvas", "Chrome", "DetailPanel", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: platform
         // Horizontals, shape traits: the interfaces verticals plug into that a shape has.
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "Draw", "Keyboard", "Palette", "Queries", "Selection", "TableOfContents", "Titles", "Topology"]), // layer: platform
@@ -301,7 +302,7 @@ let package = Package(
         .target(name: "Connections", dependencies: ["Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: platform
         .target(name: "Mentions", dependencies: ["Boards", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Keyboard", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Topology"]), // layer: platform
-        .target(name: "Boards", dependencies: ["Canvas", "ContextMenus", "DetailPanel", "FuzzyMatching", "Keyboard", "Queries", "Selection", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
+        .target(name: "Boards", dependencies: ["Canvas", "Chrome", "ContextMenus", "DetailPanel", "FuzzyMatching", "Keyboard", "Queries", "Selection", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: platform
         .target(name: "Colors", dependencies: ["Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Palette", "Queries", "SlashCommands", "TextEditing", "Validation"]), // layer: platform
         .target(name: "Types", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Colors", "ContextMenus", "DetailPanel", "Draw", "Find", "LanguageModels", "Mentions", "Neighbors", "Palette", "ProseMaps", "Queries", "Selection", "SlashCommands", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
@@ -313,7 +314,7 @@ let package = Package(
         // Jump To (⌘K): it lists
         // the titled shapes Titles names (each tinted as its kind is, the core's `registry.label(of:)`), goes to one as Boards' crumbs do (Boards'
         // `follow`), and shows its list in TextEditing's caret list, its palette over the canvas in one of the host's slots.
-        .target(name: "JumpTo", dependencies: ["Boards", "Canvas", "FuzzyMatching", "Geometry", "Keyboard", "TextEditing", "Titles", "Topology"]), // layer: platform
+        .target(name: "JumpTo", dependencies: ["Boards", "Canvas", "Chrome", "FuzzyMatching", "Geometry", "Keyboard", "TextEditing", "Titles", "Topology"]), // layer: platform
         // Moving (`/move-to`, `/move-near`): two slash
         // commands that move a shape into a frame, onto a subboard's board or beside a shape, placed as `canvas draw` places one (Draw's
         // placement for plugins, `Surroundings`),

@@ -355,7 +355,7 @@ let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 
         expectEqual(try b.board.data(ofType: boardType), before)
     },
     test("from the table of contents' list and a panel's button, Undo reaches the board's window; in a panel's field, it's the field's") {
-        let w = try InspectorWindow()
+        let w = try InspectorWindow(showsSidebar: true)
         var shape = ShapeRecord(Subboard(frame: CGRect(x: 100, y: 100, width: 240, height: 160)))
         shape[TitleProperty.self] = "eggs"
         // A note pointing at it, so its Connections tab has a row, a button; the tab chosen, since a
@@ -372,7 +372,7 @@ let sampleNotes = [CGPoint(x: 180, y: 180), CGPoint(x: 560, y: 180), CGPoint(x: 
             transaction.insert(arrow)
         }
         w.window.settle()
-        let contents = try require(w.host.descendants(NSTableView.self).first { $0.isTableOfContents }, "the panel shows the table of contents")
+        let contents = try require(w.contents, "the sidebar shows the table of contents")
         w.window.makeFirstResponder(contents)
         expect(target(of: "undo:", from: w.window.firstResponder) === w.window)
         w.click(CGPoint(x: 200, y: 180))

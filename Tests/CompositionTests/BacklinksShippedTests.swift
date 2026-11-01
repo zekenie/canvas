@@ -21,14 +21,11 @@ extension InspectorWindow {
     /// The Connections tab's list: one table of heads and rows.
     var connectionTable: NSTableView? { tables.first }
 
-    /// The Connections tab's rows: the panel's buttons beside the canvas, under its header, as
-    /// tall as a line of a name (a list's head is shorter), top first.
+    /// The Connections tab's rows: the panel's buttons under its header, as tall as a line of a name
+    /// (a list's head is shorter), top first.
     var connectionRows: [NSButton] {
-        buttons.filter {
-            let frame = $0.convert($0.bounds, to: host)
-            return frame.minX >= canvas.frame.maxX && frame.height > 21
-        }
-        .sorted { $0.convert($0.bounds, to: host).minY < $1.convert($1.bounds, to: host).minY }
+        buttons.filter { $0.convert($0.bounds, to: host).height > 21 }
+            .sorted { $0.convert($0.bounds, to: host).minY < $1.convert($1.bounds, to: host).minY }
     }
 }
 

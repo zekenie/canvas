@@ -470,15 +470,15 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         hosting.frame = CGRect(x: 0, y: 0, width: 300, height: 600)
         window.contentView = hosting
         window.settle()
-        /// The list's rows, less its header, each indented two spaces a level.
+        /// The list's rows (its header is above them), each indented two spaces a level.
         @MainActor func shown() -> [String] {
-            guard let outline = hosting.descendants(NSOutlineView.self).first, outline.numberOfRows > 1 else { return [] }
-            return (1..<outline.numberOfRows).map { String(repeating: "  ", count: outline.level(forRow: $0)) + String(describing: outline.item(atRow: $0)!) }
+            guard let outline = hosting.descendants(NSOutlineView.self).first, outline.numberOfRows > 0 else { return [] }
+            return (0..<outline.numberOfRows).map { String(repeating: "  ", count: outline.level(forRow: $0)) + String(describing: outline.item(atRow: $0)!) }
         }
         window.spin { shown().count == 7 }
         expectEqual(shown(), ["Product layer", "  Frames", "  Arrows", "  References · 3", "Selection", "Geometry", "Canvas"])
         let outline = try require(hosting.descendants(NSOutlineView.self).first)
-        outline.expandItem(outline.item(atRow: 4))
+        outline.expandItem(outline.item(atRow: 3))
         window.spin { shown().count == 10 }
         expectEqual(shown(), ["Product layer", "  Frames", "  Arrows", "  References · 3", "    Selection", "    Geometry", "    Canvas",
                               "Selection", "Geometry", "Canvas"])

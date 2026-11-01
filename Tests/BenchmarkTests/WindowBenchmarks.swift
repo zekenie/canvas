@@ -45,8 +45,8 @@ struct BoardWindowBench: View {
             let clock = ContinuousClock()
             var window: NSWindow?
             let listed = board.editor.tableOfContents?.entries.count ?? -1
-            // The outline's rows, less its header.
-            let rows = { max(0, (window?.contentView?.descendants(NSTableView.self).first?.numberOfRows ?? 0) - 1) }
+            // The outline's rows (its header is above them).
+            let rows = { window?.contentView?.descendants(NSTableView.self).first?.numberOfRows ?? 0 }
             let made = clock.measure {
                 board.makeWindowControllers()
                 window = board.windowControllers.first?.window

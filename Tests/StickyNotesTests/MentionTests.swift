@@ -56,8 +56,8 @@ private final class ContentsList {
         window.settle()
     }
 
-    /// The list's rows, less its header.
-    var rows: Int { max(0, (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) - 1) }
+    /// The list's rows (its header is above them).
+    var rows: Int { hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0 }
 }
 
 @MainActor let noteMentionTests = Suite("Sticky note mentions", [

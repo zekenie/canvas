@@ -100,7 +100,6 @@ public struct DetailPanelView: View {
         // A takeover coming or going swaps the panel's controls a turn after the key that closed it made the ring (Escape to the
         // band): made again once its views are gone.
         .onChange(of: activeTakeoverIndex) { closeRingSoon() }
-        .inspectorColumnWidth(min: DetailStyle.minWidth, ideal: DetailStyle.idealWidth, max: DetailStyle.maxWidth)
     }
 
     /// What the panel shows under the band: a takeover, else the selection's panel.
@@ -365,8 +364,8 @@ final class WindowBox {
     }
 }
 
-/// Fills the box, and reports the panel being hidden (it, or a view it's in), which `onDisappear`
-/// doesn't.
+/// Fills the box, and reports the panel being hidden (it, or a view it's in) or taken out of its window
+/// (the window's inspector hidden), which `onDisappear` doesn't, before the keyboard it had is lost.
 struct WindowReader: NSViewRepresentable {
     let box: WindowBox
     let onHide: @MainActor () -> Void
@@ -388,6 +387,8 @@ struct WindowReader: NSViewRepresentable {
             // Only the reader the box has: a new reader (`init` made it the box's) is in before the old one
             // goes, and the watch it started is the box's, not the old reader's to stop.
             if newWindow !== window, box.reader === self { box.stopWatchingKeyboard() }
+            // Going out of its window with the panel (the inspector hidden): the keyboard it had falls to the window.
+            if newWindow == nil, window != nil { onHide() }
             super.viewWillMove(toWindow: newWindow)
         }
         override func viewDidMoveToWindow() {

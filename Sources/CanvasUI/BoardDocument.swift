@@ -42,17 +42,19 @@ public struct BoardWindowContent {
     public let view: BoardViewState
 }
 
-/// A board window's own state, beside the board: whether the sidebar, the details and the minimap show
-/// (remembered per file on this Mac, with the cameras: `BoardViewMemory`). `showsDetails` is the
-/// person's choice: the inspector shows by its rule (`HostInspector.isShown`), only while it has
-/// something to show. What the file is called is the editor's (`rootName`), which the window keeps as
-/// it keeps its title.
+/// A board window's own state, beside the board: whether the sidebar, the details and the minimap show,
+/// and how wide the person left the sidebar and the inspector (nil: as wide as each starts), remembered
+/// per file on this Mac, with the cameras (`BoardViewMemory`). `showsDetails` is the person's choice:
+/// the inspector shows by its rule (`HostInspector.isShown`), only while it has something to show.
+/// What the file is called is the editor's (`rootName`), which the window keeps as it keeps its title.
 @MainActor
 @Observable
 public final class BoardViewState {
     public var showsSidebar = true
     public var showsDetails = true
     public var showsMinimap = true
+    public var sidebarWidth: CGFloat?
+    public var inspectorWidth: CGFloat?
     public init() {}
 }
 
@@ -356,6 +358,8 @@ public final class BoardDocument: NSDocument {
             viewState.showsSidebar = saved.showsSidebar
             viewState.showsDetails = saved.showsDetails
             viewState.showsMinimap = saved.showsMinimap
+            viewState.sidebarWidth = saved.sidebarWidth.map { CGFloat($0) }
+            viewState.inspectorWidth = saved.inspectorWidth.map { CGFloat($0) }
         }
     }
 
@@ -378,8 +382,8 @@ public final class BoardDocument: NSDocument {
 
     /// Remembers, for the next time the file opens, where the camera was left on the boards it can
     /// still show (`editor.boardCameras`): the one shown and those above it, then those shown most
-    /// lately, up to `BoardViewMemory.boardLimit`; which board is shown; and whether its sidebar, details
-    /// and minimap show.
+    /// lately, up to `BoardViewMemory.boardLimit`; which board is shown; whether its sidebar, details
+    /// and minimap show; and how wide the sidebar and the inspector were left.
     public func rememberView() {
         guard let url = fileURL else { return }
         let all = editor.boardCameras
@@ -392,9 +396,12 @@ public final class BoardDocument: NSDocument {
             order.append(id)
         }
         let cameras = Dictionary(uniqueKeysWithValues: order.map { ($0, all[$0]!) })
-        viewMemory.remember(BoardViewMemory.View(root: all[.root] ?? Camera(), cameras: cameras, recent: order, board: editor.board,
-                                                 showsSidebar: viewState.showsSidebar, showsDetails: viewState.showsDetails,
-                                                 showsMinimap: viewState.showsMinimap), for: url)
+        var view = BoardViewMemory.View(root: all[.root] ?? Camera(), cameras: cameras, recent: order, board: editor.board,
+                                        showsSidebar: viewState.showsSidebar, showsDetails: viewState.showsDetails,
+                                        showsMinimap: viewState.showsMinimap)
+        view.sidebarWidth = viewState.sidebarWidth.map(Double.init)
+        view.inspectorWidth = viewState.inspectorWidth.map(Double.init)
+        viewMemory.remember(view, for: url)
     }
 
     private func showLoadReportIfNeeded() {
@@ -472,7 +479,8 @@ extension String {
 }
 
 /// Each file's view, remembered on this Mac by its path, most recent first: the camera on each of
-/// its boards, the board left open, and whether the sidebar, the details and the minimap show. Not in the file,
+/// its boards, the board left open, whether the sidebar, the details and the minimap show, and how wide
+/// the sidebar and the inspector were left. Not in the file,
 /// so panning or going into a board never marks it edited, and a file opens where this Mac left it.
 /// A renamed or moved file opens with the default view.
 public struct BoardViewMemory {
@@ -490,6 +498,10 @@ public struct BoardViewMemory {
         public var boards: [String: Spot]?
         /// Those boards, the one shown last first; nil in a view remembered before it was kept.
         public var recent: [String]?
+        /// How wide the person left the sidebar and the inspector; nil for as wide as each starts, and in
+        /// a view remembered before they were kept.
+        public var sidebarWidth: Double?
+        public var inspectorWidth: Double?
 
         /// A camera, as the view keeps it.
         public struct Spot: Codable, Equatable, Sendable {
@@ -549,7 +561,9 @@ public struct BoardViewMemory {
         /// far as it was kept.
         public var recentBoards: [BoardID] { (recent ?? []).compactMap(BoardID.init) }
 
-        private enum CodingKeys: String, CodingKey { case x, y, zoom, showsSidebar, showsDetails, showsMinimap, board, boards, recent }
+        private enum CodingKeys: String, CodingKey {
+            case x, y, zoom, showsSidebar, showsDetails, showsMinimap, board, boards, recent, sidebarWidth, inspectorWidth
+        }
 
         /// A view remembered before there was a sidebar or a minimap shows them, as a new board does; one
         /// remembered before files had boards is the root's.
@@ -564,6 +578,8 @@ public struct BoardViewMemory {
             board = try container.decodeIfPresent(String.self, forKey: .board)
             boards = try container.decodeIfPresent([String: Spot].self, forKey: .boards)
             recent = try container.decodeIfPresent([String].self, forKey: .recent)
+            sidebarWidth = try container.decodeIfPresent(Double.self, forKey: .sidebarWidth)
+            inspectorWidth = try container.decodeIfPresent(Double.self, forKey: .inspectorWidth)
         }
     }
 

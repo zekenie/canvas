@@ -22,9 +22,9 @@ import Titles
 import Types
 import Validation
 
-/// The app's window (a `BoardWindow`), unshown: the canvas (through `CanvasRepresentable`) with the shipped detail
-/// panel in an `.inspector`, and the table of contents in a sidebar while `showsSidebar` (hidden by default, so
-/// the canvas starts at the window's left edge, where the tests' points take it), wired by a `CanvasFocus` as
+/// The app's window (a `BoardWindow`), unshown: the canvas (through `CanvasRepresentable`), filling the window,
+/// with the shipped detail panel in the inspector's sheet over its trailing edge, and the table of contents in
+/// the sidebar's over its leading edge while `showsSidebar` (hidden by default), wired by a `CanvasFocus` as
 /// the app wires them. The editor keeps real
 /// time, so SwiftUI's updates and the panel's hand-back land while the main run loop runs
 /// (`window.spin`, from CanvasTesting). The window is deferred, never given a place in the window
@@ -59,7 +59,7 @@ final class InspectorWindow {
     }
 
     /// The panel's views of a class: those in the inspector, after the canvas.
-    func panel<View: NSView>(_: View.Type) -> [View] { host.descendants(View.self).filter { $0.isInInspector(beside: canvas) } }
+    func panel<View: NSView>(_: View.Type) -> [View] { host.descendants(View.self).filter { $0.isInInspector } }
     /// The panel's editable text fields under its header, in view order.
     var fields: [NSTextField] { panel(NSTextField.self).filter { $0.isEditable && !$0.isInPanelHeader(of: host) } }
     /// The header's title field (Titles' `TitleHeader`), for a shape renamed there.
@@ -89,7 +89,7 @@ final class InspectorWindow {
     }
 
     /// A point of the canvas's view in the window content's top-left coordinates, where
-    /// `window.mouse` takes it: the canvas is after the sidebar, when that shows.
+    /// `window.mouse` takes it: the canvas fills the window, under the sheets.
     func inContent(_ point: CGPoint) -> CGPoint {
         let inWindow = canvas.convert(point, to: nil)
         return CGPoint(x: inWindow.x, y: host.frame.height - inWindow.y)
@@ -104,17 +104,17 @@ final class InspectorWindow {
         return host.descendants(NSButton.self).filter { button in
             let frame = canvas.convert(button.bounds, from: button)
             return !folds.contains { $0 === button } && canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+                && !button.isOnSheet(.leading) && !button.isOnSheet(.trailing)
         }
     }
     /// The table of contents' list, while the sidebar shows it.
     var contents: NSTableView? { host.descendants(NSTableView.self).first { $0.isTableOfContents && !$0.isHiddenOrHasHiddenAncestor } }
-    /// Its rows, less its header.
-    var contentsRows: Int { max(0, (contents?.numberOfRows ?? 0) - 1) }
-    /// The buttons in its header: up from the board, while it can go up.
+    /// Its rows (its header is above them).
+    var contentsRows: Int { contents?.numberOfRows ?? 0 }
+    /// The buttons in its header, above its rows: up from the board, while it can go up.
     var contentsHeaderButtons: [NSButton] {
-        guard let table = contents, table.numberOfRows > 0 else { return [] }
-        let header = table.rect(ofRow: 0)
-        return table.descendants(NSButton.self).filter { header.contains($0.convert($0.bounds, to: table)) }
+        guard let table = contents else { return [] }
+        return host.descendants(NSButton.self).filter { $0.isOnSheet(.leading) && !$0.isDescendant(of: table) }
     }
 
     private var time: TimeInterval = 1
@@ -171,7 +171,7 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         expectEqual(w.fields.count, 0)
         expectEqual(w.tables.count, 0)
     },
-    test("a note selected across the canvas's right edge keeps the part that showed in view as the inspector slides in beside it, narrowing the canvas") {
+    test("a note selected across the canvas's right edge keeps the part that showed in view as the inspector comes in over the canvas, which keeps its size") {
         let w = try InspectorWindow()
         let wide = w.canvas.bounds.width
         // Half of it past the canvas's edge.
@@ -181,11 +181,12 @@ func note(_ text: String = "") -> ShapeRecord<StickyNote> {
         let edge = w.editor.add(StickyNote(frame: frame, text: "Edge"))
         expect(w.titleField == nil, "nothing selected: no inspector")
         w.editor.selection = edge
-        w.window.spin { w.titleField != nil && w.canvas.bounds.width < wide }
+        w.window.spin { w.titleField != nil && w.editor.coveredEdges.right > 0 }
         let slid = Date(timeIntervalSinceNow: 0.5)
         repeat { w.window.settle() } while Date() < slid
-        expect(w.canvas.bounds.width < wide, "the inspector took its room from the canvas")
+        expectEqual(w.canvas.bounds.width, wide, "the inspector covers the canvas: it takes none of its room")
         let shown = w.editor.camera.toView(showed)
+        expect(w.editor.unobscuredViewport.maxX <= wide - w.editor.coveredEdges.right, "the clear part stops at the inspector")
         expect(w.editor.unobscuredViewport.contains(shown), "in view: \(shown) in \(w.editor.unobscuredViewport)")
     },
     test("typing into a panel field never switches tools") {

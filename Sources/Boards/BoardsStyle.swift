@@ -1,3 +1,4 @@
+import Chrome
 import CoreGraphics
 
 /// The path's constants, in points (data-canvas's crumb row and its menus).
@@ -39,16 +40,12 @@ enum BoardsStyle {
     static let menuWidth: CGFloat = 300
     static let menuMaxHeight: CGFloat = 360
     static let menuPadding: CGFloat = 6
-    static let menuRadius: CGFloat = 8
+    static let menuRadius = ChromeStyle.floatCorner
     static let menuMargin: CGFloat = 8
-    /// Its shadow, as data-canvas's: 18 points of blur, 6 down, at 14%.
-    static let menuShadowRadius: CGFloat = 9
-    static let menuShadowY: CGFloat = 6
-    static let menuShadowOpacity: Double = 0.14
     /// The path with the keyboard: its stop outlined, and what assistive apps call the path and its
     /// action that shows a crumb's menu.
     static let focusWidth: CGFloat = 2
-    static let focusRadius: CGFloat = 8
+    static let focusRadius = ChromeStyle.itemCorner
     static let pathLabel = "Board path"
     static let showContents = "Show Contents"
     static let foldLabel = "Boards between"

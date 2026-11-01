@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import Chrome
 import Geometry
 
 /// The AppKit view around a `CanvasEditor`: turns NSEvents into editor calls, draws it, and hosts
@@ -106,16 +107,46 @@ public final class CanvasView: NSView {
         layoutPopover()
     }
 
+    /// The part of the view the host's chrome leaves clear (`editor.coveredEdges`: under the title bar's
+    /// row, between the sheets), whose bottom-left corner the minimap and the zoom sit in.
+    private var clearOfChrome: CGRect { editor.coveredEdges.clear(in: bounds.size) }
+
     private func layoutMinimap() {
         guard let minimap else { return }
-        let size = MinimapStyle.size(in: bounds.size)
-        minimap.frame = CGRect(x: MinimapStyle.margin, y: bounds.height - MinimapStyle.margin - size.height, width: size.width, height: size.height)
+        minimap.frame = MinimapStyle.frame(in: clearOfChrome)
     }
 
     private func layoutZoomIndicator() {
         let below = minimap.flatMap { $0.isHidden ? nil : $0.frame }
-        zoomIndicator.frame = ZoomIndicatorStyle.frame(zoomIndicator.labelSize, in: bounds.size, above: below)
+        zoomIndicator.frame = ZoomIndicatorStyle.frame(zoomIndicator.labelSize, in: clearOfChrome, above: below)
     }
+
+    /// What the host's chrome covers changed (a sheet came or went, or was resized): the minimap and the
+    /// zoom go with the corner they sit in, gliding as a sheet slides in or out, and following a sheet's
+    /// edge at once as it's dragged; the card and the popover follow the part left clear.
+    public func editorCoveredEdgesDidChange(_ editor: CanvasEditor) {
+        let glides = !editor.coveredEdges.hasSameSides(as: coveredEdgesLaidOut)
+        coveredEdgesLaidOut = editor.coveredEdges
+        guard glides else {
+            layoutMinimap()
+            layoutZoomIndicator()
+            layoutCard()
+            layoutPopover()
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = ChromeStyle.paneIn
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            if let minimap { minimap.animator().frame = MinimapStyle.frame(in: clearOfChrome) }
+            let below = minimap.flatMap { $0.isHidden ? nil : MinimapStyle.frame(in: clearOfChrome) }
+            zoomIndicator.animator().frame = ZoomIndicatorStyle.frame(zoomIndicator.labelSize, in: clearOfChrome, above: below)
+        }
+        layoutCard()
+        layoutPopover()
+    }
+
+    /// What the chrome covered when the minimap and the zoom were last placed for it.
+    private var coveredEdgesLaidOut = CoveredEdges()
 
     /// Whether a point (view points) is on the minimap, which takes its own clicks while it shows
     /// (on an empty board it's hidden, and the corner is the canvas's).
@@ -134,11 +165,13 @@ public final class CanvasView: NSView {
     }
 
     /// Whether a view that isn't the canvas's is over it at a point (view points): what the host
-    /// puts over the canvas, which takes a click there (the path's pill, a crumb's menu), and so
-    /// the pointer. AppKit still tells the canvas the pointer moved there (its tracking area covers
-    /// it), as it does over the views the canvas hosts.
+    /// puts over the canvas, which takes a click there (a sheet, the path's pill, a crumb's menu), and
+    /// so the pointer; and the window's title bar's row, which the canvas runs under and the window
+    /// takes clicks in (its toolbar, or a drag of the window). AppKit still tells the canvas the
+    /// pointer moved there (its tracking area covers it), as it does over the views the canvas hosts.
     private func isCovered(_ point: CGPoint) -> Bool {
-        guard let content = window?.contentView, let frame = content.superview else { return false }
+        guard let window, let content = window.contentView, let frame = content.superview else { return false }
+        if !window.contentLayoutRect.contains(convert(point, to: nil)) { return true }
         guard let hit = content.hitTest(frame.convert(convert(point, to: nil), from: nil)) else { return false }
         return hit !== self && !hit.isDescendant(of: self)
     }

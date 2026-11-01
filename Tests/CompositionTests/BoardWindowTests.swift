@@ -56,15 +56,15 @@ final class NestedWindow {
         canvas = try require(board.focus.canvas, "the window's content made the canvas")
     }
 
-    /// The path's crumbs that are buttons, over the canvas, leading first ("…" isn't one; nor is a hidden
-    /// sidebar's button, whose frame may still lie there).
+    /// The path's crumbs that are buttons, over the canvas, leading first ("…" isn't one; nor is a button
+    /// on a sheet, the sidebar's or the inspector's, which lie over the canvas too).
     var crumbs: [NSButton] {
         guard let content = window.contentView else { return [] }
         let folds = pathFolds(under: content)
         return content.descendants(NSButton.self)
             .filter { button in
                 !button.isHiddenOrHasHiddenAncestor && !folds.contains { $0 === button } && overCanvas(button)
-                    && onCanvas(button).minY < Self.pathBottom
+                    && onCanvas(button).minY < pathBottom
             }
             .sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
     }
@@ -73,7 +73,7 @@ final class NestedWindow {
     /// row's, and a disclosure triangle's before a row with rows under it.
     var menuButtons: [NSButton] {
         (window.contentView?.descendants(NSButton.self) ?? [])
-            .filter { !$0.isHiddenOrHasHiddenAncestor && overCanvas($0) && onCanvas($0).minY >= Self.pathBottom }
+            .filter { !$0.isHiddenOrHasHiddenAncestor && overCanvas($0) && onCanvas($0).minY >= pathBottom }
             .sorted { (onCanvas($0).minY, onCanvas($0).minX) < (onCanvas($1).minY, onCanvas($1).minX) }
     }
 
@@ -88,16 +88,17 @@ final class NestedWindow {
         canvas.mouseMoved(with: event)
     }
 
-    /// Below the path, which is 8 points down and 27 tall (`BoardPath.coveredHeight`, 35).
-    static let pathBottom: CGFloat = 40
+    /// Below the path's pill, which is 8 points under the title bar's row and 27 tall, and above a crumb's
+    /// menu, 6 points under the pill.
+    var pathBottom: CGFloat { editor.coveredEdges.top + 40 }
 
     /// Whether the inspector shows: some view of it after the canvas, shown.
-    var inspectorShown: Bool { window.contentView?.descendants(NSView.self).contains { $0.isInInspector(beside: canvas) } ?? false }
+    var inspectorShown: Bool { window.contentView?.descendants(NSView.self).contains { $0.isInInspector } ?? false }
 
     /// The panel header's text field (Titles' `TitleHeader`), in the inspector after the canvas.
     var titleField: NSTextField? {
         guard let content = window.contentView else { return nil }
-        return content.descendants(NSTextField.self).first { $0.isEditable && $0.isInInspector(beside: canvas) && $0.isInPanelHeader(of: content) }
+        return content.descendants(NSTextField.self).first { $0.isEditable && $0.isInInspector && $0.isInPanelHeader(of: content) }
     }
 
     /// The app's menus, with Go's items sent to this window's controller (an unshown window isn't the
@@ -124,9 +125,10 @@ final class NestedWindow {
         CGPoint(x: x, y: canvas.isFlipped ? y : canvas.bounds.height - y)
     }
 
+    /// Over the canvas, and on neither sheet.
     private func overCanvas(_ view: NSView) -> Bool {
         let frame = canvas.convert(view.bounds, from: view)
-        return canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY))
+        return canvas.bounds.contains(CGPoint(x: frame.midX, y: frame.midY)) && !view.isOnASheet
     }
 }
 
@@ -254,7 +256,8 @@ final class NestedWindow {
         expectEqual(w.editor.boardHeading(of: .root).title, w.board.displayName, "and the board headings Find's rows have, on the root")
         w.window.settle()
         expectEqual(w.crumbs.count, 0, "nothing on the root")
-        let top = w.canvasPoint(x: w.canvas.bounds.midX, fromTop: 20)
+        let row = w.editor.coveredEdges.top                     // the title bar's row, which the canvas runs under
+        let top = w.canvasPoint(x: w.canvas.bounds.midX, fromTop: row + 20)
         expect(w.isCanvas(w.hit(top)), "the canvas, where the pill would be")
 
         expect(w.editor.showBoard(w.nest.sBoard))
@@ -265,8 +268,8 @@ final class NestedWindow {
         let pill = w.canvas.convert(root.bounds, from: root)
         expect(pill.minY >= 0 && w.canvas.convert(root.bounds, from: root).minX > 0, "over the canvas: \(pill)")
         expect(!w.isCanvas(w.hit(CGPoint(x: pill.midX, y: pill.midY))), "the pill takes a click on it")
-        expect(w.isCanvas(w.hit(w.canvasPoint(x: 30, fromTop: 20))), "beside it, the canvas does")
-        expect(w.isCanvas(w.hit(w.canvasPoint(x: w.canvas.bounds.midX, fromTop: 80))), "and below it")
+        expect(w.isCanvas(w.hit(w.canvasPoint(x: 30, fromTop: row + 20))), "beside it, the canvas does")
+        expect(w.isCanvas(w.hit(w.canvasPoint(x: w.canvas.bounds.midX, fromTop: row + 80))), "and below it")
 
         root.performClick(nil)
         w.window.settle()

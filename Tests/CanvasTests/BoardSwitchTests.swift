@@ -327,6 +327,20 @@ private func uuid(_ n: Int) -> String { String(format: "00000000-0000-0000-0000-
         h.wait(320)
         expectEqual(h.editor.camera, Camera(fitting: CGRect(x: 0, y: 0, width: 1200, height: 1100), in: clear, inset: 64))
     },
+    test("a fit leaves clear what the host's chrome covers along the view's edges, and what its views over the canvas cover under the top's") {
+        let tree = BoardTree()
+        let h = try harness(tree.file)
+        h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        h.editor.coveredEdges = CoveredEdges(top: 52, left: 240, right: 260)
+        h.editor.coveredTop = { $0.isRoot ? 0 : 35 }
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 240, y: 52, width: 300, height: 548), "on the root, the chrome alone")
+        h.enter(tree.p)
+        let clear = CGRect(x: 240, y: 87, width: 300, height: 513)
+        expectEqual(h.editor.unobscuredViewport, clear, "inside, the path's pill too, under the title bar's row")
+        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: 0, y: 0, width: 1200, height: 1100), in: clear, inset: 64, maxZoom: 1))
+        h.editor.coveredEdges = CoveredEdges(left: 900)
+        expectEqual(h.editor.unobscuredViewport.width, 1, "covered all over, a point is left")
+    },
     test("a camera moving as the board is left stops, and the board keeps where it was headed") {
         let tree = BoardTree()
         let h = try harness(tree.file)

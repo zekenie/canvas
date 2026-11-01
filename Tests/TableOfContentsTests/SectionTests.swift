@@ -72,18 +72,18 @@ struct MoreSectionsPlugin: CanvasPlugin {
 }
 
 extension ContentsWindow {
-    /// The list's rows as it shows them, top to bottom, less its header: a row's name, a section's row
-    /// its title and count ("Aliases · 2"), each indented two spaces a level.
+    /// The list's rows as it shows them, top to bottom: a row's name, a section's row its title and
+    /// count ("Aliases · 2"), each indented two spaces a level.
     var shown: [String] {
-        guard let outline, outline.numberOfRows > 1 else { return [] }
-        return (1..<outline.numberOfRows).map { row in
+        guard let outline, outline.numberOfRows > 0 else { return [] }
+        return (0..<outline.numberOfRows).map { row in
             String(repeating: "  ", count: outline.level(forRow: row)) + (outline.item(atRow: row).map { String(describing: $0) } ?? "?")
         }
     }
 
-    /// The row (the header is 0) that shows `text` as `shown` has it, untrimmed of its indent; -1 for none.
+    /// The row that shows `text` as `shown` has it, untrimmed of its indent; -1 for none.
     func row(_ text: String) -> Int {
-        (shown.firstIndex { $0.trimmingCharacters(in: .whitespaces) == text } ?? -2) + 1
+        shown.firstIndex { $0.trimmingCharacters(in: .whitespaces) == text } ?? -1
     }
 }
 
@@ -140,8 +140,8 @@ extension ContentsWindow {
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
         expectEqual(w.shown, ["B", "A", "Aliases · 2"])
-        expect(try w.isExpandable(3))
-        try w.expand(3)
+        expect(try w.isExpandable(2))
+        try w.expand(2)
         w.window.spin { w.rows == 5 }
         expectEqual(w.shown, ["B", "A", "Aliases · 2", "  Y", "  X"])
         expect(editor.contents.isExpanded(ContentsSectionKey(aliasesSection, at: .top(.root))), "the person's turn, kept")
@@ -158,10 +158,10 @@ extension ContentsWindow {
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
         expectEqual(w.shown, ["corral", "  W", "  Aliases · 2"], "the corral open from the start; the pins under W, closed")
-        try w.expand(2)
+        try w.expand(1)
         w.window.spin { w.rows == 4 }
         expectEqual(w.shown, ["corral", "  W", "    Pins · 2", "  Aliases · 2"], "W's pins in a section of their own")
-        try w.expand(4)
+        try w.expand(3)
         w.window.spin { w.rows == 6 }
         expectEqual(w.shown, ["corral", "  W", "    Pins · 2", "  Aliases · 2", "    Gizmo", "    X"], "a gizmo with the aliases, front to back")
     },
@@ -176,13 +176,13 @@ extension ContentsWindow {
             w.window.spin { w.shown == ["C", "B", "A", "Aliases · 1"] }
             let y = editor.add(Alias("Y"))
             w.window.spin { w.shown == ["C", "B", "A", "Aliases · 2"] }
-            try? w.expand(4)
+            try? w.expand(3)
             w.window.spin { w.shown == ["C", "B", "A", "Aliases · 2", "  Y", "  X"] }
             let z = editor.add(Alias("Z"))
             w.window.spin { w.shown == ["C", "B", "A", "Aliases · 3", "  Z", "  Y", "  X"] }
             editor.transact { $0.delete([y]) }
             w.window.spin { w.shown == ["C", "B", "A", "Aliases · 2", "  Z", "  X"] }
-            try? w.collapse(4)
+            try? w.collapse(3)
             editor.transact { $0.delete([x]) }
             w.window.spin { w.shown == ["C", "B", "A", "Aliases · 1"] }
             editor.transact { $0.delete([z, a]) }
@@ -211,14 +211,14 @@ extension ContentsWindow {
         let (a, x, y, _) = aliasedWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        try w.click(row: 3)
+        try w.click(row: 2)
         expectEqual(editor.selectedShapeIDs, [x, y], "every alias, in document order")
         w.window.spin { w.canvasHasKeyboard }
-        expectEqual(w.table?.selectedRowIndexes, [3])
+        expectEqual(w.table?.selectedRowIndexes, [2])
         editor.selectedShapeIDs = [a]
-        w.window.spin { w.table?.selectedRowIndexes == [2] }
+        w.window.spin { w.table?.selectedRowIndexes == [1] }
         editor.selectedShapeIDs = [a, x, y]
-        w.window.spin { w.table?.selectedRowIndexes == [2, 3] }
+        w.window.spin { w.table?.selectedRowIndexes == [1, 2] }
         expect(!editor.contents.isExpanded(ContentsSectionKey(aliasesSection, at: .top(.root))), "several selected open nothing")
     },
     test("one shape selected elsewhere opens its section and the rows above, kept open, and its row shows selected") {
@@ -235,7 +235,7 @@ extension ContentsWindow {
         editor.selectedShapeIDs = [x]
         w.window.spin { w.table?.selectedRowIndexes.count == 1 }
         let selected = try require(w.table?.selectedRow)
-        expectEqual(w.shown[selected - 1], "    X")
+        expectEqual(w.shown[selected], "    X")
         expect(editor.contents.isExpanded(ContentsSectionKey(aliasesSection, at: .under(corral))), "opened, and stays open")
         let outline = try require(w.outline)
         expect(outline.visibleRect.intersects(outline.rect(ofRow: selected)), "scrolled to")
@@ -260,7 +260,7 @@ extension ContentsWindow {
         keys.send(.right)                               // before the list caught up with the ↓, as a quick → is
         w.window.spin { w.rows == 5 }
         w.window.settle()
-        expectEqual(w.table?.selectedRowIndexes, [3], "the section's row still the selection of its rows, open")
+        expectEqual(w.table?.selectedRowIndexes, [2], "the section's row still the selection of its rows, open")
         keys.send(.down)                                // into it
         expectEqual(editor.selectedShapeIDs, [y])
         keys.send(.up)                                  // back to the section's row
@@ -295,9 +295,9 @@ extension ContentsWindow {
         _ = aliasedWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        expect(try w.writer(ofRow: 3) == nil, "the section's row")
-        expect(try w.writer(ofRow: 1) != nil, "B's")
-        let (target, drag) = try w.drag(rows: [1], over: 3, at: 0.5)
+        expect(try w.writer(ofRow: 2) == nil, "the section's row")
+        expect(try w.writer(ofRow: 0) != nil, "B's")
+        let (target, drag) = try w.drag(rows: [0], over: 2, at: 0.5)
         defer { drag.pasteboard.releaseGlobally() }
         expectEqual(target.draggingEntered(drag), [])
         expect(editor.document.shapes.allSatisfy { editor.contents.dropZone(for: $0.id) == nil }, "no row ringed or lined")
@@ -326,14 +326,14 @@ extension ContentsWindow {
         let editor = try aliasEditor([PocketsPlugin()], file: file, scheduler: TaskScheduler())
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 1 }
-        try w.expand(1)
+        try w.expand(0)
         w.window.spin { w.rows == 3 }
         expectEqual(w.shown, ["pocket", "  C", "  Aliases · 1"])
         let inside = BoardID(owner: pocket.id)
         let log = standardError {
             editor.transact(on: inside, "Add") { $0.insert(y) }
             w.window.spin { w.shown == ["pocket", "  C", "  Aliases · 2"] }
-            try? w.expand(3)
+            try? w.expand(2)
             w.window.spin { w.shown == ["pocket", "  C", "  Aliases · 2", "    Y", "    X"] }
             expect(editor.contents.isExpanded(ContentsSectionKey(aliasesSection, at: .under(pocket.id))))
             editor.transact(on: inside, "Delete") { $0.delete([x.id]) }
@@ -349,16 +349,16 @@ extension ContentsWindow {
         let x = editor.add(Alias("X"))
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 1 }
-        try w.expand(1)
+        try w.expand(0)
         w.window.spin { w.rows == 2 }
         editor.add(Pin("on X", on: x))
-        w.window.spin { (try? w.isExpandable(2)) == true }
-        try w.expand(2)
+        w.window.spin { (try? w.isExpandable(1)) == true }
+        try w.expand(1)
         w.window.spin { w.shown == ["Aliases · 1", "  X", "    on X"] }
-        try w.collapse(1)
+        try w.collapse(0)
         w.window.spin { w.rows == 1 }
         editor.add(Pin("also on X", on: x))
-        try w.expand(1)
+        try w.expand(0)
         w.window.spin { w.shown == ["Aliases · 1", "  X", "    also on X", "    on X"] }
     },
 ])

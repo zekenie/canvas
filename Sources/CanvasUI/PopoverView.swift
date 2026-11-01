@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import Chrome
 
 /// The editor's popover (`editor.popover`), which `CanvasView` puts over everything it shows: its text
 /// as the text says (its fonts, its colors, its lines), no wider than `PopoverStyle.maxTextWidth` and
@@ -51,15 +52,15 @@ final class PopoverView: NSView {
         guard let cg = NSGraphicsContext.current?.cgContext else { return }
         let reach = PopoverStyle.shadowReach, padding = PopoverStyle.padding
         let bubble = bounds.insetBy(dx: reach, dy: reach)
-        let path = CGPath(roundedRect: bubble, cornerWidth: PopoverStyle.cornerRadius, cornerHeight: PopoverStyle.cornerRadius, transform: nil)
+        let radius = PopoverStyle.cornerRadius(height: bubble.height)
+        let path = CGPath(roundedRect: bubble, cornerWidth: radius, cornerHeight: radius, transform: nil)
         cg.saveGState()
         cg.setShadow(offset: PopoverStyle.shadowOffset, blur: PopoverStyle.shadowBlur, color: PopoverStyle.shadow.cgColor)
         cg.addPath(path)
         cg.setFillColor(PopoverStyle.background.cgColor)
         cg.fillPath()
         cg.restoreGState()
-        cg.addPath(CGPath(roundedRect: bubble.insetBy(dx: 0.25, dy: 0.25), cornerWidth: PopoverStyle.cornerRadius, cornerHeight: PopoverStyle.cornerRadius,
-                          transform: nil))
+        cg.addPath(CGPath(roundedRect: bubble.insetBy(dx: 0.25, dy: 0.25), cornerWidth: radius, cornerHeight: radius, transform: nil))
         cg.setStrokeColor(PopoverStyle.border.cgColor)
         cg.setLineWidth(0.5)
         cg.strokePath()
@@ -74,7 +75,9 @@ final class PopoverView: NSView {
 enum PopoverStyle {
     /// Around the text, across and down.
     static let padding = CGSize(width: 8, height: 6)
-    static let cornerRadius: CGFloat = 6
+    /// Its corners: a float's, as the window's chrome rounds them, or a capsule's on a bubble shorter
+    /// than twice that.
+    static func cornerRadius(height: CGFloat) -> CGFloat { ChromeStyle.floatCorner(height: height) }
     /// Between the bubble and what it's about.
     static let gap: CGFloat = 4
     /// The least room it leaves at the canvas's edges.
@@ -83,10 +86,11 @@ enum PopoverStyle {
     static let maxHeight: CGFloat = 360
     static let background = NSColor.textBackgroundColor
     static let border = NSColor.separatorColor
-    static let shadow = NSColor(white: 0, alpha: 0.22)
-    /// Down 2 points: Core Graphics takes a shadow's offset with y up, whatever the view's flip.
-    static let shadowOffset = CGSize(width: 0, height: -2)
-    static let shadowBlur: CGFloat = 8
+    /// A float's shadow (`ChromeStyle`), down: Core Graphics takes a shadow's offset with y up,
+    /// whatever the view's flip.
+    static let shadow = ChromeStyle.floatShadow
+    static let shadowOffset = CGSize(width: 0, height: -ChromeStyle.floatShadowY)
+    static let shadowBlur = ChromeStyle.floatShadowBlur
     /// How far past the bubble its shadow reaches, which the view makes room for.
     static let shadowReach: CGFloat = 12
 }

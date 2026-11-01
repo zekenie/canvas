@@ -188,6 +188,29 @@ import TestKit
         expectEqual(h.editor.camera, Camera())
         expectEqual(h.scheduler.pendingCount, 0)
     },
+    test("what the host's chrome comes to cover keeps a rect in view as a narrower view does, easing with the pane; covering it later moves nothing") {
+        let h = try EditorHarness(plugins: [])
+        let size = CGSize(width: 1200, height: 800)
+        let rect = CGRect(x: 1000, y: 300, width: 150, height: 100)
+        h.editor.viewportDidResize(to: size)
+        h.editor.keepInViewWhileSettling(rect)
+        h.wait(100)
+        // The inspector comes in over the canvas's trailing 300 points: the rect's right edge 16 in from its edge, 1150 - (900 - 16).
+        h.editor.coveredEdges = CoveredEdges(right: 300)
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 266, y: 0)))
+        expect(h.editor.camera != h.editor.cameraTarget, "easing there, as the pane slides in")
+        h.wait(250)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 266, y: 0)))
+        h.editor.coveredEdges = CoveredEdges()
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 266, y: 0)), "uncovered, it's still in view: nothing moves")
+        // Its time up (a sidebar shown or hidden later, say): nothing moves.
+        h.editor.camera = Camera()
+        h.editor.keepInViewWhileSettling(rect)
+        h.wait(700)
+        h.editor.coveredEdges = CoveredEdges(left: 240, right: 300)
+        expectEqual(h.editor.camera, Camera())
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 240, y: 0, width: 660, height: 800), "the clear part, between the sheets")
+    },
     test("services hear each move a kept view makes, from where the camera was headed to where it goes; nothing when it moves nothing") {
         let log = KeptViews()
         let h = try EditorHarness(plugins: [Contributor(id: "kept") { r in r.service { _ in KeptViewListener(log: log) } }])

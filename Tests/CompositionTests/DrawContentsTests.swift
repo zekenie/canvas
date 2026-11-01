@@ -13,8 +13,8 @@ import TestKit
 // bring rows in at several places at once (a new shape at the end, and edges nested under the
 // shapes they start from, wherever those are listed).
 
-/// The app's window over an empty board, unshown: the canvas with the shipped detail panel, which
-/// lists the board with nothing selected.
+/// The app's window over an empty board, unshown: the canvas with the table of contents in the
+/// sidebar and the shipped detail panel in the inspector.
 @MainActor
 final class DrawingWindow {
     let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: TaskScheduler(), model: ScriptedLanguageModel())
@@ -23,17 +23,17 @@ final class DrawingWindow {
     let host: NSHostingView<InspectorHost>
 
     init() {
-        host = NSHostingView(rootView: InspectorHost(editor: editor, focus: focus, showsDetails: true))
+        host = NSHostingView(rootView: InspectorHost(editor: editor, focus: focus, showsDetails: true, showsSidebar: true))
         host.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         window.settle()
     }
 
-    /// The table of contents' list, if the panel shows it.
+    /// The table of contents' list, while the sidebar shows it.
     var contents: NSTableView? { host.descendants(NSTableView.self).first { $0.isTableOfContents } }
-    /// Its rows, less its header.
-    var rows: Int { max(0, (contents?.numberOfRows ?? 0) - 1) }
+    /// Its rows (its header is above them).
+    var rows: Int { contents?.numberOfRows ?? 0 }
 
     /// Runs `canvas draw` on this board as the app's command server does, and says what it drew.
     @discardableResult

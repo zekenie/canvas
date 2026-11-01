@@ -1,12 +1,13 @@
 import AppKit
 import Canvas
+import Chrome
 import SwiftUI
 import TextEditing
 
 /// Jump To's palette, for the host to place over the canvas (`.overlay`): nothing while it's closed;
 /// open, a clear scrim over the whole canvas, whose click closes the palette and goes no further, and
-/// a capsule at the top middle with the field in it, `JumpToStyle.topOffset` below the part of the
-/// canvas the host leaves clear, taken as it opened (`JumpToState.top`). Its list is the app's one
+/// a capsule at the top middle with the field in it, `JumpToStyle.topOffset` below the host's other views
+/// over the canvas (the path), taken as it opened (`JumpToState.top`). Its list is the app's one
 /// caret list (`CaretListWindow`), a child window under the capsule at the capsule's width. The field
 /// takes the keyboard as the palette opens (and on every ⌘K while it's open, its text selected); ↑ ↓
 /// ⌃P ⌃N and Page Up and Down move through the list, Return and Tab pick, Escape and ⌘. close. It
@@ -48,9 +49,7 @@ private struct JumpToOpenPalette: View {
             JumpToField(state: state, focus: state.focusRequest, onExit: onExit)
                 .padding(.horizontal, JumpToStyle.horizontalPadding)
                 .frame(width: JumpToStyle.width, height: JumpToStyle.fieldHeight)
-                .background(.regularMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(.separator))
-                .shadow(color: .black.opacity(JumpToStyle.shadowOpacity), radius: JumpToStyle.shadowRadius, y: JumpToStyle.shadowY)
+                .floatingSurface(in: RoundedRectangle(cornerRadius: JumpToStyle.corner, style: .continuous))
                 .padding(.top, state.top)
         }
     }

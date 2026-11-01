@@ -31,9 +31,9 @@ import TestKit
             let hosting = NSHostingView(rootView: try require(registry.hostSidebar).view(for: editor, onExit: {}))
             hosting.frame = CGRect(x: 0, y: 0, width: 260, height: 700)
             window.contentView = hosting
-            // The table's rows, less its header, and those it should show for the board shown: one
+            // The table's rows (its header is above them), and those it should show for the board shown: one
             // for each shape that isn't nested (an arrow is under its note, folded).
-            let rows = { max(0, (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) - 1) }
+            let rows = { hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0 }
             let contents = try require(editor.tableOfContents)
             let listed = { contents.entries.count }
             let clock = ContinuousClock()
@@ -64,7 +64,7 @@ import TestKit
             let hosting = NSHostingView(rootView: try require(registry.hostSidebar).view(for: editor, onExit: {}))
             hosting.frame = CGRect(x: 0, y: 0, width: 260, height: 700)
             window.contentView = hosting
-            let rows = { max(0, (hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0) - 1) }
+            let rows = { hosting.descendants(NSTableView.self).first?.numberOfRows ?? 0 }
             let contents = try require(editor.tableOfContents)
             let listed = { contents.entries.count }
             window.spin(until: { rows() > 0 && rows() == listed() }, timeout: 120)

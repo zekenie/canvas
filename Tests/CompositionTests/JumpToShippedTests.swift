@@ -169,7 +169,8 @@ extension NestedWindow {
         let field = try require(w.paletteField)
         let frame = w.onCanvas(field)
         let covered = w.editor.registry.hostCoveredTop(on: w.nest.sBoard)
-        expectClose(w.canvas.isFlipped ? frame.minY : w.canvas.bounds.height - frame.maxY, covered + 12, within: 1.5)
+        // The canvas runs under the title bar's row; the palette is placed under it, as the path is.
+        expectClose(w.canvas.isFlipped ? frame.minY : w.canvas.bounds.height - frame.maxY, w.editor.coveredEdges.top + covered + 12, within: 1.5)
         expect(covered > 30, "the path's pill is there")
         let state = try require(w.editor.jumpTo)
         expectClose(state.top, covered + 12)

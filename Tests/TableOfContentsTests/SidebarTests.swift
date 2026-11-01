@@ -21,8 +21,8 @@ private final class SidebarWindow {
     }
 
     var table: NSTableView? { hosting.descendants(NSTableView.self).first }
-    /// The list's rows, less its header; nil while it shows no list.
-    var rows: Int? { table.map { max(0, $0.numberOfRows - 1) } }
+    /// The list's rows (its header is above them); nil while it shows no list.
+    var rows: Int? { table.map(\.numberOfRows) }
 }
 
 @MainActor let sidebarTests = Suite("The table of contents as the window's sidebar", [

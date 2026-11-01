@@ -67,15 +67,17 @@ extension CanvasEditor {
         keptView = KeptView(rect: shown, keeping: .inView, camera: camera, until: scheduler.now + Style.viewSettle)
     }
 
-    /// The view's size changed: a view kept (`animateCamera(toFit:…)`, `keepInViewWhileSettling`) whose
-    /// time isn't up and whose camera nothing else has moved since (where the camera is headed is where
-    /// it was left), and which the view now leaves part of out, is kept in what is clear of it: a fit
-    /// fitted again, a rect brought back into view, easing there while the camera's move is under way,
-    /// at once otherwise; services hear it (`viewWasKept`), the move being no one's.
-    func keepViewAfterResize() {
+    /// The view's clear part changed (its size, or what the host covers of it, `coveredEdges`): a view
+    /// kept (`animateCamera(toFit:…)`, `keepInViewWhileSettling`) whose time isn't up and whose camera
+    /// nothing else has moved since (where the camera is headed is where it was left), and which the
+    /// clear part now leaves part of out, is kept in what is clear of it: a fit fitted again, a rect
+    /// brought back into view, easing there over `easing` when given (a pane coming in over the canvas),
+    /// else while the camera's move is under way, at once otherwise; services hear it (`viewWasKept`),
+    /// the move being no one's.
+    func keepViewAfterViewChange(easing: Duration? = nil) {
         guard let kept = keptView else { return }
         guard scheduler.now < kept.until, cameraTarget == kept.camera else { return keptView = nil }
-        // Only a view that leaves part of it out: one wider again (the inspector sliding back out) moves nothing.
+        // Only a clear part that leaves part of it out: one wider again (the inspector going back out) moves nothing.
         let view = unobscuredViewport
         guard !view.isEmpty, !kept.camera.toWorld(view).contains(kept.rect) else { return }
         let target: Camera
@@ -91,7 +93,9 @@ extension CanvasEditor {
         }
         guard target != kept.camera else { return }
         keptView?.camera = target
-        if cameraAnimationTarget != nil {
+        if let easing {
+            animateCamera(to: target, duration: easing)
+        } else if cameraAnimationTarget != nil {
             animateCamera(to: target, duration: Style.keptViewDuration)
         } else {
             camera = target

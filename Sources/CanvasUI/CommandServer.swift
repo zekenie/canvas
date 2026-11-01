@@ -279,14 +279,16 @@ public final class CommandServer {
     }
 
     /// The room a window has for a board fit into it, in view points: what a first visit fits the
-    /// root board's shapes into, at 100% at most (the view, `CanvasEditor.firstVisitInset` in from
-    /// its edges). It is the window's, whichever board of the file it shows now: a board inside a
-    /// shape has a little less, under what the host puts over it (`unobscuredViewport`), and a tool
-    /// that asks twice must be told the same. Nil while the view has no size, or none to spare.
+    /// root board's shapes into, at 100% at most (the part of the view the window's chrome leaves
+    /// clear, its title bar's row and the panes that show, `coveredEdges`, `CanvasEditor.firstVisitInset`
+    /// in from its edges). It is the window's, whichever board of the file it shows now: a board inside
+    /// a shape has a little less, under the path (`unobscuredViewport`), and a tool that asks twice must
+    /// be told the same. Nil while the view has no size, or none to spare.
     static func fitRoom(of editor: CanvasEditor) -> CGSize? {
-        let room = CGRect(origin: .zero, size: editor.viewportSize).insetBy(dx: CanvasEditor.firstVisitInset, dy: CanvasEditor.firstVisitInset)
-        guard !room.isNull, room.width >= 1, room.height >= 1 else { return nil }
-        return room.size
+        let clear = editor.coveredEdges.clear(in: editor.viewportSize)
+        let room = CGSize(width: clear.width - 2 * CanvasEditor.firstVisitInset, height: clear.height - 2 * CanvasEditor.firstVisitInset)
+        guard room.width >= 1, room.height >= 1 else { return nil }
+        return room
     }
 
     /// A file and the board inside it its window shows, as `boards` lists them and a board

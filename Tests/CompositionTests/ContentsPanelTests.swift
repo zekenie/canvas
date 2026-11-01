@@ -1,6 +1,6 @@
 import AppKit
 import Arrows
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
 import DetailPanel
@@ -36,15 +36,15 @@ final class SampleWindow {
 
     /// The table of contents' list, while the sidebar shows it.
     var contents: NSTableView? { host.descendants(NSTableView.self).first { $0.isTableOfContents && !$0.isHiddenOrHasHiddenAncestor } }
-    /// Its rows, less its header.
-    var rows: Int { max(0, (contents?.numberOfRows ?? 0) - 1) }
+    /// Its rows (its header is above them).
+    var rows: Int { contents?.numberOfRows ?? 0 }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
     var notes: [ShapeID] { editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id) }
     /// The panel header's back button, while the inspector shows and there's a selection to go back to.
-    var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInInspector(beside: canvas) && $0.isInPanelHeader(of: host) } }
+    var backButton: NSButton? { host.descendants(NSButton.self).first { $0.isInInspector && $0.isInPanelHeader(of: host) } }
     /// The panel header's title field (Titles' `TitleHeader`), while the inspector shows a note.
     var titleField: NSTextField? {
-        host.descendants(NSTextField.self).first { $0.isEditable && $0.isInInspector(beside: canvas) && $0.isInPanelHeader(of: host) }
+        host.descendants(NSTextField.self).first { $0.isEditable && $0.isInInspector && $0.isInPanelHeader(of: host) }
     }
 }
 
@@ -80,8 +80,8 @@ final class SampleBoardWindow {
     var list: NSOutlineView? {
         window.contentView?.descendants(NSOutlineView.self).first { $0.isTableOfContents && !$0.isHiddenOrHasHiddenAncestor }
     }
-    /// Its rows, less its header.
-    var rows: Int { max(0, (list?.numberOfRows ?? 0) - 1) }
+    /// Its rows (its header is above them).
+    var rows: Int { list?.numberOfRows ?? 0 }
     var listHasKeyboard: Bool { list.map { window.firstResponder === $0 } ?? false }
     var canvasHasKeyboard: Bool { window.firstResponder === canvas }
     var notes: [ShapeID] { editor.document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id) }
@@ -89,11 +89,11 @@ final class SampleBoardWindow {
     var titleField: NSTextField? {
         guard let content = window.contentView else { return nil }
         return content.descendants(NSTextField.self).first { field in
-            field.isEditable && field.isInPanelHeader(of: content) && !field.isDescendant(of: canvas) && field.isInInspector(beside: canvas)
+            field.isEditable && field.isInPanelHeader(of: content) && !field.isDescendant(of: canvas) && field.isInInspector
         }
     }
 
-    /// Picks row `row` of the list (the header is 0) as a click does: the outline's own selection, with no
+    /// Picks row `row` of the list (the first is 0) as a click does: the outline's own selection, with no
     /// key, the outline having the keyboard (a click gives it it first). A synthesized click doesn't reach
     /// a table in an unshown window.
     func click(row: Int) throws {
@@ -120,24 +120,30 @@ extension Chord {
 }
 
 extension NSView {
-    /// In the detail panel's header, the top 44 points (`DetailStyle.headerHeight`) of the window's
-    /// content, where the back button is.
-    func isInPanelHeader(of host: NSView) -> Bool { convert(bounds, to: host).maxY <= 44 }
+    /// In the detail panel's header, the 44 points (`DetailStyle.headerHeight`) of the window's content
+    /// under its title bar's row (where the content runs under it), where the back button is.
+    func isInPanelHeader(of host: NSView) -> Bool { convert(bounds, to: host).maxY <= host.safeAreaInsets.top + 44 }
 
-    /// In the inspector: shown, and after the canvas (the sidebar is before it).
-    func isInInspector(beside canvas: NSView) -> Bool {
-        guard !isHiddenOrHasHiddenAncestor else { return false }
-        return convert(bounds, to: nil).midX >= canvas.convert(canvas.bounds, to: nil).maxX
+    /// In the inspector: shown, and on its sheet, which lies over the canvas's trailing edge.
+    var isInInspector: Bool { isOnSheet(.trailing) }
+
+    /// On either sheet, the sidebar's or the inspector's.
+    var isOnASheet: Bool { isOnSheet(.leading) || isOnSheet(.trailing) }
+
+    /// On the sheet along that edge of the canvas (the sidebar's `.leading`, the inspector's `.trailing`), as
+    /// the window tells its panes apart: shown, and its middle on that sheet's marker.
+    func isOnSheet(_ edge: HorizontalEdge) -> Bool {
+        guard !isHiddenOrHasHiddenAncestor, let content = window?.contentView else { return false }
+        let frame = convert(bounds, to: nil)
+        let middle = CGPoint(x: frame.midX, y: frame.midY)
+        return content.descendants(PaneMarkerView.self).contains { $0.edge == edge && $0.convert($0.bounds, to: nil).contains(middle) }
     }
 }
 
 extension NSTableView {
-    /// The table of contents' list, as opposed to a list in a shape's panel: the one
-    /// whose first row is a section header, its board's name.
-    var isTableOfContents: Bool {
-        guard let outline = self as? NSOutlineView, outline.numberOfRows > 0 else { return false }
-        return outline.delegate?.outlineView?(outline, isGroupItem: outline.item(atRow: 0) as Any) == true
-    }
+    /// The table of contents' list, as opposed to a list in a shape's panel: the outline on the
+    /// sidebar's sheet.
+    var isTableOfContents: Bool { self is NSOutlineView && isOnSheet(.leading) }
 }
 
 @MainActor let contentsPanelTests = Suite("Table of contents in the sidebar", [
@@ -146,8 +152,11 @@ extension NSTableView {
         w.window.spin { w.rows == 6 }
         expect(w.titleField == nil && w.backButton == nil, "nothing in the inspector")
         expect(w.editor.viewportSize.width > 0 && w.editor.viewportSize.height > 0, "the canvas knows its size: \(w.editor.viewportSize)")
-        let list = try require(w.contents)
-        expect(list.convert(list.bounds, to: nil).maxX <= w.canvas.convert(w.canvas.bounds, to: nil).minX, "the list is before the canvas")
+        let list = try require(w.contents?.enclosingScrollView)
+        let listFrame = list.convert(list.bounds, to: nil), canvasFrame = w.canvas.convert(w.canvas.bounds, to: nil)
+        expectEqual(canvasFrame, w.host.convert(w.host.bounds, to: nil), "the canvas fills the window")
+        expect(listFrame.minX >= canvasFrame.minX && listFrame.maxX <= canvasFrame.minX + w.editor.coveredEdges.left,
+               "the list lies over the canvas's leading edge, in what the sidebar covers: \(listFrame), \(w.editor.coveredEdges)")
     },
     test("selecting one shape shows its details in the inspector, several their header; the list keeps every row") {
         let w = try SampleWindow()
@@ -182,7 +191,7 @@ extension NSTableView {
         w.window.spin { w.rows == 6 }
         let list = try require(w.contents)
         let note = w.notes[1]
-        let row = list.rect(ofRow: 5)                          // under the header, the six notes front to back: the second is fifth
+        let row = list.rect(ofRow: 4)                          // the six notes front to back: the second is fifth
         let probe = CGPoint(x: row.maxX - 30, y: row.midY)     // past the text
         let plain = snapshot(list)
         let box = try require(w.editor.document[note]?.box)
@@ -232,7 +241,7 @@ extension NSTableView {
         w.window.spin { w.rows == 6 }
         w.keys.send(.focusSidebar)
         w.window.spin { w.listHasKeyboard }
-        try w.click(row: 1)
+        try w.click(row: 0)
         let note = try require(w.editor.selection, "the click picks the first row")
         w.window.spin { w.canvasHasKeyboard && w.titleField != nil }
         expectEqual(w.rows, 6, "the list stays")
@@ -255,7 +264,7 @@ extension NSTableView {
             w.window.spin { w.isShown(shape) && w.titleField != nil }
             w.window.settle()
             expect(w.listHasKeyboard, "the list still has the keyboard after \(key): \(String(describing: w.window.firstResponder))")
-            expectEqual(w.list?.selectedRow, walked.count == 2 ? 2 : 1, "the row the walk is on")
+            expectEqual(w.list?.selectedRow, walked.count == 2 ? 1 : 0, "the row the walk is on")
         }
         expect(walked[0] != walked[1], "↓ went on to the next row")
         expectEqual(walked[2], walked[0], "↑ came back to the row ↓ left")
@@ -274,7 +283,7 @@ extension NSTableView {
         let before = w.editor.file
         w.keys.hold(.down, repeats: 3)
         w.window.settle()
-        expectEqual(w.list?.selectedRow, 4, "four presses, four rows")
+        expectEqual(w.list?.selectedRow, 3, "four presses, four rows")
         expect(w.listHasKeyboard, "the list kept the keyboard")
         expectEqual(w.editor.file, before, "held on, the key moves nothing")
         expect(!w.editor.canUndo, "nor is it a step")
@@ -288,11 +297,11 @@ extension NSTableView {
         w.keys.send(.tab)
         w.keys.send(.tab)
         w.window.settle()
-        expectEqual(w.list?.selectedRow, 2)
+        expectEqual(w.list?.selectedRow, 1)
         let second = w.editor.selection
         w.keys.send(.backTab)
         w.window.settle()
-        expectEqual(w.list?.selectedRow, 1)
+        expectEqual(w.list?.selectedRow, 0)
         w.keys.send(.tab)
         w.window.settle()
         expectEqual(w.editor.selection, second, "⇧Tab then Tab lands where it was")
@@ -310,10 +319,10 @@ extension NSTableView {
         w.window.settle()
         let note = try require(w.editor.selection)
         let list = try require(w.list)
-        expect(!list.isItemExpanded(list.item(atRow: 2)), "collapsed to start")
+        expect(!list.isItemExpanded(list.item(atRow: 1)), "collapsed to start")
         w.keys.send(.right)
         w.window.spin { w.rows == 7 }
-        expect(list.isItemExpanded(list.item(atRow: 2)))
+        expect(list.isItemExpanded(list.item(atRow: 1)))
         w.keys.send(.left)
         w.window.spin { w.rows == 6 }
         expectEqual(w.editor.selectedShapeIDs, [note])

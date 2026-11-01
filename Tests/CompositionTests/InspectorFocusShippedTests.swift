@@ -16,7 +16,7 @@ extension NestedWindow {
     /// Whether the keyboard is in the inspector: a view in the panel (not the canvas or what it hosts, nor the sidebar).
     var inspectorHasKeyboard: Bool {
         guard let view = window.firstResponder as? NSView else { return false }
-        return !isCanvas(view) && view.isDescendant(of: window.contentView!) && view.isInInspector(beside: canvas)
+        return !isCanvas(view) && view.isDescendant(of: window.contentView!) && view.isInInspector
     }
 
     /// ⌥⌘I pressed, as the app routes it: the window's key equivalents, then the app's menus (View's
@@ -209,14 +209,12 @@ extension Chord {
         let w = try NestedWindow()
         w.editor.selection = w.nest.notes(on: 1).0
         w.window.spin { w.titleField != nil }
-        let canvasFrame = w.canvas.convert(w.canvas.bounds, to: nil)
-        // Every control beside the canvas is hidden, again until the inspector that just slid in has made
-        // all of its own: the panel has nothing to give the keyboard to.
+        // Every control on a sheet is hidden, again until the inspector that just slid in has made all of
+        // its own: the panel has nothing to give the keyboard to.
         @MainActor func hideControls() -> Bool {
             var hid = false
             for view in (w.window.contentView?.descendants(NSView.self) ?? []) where !w.isCanvas(view) && view !== w.window.contentView {
-                let frame = view.convert(view.bounds, to: nil)
-                if view.acceptsFirstResponder, !view.isHidden, !canvasFrame.contains(CGPoint(x: frame.midX, y: frame.midY)) {
+                if view.acceptsFirstResponder, view.isOnASheet {
                     view.isHidden = true
                     hid = true
                 }

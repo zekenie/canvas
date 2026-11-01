@@ -11,7 +11,7 @@ import TestKit
 // start, each level its own disclosure triangle, and AppKit never logging a reentrant update.
 
 extension ContentsWindow {
-    /// Whether the row at `row` (the header is 0) shows the rows nested under it.
+    /// Whether the row at `row` (the first is 0) shows the rows nested under it.
     func isExpanded(_ row: Int) throws -> Bool {
         let outline = try require(outline, "no outline")
         return outline.isItemExpanded(outline.item(atRow: row))
@@ -39,9 +39,9 @@ extension ContentsWindow {
         let window = try require(w)
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
         // Front to back: C, its pin folded under it; then the outer corral, the inner corral, B, and A.
-        expectEqual(try [1, 2, 3, 4, 5].map(window.isExpandable), [true, true, true, false, false])
-        expectEqual(try [1, 2, 3].map(window.isExpanded), [false, true, true])
-        try window.expand(1)
+        expectEqual(try [0, 1, 2, 3, 4].map(window.isExpandable), [true, true, true, false, false])
+        expectEqual(try [0, 1, 2].map(window.isExpanded), [false, true, true])
+        try window.expand(0)
         window.window.spin { window.rows == 6 }
     },
     test("each level collapses on its own, and the state hears it: a collapsed row stays so when the rows are replaced, and opens onto its rows as they were") {
@@ -50,11 +50,11 @@ extension ContentsWindow {
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 5 }
         let log = try standardError {
-            try w.collapse(3)
+            try w.collapse(2)
             w.window.spin { w.rows == 4 }
             expect(!editor.contents.isExpanded(try require(editor.contents.entry(nest.inner))))
-            expect(try w.isExpanded(2), "the outer corral stays open")
-            try w.collapse(2)
+            expect(try w.isExpanded(1), "the outer corral stays open")
+            try w.collapse(1)
             w.window.spin { w.rows == 2 }
             expect(!editor.contents.isExpanded(try require(editor.contents.entry(nest.outer))))
             editor.selectedShapeIDs = [nest.outer, nest.c]          // other rows, listed again
@@ -62,10 +62,10 @@ extension ContentsWindow {
             editor.selectedShapeIDs = []
             w.window.spin { w.rows == 2 }
             w.window.settle()
-            expect(!(try w.isExpanded(2)), "still collapsed")
-            try w.expand(2)
+            expect(!(try w.isExpanded(1)), "still collapsed")
+            try w.expand(1)
             w.window.spin { w.rows == 4 }
-            expect(!(try w.isExpanded(3)), "the inner corral as it was left")
+            expect(!(try w.isExpanded(2)), "the inner corral as it was left")
             expect(editor.contents.isExpanded(try require(editor.contents.entry(nest.outer))))
         }
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
@@ -90,7 +90,7 @@ extension ContentsWindow {
             w.window.settle()
         }
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
-        expect(try w.isExpanded(11), "the corral C joined (under the ten widgets, over B and A), open from the start")
+        expect(try w.isExpanded(10), "the corral C joined (under the ten widgets, over B and A), open from the start")
         expectEqual(editor.contents.entries.tree, listedAfresh(editor))
     },
     test("a shape joining an open container, or leaving it, moves its row with no reentrant update") {
@@ -134,7 +134,7 @@ extension ContentsWindow {
             w.window.settle()
         }
         expect(!log.contains(tableReentrancyWarning), "AppKit logged: \(log)")
-        expect(try w.isExpanded(2) && w.isExpanded(4), "both corrals open: C; the outer corral, its new widget on top, the inner one")
+        expect(try w.isExpanded(1) && w.isExpanded(3), "both corrals open: C; the outer corral, its new widget on top, the inner one")
         expect(w.window.firstResponder === w.table, "the rows are new, the list isn't: it keeps the keyboard")
     },
     test("a board's outline in its own panel shows a container's rows open from the start, each level closing on its own") {
@@ -164,10 +164,10 @@ extension ContentsWindow {
         let nest = NestedCorrals(in: editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 5 }
-        try require(w.table).selectRowIndexes([4], byExtendingSelection: false)      // B, two corrals down
+        try require(w.table).selectRowIndexes([3], byExtendingSelection: false)      // B, two corrals down
         w.window.spin { editor.selectedShapeIDs == [nest.b] }
         expectEqual(w.rows, 5, "what's listed stays")
         editor.contents.select([nest.a])                // as a click on its row does
-        w.window.spin { w.table?.selectedRow == 5 }
+        w.window.spin { w.table?.selectedRow == 4 }
     },
 ])

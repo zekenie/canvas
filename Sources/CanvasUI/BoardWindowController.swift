@@ -30,7 +30,9 @@ public final class BoardWindowController: NSWindowController {
         host.sceneBridgingOptions = [.toolbars]
         let window = BoardWindow(contentViewController: host)
         window.editor = board.editor
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        // The canvas runs under the title bar's row, which the sheets take at their tops (`BoardChrome`).
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unified
         window.setContentSize(NSSize(width: 1200, height: 800))
         imagePasteboard = configuration.imagePasteboard
@@ -54,6 +56,21 @@ public final class BoardWindowController: NSWindowController {
         }
         if window?.subtitle != subtitle { window?.subtitle = subtitle }
     }
+
+    /// The title: shown only while no sidebar shows, whose header names the board shown (the root, as
+    /// the file is called); followed as the sidebar shows and hides, from when the window has its board.
+    private func showTitle() {
+        guard let board else { return }
+        let named = withObservationTracking { board.viewState.showsSidebar && editor.registry.hostSidebar != nil } onChange: { [weak self] in
+            // Told as it's about to change: read it once it has.
+            Task { @MainActor in self?.showTitle() }
+        }
+        let visibility: NSWindow.TitleVisibility = named ? .hidden : .visible
+        if window?.titleVisibility != visibility { window?.titleVisibility = visibility }
+    }
+
+    /// Whether `showTitle` follows the sidebar yet: once, from the first time the window is titled.
+    private var showsTitle = false
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("board windows aren't archived") }
@@ -166,18 +183,19 @@ public final class BoardWindowController: NSWindowController {
         return keyView(in: .inspector)
     }
 
-    /// The view of a side of the window's content that gets the keyboard, by its kind: a list, table or
+    /// The view of a pane of the window's content that gets the keyboard, by its kind: a list, table or
     /// text field first, else any other control, the topmost, then the leftmost. Of the views that are
-    /// shown, outside the canvas and what it hosts, and not over it (the path of crumbs is a view over
-    /// the canvas), that accept first responder (the scroll views a list sits in do, and aren't wanted),
-    /// those on that side of it: before the canvas for the sidebar, after it for the inspector.
+    /// shown, outside the canvas and what it hosts, that accept first responder (the scroll views a list
+    /// sits in do, and aren't wanted), those on that pane's sheet (`pane(of:)`): what the window puts over
+    /// the canvas elsewhere (the path of crumbs) is the canvas's.
     private func keyView(in pane: Pane) -> NSView? {
         guard let content = window?.contentView, let canvas = board?.focus.canvas else { return nil }
+        let markers = paneMarkers()
         var found: [(view: NSView, rank: Int, frame: CGRect)] = []
         func walk(_ view: NSView) {
             guard !view.isHidden, view !== canvas else { return }
             let frame = view.convert(view.bounds, to: nil)
-            if view.acceptsFirstResponder, !(view is NSScrollView || view is NSClipView), !frame.isEmpty, side(of: view, canvas: canvas) == pane {
+            if view.acceptsFirstResponder, !(view is NSScrollView || view is NSClipView), !frame.isEmpty, self.pane(of: view, markers: markers) == pane {
                 found.append((view, view is NSTableView || view is NSTextField || view is NSText ? 0 : 1, frame))
             }
             for subview in view.subviews { walk(subview) }
@@ -207,9 +225,8 @@ public final class BoardWindowController: NSWindowController {
 
     /// The pane the keyboard is in; nil when it is nowhere in one (on the window itself). The canvas's is the canvas
     /// and what lies over it, what it hosts and what the window puts over it (the board path, Jump To's field); the
-    /// sidebar's is the window's content before the canvas; the inspector's is the rest of the window's content, its
-    /// hosting view too (where Focus Inspector leaves the keyboard when the panel has nothing to take it), so F6 from
-    /// there goes on round.
+    /// sidebar's is the sidebar's sheet, and the inspector's the inspector's sheet and the window's content view itself
+    /// (where Focus Inspector leaves the keyboard when the panel has nothing to take it), so F6 from there goes on round.
     public func currentPane() -> Pane? {
         guard let responder = window?.firstResponder as? NSView else { return nil }
         if let canvas = board?.focus.canvas, responder === canvas || responder.isDescendant(of: canvas) {
@@ -217,19 +234,35 @@ public final class BoardWindowController: NSWindowController {
         }
         if toolbarViews().contains(where: { responder === $0 || responder.isDescendant(of: $0) }) { return .toolbar }
         guard let content = window?.contentView, responder === content || responder.isDescendant(of: content) else { return nil }
-        guard let canvas = board?.focus.canvas else { return .inspector }
-        return side(of: responder, canvas: canvas)
+        return pane(of: responder, markers: paneMarkers())
     }
 
-    /// Which pane a view of the window's content is in, by where its middle is: over the canvas (in its
-    /// frame: a view the window puts over it, the board path), before it (the sidebar) or after it (the
-    /// inspector). The content view itself, which holds them all, is the inspector's.
-    private func side(of view: NSView, canvas: NSView) -> Pane {
+    /// Which pane a view of the window's content is in, by where its middle is: on the sidebar's sheet or the
+    /// inspector's (each sheet's `PaneMarkerView`: the sheets lie over the canvas, which fills the window), else the
+    /// canvas's (a view the window puts over it elsewhere, the board path). The content view itself, which holds them
+    /// all, is the inspector's.
+    private func pane(of view: NSView, markers: [PaneMarkerView]) -> Pane {
         guard view !== window?.contentView else { return .inspector }
-        let frame = view.convert(view.bounds, to: nil), canvasFrame = canvas.convert(canvas.bounds, to: nil)
+        let frame = view.convert(view.bounds, to: nil)
         let middle = CGPoint(x: frame.midX, y: frame.midY)
-        if canvasFrame.contains(middle) { return .canvas }
-        return middle.x < canvasFrame.minX ? .sidebar : .inspector
+        // The one on top first: the inspector's, over the sidebar's in a window too narrow for both.
+        for marker in markers.reversed() where marker.convert(marker.bounds, to: nil).contains(middle) {
+            return marker.edge == .leading ? .sidebar : .inspector
+        }
+        return .canvas
+    }
+
+    /// The sheets' markers the window's content shows now (one a sheet that shows).
+    private func paneMarkers() -> [PaneMarkerView] {
+        guard let content = window?.contentView else { return [] }
+        var found: [PaneMarkerView] = []
+        func walk(_ view: NSView) {
+            guard !view.isHidden else { return }
+            if let marker = view as? PaneMarkerView { found.append(marker) }
+            for subview in view.subviews { walk(subview) }
+        }
+        walk(content)
+        return found
     }
 
     /// The toolbar's item views, which are in the window's frame, outside its content.
@@ -323,20 +356,24 @@ public final class BoardWindowController: NSWindowController {
     public override func synchronizeWindowTitleWithDocumentName() {
         super.synchronizeWindowTitleWithDocumentName()
         if let board { board.editor.nameRoot(board.displayName) }
+        if !showsTitle, board != nil {
+            showsTitle = true
+            showTitle()
+        }
     }
 }
 
 extension BoardWindowController: NSMenuItemValidation {
     public func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleSidebarShown(_:)) {
-            item.title = ChromeStyle.sidebarHelp(shown: board?.viewState.showsSidebar == true)
+            item.title = BoardChromeStyle.sidebarHelp(shown: board?.viewState.showsSidebar == true)
             return board != nil && editor.registry.hostSidebar != nil
         }
         if item.action == #selector(focusSidebar(_:)) { return board != nil && editor.registry.hostSidebar != nil }
         if item.action == #selector(toggleDetails(_:)) || item.action == #selector(focusInspector(_:)) {
             guard let board, let inspector = editor.registry.hostInspector else { return false }
             if item.action == #selector(toggleDetails(_:)) {
-                item.title = ChromeStyle.inspectorHelp(shown: inspector.isShown(in: editor, chosen: board.viewState.showsDetails))
+                item.title = BoardChromeStyle.inspectorHelp(shown: inspector.isShown(in: editor, chosen: board.viewState.showsDetails))
             }
             // With nothing to show (nothing selected), there's nothing to show it for.
             return inspector.canToggle(in: editor, chosen: board.viewState.showsDetails)

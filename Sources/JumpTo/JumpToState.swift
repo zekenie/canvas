@@ -35,8 +35,9 @@ public final class JumpToState {
     public private(set) var query = ""
     /// +1 each time ⌘K asks for the palette: its field takes the keyboard, its text selected.
     public private(set) var focusRequest = 0
-    /// How far down over the canvas its capsule is, in view points: the part the host leaves clear
-    /// of its top (below the path over a subboard) and a fixed offset, taken as it opens.
+    /// How far down its capsule is, in view points, from the top of the part of the canvas the host's chrome
+    /// leaves clear, where the host places it: below the host's other views there (the path over a
+    /// subboard, `hostViewsReach`) by a fixed offset, taken as it opens.
     public private(set) var top: CGFloat = 0
 
     /// The rows the list shows for `query`, index for index (`list`'s rows are these as they're drawn).
@@ -109,7 +110,7 @@ public final class JumpToState {
     public func open() {
         focusRequest += 1
         guard !isOpen else { return }
-        top = max(editor.unobscuredViewport.minY, 0) + JumpToStyle.topOffset
+        top = editor.hostViewsReach + JumpToStyle.topOffset
         query = ""
         isOpen = true
         if case .unbuilt = phase { startBuild() }

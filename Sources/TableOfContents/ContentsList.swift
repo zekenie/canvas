@@ -9,8 +9,8 @@ import TextEditing
 // drew it, hosted in a cell the outline reuses), with rows all of one height, so a board of 100,000
 // shapes shows, and its rows are replaced, at the cost of the rows in view and a pass over the rows
 // listed; a commit costs the rows it changed. A row's nested rows are read only once it's open (a
-// subboard's board's rows among them). Its header is the outline's first row, a group row. The rows of
-// a kind that gathers them in a section (`ContentsSections`) are under the section's row, after their
+// subboard's board's rows among them). Its header is above it, pinned (`TableOfContentsView`), so the
+// outline's first row is the first shape's. The rows of a kind that gathers them in a section (`ContentsSections`) are under the section's row, after their
 // level's other rows: read with their level, shown once the section is open.
 
 /// What the list shows, as the view's body reads it, so SwiftUI hands the list each change: the board,
@@ -121,10 +121,6 @@ extension ContentsSectionItem: CustomStringConvertible {
 }
 #endif
 
-/// The header's row: the outline's first, a group row.
-@MainActor
-final class ContentsHeaderItem {}
-
 /// The list's controller: the outline's data source and delegate, which reads the state's rows as the
 /// outline asks for them, brings the outline up to date as the listing changes (row by row, as the
 /// listing's own updates say: `ContentsListingChanges`), and carries the selection, the keys, the
@@ -137,8 +133,6 @@ final class ContentsListController: NSObject {
     let view = ContentsListView()
     var outline: ContentsTable { view.outline }
 
-    private let header = ContentsHeaderItem()
-    private lazy var headerCell = ContentsHeaderCell(state: state, editor: editor)
     /// The top-level rows, front to back, and the top level's sections, after them.
     private var top: [ContentsItem] = []
     private var topSections: [ContentsSectionItem] = []
@@ -182,6 +176,7 @@ final class ContentsListController: NSObject {
         outline.action = #selector(rowClicked(_:))
         outline.doubleAction = #selector(openClicked(_:))
         view.onHide = { [weak self] in self?.reclaimSoon() }
+        view.onLeave = { [weak self] in self?.reclaimAfterLeaving() }
         state.watchTurns(self)
         state.keyboardEntry = outline
     }
@@ -298,7 +293,7 @@ final class ContentsListController: NSObject {
             guard let parent else {
                 let slot = Self.slot(for: item.key, in: top, from: 0)
                 top.insert(item, at: slot)
-                outline.insertItems(at: [slot + 1], inParent: nil, withAnimation: [])
+                outline.insertItems(at: [slot], inParent: nil, withAnimation: [])
                 return (item, nil)
             }
             var level = parent.children ?? []
@@ -485,9 +480,8 @@ final class ContentsListController: NSObject {
         if let parent { parent.sections = sections } else { topSections = sections }
     }
 
-    /// Where the sections at `parent`'s level start among the outline's rows there: after its rows
-    /// (and, at the top, the header).
-    private func sectionsStart(under parent: ContentsItem?) -> Int { parent.map { $0.children?.count ?? 0 } ?? top.count + 1 }
+    /// Where the sections at `parent`'s level start among the outline's rows there: after its rows.
+    private func sectionsStart(under parent: ContentsItem?) -> Int { parent.map { $0.children?.count ?? 0 } ?? top.count }
 
     /// A section's row comes into the outline at its level, in its place among the level's sections.
     private func add(_ section: ContentsSectionItem) {
@@ -518,7 +512,7 @@ final class ContentsListController: NSObject {
         guard let parent = item.parent else {
             guard let index = Self.index(of: item, in: top, among: 0..<top.count) else { return }
             top.remove(at: index)
-            outline.removeItems(at: [index + 1], inParent: nil, withAnimation: [])
+            outline.removeItems(at: [index], inParent: nil, withAnimation: [])
             return
         }
         guard var level = parent.children else { return }
@@ -708,18 +702,18 @@ final class ContentsListController: NSObject {
                 guard let item = items[id] else { continue }
                 if isShown(item) {
                     let row = outline.row(forItem: item)
-                    if row > 0 { rows.insert(row) }
+                    if row >= 0 { rows.insert(row) }
                 } else if let section = item.section, !closed.contains(where: { $0 === section }) {
                     closed.append(section)
                 }
             }
             for section in closed where showsSelected(section, wanted) {
                 let row = outline.row(forItem: section)
-                if row > 0 { rows.insert(row) }
+                if row >= 0 { rows.insert(row) }
             }
         } else {
             // Many: one pass over the rows shown.
-            for row in 1..<max(1, outline.numberOfRows) {
+            for row in 0..<outline.numberOfRows {
                 switch outline.item(atRow: row) {
                 case let item as ContentsItem where wanted.contains(item.id): rows.insert(row)
                 case let section as ContentsSectionItem where showsSelected(section, wanted): rows.insert(row)
@@ -799,12 +793,12 @@ final class ContentsListController: NSObject {
         if !keyArrived { giveCanvasTheKeyboardSoon() }
     }
 
-    /// A click on a row, once it's let go (the outline's action; not a press that dragged, nor the
-    /// header's row): one on a row already selected, which changes no selection, gives the canvas the
+    /// A click on a row, once it's let go (the outline's action; not a press that dragged, nor one below
+    /// the rows): one on a row already selected, which changes no selection, gives the canvas the
     /// keyboard as one that picks does. The second click of a double-click opens the shape
     /// (`openClicked`).
     @objc private func rowClicked(_ sender: Any?) {
-        guard outline.clickedRow > 0 else { return }
+        guard outline.clickedRow >= 0 else { return }
         giveCanvasTheKeyboardSoon()
     }
 
@@ -822,7 +816,7 @@ final class ContentsListController: NSObject {
     /// section opened or closed.
     @objc private func openClicked(_ sender: Any?) {
         let row = outline.clickedRow
-        guard row > 0 else { return }
+        guard row >= 0 else { return }
         switch outline.item(atRow: row) {
         case let item as ContentsItem: state.open([item.id])
         case let section as ContentsSectionItem: toggle(section)
@@ -851,6 +845,11 @@ final class ContentsListController: NSObject {
 
     /// The keyboard back to the canvas: Escape, ⌘↑, ⌘↩, ⌘.
     func exit() { onExit() }
+
+    /// The list left its window with the keyboard (the sidebar hidden): the canvas takes it, once the list is out.
+    private func reclaimAfterLeaving() {
+        _ = editor.scheduler.schedule(after: .zero) { [onExit] in onExit() }
+    }
 
     /// After AppKit has hidden the list: if the keyboard fell to the window, hand it to the canvas.
     private func reclaimSoon() {
@@ -898,7 +897,7 @@ final class ContentsListController: NSObject {
     /// let go of.
     func pointerMoved(to point: CGPoint) {
         let row = outline.row(at: point)
-        let id = row > 0 ? (outline.item(atRow: row) as? ContentsItem)?.id : nil
+        let id = row >= 0 ? (outline.item(atRow: row) as? ContentsItem)?.id : nil
         guard id != pointerRow else { return }
         if let old = pointerRow { state.endHover(old) }
         pointerRow = id
@@ -918,7 +917,7 @@ final class ContentsListController: NSObject {
     private func rowUnder(_ info: any NSDraggingInfo) -> (item: ContentsItem, fraction: CGFloat)? {
         let point = outline.convert(info.draggingLocation, from: nil)
         let row = outline.row(at: point)
-        guard row > 0, let item = outline.item(atRow: row) as? ContentsItem else { return nil }
+        guard row >= 0, let item = outline.item(atRow: row) as? ContentsItem else { return nil }
         let rect = outline.rect(ofRow: row)
         guard rect.height > 0 else { return nil }
         let fraction = outline.isFlipped ? (point.y - rect.minY) / rect.height : (rect.maxY - point.y) / rect.height
@@ -968,19 +967,20 @@ extension ContentsListController: ContentsTurnWatcher {
 
 extension ContentsListController: NSOutlineViewDataSource {
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        guard let item else { return top.count + topSections.count + 1 }
+        guard let item else { return top.count + topSections.count }
         if let section = item as? ContentsSectionItem { return section.rows.count }
         guard let item = item as? ContentsItem else { return 0 }
         return children(of: item).count + item.sections.count
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        guard let item else {
-            guard index > 0 else { return header }
-            return index - 1 < top.count ? top[index - 1] : topSections[index - 1 - top.count]
-        }
+        guard let item else { return index < top.count ? top[index] : topSections[index - top.count] }
         if let section = item as? ContentsSectionItem { return section.rows[index] }
-        guard let item = item as? ContentsItem else { return header }
+        guard let item = item as? ContentsItem else {
+            // Never asked: nothing else has rows under it (`isItemExpandable`).
+            assertionFailure("rows asked for under \(item)")
+            return NSNull()
+        }
         let rows = children(of: item)
         return index < rows.count ? rows[index] : item.sections[index - rows.count]
     }
@@ -1026,16 +1026,9 @@ extension ContentsListController: NSOutlineViewDataSource {
 }
 
 extension ContentsListController: NSOutlineViewDelegate {
-    func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool { item is ContentsHeaderItem }
-
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool { item is ContentsItem || item is ContentsSectionItem }
 
-    func outlineView(_ outlineView: NSOutlineView, selectionIndexesForProposedSelection proposed: IndexSet) -> IndexSet {
-        proposed.contains(0) ? proposed.subtracting([0]) : proposed
-    }
-
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
-        if item is ContentsHeaderItem { return headerCell }
         guard item is ContentsItem || item is ContentsSectionItem else { return nil }
         let cell = outlineView.makeView(withIdentifier: ContentsCell.identifier, owner: nil) as? ContentsCell ?? ContentsCell()
         if let item = item as? ContentsItem {

@@ -58,7 +58,7 @@ public struct DetailCodeEditor: View {
     public var body: some View {
         let lines = CGFloat(Self.lineCount(text, upTo: DetailStyle.codeEditorMaxLines))
         // A line more than it has, for the caret on a new one and a sideways scroller.
-        let fitted = max(height, (lines + 1) * DetailStyle.codeLineHeight + DetailStyle.fieldCorner * 2)
+        let fitted = max(height, (lines + 1) * DetailStyle.codeLineHeight + DetailStyle.fieldPadding * 2)
         let coloring = coloring, completions = completions, onCompleting = onCompleting
         // ⌘↩ commits; Return is a new line.
         DetailTextBox($text, height: nil, isEditable: isEditable, commitsOnReturn: false, label: label, onCommit: onCommit,
@@ -124,7 +124,7 @@ extension View {
     /// background, in a hairline border. Its first text baseline is its first line's (`baseline`
     /// down from its top), so a row's label sits on the text's line and not at the box's edge.
     func detailTextBox(height: CGFloat?, baseline: CGFloat) -> some View {
-        padding(DetailStyle.fieldCorner)
+        padding(DetailStyle.fieldPadding)
             .frame(height: height)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: DetailStyle.fieldCorner))
             .overlay(RoundedRectangle(cornerRadius: DetailStyle.fieldCorner).strokeBorder(.separator))

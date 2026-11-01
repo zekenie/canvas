@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Chrome
 import Observation
 import SwiftUI
 import TableOfContents
@@ -55,14 +56,16 @@ public struct BoardPath: View {
         }
     }
 
-    /// How far down over the canvas the path reaches on a board, in points: to its pill's bottom
-    /// edge, nothing on the root, where it shows nothing. The host tells the editor
-    /// (`coveredTop`), so a fit (a board's first visit, Zoom to Fit, `reveal`) leaves it clear.
+    /// How far down over the canvas the path reaches on a board, in points: to the bottom of its pill's
+    /// shadow (it floats as the window's chrome does), nothing on the root, where it shows nothing. The
+    /// host tells the editor (`coveredTop`), so a fit (a board's first visit, Zoom to Fit, `reveal`)
+    /// leaves it clear.
     @MainActor
     public static func coveredHeight(on board: BoardID) -> CGFloat {
         guard !board.isRoot else { return 0 }
         let font = NSFont.systemFont(ofSize: BoardsStyle.fontSize, weight: .medium)
-        return BoardsStyle.topInset + 2 * BoardsStyle.verticalPadding + (font.ascender - font.descender + font.leading).rounded(.up)
+        let pill = 2 * BoardsStyle.verticalPadding + (font.ascender - font.descender + font.leading).rounded(.up)
+        return BoardsStyle.topInset + pill + ChromeStyle.floatShadowReach
     }
 }
 
@@ -121,8 +124,7 @@ struct BoardPathPill: View {
         .lineLimit(1)
         .padding(.horizontal, BoardsStyle.horizontalPadding)
         .padding(.vertical, BoardsStyle.verticalPadding)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.separator))
+        .floatingSurface(in: Capsule())
         .frame(maxWidth: BoardsStyle.maxWidth)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, BoardsStyle.topInset)
@@ -373,11 +375,7 @@ struct CrumbMenuPanel: View {
         }
             .padding(BoardsStyle.menuPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                shape.fill(.thickMaterial)
-                    .shadow(color: .black.opacity(BoardsStyle.menuShadowOpacity), radius: BoardsStyle.menuShadowRadius, y: BoardsStyle.menuShadowY)
-            }
-            .overlay(shape.strokeBorder(.separator))
+            .floatingSurface(in: shape)
             .contentShape(shape)
             .onHover { inside in
                 if inside { crumbs.pointerEnteredMenu() } else { crumbs.pointerExitedMenu() }

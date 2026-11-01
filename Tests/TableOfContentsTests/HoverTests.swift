@@ -7,7 +7,7 @@ import TableOfContents
 import TestKit
 
 extension ContentsWindow {
-    /// Row `row` of the list (0 is the header), in the hosting view's points.
+    /// Row `row` of the list (0 is the first, the front shape's), in the hosting view's points.
     func rect(ofRow row: Int) throws -> CGRect {
         let table = try require(table, "no list")
         return table.convert(table.rect(ofRow: row), to: hosting)
@@ -63,7 +63,7 @@ extension ContentsWindow {
         let (a, b, _) = threeWidgets(editor)
         let w = ContentsWindow(editor)
         w.window.spin { w.rows == 3 }
-        let rowA = try w.rect(ofRow: 3), rowB = try w.rect(ofRow: 2)       // front to back: C, B, A
+        let rowA = try w.rect(ofRow: 2), rowB = try w.rect(ofRow: 1)       // front to back: C, B, A
         let probe = CGPoint(x: rowA.maxX - 30, y: rowA.midY)       // past the text
         let plain = snapshot(w.hosting)
         editor.hovered = a
@@ -173,7 +173,7 @@ extension ContentsWindow {
         w.window.spin { w.rows == ids.count }
         w.window.settle()
         let contents = editor.contents
-        /// The shape of the list's row `n` (1, the first under the header): front to back, the last added first.
+        /// The shape of the list's `n`th row (1, the first): front to back, the last added first.
         let row = { (n: Int) in ids[ids.count - n] }
         /// How many rows the list redraws for `change`: once one has, and a few more turns of the run
         /// loop have passed.
@@ -185,7 +185,7 @@ extension ContentsWindow {
             return contents.rowsRedrawn - before
         }
         // The list makes views for the rows in view alone: row 15 is in view, ids[0]'s, the last, isn't.
-        expect(try w.rect(ofRow: 15).maxY <= w.hosting.bounds.height && w.rect(ofRow: ids.count).minY > w.hosting.bounds.height)
+        expect(try w.rect(ofRow: 14).maxY <= w.hosting.bounds.height && w.rect(ofRow: ids.count - 1).minY > w.hosting.bounds.height)
         let changes: [(String, Int, @MainActor () -> Void)] = [
             ("the pointer onto a row", 1, { contents.hover(row(4)) }),
             ("onto the next row", 2, { contents.hover(row(5)) }),

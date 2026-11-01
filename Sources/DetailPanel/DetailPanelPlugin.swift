@@ -24,7 +24,8 @@ public struct DetailPanelPlugin: ListedPlugin {
     public var id: PluginID { .detailPanel }
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { DetailPanelState(editor: $0) }
-        registrar.hostInspector(shownWhile: { !$0.selectedShapeIDs.isEmpty },
+        registrar.hostInspector(width: PaneWidth(min: DetailStyle.minWidth, ideal: DetailStyle.idealWidth, max: DetailStyle.maxWidth),
+                                shownWhile: { !$0.selectedShapeIDs.isEmpty },
                                 isRequested: { $0.registry.activeDetailTakeover(in: $0) != nil || $0.registry.activeDetailBand(in: $0) != nil },
                                 onDismiss: { editor in
                                     // Both found before either runs: ending the takeover may end the band's reason too.

@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import Chrome
 
 /// The box around a card's view (`editor.card`), which `CanvasView` puts over what it hosts, under the
 /// popover: the bubble (white, rounded, with its shadow) and the plugin's view in it, clipped to the
@@ -140,7 +141,8 @@ enum CardStyle {
     static let gap: CGFloat = 4
     /// The least room it leaves at the canvas's edges.
     static let margin: CGFloat = 8
-    static let cornerRadius: CGFloat = 8
+    /// A float's corners, as the window's chrome rounds them.
+    static let cornerRadius = ChromeStyle.floatCorner
     /// The least tall it is asked to be when there is hardly room.
     static let minHeight: CGFloat = 44
     /// What VoiceOver calls a card that says nothing of itself.
