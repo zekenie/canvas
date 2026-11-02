@@ -418,19 +418,35 @@ public final class CanvasView: NSView {
     /// A Control-click comes here only when `menu(for:)` had nothing for it; the tool decides
     /// whether it's a click (`Pointer.isControlClick`). One press at a time: a left press during the
     /// middle button's pan ends the pan there, and is the press from then on (its drags and release;
-    /// the middle button's are dropped).
+    /// the middle button's are dropped). A press in the window's title bar's row, which the canvas runs
+    /// under, is the window's (`TitleRow`): the board hears none of it.
     public override func mouseDown(with event: NSEvent) {
+        let activatesWindow = firstMouse == event.eventNumber
+        firstMouse = nil
+        if let window, !window.contentLayoutRect.contains(event.locationInWindow) {
+            // The title bar's row, which the canvas runs under, is the window's: a press there drags it (`TitleRow`).
+            TitleRow.press(event, in: window)
+            // A drag of the window tracks the release itself: only a press still held has its drag and release to come.
+            isPressInTitleRow = NSEvent.pressedMouseButtons & 1 != 0
+            return
+        }
+        isPressInTitleRow = false
         pointerPlace = .canvas
         if isPanningWithOtherButton {
             isPanningWithOtherButton = false
             editor.pointerUp(pointerEvent(event))
         }
         var press = pointerEvent(event)
-        press.activatesWindow = firstMouse == event.eventNumber
-        firstMouse = nil
+        press.activatesWindow = activatesWindow
         editor.pointerDown(press)
     }
-    public override func mouseDragged(with event: NSEvent) { editor.pointerDragged(pointerEvent(event)) }
+    public override func mouseDragged(with event: NSEvent) {
+        guard !isPressInTitleRow else { return }
+        editor.pointerDragged(pointerEvent(event))
+    }
+
+    /// Whether the press under way began in the title bar's row, so the board hears none of it.
+    private var isPressInTitleRow = false
 
     /// A press of the middle button pans, as the Hand does, whatever the tool; while another press
     /// is under way it does nothing, and nor do its drags and release. A pan is a press on the canvas,
@@ -460,6 +476,10 @@ public final class CanvasView: NSView {
     /// there, off the canvas, as a move there would; so does one over the minimap. The minimap, which
     /// waits for a press that placed the first shape under it, is asked again.
     public override func mouseUp(with event: NSEvent) {
+        guard !isPressInTitleRow else {
+            isPressInTitleRow = false
+            return
+        }
         let pointer = pointerEvent(event)
         editor.pointerUp(pointer)
         minimap?.updateVisibility()

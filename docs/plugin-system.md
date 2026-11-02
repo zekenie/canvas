@@ -3661,17 +3661,24 @@ The window's side is CanvasUI's, and knows no plugin:
   each a sheet flush to the window's side, top and bottom, of one surface, a hairline and a shade
   where it meets the board, coming in from its edge over the board and going back out, as wide as
   the person left it (a drag of its inner edge, within the slot's `PaneWidth`); each view over the
-  canvas, in plugin order, in the part the title bar and the sheets leave clear. Each pane has its
-  toolbar button: Sidebar at the toolbar's leading end (its tooltip "Show Sidebar" or "Hide
-  Sidebar", as View › Show Sidebar is titled), where it stays while the sidebar is hidden, and
-  Inspector at its trailing end ("Show Inspector" or "Hide Inspector"). A registry with no sidebar
-  gets none, and one with no inspector none. The editor is told what the chrome covers
-  (`editor.coveredEdges`), so fits and reveals land in the clear part. The window keeps whether the
-  sidebar shows, whether the person has the details shown and how wide each pane was left
-  (`BoardViewState`'s `showsSidebar`, `showsDetails`, `sidebarWidth` and `inspectorWidth`, which the
-  app binds), per file. The look the sheets and every float over the board share is Chrome's
-  (`ChromeStyle`: one surface, a hairline, one corner rule, items 6 points and floats 12, a pane's
-  header the same in both).
+  canvas, in plugin order, in the part the title bar and the sheets leave clear. A sheet hands its
+  view the title bar's row (Chrome's `PaneTitleRow`: how tall it is, and how far in a line there
+  starts and ends, clear of the window's own buttons), and the pane's header sits in it, beside the
+  traffic lights and the toolbar's buttons, not under an empty band; a press on the header's words or
+  bare room, and on the board under the row, is the window's (Chrome's `TitleRow`: a drag, and a
+  double-click as System Settings says). Each pane has its toolbar button: Sidebar at the toolbar's
+  leading end (its tooltip "Show Sidebar" or "Hide Sidebar", as View › Show Sidebar is titled),
+  where it stays while the sidebar is hidden, and Inspector at its trailing end ("Show Inspector" or
+  "Hide Inspector"). The sidebar's header starts where the window's own title does, past the
+  Sidebar button, in the title's type: the title shows only while the sidebar doesn't, so on the root
+  the board's name never moves as the sidebar comes and goes. A registry with no sidebar gets none,
+  and one with no inspector none. The editor is told what the chrome covers (`editor.coveredEdges`),
+  so fits and reveals land in the clear part. The window keeps whether the sidebar shows, whether
+  the person has the details shown and how wide each pane was left (`BoardViewState`'s
+  `showsSidebar`, `showsDetails`, `sidebarWidth` and `inspectorWidth`, which the app binds), per
+  file. The look the sheets and every float over the board share is Chrome's (`ChromeStyle`: one
+  surface, a hairline, one corner rule, items 6 points and floats 12, a pane's header the same in
+  both).
 - **The inspector's rule.** An inspector says when it has something to show (`shownWhile`, read in
   a view's body, so on observable state; always, by default: the detail panel's, while shapes are
   selected), when it's wanted whether or not the person has it shown (`isRequested`: a takeover is
@@ -4046,6 +4053,12 @@ gadget.details(header: { $gadget in DetailHeader(gadget.name, subtitle: gadget.m
   `disabled` dims the field, for a while something else writes it.
 - **A header without a symbol** shows its kind's: the panel hands a header view its kind's name
   and symbol through the environment, as the table of contents hands a row its symbol.
+- **In the window's inspector** the header is the title bar's row (the sheet hands it the row, a
+  `PaneTitleRow`), its title in the window's title's type there: 15 semibold, or 13 bold over an 11
+  subtitle, and a field only as wide as its words while no one types in it, so the row beside them
+  drags the window. Whatever is the panel's first line takes the row the same way
+  (`detailTitleRow(else:height:)`: Find's field and Done, a band, which has the row while it shows,
+  the header under it a header again).
 - **Headless**, `layout.header` is the header when it's a `DetailHeader` (with its kind's symbol
   if it has none), and `layout.header(as: TitleHeader.self)` reads back a header of another type,
   as the table of contents reads rows back as `ContentsLabel`s.
@@ -5353,7 +5366,8 @@ shows, cost more).
   column, the text white on a selected row of a list with the keyboard, as a source list's.
 - **The header** is above the outline, pinned while the rows scroll under it (the board's heading:
   "Board", or what a plugin calls it), the pane's header as the inspector's is: the window's look,
-  `ChromeStyle`. The outline's first row is the first shape's.
+  `ChromeStyle`. In the window's sidebar it is the title bar's row, past the window's buttons. The
+  outline's first row is the first shape's.
 - **Kept up row by row.** The view's body reads `entries` and hands the list which listing it is
   (`ContentsListing.serial`), how often it changed, the editor's revision and the selection. A new
   listing (another board, one listed afresh) is shown whole. The one shown is

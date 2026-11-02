@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import Chrome
 import Selection
 import SwiftUI
 import TableOfContents
@@ -22,8 +23,9 @@ final class ContentsWindow {
     /// How often the list handed the keyboard back.
     private(set) var exits = 0
 
-    /// The header's heading is the editor's plugins' (BoardTests' `headingPlugin`).
-    init(_ editor: CanvasEditor) {
+    /// The header's heading is the editor's plugins' (BoardTests' `headingPlugin`). `titleRow`: the row the window's sidebar
+    /// hands the list, under a title bar.
+    init(_ editor: CanvasEditor, titleRow: PaneTitleRow? = nil) {
         self.editor = editor
         canvas = CanvasView(editor: editor)
         canvas.frame = CGRect(x: listWidth, y: 0, width: 1000 - listWidth, height: 700)
@@ -33,7 +35,7 @@ final class ContentsWindow {
             exits += 1
             window.makeFirstResponder(canvas)
         })
-        hosting = NSHostingView(rootView: contents)
+        hosting = NSHostingView(rootView: contents.environment(\.paneTitleRow, titleRow))
         hosting.frame = CGRect(x: 0, y: 0, width: listWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         root.addSubview(canvas)
@@ -57,6 +59,13 @@ final class ContentsWindow {
         guard let scroll = table?.enclosingScrollView else { return hosting.bounds }
         let rows = scroll.convert(scroll.bounds, to: hosting)
         return CGRect(x: 0, y: 0, width: hosting.bounds.width, height: hosting.isFlipped ? rows.minY : hosting.bounds.height - rows.maxY)
+    }
+
+    /// The view a click at a point of the list's view (from its top left) lands on, as the window finds it.
+    func hit(_ point: CGPoint) -> NSView? {
+        guard let top = window.contentView?.superview else { return nil }
+        let flipped = hosting.isFlipped ? point : CGPoint(x: point.x, y: hosting.bounds.height - point.y)
+        return top.hitTest(hosting.convert(flipped, to: nil))
     }
 
     /// Gives the list the keyboard, as View ▸ Focus Sidebar does.

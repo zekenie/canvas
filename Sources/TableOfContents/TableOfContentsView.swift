@@ -20,11 +20,12 @@ import TextEditing
 ///
 /// Its header names the board listed: a plugin says how (`ContentsHeadings`), else it's "Board". It
 /// stays at the top as the rows scroll under it, and looks as the inspector's does (the window's
-/// chrome's, `ChromeStyle`), on an empty board too. The list doesn't know what a board is called; the
-/// plugin that names boards does.
+/// chrome's, `ChromeStyle`), on an empty board too; in the window's sidebar it is the title bar's row
+/// (`PaneTitleRow`). The list doesn't know what a board is called; the plugin that names boards does.
 public struct TableOfContentsView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
+    @Environment(\.paneTitleRow) private var titleRow
 
     public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}) {
         self.editor = editor
@@ -35,7 +36,7 @@ public struct TableOfContentsView: View {
         if let state = editor.tableOfContents {
             VStack(spacing: 0) {
                 ContentsHeader(state: state, editor: editor)
-                    .frame(height: ChromeStyle.headerHeight)
+                    .frame(height: titleRow?.height ?? ChromeStyle.headerHeight)
                 Rectangle().fill(Color(nsColor: ChromeStyle.hairline)).frame(height: ChromeStyle.hairlineWidth)
                 let entries = state.entries
                 if entries.isEmpty {
@@ -76,17 +77,26 @@ public struct ContentsHeading {
 
 /// The board's heading (`ContentsState.heading`: a plugin's, else "Board"), with a button up from it
 /// while it can go up: the pane's header, as the inspector's is (its symbol dimmed in its column, its
-/// title in the header's type). Its own view, so what the heading reads redraws only the header.
+/// title in the header's type). In the window's sidebar it is the title bar's row, past the window's
+/// buttons, where the window's own title starts, in the title's type and with no symbol, as the title
+/// has none: on the root the two are the same name in the same place, the title showing while the
+/// sidebar doesn't. A press there on its words or nothing is the window's (`TitleRowDragArea`). Its own
+/// view, so what the heading reads redraws only the header.
 struct ContentsHeader: View {
     let state: ContentsState
     let editor: CanvasEditor
+    @Environment(\.paneTitleRow) private var row
 
     var body: some View {
         HStack(spacing: ChromeStyle.headerSpacing) {
             content
         }
-        .padding(.horizontal, ChromeStyle.headerInset)
+        .padding(.leading, row?.leading ?? ChromeStyle.headerInset)
+        .padding(.trailing, row?.trailing ?? ChromeStyle.headerInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background {
+            if row != nil { TitleRowDragArea() }
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -104,13 +114,14 @@ struct ContentsHeader: View {
             .help(heading.upHelp ?? upTitle)
             .accessibilityLabel(upTitle)
         }
-        if let symbol = heading.systemImage {
+        if row == nil, let symbol = heading.systemImage {
             Image(systemName: symbol)
                 .font(ChromeStyle.headerSymbol)
                 .foregroundStyle(.secondary)
                 .frame(width: ChromeStyle.headerSymbolWidth)
         }
-        Text(heading.title).font(ChromeStyle.headerTitle).lineLimit(1)
+        Text(heading.title).font(row == nil ? ChromeStyle.headerTitle : ChromeStyle.rowTitle).lineLimit(1)
+            .allowsHitTesting(row == nil)
             .accessibilityAddTraits(.isHeader)
         Spacer(minLength: 0)
     }

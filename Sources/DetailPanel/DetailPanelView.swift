@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Chrome
 import Keyboard
 import Selection
 import SwiftUI
@@ -15,7 +16,9 @@ import TextEditing
 /// (`DetailTakeovers`), that in place of everything. It reads the takeovers from the editor's
 /// registry, and makes their views as it's made. With nothing selected the window hides it
 /// (`DetailPanelPlugin`'s `shownWhile`). A band a plugin gave (`DetailBands`) shows above whichever
-/// of them shows, the first that's active.
+/// of them shows, the first that's active. In the window's inspector the panel's first line is in the
+/// title bar's row (`PaneTitleRow`, `detailTitleRow(else:height:)`): the band's while one shows, else the
+/// header of what shows under it.
 public struct DetailPanelView: View {
     let editor: CanvasEditor
     let onExit: @MainActor () -> Void
@@ -23,6 +26,7 @@ public struct DetailPanelView: View {
     let bands: [PlacedBand]
     @State private var window = WindowBox()
     @State private var drafts = DraftTracker()
+    @Environment(\.paneTitleRow) private var titleRow
 
     public init(editor: CanvasEditor, onExit: @escaping @MainActor () -> Void = {}) {
         self.editor = editor
@@ -42,13 +46,16 @@ public struct DetailPanelView: View {
     private var activeBand: PlacedBand? { bands.first { $0.band.isActive(editor) } }
 
     public var body: some View {
+        let band = activeBand
         VStack(spacing: 0) {
-            if let band = activeBand {
+            if let band {
                 band.content
                     .background(BandReader(box: window))
                     .id(band.index)
             }
+            // The title bar's row is the first line's: under a band, the header is a header's height.
             content
+                .environment(\.paneTitleRow, band == nil ? titleRow : nil)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(WindowReader(box: window, onHide: reclaimSoon))
@@ -537,26 +544,60 @@ struct HeaderView<Content: View>: View {
                 .disabled(isReadOnly)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, DetailStyle.inset)
-        .frame(height: DetailStyle.headerHeight)
+        .detailTitleRow(else: EdgeInsets(top: 0, leading: DetailStyle.inset, bottom: 0, trailing: DetailStyle.inset),
+                        height: DetailStyle.headerHeight)
+    }
+}
+
+extension View {
+    /// This, the panel's first line (the shape's header, Find's field and Done, the issue walk's band), in the window's title
+    /// bar's row while the panel's sheet runs under one and nothing above it in the panel has the row (a band does while it
+    /// shows: `DetailPanelView`): as tall as the row, its ends clear of the window's buttons there (`PaneTitleRow`), and a
+    /// press on what of it takes none (its words, its symbol, the room between) the window's (`TitleRowDragArea`). Elsewhere
+    /// it's padded by `insets`, and `height` tall where that's given.
+    public func detailTitleRow(else insets: EdgeInsets, height: CGFloat? = nil) -> some View {
+        modifier(DetailTitleRow(insets: insets, height: height))
+    }
+}
+
+struct DetailTitleRow: ViewModifier {
+    let insets: EdgeInsets
+    let height: CGFloat?
+    @Environment(\.paneTitleRow) private var row
+
+    // One chain of modifiers in or out of the row, so the line keeps its views (the header's field) as a band comes or goes.
+    func body(content: Content) -> some View {
+        content
+            .padding(.top, row == nil ? insets.top : 0)
+            .padding(.bottom, row == nil ? insets.bottom : 0)
+            .padding(.leading, row?.leading ?? insets.leading)
+            .padding(.trailing, row?.trailing ?? insets.trailing)
+            .frame(height: row?.height ?? height)
+            .background {
+                if row != nil { TitleRowDragArea() }
+            }
     }
 }
 
 extension DetailHeader: View {
     public var body: some View {
-        DetailHeaderLabel(subtitle: subtitle, systemImage: systemImage) { Text(title) }
+        // Words a press goes through, to the window in the title bar's row.
+        DetailHeaderLabel(subtitle: subtitle, systemImage: systemImage) { Text(title).allowsHitTesting(false) }
     }
 }
 
 /// The header's layout, for a header view a kind builds itself: the shape's symbol (this one, else
 /// its kind's), then its title on one line in the header's font, over an optional subtitle. The
 /// title is any view: `DetailHeader` makes it text, and a header that renames its shape a
-/// `DetailHeaderField` (Titles' `TitleHeader`).
+/// `DetailHeaderField` (Titles' `TitleHeader`). In the window's title bar's row its words are in the
+/// window's title's type there (`DetailStyle.rowTitle`; over a subtitle, the title's two-line form), and
+/// a press on the symbol or the subtitle goes through to the window.
 public struct DetailHeaderLabel<Title: View>: View {
     let subtitle: String?
     let systemImage: String?
     let title: Title
     @Environment(\.detailKindSymbol) private var kindSymbol
+    @Environment(\.paneTitleRow) private var row
 
     public init(subtitle: String? = nil, systemImage: String? = nil, @ViewBuilder title: () -> Title) {
         self.subtitle = subtitle
@@ -571,13 +612,43 @@ public struct DetailHeaderLabel<Title: View>: View {
                     .font(DetailStyle.headerSymbol)
                     .foregroundStyle(.secondary)
                     .frame(width: DetailStyle.headerSymbolWidth)
+                    .allowsHitTesting(false)
             }
             VStack(alignment: .leading, spacing: 1) {
-                title.font(DetailStyle.headerTitle).lineLimit(1)
+                title.font(titleType.font).lineLimit(1)
+                    .environment(\.detailHeaderTitleType, titleType)
                 if let subtitle {
-                    Text(subtitle).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subtitle).font(row == nil ? DetailStyle.caption : DetailStyle.rowSubtitle).foregroundStyle(.secondary).lineLimit(1)
+                        .allowsHitTesting(false)
                 }
             }
+        }
+    }
+
+    private var titleType: DetailHeaderTitleType {
+        guard row != nil else { return .header }
+        return subtitle == nil ? .row : .rowOverSubtitle
+    }
+}
+
+/// The type a header's title is set in: the header's, or in the window's title bar's row the window's title's, alone or over a
+/// subtitle; `fieldFont` the same for a title AppKit draws (`HeaderTitleField`).
+enum DetailHeaderTitleType: Sendable {
+    case header, row, rowOverSubtitle
+
+    @MainActor var font: Font {
+        switch self {
+        case .header: DetailStyle.headerTitle
+        case .row: DetailStyle.rowTitle
+        case .rowOverSubtitle: DetailStyle.rowTitleOverSubtitle
+        }
+    }
+
+    @MainActor var fieldFont: NSFont {
+        switch self {
+        case .header: DetailStyle.headerTitleFont
+        case .row: DetailStyle.rowTitleFont
+        case .rowOverSubtitle: DetailStyle.rowTitleOverSubtitleFont
         }
     }
 }
@@ -637,7 +708,17 @@ struct DetailReclaimKey: EnvironmentKey {
     static var defaultValue: @MainActor () -> Void { {} }
 }
 
+/// The type the header's title is in, which `DetailHeaderLabel` hands its title: what `HeaderTitleField` sets.
+struct DetailHeaderTitleTypeKey: EnvironmentKey {
+    static let defaultValue = DetailHeaderTitleType.header
+}
+
 extension EnvironmentValues {
+    var detailHeaderTitleType: DetailHeaderTitleType {
+        get { self[DetailHeaderTitleTypeKey.self] }
+        set { self[DetailHeaderTitleTypeKey.self] = newValue }
+    }
+
     var detailKindName: String {
         get { self[DetailKindNameKey.self] }
         set { self[DetailKindNameKey.self] = newValue }

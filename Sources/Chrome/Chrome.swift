@@ -4,7 +4,8 @@ import SwiftUI
 
 /// The look every surface around the board shares, so that the panes and what floats over the board
 /// read as one kind of thing: the two panes (the sidebar and the inspector, sheets flush to the
-/// window's edges and full height, one tone, a hairline and a shade where they meet the board), what
+/// window's edges and full height, their headers in the title bar's row (`PaneTitleRow`), one tone,
+/// a hairline and a shade where they meet the board), what
 /// floats over the board (the minimap, the zoom, the board path, Jump To, crumb menus, the caret list,
 /// cards and popovers: one corner and one shadow), and what both hold (a header, rows, tabs, fields).
 /// A module's own style enum reads these, and keeps only what is its own.
@@ -73,6 +74,16 @@ public enum ChromeStyle {
     public static var headerTitleFont: NSFont { .systemFont(ofSize: 13, weight: .semibold) }
     /// Between a header's back or up button, its symbol and its title.
     public static let headerSpacing: CGFloat = 6
+
+    /// A pane's header in the window's title bar's row (`PaneTitleRow`) is set as the window's own title is there, so the row
+    /// carries one size of words, and on the root the sidebar's name and the window's title (shown while the sidebar isn't)
+    /// are the same words in the same type in the same place: 15 semibold, and with a line under it the title's two-line form,
+    /// 13 bold over 11. `rowTitleFont` and `rowTitleOverSubtitleFont` are those for a title AppKit draws (the inspector's field).
+    public static let rowTitle = Font.system(size: 15, weight: .semibold)
+    public static var rowTitleFont: NSFont { .systemFont(ofSize: 15, weight: .semibold) }
+    public static let rowTitleOverSubtitle = Font.system(size: 13, weight: .bold)
+    public static var rowTitleOverSubtitleFont: NSFont { .systemFont(ofSize: 13, weight: .bold) }
+    public static let rowSubtitle = Font.system(size: 11)
 
     /// How far in from a pane's sides a row's highlight starts and ends.
     public static let rowHighlightInset: CGFloat = 8

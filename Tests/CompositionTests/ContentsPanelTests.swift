@@ -120,9 +120,12 @@ extension Chord {
 }
 
 extension NSView {
-    /// In the detail panel's header, the 44 points (`DetailStyle.headerHeight`) of the window's content
-    /// under its title bar's row (where the content runs under it), where the back button is.
-    func isInPanelHeader(of host: NSView) -> Bool { convert(bounds, to: host).maxY <= host.safeAreaInsets.top + 44 }
+    /// In the detail panel's header, where the back button is: the title bar's row, where the window's content runs under one
+    /// (the inspector's sheet hands its panel the row), else the panel's top 44 points (`DetailStyle.headerHeight`).
+    func isInPanelHeader(of host: NSView) -> Bool {
+        let row = host.safeAreaInsets.top
+        return convert(bounds, to: host).maxY <= (row > 0 ? row : 44)
+    }
 
     /// In the inspector: shown, and on its sheet, which lies over the canvas's trailing edge.
     var isInInspector: Bool { isOnSheet(.trailing) }

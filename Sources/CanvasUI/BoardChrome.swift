@@ -7,7 +7,8 @@ import SwiftUI
 /// canvas that fills the window, its title bar's row too, so that nothing on the board moves as any of
 /// it comes or goes: the sidebar (`registry.hostSidebar`) along the canvas's leading edge and the
 /// inspector (`registry.hostInspector`) along its trailing edge, each a sheet flush to the window's
-/// side, top and bottom that comes in over the board and goes back out (`PaneSheet`), with its toolbar
+/// side, top and bottom that comes in over the board and goes back out (`PaneSheet`, its header in the
+/// title bar's row, beside the window's own buttons: `PaneTitleRow`), with its toolbar
 /// button (a view in one that has the keyboard as it goes gives it back to the canvas itself); the
 /// sidebar shown while `showsSidebar`, the inspector by its rule (`HostInspector.isShown`: while
 /// `showsInspector` and it has something to show, or while it's wanted); and each view over the canvas
@@ -124,9 +125,10 @@ public struct BoardChrome: ViewModifier {
 }
 
 /// A pane along an edge of the canvas: a sheet of the chrome's tone flush to the window's side, top and
-/// bottom, its top the title bar's row (the window's own buttons are over it, so its content starts
-/// under it), a hairline along its inner edge with the shade the board takes beside it, and that edge a
-/// grip a drag resizes it by, between its narrowest and its widest (`range`), as `resize` keeps.
+/// bottom, its top the title bar's row, which it hands its content (`PaneTitleRow`: the pane's header sits
+/// in it, beside the window's own buttons, rather than under them), a hairline along its inner edge with
+/// the shade the board takes beside it, and that edge a grip a drag resizes it by, between its narrowest
+/// and its widest (`range`), as `resize` keeps.
 struct PaneSheet<Content: View>: View {
     let edge: HorizontalEdge
     let titleBar: CGFloat
@@ -138,11 +140,10 @@ struct PaneSheet<Content: View>: View {
     @State private var dragStart: CGFloat?
 
     var body: some View {
-        VStack(spacing: 0) {
-            Color.clear.frame(height: titleBar)
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(width: width)
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .environment(\.paneTitleRow, row)
+            .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: ChromeStyle.surface))
         // What tells the window which pane a view of it is in (`BoardWindowController.currentPane`).
@@ -153,6 +154,15 @@ struct PaneSheet<Content: View>: View {
                 .allowsHitTesting(false)
         }
         .overlay(alignment: inner) { grip }
+    }
+
+    /// The title bar's row as this sheet hands it on: on the sidebar's, a line starts past the traffic lights and the
+    /// toolbar's Sidebar button; on the inspector's, it ends before the Inspector button. None without a title bar.
+    private var row: PaneTitleRow? {
+        guard titleBar > 0 else { return nil }
+        return edge == .leading
+            ? PaneTitleRow(height: titleBar, leading: BoardChromeStyle.rowPastWindowButtons, trailing: ChromeStyle.headerInset)
+            : PaneTitleRow(height: titleBar, leading: ChromeStyle.headerInset, trailing: BoardChromeStyle.rowBeforeInspectorButton)
     }
 
     /// The edge the sheet meets the board along.
@@ -242,6 +252,12 @@ enum BoardChromeStyle {
     static let inspectorTitle = "Inspector"
     static let inspectorSymbol = "sidebar.trailing"
     static func inspectorHelp(shown: Bool) -> String { shown ? "Hide Inspector" : "Show Inspector" }
+    /// Where a line in the title bar's row starts on the sidebar's sheet, past the traffic lights and the Sidebar button:
+    /// where the window's own title starts (macOS 26, a unified toolbar), so on the root the sidebar's name and the title,
+    /// shown while the sidebar isn't, sit in one place. And how far in from the inspector's trailing edge one ends, clear of
+    /// the Inspector button's glass by the gap the title keeps from the Sidebar button's.
+    static let rowPastWindowButtons: CGFloat = 148
+    static let rowBeforeInspectorButton: CGFloat = 60
     /// A sheet's edge to assistive apps: named for its pane, its width its value, and how far one step of
     /// VoiceOver's increment or decrement takes it.
     static func edgeLabel(_ edge: HorizontalEdge) -> String { edge == .leading ? "Sidebar width" : "Inspector width" }

@@ -87,7 +87,8 @@ private struct BandContent: View {
                 Text(name)
             }
         }
-        .padding(8)
+        // In the window's title bar's row while the panel is under one, as the issue walk's band is.
+        .detailTitleRow(else: EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
     }
 }
 

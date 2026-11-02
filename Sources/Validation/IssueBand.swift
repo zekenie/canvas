@@ -38,7 +38,7 @@ struct IssueBand: View {
                         .labelStyle(.iconOnly)
                     DetailCommandButton(command: .endIssueWalk, title: IssueWalkStyle.done)
                 }
-                .padding(IssueWalkStyle.bandInset)
+                .detailTitleRow(else: IssueWalkStyle.bandInset)
                 Divider()
             }
             .background(KeyboardWatch(lights: editor.issueLights, keyboard: walk.listKeyboard))

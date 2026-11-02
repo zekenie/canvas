@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Chrome
 import CoreGraphics
 import Selection
 import SwiftUI
@@ -174,6 +175,21 @@ extension ContentsWindow {
         try require(w.headerButtons.first).performClick(nil)
         w.window.spin { editor.board == .root && w.rows == 2 }
         expectEqual(w.headerButtons.count, 0)
+    },
+    test("in the window's sidebar the header is the title bar's row: past the window's buttons, the list under the row, and a press on its words or the room beside them the window's") {
+        let (file, pocket) = pocketFile(outside: ["A"], inside: ["C"])
+        let editor = try contentsEditor([PocketsPlugin(), UpPlugin(), headingPlugin(testHeading)], file: file, scheduler: TaskScheduler())
+        let w = ContentsWindow(editor, titleRow: PaneTitleRow(height: 52, leading: 148, trailing: 16))
+        w.window.spin { w.rows == 2 }
+        expectEqual(w.headerRect.height, 52 + ChromeStyle.hairlineWidth, "the row, then the hairline, then the rows")
+        expect(w.hit(CGPoint(x: 160, y: 26)) is TitleRowDragView, "the name lets a press through to the window: \(String(describing: w.hit(CGPoint(x: 160, y: 26))))")
+        expect(w.hit(CGPoint(x: listWidth - 20, y: 26)) is TitleRowDragView, "and so does the room beside it")
+        editor.showBoard(BoardID(owner: pocket))
+        w.window.spin { w.rows == 1 && w.headerButtons.count == 1 }
+        let up = try require(w.headerButtons.first), frame = up.convert(up.bounds, to: w.hosting)
+        expect(frame.minX >= 148 - 0.5 && abs(frame.midY - 26) < 2, "the way up past the window's buttons, on the row's line: \(frame)")
+        try require(w.headerButtons.first).performClick(nil)
+        w.window.spin { editor.board == .root && w.rows == 2 }
     },
     test("with no heading the header is Board's, whatever is selected") {
         let (file, _) = pocketFile(outside: ["A"], inside: [])

@@ -92,6 +92,16 @@ public enum DetailStyle {
     /// `headerTitle`, for the header's field, which AppKit draws (`HeaderTitleField`).
     static let headerTitleFont = ChromeStyle.headerTitleFont
     static let headerSymbol = ChromeStyle.headerSymbol
+    /// The header in the window's title bar's row: the window's title's type there, alone (`rowTitle`) or over a subtitle
+    /// (`rowTitleOverSubtitle` over `rowSubtitle`), and each for the header's field, which AppKit draws.
+    static let rowTitle = ChromeStyle.rowTitle
+    static let rowTitleFont = ChromeStyle.rowTitleFont
+    static let rowTitleOverSubtitle = ChromeStyle.rowTitleOverSubtitle
+    static let rowTitleOverSubtitleFont = ChromeStyle.rowTitleOverSubtitleFont
+    static let rowSubtitle = ChromeStyle.rowSubtitle
+    /// The room the header's field keeps past its words in the title bar's row, where it's as wide as they are: its cell's
+    /// insets and the caret's.
+    static let rowFieldSlack: CGFloat = 6
     static let backSymbol = Font.system(size: 13, weight: .semibold)
     static let disclosure = Font.system(size: 8, weight: .bold)
     static let placeholder = Font.system(size: 13)

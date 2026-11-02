@@ -1,6 +1,6 @@
 # Sidebar styling coherence
 
-Claude Code session `59d27ad1-2c54-442b-8f34-abc1d912e949`, 2026-11-01 14:11 to 2026-11-01 20:48 UTC, on `claude/sidebar-styling-coherence-eec166`.
+Claude Code session `59d27ad1-2c54-442b-8f34-abc1d912e949`, 2026-11-01 14:11 to 2026-11-02 15:56 UTC, on `claude/sidebar-styling-coherence-eec166`, `main`, `claude/pane-headers-title-row`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -468,3 +468,373 @@ git log --oneline -1 main; git merge-base HEAD main; git log --oneline main ^HEA
 
 [2026-11-01 20:48] ASSISTANT:
 Main hasn't moved, so no rebase is needed. Writing the session's record.
+
+[2026-11-01 20:48] ASSISTANT:
+The record reads cleanly and holds nothing key-shaped. Squashing the branch into one commit with it.
+
+[2026-11-01 20:49] COMMIT MESSAGE FILE commit-message.txt:
+The sidebar and the inspector are one kind of pane: flush, full-height sheets over a canvas that fills the window, so neither moves the board as it comes or goes
+
+The owner, after the table of contents moved into the left sidebar (c2344be6): "I'm really struggling with how bad the two sidebars look. They have different styles than one another. Their roundedness is totally incoherent. And it doesn't feel of a kind." And: "if i toggle the left sidebar there's a layout shift, it would be nice if the sidebars came in and out w/o shifting content over." The two looked unrelated because each was the system's default for a different job: the sidebar was a NavigationSplitView column, which macOS 26 draws as floating Liquid Glass for a list of places (Finder, Mail), and the inspector was SwiftUI's `.inspector`, drawn flush to the window's edge. Both narrowed the canvas, so showing either shifted the board. A platform check found no setting that makes the two match or keeps the canvas still under them: the window has to host both panes itself.
+
+Three directions were drawn over the owner's own screenshot (glass islands, solid cards, flush sheets), each against the Mac apps the owner pointed to ("think about how other mac apps work that have these panels (keynote, sketch, etc)"): Keynote, Sketch, Pixelmator Pro and Logic give the list and the inspector one surface attached to the window's edges; Figma's canvas fills its window and its panels cover it, so hiding them uncovers the board without moving it. The owner then asked for the window's header and footer to be "fair game" for the panes, so the panes run the window's full height and the toolbar band goes. The owner turned down the glass islands ("Don't love the glass islands") and chose "Flush sheet full height" over solid cards, which floated and grew with what the inspector showed.
+
+What it is now:
+- The canvas fills the window, its title bar's row too (`.fullSizeContentView`, a transparent title bar). CanvasUI's `BoardChrome` lays the sidebar along the leading edge and the inspector along the trailing edge as `PaneSheet`s: one opaque tone, flush to the window's side, top and bottom, square, with a hairline and a soft shade where they meet the board. A sheet's top is the title bar's row, under the window's buttons, so its header sits level with the other's. A sheet slides in over the board and back out (200 ms; a fade with Reduce Motion), and the board never moves. In a window too narrow for both, the inspector covers the sidebar.
+- The core learns what the chrome covers (`CoveredEdges`, `editor.coveredEdges`, host API: the title bar's row and each sheet's width), so a first visit, Zoom to Fit, reveals and `canvas draw --reveal` fit into the clear part. A shape just selected that the inspector slides in over is panned clear with the slide, which the kept view did when the inspector narrowed the canvas; a pane shown later moves nothing. Resizing a pane follows the drag at once rather than easing.
+- One look for everything around the board: a new core library, Chrome (`ChromeStyle`, `floatingSurface`), holds the surface, hairline, shade, float shadow, selected and hover fills, the panes' 44-point header with its 13-point semibold title, and one corner rule: an item (a row, a tab, a field, a crumb) 6 points, what floats 12 (minimap, zoom, path pill, Jump To, crumb menus, caret list, cards, popovers), a sheet square, its one curve the window's own. Each module's style enum reads it.
+- The table of contents' header left the outline: it's pinned above the rows and looks like the inspector's, so the outline's first row is the first shape's. Its selected row is drawn at the shared corner and fill, which the inspector's chosen tab uses too.
+- The minimap and the zoom sit in the bottom-left corner of the clear part, beside the sidebar, and glide to the window's corner with it. The minimap's board sits in a well of the canvas's color inside the float. The path and Jump To center in the clear part; Jump To's palette sits under the path by `editor.hostViewsReach` (a new public reading of how far the host's views reach inside the clear part), since `unobscuredViewport.minY` counts the title bar's row as well.
+- Each pane is as wide as its slot says (`PaneWidth` on `hostSidebar` and `hostInspector`: min, ideal, max). The person drags a sheet's inner edge to resize it, and each file remembers the width with whether the pane shows (`BoardViewState`, `BoardViewMemory`). To VoiceOver each edge is an adjustable element, "Sidebar width" or "Inspector width". There's no key for it, as the split view's divider had none.
+- The window finds its panes by the sheets' markers (`PaneMarkerView`), not by which side of the canvas a view is on, since both lie over the canvas: F6, Focus Sidebar and Focus Inspector work as before. The window's title shows only while the sidebar doesn't, whose header names the board. A pane's view that has the keyboard as it's taken out gives it back to the canvas (the list's `onLeave`, the panel reader's).
+- `canvas boards` reports as the room for a first visit the part the chrome leaves clear, as it did when the panes sat beside the canvas.
+
+The owner approved four calls before the build: the inspector still pans a just-clicked shape clear, while toggling the sidebar never pans; the top row drags the window, so a click there doesn't select; the title shows only while the sidebar is hidden; cards and popovers take the float's corners and shadow but keep their own fill.
+
+The title bar's height comes from a `GeometryReader` that keeps to the safe area. One that ignores it reports no insets: that read 0, which put the sheets' headers under the window's buttons and every fit under the title bar. CanvasUITests' chromeTests hold it in a window whose content runs under its title bar and toolbar, and fail on the earlier reader.
+
+Not done: no key resizes a pane, and in a window narrower than about 600 points with both panes shown the minimap can lie und […277 more chars]
+
+[2026-11-01 20:49] GIT:
+git status --short | head -5; git reset -q --soft main && git add -A && git commit -q -F /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-sidebar-styling-coherence-eec166/59d27ad1-2c54-442b-8f34-abc1d912e949/scratchpad/commit-message.txt && git log --oneline -2 && git show --stat HEAD | tail -3 && git status --short | head -3
+
+[2026-11-01 20:49] ASSISTANT:
+Main is at the new commit. Cleaning up the worktree and its branch.
+
+[2026-11-01 20:49] WRAP-UP:
+The flush full-height sheets are on main as bd69de06, with this session's record. The worktree and its branch are removed. Nobody has looked at it on screen yet.
+Ask:
+
+[2026-11-01 20:49] ASSISTANT:
+It's on main as bd69de06.
+
+[2026-11-02 14:21] USER:
+/compact
+
+[2026-11-02 14:22] COMPACTED:
+(the context was summarized here)
+
+[2026-11-02 14:22] USER:
+[image attached]
+
+[2026-11-02 14:22] USER:
+do not like how this ultimately looks, i think it should shift up into the header, spin up a ux again again to look at this
+
+[2026-11-02 14:23] ASSISTANT:
+Looking at how the window's top row and the two pane headers are built, so the UX agents get exact facts.
+
+[2026-11-02 14:26] ASSISTANT:
+Gathering the facts for the UX brief: how the top row is built today (traffic lights, the two toggle buttons, the tool picker) and what each pane's header holds.
+
+[2026-11-02 14:32] ASSISTANT:
+The "today" base is right: it shows the empty 52-pt band over both headers exactly as in your screenshot. Now writing the brief and routing the agents through Jev.
+
+[2026-11-02 14:34] AGENT Design: headers rise beside system buttons:
+You're one of three UX designers redesigning the top of this Mac app's two side panes. The other two have the other directions; you have one.
+
+Read the shared brief first, whole: /private/tmp/claude-501/-Users-zekenie-code-native-canvas/59d27ad1-2c54-442b-8f34-abc1d912e949/scratchpad/header-row/brief.md — it has the owner's words, what's settled (flush full-height sheets, shipped yesterday), the measured geometry of the title row, the hard requirements, the bases and the kit, and the don'ts. Then Read the owner's screenshot (`$S/base/owner-corner.png`) and `$S/base/today-both.png`. Read code only where you need a fact the brief lacks.
+
+**Your direction: rise beside the system's buttons.** Folder: `$S/rise/`. The system toolbar stays exactly as it is: the traffic lights, the glass Sidebar toggle after them, the glass tool picker in the middle, the glass Inspector toggle at the end. Each sheet's header rises into the 52-pt title row between them: the inspector's Back, symbol and title from its 16-pt inset to just before the Inspector toggle; the sidebar's Up, symbol and board name from just after the Sidebar toggle to the sheet's inner inset. The inspector's tabs and the sidebar's outline come up right under the row. Push it to its best version:
+
+- The board's name in the sidebar's row can sit exactly where the window's title sits when the sidebar is hidden, so toggling the sidebar leaves the name where it was. Decide the type: the header's 13 semibold in both rows, or the syst […1138 more chars]
+
+[2026-11-02 14:34] AGENT Design: each pane owns its row:
+You're one of three UX designers redesigning the top of this Mac app's two side panes. The other two have the other directions; you have one.
+
+Read the shared brief first, whole: /private/tmp/claude-501/-Users-zekenie-code-native-canvas/59d27ad1-2c54-442b-8f34-abc1d912e949/scratchpad/header-row/brief.md — it has the owner's words, what's settled (flush full-height sheets, shipped yesterday), the measured geometry of the title row, the hard requirements, the bases and the kit, and the don'ts. Then Read the owner's screenshot (`$S/base/owner-corner.png`) and `$S/base/today-both.png`. Read code only where you need a fact the brief lacks.
+
+**Your direction: each pane owns its row.** Folder: `$S/own-row/`. The two pane toggles leave the system toolbar and live in the panes' own headers as plain icon buttons drawn in the chrome's style (the 6-pt item corner, the chrome's hover and pressed fills; no glass), so each sheet's top row is one header. The sidebar's row reads traffic lights, then Up, symbol, name, then its toggle (Finder and Xcode put a sidebar's toggle at its trailing end); the inspector's row holds its toggle and Back, symbol, title: you decide which end the toggle is at, with reasons (mirror the sidebar or not). The tool picker stays the system's glass capsule in the middle of the row, the only glass left (or argue otherwise). Push it to its best version:
+
+- A pane's toggle while its pane is hidden: it can't vanish (the person needs it to bring the pane back; the menu i […896 more chars]
+
+[2026-11-02 14:34] AGENT Design: no toolbar, tools float:
+You're one of three UX designers redesigning the top of this Mac app's window and its two side panes. The other two have the other directions; you have one.
+
+Read the shared brief first, whole: /private/tmp/claude-501/-Users-zekenie-code-native-canvas/59d27ad1-2c54-442b-8f34-abc1d912e949/scratchpad/header-row/brief.md — it has the owner's words, what's settled (flush full-height sheets, shipped yesterday), the measured geometry of the title row, the hard requirements, the bases and the kit, and the don'ts. Then Read the owner's screenshot (`$S/base/owner-corner.png`) and `$S/base/today-both.png`. Read code only where you need a fact the brief lacks.
+
+**Your direction: no toolbar; the window is the app's own.** Folder: `$S/no-toolbar/`. The system toolbar goes entirely: no glass anywhere. The top row is the traffic lights, the two sheets' headers (each with its own plain toggle in the chrome's style: 6-pt item corners, the chrome's hover and pressed fills) and the board itself. The tool picker becomes one of the board's floats (the chrome's surface, a capsule or 12-pt corners, its hairline and float shadow), placed where you judge best: bottom center of the clear part (Figma, tldraw, Freeform) or top center (where the board path's pill sits inside a subboard: say how they share it). Push it to the calmest pro-tool version:
+
+- Row height: 52 as today, the header's 44, or the bare title bar's (about 28 pt with no toolbar, where the system puts the lights near y = 14 unless they  […1076 more chars]
+
+[2026-11-02 14:34] AGENT Platform: content in the title row:
+Read the shared brief first, whole: /private/tmp/claude-501/-Users-zekenie-code-native-canvas/59d27ad1-2c54-442b-8f34-abc1d912e949/scratchpad/header-row/brief.md (`$S`, `$OLD` and the repo path are defined there; the repo is read-only for you).
+
+You're the platform engineer on this round. Three designers are proposing how each pane's header rises into the window's title row: A keeps the system toolbar and puts the headers beside its buttons; B moves the two pane toggles into the headers as plain buttons and keeps the tool picker as a toolbar item; C drops the toolbar and floats the tool picker over the board. You find out what macOS 26 lets us build, with evidence. Don't design.
+
+Answer each with evidence: an SDK header file and line, an Apple documentation URL, or the output of a spike you ran offscreen.
+
+1. **Clicks in the title row.** In a window set up as the app's is (`styleMask` [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], `titlebarAppearsTransparent = true`, `toolbarStyle = .unified`, a SwiftUI root hosted by `NSHostingController` with `sceneBridgingOptions = [.toolbars]`, toolbar items at `.navigation`, `.principal` and `.primaryAction`, content that `.ignoresSafeArea()`; see `Sources/CanvasUI/BoardWindowController.swift`, `Sources/CanvasUI/BoardChrome.swift`, `Sources/InfiniteCanvas/InfiniteCanvasApp.swift`), does a mouse-down in the top 52 pt where no toolbar item is (say x = 1200 in a 1440-wide window, y = 26 from the top) reach a SwiftU […3353 more chars]
+
+[2026-11-02 14:35] WRAP-UP:
+Four agents are working on moving each pane's header up into the window's title row: three designers on Opus (rise beside the system buttons, toggles inside the headers, no toolbar) and a platform check on Sonnet. Nothing is drawn or built yet.
+Ask:
+
+[2026-11-02 14:35] ASSISTANT:
+I've started four agents on moving each pane's header up into the window's top row; nothing is drawn or built yet. When they finish, you'll get one picture: your screenshot of the inspector's corner next to the three versions, with the full window for each underneath.
+
+[2026-11-02 14:59] USER:
+sorta surprised this is taking this long to do this... can you check in and make sure we're good
+
+[2026-11-02 14:59] ASSISTANT:
+All four are moving; files were written in the last few minutes. Checking a couple of early mockups to make sure they're on track.
+
+[2026-11-02 14:59] ASSISTANT:
+Yes, it's on track. The agents have been running about 23 minutes, and all four wrote files within the last few minutes:
+
+- **Own row:** all five mockups are drawn. Only the one-page spec is left.
+- **Rise:** four of five mockups are drawn. The full-window view and the spec are left.
+- **No toolbar:** still drawing. It's furthest behind because it also has to place the tool picker somewhere new.
+- **Platform check:** its offscreen tests have run (clicks in the top row, dragging the window, the row's size for each toolbar style). It's writing up the results now.
+
+I looked at the two finished corner views of your screenshot, and both do what you asked. "Aggregate" now sits in the top row beside the toggle, and the tabs move up right under it, so the empty band is gone. The two differ in that "Own row" makes the toggle a plain icon, while "Rise" keeps the system's glass button.
+
+I'd expect the rest in roughly 10–20 minutes. As soon as all four are back I'll send the single comparison picture.
+
+[2026-11-02 15:01] ASSISTANT:
+The "Own row" design is done and looks clean. The board's name sits next to the traffic lights, the inspector's name sits on the same line, and the tabs and list each move up 44 pt. Still waiting on "Rise", "No toolbar" and the platform check; I'll send the comparison once all three are in.
+
+[2026-11-02 15:05] ASSISTANT:
+"Rise" is in too. The board's name now sits exactly where the window title appears when the sidebar is hidden, so it doesn't move when you toggle the sidebar. The cost is that the sidebar has to get about 70 pt wider (240 → 310) to fit the name next to the system's glass buttons. Still waiting on "No toolbar" and the platform check.
+
+[2026-11-02 15:08] USER:
+both of these are the right direction
+
+[2026-11-02 15:09] ASSISTANT:
+Here are the two finished designs next to today. Both get rid of the empty band, so the tabs and the list each move up 44 pt. They differ in two ways:
+
+- **Buttons:**
+  - **Rise** keeps the system's glass toggles where they are.
+  - **Own row** makes them plain icons at the end of each header. The inspector's stays put in the window's corner, and the sidebar's moves with the sidebar's edge.
+- **Room for the board's name:**
+  - **Rise** puts the name in exactly the spot and font of the window title, so it doesn't move when you hide the sidebar. The cost is a wider sidebar: 240 → 310 pt by default, and at least 240 instead of 180.
+  - **Own row** keeps today's widths and cuts a long name short ("system 10-31-…").
+
+The pieces can be mixed, for example Own row's plain buttons with Rise's name placement.
+
+Two agents are still running:
+
+- **No toolbar.**
+- **The platform check.** It matters for both designs, because it tells us whether a click on the inspector's title field still reaches it once the field sits in the title row.
+
+When they're back I'll ask you to pick or mix.
+
+[2026-11-02 15:11] USER:
+i don't care about this particular distinction
+
+[2026-11-02 15:13] ASSISTANT:
+I've read both specs. My pick depends on one answer from the platform check that's still running: whether a click in the title row can reach the panes' own content at all, or whether the toolbar takes every click there.
+
+- **If the panes can take the click:** I'll go with Rise's layout, keeping the system's buttons, which is the fewest moving parts.
+- **If only toolbar items can take clicks there:** the headers have to be built as toolbar items. Rise's layout still suits that best.
+
+I'll write the build plan once the answer is in.
+
+[2026-11-02 15:17] ASSISTANT:
+The platform check is back, and it settles the pick. I've merged the two into one build plan; it's below for your OK.
+
+[2026-11-02 15:17] WRAP-UP:
+The platform check found that a text field in the title row gets clicks and typing, so the panes' headers can move into it. I picked Rise, which keeps the system's buttons, and wrote the build plan. Nothing is built yet.
+Ask: Build it as planned?
+
+[2026-11-02 15:17] ASSISTANT:
+The platform check settles it: I'm going with **Rise**, with one piece from Own row. It needs the fewest changes, and the check found that an editable field in the title row still gets clicks and typing. A double-click there selects a word without zooming the window.
+
+**What you'll see**
+- **The empty band is gone.** Each pane's header sits in the title row, and the tabs and the list move up 44 pt.
+- **The system's buttons stay as they are.** The glass Sidebar and Inspector toggles and the tool picker don't change.
+- **The board's name takes the window title's spot.** It's in the title's place and type (15 pt semibold, right after the Sidebar toggle). So on the root board, hiding the sidebar leaves the name where it was. The shape's name in the inspector goes from 13 to 15 pt to match.
+- **The sidebar gets wider:** 310 pt by default (was 240) and at least 240 (was 180), so the name fits beside the glass button.
+- **The window title waits for the sidebar.** It appears only once the sidebar has finished sliding out, and goes as soon as it starts coming back, so the two names never overlap. This is the piece from Own row.
+- **The board's strip in the top row drags the window,** as we agreed last time. The check found that a click there actually acts on the board today, so this fixes that.
+
+**How**
+- The sheet tells its content how tall the title row is and how much room the window's buttons take at each end. The sidebar's and the inspector's headers lay themselves out in that row.
+- Where the system doesn't drag or zoom the window by itself, I handle a drag and a double-click in the row myself, following your system setting.
+- After that: tests, before/after renders, the docs, and a code review.
+
+**One thing only the screen can show:** the Up and Back buttons in that row. The check could prove clicks for the system's text field but couldn't fire a SwiftUI button offscreen. If they don't respond when you try it, I'll switch them to system buttons.
+
+[2026-11-02 15:18] USER:
+Build it
+
+[2026-11-02 15:24] ASSISTANT:
+Now the window side: each sheet hands its content the row instead of padding it down under an empty band.
+
+[2026-11-02 15:26] ASSISTANT:
+Now the band and the panel itself:
+
+[2026-11-02 15:27] ASSISTANT:
+Now the inspector's header and the shared modifier:
+
+[2026-11-02 15:28] ASSISTANT:
+Code changes are in. Building to catch compile errors.
+
+[2026-11-02 15:28] ASSISTANT:
+The `@Entry` macro isn't available with these command-line tools; switching both to the classic environment-key form this codebase already uses.
+
+[2026-11-02 15:29] ASSISTANT:
+The app builds. Running the affected test targets in the background while I write the new tests.
+
+[2026-11-02 15:30] ASSISTANT:
+Only the one test that held the old layout failed (the panes' content used to start under the top row). Everything else passes. Now updating that test and adding new ones for the row.
+
+[2026-11-02 15:31] ASSISTANT:
+Writing the new tests now: the sheets hand their content the row, a press on the board's strip in the top row reaches the window instead of the board, and both pane headers sit in the row.
+
+[2026-11-02 15:32] ASSISTANT:
+Still writing tests (the chrome test is updated; adding the top-row press tests next, then the two headers' tests), then I'll run everything.
+
+[2026-11-02 15:34] ASSISTANT:
+The new "title row" piece builds; adding the inspector's tests (its header in the row, the two-line form, and a band taking the row), then running all affected suites.
+
+[2026-11-02 15:34] ASSISTANT:
+While those run, checking which shipped-app tests lean on the old header position:
+
+[2026-11-02 15:35] ASSISTANT:
+While the tests run, updating the docs. Finding every passage that describes the header's old place:
+
+[2026-11-02 15:37] ASSISTANT:
+The panel's tests all pass now (200). Running the whole suite in the background while I update the docs.
+
+[2026-11-02 15:37] ASSISTANT:
+Updating the guide's two passages:
+
+[2026-11-02 15:37] EDIT .claude/worktrees/pane-headers-title-row/docs/plugin-system.md:
+each a sheet flush to the window's side, top and bottom, of one surface, a hairline and a shade
+  where it meets the board, coming in from its edge over the board and going back out, as wide as
+  the person left it (a drag of its inner edge, within the slot's `PaneWidth`); each view over the
+  canvas, in plugin order, in the part the title bar and the sheets leave clear. A sheet hands its
+  view the title bar's row (Chrome's `PaneTitleRow`: how tall it is, and how far in a line there
+  starts and ends, clear of the window's own buttons), and the pane's header sits in it, beside the
+  traffic lights and the toolbar's buttons, not under an empty band; a press on the header's words or
+  bare room, and on the board under the row, is the window's (Chrome's `TitleRow`: a drag, and a
+  double-click as System Settings says). Each pane has its toolbar button: Sidebar at the toolbar's
+  leading end (its tooltip "Show Sidebar" or "Hide Sidebar", as View › Show Sidebar is titled),
+  where it stays while the sidebar is hidden, and Inspector at its trailing end ("Show Inspector" or
+  "Hide Inspector"). The sidebar's header starts where the window's own title does, past the
+  Sidebar button, in the title's type: the title shows only while the sidebar doesn't, so on the root
+  the board's name never moves as the sidebar comes and goes. A registry with no sidebar gets none,
+  and one with no inspector none. The editor is told what the chrome covers (`editor.coveredEdges`),
+  so fits and revea […466 more chars]
+
+[2026-11-02 15:37] EDIT .claude/worktrees/pane-headers-title-row/docs/plugin-system.md:
+- **The header** is above the outline, pinned while the rows scroll under it (the board's heading:
+  "Board", or what a plugin calls it), the pane's header as the inspector's is: the window's look,
+  `ChromeStyle`. In the window's sidebar it is the title bar's row, past the window's buttons. The
+  outline's first row is the first shape's.
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/docs/plugin-system.md:
+- **A header without a symbol** shows its kind's: the panel hands a header view its kind's name
+  and symbol through the environment, as the table of contents hands a row its symbol.
+- **In the window's inspector** the header is the title bar's row (the sheet hands it the row, a
+  `PaneTitleRow`), its title in the window's title's type there: 15 semibold, or 13 bold over an 11
+  subtitle, and a field only as wide as its words while no one types in it, so the row beside them
+  drags the window. Whatever is the panel's first line takes the row the same way
+  (`detailTitleRow(else:height:)`: Find's field and Done, a band, which has the row while it shows,
+  the header under it a header again).
+
+[2026-11-02 15:38] ASSISTANT:
+Now the rule files, starting with host slots:
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/host-slots.md:
+each in a `PaneSheet`, a sheet of the chrome's surface flush to the window's side, top and bottom (its top the title bar's row, which it hands its content as a `PaneTitleRow` (Chrome's: the row's height, and how far in from the sheet's edges a line there starts and ends, clear of the window's own buttons: on the sidebar's sheet past the traffic lights and the Sidebar button, where the window's title starts, `BoardChromeStyle.rowPastWindowButtons`, 148; on the inspector's before the Inspector button, `rowBeforeInspectorButton`, 60; a header's inset elsewhere; none in a window with no title bar), so each pane's header sits in the row beside the window's buttons rather than under an empty band (the owner's ask, 2026-11-02: "it should shift up into the header"; [table of contents](table-of-contents.md), [detail panel](detail-panel.md)); a hairline along its inner edge
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/host-slots.md:
+The window's title shows only while no sidebar does, whose header names the board shown in the title's own place and type (`BoardWindowController.showTitle`, following `showsSidebar`; the title is still set, for the Window menu and Mission Control): it shows as the sidebar starts to go, and goes once a sidebar coming in has slid into place (`ChromeStyle.paneIn` later, on `editor.scheduler`), so on the root the board's name never leaves its place. A press on the board under the title bar's row is the window's, never the board's (`CanvasView.mouseDown` hands a press outside `window.contentLayoutRect` to Chrome's `TitleRow.press`, and the drag and release that follow to no one): a drag moves the window, and a double-click does what System Settings › Desktop & Dock says (`TitleRow.action`: zoom, minimize or nothing, from `AppleActionOnDoubleClick`), except where a view of the toolbar is under the press, which answers it itself (`TitleRow.isUnderToolbar`, the window frame's hit test); so does a press on what a pane's header puts in the row that takes none (its words, its symbol, the room beside them: `TitleRowDragArea` behind it).
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/host-slots.md:
+a pane's header, the same in both panes (`headerHeight` 44, `headerInset` 16, `headerSymbolWidth` 20, `headerSymbol` 15 points, `headerTitle` and `headerTitleFont` 13 semibold, `headerSpacing` 6), and in the title bar's row the window's title's type, which a header there takes (`rowTitle` and `rowTitleFont` 15 semibold; over a subtitle, the title's two-line form, `rowTitleOverSubtitle` 13 bold over `rowSubtitle` 11), a row's highlight's inset
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/host-slots.md:
+`floatingSurface(in:)`, a `View` extension, sets a view on that surface as the window's floats are: filled within a shape, a hairline round it, the float's shadow. The title bar's row (`Sources/Chrome/TitleRow.swift`): `PaneTitleRow` (`height`, `leading`, `trailing`), which a pane's sheet hands what it holds through the environment (`EnvironmentValues.paneTitleRow`, nil elsewhere, where a header keeps its own height and insets); `TitleRow`, what a press in the row does where the app draws (`action(clickCount:underToolbar:setting:)`, `press(_:in:)`, `isUnderToolbar(_:in:)`, and `perform`, which a test replaces, since a drag of an unshown window would wait for a release); and `TitleRowDragArea`, an AppKit view a header puts behind what it shows in the row, whose press is the window's (hidden from assistive apps).
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/host-slots.md:
+and, in a window whose content runs under its title bar and toolbar, the canvas and the sheets' content under them too, from the window's top, each sheet handing its content the row (the sidebar's past the window's buttons, 148, the inspector's ending 60 in; none without a title bar), what floats starting under the row, and the editor told how tall it is (the window's own `safeAreaInsets`). CanvasUITests' `titleRowTests` (`TitleRowTests.swift`) hold what a press in the row does (`TitleRow.action`: a drag, a double-click by the setting, nothing where the toolbar answers it) and a press on the board under the row reaching the window and no tool, with one under the row the board's (`TitleRow.perform` replaced for the test).
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/table-of-contents.md:
+`ContentsStyle.sidebarMinWidth`, `sidebarWidth` and `sidebarMaxWidth`: 240, 310 and 400 points, since its header shares the title bar's row with the traffic lights and the Sidebar button, which take its first 148; the window's sheet takes it
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/table-of-contents.md:
+the pane's header, as the inspector's is, the window's look, `ChromeStyle`: 44 points, the up button, the heading's symbol dimmed in its 20-point column and its title 13 semibold; in the window's sidebar, the title bar's row instead (the `PaneTitleRow` the sheet hands it: as tall as the row, starting where the window's own title does, past the traffic lights and the Sidebar button, the up button there, then the title in the window's title's type, `ChromeStyle.rowTitle`, and no symbol, as the title has none, so on the root the board's name and the window's title, which shows while the sidebar doesn't, are one name in one place; its words and the room beside them let a press through to the window, `TitleRowDragArea`).
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/table-of-contents.md:
+and one without the table of contents refused; `boardWindowTests` its button and pixels, and, handed the title bar's row (`ContentsWindow(_:titleRow:)`), the header as the row (the rows starting under it and its hairline), the up button past the window's buttons on the row's line, and a press on the name and the room beside it the window's (`ContentsWindow.hit`, a `TitleRowDragView`).
+
+[2026-11-02 15:38] ASSISTANT:
+Now the detail panel's rule file:
+
+[2026-11-02 15:38] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/detail-panel.md:
+the title 13 semibold, and in the window's inspector the title bar's row (below, the title bar's row); a chosen tab on the chrome's selected fill, and tabs and text boxes rounded as an item is, 6 points, a box's padding round its text staying 4, `fieldPadding`)
+
+[2026-11-02 15:39] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/detail-panel.md:
+- **The title bar's row.** In the window's inspector the panel's sheet hands it the title bar's row (Chrome's `PaneTitleRow`, [host slots](host-slots.md)), and the panel's first line is in it: `detailTitleRow(else:height:)` (public, `DetailPanelView.swift`), which the header (`HeaderView`), Find's field and Done ([find](find.md)) and the issue walk's band ([validation](validation.md)) use, makes the line as tall as the row, its ends clear of the window's buttons (16 in, and ending 60 in, before the Inspector button), with `TitleRowDragArea` behind it, so a press on its words, its symbol or the room beside them is the window's; elsewhere the line is padded by its own insets, `height` tall where given; one chain of modifiers either way, so its views (the header's field) stay the same as a band comes or goes. `DetailPanelView` hands the row to the band while one shows and none to what shows under it, whose header is then a header's height again. In the row the header's title is in the window's title's type (`DetailStyle.rowTitle`, 15 semibold; over a subtitle the title's two-line form, `rowTitleOverSubtitle`, 13 bold, over `rowSubtitle`, 11: `DetailHeaderTitleType`, which `DetailHeaderLabel` hands its title through the environment for `HeaderTitleField`), its symbol and subtitle let a press through, and the field is as wide as its words (the placeholder's while it has none, and `DetailStyle.rowFieldSlack` past them) while no one types in it, so the room beside them drags the win […113 more chars]
+
+[2026-11-02 15:39] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/detail-panel.md:
+Once there's a step back, the header has a back button, an `NSButton` in the panel's top 44 points (the title bar's row, where the window's content runs under one), and a kind renamed in its header has a text field there, so tests that count the panel's buttons, checkboxes or fields leave the header out (`isInPanelHeader`). TitleRowTests (`titleRowPanelTests`, the panel handed the row, `PanelWindow(_:titleRow:)`) hold the header in the row (the field on the row's line in 15 semibold, ending 60 in, the room beside it a `TitleRowDragView`), the two-line form over a subtitle (13 bold), and a band taking the row (the fixture band's own `detailTitleRow`), the header under it in 13 semibold, and the same field back in the row once the band goes.
+
+[2026-11-02 15:39] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/find.md:
+Find's own header (no Back; its first line, the field and Done, in the window's title bar's row as the panel's first line is, the panel's `detailTitleRow`: [detail panel](detail-panel.md)): the field ("Find", magnifier, a spinner while indexing, Return and ⇧Return step), Done,
+
+[2026-11-02 15:39] EDIT .claude/worktrees/pane-headers-title-row/.claude/rules/validation.md:
+One row (`IssueBand`; in the window's title bar's row while it shows, the panel's first line, through the panel's `detailTitleRow`, the shape's header under it: [detail panel](detail-panel.md)): the scope's name, then ‹, the count "12 of 63", › and Done,
+
+[2026-11-02 15:39] GIT:
+git add -A && git commit -q -m "WIP: each pane's header in the window's title bar's row" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" && git log --oneline -2
+
+[2026-11-02 15:40] ASSISTANT:
+The whole suite is running in the background; the render setup is ready for when it finishes. Meanwhile I'm starting the code review of the branch.
+
+[2026-11-02 15:42] ASSISTANT:
+The middle-button fix broke a panning test (the synthesized middle-button event carries no window position), and the finding was minor, so I'm backing that one change out.
+
+[2026-11-02 15:44] ASSISTANT:
+Now the "after" renders in the scratch clone.
+
+[2026-11-02 15:44] GIT:
+git add -A && git commit -q -m "WIP: the review's fixes" && S=/private/tmp/claude-501/-Users-zekenie-code-native-canvas/59d27ad1-2c54-442b-8f34-abc1d912e949/scratchpad && git -C $S/render-clone pull -q --no-rebase origin claude/pane-headers-title-row 2>&1 | tail -2; mkdir -p $S/header-row/after && echo ok
+
+[2026-11-02 15:44] GIT:
+git add -A && git commit -q -m "WIP: the review's fixes" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" && git log --oneline -1
+
+[2026-11-02 15:45] ASSISTANT:
+Composing the system's title-row pieces onto the renders and building the before/after picture:
+
+[2026-11-02 15:45] ASSISTANT:
+I'll write the steps as a script with literal paths instead.
+
+[2026-11-02 15:45] WRAP-UP:
+Both panes' headers now sit in the title row and the empty band is gone; the whole test suite passes and a code review's fixes are in. Nothing is on main yet, and nobody has tried it on screen.
+Ask: Land it on main?
+
+[2026-11-02 15:46] ASSISTANT:
+Both pane headers now sit in the window's top row, so the empty band above them is gone. It's built on a branch and the whole test suite passes, but nothing is on main yet and nobody has looked at it on screen.
+
+**What changed**
+- **Sidebar:** the board's name sits in the top row right after the Sidebar button, in the window title's spot and font. When you hide the sidebar, the window's own title appears in that same place. The list starts 44 pt higher.
+- **Sidebar width:** it's now 310 pt by default and at least 240 (was 240 and 180), to make room for the name next to the buttons. In the render "system 10-31-2026" is still cut off slightly, so the default may need to be about 10 pt wider.
+- **Inspector:** the shape's name sits in the top row and ends before the Inspector button. The tabs come up right under it.
+- **Find and the issue walk:** while Find is open, its search field takes the top row. During an issue walk, the walk's bar takes the row and the shape's name drops to just below it.
+- **Dragging the window:** you can drag it by the empty top strip of the board and by the room beside each pane's name. Before this, a click on that strip of the board acted on the board instead.
+
+**What the code review found**
+- **Fixed:** the inspector's name field stayed full-width after an edit, which stopped the space beside it from dragging the window. A flag could also stay set after a window drag.
+- **Not done:**
+  - A middle-click on the board's top strip still pans the board. My fix for it broke a panning test, so I took it back out.
+  - In full screen or with the toolbar hidden, the sidebar's name keeps a fixed 148-pt gap at its left.
+  - No test checks the window title's timing when the sidebar slides.
+
+**Only the screen can tell:** whether the Up and Back buttons respond to clicks in the top row. The offscreen tests could prove that for the name field but couldn't click a SwiftUI button.
+
+To try it:
+```bash
+cd /Users/zekenie/code/native-canvas/.claude/worktrees/pane-headers-title-row && ./build.sh && open build/InfiniteCanvas.app
+```
+
+[2026-11-02 15:55] USER:
+Land it
+
+[2026-11-02 15:56] GIT:
+git log --oneline -1 main && git merge-base HEAD main && git status --short | head -5
+
+[2026-11-02 15:56] ASSISTANT:
+Main hasn't moved, so no rebase is needed. Writing this session's record:

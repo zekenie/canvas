@@ -1,5 +1,6 @@
 import AppKit
 @_spi(Host) import Canvas
+import Chrome
 import SwiftUI
 
 /// A board's window: the app's content for it (`BoardConfiguration.content`), hosted with its
@@ -58,16 +59,40 @@ public final class BoardWindowController: NSWindowController {
     }
 
     /// The title: shown only while no sidebar shows, whose header names the board shown (the root, as
-    /// the file is called); followed as the sidebar shows and hides, from when the window has its board.
+    /// the file is called) in the title's own place in the title bar's row; followed as the sidebar shows
+    /// and hides, from when the window has its board. The name is never missing from that place: the title
+    /// shows as the sidebar starts to go, and goes once a sidebar coming in has slid into place
+    /// (`ChromeStyle.paneIn`), so on the root the two are one name that never moves.
     private func showTitle() {
         guard let board else { return }
         let named = withObservationTracking { board.viewState.showsSidebar && editor.registry.hostSidebar != nil } onChange: { [weak self] in
             // Told as it's about to change: read it once it has.
             Task { @MainActor in self?.showTitle() }
         }
-        let visibility: NSWindow.TitleVisibility = named ? .hidden : .visible
+        titleHiding?.cancel()
+        titleHiding = nil
+        guard named else { return setTitleVisibility(.visible) }
+        // The first time, the sidebar is there as the window opens: nothing slides in.
+        guard titleFollowsSidebar, window?.titleVisibility == .visible else {
+            titleFollowsSidebar = true
+            return setTitleVisibility(.hidden)
+        }
+        titleHiding = editor.scheduler.schedule(after: .seconds(ChromeStyle.paneIn)) { [weak self] in
+            self?.titleHiding = nil
+            self?.setTitleVisibility(.hidden)
+        }
+    }
+
+    private func setTitleVisibility(_ visibility: NSWindow.TitleVisibility) {
+        titleFollowsSidebar = true
         if window?.titleVisibility != visibility { window?.titleVisibility = visibility }
     }
+
+    /// The title's hiding, waiting for a sidebar coming in to be in place.
+    private var titleHiding: ScheduledTask?
+
+    /// Whether the title has been set once, so a sidebar shown later slides in under it.
+    private var titleFollowsSidebar = false
 
     /// Whether `showTitle` follows the sidebar yet: once, from the first time the window is titled.
     private var showsTitle = false

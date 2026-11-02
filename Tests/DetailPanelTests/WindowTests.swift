@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import CanvasTesting
 import CanvasUI
+import Chrome
 import DetailPanel
 import Selection
 import SwiftUI
@@ -24,9 +25,9 @@ final class PanelWindow {
 
     /// `inBoardWindow`: the window is a board's, as the app's is, which splits Edit › Undo between
     /// text and the board. The panel's takeovers are the editor's plugins' (TakeoverTests'
-    /// `TakeoverPlugin`).
+    /// `TakeoverPlugin`). `titleRow`: the row the window's inspector hands the panel, under a title bar.
     init(_ editor: CanvasEditor, panelWidth: CGFloat = DetailStyle.idealWidth, locale: Locale = Locale(identifier: "en_US"),
-         inBoardWindow: Bool = false) {
+         inBoardWindow: Bool = false, titleRow: PaneTitleRow? = nil) {
         self.editor = editor
         let frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
         if inBoardWindow {
@@ -44,7 +45,8 @@ final class PanelWindow {
             exits += 1
             window.makeFirstResponder(canvas)
         }
-        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: exit).environment(\.locale, locale))
+        hosting = NSHostingView(rootView: DetailPanelView(editor: editor, onExit: exit).environment(\.locale, locale)
+            .environment(\.paneTitleRow, titleRow))
         hosting.frame = CGRect(x: 1000 - panelWidth, y: 0, width: panelWidth, height: 700)
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 1000, height: 700))
         root.addSubview(canvas)

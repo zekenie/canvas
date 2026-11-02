@@ -81,8 +81,10 @@ private struct FindPanelContent: View {
         AccessibilityNotification.Announcement(text).post()
     }
 
+    /// The field and Done, the panel's first line (in the window's title bar's row while the panel's sheet runs under one), then
+    /// the count and the buttons that step.
     private var header: some View {
-        VStack(spacing: FindStyle.fieldSpacing) {
+        VStack(spacing: 0) {
             HStack(spacing: FindStyle.fieldSpacing) {
                 HStack(spacing: FindStyle.buttonSpacing) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -124,6 +126,8 @@ private struct FindPanelContent: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.tint)
             }
+            .detailTitleRow(else: EdgeInsets(top: FindStyle.fieldSpacing, leading: DetailStyle.inset, bottom: FindStyle.fieldSpacing,
+                                             trailing: DetailStyle.inset))
             HStack(spacing: FindStyle.buttonSpacing) {
                 Text(countText).font(FindStyle.count).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -137,9 +141,9 @@ private struct FindPanelContent: View {
                     .disabled(find.total == 0)
             }
             .buttonStyle(.borderless)
+            .padding(.horizontal, DetailStyle.inset)
+            .padding(.bottom, FindStyle.fieldSpacing)
         }
-        .padding(.horizontal, DetailStyle.inset)
-        .padding(.vertical, FindStyle.fieldSpacing)
         .frame(minHeight: DetailStyle.headerHeight)
     }
 

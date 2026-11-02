@@ -772,7 +772,7 @@ struct HeaderTitleField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSTextField {
         let field = HeaderField(string: text)
-        field.font = DetailStyle.headerTitleFont
+        field.font = context.environment.detailHeaderTitleType.fieldFont
         field.isBordered = false
         field.isBezeled = false
         field.drawsBackground = false
@@ -794,6 +794,9 @@ struct HeaderTitleField: NSViewRepresentable {
         coordinator.onSubmit = onSubmit
         if field.placeholderString != placeholder { field.placeholderString = placeholder }
         if field.isEnabled != context.environment.isEnabled { field.isEnabled = context.environment.isEnabled }
+        // In the title bar's row, or out of it (a band came over the panel): the header's type follows.
+        let font = context.environment.detailHeaderTitleType.fieldFont
+        if field.font != font { field.font = font }
         // Changed from outside: show it. (Typing changes the field first, then the binding.)
         guard text != coordinator.shown else { return }
         coordinator.shown = text
@@ -806,10 +809,16 @@ struct HeaderTitleField: NSViewRepresentable {
         editor.undoManager?.removeAllActions()
     }
 
-    /// As wide as it's offered, a line of its font tall.
+    /// As wide as it's offered, a line of its font tall; in the window's title bar's row, while it isn't being typed in, only as
+    /// wide as its words (the placeholder's while it has none), so the row beside them is the window's to drag
+    /// (`TitleRowDragArea`).
     func sizeThatFits(_ proposal: ProposedViewSize, nsView field: NSTextField, context: Context) -> CGSize? {
         let fitting = field.cell?.cellSize ?? field.intrinsicContentSize
-        return CGSize(width: proposal.width ?? fitting.width, height: fitting.height)
+        let type = context.environment.detailHeaderTitleType
+        guard type != .header, field.currentEditor() == nil else { return CGSize(width: proposal.width ?? fitting.width, height: fitting.height) }
+        let words = field.stringValue.isEmpty ? field.placeholderString ?? "" : field.stringValue
+        let width = (words as NSString).size(withAttributes: [.font: type.fieldFont]).width.rounded(.up) + DetailStyle.rowFieldSlack
+        return CGSize(width: min(width, proposal.width ?? width), height: fitting.height)
     }
 
     @MainActor
@@ -836,6 +845,16 @@ struct HeaderTitleField: NSViewRepresentable {
             guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
             onSubmit()
             return true
+        }
+
+        // In the title bar's row the field is as wide as its words only while it isn't typed in: measured again as that
+        // starts and ends (`sizeThatFits`), so the room beside a short title is the window's again once typing is done.
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            (notification.object as? NSView)?.invalidateIntrinsicContentSize()
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            (notification.object as? NSView)?.invalidateIntrinsicContentSize()
         }
     }
 }

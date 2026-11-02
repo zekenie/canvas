@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
+import Chrome
 import Observation
 import SwiftUI
 import TestKit
@@ -21,6 +22,8 @@ import TestKit
     var sidebarWidth: CGFloat?
     @ObservationIgnored var dismissed = 0
     @ObservationIgnored var exits = 0
+    /// The title bar's row each pane's view was handed last (`PaneTitleRow`), by its marker's name.
+    @ObservationIgnored var rows: [String: PaneTitleRow?] = [:]
 }
 
 /// The canvas with the chrome around it, its sidebar's and inspector's bindings the model's.
@@ -36,15 +39,17 @@ private struct ChromeHost: View {
     }
 }
 
-/// A small view a test finds in the window by its name.
+/// A small view a test finds in the window by its name, which tells `record` the title bar's row it's handed.
 private struct Marker: NSViewRepresentable {
     let name: String
+    var record: (@MainActor (PaneTitleRow?) -> Void)?
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         view.identifier = NSUserInterfaceItemIdentifier(name)
+        record?(context.environment.paneTitleRow)
         return view
     }
-    func updateNSView(_ view: NSView, context: Context) {}
+    func updateNSView(_ view: NSView, context: Context) { record?(context.environment.paneTitleRow) }
 }
 
 /// A marker over the canvas, 40 by 20, where it's told.
@@ -59,13 +64,15 @@ private struct Marker: NSViewRepresentable {
         registrar.hostInspector(shownWhile: { _ in model.content }, isRequested: { _ in model.wanted }, onDismiss: { _ in
             model.dismissed += 1
             model.wanted = false
-        }) { _, _ in Marker(name: "Inspector") }
+        }) { _, _ in Marker(name: "Inspector") { model.rows["Inspector"] = $0 } }
     }
 }
 
-/// A sidebar, a marker filling it.
-@MainActor private func sidebar() -> Contributor {
-    Contributor(id: "sidebar") { $0.hostSidebar { _, _ in Marker(name: "Sidebar").frame(maxWidth: .infinity, maxHeight: .infinity) } }
+/// A sidebar, a marker filling it, which tells `model` the row it's handed.
+@MainActor private func sidebar(_ model: ChromeModel? = nil) -> Contributor {
+    Contributor(id: "sidebar") {
+        $0.hostSidebar { _, _ in Marker(name: "Sidebar") { model?.rows["Sidebar"] = $0 }.frame(maxWidth: .infinity, maxHeight: .infinity) }
+    }
 }
 
 @MainActor private final class ChromeWindow {
@@ -222,8 +229,9 @@ private struct Marker: NSViewRepresentable {
         expect(rule.canToggle(in: w.editor, chosen: false), "wanted, it shows: it can be hidden")
     },
     test("a sidebar and an inspector together: over the canvas's leading and trailing edges, the canvas the whole window between and under them") {
-        let w = try ChromeWindow { [sidebar(), inspector($0)] }
+        let w = try ChromeWindow { [sidebar($0), inspector($0)] }
         w.window.spin { w.shows("Sidebar") && w.shows("Inspector") }
+        expect(w.model.rows["Sidebar"] == .some(nil) && w.model.rows["Inspector"] == .some(nil), "no title bar, no row: \(w.model.rows)")
         let canvas = try require(w.canvas).convert(try require(w.canvas).bounds, to: nil)
         let side = try require(w.marker("Sidebar")).convert(try require(w.marker("Sidebar")).bounds, to: nil)
         let panel = try require(w.marker("Inspector")).convert(try require(w.marker("Inspector")).bounds, to: nil)
@@ -235,8 +243,8 @@ private struct Marker: NSViewRepresentable {
         expectEqual(w.editor.coveredEdges, CoveredEdges(left: side.width), "the inspector gone, it covers nothing")
         expectEqual(try require(w.canvas).convert(try require(w.canvas).bounds, to: nil), canvas, "and the canvas is where it was")
     },
-    test("in a window whose content runs under its title bar, the canvas does too, the sheets' content and what floats start under its row, and the editor is told how tall it is") {
-        let w = try ChromeWindow(underTitleBar: true) { [sidebar(), inspector($0), overlay("Top", alignment: .top)] }
+    test("in a window whose content runs under its title bar, the canvas and the sheets do too, each sheet handing its content the row, what floats starts under it, and the editor is told how tall it is") {
+        let w = try ChromeWindow(underTitleBar: true) { [sidebar($0), inspector($0), overlay("Top", alignment: .top)] }
         w.window.spin { w.shows("Sidebar") && w.shows("Inspector") && w.marker("Top") != nil }
         let titleBar = w.hosting.safeAreaInsets.top
         expect(titleBar > 0, "the window's content runs under its title bar: \(titleBar)")
@@ -246,8 +254,12 @@ private struct Marker: NSViewRepresentable {
         for name in ["Sidebar", "Inspector"] {
             let marker = try require(w.marker(name)), frame = w.hosting.convert(marker.bounds, from: marker)
             let top = w.hosting.isFlipped ? frame.minY : w.hosting.bounds.height - frame.maxY
-            expect(abs(top - titleBar) < 1, "\(name)'s content under the title bar's row: \(top), the row \(titleBar)")
+            expect(abs(top) < 1, "\(name)'s content from the window's top, its header in the title bar's row: \(top)")
         }
+        // The sidebar's line starts past the traffic lights and the Sidebar button, where the window's title starts; the
+        // inspector's ends before the Inspector button.
+        expectEqual(w.model.rows["Sidebar"], PaneTitleRow(height: titleBar, leading: 148, trailing: 16))
+        expectEqual(w.model.rows["Inspector"], PaneTitleRow(height: titleBar, leading: 16, trailing: 60))
         let top = w.middle(of: try require(w.marker("Top")))
         expect(abs(top.y - (titleBar + 10)) < 1, "what floats under it: \(top), the row \(titleBar)")
     },

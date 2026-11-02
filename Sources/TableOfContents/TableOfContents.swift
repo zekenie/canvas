@@ -817,9 +817,11 @@ enum ContentsStyle {
     static let helpLength = 200
     /// The header's: what it calls the board listed when no plugin says (`ContentsHeadings`).
     static let heading = "Board"
-    /// The sidebar the list is in: its narrowest, the width it starts at, and its widest.
-    static let sidebarMinWidth: CGFloat = 180
-    static let sidebarWidth: CGFloat = 240
+    /// The sidebar the list is in: its narrowest, the width it starts at, and its widest. Its header shares the
+    /// title bar's row with the traffic lights and the Sidebar button, which take its first 148 points, so it
+    /// starts wide enough for a board's name after them, and is never too narrow for a few letters of one.
+    static let sidebarMinWidth: CGFloat = 240
+    static let sidebarWidth: CGFloat = 310
     static let sidebarMaxWidth: CGFloat = 400
     /// What ⇧Tab types: the back-tab character, which the list takes as ↑.
     static let backTab = "\u{19}"
