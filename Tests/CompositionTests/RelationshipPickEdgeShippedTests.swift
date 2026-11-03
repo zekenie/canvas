@@ -452,9 +452,12 @@ private final class PickWorld {
         let contents = try require(w.editor.tableOfContents)
         expect(contents.beginDrag(from: world.ann) && contents.drop(on: ContentsDropTarget(row: world.clients, zone: .on)))
         expectEqual(w.editor.file.board(containing: world.ann), world.board, "Ann is on Clients")
+        expectEqual(w.editor.board, world.board, "and the window with her")
         expectEqual(w.editor.undoHistory.undoName, "Move")
         let kept = try require(w.editor.file.record(arrow)?.typed(as: Arrow.self), "the arrow is kept")
         expect(kept.props.start.binding?.shapeID != world.ann, "its end at Ann is free: \(kept.props.start)")
+        w.editor.goBack()
+        expectEqual(w.editor.board, .root, "Back to the board the arrow stayed on, which is the board Validation checks")
         expect(!(w.editor.validation?.result(for: arrow)?.issues ?? []).isEmpty, "the arrow is warned of")
         expectEqual(w.rows.rows(of: world.ann).first { $0.name == "employer" }.map { row -> Int in
             if case .related(let pills, _) = row.content { pills.count } else { 0 }

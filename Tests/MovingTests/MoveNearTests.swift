@@ -174,14 +174,14 @@ private let xFrame = at(400, 400)
         expectEqual(h.editor.holder(of: a), k)
     },
 
-    test("beside a shape on the root, from a pocket's board: onto the root, put down there; the window stays where it is") {
+    test("beside a shape on the root, from a pocket's board: onto the root, put down there; the window goes to the root after it") {
         let p = ShapeID(), x = ShapeID(), s = ShapeID()
         let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(x, 400, 400)), children: [p: board(box(s, 0, 0))]))
         expect(h.enter(p))
         let before = h.file
         expect(h.run("move-near", on: s, with: x))
-        expectEqual(h.editor.board, BoardID(owner: p))
-        expectEqual(h.editor.document[s], nil)
+        expectEqual(h.editor.board, .root)
+        expect(h.editor.document[s] != nil)
         expectEqual(h.file.board(containing: s), .root)
         expectEqual(h.frame(of: s), at(580, 400))
         expectEqual(h.editor.undoHistory.undoName, "Move")

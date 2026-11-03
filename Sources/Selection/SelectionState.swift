@@ -48,6 +48,8 @@ final class SelectionState {
     @ObservationIgnored var hoversCanvas = false
     /// The places to go back to (`editor.goBack()`).
     private(set) var history = SelectionHistory()
+    /// How many ways around have taken a start (`editor.navigationStart`), each start's serial.
+    @ObservationIgnored private var startsTaken = 0
     /// Where the person is: the board, and where the camera was headed as the selection last settled there
     /// (`settle()`): the view a new selection is judged against, a place of its own only when it isn't in
     /// that view (`isAway`). Nil on a board just shown, until something settles there.
@@ -364,8 +366,12 @@ final class SelectionState {
 
     /// What going back to `entry` selects: its shapes, less any that are gone or can no longer be
     /// selected. On the board shown, nil if it would change nothing: its shapes are all gone
-    /// (unless it selected nothing), or they're what's selected. On another board, nil only if the
-    /// board can't be shown (its owner is gone); going there is a change, even to nothing selected.
+    /// (unless it selected nothing), or they're what's selected (and, for a place a way around left,
+    /// `entry.start`, the camera is where it was there: shapes moved out of view, which the camera
+    /// followed with the selection kept, are gone back from by the camera; any other place is a
+    /// selection, so one whose shapes are selected again in view is passed over). On another board, nil
+    /// only if the board can't be shown (its owner is gone); going there is a change, even to nothing
+    /// selected.
     private func restoration(of entry: SelectionHistory.Entry) -> [ShapeID]? {
         guard entry.board == editor.board else {
             guard editor.canShow(entry.board) else { return nil }
@@ -373,7 +379,7 @@ final class SelectionState {
             return entry.selection.filter { shapes[$0].map(isSelectable) ?? false }
         }
         let kept = entry.selection.filter { isSelectable(id: $0) }
-        guard entry.selection.isEmpty || !kept.isEmpty, Set(kept) != Set(selectedIDs) else { return nil }
+        guard entry.selection.isEmpty || !kept.isEmpty, Set(kept) != Set(selectedIDs) || (entry.start != nil && entry.camera != editor.cameraTarget) else { return nil }
         return kept
     }
 
@@ -391,11 +397,18 @@ final class SelectionState {
         settle()
     }
 
+    /// A new start's serial (`NavigationStart.serial`): one no other start has.
+    func takeStart() -> Int {
+        startsTaken += 1
+        return startsTaken
+    }
+
     /// Runs `body` as part of one step back to `entry` (`editor.navigate(from:_:)`), recording
     /// nothing of its own; `entry` goes on the stack the first time `body` moves the board, the
     /// selection or the camera, and not again while it's on the stack (a click or a pan between two
-    /// calls adds no second copy; a call that moves nothing, after a pan, adds none). The person is
-    /// where a call that moves something leaves them.
+    /// calls adds no second copy; a call that moves nothing, after a pan, adds none). It is found by its
+    /// start (`entry.start`), so a place left earlier with the same board, selection and camera doesn't
+    /// keep it off. The person is where a call that moves something leaves them.
     func asOneStep(from entry: SelectionHistory.Entry, _ body: () -> Void) {
         guard !isOneStep else { return body() }
         let board = editor.board, selection = Set(selectedIDs), camera = editor.cameraTarget
@@ -407,29 +420,31 @@ final class SelectionState {
         settle()
     }
 
-    /// Whether `goBack` would change the selection, or the board: some step on the stack would be
-    /// restored.
+    /// Whether `goBack` would change the selection, the board or the view: some step on the stack would
+    /// be restored.
     var canGoBack: Bool { history.entries.reversed().contains { restoration(of: $0) != nil } }
 
     /// Whether `goForward` would: some step gone back from would be restored.
     var canGoForward: Bool { history.ahead.reversed().contains { restoration(of: $0) != nil } }
 
-    /// Takes steps off the stack until one would change the selection or the board, and restores
-    /// it: on the board shown, its selection and its camera (animated); on another, shows that
-    /// board, then selects there, with the camera where it was (set, not animated: gliding from
-    /// another board's camera means nothing). Where it was goes on the way forward, and the person is
-    /// where it arrives.
+    /// Takes steps off the stack until one would change the selection, the board or the view
+    /// (`restoration`), and restores it: on the board shown, its selection and its camera (animated); on
+    /// another, shows that board, then selects there, with the camera where it was (set, not animated:
+    /// gliding from another board's camera means nothing). Where it was goes on the way forward, and the
+    /// person is where it arrives.
     func goBack() { travel(back: true) }
 
-    /// The same the other way: takes steps off the way forward until one would change the selection or
-    /// the board, and restores it, where it was going back on the stack.
+    /// The same the other way: takes steps off the way forward until one would change the selection,
+    /// the board or the view, and restores it, where it was going back on the stack.
     func goForward() { travel(back: false) }
 
     private func travel(back: Bool) {
         let current = SelectionHistory.Entry(board: editor.board, selection: selectedIDs, camera: editor.cameraTarget)
         while let entry = back ? history.pop() : history.popAhead() {
             guard let kept = restoration(of: entry) else { continue }
-            if back { history.wentBack(from: current) } else { history.wentForward(from: current) }
+            // Where it was is the other end of the same way around, gone back to by its camera as this one is.
+            let left = SelectionHistory.Entry(board: current.board, selection: current.selection, camera: current.camera, start: entry.start)
+            if back { history.wentBack(from: left) } else { history.wentForward(from: left) }
             isGoingBack = true
             defer {
                 isGoingBack = false
@@ -629,13 +644,13 @@ extension CanvasEditor {
 
     public func isSelected(_ id: ShapeID) -> Bool { selectedShapeIDs.contains(id) }
 
-    /// Whether going back (`goBack`) would change the selection: there's a place to go back to whose
-    /// shapes aren't all gone, and aren't what's selected, or that's on another board. Without the
-    /// Selection plugin, false.
+    /// Whether going back (`goBack`) would change the selection or the view: there's a place to go back
+    /// to whose shapes aren't all gone, and aren't what's selected or, for a place a way around left,
+    /// were selected with the camera elsewhere, or that's on another board. Without the Selection plugin, false.
     public var canGoBack: Bool { selectionState?.canGoBack ?? false }
 
-    /// Whether going forward (`goForward`) would change the selection: Back has been gone, and the person
-    /// has gone nowhere new since. Without the Selection plugin, false.
+    /// Whether going forward (`goForward`) would change the selection or the view: Back has been gone, and
+    /// the person has gone nowhere new since. Without the Selection plugin, false.
     public var canGoForward: Bool { selectionState?.canGoForward ?? false }
 
     /// Whether the shape is there and its kind's rule (`ShapeSelectability`) lets it be selected.
@@ -782,7 +797,9 @@ extension CanvasEditor {
     /// person went from, its board, what was selected there and the camera they had (where it was
     /// headed, if it was moving), animated on the board shown.
     /// A place is left by going somewhere: following a link to shapes or picking a row of the table of
-    /// contents (`goTo`, `goInto`, `navigate(_:)`, a way around such as Find's, `navigate(from:_:)`),
+    /// contents (`goTo`, `goInto`, `navigate(_:)`, a way around such as Find's or the one a move takes
+    /// after the shapes it moved, `navigate(from:_:)`, which is a place of its own even where only the
+    /// camera moved, gone back to by the camera),
     /// showing another board, even with nothing selected, or selecting what wasn't in the view the
     /// person had where they were, after a pan or a zoom of their own, or a key stepping to a shape out
     /// of view (VS Code's selection more than 10 lines away). Selecting in view (a click, the marquee, Tab, Escape,

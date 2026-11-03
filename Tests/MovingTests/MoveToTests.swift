@@ -106,20 +106,21 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expectEqual(h.editor.holder(of: card), f)
     },
 
-    test("onto a pocket's board: at the middle of the view it would be shown with (a first visit's, to a board with nothing on it), gone from the board shown; one step that undo takes back, both boards exactly") {
+    test("onto a pocket's board: at the middle of the view it would be shown with (a first visit's, to a board with nothing on it), and the window goes after it; one step that undo takes back, both boards exactly, back on the root") {
         let p = ShapeID(), s = ShapeID()
         let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(s, 400, 0))))
         h.editor.viewportDidResize(to: viewSize)
         let before = h.file
         expect(h.run("move-to", on: s, with: p))
-        expectEqual(h.editor.document[s], nil, "off the board shown")
         expectEqual(h.file.board(containing: s), BoardID(owner: p))
         expectEqual(h.frame(of: s), at(450, 300), "centered on the view's middle, (500, 350)")
         expectEqual(h.editor.undoHistory.undoName, "Move")
-        expect(!h.editor.isGliding(s), "nothing glides off the board shown")
-        expectEqual(h.editor.board, .root, "the window stays where it is")
+        expectEqual(h.editor.board, BoardID(owner: p), "the window shows the board it went to")
+        expect(h.editor.document[s] != nil, "on the board shown")
+        expect(!h.editor.isGliding(s), "nothing glides onto another board")
         let after = h.file
         h.editor.undo()
+        expectEqual(h.editor.board, .root, "undo shows the board the step was made on")
         try expectFile(h, before, "the root as it was, and no board for the pocket")
         h.editor.redo()
         try expectFile(h, after, "and on the pocket's board again")
@@ -143,14 +144,15 @@ private let viewSize = CGSize(width: 1000, height: 700)
         h.freeze([pin])
         expect(h.run("move-to", on: s, with: p))
         expectEqual(h.frame(of: s), at(450, 300), "on the pocket's board, at its view's middle")
-        let released = try require(h.editor.document[pin]?.typed(as: Pin.self)?.props)
+        let released = try require(h.file.record(pin)?.typed(as: Pin.self)?.props)
+        expectEqual(h.file.board(containing: pin), .root, "the locked pin stays")
         expectEqual(released.target, nil)
         expectEqual(released.at, CGPoint(x: 450, y: 50), "where the box was drawn on the root, not (500, 350)")
         expectEqual(h.file.board(containing: free), BoardID(owner: p), "a pin bound only to it moves with it")
         expectEqual(h.file.record(free)?.typed(as: Pin.self)?.props.target, s, "bound still")
     },
 
-    test("a shape being edited, moved onto a pocket's board, is gone from the board shown, so it isn't edited") {
+    test("a shape being edited, moved onto a pocket's board, isn't edited there: editing ends as it leaves the board it was edited on") {
         let p = ShapeID()
         let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0))))
         let card = h.add(Card(at(400, 0, 100, 60), text: "keep"))
@@ -158,6 +160,7 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expect(h.run("move-to", on: card, with: p))
         expectEqual(h.editor.editingShapeID, nil)
         expectEqual(h.file.board(containing: card), BoardID(owner: p))
+        expectEqual(h.editor.board, BoardID(owner: p))
     },
 
     test("into a corral on a pocket's board: onto that board, in the corral there") {
@@ -173,12 +176,12 @@ private let viewSize = CGSize(width: 1000, height: 700)
         try expectFile(h, before, "both boards as they were")
     },
 
-    test("into a corral on the root, from a pocket's board: onto the root, in the corral; the window stays on the pocket's board") {
+    test("into a corral on the root, from a pocket's board: onto the root, in the corral; the window goes to the root after it") {
         let p = ShapeID(), f = ShapeID(), s = ShapeID()
         let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), corral(f, at(400, 0, 600, 400))), children: [p: board(box(s, 0, 0))]))
         expect(h.enter(p))
         expect(h.run("move-to", on: s, with: f))
-        expectEqual(h.editor.board, BoardID(owner: p))
+        expectEqual(h.editor.board, .root)
         expectEqual(h.file.board(containing: s), .root)
         expectEqual(h.frame(of: s), at(440, 40))
         expectEqual(h.container(of: s), f)
@@ -236,17 +239,16 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expect(!h.admits("move-to", onSelection: [a], f), "all of them in it: nowhere to go")
     },
 
-    test("three boxes selected, /move-to a pocket: onto its board as one block, the box around them at the middle of the view it would be shown with, each where it was to the others; gone from the board shown; one step that undo takes back, both boards exactly") {
+    test("three boxes selected, /move-to a pocket: onto its board as one block, the box around them at the middle of the view it would be shown with, each where it was to the others; the window goes after them; one step that undo takes back, both boards exactly") {
         let p = ShapeID(), a = ShapeID(), b = ShapeID(), c = ShapeID()
         let h = try movingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(a, 400, 0), box(b, 600, 0), box(c, 400, 200))))
         h.editor.viewportDidResize(to: viewSize)
         let before = h.file, selection = [a, b, c]
         expect(h.run("move-to", onSelection: selection, with: p))
-        expectEqual(selection.map { h.editor.document[$0] == nil }, [true, true, true], "off the board shown")
         expectEqual(selection.map { h.file.board(containing: $0) }, Array(repeating: BoardID(owner: p), count: 3))
         expectEqual(selection.map { h.frame(of: $0) }, [at(350, 200), at(550, 200), at(350, 400)], "300 across and down, centered on (500, 350)")
         expectEqual(h.editor.undoHistory.undoName, "Move")
-        expectEqual(h.editor.board, .root, "the window stays where it is")
+        expectEqual(h.editor.board, BoardID(owner: p), "the window shows the board they went to")
         let after = h.file
         h.editor.undo()
         try expectFile(h, before, "the root as it was, and no board for the pocket")

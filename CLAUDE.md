@@ -106,7 +106,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 **Platform**, things you do (no kind opts in and no plugin imports one)
 - [clipboard](.claude/rules/clipboard.md): cut, copy and paste; boards and containers copied whole; cut and paste as a move.
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
-- [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in, or the shapes selected (typed in the command bar) as one block, moved into a frame, onto a subboard's board or beside a shape, on any board; the table of contents' drops that move shapes; what each takes, where it lands (draw's solver), the commit.
+- [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in, or the shapes selected (typed in the command bar) as one block, moved into a frame, onto a subboard's board or beside a shape, on any board; the table of contents' drops that move shapes; what each takes, where it lands (draw's solver), the commit, and going where the shapes went.
 - [snapping](.claude/rules/snapping.md): what a drag, and a resize, snaps to, and its guides.
 - Reordering (`Examples/`) has no file of its own: Arrange is in [context menus](.claude/rules/context-menus.md), its slash commands in [slash commands](.claude/rules/slash-commands.md).
 

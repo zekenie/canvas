@@ -2324,7 +2324,8 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   stack of the places the person went from, each its board, what was selected there and the camera
   they had. A place is left by going somewhere: following a link to shapes or picking a row of the
   table of contents (`goTo`, `goInto`, `navigate(_:)`, which any plugin wraps what it selects and
-  reveals in, a way around such as Find's, below), however near they are, as VS Code's jumps and its
+  reveals in, a way around such as Find's, below, and a move, which goes where the shapes went:
+  [Moving](#moving)), however near they are, as VS Code's jumps and its
   outline's picks are; showing another board; or selecting what wasn't in the view the person had where
   they were, after a pan or a zoom of their own, or a key stepping to a shape out of view (VS Code's
   selection more than 10 lines from the last one).
@@ -2348,7 +2349,9 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   after Back keeps the way forward, and going somewhere new lets it go.
   The stack holds 50 steps, skips a repeat of the step below, and going back skips a step that
   would change nothing: its shapes are all gone (unless it selected nothing, the board's list), or
-  they're what's selected. `canGoBack` is true only when a step wouldn't be skipped, so after
+  they're what's selected (with the camera where it was there, for a place a way around left: so a
+  way around that moved only the camera, a move the camera followed or Find's walk closed where it
+  went, is gone back to by its camera; any other place is a selection). `canGoBack` is true only when a step wouldn't be skipped, so after
   deleting the only shape selected there's no Back. It's per editor, so per window, and isn't
   saved. Showing another board is a step too, even with nothing selected: the board left, what
   was selected there and its camera (but not a file put in place, which no one took: a file opened
@@ -2411,8 +2414,10 @@ Its state is `CanvasEditor` members that only modules importing Selection see. W
   headed) as it begins, and make each move inside `editor.navigate(from: start) { … }`: nothing in
   it records a step of its own, and the first call that moves the board, the selection or the
   camera puts the start on the history as the step back, once (a later call finds it there and adds
-  none, even after a click or a pan between; a call that moves nothing adds none). Back after it
-  returns to where it began.
+  none, even after a click or a pan between; a call that moves nothing adds none). Each start taken
+  is its own (it carries a serial, and so does the step it puts on the history), so a place left
+  earlier with the same board, selection and camera never keeps it off. Back after it returns to
+  where it began.
 - `goInto(_:)` follows a link into what it names (a mention of a subboard enters it): `goTo`, then
   `open` there if it opens (`canOpen`), as one step back, to the board and selection it was
   followed from, whatever boards it went through (the selection state runs both as one step,
@@ -11043,8 +11048,20 @@ registrar.forShapes(adopting: .box) { boxes in
   refused [turn](#turning) does. (A shape on a read-only board
   is offered no command at all, as no read-only shape is, so none moves off one.) On the board shown, what moved glides there and a note being
   edited is put down (editing ends, as a `canvas draw` that moves it ends it); onto another board,
-  it's gone from the one shown, the window stays where it is, and Undo Move puts both boards back
-  exactly. A move that lands where the shape is commits nothing.
+  it's gone from the one shown, and Undo Move puts both boards back exactly (undo shows the board
+  the step was made on first). A move that lands where the shape is commits nothing.
+
+- **Then where it went.** Every move that commits (the commands, Move To ▸ and the table of
+  contents' drops, through the one commit) takes the person to the shapes, so they're never left
+  where the shapes were (the owner's ask: "being left somewhere after the object you moved is gone
+  is not the right move"). Onto another board, that board is shown with them selected there; on
+  the board shown, they're selected; what was selected stays so where it holds them all (an arrow
+  that rode along with them too). They're brought into view if they aren't in it, at the zoom the
+  camera has (`revealIfOffscreen`, never closer: a move isn't a link followed to read what it
+  names, which `goTo` brings to 70%). It's one step back to the board, the selection and the camera
+  before the move (`navigate(from:)` of the `navigationStart` taken before the transaction), so ⌘[
+  returns to where the move was made; a move on the board shown that stays in view, with nothing
+  more selected, goes nowhere and makes no step.
 
 - **Rows dropped in the table of contents** ([Dragging rows](#dragging-rows)) where their shapes
   aren't are Moving's too (`Drop`): the shapes move as one block (`Block`: on one board, any the app

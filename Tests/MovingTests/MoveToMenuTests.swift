@@ -68,14 +68,15 @@ import Topology
         h.editor.undo()
         try expectFile(h, before, "where it was")
     },
-    test("a subboard is offered and takes the shape onto its board") {
+    test("a subboard is offered and takes the shape onto its board, where the window goes after it, the shape selected there") {
         let p = ShapeID(), s = ShapeID()
         let h = try menuHarness(CanvasFile(root: board(box(s, 0, 0), pocket(p, 400, 0)), children: [p: board()]))
         let items = try require(moveItems(try menu(h, on: s)))
         expectEqual(items.count, 1)
         try menu(h, on: s).choose("Move To", items[0])
-        expectEqual(h.editor.document[s], nil, "gone from the board shown")
         expect(h.file[BoardID(owner: p)][s] != nil, "on the subboard's board")
+        expectEqual(h.editor.board, BoardID(owner: p))
+        expectEqual(h.editor.selectedShapeIDs, [s])
     },
     test("the enclosing board is offered from inside a subboard") {
         let p = ShapeID(), s = ShapeID()

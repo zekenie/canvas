@@ -235,7 +235,7 @@ import Types
         expectEqual(s.editor.undoHistory.undoName, "Move")
     },
 
-    test("two notes selected: /move-to @pla moves them onto the subboard's board, the window staying on the board shown") {
+    test("two notes selected: /move-to @pla moves them onto the subboard's board, and the window goes after them, both selected there") {
         let s = ShippedBar()
         let notes = [s.note(100, 100, "one"), s.note(320, 100, "two")]
         let plans = s.editor.add(Subboard(frame: CGRect(x: 1400, y: 100, width: 240, height: 160)), title: "Plans")
@@ -246,11 +246,12 @@ import Types
         s.window.pressReturn()
         s.window.pressReturn()
         expectEqual(Set(s.editor.file[BoardID(owner: plans)].shapes.map(\.id)), Set(notes), "both on the subboard's board")
-        expect(notes.allSatisfy { s.editor.document[$0] == nil }, "and gone from this one")
-        expectEqual(s.editor.board, .root, "the window stays on the board shown")
+        expectEqual(s.editor.board, BoardID(owner: plans), "the window shows the board they went to")
+        expectEqual(s.editor.selectedShapeIDs, notes)
         expectEqual(s.editor.undoHistory.undoName, "Move")
         s.editor.undo()
-        expect(notes.allSatisfy { s.editor.document[$0] != nil }, "Undo Move brings them back")
+        expectEqual(s.editor.board, .root, "Undo Move shows the board it was made on")
+        expect(notes.allSatisfy { s.editor.document[$0] != nil }, "and brings them back")
     },
 
     test("two notes and the arrow between them selected: move-to acts on the notes, 2 of 3, and the arrow rides along, both its ends following") {

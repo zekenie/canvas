@@ -213,6 +213,27 @@ private struct Tree {
         expectEqual(h.editor.camera, revealed(far), "F is out of view: brought in")
         expectEqual(h.editor.selectedShapeIDs, [])
     },
+    test("shows on the board shown, a stop out of view, the walk ended there: Back returns the camera to where it began, with the selection it never changed") {
+        let tree = Tree()
+        let h = try harness(tree)
+        let distant = h.add(Box(far))
+        let rows = Rows([(distant, .root, 1)])
+        let walk = ShapeWalk(editor: h.editor, arrival: .shows)
+        attach(walk, rows)
+        h.editor.selection = tree.a
+        walk.begin()
+        walk.step(forward: true)
+        h.wait(300)
+        expectEqual(h.editor.camera, revealed(far))
+        walk.end()
+        expectEqual(h.editor.selectedShapeIDs, [tree.a])
+        expect(h.editor.canGoBack, "a place of its own, though only the camera moved")
+        h.editor.goBack()
+        h.wait(300)
+        expectEqual(h.editor.camera, Camera())
+        expectEqual(h.editor.selectedShapeIDs, [tree.a])
+        expect(!h.editor.canGoBack)
+    },
     test("shows: a stop's focus rect, not its shape, is what has to be in view") {
         let tree = Tree()
         let h = try harness(tree)

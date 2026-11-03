@@ -137,7 +137,7 @@ import TestKit
         expectEqual(e.editor.undoHistory.undoName, "Move")
     },
 
-    test("/move-to @Plans moves the note onto the subboard's board, where the window doesn't go: it's gone from the root, editing ends, and Undo Move brings it back") {
+    test("/move-to @Plans moves the note onto the subboard's board, and the window goes after it: the note selected there, editing over; Back returns to the root, and Undo Move brings the note back there") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let e = Errands(pasteboard)
@@ -146,18 +146,20 @@ import TestKit
         e.window.pressReturn()
         e.window.pressReturn()
         e.window.settle()
-        expectEqual(e.editor.document[e.note], nil, "gone from the board shown")
         expectEqual(e.editor.file.board(containing: e.note), BoardID(owner: e.plans))
-        expectEqual(e.editor.board, .root)
+        expectEqual(e.editor.board, BoardID(owner: e.plans), "the board it went to")
+        expectEqual(e.editor.selectedShapeIDs, [e.note])
         expectEqual(e.editor.editingShapeID, nil)
         expectEqual(e.text(), "keep\n")
         expectEqual(e.editor.undoHistory.undoName, "Move")
+        e.editor.goBack()
+        expectEqual(e.editor.board, .root, "back where it was moved from")
         e.editor.undo()
         expectEqual(e.editor.file.board(containing: e.note), .root)
         expectEqual(e.frame(e.note)?.origin, CGPoint(x: 100, y: 100))
     },
 
-    test("on a subboard's board, /move-to @ lists the subboard beside it on the root with nothing typed; picked and run, the note goes onto that one's board") {
+    test("on a subboard's board, /move-to @ lists the subboard beside it on the root with nothing typed; picked and run, the note goes onto that one's board, and the window after it") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
@@ -173,7 +175,8 @@ import TestKit
         window.pressReturn()
         window.settle()
         expectEqual(editor.file.board(containing: note), BoardID(owner: polish))
-        expectEqual(editor.board, BoardID(owner: bugs), "the window stays on Bugs' board")
+        expectEqual(editor.board, BoardID(owner: polish), "the window goes to Polish's board")
+        expectEqual(editor.selectedShapeIDs, [note])
     },
 
     test("/move-to @Plans with an arrow bound to the note and free at the other end: the arrow goes to the subboard's board with the note, its free end as far from the note as it was; Undo Move brings both back") {

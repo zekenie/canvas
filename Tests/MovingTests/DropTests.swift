@@ -70,16 +70,19 @@ private let viewSize = CGSize(width: 1000, height: 700)
         expectEqual(h.frame(of: s), at(500, 220), "right of the inner one, 80 away, centered on it")
         expectEqual(ids(h.editor.document), [f, g, s, a], "behind A, which it was dropped below")
     },
-    test("on a pocket's row: onto its board, near the middle of the view it would be shown with, in front of what it holds; gone from the board shown") {
+    test("on a pocket's row: onto its board, near the middle of the view it would be shown with, in front of what it holds; the window goes after it, selected there, one step back to the root") {
         let p = ShapeID(), s = ShapeID(), x = ShapeID()
         let h = try droppingHarness(CanvasFile(root: board(pocket(p, 0, 0), box(s, 400, 0)), children: [p: board(box(x, 2000, 2000))]))
         h.editor.viewportDidResize(to: viewSize)
         let before = h.file
         expect(h.drop([s], on: p, .on))
-        expectEqual(h.editor.document[s], nil)
         expectEqual(ids(h.file[BoardID(owner: p)]), [x, s], "on top of what it holds")
         expectEqual(h.frame(of: s), at(2000, 1800), "the view a first visit fits to X is around it: the nearest clear ring, above it, draw's 80 clear")
         expect(!h.editor.isGliding(s))
+        expectEqual(h.editor.board, BoardID(owner: p), "the board it went to")
+        expectEqual(h.editor.selectedShapeIDs, [s])
+        h.editor.goBack()
+        expectEqual(h.editor.board, .root, "back where it was dropped from")
         h.editor.undo()
         try expectFile(h, before, "both boards as they were")
     },

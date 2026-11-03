@@ -331,6 +331,77 @@ private let view = CGSize(width: 1000, height: 700)
         expect(!h.editor.canPerform(.goBack))
         h.editor.goBack()
     },
+    test("a way around that moved only the camera, the selection kept, is a place of its own: Back returns the camera with the selection as it is, and Forward goes there again") {
+        let h = try historyHarness()
+        let a = boxes(h, 1)[0]
+        let (far, _) = away(h, 1)
+        h.editor.selection = a
+        let start = try require(h.editor.navigationStart)
+        h.editor.navigate(from: start) { h.editor.revealIfOffscreen([far]) }
+        h.wait(300)
+        let there = h.editor.camera
+        expect(there != Camera(), "the camera went to it")
+        expectEqual(h.editor.selectedShapeIDs, [a], "nothing more selected")
+        expect(h.editor.canGoBack)
+        h.editor.goBack()
+        h.wait(300)
+        expectEqual(h.editor.camera, Camera(), "where it was")
+        expectEqual(h.editor.selectedShapeIDs, [a])
+        expect(!h.editor.canGoBack)
+        expect(h.editor.canGoForward)
+        h.editor.goForward()
+        h.wait(300)
+        expectEqual(h.editor.camera, there)
+        expectEqual(h.editor.selectedShapeIDs, [a])
+    },
+    test("two ways around in a row that each moved only the camera, the selection kept, are two places: Back returns to each in turn") {
+        let h = try historyHarness()
+        let a = boxes(h, 1)[0]
+        let (far, _) = away(h, 1)
+        let (farther, _) = away(h, 2)
+        h.editor.selection = a
+        let first = try require(h.editor.navigationStart)
+        h.editor.navigate(from: first) { h.editor.revealIfOffscreen([far]) }
+        h.wait(300)
+        let between = h.editor.camera
+        let second = try require(h.editor.navigationStart)
+        h.editor.navigate(from: second) { h.editor.revealIfOffscreen([farther]) }
+        h.wait(300)
+        h.editor.goBack()
+        h.wait(300)
+        expectEqual(h.editor.camera, between, "where the second began")
+        h.editor.goBack()
+        h.wait(300)
+        expectEqual(h.editor.camera, Camera(), "and then where the first did")
+    },
+    test("a place left by selecting, whose shapes are selected again in view, is passed over whatever the camera: only a way around's place is gone back to by its camera") {
+        let h = try historyHarness()
+        let a = boxes(h, 1)[0]
+        let (far, _) = away(h, 1)
+        h.editor.selection = a
+        h.editor.camera = Camera(zoom: 0.1)                    // a zoom of the person's own: both in view
+        h.editor.selection = far                               // away from the view A was selected in: (A, the start) goes on
+        h.editor.selection = a                                 // in view of where far was: no step, A selected again
+        expect(!h.editor.canGoBack, "A's place would only pan the camera: passed over")
+    },
+    test("a way around's start goes on the history though a place left earlier looks just the same: Back returns to it, not past it") {
+        let h = try historyHarness()
+        let a = boxes(h, 1)[0]
+        let (far, there) = away(h, 1)
+        let (farther, _) = away(h, 2)
+        h.editor.selection = a
+        h.editor.camera = there
+        h.editor.selection = far                               // a place of its own: A, where the board starts
+        h.editor.camera = Camera()
+        h.editor.selection = a                                 // and far's: the person is where they began
+        let start = try require(h.editor.navigationStart)
+        h.editor.navigate(from: start) { h.editor.revealIfOffscreen([farther]) }
+        h.wait(300)
+        h.editor.goBack()
+        h.wait(300)
+        expectEqual(h.editor.selectedShapeIDs, [a], "where the way around began, not the place before it")
+        expectEqual(h.editor.camera, Camera())
+    },
     test("⌘[ and ⌃- go back and ⌘] and ⌃⇧- forward, as Go › Back and Forward do; with nowhere to go, the keys pass, as those items are dimmed") {
         let h = try historyHarness()
         let a = boxes(h, 1)[0]

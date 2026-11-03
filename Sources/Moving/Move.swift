@@ -1,6 +1,7 @@
 import Canvas
 import CoreGraphics
 import Draw
+import Selection
 
 /// The shapes a command moves, as one block: on the board shown, with a box, kept where they are to each
 /// other. Each command asks its rule again before it moves anything (what it was given may have changed
@@ -90,12 +91,15 @@ struct Block {
     /// they shake).
     /// Landed on the board shown, from it, a shape being typed in that moved is put down (editing ends,
     /// what was typed kept), as a `canvas draw` that moves it puts it down, and what moved glides there
-    /// from where it was; the camera stays where it is. Moved onto another board, the shapes are gone
-    /// from the board shown (the core ends their editing), and nothing glides.
+    /// from where it was. Moved onto another board, the shapes are gone from the board shown (the core
+    /// ends their editing), and nothing glides. Then the editor goes where they went (`follow`), so
+    /// the person is never left where they were.
     func commit(_ landing: Landing, finish: (inout Transaction) throws -> Void = { _ in }) {
         let ids = ids, editor = editor, source = board, target = landing.board, shown = editor.board, kinds = editor.registry.containingKinds
         let delta = CGPoint(x: landing.rect.minX - box.minX, y: landing.rect.minY - box.minY)
         let order = shapes.map(\.id)
+        // Where the person is and what they have selected before the move: what going after the shapes is a step back to.
+        let start = editor.navigationStart, selected = editor.selectedShapeIDs, revision = editor.revision
         let committed = editor.transactWhole(MovingStyle.stepName) { transaction -> [ShapeID: CGPoint] in
             if target != source {
                 // Onto the board first, so what's bound to them across the edge lets go where it's drawn (an
@@ -126,11 +130,35 @@ struct Block {
                 throw Transaction.Refused()
             }
         }
-        guard let nudges = committed, target == shown, source == shown else { return }
-        var moved: [ShapeID: CGPoint] = [:]
-        if delta != .zero { for each in ids.union(carried) { moved[each] = delta } }
-        for (each, nudge) in nudges { moved[each] = moved[each].map { CGPoint(x: $0.x + nudge.x, y: $0.y + nudge.y) } ?? nudge }
-        if let editing = editor.editingShapeID, let by = moved[editing], by != .zero { editor.endEditing(discarding: false) }
-        editor.glide(moved)
+        // A move that lands where the shapes are commits nothing: nowhere to go, and editing goes on.
+        guard let nudges = committed, editor.revision != revision else { return }
+        if target == shown, source == shown {
+            var moved: [ShapeID: CGPoint] = [:]
+            if delta != .zero { for each in ids.union(carried) { moved[each] = delta } }
+            for (each, nudge) in nudges { moved[each] = moved[each].map { CGPoint(x: $0.x + nudge.x, y: $0.y + nudge.y) } ?? nudge }
+            if let editing = editor.editingShapeID, let by = moved[editing], by != .zero { editor.endEditing(discarding: false) }
+            editor.glide(moved)
+        }
+        follow(onto: target, from: start, selected: selected)
+    }
+
+    /// Goes where the shapes went, as one step back to where the person was (`start`: the board, the
+    /// selection and the camera before the move): onto another board, that board is shown with them
+    /// selected there; on the board shown, they're selected; either way what was selected stays so
+    /// where it holds them all (an arrow that rode along with them too). Then the shapes that moved,
+    /// and only they (not a selected shape that stayed where it was), are brought into view if they
+    /// aren't in it, at the zoom the camera has (`revealIfOffscreen`), since a move isn't a link
+    /// followed to read what it names, which `goTo` brings to a readable zoom. Landed in view with
+    /// nothing more selected, nothing moves and no step is made. Without the Selection plugin there's
+    /// no step back and nothing is selected: their board is shown and they're brought into view.
+    private func follow(onto target: BoardID, from start: NavigationStart?, selected: [ShapeID]) {
+        let editor = editor, file = editor.file, moved = shapes.map(\.id)
+        let kept = selected.filter { file.board(containing: $0) == target }
+        let landed = ids.isSubset(of: kept) ? kept : moved
+        let go = {
+            guard editor.showBoard(target, selecting: landed) else { return }
+            editor.revealIfOffscreen(moved)
+        }
+        if let start { editor.navigate(from: start, go) } else { go() }
     }
 }

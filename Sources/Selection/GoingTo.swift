@@ -54,6 +54,9 @@ public struct NavigationStart: Equatable, Sendable {
     public let board: BoardID
     public let selection: [ShapeID]
     public let camera: Camera
+    /// Which start this is, a new one each time one is taken: the step back the way around puts on the
+    /// history carries it, so a later call finds that step, never an older place that looks the same.
+    let serial: Int
 }
 
 // Going to shapes, one way for every plugin that brings shapes into view: the table of contents
@@ -167,17 +170,19 @@ extension CanvasEditor {
     /// around that spans many calls (Find's stepping through its hits, board to board) to come back
     /// to as one step back (`navigate(from:_:)`). Nil without the Selection plugin.
     public var navigationStart: NavigationStart? {
-        selectionState.map { _ in NavigationStart(board: board, selection: selectedShapeIDs, camera: cameraTarget) }
+        selectionState.map { NavigationStart(board: board, selection: selectedShapeIDs, camera: cameraTarget, serial: $0.takeStart()) }
     }
 
     /// Runs `body` (showing boards, revealing shapes) as part of one step back to `start`, however
     /// many calls make it up: nothing `body` does records a step of its own, and the first call
     /// that moves the board, the selection or the camera puts `start` on the history as the step
-    /// back, once (a later call finds it there and adds none, whatever the person did between). As `asOneStep`, but
-    /// for a way around the person takes a step at a time: Back after it returns to where it began.
+    /// back, once (a later call finds it there and adds none, whatever the person did between; a place
+    /// left earlier that looks the same is another step, so it never stands in for this one). As
+    /// `asOneStep`, but for a way around the person takes a step at a time: Back after it returns to
+    /// where it began.
     public func navigate(from start: NavigationStart, _ body: () -> Void) {
         guard let state = selectionState else { return body() }
-        state.asOneStep(from: SelectionHistory.Entry(board: start.board, selection: start.selection, camera: start.camera), body)
+        state.asOneStep(from: SelectionHistory.Entry(board: start.board, selection: start.selection, camera: start.camera, start: start.serial), body)
     }
 
     /// A trackpad's smart zoom (a two-finger double-tap, `.smartMagnify`), as Safari's and Preview's:

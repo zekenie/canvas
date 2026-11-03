@@ -7,6 +7,7 @@ import Frames
 import LanguageModels
 import Locking
 import Mentions
+import Selection
 import ShippedTesting
 import StickyNotes
 import Subboards
@@ -68,13 +69,14 @@ import TestKit
         expect(d.editor.document.index(of: d.other)! < d.editor.document.index(of: d.inside)!, "behind Milk")
         expectEqual(d.editor.undoHistory.undoName, "Move")
     },
-    test("a note's row on a subboard's row: onto its board, gone from the board shown, which stays; Undo Move brings it back") {
+    test("a note's row on a subboard's row: onto its board, where the window goes after it, the note selected there; Undo Move brings it back to the root") {
         let d = Desk()
         expect(d.drop(d.note, on: d.plans, .on))
-        expectEqual(d.editor.document[d.note], nil)
         expectEqual(d.editor.file.board(containing: d.note), BoardID(owner: d.plans))
-        expectEqual(d.editor.board, .root)
+        expectEqual(d.editor.board, BoardID(owner: d.plans))
+        expectEqual(d.editor.selectedShapeIDs, [d.note])
         d.editor.undo()
+        expectEqual(d.editor.board, .root)
         expectEqual(d.editor.file.board(containing: d.note), .root)
     },
     test("a locked note's row doesn't drag, nor an arrow's; nothing goes into a locked frame") {

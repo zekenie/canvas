@@ -12,6 +12,9 @@ struct SelectionHistory {
         let board: BoardID
         let selection: [ShapeID]
         let camera: Camera
+        /// The way around this place is the start of (`NavigationStart.serial`), which finds it here again;
+        /// nil for every other place, so one left earlier that looks the same is never taken for it.
+        var start: Int? = nil
     }
 
     /// data-canvas's MAX_HISTORY_SIZE, and VS Code's: past it, the oldest entry goes, each way.
@@ -38,8 +41,11 @@ struct SelectionHistory {
     /// Going forward from `current`: it is a step back again, and the way forward stays.
     mutating func wentForward(from current: Entry) { Self.add(current, to: &entries) }
 
+    /// A repeat of the top is the same shapes on the same board; for a way around's place (`start`), which
+    /// is gone back to by its camera, at the same camera too, so a move after a move is a place of its own.
     private static func add(_ entry: Entry, to stack: inout [Entry]) {
-        if let top = stack.last, top.board == entry.board, Set(top.selection) == Set(entry.selection) { return }
+        if let top = stack.last, top.board == entry.board, Set(top.selection) == Set(entry.selection),
+           entry.start == nil || top.camera == entry.camera { return }
         stack.append(entry)
         if stack.count > limit { stack.removeFirst(stack.count - limit) }
     }
