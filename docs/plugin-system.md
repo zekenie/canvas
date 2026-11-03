@@ -3152,7 +3152,7 @@ What the shipped app's keys do:
 | ⇥, ⇧⇥ | Selects the next and the previous shape in reading order, round the selection's siblings, bringing it into view if it is not (again and again while held; while nothing's under way or edited) | Selection |
 | ⌥⌘ and ← → ↑ ↓ (⇧ too) | Selects the nearest shape that way, from the one selected last; with ⇧ adds it to the selection (again and again while held; while nothing's under way or edited) | Selection |
 | ⌥⇥, ⌥⇧⇥ | Focuses the only selected shape's first or last part in reading order (its chips, pills, buttons, handles: [parts of a shape](#parts-of-a-shape)), then the next or previous, round inside the shape, bringing it into view if it is not; ↩ and Space press it, ← → ↑ ↓ adjust one that moves (else nudge the shape), ⎋ goes back to the shape (while one shape is selected and nothing's under way or edited) | Selection |
-| ⌘L | Connects two selected shapes, from the one selected first to the other, as `canvas draw` makes an edge (`registry.drawConnection`: the channel both take; where none does, or the maker refuses, nothing, and both shake), one step, Connect; Connect in a right-click on two shapes and in the Shape menu runs it too | Connections (`PortsPlugin`; the item, `ConnectMenuPlugin`) |
+| ⌘L | Connects two selected shapes, from the one selected first to the other, or one shape to itself (a loop), as `canvas draw` makes an edge (`registry.drawConnection`: the channel both take; where none does, or the maker refuses, nothing, and both shake), one step, Connect; Connect in a right-click on two shapes and in the Shape menu runs it too | Connections (`PortsPlugin`; the item, `ConnectMenuPlugin`) |
 | ⇧↩ in a note | Puts a new note down beside the one edited (where Placing puts a note's box beside it, `Surroundings.near`, the right first), in its color, and edits it: one step, Add Note; with no room, the note shakes | StickyNotes (a key hint: the note's editor reads it) |
 | ⇥, ⇧⇥ in a note | Edits the next and the previous note in reading order, round the notes in the one's container, passing over read-only ones (a list open at the caret takes them first) | StickyNotes (a key hint) |
 
@@ -6785,26 +6785,29 @@ literal edges and `registry.accepts`, once per revision of the reference's edges
 
 ### A drag back onto where it starts
 
-A port's drag never ends where it starts, but a plugin may let one end on the shape it started
-from, for that drag's release to make something else of it
-([SelfConnections.swift](../Sources/Connections/SelfConnections.swift)). It says so for the shapes of
-the kinds its scope reaches, of each shape, whenever the drag asks of the one it started from (as
-the pointer moves over it, and on each frame the faint outlines are drawn), so the test is cheap:
+A port's drag may end on the shape it started from, as on any shape that takes its channel:
+`editor.channel(of:endingAt:)` asks the start as any other, so the faint outlines show it as a drag
+begins and the hint lights it when the pointer comes back over it. Let go there, the drag joins the
+shape to itself, and the connector draws that as it says. Arrows draw a loop on the side of the dot
+the drag was pulled from ([ArrowLoops.swift](../Sources/Arrows/ArrowLoops.swift)): it leaves the side
+and comes back into it, clockwise round the shape, bowed out past it, and each further loop on a
+side goes round the one before. The drag shows the loop as soon as its end is back on the shape, and
+an arrow from the shape's middle again once it leaves:
 
 ```swift
-registrar.forShapes(holding: TypeSchemaProperty.self) { types in
-    types.connectsToItself { shape, editor in editor.canRelateToItself(shape) }
-}
+let loop = ArrowConnections.loop(on: shape, side: .right, beside: loops, in: document)
+arrow.start = .bound(loop.start)
+arrow.end = .bound(loop.end)
+arrow.bend = loop.bend
 ```
 
-That's `ArrowPortsPlugin`'s: a type dragged back onto itself is related to itself, and the release
-(`ArrowConnecting.finished`, Types' `connectionDrawn`) replaces the arrow with a relationship type
-and an arrow into it and one out of it. `editor.channel(of:endingAt:)` answers for the start then,
-on the channels the shape takes, so the faint outline and the hint show it as any other end. Such
-a connection is never kept: the connector takes back whatever the release leaves joining the shape
-to itself, in the press's step, so a release that makes nothing of it leaves no step. Connect (⌘L)
-and `canvas draw` are untouched: one takes two shapes, and the other refuses an edge on a channel
-from a shape to itself.
+The loop is stored as tldraw's own properties, two precise anchors on one side and a bend, so its
+geometry is tldraw's arrow bound twice to one shape (both anchors taken as precise, clipped at the
+outline), a pure function of the arrow that a person reshapes by its handles. The release then says
+what the arrow is, as for any: Types' `connectionDrawn` replaces a type's loop with a relationship
+type from it to itself, an arrow into it and one out of it. Connect (⌘L) on one shape and `canvas
+draw`'s `edge "A" -> "A"` make the same loop through the connector's maker, on the right side or
+the one a script names.
 
 ### The dots and the select tool
 
@@ -7021,12 +7024,14 @@ connection by name from the keyboard: with two shapes selected and nothing under
 `editor.connect(_:)` connects the one selected first to the other, through
 `registry.drawConnection(from:to:in:)`, the maker `canvas draw` makes an edge with, on the channel it
 picks, one step, Connect, the selection kept (a second between a pair is bent apart from the first,
-as a script's is). A reference pill is an end as what it stands for, as a drag reads its dots, and
+as a script's is); with one, it connects the shape to itself, the drag back onto it by keys (arrows:
+a loop on its right side). A reference pill is an end as what it stands for, as a drag reads its dots, and
 one that stands for nothing now is none. Where the maker refuses the pair (no channel joins them, a
 note and a frame; one holds the other, a frame and a note in it) or the board takes nothing, nothing
 is put down and both shake. `ConnectMenuPlugin` adds the item
-that runs it to a right-click on two shapes (`MenuItem(command: .connect)`), so the menu bar's Shape
-menu has it too; a list without ContextMenus leaves it out and keeps the key. PortEdgesTests'
+that runs it to a right-click on two shapes (`MenuItem(command: .connect, when:)`), so the menu bar's Shape
+menu has it too, and leaves it off one shape's menu, which every right-click would carry for the rare
+loop; a list without ContextMenus leaves it out and keeps the key. PortEdgesTests'
 `connectTests` hold it over fixtures, CompositionTests' `connectShippedTests` over the shipped kinds.
 
 Ports are the part of data-canvas's that notes and subboards need to prove the API; the rest is in
@@ -15607,7 +15612,7 @@ type-colors          inherited color → every shape holding is
 snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
-arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · connects to itself → every shape holding schema · ArrowBindingRules
+arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
 language-models      service LanguageModelState
 decision-models      service Decisions
 language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips

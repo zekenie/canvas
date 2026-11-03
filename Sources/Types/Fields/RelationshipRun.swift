@@ -443,19 +443,22 @@ extension RelationshipIndex {
             guard !kinds.isEmpty else { continue }
             let start = ReadEnd(literal: edge.source, reading: self.reading(ofEnd: edge.source, in: reading))
             let end = ReadEnd(literal: edge.target, reading: self.reading(ofEnd: edge.target, in: reading))
-            let side: RelationshipSide
-            let far: ReadEnd
-            // The note is an end as the recorded edges have it: a shape, or one a pill that reads through names.
-            if names(note, atEnd: edge.source, in: reading) {
-                side = .from
-                far = end
-            } else if names(note, atEnd: edge.target, in: reading) {
-                side = .to
-                far = start
+            // The note is an end as the recorded edges have it: a shape, or one a pill that reads through names; at both ends
+            // (a loop, or the note and a pill for it), on both sides, as `relations(of:)` has it.
+            let starts = names(note, atEnd: edge.source, in: reading), ends = names(note, atEnd: edge.target, in: reading)
+            let sides: [(side: RelationshipSide, far: ReadEnd)]
+            if starts && ends {
+                sides = [(.from, end), (.to, start)]
+            } else if starts {
+                sides = [(.from, end)]
+            } else if ends {
+                sides = [(.to, start)]
             } else {
                 continue
             }
-            for type in kinds { found.append(Relation(arrow: carrier, type: type, side: side, far: far)) }
+            for (side, far) in sides {
+                for type in kinds { found.append(Relation(arrow: carrier, type: type, side: side, far: far)) }
+            }
         }
         runRelations.answers[note] = found
         return found

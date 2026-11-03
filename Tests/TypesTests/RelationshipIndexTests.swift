@@ -420,12 +420,25 @@ import Types
         s.editor.transact { $0.update(s.person) { $0[TitleProperty.self] = "Human" } }
         expect(s.heard.last?.rows == true, "Person is an end")
     },
-    test("a note related to itself has the one arrow once") {
+    test("a note related to itself is both ends of its one arrow: on each side, its own far end, and once in a row of both sides") {
         let s = try Scene()
         s.editor.addBond(s.person, s.employment)
         s.editor.addBond(s.employment, s.person)
         let loop = s.editor.addBond(s.ann, s.ann, of: [s.employment])
-        expectEqual(s.index.relations(of: s.ann).filter { $0.arrow == loop }.count, 1)
+        let mine = s.index.relations(of: s.ann).filter { $0.arrow == loop }
+        expectEqual(mine.map(\.side), [.from, .to])
+        expectEqual(mine.map(\.far.literal), [s.ann, s.ann])
+        let row = try require(s.index.rows(for: [s.person], isType: false).first { $0.sides.count == 2 })
+        expectEqual(s.index.relations(of: s.ann, in: row).filter { $0.arrow == loop }.count, 1, "once")
+    },
+    test("a note related to itself through ends named apart is in both rows: parent and child each hold the one arrow") {
+        let s = try Scene()
+        s.editor.addBond(s.person, s.employment, name: "parent")
+        s.editor.addBond(s.employment, s.person, name: "child", rule: EndRule(needed: true, onlyOne: false))
+        let loop = s.editor.addBond(s.ann, s.ann, of: [s.employment])
+        let rows = s.index.rows(for: [s.person], isType: false).filter { $0.key.type == s.employment }
+        expectEqual(rows.count, 2)
+        for row in rows { expectEqual(s.index.relations(of: s.ann, in: row).filter { $0.arrow == loop }.count, 1, "\(row.sides)") }
     },
     test("a rename that gives a type the row of the type it builds on takes a row from its notes and lays them out") {
         let s = try Scene()

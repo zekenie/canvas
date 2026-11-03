@@ -265,7 +265,8 @@ public final class RelationshipIndex {
 
     /// The relationships a note has, in the arrows' order as Topology gives them: read from the recorded
     /// edges of the note (O(degree)) and filtered at the read by the marks, so a mark that comes or goes
-    /// changes the answer with nothing kept to drop. A free-ended arrow is in none.
+    /// changes the answer with nothing kept to drop. A free-ended arrow is in none; one at the note at both ends
+    /// (a loop, or the note and a pill for it, as the recorded edges have it) is on both sides, the note its own far end.
     public func relations(of note: ShapeID) -> [Relation] {
         guard isActive, let editor else { return [] }
         let marked = types.graph.relationshipTypes
@@ -274,11 +275,13 @@ public final class RelationshipIndex {
             guard let carrier = editor.shape(inFile: edge.carrier), relatingKinds.contains(carrier.kind), let list = carrier[IsAProperty.self] else { continue }
             let kinds = list.map(\.shape).filter(marked.contains)
             guard !kinds.isEmpty else { continue }
-            // The note is the start of its own arrow's relationship, the end of the far one.
-            let side: RelationshipSide = edge.source == note ? .from : .to
-            let far = side == .from ? edge.literalTarget : edge.literalSource
-            let end = ReadEnd(literal: far, reading: reading(ofEnd: far))
-            for type in kinds { found.append(Relation(arrow: edge.carrier, type: type, side: side, far: end)) }
+            // The note is the start of its own arrow's relationship, the end of the far one; of a loop, both.
+            let sides: [RelationshipSide] = edge.source == note && edge.target == note ? [.from, .to] : [edge.source == note ? .from : .to]
+            for side in sides {
+                let far = side == .from ? edge.literalTarget : edge.literalSource
+                let end = ReadEnd(literal: far, reading: reading(ofEnd: far))
+                for type in kinds { found.append(Relation(arrow: edge.carrier, type: type, side: side, far: end)) }
+            }
         }
         return found
     }

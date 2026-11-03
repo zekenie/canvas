@@ -114,13 +114,18 @@ import Types
         expect(try w.bytes() == start, "one Undo returns the bytes")
         expect(!editor.canUndo)
     },
-    test("a relationship type, or a note that is no type, dragged onto itself makes nothing and leaves no step") {
-        for frame in [ReleaseBoard.employmentFrame, ReleaseBoard.annFrame] {
+    test("a relationship type, or a note that is no type and fits no relationship type to itself, dragged onto itself is a plain loop on it: one step, Add Arrow") {
+        for (frame, shape) in [(ReleaseBoard.employmentFrame, \ReleaseBoard.employment), (ReleaseBoard.annFrame, \ReleaseBoard.ann)] {
             let w = try ReleaseBoard()
-            let before = w.h.editor.document
+            let known = Set(w.h.editor.document.shapes.map(\.id))
             w.drag(from: frame, to: w.center(frame))
-            expectEqual(w.h.editor.document, before, "nothing is made from \(frame)")
-            expectEqual(w.h.editor.undoHistory.undoName, nil, "and no step")
+            let made = w.arrows.filter { !known.contains($0.id) }
+            expectEqual(made.count, 1, "one arrow from \(frame)")
+            let loop = try require(made.first)
+            expectEqual(loop.props.start.binding?.shapeID, w[keyPath: shape])
+            expectEqual(loop.props.end.binding?.shapeID, w[keyPath: shape])
+            expectEqual(loop[IsAProperty.self], nil, "plain")
+            expectEqual(w.h.editor.undoHistory.undoName, "Add Arrow")
             expect(w.h.editor.card == nil)
         }
     },

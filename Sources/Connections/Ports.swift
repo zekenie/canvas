@@ -341,14 +341,13 @@ extension CanvasEditor {
     /// The channel `connection` would be drawn on if it ended at `shape`: the first of its channels
     /// that `shape` takes as a target (as `registry.takes(_:_:as:)` has it for its kind; for a
     /// shape that stands for others, a reference, what it stands for now: `ports(of:)`); nil if it
-    /// takes none (or it's where the connection starts, as a port's drag never ends where it starts
-    /// but on a shape a plugin says may take one from itself, `SelfConnections`, for its release to
-    /// make something else of, or it holds where the connection starts or is held by it:
-    /// `mayConnect`, or it's kept aside). Cheap enough to ask of each shape under the pointer: it
-    /// reads the port table the editor keeps, a stand-in's, kept until what it stands for changes,
-    /// and the two shapes' containers.
+    /// takes none (or it holds where the connection starts or is held by it: `mayConnect`, or it's
+    /// kept aside). The shape it starts from is asked as any other: a drag let go back on it joins it
+    /// to itself, which the connector draws as it says (arrows: a loop). Cheap enough to ask of each
+    /// shape under the pointer: it reads the port table the editor keeps, a stand-in's, kept until
+    /// what it stands for changes, and the two shapes' containers.
     public func channel(of connection: Connection, endingAt shape: AnyShapeRecord) -> ChannelID? {
-        guard shape.id != connection.shape || connectsToItself(shape), !shape.isOpaque, shapeContext.mayConnect(shape.id, connection.shape),
+        guard !shape.isOpaque, shapeContext.mayConnect(shape.id, connection.shape),
               let ports = service(PortState.self)?.ports(of: shape) else { return nil }
         return connection.channels.first { ports.roles[$0]?.allows(.target) == true }
     }
@@ -397,7 +396,7 @@ public struct PortsPlugin: ListedPlugin {
         registrar.overlay(PortOverlay())
         registrar.canvasButtons(at: { editor, point in editor.service(PortState.self)?.dot(atViewPoint: point) },
                                 drag: { dot, origin, editor in editor.service(PortState.self)?.connect(from: dot, at: origin) })
-        // ⌘L connects two selected shapes, the port's drag from the keyboard (its item: `ConnectMenuPlugin`).
+        // ⌘L connects two selected shapes, or one to itself: the port's drag from the keyboard (its item: `ConnectMenuPlugin`).
         registrar.connectCommand()
         // A shape's arrows are its ⌥Tab parts: every shape by its nature can have one bound to it.
         registrar.forEveryShape { shapes in

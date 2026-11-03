@@ -32,8 +32,8 @@ public struct PortEdgesPlugin: ListedPlugin {
 /// - Unwritten: the first of the start's dot channels (on `from:`'s side, if named; else all its
 ///   dots', in the port table's order) that the end takes as a target (on `to:`'s side, if named).
 ///   With none, a plain connection if neither kind has ports on anything, else `no_channel`.
-/// - A connection on a channel never ends where it starts: a shape joined to itself is plain, or
-///   `no_channel`.
+/// - A shape joined to itself takes a channel as any pair does (the connector draws it: arrows, as a
+///   loop on the side named), and is joined on one side: `from:` and `to:` naming two is `invalid_value`.
 /// - A connection already drawn keeps its channel: a different one written is `invalid_value` (to
 ///   put it on another, delete it and draw it again), and a side the statement names must have a
 ///   port on it.
@@ -137,6 +137,11 @@ enum EdgeChannels {
             throw refuse(.cannotConnect, "\(request.fromName) can't be connected to \(request.toName), which \(startIsHeld ? "holds it" : "it holds")",
                          hint: "connect \(startIsHeld ? request.fromName : request.toName) to a shape that doesn't hold it")
         }
+        // A shape joined to itself is joined on one side: two sides named would say two things.
+        if request.from == request.to, let fromSide = request.fromSide, let toSide = request.toSide, fromSide != toSide {
+            throw refuse(.invalidValue, "\(request.written) names two sides, from: \(fromSide.rawValue) and to: \(toSide.rawValue), and an edge from a shape to itself is on one",
+                         hint: "name one: from: \(fromSide.rawValue), or to: \(toSide.rawValue)")
+        }
         let written = try self.written(request, in: registry)
         let channel: ChannelID?
         if let existing {
@@ -204,10 +209,6 @@ enum EdgeChannels {
                              hint: (sides.isEmpty ? "" : "name sides with ports on one channel, or ")
                                  + "\(ChannelProperty.key): \(plain) draws a plain arrow between them anyway")
             }
-        }
-        if request.from == request.to {
-            throw refuse(.noChannel, "a connection on \(channel) can't end where it starts",
-                         hint: "write \(ChannelProperty.key): \(plain) for a plain arrow from \(request.fromName) to itself")
         }
         return channel
     }

@@ -79,13 +79,19 @@ final class ArrowTargeting {
     /// plugins' rules let it (`ArrowBindingRules`), and `also` (a drag from a port's), looking
     /// through the rest. `onto` is a shape a key picked (⌥⌘ and an arrow on a focused end: `ArrowParts`),
     /// bound to in place of the one at `point`, as an end that arrived quickly is: no pointer aimed.
+    /// `reshape` changes the arrow further in the same commit, once the end is bound or free (a port's
+    /// arrow bound back to the shape it starts from is made a loop).
     func bindTerminal(of arrowID: ShapeID, _ end: ArrowEnd, to point: CGPoint, isPrecise: Bool, modifiers: Modifiers,
-                      accepting also: ((AnyShapeRecord) -> Bool)? = nil, onto picked: ConnectableShape? = nil) {
+                      accepting also: ((AnyShapeRecord) -> Bool)? = nil, onto picked: ConnectableShape? = nil,
+                      then reshape: ((inout Arrow) -> Void)? = nil) {
         guard let arrow = arrow(arrowID) else { return }
         let current = arrow[end].binding
         let opposite = arrow[end.opposite].binding
         guard let target = picked ?? arrowTarget(at: point, modifiers: modifiers, accepting: filter(for: arrowID, end, also: also)) else {
-            updateArrow(arrowID) { $0[end] = .free(point) }
+            updateArrow(arrowID) {
+                $0[end] = .free(point)
+                reshape?(&$0)
+            }
             editor.hintedShapeID = nil
             return
         }
@@ -121,6 +127,7 @@ final class ArrowTargeting {
         }
         updateArrow(arrowID) {
             $0[end] = .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: normalized, isPrecise: precise, isExact: isExact))
+            reshape?(&$0)
         }
         editor.hintedShapeID = target.id
     }

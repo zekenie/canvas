@@ -5,16 +5,18 @@ import Draw
 import Keyboard
 
 extension CanvasCommand {
-    /// Connect (⌘L): the first of two selected shapes connected to the second, as a port's drag would.
+    /// Connect (⌘L): the first of two selected shapes connected to the second, or one connected to itself, as a
+    /// port's drag would.
     public static let connect: CanvasCommand = "connect"
 }
 
 extension PluginRegistrar {
-    /// ⌘L, Connect: for two shapes, a connection from the one selected first to the other, while
-    /// something makes connections; never mid-press or while a shape is edited.
+    /// ⌘L, Connect: for two shapes, a connection from the one selected first to the other, and for one, from it to
+    /// itself (the drag from its dot back onto it, by keys), while something makes connections; never mid-press or
+    /// while a shape is edited.
     mutating func connectCommand() {
         command(.connect, title: ConnectionsStyle.connect, shortcut: KeyChord("l", .command), runs: .whenIdle,
-                isEnabled: { $0.shapes.count == 2 && $0.editor.registry.drawsConnections }) { $0.editor.connect($0.shapes) }
+                isEnabled: { (1...2).contains($0.shapes.count) && $0.editor.registry.drawsConnections }) { $0.editor.connect($0.shapes) }
     }
 }
 
@@ -42,32 +44,35 @@ extension PluginID {
 }
 
 /// Connect in a right-click on two shapes, and so in the menu bar's Shape menu: the item that runs
-/// Ports' ⌘L. A plugin value of its own after `ContextMenusPlugin` and `PortsPlugin`, so a list with
-/// ports and no context menus has the key and no item.
+/// Ports' ⌘L. Not on one shape, whose every menu would carry it for the rare loop: the key does that.
+/// A plugin value of its own after `ContextMenusPlugin` and `PortsPlugin`, so a list with ports and no
+/// context menus has the key and no item.
 public struct ConnectMenuPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .connectMenu }
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.contextMenuForCanvas {
-            MenuItem(command: .connect)
+            MenuItem(command: .connect, when: { $0.shapes.count == 2 })
         }
     }
 }
 
 extension CanvasEditor {
-    /// Connects the first of two shapes to the second (from a key, the one selected first to the other):
-    /// what `.connect` does to its shapes, the connection the connector makes by name, as `canvas draw` makes `edge "A" -> "B"` (on the first
+    /// Connects the first of two shapes to the second (from a key, the one selected first to the other), or one
+    /// shape to itself: what `.connect` does to its shapes, the connection the connector makes by name, as `canvas draw` makes `edge "A" -> "B"` (on the first
     /// channel the start has a dot on that the end takes; a second between a pair bent apart from the
-    /// first), one step, "Connect". A stand-in (a reference pill) is an end as what it stands for, as a
+    /// first; a shape and itself, `edge "A" -> "A"`, a loop on its right side, as a port's drag let go back on it
+    /// draws one on the side of its dot), one step, "Connect". A stand-in (a reference pill) is an end as what it stands for, as a
     /// drag from a port reads it (`PortState.ports(of:)`): one that stands for nothing now is no end.
     /// The selection stays. Where the connector refuses the pair (no channel joins them, as a note and
     /// a frame; one holds the other, as a frame and a note in it: `mayConnect`), or the board takes
     /// nothing, nothing changes and both shake. Nothing for any other number of shapes.
     public func connect(_ ids: [ShapeID]) {
-        guard ids.count == 2 else { return }
+        guard let first = ids.first, ids.count <= 2 else { return }
+        let ends = [first, ids.last ?? first]
         let ports = service(PortState.self)
-        let standing = ids.map { id in document[id].flatMap { record in ports.map { $0.standingKinds(of: record) } ?? [] } }
+        let standing = ends.map { id in document[id].flatMap { record in ports.map { $0.standingKinds(of: record) } ?? [] } }
         guard let from = standing[0], let to = standing[1] else {
             refuseChanges(to: Set(ids))
             return
@@ -78,7 +83,7 @@ extension CanvasEditor {
         // changes (a relationship type given to the arrow) is the step's, and a menu it pops needs the arrow committed.
         undoHistory.group(ConnectionsStyle.connect) {
             let made: ShapeID? = transactWhole(ConnectionsStyle.connect, shaking: Set(ids)) { transaction in
-                guard let made = registry.drawConnection(from: ids[0], to: ids[1], in: transaction.shapes, standingFor: (from, to))
+                guard let made = registry.drawConnection(from: ends[0], to: ends[1], in: transaction.shapes, standingFor: (from, to))
                 else { throw Transaction.Refused() }
                 transaction.insert(made)
                 guard transaction.document[made.id] != nil else { throw Transaction.Refused() }

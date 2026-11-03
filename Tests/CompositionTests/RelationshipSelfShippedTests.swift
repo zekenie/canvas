@@ -5,6 +5,7 @@ import Arrows
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
+import Connections
 import Foundation
 import Geometry
 import LanguageModels
@@ -259,19 +260,39 @@ extension Minute {
         expect(try m.bytes() == start, "two Undos return the bytes")
         expect(m.model.requests.isEmpty, "no step asked the model")
     },
-    test("Feature in a locked frame, dragged onto itself: nothing can be made, so nothing is left, no arrow from Feature to itself, and no step") {
+    test("Feature in a locked frame, dragged onto itself: no relationship type can be made, so the loop the drag drew is kept plain, as a drag between two types there keeps its arrow") {
         let m = try Minute()
         defer { m.close() }
         _ = m.frameAround(locked: true)
         let before = m.editor.document
-        let steps = m.editor.undoHistory.undoName
         try m.drag(from: m.feature, to: m.feature)
-        expectEqual(m.editor.document, before)
-        expectEqual(m.editor.undoHistory.undoName, steps)
+        expectEqual(m.editor.document.shapes.count, before.shapes.count + 1, "only the loop the drag drew")
+        let loop = try require(m.arrows(from: m.feature, to: m.feature).first)
+        expectEqual(loop[IsAProperty.self], nil, "plain")
+        expectEqual(m.editor.relationships?.graph.relationshipTypes(joining: m.feature, and: m.feature), [])
+        expectEqual(m.editor.undoHistory.undoName, "Add Arrow")
         expect(m.editor.card == nil)
         #if DEBUG
         expectEqual(m.editor.relationships?.heldConnections, [])
         #endif
+    },
+    test("⌘L on Feature alone relates it to itself, as the drag back onto it does; on a Feature note alone, it is a loop that takes the one relationship type that fits") {
+        let m = try Minute()
+        defer { m.close() }
+        let editor = m.editor
+        editor.selection = m.feature
+        expect(editor.canPerform(.connect))
+        editor.perform(.connect)
+        let type = try require(editor.relationships?.graph.relationshipTypes(joining: m.feature, and: m.feature).first)
+        let out = try require(m.arrows(from: m.feature, to: type).first).id, back = try require(m.arrows(from: type, to: m.feature).first).id
+        try m.expectTwoArrows((out, back), type: type, "by keys")
+        expect(m.arrows(from: m.feature, to: m.feature).isEmpty, "no arrow from Feature to itself")
+        editor.endEditing()
+        editor.selection = m.featureNote
+        editor.perform(.connect)
+        let loop = try require(m.arrows(from: m.featureNote, to: m.featureNote).first)
+        expectEqual(loop[IsAProperty.self]?.map(\.shape), [type])
+        expectEqual(editor.selectedShapeIDs, [m.featureNote], "the selection stays")
     },
     test("Relate to ▸ on a type whose words name nothing lists the type itself, the drag by keys: a pick relates it to itself, and it stays listed for another") {
         let m = try Minute()
@@ -296,7 +317,7 @@ extension Minute {
         editor.selection = m.featureNote
         expectEqual(try require(editor.menuForSelection(omitting: [])).item(withTitle: TypesStyle.relateTo), nil, "nor on a note that is no type")
     },
-    test("a note related to itself: a port's drag never ends on its own note, a row's pick refuses it, and what a script's arrow from a note to itself does is pinned") {
+    test("a note related to itself: a port's drag let go back on its own note is a loop, which takes the one relationship type that fits as any drag between two notes does; a row's pick still lists and takes no note itself") {
         let m = try Minute()
         defer { m.close() }
         let editor = m.editor
@@ -305,10 +326,13 @@ extension Minute {
         m.name(pair.out, friends)
         m.name(pair.back, friends)
         let before = editor.document
-        // A drag from a note's dot back onto the note itself is a free release: the arrow is taken back.
         try m.drag(from: m.featureNote, to: m.featureNote)
-        expectEqual(m.arrows.count, 2, "no arrow from a note to itself")
-        expectEqual(editor.document.shapes.map(\.id), before.shapes.map(\.id))
+        expectEqual(m.arrows.count, 3)
+        let loop = try require(m.arrows(from: m.featureNote, to: m.featureNote).first)
+        expectEqual(loop[IsAProperty.self]?.map(\.shape), [type], "the one relationship type that fits: Feature to Feature")
+        expectEqual(editor.undoHistory.undoName, "Add Arrow")
+        editor.undo()
+        expectEqual(editor.document.shapes.map(\.id), before.shapes.map(\.id), "one Undo takes it back")
         // A row's pick of the note itself refuses it.
         let row = try require(editor.relationships?.graph.rows(for: [m.feature], isType: false).first)
         expectEqual(editor.relate(m.featureNote, to: m.featureNote, in: row), nil, "refused")
@@ -365,15 +389,21 @@ private func rows(_ result: JSON) -> [JSON] { result["changes"]?.arrayValue ?? [
         expectEqual(rows(again).map { $0["did"] }, Array(repeating: "unchanged", count: 7), "run again")
         let dry = try JSON(text: canvas(server, ["draw", "--dry-run", script]).output)
         expectEqual(rows(dry).map { $0["endOf"] }, rows(made).map { $0["endOf"] }, "a dry run says what a real run says")
-        // A note related to itself: the connector makes no arrow from a note to itself, so a script is refused, as a port's drag
-        // and a row's pick are, and nothing is drawn.
+        // A note related to itself: the script's edge is the loop a port's drag back onto the note draws, on note-link, of the
+        // type it names; a run again is unchanged; Undo takes it back.
         let count = board.editor.document.shapes.count
         let loop = try canvas(server, ["draw", #"edge "Ann" -> "Ann" is: "Friendship""#])
-        expectEqual(loop.status, 1)
-        let refusal = try JSON(text: loop.error)
-        expectEqual(refusal["error"]?["reason"], "no_channel")
-        expectEqual(refusal["error"]?["message"], "a connection on note-link can't end where it starts")
-        expectEqual(board.editor.document.shapes.count, count, "nothing drawn")
+        expectEqual(loop.status, 0, loop.error)
+        expectEqual(board.editor.document.shapes.count, count + 1)
+        let looped = try require(board.editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first {
+            $0.props.start.binding?.shapeID == ann && $0.props.end.binding?.shapeID == ann
+        })
+        expectEqual(looped[IsAProperty.self]?.map(\.shape), board.editor.document.shapes.first { $0[TitleProperty.self] == "Friendship" }.map { [$0.id] })
+        expect(looped.props.bend != 0, "bowed out past its side")
+        let loopAgain = try JSON(text: canvas(server, ["draw", #"edge "Ann" -> "Ann" is: "Friendship""#]).output)
+        expectEqual(rows(loopAgain).map { $0["did"] }, ["unchanged"])
+        board.editor.undo()
+        expectEqual(board.editor.document.shapes.count, count)
         // And the relationship type deleted by a script takes both end arrows with it in the run's one step; the friendship stays.
         let friendship = try require(board.editor.document.shapes.first { $0[TitleProperty.self] == "Friendship" }).id
         let withEnds = board.editor.document

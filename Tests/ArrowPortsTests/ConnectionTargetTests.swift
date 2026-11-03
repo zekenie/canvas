@@ -27,20 +27,23 @@ let overBoth = CGPoint(x: 490, y: 130)
         expectEqual(board.arrows.first?.props.end, binding(board.b))
         expectEqual(board.arrows.first?[ChannelProperty.self], Wire.id)
     },
-    test("the end looks through its own shape to one behind it that takes the channel") {
+    test("over its own shape, in front of another that takes the channel, the end is on its own shape, a loop; past its edge, on the one behind") {
         let board = try PortBoard()
         let behind = board.h.add(Box(CGRect(x: 200, y: 200, width: 200, height: 200)))
         board.h.editor.transact { $0.sendToBack(behind) }
         let overlap = CGPoint(x: 250, y: 250)
         expectEqual(board.h.editor.selectableShape(at: overlap), board.a, "A is in front")
         board.connect(to: overlap, release: false)
+        expectEqual(board.h.editor.hintedShapeID, board.a, "A itself")
+        expectEqual(board.arrows.first?.props.end.binding?.shapeID, board.a)
+        board.h.drag(to: CGPoint(x: 350, y: 350), speed: fast)
         expectEqual(board.h.editor.hintedShapeID, behind)
         board.h.release()
         expectEqual(board.arrows.first?.props.start, binding(board.a))
         expectEqual(board.arrows.first?.props.end, binding(behind))
     },
-    test("released on empty canvas, on a shape that doesn't take the channel, or back on its own shape, nothing is drawn") {
-        for (place, point) in [("empty canvas", CGPoint(x: 380, y: 500)), ("the disc", discC.center), ("A", CGPoint(x: 150, y: 150))] {
+    test("released on empty canvas, or on a shape that doesn't take the channel, nothing is drawn") {
+        for (place, point) in [("empty canvas", CGPoint(x: 380, y: 500)), ("the disc", discC.center)] {
             let board = try PortBoard()
             let before = board.h.editor.document
             board.connect(to: point, release: false)

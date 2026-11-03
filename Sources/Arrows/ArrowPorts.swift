@@ -21,7 +21,8 @@ extension ArrowEdge: EdgeType {
 /// Arrows are what ports draw: a drag from a port draws an arrow, its end binding (by tldraw's
 /// rules, as a re-aimed end does) only to shapes that take one of the port's channels, and an arrow
 /// so drawn keeps its channel (`ChannelProperty`); onto a shape that stands for others (a reference),
-/// only if what it stands for takes one (`PortState.ports(of:)`). Released on nothing, nothing is drawn. An arrow
+/// only if what it stands for takes one (`PortState.ports(of:)`). Released on nothing, nothing is drawn; released on the
+/// shape it starts from, it is a loop on the side of the dot it was pulled from (`ArrowConnections.loop`). An arrow
 /// with a channel, re-aimed or moved, binds only to shapes that take its channel, at that end; one
 /// without (`canvas draw`'s `channel: none`, a board's from before ports), or with a channel no
 /// installed plugin declares, binds wherever an arrow can. Without a drag (`registry.connection`),
@@ -39,12 +40,13 @@ public struct ArrowPortsPlugin: ListedPlugin {
         registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
                            make: { request, existing, shapes in ArrowConnections.arrow(for: request, existing: existing, in: shapes) },
                            ends: { ArrowConnections.ends(of: $0) }) { connection, editor in
-            editor.beginArrow(from: connection.shape, at: connection.origin,
+            editor.beginArrow(from: connection.shape, side: connection.side, at: connection.origin,
                               canBind: { editor.channel(of: connection, endingAt: $0) != nil },
                               complete: { arrow, end in
                                   guard let shape = editor.document[end] else { return }
                                   arrow[ChannelProperty.self] = editor.channel(of: connection, endingAt: shape)
-                                  // A second arrow of a pair, aimed at the centers, is bent apart from the first.
+                                  // A second arrow of a pair, aimed at the centers, is bent apart from the first (a loop is
+                                  // precise at both ends, and kept as the drag made it).
                                   guard var typed = arrow.typed(as: Arrow.self), let topology = editor.topology,
                                         let start = typed.props.start.binding, let finish = typed.props.end.binding else { return }
                                   let beside = ArrowConnections.parallels(of: start.shapeID, finish.shapeID, except: arrow.id, in: topology)
@@ -56,15 +58,11 @@ public struct ArrowPortsPlugin: ListedPlugin {
                                   arrow = bent
                               },
                               // Released bound: what the arrow is (an end, a relationship, a relationship type
-                              // between two types) is Types', in the press's own step.
+                              // between two types, or from a type to itself) is Types', in the press's own step.
                               finished: { editor.connectionDrawn($0) })
         }
         // Connect (⌘L) gives the arrow it made the release a drag gives: the same wiring, in its step.
         registrar.connectionMade { connection, editor in editor.connectionDrawn(connection) }
-        // A type's drag may end on the type itself, which the release relates to itself: what is left joining it to itself goes.
-        registrar.forShapes(holding: TypeSchemaProperty.self) { types in
-            types.connectsToItself { shape, editor in editor.canRelateToItself(shape) }
-        }
         registrar.arrowBindingRule { query in
             // Never a container and what it holds, either way round, whatever the arrow's channel: Connections' rule.
             if let other = query.arrow.typed(as: Arrow.self)?.props[query.end.opposite].binding?.shapeID,
@@ -80,11 +78,12 @@ public struct ArrowPortsPlugin: ListedPlugin {
 /// as an end bound slowly does) or, with none, at the shape's center (imprecise, as
 /// a port's drag starts one). Where a named side faces away from the other shape, the arrow still
 /// leaves from the side facing it: an end is clipped where the line first crosses the outline
-/// (tldraw's).
+/// (tldraw's). A shape joined to itself is a loop on one of its sides (`loop(on:side:beside:in:)`).
 @MainActor
 enum ArrowConnections {
     /// A new arrow (`existing` nil) or `existing` changed: an end the request names a side for, or
-    /// whose shape isn't the one it's bound to, is bound anew; any other end keeps its binding; its
+    /// whose shape isn't the one it's bound to, is bound anew (from a shape to itself, a loop on the side
+    /// named, else the right, and one already made changed only for a side it isn't on); any other end keeps its binding; its
     /// heads are the request's (one at the end, and at the start too with `bothHeads`); and a
     /// changed arrow keeps its curve, its channel and everything plugins keep about it. A new one's
     /// channel is the request's, set before any rule is asked. Nil if an arrow can't bind to either
@@ -101,32 +100,37 @@ enum ArrowConnections {
             // First, so the rules below see the channel the arrow is drawn on.
             arrow[ChannelProperty.self] = request.channel
         }
-        var rebound: Set<ArrowEnd> = []
-        for (end, shape, side) in [(ArrowEnd.start, request.from, request.fromSide), (.end, request.to, request.toSide)]
-        where side != nil || arrow.props[end].binding?.shapeID != shape {
-            arrow.props[end] = .bound(binding(to: shape, side: side))
-            rebound.insert(end)
+        // The connections already joining the pair, but this one (`request.beside` names them; none: read now, from
+        // Topology's committed arrows).
+        let id = arrow.id
+        let beside = {
+            (request.beside ?? shapes.service(TopologyIndex.self).map { parallels(of: request.from, request.to, except: id, in: $0) } ?? [])
+                .filter { $0 != id }
         }
-        // Both ends on one shape at one anchor would draw nothing: an end bound here (the end, if
-        // both were) moves off it, as a dragged end moves off the other, but inward from a
-        // right side (x = 1), past which it'd be held to the side and still meet the other end.
-        if let start = arrow.props.start.binding, let end = arrow.props.end.binding, start.shapeID == end.shapeID,
-           start.normalizedAnchor == end.normalizedAnchor, let moved = [ArrowEnd.end, .start].first(where: rebound.contains) {
-            var binding = moved == .end ? end : start
-            let nudge: CGFloat = 0.05
-            binding.normalizedAnchor.x += binding.normalizedAnchor.x + nudge > 1 ? -nudge : nudge
-            arrow.props[moved] = .bound(binding)
+        if request.from == request.to {
+            // A shape joined to itself is a loop on one of its sides (`loop(on:side:beside:in:)`): the side the request
+            // names (its start's, else its end's), else the right. One made already keeps its ends and its bend, unless a
+            // side is named that it isn't on.
+            let side = request.fromSide ?? request.toSide
+            if existing == nil || side.map({ $0 != loopSlot(of: arrow.props, on: request.from)?.side }) == true {
+                guard let shape = Connectables(shapes: shapes)[request.from] else { return nil }
+                let loop = loop(on: shape, side: side ?? .right, beside: beside(), in: shapes.document)
+                arrow.props.start = .bound(loop.start)
+                arrow.props.end = .bound(loop.end)
+                arrow.props.bend = loop.bend
+            }
+        } else {
+            for (end, shape, side) in [(ArrowEnd.start, request.from, request.fromSide), (.end, request.to, request.toSide)]
+            where side != nil || arrow.props[end].binding?.shapeID != shape {
+                arrow.props[end] = .bound(binding(to: shape, side: side))
+            }
+            // A new arrow aimed at the centers beside another of the pair is bent apart from it.
+            if existing == nil {
+                arrow.props.bend = pairBend(of: arrow.props, beside: beside(), in: shapes.document)
+            }
         }
         arrow.props.startArrowhead = request.bothHeads
         arrow.props.endArrowhead = true
-        // A new arrow aimed at the centers beside another of the pair is bent apart from it (`request.beside`
-        // names them; none: read now, from Topology's committed arrows).
-        if existing == nil {
-            let beside = request.beside ?? shapes.service(TopologyIndex.self).map {
-                parallels(of: request.from, request.to, except: arrow.id, in: $0)
-            } ?? []
-            arrow.props.bend = pairBend(of: arrow.props, beside: beside, in: shapes.document)
-        }
         var made = AnyShapeRecord(arrow)
         if let existing { made.meta = existing.meta }
         let registry = shapes.registry

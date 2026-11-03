@@ -61,12 +61,12 @@ import TestKit
         expectEqual(heard.first?.2, "Connect", "inside the step")
         expectEqual(editor.undoHistory.undoName, "Connect")
     },
-    test("Connect can't run with one shape, or three, selected, nor while a shape is edited; the key then goes on") {
+    test("Connect can't run with three shapes, or none, selected, nor while a shape is edited; the key then goes on") {
         let editor = try edgesEditor()
         let a = add(Tile(CGRect(x: 0, y: 0, width: 100, height: 60), label: "A"), to: editor)
         let b = add(Tile(CGRect(x: 300, y: 0, width: 100, height: 60), label: "B"), to: editor)
         let c = add(Tile(CGRect(x: 600, y: 0, width: 100, height: 60), label: "C"), to: editor)
-        for selected in [[a], [a, b, c], []] {
+        for selected in [[a, b, c], []] {
             editor.selectedShapeIDs = selected
             expect(!editor.canPerform(.connect), "\(selected.count) selected")
             expect(!editor.keyDown(KeyStroke("l", modifiers: .command)), "the key goes on")
@@ -74,6 +74,32 @@ import TestKit
         editor.selectedShapeIDs = [a, b]
         expect(editor.keyDown(KeyStroke("l", modifiers: .command)))
         expectEqual(connections(in: editor).count, 1)
+    },
+    test("⌘L on one shape connects it to itself, as the maker makes `edge \"A\" -> \"A\"`: one step, Connect; one it can't join to itself shakes, with no step") {
+        let editor = try edgesEditor()
+        let a = add(Tile(CGRect(x: 0, y: 0, width: 100, height: 60), label: "A"), to: editor)
+        let card = add(Card(CGRect(x: 300, y: 0, width: 100, height: 60), text: "C"), to: editor)
+        let glossy = add(Tile(CGRect(x: 600, y: 0, width: 100, height: 60), label: "G", finish: .glossy), to: editor)
+        editor.replaceDocument(with: editor.document)
+        editor.selectedShapeIDs = [a]
+        expect(editor.canPerform(.connect))
+        expect(editor.keyDown(KeyStroke("l", modifiers: .command)))
+        let link = try require(connections(in: editor).first)
+        expectEqual(endsList(editor.registry.connectionEnds(of: link)), [a, a])
+        expectEqual(link[ChannelProperty.self], "wire")
+        expectEqual(editor.undoHistory.undoName, "Connect")
+        expectEqual(editor.selectedShapeIDs, [a], "the selection stays")
+        editor.selectedShapeIDs = [card]
+        editor.perform(.connect)
+        expectEqual(connections(in: editor).last.flatMap { editor.registry.connectionEnds(of: $0) }.map { [$0.from, $0.to] }, [card, card],
+                    "a card dots the pipe and takes it")
+        editor.selectedShapeIDs = [glossy]
+        editor.undoHistory.seal()
+        let steps = editor.undoHistory.undoName
+        editor.perform(.connect)
+        expectEqual(connections(in: editor).count, 2, "the maker refuses a glossy tile")
+        expect(editor.service(RefusalShake.self)?.isShaking == true)
+        expectEqual(editor.undoHistory.undoName, steps, "no step")
     },
     test("a glossy tile, which the maker refuses, is connected to nothing: both shake and no step is left") {
         let editor = try edgesEditor()

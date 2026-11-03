@@ -244,7 +244,7 @@ extension EditorHarness {
         expectEqual(h.editor.selectedShapeIDs, [])
         expectEqual(h.editor.currentToolID, .select)
     },
-    test("a frame and the frame it holds: neither's drag ends on the other, and let go there nothing is drawn; a frame's to a note draws nothing either") {
+    test("a frame and the frame it holds: neither's drag ends on the other; the outer's let go on the inner looks past it to the outer itself, where it started, a loop; a frame's to a note draws nothing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let outerFrame = CGRect(x: 100, y: 100, width: 600, height: 400), innerFrame = CGRect(x: 160, y: 160, width: 240, height: 160)
@@ -256,7 +256,12 @@ extension EditorHarness {
         h.connect(from: .right, of: innerFrame, to: CGPoint(x: 600, y: 420))
         expectEqual(h.editor.document, before, "from the inner frame into the one that holds it")
         h.connect(from: .bottom, of: outerFrame, to: center(innerFrame))
-        expectEqual(h.editor.document, before, "from the outer frame onto the one it holds")
+        expectEqual(arrows(h).count, 1, "from the outer frame onto the one it holds")
+        let loop = try require(arrows(h).first)
+        expectEqual(loop.props.start.binding?.shapeID, outer.id)
+        expectEqual(loop.props.end.binding?.shapeID, outer.id, "on the outer frame, never the inner")
+        h.editor.undo()
+        expectEqual(h.editor.document, before)
         h.connect(from: .right, of: outerFrame, to: center(noteFrame))
         expectEqual(h.editor.document, before, "to a note")
     },
@@ -426,17 +431,40 @@ extension EditorHarness {
         expectEqual(h.editor.document, before)
         expectEqual(h.editor.selectedShapeIDs, [b.id])
     },
-    test("a drag from a note's dot back onto the note, or onto empty canvas, draws nothing") {
+    test("a drag from a note's dot let go back on the note is a loop out past that side, on note-link, the note outlined as its target on the way; let go on empty canvas, nothing") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let aFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
-        let h = shipped([note(aFrame), note(CGRect(x: 500, y: 100, width: 200, height: 200))], pasteboard)
+        let a = note(aFrame)
+        let h = shipped([a, note(CGRect(x: 500, y: 100, width: 200, height: 200))], pasteboard)
         let before = h.editor.document
-        h.connect(from: .right, of: aFrame, to: CGPoint(x: 150, y: 150))
-        expectEqual(h.editor.document, before, "back onto its own note")
         h.connect(from: .bottom, of: aFrame, to: CGPoint(x: 400, y: 500))
         expectEqual(h.editor.document, before, "onto empty canvas")
+        h.connect(from: .right, of: aFrame, to: CGPoint(x: 150, y: 150), release: false)
+        expectEqual(h.editor.hintedShapeID, a.id, "back on its own note, the note is the target")
+        h.release()
+        expectEqual(arrows(h).count, 1)
+        let loop = try require(arrows(h).first)
+        expectEqual(loop.props.start.binding?.shapeID, a.id)
+        expectEqual(loop.props.end.binding?.shapeID, a.id)
+        expectEqual(try channel(of: loop.id, in: h.editor), noteLink)
+        let middle = try require(h.editor.arrowGeometry(of: loop.id)).middle
+        expect(middle.x > aFrame.maxX + 40 && abs(middle.y - aFrame.midY) < 1, "out past the right side: \(middle)")
+        expectEqual(h.editor.undoHistory.undoName, "Add Arrow")
+        expectEqual(h.editor.selectedShapeIDs, [])
         expectEqual(h.editor.currentToolID, .select)
+        // ⌘L with the note alone selected makes another, round the first: the drag by keys.
+        h.editor.selection = a.id
+        h.hold(.command)
+        expect(h.key("l"), "⌘L takes one note")
+        h.hold([])
+        expectEqual(arrows(h).count, 2)
+        let second = try require(arrows(h).last)
+        expectEqual(second.props.start.binding?.shapeID, a.id)
+        expectEqual(second.props.end.binding?.shapeID, a.id)
+        let outer = try require(h.editor.arrowGeometry(of: second.id)).middle
+        expect(outer.x > middle.x + 20, "round the first: \(outer) past \(middle)")
+        expectEqual(h.editor.undoHistory.undoName, "Connect")
     },
     test("Escape lets go of a drag from a note's dot: nothing is drawn, and the note's dots don't stay behind while the pointer is held away from it") {
         let pasteboard = NSPasteboard.withUniqueName()

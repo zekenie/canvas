@@ -132,14 +132,13 @@ extension PortBoard {
         expectEqual(board.bend(third), -34 * s)
         expectEqual(board.bend(again), 34 * s)
     },
-    test("a request for a shape's arrow to itself takes the offsets in turn and does not crash") {
+    test("a request for a shape's arrow to itself is a loop, and each one more on its side goes round the last") {
         let board = try PortBoard()
         var bends: [CGFloat] = []
         for _ in 0..<3 {
             bends.append(try require(board.bend(try board.put(ConnectionRequest(from: board.a, to: board.a)))))
         }
-        expectEqual(bends.count, 3)
-        expect(Set(bends).count == 3, "three offsets: \(bends)")
+        expectEqual(bends, [-64, -98, -132])
     },
     test("a re-aimed arrow is not bent again, and the arrows it leaves behind keep their bends") {
         let board = try PortBoard()

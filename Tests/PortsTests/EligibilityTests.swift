@@ -56,41 +56,21 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
 }
 
 @MainActor let eligibilityTests = Suite("Where a connection may end", [
-    test("a connection may end on a shape whose kind takes one of its channels, never where it starts, nor on a connection") {
+    test("a connection may end on a shape whose kind takes one of its channels, where it starts as anywhere, never on a connection") {
         let board = try EligibilityBoard()
         let tag = board.h.add(Tag())
         let connection = try board.startConnecting()
-        expectEqual(try board.channel(connection, endingAt: board.start), nil, "where it starts")
+        expectEqual(try board.channel(connection, endingAt: board.start), Wire.id, "where it starts, joining the box to itself")
         expectEqual(try board.channel(connection, endingAt: board.above), Wire.id)
         expectEqual(try board.channel(connection, endingAt: board.below), Wire.id)
         expectEqual(try board.channel(connection, endingAt: board.disc), nil, "discs take the pipe")
         expectEqual(try board.channel(connection, endingAt: tag), nil)
     },
-    test("where it starts, on a shape a plugin says takes one from itself (`SelfConnections`), for the shapes its scope reaches: there, on the channel the shape takes, and outlined as the rest are") {
-        let connections = ConnectionLog()
-        let loops = Contributor(id: "loops") { registrar in
-            registrar.declare(Looped.self)
-            registrar.optIn(Box.self, to: Looped.self)
-            registrar.forShapes(holding: Looped.self) { boxes in boxes.connectsToItself { shape, _ in shape[Looped.self] == true } }
-        }
-        let board = try EligibilityBoard(connections, plugins: [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), PortsPlugin(),
-                                                                channelsPlugin(), connectorPlugin(connections), loops])
-        let h = board.h
-        let plain = render(h)
-        let connection = try board.startConnecting()
-        expectEqual(try board.channel(connection, endingAt: board.start), nil, "not while the box says nothing")
-        h.release()
-        h.editor.transact { $0.update(board.start) { $0[Looped.self] = true } }
-        let looped = try board.startConnecting()
-        expectEqual(try board.channel(looped, endingAt: board.start), Wire.id)
-        expectEqual(try board.channel(looped, endingAt: board.above), Wire.id, "the others as ever")
-        expect(changedPixels(plain, render(h), in: topEdge(of: boxFrame)) > 100, "outlined")
-        expect(h.editor.registry.report.contains("connects to itself → every shape holding looped"), "the report names the scope")
-    },
-    test("a kind whose ports only start connections takes none") {
+    test("a kind whose ports only start connections takes none, where it starts neither") {
         let board = try EligibilityBoard(boxRole: .source)
         let connection = try board.startConnecting()
         expectEqual(try board.channel(connection, endingAt: board.above), nil)
+        expectEqual(try board.channel(connection, endingAt: board.start), nil)
     },
     test("ports that only take connections take them, but give the kind no dot on their channel") {
         let wiredDiscs = Contributor(id: "wired-discs") { $0.ports(Disc.self, on: Wire.self, role: .target) }
@@ -154,7 +134,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
         expectEqual(changedPixels(belowHovered, drawing, in: topEdge(of: belowFrame)), 0, "as a hover's outline")
         expect(changedPixels(plain, drawing, in: topEdge(of: aboveFrame)) > 100, "a box above")
         expectEqual(changedPixels(plain, drawing, in: discTop), 0, "not the disc: it takes the pipe")
-        expectEqual(changedPixels(plain, drawing, in: topEdge(of: boxFrame)), 0, "not where it starts")
+        expect(changedPixels(plain, drawing, in: topEdge(of: boxFrame)) > 100, "where it starts too: let go there, it joins the box to itself")
         h.release()
         let ended = render(h)
         expectEqual(changedPixels(plain, ended, in: topEdge(of: belowFrame)), 0)

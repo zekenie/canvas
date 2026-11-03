@@ -2,6 +2,7 @@ import Canvas
 import CoreGraphics
 import Geometry
 import Selection
+import Topology
 import Types
 
 /// Dragging an arrow's handle: an end (binding as it goes) or the bend handle; or the end of an
@@ -17,6 +18,8 @@ final class ArrowHandleDragSession {
     let targeting: ArrowTargeting
     /// This drag is drawing an arrow for a port's drag (`CanvasEditor.beginArrow`).
     let connecting: ArrowConnecting?
+    /// The loops already on the shape a port's drag starts from, read once, as its end first comes back onto it.
+    private var loopsBeside: [ShapeID]?
 
     init(arrowID: ShapeID, handle: ArrowHandle, handleOffset: CGPoint, isPrecise: Bool, targeting: ArrowTargeting,
          connecting: ArrowConnecting? = nil) {
@@ -63,10 +66,9 @@ extension ArrowHandleDragSession: Session {
 
     /// An arrow drawn for a port's drag: bound, it's finished by `ArrowPortsPlugin` and told (`finished`, still in
     /// the press, so what it does is the press's step); free, it's deleted, so nothing is drawn. One bound back to the
-    /// shape it starts from (a shape that takes a connection from itself: Connections' `SelfConnections`) is there for
-    /// `finished` to make something else of, and what it leaves joining the shape to itself is deleted too. The selection is
-    /// left as it was. However it ends, the relationships are told the drag is over (`connectionReleased`): the
-    /// arrow was bound and unbound at every hover and counted only now.
+    /// shape it starts from is the loop the drag showed (`loopBack`). The selection is left as it was. However it ends,
+    /// the relationships are told the drag is over (`connectionReleased`): the arrow was bound and unbound at every hover
+    /// and counted only now.
     private func finish(_ connecting: ArrowConnecting, in editor: CanvasEditor) {
         guard case .terminal(let end) = handle, let target = targeting.arrow(arrowID)?[end].binding?.shapeID else {
             editor.transact { $0.delete([arrowID]) }
@@ -75,9 +77,6 @@ extension ArrowHandleDragSession: Session {
         }
         editor.transact { $0.update(arrowID) { connecting.complete(&$0, target) } }
         if let finished = connecting.finished { finished(arrowID) } else { editor.connectionReleased(arrowID) }
-        if let arrow = targeting.arrow(arrowID), arrow[end.opposite].binding?.shapeID == target {
-            editor.transact { $0.delete([arrowID]) }
-        }
     }
 
     /// Escape while drawing an arrow for a port's drag deletes it, leaving the selection
@@ -107,12 +106,16 @@ extension ArrowHandleDragSession {
 
         case .terminal(let end):
             if modifiers.contains(.shift) {
-                let pivot = targeting.geometry(of: arrow).handlePoint(at: end.opposite)
+                // A port's arrow pivots on the middle of the shape it starts from, looped back on it or not, so the loop
+                // moving its start never moves where the pointer snaps to.
+                let pivot = connecting.flatMap { targeting.connectables[$0.start.shapeID]?.bounds.center }
+                    ?? targeting.geometry(of: arrow).handlePoint(at: end.opposite)
                 point = snapAngle(of: point, around: pivot, steps: 24)
             }
             let before = arrow[end].binding
+            let reshape: ((inout Arrow) -> Void)? = connecting.map { connecting in { [self] in loopBack(&$0, connecting) } }
             targeting.bindTerminal(of: arrowID, end, to: point, isPrecise: isPrecise || modifiers.contains(.option), modifiers: modifiers,
-                                   accepting: connecting?.canBind)
+                                   accepting: connecting?.canBind, then: reshape)
             let after = targeting.arrow(arrowID)?[end].binding
             // Each new shape starts over: precise only if arrived at slowly or after a pause there.
             if let after {
@@ -125,6 +128,25 @@ extension ArrowHandleDragSession {
                 startDragPreciseTimer()
             }
         }
+    }
+
+    /// A port's arrow whose end is bound back to the shape it starts from is the loop it is let go as, on the side of the
+    /// dot it was pulled from (`ArrowConnections.loop`), so the drag shows what a release makes; bound to any other shape, or
+    /// free, it starts from the shape's middle, straight, as it began.
+    private func loopBack(_ arrow: inout Arrow, _ connecting: ArrowConnecting) {
+        let id = connecting.start.shapeID
+        guard arrow.end.binding?.shapeID == id, let shape = targeting.connectables[id] else {
+            arrow.start = .bound(connecting.start)
+            arrow.bend = 0
+            return
+        }
+        if loopsBeside == nil {
+            loopsBeside = targeting.editor.topology.map { ArrowConnections.parallels(of: id, id, except: arrowID, in: $0) } ?? []
+        }
+        let loop = ArrowConnections.loop(on: shape, side: connecting.side, beside: loopsBeside ?? [], in: targeting.editor.document)
+        arrow.start = .bound(loop.start)
+        arrow.end = .bound(loop.end)
+        arrow.bend = loop.bend
     }
 
     func startDragPreciseTimer() {

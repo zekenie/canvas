@@ -74,11 +74,14 @@ let heldRightDot = CGPoint(x: 932, y: 180), paddockRightDot = CGPoint(x: 1192, y
         p.connect(from: heldRightDot, via: boxInPaddock.center, to: CGPoint(x: 560, y: 180))
         expectEqual(p.board.arrows.map { [$0.props.start, $0.props.end] }, [[binding(p.box), binding(p.board.b)]])
     },
-    test("an end never lands on a shape inside the container it starts on: let go on it, nothing is drawn") {
+    test("an end never lands on a shape inside the container it starts on: let go on one, it is on the container, where it began, and a loop on it") {
         let p = try PaddockBoard()
-        let before = p.h.editor.document
         p.connect(from: paddockRightDot, via: CGPoint(x: 1180, y: 330), to: boxInPaddock.center)
-        expectEqual(p.h.editor.document, before)
+        expectEqual(p.board.arrows.count, 1)
+        let loop = try require(p.board.arrows.first)
+        expectEqual(loop.props.start.binding?.shapeID, p.paddock)
+        expectEqual(loop.props.end.binding?.shapeID, p.paddock)
+        expectEqual(loop.props.bend, -64)
     },
     test("made by name, a container and what it holds are no connection, either way round, on a channel or none; beside it, they are") {
         let p = try PaddockBoard()

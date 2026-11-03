@@ -143,26 +143,85 @@ let sideMiddles: [(side: PortSide, anchor: CGPoint)] = [(.top, CGPoint(x: 0.5, y
         expectEqual(made.props.end, binding(drawn.id, CGPoint(x: 0.5, y: 0), precise: true))
         expectEqual(made[ChannelProperty.self], Wire.id)
     },
-    test("an arrow from a shape to itself moves the end off an anchor the start has, as a dragged end does, inward from the right side") {
+    test("an arrow from a shape to itself is a loop on one side, the right with none named, else the one named (the start's first): clockwise along it, bowed out past it") {
         let board = try PortBoard()
-        let centered = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, channel: Wire.id)))
-        expectEqual(centered.start, binding(board.a))
-        expectEqual(centered.end, binding(board.a, CGPoint(x: 0.55, y: 0.5)))
-        let right = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, fromSide: .right, toSide: .right)))
-        expectEqual(right.start, binding(board.a, CGPoint(x: 1, y: 0.5), precise: true))
-        expectEqual(right.end, binding(board.a, CGPoint(x: 0.95, y: 0.5), precise: true), "past the side it would be held to it, where the start is")
-        let left = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, fromSide: .left, toSide: .left)))
-        expectEqual(left.end, binding(board.a, CGPoint(x: 0.05, y: 0.5), precise: true))
-        let across = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, fromSide: .left, toSide: .right)))
-        expectEqual(across.start, binding(board.a, CGPoint(x: 0, y: 0.5), precise: true))
-        expectEqual(across.end, binding(board.a, CGPoint(x: 1, y: 0.5), precise: true))
-        // Each draws something: a body with length, not a point.
-        for (from, to) in [(nil, nil), (PortSide.right, PortSide.right), (.left, .left), (.top, .top), (.bottom, .bottom)] as [(PortSide?, PortSide?)] {
-            let made = try require(board.make(ConnectionRequest(from: board.a, to: board.a, fromSide: from, toSide: to)))
+        let along = 28 / boxA.height
+        let right = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, channel: Wire.id)))
+        expectEqual(right.start, binding(board.a, CGPoint(x: 1, y: 0.5 - along), precise: true))
+        expectEqual(right.end, binding(board.a, CGPoint(x: 1, y: 0.5 + along), precise: true))
+        expectEqual(right.bend, -64)
+        let bottom = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, toSide: .bottom)))
+        expectEqual(bottom.start, binding(board.a, CGPoint(x: 0.5 + along, y: 1), precise: true))
+        expectEqual(bottom.end, binding(board.a, CGPoint(x: 0.5 - along, y: 1), precise: true))
+        let left = try require(board.madeArrow(ConnectionRequest(from: board.a, to: board.a, fromSide: .left, toSide: .right)))
+        expectEqual(left.start, binding(board.a, CGPoint(x: 0, y: 0.5 + along), precise: true), "the start's side")
+        expectEqual(left.end, binding(board.a, CGPoint(x: 0, y: 0.5 - along), precise: true))
+        // Each is drawn out past its side, its middle a loop's reach off it.
+        for side in PortSide.allCases {
+            let made = try require(board.make(ConnectionRequest(from: board.a, to: board.a, fromSide: side)))
             board.h.editor.transact { $0.insert(made) }
-            let body = try require(board.h.editor.shapeContext.geometry(of: made.id)?.bounds)
-            expect(max(body.width, body.height) > 5, "from \(from.map { "\($0)" } ?? "center") to \(to.map { "\($0)" } ?? "center"): \(body)")
+            let middle = try require(board.h.editor.arrowGeometry(of: made.id)).middle
+            let out = switch side {
+            case .top: boxA.minY - middle.y
+            case .right: middle.x - boxA.maxX
+            case .bottom: middle.y - boxA.maxY
+            case .left: boxA.minX - middle.x
+            }
+            expect(abs(out - 64) < 1, "\(side): \(middle)")
         }
+    },
+    test("on every side a second loop goes round the first, clockwise as the first; a loop whose ends a person swapped holds no place") {
+        let board = try PortBoard()
+        for side in PortSide.allCases {
+            let first = try board.put(ConnectionRequest(from: board.a, to: board.a, fromSide: side))
+            let second = try board.put(ConnectionRequest(from: board.a, to: board.a, fromSide: side))
+            expectEqual(board.bend(first), -64, "\(side)")
+            expectEqual(board.bend(second), -98, "\(side): round the first")
+            let (start, end) = try (require(board.arrow(second)?.props.start.binding?.normalizedAnchor), require(board.arrow(second)?.props.end.binding?.normalizedAnchor))
+            let along = 42 / boxA.width
+            let clockwise: (CGPoint, CGPoint) = switch side {
+            case .top: (CGPoint(x: 0.5 - along, y: 0), CGPoint(x: 0.5 + along, y: 0))
+            case .right: (CGPoint(x: 1, y: 0.5 - along), CGPoint(x: 1, y: 0.5 + along))
+            case .bottom: (CGPoint(x: 0.5 + along, y: 1), CGPoint(x: 0.5 - along, y: 1))
+            case .left: (CGPoint(x: 0, y: 0.5 + along), CGPoint(x: 0, y: 0.5 - along))
+            }
+            expectEqual(start, clockwise.0, "\(side)")
+            expectEqual(end, clockwise.1, "\(side)")
+        }
+        // A right loop with its ends swapped bows the other way: it is no left loop's, so the left's first place is free.
+        let other = try PortBoard()
+        let swapped = try other.put(ConnectionRequest(from: other.a, to: other.a, channel: Wire.id))
+        other.h.editor.transact { $0.update(swapped, as: Arrow.self) { arrow in
+            let start = arrow.props.start
+            arrow.props.start = arrow.props.end
+            arrow.props.end = start
+        } }
+        let left = try other.put(ConnectionRequest(from: other.a, to: other.a, fromSide: .left, channel: Wire.id))
+        expectEqual(other.bend(left), -64)
+    },
+    test("a loop's ends are on the outline: a disc's right side is short of its bounds; on a short side they keep to its middle and further loops bow wider") {
+        let board = try PortBoard()
+        let loop = try require(board.madeArrow(ConnectionRequest(from: board.c, to: board.c, channel: Pipe.id)))
+        let start = try require(loop.start.binding?.normalizedAnchor)
+        let radius = discC.width / 2, offset = 28.0
+        expect(abs(start.x - (0.5 + (radius * radius - offset * offset).squareRoot() / discC.width)) < 0.005, "on the circle: \(start)")
+        expectEqual(start.y, 0.5 - offset / discC.height)
+        let small = board.h.add(Box(CGRect(x: 80, y: 700, width: 40, height: 30)))
+        let inner = try board.put(ConnectionRequest(from: small, to: small))
+        let outer = try board.put(ConnectionRequest(from: small, to: small))
+        expectEqual(board.arrow(inner)?.props.start.binding?.normalizedAnchor, CGPoint(x: 1, y: 0.5 - 0.4), "a side of 30: 12 either side of the middle")
+        expectEqual(board.arrow(outer)?.props.start.binding?.normalizedAnchor, CGPoint(x: 1, y: 0.5 - 0.4), "no more room along it")
+        expectEqual([board.bend(inner), board.bend(outer)], [-64, -98])
+    },
+    test("a loop made again keeps its ends and its bend, unless a side is named it isn't on: then it is the loop there") {
+        let board = try PortBoard()
+        let loop = try board.put(ConnectionRequest(from: board.a, to: board.a, channel: Wire.id))
+        let kept = try require(board.make(ConnectionRequest(from: board.a, to: board.a, toSide: .right, channel: Wire.id), existing: loop))
+        expect(kept == board.h.editor.document[loop], "on the right already: unchanged")
+        let moved = try require(board.make(ConnectionRequest(from: board.a, to: board.a, fromSide: .top, channel: Wire.id), existing: loop))
+        let top = try require(moved.typed(as: Arrow.self)?.props)
+        expectEqual(top.start, binding(board.a, CGPoint(x: 0.5 - 28 / boxA.width, y: 0), precise: true))
+        expectEqual(top.bend, -64, "the first on the top, though the one it was holds the right's")
     },
     test("changed without a drag, an arrow keeps its id, its unnamed ends, its curve and its channel; its heads follow the request") {
         let board = try PortBoard()

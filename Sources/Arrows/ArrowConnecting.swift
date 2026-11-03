@@ -1,4 +1,5 @@
 import Canvas
+import Connections
 import CoreGraphics
 
 // What any plugin may say about arrows: what an end may bind to (tldraw's canBind,
@@ -71,6 +72,10 @@ struct ArrowConnecting {
     /// changes is the press's step (`ArrowPortsPlugin` has Types read what the arrow is and give it a type).
     /// Nil: only the relationships are told the drag is over (`connectionReleased`).
     var finished: (@MainActor (ShapeID) -> Void)? = nil
+    /// Where the arrow starts while its end is anywhere but back on the shape it starts from: the shape's middle.
+    let start: ArrowBinding
+    /// The side of that shape the drag left from (the dot's): an end back on the shape makes the arrow a loop there.
+    let side: PortSide
 }
 
 extension CanvasEditor {
@@ -78,15 +83,16 @@ extension CanvasEditor {
     /// (`ShapeContext.canBindArrow(to:)`, of the editor's document).
     public func canBindArrow(to id: ShapeID) -> Bool { shapeContext.canBindArrow(to: id) }
 
-    /// An arrow drawn from `shape` for a port's drag (`ArrowPortsPlugin`'s): its start bound to
+    /// An arrow drawn from `shape` for a port's drag (`ArrowPortsPlugin`'s), from its dot on `side`: its start bound to
     /// the shape, aiming at its center (imprecise), and its end at `origin` (world units), then
     /// following the pointer and binding by tldraw's rules, as a re-aimed end does, but only to
-    /// shapes `canBind` accepts, looking through the rest. Released bound, `complete` finishes it (in the transaction that does, with the shape
+    /// shapes `canBind` accepts, looking through the rest. Bound back to `shape`, it is the loop it will be, on `side`
+    /// (`ArrowConnections.loop`), and leaving it again it starts from the center as before. Released bound, `complete` finishes it (in the transaction that does, with the shape
     /// its end is bound to) and `finished` hears of it, still in the press; released free, or on Escape, it's deleted, so nothing is drawn. The
     /// selection and the tool are left alone. Returns the session that drags it, for the caller to
     /// hand the drag to; nil if an arrow can't bind to `shape`, or the board takes no shapes
     /// (`isBoardReadOnly`: its transaction would drop the arrow).
-    func beginArrow(from shape: ShapeID, at origin: CGPoint, canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
+    func beginArrow(from shape: ShapeID, side: PortSide, at origin: CGPoint, canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
                     complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void,
                     finished: (@MainActor (ShapeID) -> Void)? = nil) -> (any Session)? {
         guard !isBoardReadOnly, canBindArrow(to: shape), let targeting = service(ArrowTargeting.self) else { return nil }
@@ -94,7 +100,8 @@ extension CanvasEditor {
         let start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
         let arrow = ShapeRecord(Arrow(start: .bound(start), end: .free(origin)))
         transact("Add Arrow") { $0.insert(arrow) }
+        let connecting = ArrowConnecting(canBind: canBind, complete: complete, finished: finished, start: start, side: side)
         return ArrowHandleDragSession(arrowID: arrow.id, handle: .terminal(.end), handleOffset: .zero, isPrecise: false,
-                                      targeting: targeting, connecting: ArrowConnecting(canBind: canBind, complete: complete, finished: finished))
+                                      targeting: targeting, connecting: connecting)
     }
 }

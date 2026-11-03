@@ -83,14 +83,19 @@ import TestKit
         _ = try drawn(#"edge "C" -> "D" from: bottom to: right"#, on: editor)
         expectEqual(links(in: editor), ["C -> D on pipe aimed bottom right"])
     },
-    test("an edge on a channel can't end where it starts; a plain one can") {
+    test("an edge from a shape to itself is on a channel as any edge is: the first it dots and takes, on the side named, or none") {
         let editor = try edgesEditor()
         _ = try drawn(board, on: editor)
-        let loop = try refused(#"edge "A" -> "A""#, on: editor)
-        expectEqual(loop["reason"], "no_channel")
-        expectEqual(loop["message"], "a connection on wire can't end where it starts")
-        _ = try drawn(#"edge "A" -> "A" channel: none"#, on: editor)
-        expectEqual(links(in: editor), ["A -> A"])
+        _ = try drawn(#"edge "A" -> "A""#, on: editor)
+        _ = try drawn(#"edge "C" -> "C" from: bottom"#, on: editor)
+        _ = try drawn(#"edge "D" -> "D" channel: none"#, on: editor)
+        expectEqual(links(in: editor), ["A -> A on wire", "C -> C on pipe aimed bottom -", "D -> D"])
+        // It is joined on one side: two named are two answers.
+        _ = try drawn(#"edge "B" -> "B" from: top to: top"#, on: editor)
+        let two = try refused(#"edge "A" -> "A" from: top to: bottom"#, on: editor)
+        expectEqual(two["reason"], "invalid_value")
+        expectEqual(two["message"], #""A" -> "A" names two sides, from: top and to: bottom, and an edge from a shape to itself is on one"#)
+        expectEqual(two["hint"], "name one: from: top, or to: bottom")
     },
     test("an end the connector can't connect is cannot_connect, naming it") {
         let editor = try edgesEditor()
