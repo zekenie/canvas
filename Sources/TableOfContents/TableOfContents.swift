@@ -850,6 +850,11 @@ enum ContentsStyle {
     /// Up to how many shapes selected the list finds each one's row; past that, it goes down the rows
     /// once.
     static let selectedRowLookups = 64
+    /// The rows held over the list's top while the rows nested under them scroll under it
+    /// (`ContentsHeldRows`): at most so many, and so much of the list's height, the outermost kept
+    /// (VS Code's sticky scroll keeps 7 and 40%).
+    static let heldRowsMost = 5
+    static let heldRowsShare: CGFloat = 0.4
     /// The up button's: an arrow that turns up, a way out as Finder's enclosing folder is, not a disclosure.
     static let upSymbol = "arrow.turn.left.up"
     /// A mark's dot, a mark's symbol, and the square around either that its tooltip answers in.

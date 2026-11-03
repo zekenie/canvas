@@ -10,8 +10,10 @@ import TextEditing
 // shapes shows, and its rows are replaced, at the cost of the rows in view and a pass over the rows
 // listed; a commit costs the rows it changed. A row's nested rows are read only once it's open (a
 // subboard's board's rows among them). Its header is above it, pinned (`TableOfContentsView`), so the
-// outline's first row is the first shape's. The rows of a kind that gathers them in a section (`ContentsSections`) are under the section's row, after their
-// level's other rows: read with their level, shown once the section is open.
+// outline's first row is the first shape's; the rows the rows under its top are nested under are held
+// there as they scroll under it (`ContentsHeldRows`). The rows of a kind that gathers them in a section
+// (`ContentsSections`) are under the section's row, after their level's other rows: read with their
+// level, shown once the section is open.
 
 /// What the list shows, as the view's body reads it, so SwiftUI hands the list each change: the board,
 /// which listing (`ContentsListing.serial`) and how often it changed, the editor's revision (a board
@@ -160,6 +162,8 @@ final class ContentsListController: NSObject {
     private var updating = 0
     /// The row the pointer is on, whose shape it hovers (`ContentsState.hover`).
     private var pointerRow: ShapeID?
+    /// The list's top as of the last scroll, so a scroll under a still pointer is told from the rest.
+    private var scrolledTop: CGFloat?
     /// The rows an update made again where they are, and the sections whose count it changed, redrawn
     /// as it ends where they're in view.
     private var remade: Set<ShapeID> = []
@@ -177,6 +181,11 @@ final class ContentsListController: NSObject {
         outline.doubleAction = #selector(openClicked(_:))
         view.onHide = { [weak self] in self?.reclaimSoon() }
         view.onLeave = { [weak self] in self?.reclaimAfterLeaving() }
+        view.held.list = self
+        view.scrollView.onScroll = { [weak self] in
+            self?.holdRows()
+            self?.scrolledUnderPointer()
+        }
         state.watchTurns(self)
         state.keyboardEntry = outline
     }
@@ -185,7 +194,8 @@ final class ContentsListController: NSObject {
 
     /// Brings the outline up to date with the state: the listing shown whole if it's another (another
     /// board, another scope, a listing made afresh), else row by row as its updates changed it; the
-    /// rows of boards open under their owners' rows, as their boards changed; then the selection.
+    /// rows of boards open under their owners' rows, as their boards changed; then the selection, and
+    /// the rows held over the list's top as they are now.
     func update() {
         _ = state.entries
         updating += 1
@@ -203,6 +213,7 @@ final class ContentsListController: NSObject {
         }
         redrawRemade()
         showSelection()
+        holdRows()
     }
 
     /// Shows the listing whole: its top-level rows and sections, and under each row or section that's
@@ -893,15 +904,25 @@ final class ContentsListController: NSObject {
 
     // MARK: Hover
 
-    /// The pointer moved over the outline: the shape of the row it's on hovered, and the last one's
-    /// let go of.
+    /// The pointer moved over the outline: the shape of the row it's on hovered (a held row's, over
+    /// the row under it), and the last one's let go of.
     func pointerMoved(to point: CGPoint) {
-        let row = outline.row(at: point)
-        let id = row >= 0 ? (outline.item(atRow: row) as? ContentsItem)?.id : nil
+        let id = (shownRow(at: point)?.item as? ContentsItem)?.id
         guard id != pointerRow else { return }
         if let old = pointerRow { state.endHover(old) }
         pointerRow = id
         if let id { state.hover(id) }
+    }
+
+    /// The list scrolled under a pointer on a row that didn't move: what's under it now is hovered (a
+    /// held row's shape, the row that came under it), as a move would.
+    private func scrolledUnderPointer() {
+        let top = view.listTop
+        guard top != scrolledTop else { return }
+        scrolledTop = top
+        guard pointerRow != nil, let window = outline.window else { return }
+        let point = outline.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if outline.visibleRect.contains(point) { pointerMoved(to: point) } else { endPointing() }
     }
 
     /// The pointer left the outline, or its row went: the hover it set let go of.
@@ -913,13 +934,12 @@ final class ContentsListController: NSObject {
 
     // MARK: Dragging
 
-    /// The row a drag is over, and how far down it (0 its top, 1 its bottom).
+    /// The row a drag is over (a held row, over the row under it), and how far down it (0 its top, 1
+    /// its bottom).
     private func rowUnder(_ info: any NSDraggingInfo) -> (item: ContentsItem, fraction: CGFloat)? {
         let point = outline.convert(info.draggingLocation, from: nil)
-        let row = outline.row(at: point)
-        guard row >= 0, let item = outline.item(atRow: row) as? ContentsItem else { return nil }
-        let rect = outline.rect(ofRow: row)
-        guard rect.height > 0 else { return nil }
+        guard let shown = shownRow(at: point), let item = shown.item as? ContentsItem, shown.rect.height > 0 else { return nil }
+        let rect = shown.rect
         let fraction = outline.isFlipped ? (point.y - rect.minY) / rect.height : (rect.maxY - point.y) / rect.height
         return (item, min(max(fraction, 0), 1))
     }
@@ -1059,6 +1079,7 @@ extension ContentsListController: NSOutlineViewDelegate {
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
+        view.held.showSelection()
         guard updating == 0 else { return }
         selectionChanged()
     }

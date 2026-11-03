@@ -5,17 +5,20 @@ import Observation
 import Selection
 import SwiftUI
 
-// The table of contents' list's views (`ContentsList`): the outline and its scroll view, a row's view
-// (its selection's highlight, its hover's tint, a drop's ring and line, its triangle's name), and the
-// cell that hosts a row's view in SwiftUI.
+// The table of contents' list's views (`ContentsList`): the outline and its scroll view (which tells the
+// list it scrolled, for the rows held over its top: `ContentsHeldRows`), a row's view (its selection's
+// highlight, its hover's tint, a drop's ring and line, its triangle's name), and the cell that hosts a
+// row's view in SwiftUI.
 
-/// The list's view: the outline in its scroll view, on the sidebar's background. It tells the list
-/// when it's hidden (it, or a view it's in) or taken out of its window (the sidebar hidden), which
-/// SwiftUI doesn't say.
+/// The list's view: the outline in its scroll view, on the sidebar's background, and the rows held over
+/// its top (`ContentsHeldRows`), over the outline's and under its scroller. It tells the list when it's
+/// hidden (it, or a view it's in) or taken out of its window (the sidebar hidden), which SwiftUI doesn't
+/// say.
 @MainActor
 final class ContentsListView: NSView {
-    let scrollView = NSScrollView()
+    let scrollView = ContentsScrollView()
     let outline = ContentsTable()
+    let held = ContentsHeldRowsView()
     var onHide: (@MainActor () -> Void)?
 
     init() {
@@ -48,6 +51,9 @@ final class ContentsListView: NSView {
         scrollView.borderType = .noBorder
         scrollView.autoresizingMask = [.width, .height]
         addSubview(scrollView)
+        held.outline = outline
+        held.registerForDraggedTypes([.contentsRows])
+        scrollView.addSubview(held, positioned: .above, relativeTo: scrollView.contentView)
     }
 
     @available(*, unavailable)
@@ -57,6 +63,36 @@ final class ContentsListView: NSView {
         super.layout()
         scrollView.frame = bounds
         outline.sizeLastColumnToFit()
+        scrollView.onScroll?()
+    }
+
+    /// Where the list's top is in the outline (its points, down from its top): the top of what's in
+    /// view, where the rows held there start.
+    var listTop: CGFloat {
+        let clip = scrollView.contentView
+        return outline.convert(CGPoint(x: clip.bounds.minX, y: clip.bounds.minY + clip.contentInsets.top), from: clip).y
+    }
+
+    /// How tall the part of the list in view is.
+    var listHeight: CGFloat {
+        let clip = scrollView.contentView
+        return max(0, clip.bounds.height - clip.contentInsets.top - clip.contentInsets.bottom)
+    }
+
+    /// Scrolls the outline so `top` (its points) is at the list's top.
+    func scrollList(toTop top: CGFloat) {
+        let clip = scrollView.contentView
+        let x = outline.convert(clip.bounds.origin, from: clip).x
+        outline.scroll(CGPoint(x: x, y: top - clip.contentInsets.top))
+    }
+
+    /// Puts the held rows over the list's top, down as far as they reach and the hairline under them.
+    func placeHeldRows(reaching bottom: CGFloat) {
+        let rect = CGRect(x: 0, y: listTop, width: outline.bounds.width, height: bottom + ChromeStyle.hairlineWidth)
+        let frame = scrollView.convert(rect, from: outline)
+        guard held.frame != frame else { return }
+        held.frame = frame
+        held.needsDisplay = true
     }
 
     override func viewDidHide() {
@@ -75,13 +111,50 @@ final class ContentsListView: NSView {
     }
 }
 
+/// The list's scroll view: it tells the list each time what's under the list's top may have moved (the
+/// outline scrolled, its rows changed, the view laid out), so the rows held there follow.
+@MainActor
+final class ContentsScrollView: NSScrollView {
+    var onScroll: (@MainActor () -> Void)?
+
+    override func reflectScrolledClipView(_ clipView: NSClipView) {
+        super.reflectScrolledClipView(clipView)
+        onScroll?()
+    }
+
+    override func tile() {
+        super.tile()
+        onScroll?()
+    }
+}
+
 /// The list's outline: it hands each key to the list before handling it itself (Tab and ⇧Tab as ↓ and
 /// ↑, Return, Delete, and the keys that give the canvas the keyboard), the pointer's moves (hover), and
-/// a drag leaving it.
+/// a drag leaving it; it brings a row into view clear of the rows held over the list's top, and they
+/// follow its highlight.
 @MainActor
 final class ContentsTable: NSOutlineView {
     weak var list: ContentsListController?
     private var tracking: NSTrackingArea?
+
+    /// A key's step, or the selection shown, lands on a row in view, never under the rows held over the
+    /// list's top.
+    override func scrollRowToVisible(_ row: Int) {
+        super.scrollRowToVisible(row)
+        list?.showClearOfHeldRows(row)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        list?.view.held.emphasize(window?.isKeyWindow ?? false)
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        list?.view.held.emphasize(false)
+        return true
+    }
 
     override func keyDown(with event: NSEvent) {
         guard let list else { return super.keyDown(with: event) }
@@ -158,6 +231,9 @@ final class ContentsTable: NSOutlineView {
 final class ContentsTableRow: NSTableRowView {
     static let identifier = NSUserInterfaceItemIdentifier("ContentsTableRow")
     weak var list: ContentsListController?
+    /// Whether it paints the sheet's surface under what it draws, edge to edge: a row held over the list's
+    /// top does, over the rows under it.
+    var paintsSurface = false
     private var shape: ShapeID?
     private var spokenName = ""
     private var isTinted = false
@@ -238,6 +314,10 @@ final class ContentsTableRow: NSTableRowView {
     }
 
     override func drawBackground(in dirtyRect: NSRect) {
+        if paintsSurface {
+            ChromeStyle.surface.setFill()
+            NSBezierPath.fill(bounds)
+        }
         super.drawBackground(in: dirtyRect)
         guard isTinted || zone == .on else { return }
         let accent = NSColor.controlAccentColor
@@ -285,6 +365,12 @@ final class ContentsTableRow: NSTableRowView {
             if button.cell?.accessibilityLabel() != spokenName { button.cell?.setAccessibilityLabel(spokenName) }
         }
     }
+
+    #if DEBUG
+    /// The row's name (debug builds), as the outline's items describe themselves: what a test reads of a
+    /// held row.
+    override var description: String { MainActor.assumeIsolated { spokenName } }
+    #endif
 }
 
 /// A drop's line above or below a row, from a ring at its leading end, in the accent color, as a Mac

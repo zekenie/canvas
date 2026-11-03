@@ -281,6 +281,9 @@ public final class ContentsState {
     /// How many rows have been made (debug builds only): a kind asked for a shape's row. Going back
     /// to a board as it was left makes none.
     @ObservationIgnored public var rowsMade = 0
+    /// How many times the list has shown a row it holds over its top afresh (debug builds only): a
+    /// row comes to be held, or its shape changes while it is; a scroll under it shows none.
+    @ObservationIgnored public var heldRowsShown = 0
     #endif
 
     init(editor: CanvasEditor) {

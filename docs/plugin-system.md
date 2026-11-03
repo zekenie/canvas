@@ -5373,6 +5373,15 @@ shows, cost more).
   "Board", or what a plugin calls it), the pane's header as the inspector's is: the window's look,
   `ChromeStyle`. In the window's sidebar it is the title bar's row, past the window's buttons. The
   outline's first row is the first shape's.
+- **Held rows.** As the rows nested under an open row scroll up past the list's top, its row is held
+  there over them (VS Code's sticky scroll in its trees), and so is each open row they're nested
+  under, outermost first, one a level: a frame of a thousand notes keeps its row in view however far
+  into them the list is, and a frame in a frame keeps both, at most five rows and 40% of the list.
+  The last row nested under a held row takes it up with it as it goes. A held row is its row
+  (`ContentsHeldRows.swift`): drawn as the outline draws it, a press on it scrolls its row into its
+  place under the rows held above it and hands the press on there, the pointer and a drag over it
+  are over its row, and a row the keys reach is scrolled clear of them. Which rows and where costs a
+  few rows' levels a level, so a scroll costs the rows held, whatever's listed.
 - **Kept up row by row.** The view's body reads `entries` and hands the list which listing it is
   (`ContentsListing.serial`), how often it changed, the editor's revision and the selection. A new
   listing (another board, one listed afresh) is shown whole. The one shown is
