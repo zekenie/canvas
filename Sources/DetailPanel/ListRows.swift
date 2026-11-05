@@ -1,4 +1,5 @@
 import AppKit
+import Chrome
 import SwiftUI
 import TextEditing
 
@@ -31,7 +32,8 @@ public struct DetailCheckbox: View {
 /// A row for a shape in a panel's list, laid out as the panel's status lines are: the kind's symbol
 /// (in `tint`, else secondary) in the status icon's column, then the shape's `name` on one line in the
 /// panel's text size, with an optional `detail` at the end of it and up to two `lines` of caption
-/// text under it (`detailTruncation`: which end of the detail is cut when it doesn't fit, the start by default, for a path,
+/// text under it (`place`: when the detail is an address, its steps, folded in the room the row has by `PlaceFold`
+/// as every address is, boards semibold, the nearest whole; `detail` stays its plain text; `detailTruncation`: which end of the detail is cut when it doesn't fit, the start by default, for a path,
 /// and `.tail` for a value read from its start). A `dimmed` row (a shape that can't be gone to, say) is all dimmed, its secondary
 /// text with it. The row is a plain view: wrap it in a `Button` to make it one.
 public struct DetailShapeRow: View {
@@ -42,9 +44,12 @@ public struct DetailShapeRow: View {
     let detailTruncation: Text.TruncationMode
     let lines: [String]
     let dimmed: Bool
+    let place: [PlaceStep]
+    @State private var width: CGFloat?
 
     public init(symbol: String, tint: NSColor? = nil, name: String, detail: String? = nil, detailTruncation: Text.TruncationMode = .head,
-                lines: [String] = [], dimmed: Bool = false) {
+                place: [PlaceStep] = [], lines: [String] = [], dimmed: Bool = false) {
+        self.place = place
         self.symbol = symbol
         self.tint = tint
         self.name = name
@@ -62,7 +67,10 @@ public struct DetailShapeRow: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline, spacing: DetailStyle.pairSpacing) {
                     Text(name).font(DetailStyle.body).lineLimit(1)
-                    if let detail {
+                    if !place.isEmpty {
+                        Spacer(minLength: 0)
+                        DetailPlaceText(steps: place, room: placeRoom).fixedSize(horizontal: true, vertical: false)
+                    } else if let detail {
                         Spacer(minLength: 0)
                         // A path is told by the container its shape is in, which is last: cut at the start.
                         Text(detail).font(DetailStyle.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(detailTruncation)
@@ -73,10 +81,72 @@ public struct DetailShapeRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if !place.isEmpty {
+                    GeometryReader { geometry in Color.clear.preference(key: DetailRowWidthKey.self, value: geometry.size.width) }
+                }
+            }
         }
+        .onPreferenceChange(DetailRowWidthKey.self) { if place.isEmpty == false, width != $0 { width = $0 } }
         .frame(minHeight: DetailStyle.listRowHeight, alignment: .top)
         .opacity(dimmed ? DetailStyle.dimmedRow : 1)
         .contentShape(Rectangle())
+    }
+
+    /// What the place may take of the row: what the name leaves, but at least `DetailStyle.placeShare` of it; all of it
+    /// until the row's width is read.
+    private var placeRoom: CGFloat {
+        guard let width else { return .infinity }
+        let named = ceil(NSAttributedString(string: name, attributes: [.font: NSFont.systemFont(ofSize: DetailStyle.bodySize)]).size().width)
+        return max(width - named - DetailStyle.pairSpacing, width * DetailStyle.placeShare)
+    }
+}
+
+/// The width a row's text column was given.
+private struct DetailRowWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// A place's steps as one line of text in `room` points, folded as every address is (`PlaceFold`): boards semibold,
+/// an untitled container's name and the marks between fainter, in the panel's caption.
+public struct DetailPlaceText: View {
+    let steps: [PlaceStep]
+    let lead: String
+    let room: CGFloat
+    let size: CGFloat
+    let wraps: Bool
+
+    /// `wraps`: the whole place in as many lines as it takes, in the panel's caption (the Reference tab's).
+    public init(steps: [PlaceStep], lead: String = "", room: CGFloat = .infinity, size: CGFloat? = nil, wraps: Bool = false) {
+        self.steps = steps
+        self.lead = lead
+        self.room = room
+        self.size = size ?? DetailStyle.captionSize
+        self.wraps = wraps
+    }
+
+    /// The steps folded in `room`, less the lead, in the font of `size`.
+    public static func line(_ steps: [PlaceStep], lead: String = "", room: CGFloat, size: CGFloat? = nil) -> PlaceLine {
+        let size = size ?? DetailStyle.captionSize
+        let measure: (String, Bool) -> CGFloat = { text, isBoard in
+            ceil(NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: size, weight: isBoard ? .semibold : .regular)]).size().width)
+        }
+        return PlaceFold.line(for: steps, room: room - measure(lead, false), measure: measure)
+    }
+
+    public var body: some View {
+        let line = Self.line(steps, lead: lead, room: room, size: size)
+        line.pieces.reduce(Text(lead).foregroundStyle(.secondary)) { text, piece in
+            switch piece.kind {
+            case .separator, .ellipsis:
+                text + Text(piece.text).foregroundStyle(.tertiary)
+            case .step(_, let opensBoard, let isPlaceholder):
+                text + Text(piece.text).fontWeight(opensBoard ? .semibold : .regular)
+                    .foregroundStyle(isPlaceholder ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+            }
+        }
+        .font(.system(size: size)).lineLimit(wraps ? nil : 1).fixedSize(horizontal: false, vertical: wraps)
     }
 }
 

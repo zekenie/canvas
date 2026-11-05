@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Palette
 import Publishing
 
 /// On the main actor as a whole, so its drawing helpers share the protocol's isolation.
@@ -14,8 +15,11 @@ extension ReferenceDefinition: ShapeDefinition {
         let state = context.service(ReferenceState.self)
         let standing = condition(of: shape, state: state, in: context)
         let handsOff = context.isEditing && state?.isHandingOff(shape.id) == true
-        let look = context.isEditing ? ReferenceLook(editing: standing, handsOff: handsOff)
-            : ReferenceLook(standing, mismatch: state?.drawnMismatch(of: shape.id) != nil, place: state?.drawnPlace(of: shape.id))
+        // The place and the colors it wears are kept with the condition, so a frame looks up neither for a pill again.
+        let colors = state?.drawnColors(of: shape, standing)
+        let look = context.isEditing ? ReferenceLook(editing: standing, handsOff: handsOff, colors: colors)
+            : ReferenceLook(standing, mismatch: state?.drawnMismatch(of: shape.id) != nil,
+                            place: state?.drawnPlace(for: standing, of: shape), colors: colors)
         draw(look, in: shape.frame, editing: context.isEditing, context)
     }
 
@@ -24,15 +28,24 @@ extension ReferenceDefinition: ShapeDefinition {
     }
 }
 
-/// Zoomed out, one square fill: no text, no rounding, no symbol, so rects batch. A pill that stands
-/// for nothing is the lighter one. Looking at the target is a dictionary hit and a public check, never
-/// its name (`ReferenceCondition.standsForNothing`).
+/// Zoomed out, one square fill: no text, no rounding, no symbol, so rects batch. A pill wearing its original's color is a block
+/// of that color's `solid` at 50% over the canvas, a lighter one when it stands for nothing; a neutral pill is gray, and a
+/// lighter gray when it stands for nothing. Looking at the target is a dictionary hit and a public check, never its name
+/// (`ReferenceCondition.standsForNothing`), and its colors are kept (`ReferenceState.skeletonColors`).
 extension ReferenceDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Reference>, in context: RenderContext) {
         let cg = context.cg
+        let state = context.service(ReferenceState.self)
         let asks = shape.props.mode == .dynamic
-        let nothing = ReferenceCondition.standsForNothing(shape.props, status: asks ? context.service(ReferenceState.self)?.answer(of: shape.id) : nil,
+        let nothing = ReferenceCondition.standsForNothing(shape.props, status: asks ? state?.answer(of: shape.id) : nil,
                                                           registry: context.shapes.registry, lookup: { context.shape(inFile: $0) })
+        if let colors = state?.skeletonColors(of: shape) {
+            cg.setFillColor(colors.parts(dark: ReferenceStyle.surface.dark).skeleton)
+            cg.setAlpha(nothing ? ReferenceStyle.missingStrength : 1)
+            cg.fill(shape.frame)
+            cg.setAlpha(1)
+            return
+        }
         cg.setFillColor((nothing ? ReferenceStyle.skeletonMissingFill : ReferenceStyle.skeletonFill).cgColor)
         cg.fill(shape.frame)
     }

@@ -209,7 +209,10 @@ public final class CanvasEditor {
 
     /// The host's: what the root board is called from now on (`rootName`).
     @_spi(Host) public func nameRoot(_ name: String) {
-        if name != rootName { rootName = name }
+        guard name != rootName else { return }
+        rootName = name
+        // What the canvas draws may say it (a reference's place led by the root), and a rename is no commit.
+        setNeedsDisplay()
     }
 
     /// A shape outlined as a target, whatever the tool (a connector tool sets it while aiming).

@@ -1,3 +1,4 @@
+import Chrome
 import CoreGraphics
 
 /// How a reference is written: each keeps exactly one mode (so `target`, `words` and `query` never
@@ -8,10 +9,10 @@ import CoreGraphics
 public enum ReferenceEdits {
     /// Stands for `target`: its words and query are let go of.
     ///
-    /// `place`: where the shape is, when that isn't where the pill is (the containers it is inside, else the name
-    /// of its board), which the pill says after the shape's name (`ReferenceStyle.boardGap`), so the width has room
-    /// for it.
-    public static func pick(_ props: inout Reference, _ target: ReferenceTarget, place: String? = nil) {
+    /// `place`: where the shape is, when that isn't where the pill is (the steps of `ReferenceState.placeOfTarget`: the
+    /// containers it is inside, the board that leads), which the pill says over the shape's name, so the width has room
+    /// for it (its fold at `ReferenceStyle.placeRoomMost`).
+    public static func pick(_ props: inout Reference, _ target: ReferenceTarget, place: [PlaceStep] = []) {
         props.target = target
         props.words = ""
         props.query = nil
@@ -43,8 +44,10 @@ public enum ReferenceEdits {
     /// The width the pill's text asks for: the leading pad and symbol, the label, what may trail it
     /// (a dynamic pill's count, or a direct one's eye or warning, which come and go with no write, so
     /// their room is always there), and the trailing pad, never under `minWidth` or over `maxWidth`;
-    /// an empty pill is the width it was placed at.
-    public static func width(of props: Reference, place: String? = nil) -> CGFloat {
+    /// an empty pill is the width it was placed at. A direct pill with a place is as wide as the wider of its name (and
+    /// what may trail it) and its place's line folded at 234 points (`ReferenceStyle.placeRoomMost`), never padded to the
+    /// whole of a long address.
+    public static func width(of props: Reference, place: [PlaceStep] = []) -> CGFloat {
         let style = ReferenceStyle.self
         switch props.mode {
         case .empty:
@@ -57,17 +60,16 @@ public enum ReferenceEdits {
         }
     }
 
-    private static func fitted(label: String, trailing: CGFloat, place: String? = nil) -> CGFloat {
+    private static func fitted(label: String, trailing: CGFloat, place: [PlaceStep] = []) -> CGFloat {
         let style = ReferenceStyle.self
         // As wide as it's set either way: a pill that comes to stand for nothing says it in italic.
         let text = max(ReferenceMemo.shared.width(of: label, italic: false), ReferenceMemo.shared.width(of: label, italic: true))
-        let named = place.map { style.boardGap + ReferenceMemo.shared.board($0, strength: 1).width } ?? 0
-        let width = style.leadingPad + style.symbolBox + style.gap + text + named + trailing + style.trailingPad
-        return min(style.maxWidth, max(style.minWidth, ceil(width)))
+        let line = place.isEmpty ? 0 : style.placeLine(place, room: style.placeRoomMost).width
+        return min(style.maxWidth, max(style.minWidth, ceil(style.padding + max(text + trailing, line))))
     }
 
     /// Fits the pill to what it says.
-    static func fit(_ props: inout Reference, place: String? = nil) {
+    static func fit(_ props: inout Reference, place: [PlaceStep] = []) {
         props.frame.size = CGSize(width: width(of: props, place: place), height: ReferenceStyle.height)
     }
 }

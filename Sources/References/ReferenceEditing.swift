@@ -94,11 +94,14 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
     /// What the field started with: text that's back to it is what the pill said.
     private let openingText: String
     private let picker: ReferencePicker?
+    /// The pill being edited, whose place a pick is fitted to.
+    private let pill: ShapeID
     /// Whether the list has only the words row left.
     private var handsOff = false
 
     init(reference: ShapeRecord<Reference>, context: EditContext<Reference>) {
         self.context = context
+        pill = reference.id
         original = reference.props
         let state = context.service(ReferenceState.self)
         let opening = Self.text(of: reference.props, shown: state?.state(of: reference.props) ?? .empty)
@@ -263,7 +266,7 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
     /// What a row of the list does: a shape's names it, and the words row's commits the words.
     private func pick(_ row: ReferencePickerRow) {
         switch row {
-        case .shape(let choice): pickTarget(choice.candidate, place: choice.place?.text)
+        case .shape(let choice): pickTarget(choice.candidate)
         case .words: commitWords()
         case .empty: break
         }
@@ -271,7 +274,9 @@ final class ReferenceEditor: NSView, NSTextViewDelegate {
 
     /// The pill stands for the shape, named as a mention of it shows it: one write, the words and query
     /// let go of, the width refit to its name; and editing ends.
-    private func pickTarget(_ candidate: MentionCandidate, place: String?) {
+    private func pickTarget(_ candidate: MentionCandidate) {
+        // Fitted to the place the pill will say once it names the shape, from where the pill sits.
+        let place = context.service(ReferenceState.self)?.placeOfPick(from: pill, candidate.id) ?? []
         context.update { ReferenceEdits.pick(&$0, ReferenceTarget(id: candidate.id, label: candidate.appearance.label), place: place) }
         context.service(MentionState.self)?.didPick(candidate.id)
         context.end()

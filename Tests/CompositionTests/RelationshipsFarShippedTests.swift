@@ -4,6 +4,7 @@ import Arrows
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
+import Chrome
 import Connections
 import CoreGraphics
 import Foundation
@@ -322,9 +323,10 @@ private final class FarWorld {
         }
         let a = try reference(drawn.editor), b = try reference(picked.editor)
         expectEqual(a.props.frame, b.props.frame, "the same pill in the same place")
-        expectEqual(b.props.frame.width, ReferenceEdits.width(of: b.props, place: "Clients"), "as wide as it is saying where Acme is")
         _ = renderBitmap(picked.editor, size: CGSize(width: 1440, height: 900))
-        expectEqual(try require(picked.editor.service(ReferenceState.self)).drawnPlace(of: b.id), "Clients")
+        let state = try require(picked.editor.service(ReferenceState.self))
+        expectEqual(state.drawnPlace(of: b.id)?.text, "Clients")
+        expectEqual(b.props.frame.width, ReferenceEdits.width(of: b.props, place: try require(state.drawnPlaceSteps(of: b.id))), "as wide as it is saying where Acme is")
     },
     test("step 13 and the equivalence: the app's pick and `canvas draw` of the same edge, on the same file, put a pill of the same size at the same spot with the same arrow; a draw of the edge after the pick is unchanged, and a query reads it through the pill") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -352,6 +354,13 @@ private final class FarWorld {
         let a = try reference(drawn.editor), b = try reference(picked.editor)
         expectEqual(a.props.frame, b.props.frame, "the same pill in the same place")
         expectEqual(a.props.target, b.props.target)
+        // Acme's title is its alone, and both pills say where Acme is all the same, as wide as that.
+        _ = renderBitmap(picked.editor, size: CGSize(width: 1440, height: 900))
+        let state = try require(picked.editor.service(ReferenceState.self))
+        let place = try require(state.drawnPlaceSteps(of: b.id), "a pill says where its note is, whether its title is its alone or not")
+        expectEqual(place.map(\.name), ["Clients"])
+        expectEqual(b.props.frame.width, ReferenceEdits.width(of: b.props, place: place), "as wide as it is saying where Acme is")
+        expectEqual(a.props.frame.size, b.props.frame.size, "the pick and the draw leave one size")
         @MainActor func arrow(_ editor: CanvasEditor) throws -> ShapeRecord<Arrow> {
             try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first { $0[IsAProperty.self]?.map(\.shape) == [world.employment] })
         }

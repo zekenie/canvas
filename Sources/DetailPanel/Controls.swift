@@ -83,8 +83,12 @@ public enum DetailStyle {
     /// The dot in the chosen swatch (System Settings' accent colors).
     static let swatchMark: CGFloat = 6
 
-    static let body = Font.system(size: 11)
-    static let caption = Font.system(size: 10)
+    static let bodySize: CGFloat = 11
+    static let captionSize: CGFloat = 10
+    static let body = Font.system(size: bodySize)
+    static let caption = Font.system(size: captionSize)
+    /// The least of a shape row's width its place may take (`DetailShapeRow`).
+    static let placeShare: CGFloat = 0.4
     static let tab = Font.system(size: 11)
     static let tabSelected = Font.system(size: 11, weight: .semibold)
     static let sectionTitle = Font.system(size: 11, weight: .bold)
@@ -99,6 +103,7 @@ public enum DetailStyle {
     static let rowTitleOverSubtitle = ChromeStyle.rowTitleOverSubtitle
     static let rowTitleOverSubtitleFont = ChromeStyle.rowTitleOverSubtitleFont
     static let rowSubtitle = ChromeStyle.rowSubtitle
+    static let rowSubtitleSize: CGFloat = 11
     /// The room the header's field keeps past its words in the title bar's row, where it's as wide as they are: its cell's
     /// insets and the caret's.
     static let rowFieldSlack: CGFloat = 6

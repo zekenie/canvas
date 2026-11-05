@@ -116,7 +116,7 @@ extension CanvasEditor {
         if let pending = pill, pending.reused == nil, let route = verdicts.route, let record = shape(inFile: far) {
             let label = registry.mentionAppearance(of: record)?.label ?? ""
             guard var made = registry.standIns.make(pending.kind, standingFor: far, label: label) else { return nil }
-            route.seat(&made, for: record, beside: near, in: self)
+            route.seat(&made, beside: near, in: self)
             guard let pillSize = made.box?.size, let pillSurroundings = Surroundings(on: board, moving: pillSize, in: self) else { return nil }
             let spot = route.spot(beside: near, edgeIs: farFirst ? .to : .from, side: nil, in: pillSurroundings.reading)
             guard let spotLanding = route.landing(of: pillSize, at: spot, in: pillSurroundings, avoiding: [landing.rect]) else { return nil }

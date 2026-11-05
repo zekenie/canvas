@@ -4,9 +4,11 @@ import Arrows
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
+import Chrome
 import Connections
 import CoreGraphics
 import Foundation
+import Frames
 import Locking
 import Mentions
 import Publishing
@@ -94,7 +96,12 @@ extension CanvasEditor {
         let pill = try require(editor.references().first)
         expectEqual(editor.references().count, 1)
         expectEqual(pill.props.target, ReferenceTarget(id: wharf.auth, label: "Auth"), "a direct reference to Auth, called as draw folds its title")
-        expectEqual(pill.props.frame.width, ReferenceEdits.width(of: pill.props), "fitted to its label")
+        // Auth's title is its alone, and its reference still says where Auth is, over its name: every pill does.
+        _ = renderBitmap(editor, size: CGSize(width: 1440, height: 900))
+        let place = try require(editor.service(ReferenceState.self)?.drawnPlaceSteps(of: pill.id))
+        expectEqual(place.map(\.name), ["Payments", "Gateway"])
+        expectEqual(pill.props.frame.width, ReferenceEdits.width(of: pill.props, place: place), "fitted to its label and its place")
+        expectEqual(pill.props.frame.height, 40, "a pill is 40 tall")
         let checkout = try require(editor.file.record(wharf.checkout)?.box)
         expectEqual(pill.frame.minX, checkout.maxX + 80, "right of Checkout")
         expectEqual(pill.frame.midY, checkout.midY)
@@ -122,7 +129,7 @@ extension CanvasEditor {
         expectEqual(connection["via"]?["to"]?["id"], .string(pill.id.description), "through the pill")
     },
 
-    test("a public note whose title another note has: its reference says where it is beside the name and is as wide as that, which measure says too") {
+    test("a public note whose title another note has, or has not: its reference says where it is over the name and is as wide as that, which measure says too") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -140,21 +147,25 @@ extension CanvasEditor {
         expectEqual(result.status, 0, result.error)
         let pill = try require(editor.references().first)
         expectEqual(pill.props.target, ReferenceTarget(id: wharf.auth, label: "Auth"))
-        expectEqual(pill.props.frame.width, ReferenceEdits.width(of: pill.props, place: "Payments › Gateway"), "fitted to where Auth is, from the root")
+        _ = renderBitmap(editor, size: CGSize(width: 1440, height: 900))
+        let references = try require(editor.service(ReferenceState.self))
+        let place = try require(references.drawnPlaceSteps(of: pill.id))
+        expectEqual(place.map(\.name), ["Payments", "Gateway"])
+        expectEqual(pill.props.frame.width, ReferenceEdits.width(of: pill.props, place: place), "fitted to where Auth is, from the root")
         expect(pill.props.frame.width > ReferenceEdits.width(of: pill.props), "wider than its name")
         let checkout = try require(editor.file.record(wharf.checkout)?.box)
         expectEqual(pill.frame.minX, checkout.maxX + 80, "right of Checkout, as any")
-        _ = renderBitmap(editor, size: CGSize(width: 1440, height: 900))
-        expectEqual(try require(editor.service(ReferenceState.self)).drawnPlace(of: pill.id), "Payments › Gateway", "what it was fitted for is what it says")
+        expectEqual(references.drawnPlace(of: pill.id)?.text, "Payments › Gateway", "what it was fitted for is what it says")
         let measured = try canvas(server, ["measure", "-"], input: edge + " via: reference\n")
         expectEqual(measured.status, 0, measured.error)
         let size = try JSON(text: measured.output)["references"]?.arrayValue?.first?["size"]?.arrayValue?.compactMap(\.numberValue)
         expectEqual(size, [Double(pill.props.frame.width), Double(pill.props.frame.height)], "measure says the size draw made")
-        // With the title Auth's alone again, a reference to it is as wide as its name.
+        // With the title Auth's alone again, a reference to it says where Auth is as well, and is as wide as that.
         editor.transact { $0.delete([other.id]) }
         _ = try canvas(server, ["draw", #"edge "Ledger" -> "Auth""#])
         let plain = try require(editor.references().first { $0.id != pill.id })
-        expectEqual(plain.props.frame.width, ReferenceEdits.width(of: plain.props))
+        expectEqual(plain.props.frame.width, pill.props.frame.width, "as wide as the one for the same place, whether the title is its alone or not")
+        expect(plain.props.frame.width > ReferenceEdits.width(of: plain.props), "wider than its name")
     },
     test("the references beside a note are a column of their own, 16 apart; a later run's joins it, 16 below its end, in line with it") {
         let pasteboard = NSPasteboard.withUniqueName()
@@ -173,7 +184,7 @@ extension CanvasEditor {
         let editor = board.editor
         let checkout = try require(editor.file.record(wharf.checkout)?.box)
         expectEqual(editor.references().map(\.frame.minX), [checkout.maxX + 80, checkout.maxX + 80], "in line, right of Checkout")
-        expectEqual(editor.references().map(\.frame.minY), [checkout.midY - 40, checkout.midY + 8], "32 tall, 16 apart, centered on it as one")
+        expectEqual(editor.references().map(\.frame.minY), [checkout.midY - 48, checkout.midY + 8], "40 tall, 16 apart, centered on it as one")
         expectEqual(try JSON(text: both.output)["changes"]?.arrayValue?.compactMap { $0["pushedPast"] }, [])
         editor.undo()
         expectEqual(editor.references().count, 0)
@@ -181,7 +192,7 @@ extension CanvasEditor {
         let later = try canvas(server, ["draw", #"edge "Checkout" -> "Docs" via: reference"#])
         expectEqual(later.status, 0, later.error)
         let pills = editor.references().map(\.frame)
-        expectEqual(pills.map(\.minY), [checkout.midY - 16, checkout.midY + 32], "the first where it was, the next 16 below it")
+        expectEqual(pills.map(\.minY), [checkout.midY - 20, checkout.midY + 36], "the first where it was, the next 16 below it")
         expectEqual(pills.map(\.minX), [checkout.maxX + 80, checkout.maxX + 80])
         expectEqual(try JSON(text: later.output)["warnings"]?.arrayValue ?? [], [])
     },
@@ -478,6 +489,74 @@ extension CanvasEditor {
         expectEqual(editor.references(on: BoardID(owner: wharf.gateway)).count, 0)
     },
 
+    test("a column of references beside a card clears itself: each pill a pill's height and the gap below the one above, however many, and kept together over a frame's edge") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let editor = board.editor
+        let names = ["Auth", "Billing", "Catalog", "Search", "Mail", "Queue", "Cache", "Logging", "Metrics", "Storage", "Payments", "Reports"]
+        for frames in ["frame \"Library\" size: 2600x200\nframe \"Work\" below \"Library\" size: 1500x1100\n"] {
+            expectEqual(try canvas(server, ["draw", "-"], input: frames).status, 0)
+        }
+        var notes = ""
+        for (n, name) in names.enumerated() { notes += "sticky-note \"\(name)\" in \"Library\" public: true size: 120x70 \(n == 0 ? "" : "right of \"\(names[n - 1])\"")\n" }
+        let placed = try canvas(server, ["draw", "-"], input: notes)
+        expectEqual(placed.status, 0, placed.error)
+        let made = try canvas(server, ["draw", "-"], input: "subboard \"Checkout\" in \"Work\" inside \"Work\" left size: 170x80\nsubboard \"Top\" in \"Work\" size: 170x80\n")
+        expectEqual(made.status, 0, made.error)
+        let edges = try canvas(server, ["draw", "-"], input: names.prefix(8).map { "edge \"Checkout\" -> \"\($0)\" via: reference" }.joined(separator: "\n")
+                               + "\n" + names.prefix(4).map { "edge \"Top\" -> \"\($0)\" via: reference" }.joined(separator: "\n"))
+        expectEqual(edges.status, 0, edges.error)
+        let pills = editor.references().map(\.frame)
+        expectEqual(pills.count, 12)
+        expect(pills.allSatisfy { $0.height == 40 }, "a pill is 40 tall")
+        for (a, b) in pills.enumerated().flatMap({ a in pills.enumerated().filter { $0.offset > a.offset }.map { (a.element, $0.element) } }) {
+            expect(!a.intersects(b), "\(a) and \(b) overlap")
+        }
+        // A column's pills are a pill's height and the gap apart, one after another: each is 16 clear below the one above, and the
+        // column is the card's own, which the frame's top, over the first pill, leaves whole.
+        for column in [Array(pills.prefix(8)), Array(pills.suffix(4))] {
+            let ordered = column.sorted { $0.minY < $1.minY }
+            for (above, below) in zip(ordered, ordered.dropFirst()) { expectEqual(below.minY, above.maxY + 16, "16 below the pill above") }
+        }
+        let work = try require(editor.contents(of: .root).shapes.first { $0.kind == Frame.kind && editor.registry.title(of: $0) == "Work" }?.box)
+        expect(pills.suffix(4).allSatisfy { work.contains($0) }, "the column beside a card at the top of a frame goes in the frame, whole")
+    },
+
+    test("two cards of one title in two frames: each one's references are a column of its own, settled in its own frame") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let editor = board.editor
+        let frames = try canvas(server, ["draw", "-"], input: "frame \"Library\" size: 1200x200\nframe \"web\" below \"Library\" size: 700x500\n"
+                                + "frame \"api\" right of \"web\" size: 700x500\n")
+        expectEqual(frames.status, 0, frames.error)
+        let notes = try canvas(server, ["draw", "-"], input: "sticky-note \"Auth\" in \"Library\" public: true size: 120x70\n"
+                               + "sticky-note \"Billing\" in \"Library\" public: true size: 120x70 right of \"Auth\"\n")
+        expectEqual(notes.status, 0, notes.error)
+        let cards = try canvas(server, ["draw", "-"], input: "subboard \"index.ts\" in \"web\" size: 170x80\nsubboard \"index.ts\" in \"api\" size: 170x80\n")
+        expectEqual(cards.status, 0, cards.error)
+        // One run: the pills beside the two index.ts are placed by clauses that read alike, and are two columns all the same.
+        let edges = ["web", "api"].flatMap { frame in ["Auth", "Billing"].map { "edge \"\(frame)\" > \"index.ts\" -> \"\($0)\" via: reference" } }
+        let drew = try canvas(server, ["draw", "-"], input: edges.joined(separator: "\n"))
+        expectEqual(drew.status, 0, drew.error)
+        let pills = editor.references().map(\.frame)
+        expectEqual(pills.count, 4)
+        @MainActor func frame(_ title: String) throws -> CGRect {
+            try require(editor.contents(of: .root).shapes.first { $0.kind == Frame.kind && editor.registry.title(of: $0) == title }?.box)
+        }
+        let web = try frame("web"), api = try frame("api")
+        expectEqual(pills.filter { web.contains($0) }.count, 2, "web's index.ts has its two, in web")
+        expectEqual(pills.filter { api.contains($0) }.count, 2, "api's has its two, in api")
+    },
     test("a shape the script draws is on the board the run draws on: joined to a public note elsewhere it gets a reference beside it there, and with nothing else to say the edge is straight on that note's board") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

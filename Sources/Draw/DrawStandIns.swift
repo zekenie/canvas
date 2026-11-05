@@ -580,10 +580,11 @@ extension Drawing {
     /// beside one shape on one side are a list, `LayoutProblem.impliedListStep` apart. Either way it's
     /// put down in or out of the containers it lands on. Its id, and what holds it (`in "F"`, a frame).
     ///
-    /// Where the name it shows is another shape's too (`sharesName`), it's told where it sits (`StandIns.seat`: in the frame
-    /// that holds it, at the top of the board an `in` names, else in `container`, the frame the shape beside it is in, else
-    /// on the board), and shows where its shape is beside the name, as a pick from the list does: a pill made for one of two
-    /// `index.ts` says which. Where its placements put it is a guess until it lands, as `share:`'s container is.
+    /// It's told where it sits (`StandIns.seat`: in the frame that holds it, at the top of the board an `in` names, else in
+    /// `container`, the frame the shape beside it is in, else on the board), and shows where its shape is over the name, as a
+    /// pick from the list does, however many shapes are called what its shape is: a pill made for one of two `index.ts` says
+    /// which, and one for a title that is its shape's alone says where that is as well. Where its placements put it is a guess
+    /// until it lands, as `share:`'s container is.
     private mutating func addStandIn(_ kind: ShapeKind, for target: AnyShapeRecord, called label: String, said: String, beside near: ShapeID, item: Int?,
                                      title nearTitle: String, nearIs place: EdgePlace, side: EdgeSide?,
                                      placed: (clauses: [Clause], container: ShapeName?), seatedIn container: ShapeID?,
@@ -591,7 +592,6 @@ extension Drawing {
         guard let route, var record = route.standIns.make(kind, standingFor: target.id, label: label), record.box != nil else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(said)")
         }
-        let tellsApart = sharesName(target)
         if !placed.clauses.isEmpty || placed.container != nil {
             let size = record.box!.size
             var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: placed.clauses, container: placed.container),
@@ -600,21 +600,19 @@ extension Drawing {
             items.append(standIn)
             let index = items.count - 1
             try contain(index)
-            if tellsApart {
-                // In the frame that holds it; `in` a subboard, at the top of its board; else beside the end, in its frame.
-                let seat = items[index].holder?.id ?? (placed.container == nil ? container : nil)
-                var seated = items[index].record
-                route.standIns.seat(&seated, at: .file(container: seat, board: self.target.board), in: self.target.shapes)
-                if let size = seated.box?.size {
-                    items[index].record = seated
-                    items[index].size = size
-                    items[index].room = size
-                }
+            // In the frame that holds it; `in` a subboard, at the top of its board; else beside the end, in its frame.
+            let seat = items[index].holder?.id ?? (placed.container == nil ? container : nil)
+            var seated = items[index].record
+            route.standIns.seat(&seated, at: .file(container: seat, board: self.target.board), in: self.target.shapes)
+            if let size = seated.box?.size {
+                items[index].record = seated
+                items[index].size = size
+                items[index].room = size
             }
             try resolveTargets(index)
             return (record.id, items[index].holder?.id)
         }
-        if tellsApart { route.standIns.seat(&record, at: .file(container: container, board: self.target.board), in: self.target.shapes) }
+        route.standIns.seat(&record, at: .file(container: container, board: self.target.board), in: self.target.shapes)
         let size = record.box!.size
         let found: ShapeItem.Found
         if let item {
@@ -640,18 +638,6 @@ extension Drawing {
         standIn.implied = true
         items.append(standIn)
         return (record.id, nil)
-    }
-
-    /// Whether another shape has the title of `record`: one of the file's, on a board the app can show, that the run neither
-    /// deletes nor takes with a board it deletes, or one the run draws. A stand-in made for it says where it is (`addStandIn`).
-    /// `StandInRoute.sharesTitle` is the same rule over the file as it is, for a writer that is not a script.
-    func sharesName(_ record: AnyShapeRecord) -> Bool {
-        guard let title = Drawing.title(of: record, names: names, naming: naming, registry: registry) else { return false }
-        let drawn = (itemsByTitle[title] ?? []).filter { items[$0].existing == nil }.count
-        guard let fileNames else { return (names.ids[title] ?? []).filter { !deletedShapes.contains($0) }.count + drawn > 1 }
-        let taken = deletedShapes.isEmpty ? [] : takenBoards.boards(owned: deletedShapes, in: editor.file)
-        let filed = (fileNames.places[title] ?? []).filter { !deletedShapes.contains($0.id) && !taken.contains($0.board) }.count
-        return filed + drawn > 1
     }
 
     /// A stand-in on the board, as a message names it: `the reference to "Auth"`, by the title of what it

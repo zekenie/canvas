@@ -5,12 +5,12 @@ import CoreGraphics
 import Foundation
 import TestKit
 
-// A stand-in an edge makes for a shape whose title another shape has (one of the file's, or one the run
-// draws) is told where it sits (`StandIns.seat`), so it says where its shape is beside the name and is as
-// wide as that: in what holds it (the edge's `in`), else in the frame of the shape beside it, else on the
-// board. One for a shape whose title is its alone is told nothing. `measure` tells one where it sits when
-// the end is written as a path: in the containers the path names, from those of the start's. Over the
-// Harbor's relays, which say where they're told they sit (`relaySeating`), and a pen.
+// A stand-in an edge makes is told where it sits (`StandIns.seat`), whether another shape has its shape's
+// title or not, so it says where its shape is beside the name and is as wide as that: in what holds it (the
+// edge's `in`), else in the frame of the shape beside it, else on the board. `measure` tells every one where
+// it sits: in the containers the end names (its path, or where the file or the script has the shape), from
+// those of the start's. Over the Harbor's relays, which say where they're told they sit (`relaySeating`),
+// and a pen.
 
 /// The Harbor with a second Deep (open) on Q's board, a pen on the root holding tiles A and B, and a tile
 /// Out beside the pen.
@@ -58,12 +58,12 @@ private struct Measured: Decodable {
         expectEqual(rows(try drawn(script, on: editor)).map { $0["did"] }, ["unchanged", "unchanged"])
         expectEqual(editor.file, made)
     },
-    test("one for a shape whose title is its alone is told nothing") {
+    test("one for a shape whose title is its alone is told as well") {
         let editor = try seated()
         _ = try drawn(#"edge "A" -> "Reef""#, on: editor)
-        expectEqual(editor.linkNames(), ["A -> relay Reef"])
+        expectEqual(editor.linkNames(), ["A -> relay Reef in Pen"])
     },
-    test("a title the run gives another shape counts, and one only a shape the run deletes has doesn't") {
+    test("a title the run gives another shape, or one a shape the run deletes has, changes nothing: every stand-in is told where it sits") {
         let editor = try seated()
         _ = try drawn("""
             tile board > "Reef" right of "Out"
@@ -77,18 +77,18 @@ private struct Measured: Decodable {
             delete board > "Pier"
             edge "A" -> "P" > "Pier"
             """, on: deleting)
-        expectEqual(deleting.relays().map(\.props.says), ["Pier"])
+        expectEqual(deleting.relays().map(\.props.says), ["Pier in Pen"])
         let kept = try seated()
         tile("Pier", CGRect(x: 1200, y: 300, width: 120, height: 80), in: kept)
         _ = try drawn(#"edge "A" -> "P" > "Pier""#, on: kept)
         expectEqual(kept.relays().map(\.props.says), ["Pier in Pen"], "and with it kept, two")
-        // Q's Deep goes with Q's board, which the run deletes: P's is the only Deep left.
+        // Q's Deep goes with Q's board, which the run deletes: P's is the only Deep left, and says where it is as well.
         let pocketed = try seated()
         _ = try drawn("""
             delete "Q"
             edge "A" -> "P" > "Deep"
             """, on: pocketed)
-        expectEqual(pocketed.relays().map(\.props.says), ["Deep"])
+        expectEqual(pocketed.relays().map(\.props.says), ["Deep in Pen"])
     },
     test("an edge that says where its stand-in goes seats it in what holds it there, and it lands there at that size") {
         let editor = try seated()
@@ -113,12 +113,15 @@ private struct Measured: Decodable {
         _ = try drawn(#"edge "Shore" -> "Q" > "Deep" in "P" right of "Inner" (gap: 100)"#, on: editor)
         expectEqual(editor.relays(on: BoardID(owner: harbor.p)).map(\.props.says), ["Deep in the board"])
     },
-    test("measure seats the pill of an end written as a path: in the containers the path names, from those of the start's path") {
+    test("measure seats the pill of every end: in the containers its path names, or where the script or the file has its shape, from those of the start's") {
         let editor = try seated()
         expectEqual(try pillWidth(measuring: #"edge "Pen" > "A" -> "P" > "Deep" via: relay"#, on: editor), Double(Relay.width(saying: "Deep in P from Pen")))
-        expectEqual(try pillWidth(measuring: #"edge "A" -> "P" > "Deep" via: relay"#, on: editor), Double(Relay.width(saying: "Deep in P")), "a start named by its title alone sits at the top")
-        expectEqual(try pillWidth(measuring: #"edge "A" -> "Reef" via: relay"#, on: editor), Double(Relay.width(saying: "Reef")), "an end named by its title alone is told nothing")
+        expectEqual(try pillWidth(measuring: #"edge "Nobody" -> "P" > "Deep" via: relay"#, on: editor), Double(Relay.width(saying: "Deep in P")), "a start no shape has sits at the top")
+        expectEqual(try pillWidth(measuring: #"edge "A" -> "P" > "Deep" via: relay"#, on: editor), Double(Relay.width(saying: "Deep in P from Pen")), "a start named by its title is where the file has it")
+        expectEqual(try pillWidth(measuring: #"edge "A" -> "Reef" via: relay"#, on: editor), Double(Relay.width(saying: "Reef in Q from Pen")), "an end named by its title is where the file has its shape, though no other shape has the title")
         let a = try require(shape("A", in: editor)).id
-        expectEqual(try pillWidth(measuring: #"edge #\#(a) -> "P" > "Deep" via: relay"#, on: editor), Double(Relay.width(saying: "Deep")), "nor one whose start is named by its id")
+        let reef = try require(editor.file.children.values.flatMap { $0.shapes }.first { $0.typed(as: Tile.self)?.props.label == "Reef" }).id
+        expectEqual(try pillWidth(measuring: #"edge #\#(a) -> "P" > "Deep" via: relay"#, on: editor), Double(Relay.width(saying: "Deep in P from Pen")), "a start named by its id too")
+        expectEqual(try pillWidth(measuring: #"edge "A" -> #\#(reef) via: relay"#, on: editor), Double(Relay.width(saying: "Reef in Q from Pen")), "an end named by its id too")
     },
 ])

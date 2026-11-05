@@ -136,7 +136,7 @@ struct EchoesPlugin: CanvasPlugin {
                           seats: { props, seat, context in
                               switch seat {
                               case .file(let container, _): props.says += " · " + (container.flatMap { context.document[$0]?.kind.rawValue } ?? "board")
-                              case .written(let shape, _): props.says += " · " + shape.joined(separator: " › ")
+                              case .written(let shape, _, _, _): props.says += " · " + shape.joined(separator: " › ")
                               }
                               props.frame.size.width = Echo.width(saying: props.says)
                           }) { shape, _ in shape.props.cites.map { .shapes([$0.shape]) } }

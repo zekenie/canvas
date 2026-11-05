@@ -33,6 +33,17 @@ extension PluginID {
 /// derived and never saved.
 public struct Reference: BoxShapeProps {
     public static let kind: ShapeKind = "reference"
+    /// Append only. The count is the version boards record.
+    public static let migrations = [
+        // The pill is tall enough for its place over its name: 40, not 32, about the same center.
+        PropsMigration("height 40") { props in
+            guard case .array(let frame)? = props["frame"], frame.count == 2,
+                  case .array(let origin) = frame[0], origin.count == 2, case .number(let y) = origin[1],
+                  case .array(let size) = frame[1], size.count == 2, case .number(let height) = size[1] else { return }
+            // The center stays where it was: the origin moves by half the difference.
+            props["frame"] = .array([.array([origin[0], .number(y + (height - 40) / 2)]), .array([size[0], .number(40)])])
+        },
+    ]
     public static let properties = Properties<Reference>(title: "Reference") {
         Property("frame", \.frame).required()
         Property("target", \.target).readOnly().description("The shape it stands for, picked by name.")
@@ -42,7 +53,7 @@ public struct Reference: BoxShapeProps {
     }
 
     /// What a click with the Reference tool places, and what `canvas draw` places.
-    public static let defaultSize = CGSize(width: 120, height: 32)
+    public static let defaultSize = CGSize(width: 120, height: 40)
 
     /// Its height is the pill's; its width is stored and refitted whenever its text or mode is
     /// written (`ReferenceEdits`).
@@ -211,6 +222,8 @@ public struct ReferencesPlugin: ListedPlugin {
                     editor.service(ReferenceState.self)?.goToOriginal(shape.id)
                 }]
             }
+            // VoiceOver: "FieldValues.swift, Reference, in Shop › Policies": the name, the kind, the whole place.
+            reference.accessibility { shape, editor in editor.service(ReferenceState.self)?.accessibleTraits(of: shape) }
             reference.referenceRow()
             reference.referencePanel()
             // Every match, or the first: steps of their own, the width as it is (the count's room is kept).

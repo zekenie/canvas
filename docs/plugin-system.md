@@ -5020,12 +5020,10 @@ note.contentsRow(affected: MentionRows.affected) { note, context in
   the title, dimmed, with "›" between, "Alpha › Beta › Checkout". Each is a `ContentsPathName` (a
   string literal is one), and one that is only what its kind is called (`isPlaceholder`: an untitled
   frame's "Frame") is fainter than a title, as in Jump To's rows. The path gives way before the
-  title does: a row without the room for all of it folds the names between the first and the last
-  into "…" (`ContentsLabel.folded(_:)`, the first and the nearest always said, as the path over
-  the canvas folds its middle), a row narrower than that cuts each name short on its own, the
-  longest first and none to less than a few letters (`ContentsStyle.pathNameFloor`, so every name
-  still starts and every "›" shows: `ContentsPathLine`, a `Layout`, since a stack would let the title
-  push the names down to nothing), and only then is the title cut. VoiceOver says "Checkout, in
+  title does, and has what the title whole leaves, never less than half the row: a row without the room for all of it folds the path
+  as every address is folded (`PlaceFold`, in Chrome: the first name, "…", the nearest, the middle
+  that fits put back, the first name cut at its end, the nearest always whole), in the row's fonts, a
+  board's name (`ContentsPathName.opensBoard`) in semibold, and only then is the title cut. VoiceOver says "Checkout, in
   Alpha › Beta".
   Its text is its tooltip, after its path if it has one (`label.help`, none for a
   placeholder with no path; past 200 characters, cut between words with "…"), for a row the list cuts short, in
@@ -7518,9 +7516,9 @@ follows undo and redo, during which nothing may):
   containers it is inside, outermost first, "Alpha › Beta", an untitled one by what its kind is called,
   less those the board shown is inside when the shape is inside it too; for a shape in none, the name of
   its board when that isn't the board shown, `boardName(ofShape:)`: what Boards calls the board,
-  `editor.name(of:root:)`, so an untitled subboard's is "Untitled Subboard" as on the path; "Board" for
-  the root), and `MentionChoice.items` the caret list's lines for them (the name, the matched
-  letters, the kind's symbol and tint, the place as the detail, cut at its start when too long, "Kind · place" for two
+  `editor.name(of:)`, so an untitled subboard's is "Untitled Subboard" as on the path; the file's name for
+  the root, "Board" while it has none), and `MentionChoice.items` the caret list's lines for them (the name, the matched
+  letters, the kind's symbol and tint, the place as the detail, folded in the row's room as every address is (`PlaceFold`: the first name, "…", the nearest, the names the query matched kept when they fit, boards in semibold), "Kind · place" for two
   called alike, spoken "Ann Lee, Note, in Alpha › Beta, 1 of 3"): one
   line for the `@` picker's neighbours (the Reference picker's, a row's list of notes), written once. The
   picker's own rows say the same place in the kind's place.
@@ -9024,8 +9022,9 @@ x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
   no rule, only said ("only a public shape can be stood for", "ask the user to make it public").
   `seats` is for a kind whose shape can say where the shape it stands for is: given where one `make`
   made sits (`StandInSeat`: `.file(container:board:)`, a frame, else the board, in the file `context`
-  reads; or `.written(shape:seat:)`, the names of the containers a script wrote for the shape and for
-  where it sits, with no file to read), it leaves the props saying that, as its writers would
+  reads; or `.written(shape:seat:opening:root:)`, the names of the containers a script wrote for the shape
+  and for where it sits, with no file to read, which of them own a board, and what the open file calls its
+  top board), it leaves the props saying that, as its writers would
   (References': fitted to the path from the seat to the shape, as a pick from the list is).
   `registry.standIns` (`StandIns`, main actor, nothing kept, so a caller that asks of many shapes makes it once: `RelationshipIndex.standIns`, `FarVerdicts`; the registry never changes) reads the
   rules without an index: `kinds`, `isEmpty`, `forwarding(of: record)` (a record's rule, applied: what
@@ -9038,8 +9037,7 @@ x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
   for nothing. `seat(&record, at:, in:)` runs the kind's `seats` on a record `make` made, which leave
   it in step as the kind's writers would (it isn't derived again: a pill fitted to its place at the
   tool's width would be taken for one placed; a kind that doesn't say is left as it is): `canvas draw`
-  asks it of a pill whose shape's title another shape has, so two pills for two `index.ts` say which
-  ([below](#draw)).
+  asks it of every pill it makes, so a pill says over its name where its shape is ([below](#draw)).
 - **Forwarded on read.** The index keeps what each carrier emitted (`byCarrier`, by each end and
   type) and what each stand-in stands for, and no copy: every view is read from them as it's asked.
   A read at the far end of an arrow into a stand-in makes one copy for each shape it stands for; a
@@ -11455,7 +11453,7 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
 }
 ```
 
-- **The props** (`Reference`): `frame` (32 tall, the width stored and fitted), `target: ReferenceTarget?`
+- **The props** (`Reference`): `frame` (40 tall, the width stored and fitted), `target: ReferenceTarget?`
   (`{id, label}`, a [name](#values-that-name-shapes), not a binding: it crosses boards, outlives its shape,
   is kept by cut and paste and by a copy that doesn't take the shape along, and renamed by one that does),
   `words`, `query: String?` (format `x-canvas-query`, so `canvas draw` refuses one the engine can't read)
@@ -11511,21 +11509,31 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   session's deleted references don't pile up and an answer of every shape isn't kept four times over. It's one of Topology's settle sources (busy while a wait is armed, a
   hop is due or a batch is out), so `canvas query` right after a draw waits for it, and "Finding…"
   shows only once a batch has been out 250 ms.
-- **The pill** (`ReferenceStyle`): a capsule 32 tall, a leading symbol (the kind's, tinted, or a
-  magnifier for every dynamic one, or a dashed square for what's gone), the label (14 medium, one line;
+- **The pill** (`ReferenceStyle`): a capsule 40 tall, a leading symbol (the kind's, in its original's
+  color, or a magnifier for every dynamic one, or a dashed square for what's gone), the label (14 medium, one line;
   a dynamic one's words, never its matches' names), and what trails (the eye of a shape gone private,
   and of a query whose every match isn't public;
-  the first match's kind symbol in its tint, an All one's count in a capsule ("1.2k" past a thousand, cut down, never rounded up), a "0"
+  the first match's kind symbol, an All one's count in a capsule ("1.2k" past a thousand, cut down, never rounded up), a "0"
   for none or a refusal, the warning for a failure); filled and bordered, or, when it stands for
   nothing, a dashed border with no fill and the label in italic at two thirds; while it's looked for,
-  solid with its words at half. A pill whose shape is somewhere other than the pill says where after the
-  shape's name, gray, in what room the width leaves: its path ("Alpha › Beta", the containers the shape is
-  inside and the pill is not), or the name of its board (`ReferenceEdits.pick(_:_:place:)` fits
-  the width to it for a pick from the list; written without, the width is the name's
-  alone). Its width keeps room for what may trail it (a dynamic one's count, a
-  direct one's eye or warning), so nothing that comes and goes refits it or cuts a short name short.
-  Zoomed out it's one square fill. Labels and symbols are memoized, symbols as bitmaps, so a frame of a
-  thousand pills builds none.
+  solid with its words at half. A pill whose shape is somewhere other than the pill says where in a small
+  line over the name (SF 11 at the label's color at 60%, a board's name semibold, the `›` and `…` at 30%): its
+  path ("Alpha › Beta", the containers the shape is inside and the pill is not, as steps that each say whether
+  they open a board), led by the board the shape is on (the file's name for the root) when that is not the
+  pill's and no step opens one, folded by Chrome's `PlaceFold` in the pill's room (`ReferenceEdits.pick(_:_:place:)` fits
+  the width to the line, folded at 234, for a pick from the list; written without, the width is the name's
+  alone). A pill with nothing to say, and any pill under 60% zoom, has its name alone, centered; an original
+  that is gone says "Deleted" or "Not available" in the line, and a query for its first match says that
+  match's place. Resting the pointer on a folded or cut line says the whole place, then the name, and on a
+  word the pill cuts, the word; VoiceOver always says the whole place. Its width keeps room for what may
+  trail it (a dynamic one's count, a direct one's eye or warning, which sits on the name's line), so nothing
+  that comes and goes refits it, cuts a short name short or folds its place.
+  The pill wears the color its original is drawn in, as the color book says it (`ColorBook.swatch(of:)`, so a
+  type's color on its notes, subboards and frames is read with no word of types): its wash for the fill,
+  its solid for the edge, its ink for the symbol; a shape with no color gives a neutral pill, a query for its
+  first match that match's color and for every match the color they share. Zoomed out it's one square
+  fill, in the color's solid at half. Labels and symbols are memoized, symbols as bitmaps, so a frame of a
+  thousand pills builds none, and the colors a pill wears are kept with the condition it was drawn as.
 - **Typing** (`ReferenceEditor`): the Reference tool places an empty pill and edits it, in a step named
   "Add Reference" (an existing pill's is "Edit Reference", `Editable.editingStepName`): one line over the
   pill, in an `NSView` framed in view points with its bounds in world units, as an arrow's label editor is,
@@ -12161,14 +12169,14 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   `existing(for:kind:sharing:near:in:)`, `spot(beside:edgeIs:side:in:excluding:staying:)` and
   `landing(of:at:in:avoiding:)`) is that making, for a writer that is not a script: it lands a pill
   of its size at a spot against `Surroundings`, in the rect a run gives the same pill.
-- **What it says.** A stand-in made for a shape whose title another shape has (`Drawing.sharesName`:
-  one of the file's on a board the app can show, but those the run deletes, or one the run draws) is
-  told where it sits before it's placed (`StandIns.seat`, `.file`: the frame that holds it, the top of
-  the board an `in` names, else the frame of the end beside it, else the board), so a reference says
-  where its shape is after the name and is as wide as that; one whose title is its alone is as wide
-  as its name. A writer that is not a script asks the route the same before it lands its pill,
-  `StandInRoute.seat(_:for:beside:in:)` over `sharesTitle(_:in:)` (the rule over the file as it is):
-  Types' row pick and a far relationship type do, so a pick and a script leave the same pill.
+- **What it says.** Every stand-in is told where it sits before it's placed (`StandIns.seat`,
+  `.file`: the frame that holds it, the top of the board an `in` names, else the frame of the end
+  beside it, else the board), whether another shape has its shape's title or not, so a reference says
+  where its shape is over the name and is as wide as that; one whose shape is right where it sits is
+  as wide as its name. A writer that is not a script asks the route the same before it lands its
+  pill, `StandInRoute.seat(_:beside:in:)`: Types' row pick and a far relationship type do, so a pick
+  and a script leave the same pill. The stand-ins beside one shape are put down together, so a
+  column over a frame's edge goes in or out as one.
 - **An edge may place it** (`EdgeStatement.clauses` and `container`: placements and `in`, written on
   the edge as on a shape). Then the stand-in it makes is placed by them, as a shape statement's
   placements place a shape (`addStandIn` asks `contain` and `resolveTargets`, as `complete` does, and
@@ -12325,10 +12333,12 @@ points (`AdornmentLayout.extent(of:in:)`, pure over the layout, so text left out
 reaches nowhere); asked of a record that is not on any board, nothing is kept for it. A reference
 row is the size of `registry.standIns.make(kind, standingFor:, label:)` for the end's title, for
 each edge that says `via:` (the kind it names): Draw knows no kind of stand-in, and a bare edge's
-goes through one or not by the boards, which it does not read. An end written as a path, as a script
-writes a title another shape has, is seated as written (`.written(shape:seat:)`: the containers its
-path names, and those of the start's path, none for a start named by its title alone; no seat for a
-start named by its id), so its pill measures as draw makes one. The constants are read from the
+goes through one or not by the boards, which it does not read. Every end is seated as written
+(`.written(shape:seat:opening:root:)`: the containers the end names, from its path, else from the script's
+shape of that title or the one shape the open file has, or from the file by its id (none at the top of the
+root board), and those of the start's; which of them own a board, the script's own containers first, so a
+frame it draws is a frame whatever the file holds; and the open file's name for its top board), so its pill
+measures as draw makes one. The constants are read from the
 source and never copied: the gaps (`GapName`), the step between references
 (`LayoutProblem.impliedListStep`), the inset of what `in "F"` holds (`LayoutProblem.insideGap`),
 the default gap, the list step, the clearances, and each kind's least size
@@ -15591,7 +15601,7 @@ arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hin
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference v1 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in ViewMenu.Panels · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in ViewMenu.Panels · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete

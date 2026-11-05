@@ -7,6 +7,7 @@ import Foundation
 import Frames
 import LanguageModels
 import Mentions
+import References
 import ShippedTesting
 import StickyNotes
 import Subboards
@@ -78,6 +79,22 @@ import Types
         looks["bend"] = 0
         let escaped = try require(codec.decodeRecord(props: try JSONEncoder().encode(JSONValue.object(looks)), kind: Arrow.kind, version: 1).typed(as: Arrow.self))
         expectEqual(escaped.props.text.runs, [.text("see @[x](shape:1234)")])
+    },
+    // Since its first version a pill is 40 tall, for the place over its name: a pill from before keeps its center.
+    test("a reference from before it was 40 tall keeps its center; today's fixture is 40 tall and its other members are as they were") {
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let codec = BoardCodec(registry: registry)
+        let directory = "Tests/CompositionTests/Fixtures/kinds"
+        expectEqual(codec.version(of: Reference.kind), 1)
+        let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/reference.v0.json"))
+        let old = try require(codec.decodeRecord(props: before, kind: Reference.kind, version: 0).typed(as: Reference.self))
+        expectEqual(old.props.frame, CGRect(x: 0, y: -4, width: 160, height: 40), "32 tall at y 0 is 40 tall at y -4: the same middle")
+        expectEqual(old.props.query, "sticky-note")
+        expectEqual(old.props.target?.label, "Shapes")
+        let data = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/reference.v1.json"))
+        let now = try require(codec.decodeRecord(props: data, kind: Reference.kind, version: 1).typed(as: Reference.self))
+        expectEqual(now.props.frame, CGRect(x: 0, y: 0, width: 160, height: 40))
+        expectEqual(now.props.words, "every note")
     },
     // A type's schema (Types' added property) is its text, one string, whose `$ref`s to other types
     // name them, as a note's mentions do.

@@ -4,6 +4,7 @@ import Arrows
 import CanvasRPC
 import CanvasTesting
 import Clipboard
+import Colors
 import Connections
 import CoreGraphics
 import Foundation
@@ -11,6 +12,7 @@ import Frames
 import Geometry
 import LanguageModels
 import Mentions
+import Palette
 import Publishing
 import Queries
 import References
@@ -22,6 +24,7 @@ import SwiftUI
 import TableOfContents
 import TestKit
 import Topology
+import Types
 import Validation
 
 // References as shipped: its tool, a note's arrow into a pill read as an arrow into what it stands
@@ -85,6 +88,26 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
     let id = h.editor.add(Frame(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160))), title: title)
     if isPublic { h.editor.makePublic([id]) }
     return id
+}
+
+/// The canvas drawn into a bitmap in either appearance (`renderBitmap` draws in the light one).
+@MainActor private func renderPills(_ editor: CanvasEditor, size: CGSize, dark: Bool) -> NSBitmapImageRep {
+    var rep: NSBitmapImageRep!
+    NSAppearance(named: dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                                      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let cg = NSGraphicsContext(bitmapImageRep: bitmap)!.cgContext
+        cg.translateBy(x: 0, y: size.height)
+        cg.scaleBy(x: 1, y: -1)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: cg, flipped: true)
+        let bounds = CGRect(origin: .zero, size: size)
+        editor.draw(in: cg, bounds: bounds, dirtyRect: bounds)
+        NSGraphicsContext.restoreGraphicsState()
+        rep = bitmap
+    }
+    return rep
 }
 
 @MainActor let referencesShippedTests = Suite("References, as shipped", [
@@ -311,7 +334,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         expectEqual(other.editor.references?.state(of: pasted), .missing(label: "shapes"))
         expectEqual(other.editor.topology?.forwarding(of: pasted), .record([]))
     },
-    test("canvas draw makes a reference from a query: 120 by 32 or as wide as it says; a query the app can't read is refused, and what a script can't write is unknown") {
+    test("canvas draw makes a reference from a query: 120 by 40 or as wide as it says; a query the app can't read is refused, and what a script can't write is unknown") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = emptyBoard(pasteboard)
@@ -321,7 +344,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         expectEqual(made.props.query, "sticky-note")
         expectEqual(made.props.all, true)
         expectEqual(made.props.target, nil)
-        expectEqual(made.frame.height, 32)
+        expectEqual(made.frame.height, 40)
         expectEqual(made.frame.width, ReferenceEdits.width(of: made.props), "fitted as the writers fit it")
         let bad = try refusedInProcess(#"reference query: "sticky-note[""#, on: h.editor)
         expectEqual(bad.reason, "invalid_value", "\(bad)")
@@ -455,6 +478,51 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let issues = try require(h.editor.validation?.result(for: pill)).issues
         expectEqual(issues.map(\.severity), [.warning])
         expectEqual(issues.first?.field, "query")
+    },
+    test("a pill wears its original's color through the color book: a note, a subboard, a frame with a color and with none, a type, and a note, a frame and a subboard of a type") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = emptyBoard(pasteboard)
+        let editor = h.editor
+        let person = editor.addTypeNote(#"{"type": "object"}"#, text: "A person", title: "Person", frame: CGRect(x: 100, y: 100, width: 200, height: 160))
+        editor.setColor(.blue, of: [person])
+        let ann = note(h, "Ann", at: CGPoint(x: 100, y: 400))
+        editor.addTypeLink(person, to: ann)
+        let plain = note(h, "Plain note", at: CGPoint(x: 400, y: 400))
+        let painted = note(h, "Painted note", at: CGPoint(x: 700, y: 400))
+        editor.setColor(.purple, of: [painted])
+        let wing = subboard(h, "Wing", at: CGPoint(x: 100, y: 700))
+        let typedWing = subboard(h, "Typed wing", at: CGPoint(x: 400, y: 700))
+        editor.addTypeLink(person, to: typedWing)
+        let room = frameShape(h, "Room", at: CGPoint(x: 100, y: 1000))
+        let paintedRoom = frameShape(h, "Painted room", at: CGPoint(x: 400, y: 1000))
+        editor.setColor(.teal, of: [paintedRoom])
+        let typedRoom = frameShape(h, "Typed room", at: CGPoint(x: 700, y: 1000))
+        editor.addTypeLink(person, to: typedRoom)
+        editor.makePublic([person, ann, plain, painted])
+        let wanted: [(String, ShapeID, Swatch?)] = [
+            ("a type's own note", person, BuiltInColors.blue.swatch), ("a note of a type", ann, BuiltInColors.blue.swatch),
+            ("a plain note", plain, BuiltInColors.yellow.swatch), ("a note with its own color", painted, BuiltInColors.purple.swatch),
+            ("a subboard", wing, BuiltInColors.indigo.swatch), ("a subboard of a type", typedWing, BuiltInColors.blue.swatch),
+            ("a frame with no color", room, nil), ("a frame with a color", paintedRoom, BuiltInColors.teal.swatch),
+            ("a frame of a type", typedRoom, BuiltInColors.blue.swatch),
+        ]
+        var pills: [ShapeID] = []
+        for (index, item) in wanted.enumerated() {
+            pills.append(reference(h, to: item.1, label: item.0, at: CGPoint(x: 2_000, y: 20 + CGFloat(index) * 60)))
+        }
+        editor.camera = Camera(origin: CGPoint(x: 1_980, y: 0))
+        for dark in [false, true] {
+            let drawn = renderPills(editor, size: CGSize(width: 340, height: 580), dark: dark)
+            for (index, item) in wanted.enumerated() {
+                let frame = try frame(of: pills[index], in: h)
+                let inside = CGPoint(x: frame.minX - 1_980 + 48, y: frame.minY + 3)
+                let expected = item.2.map { [$0.wash[dark: dark].red, $0.wash[dark: dark].green, $0.wash[dark: dark].blue].map { Int(($0 * 255).rounded()) } }
+                    ?? (dark ? [44, 44, 46] : [255, 255, 255])
+                let found = pixel(drawn, at: inside)
+                expect(zip(found, expected).allSatisfy { abs($0 - $1) <= 2 }, "\(item.0), \(dark ? "dark" : "light"): the pill's fill \(Array(found.prefix(3))) isn't \(expected)")
+            }
+        }
     },
     test("in the sidebar, a frame lists the shapes it holds, then its pills' rows under one closed \"References\" row with their count") {
         let pasteboard = NSPasteboard.withUniqueName()

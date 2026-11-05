@@ -1,4 +1,5 @@
 import AppKit
+import Chrome
 import Palette
 import TextEditing
 
@@ -8,8 +9,8 @@ import TextEditing
 enum ReferenceStyle {
     // MARK: The capsule
 
-    /// The pill's height, and so its corners' radius: a capsule.
-    static let height: CGFloat = 32
+    /// The pill's height, and so its corners' radius: a capsule. Tall enough for the place over the name.
+    static let height: CGFloat = 40
     static let radius: CGFloat = height / 2
     /// What a click with the Reference tool puts down, and what an empty pill is.
     static let defaultWidth: CGFloat = 120
@@ -27,6 +28,11 @@ enum ReferenceStyle {
     /// the gap and the badge. A count of 100,000 or a million ("120k", "1.2M") reaches a point or three
     /// into the gap.
     static let badgeRoom: CGFloat = 6 + 37
+    /// What surrounds the room a pill's text has: the leading pad, the symbol, the gap and the trailing pad. A pill's
+    /// width is this and the wider of its name (and what trails it) and its place's line.
+    static let padding: CGFloat = leadingPad + symbolBox + gap + trailingPad
+    /// The room a place's line is folded in when a pill is fitted: the widest a pill is, less the padding.
+    static let placeRoomMost: CGFloat = maxWidth - padding
     /// A direct pill reserves room for what may come to trail it (the eye of a shape gone private, a
     /// channel's warning): the gap and the glyph, so neither cuts a short name short.
     static let glyphRoom: CGFloat = gap + eyeSize
@@ -94,14 +100,40 @@ enum ReferenceStyle {
     /// to it, and a translation that failed: a warning, always its own orange.
     static let warningSymbol = "exclamationmark.triangle.fill"
     static let warningSize: CGFloat = 11
-    static let warningTint = NSColor.systemOrange
-    /// Where a pill's note is, when that isn't where the pill is (its path, "Alpha › Beta", or the name of its board):
-    /// gray, after the note's name, a gap from it, in what room the pill's width leaves (cut at its end, and left out when
-    /// less than `boardRoomLeast` remains). A pick from the list fits the pill's width to it too.
-    static let boardFont = NSFont.systemFont(ofSize: 14, weight: .regular)
-    static let boardGap: CGFloat = 6
-    static let boardRoomLeast: CGFloat = 24
-    static let boardColor = NSColor.tertiaryLabelColor
+    /// In light the system orange reads 1.7:1 on a wash, so it is `#B96B00` there (3:1 on every wash); the dark keeps the system's.
+    static let warningTint = NSColor(light: RGB(hex: 0xB96B00), dark: RGB(hex: 0xFF9F0A))
+    /// Where a pill's original is, when that isn't where the pill is (its place, "Alpha › Beta", the board it is on
+    /// leading when no step opens one): the fold of its steps (Chrome's `PlaceFold`) in the pill's room, set in SF 11
+    /// regular over the name, a board's name semibold.
+    static let placeFont = NSFont.systemFont(ofSize: 11, weight: .regular)
+    static let placeBoardFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    /// The width of text in the place's line, to a whole point, a board's name in its own weight: what `PlaceFold` is given.
+    static func placeWidth(_ text: String, isBoard: Bool) -> CGFloat {
+        ceil(NSAttributedString(string: text, attributes: [.font: isBoard ? placeBoardFont : placeFont]).size().width)
+    }
+    /// A place's steps folded in `room` points, in the pill's fonts: the line a pill is fitted for (the fold in the most room a
+    /// pill has, `placeRoomMost`) wherever that fits in `room`, so a pill fitted to its place draws the very line its width was
+    /// made for (a fold in exactly the width the line came to can cut a name shorter, since a cut backs up to a word); else
+    /// the fold in `room`.
+    static func placeLine(_ steps: [PlaceStep], room: CGFloat) -> PlaceLine {
+        func fold(_ room: CGFloat) -> PlaceLine { PlaceFold.line(for: steps, room: room) { placeWidth($0, isBoard: $1) } }
+        guard room >= PlaceFold.leastRoom, room < placeRoomMost else { return fold(room) }
+        let fitted = fold(placeRoomMost)
+        return fitted.width <= room ? fitted : fold(room)
+    }
+    /// The place line's text: the label's color at 60%; the `›` and `…` between and an untitled container's name at 30%.
+    static let placeColor = NSColor.labelColor.fading(to: 0.6)
+    static let placeFaintColor = NSColor.labelColor.fading(to: 0.3)
+    /// From this zoom up the pill has both lines; under it (down to the skeleton's) the name alone, centered.
+    static let placeZoom: CGFloat = 0.6
+    static func showsPlace(atZoom zoom: CGFloat) -> Bool { zoom >= placeZoom - 0.0005 }
+    /// Where the lines' baselines are in the pill's 40: the place's, and the name's under it. Strings and the editor both
+    /// set a baseline the ascender, rounded up, below a line's top (`lineTop`).
+    static let placeBaseline: CGFloat = 16
+    static let nameBaseline: CGFloat = 31
+    static let placeTop = placeBaseline - ceil(placeFont.ascender)
+    static let nameTop = nameBaseline - ceil(labelFont.ascender)
+    static let placeLineHeight = ceil(placeBoardFont.ascender - placeBoardFont.descender)
     /// A line the label sits on as the render and the editing view lay it out: its font's, rounded up.
     static let lineHeight = ceil(labelFont.ascender - labelFont.descender)
 
@@ -144,16 +176,25 @@ enum ReferenceStyle {
     static let findingStrength: CGFloat = 0.5
     static let borderWidth: CGFloat = 1
     static let dashPattern: [CGFloat] = [2, 2]
-    static let dashStrength: CGFloat = 0.35
+    /// The edge and the dashes of a pill wearing no color: the label's color at 45% (3:1 and better on either canvas).
+    static let neutralStrength: CGFloat = 0.45
+    static let dashStrength: CGFloat = neutralStrength
+    /// The count's capsule on a colored pill: its color's `solid` at 30%. A block zoomed out is `solid` at 50% over the canvas,
+    /// and a pill that stands for nothing, zoomed out, a lighter one still.
+    static let badgeStrength: CGFloat = 0.3
+    /// A pill for every match wears the color they share, looked for among this many matches at most (past it, gray): a scan of
+    /// 2,000 costs some 2 ms, once an answer.
+    static let sharedColorMost = 2_000
+    static let skeletonStrength: CGFloat = 0.5
 
     // MARK: Colors
 
     static let fill = NSColor(name: nil) {
         $0.isDark ? NSColor(srgbRed: 0x2C / 255, green: 0x2C / 255, blue: 0x2E / 255, alpha: 1) : .white
     }
-    /// The dashes of a pill that stands for nothing: the label's color at a third.
+    /// The dashes of a pill that stands for nothing, and the edge of one wearing no color: the label's color at 45%.
     static let dash = NSColor.labelColor.fading(to: dashStrength)
-    static let border = NSColor(name: nil) { $0.isDark ? NSColor.white.withAlphaComponent(0.16) : NSColor.black.withAlphaComponent(0.14) }
+    static let border = NSColor.labelColor.fading(to: neutralStrength)
     static let label = NSColor.labelColor
     static let secondary = NSColor.secondaryLabelColor
     static let placeholderColor = NSColor.placeholderTextColor
@@ -170,6 +211,9 @@ enum ReferenceStyle {
         let fill: CGColor
         let border: CGColor
         let dash: CGColor
+        let badge: CGColor
+        /// Whether the appearance is dark: asked once an appearance, not once a pill.
+        let dark: Bool
     }
 
     private static var surfaces: [NSAppearance.Name: Surface] = [:]
@@ -177,7 +221,7 @@ enum ReferenceStyle {
     static var surface: Surface {
         let appearance = NSAppearance.currentDrawing()
         if let found = surfaces[appearance.name] { return found }
-        let made = Surface(fill: fill.cgColor, border: border.cgColor, dash: dash.cgColor)
+        let made = Surface(fill: fill.cgColor, border: border.cgColor, dash: dash.cgColor, badge: badgeFill.cgColor, dark: appearance.isDark)
         surfaces[appearance.name] = made
         return made
     }
@@ -215,6 +259,7 @@ enum ReferenceStyle {
 
     /// What the pointer resting on a pill that stands for nothing says.
     static let helpFont = NSFont.systemFont(ofSize: 11)
+    static let helpNameFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let deletedHelp = "Deleted"
     static let unavailableHelp = "Not available"
     static let privateHelp = "Not public"
@@ -226,9 +271,6 @@ enum ReferenceStyle {
     static func mismatchLine(name: String, channels: String) -> String { "“\(name)” doesn’t take \(channels)." }
 
     /// Menu items and the panel's button.
-    /// What the root board is called where a line names a shape's board (the pill, the header, a
-    /// match's row): no owner gives it a name. Any other board is what Boards calls it.
-    static let rootBoardName = "Board"
 
     static let goToOriginal = "Go to Original"
     static let showMatches = "Show Matches"

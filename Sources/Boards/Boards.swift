@@ -195,7 +195,8 @@ extension Registry {
     /// agree with one another and with the path over the canvas.
     public func containerName(of record: AnyShapeRecord) -> ContainerName {
         ContainerName(title: record.isOpaque ? nil : title(of: record),
-                      placeholder: boardPlaceholder(of: record.kind) ?? label(of: record.kind).name)
+                      placeholder: boardPlaceholder(of: record.kind) ?? label(of: record.kind).name,
+                      opensBoard: !record.isOpaque && boardOwningKinds.contains(record.kind))
     }
 }
 
@@ -205,10 +206,14 @@ public struct ContainerName: Hashable, Sendable {
     public let title: String?
     /// What its kind is called, said in a title's place: "Untitled Subboard", "Frame".
     public let placeholder: String
+    /// Whether it owns a board, so that what is inside it is on another board than it is (a subboard), not a region of the
+    /// board it is on (a frame): what a place says in semibold.
+    public let opensBoard: Bool
 
-    public init(title: String?, placeholder: String) {
+    public init(title: String?, placeholder: String, opensBoard: Bool = false) {
         self.title = title
         self.placeholder = placeholder
+        self.opensBoard = opensBoard
     }
 
     /// What the path says: the title, else the placeholder.

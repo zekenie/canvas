@@ -1,4 +1,5 @@
 import AppKit
+import Chrome
 
 /// One row of a caret list: a section's header, an item that can be picked, or the one row an
 /// empty list shows instead (quiet: "No matches"). Only an item's row can be highlighted and
@@ -11,6 +12,33 @@ public enum CaretListRow: Equatable {
     /// The item a row picks; nil for a header or an empty state.
     public var item: CaretListItem? {
         if case .item(let item) = self { item } else { nil }
+    }
+}
+
+/// An address a row's detail says: a lead ("Note · ", for a shape called like another), then the steps, outermost
+/// first, and the characters of each step's name the query matched (ranges of `Character` offsets in the name; none,
+/// or one list a step, for steps nothing matched). A row too narrow for all of it folds the steps (`PlaceFold`),
+/// keeping those the query matched when it can.
+public struct CaretPlace: Equatable {
+    public var lead: String
+    public var steps: [PlaceStep]
+    public var matched: [[Range<Int>]]
+
+    public init(lead: String = "", steps: [PlaceStep], matched: [[Range<Int>]] = []) {
+        self.lead = lead
+        self.steps = steps
+        self.matched = matched
+    }
+
+    func matched(at index: Int) -> [Range<Int>] { matched.indices.contains(index) ? matched[index] : [] }
+
+    /// What a row with `room` points for its detail says, as text: the lead and the steps folded in the list's detail
+    /// fonts, "Note · Shop › … › Disputes".
+    @MainActor public func text(in room: CGFloat) -> String {
+        let (regular, bold) = CaretListRowsView.detailFonts()
+        let width = CaretListRowsView.placeWidth(self, regular: regular, bold: bold)
+        let lead = ceil(NSAttributedString(string: self.lead, attributes: [.font: regular]).size().width)
+        return self.lead + CaretListRowsView.placeLine(self, room: room - lead, width: width).line.text
     }
 }
 
@@ -40,6 +68,10 @@ public struct CaretListItem: Equatable {
     /// Whether a detail too long for its room is cut at its start, with "…" there, not at its end: a path
     /// ("Alpha › Beta") is told by the container its shape is in, which is last.
     public var detailTruncatesHead: Bool
+    /// Where the shape is, as steps, when the detail is an address: the row folds it in the room it has
+    /// (`PlaceFold`, as the pill's line and the table of contents' rows do) and draws it after `detail`'s lead,
+    /// in place of `detail`, which stays what the row says and is searched by.
+    public var place: CaretPlace?
     /// An SF Symbol right after the title, in the detail's color.
     public var trailingSymbol: String?
     /// Whether a line one point thick sets the row off from the one above it (a row of another kind,
@@ -57,7 +89,7 @@ public struct CaretListItem: Equatable {
 
     /// `spoken` nil: the title, then the detail ("type, keyword").
     public init(_ title: String, matched: [Range<Int>] = [], font: NSFont? = nil, symbol: String? = nil, tint: NSColor? = nil,
-                detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], detailTruncatesHead: Bool = false,
+                detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], detailTruncatesHead: Bool = false, place: CaretPlace? = nil,
                 trailingSymbol: String? = nil, separated: Bool = false,
                 chip: NSColor? = nil, chipInk: NSColor? = nil, spoken: String? = nil) {
         self.title = title
@@ -69,6 +101,7 @@ public struct CaretListItem: Equatable {
         self.detailMatched = detailMatched
         self.detailDimmed = detailDimmed
         self.detailTruncatesHead = detailTruncatesHead
+        self.place = place
         self.trailingSymbol = trailingSymbol
         self.separated = separated
         self.chip = chip

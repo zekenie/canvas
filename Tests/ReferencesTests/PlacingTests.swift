@@ -6,7 +6,7 @@ import Selection
 import TestKit
 import Topology
 
-// The Reference tool (R): a click places an empty pill, 120 by 32, centered on it, and types into it.
+// The Reference tool (R): a click places an empty pill, 120 by 40, centered on it, and types into it.
 // What's typed writes words and refits the pill; one left empty is discarded; Return and Escape end
 // editing; the steps are named for what the person did.
 
@@ -26,10 +26,10 @@ import Topology
         let tool = try require(h.editor.registry.tools.first { $0.label == "Reference" })
         expectEqual(tool.systemImage, "arrow.turn.up.right")
     },
-    test("a click places an empty pill 120 by 32, centered on the click, and edits it: one step, \"Add Reference\"") {
+    test("a click places an empty pill 120 by 40, centered on the click, and edits it: one step, \"Add Reference\"") {
         let h = try referenceHarness()
         let id = try place(h, at: CGPoint(x: 300, y: 300))
-        expectEqual(h.editor.document[id]?.box, CGRect(x: 240, y: 284, width: 120, height: 32))
+        expectEqual(h.editor.document[id]?.box, CGRect(x: 240, y: 280, width: 120, height: 40))
         expectEqual(h.reference(id)?.mode, .empty)
         expectEqual(h.editor.currentToolID, .select, "back to the select tool")
         expectEqual(h.editor.undoHistory.undoName, "Add Reference")
@@ -48,7 +48,7 @@ import Topology
         let long = try require(h.editor.document[id]?.box)
         expect(long.width > short.width, "wider as it's typed: \(short.width) then \(long.width)")
         expectEqual(long.minX, 240)
-        expectEqual(long.height, 32)
+        expectEqual(long.height, 40)
         expectEqual(h.reference(id)?.query, nil)
         textView.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 1, windowNumber: 0, context: nil,
                                                 characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36)!)

@@ -8,7 +8,7 @@ import TestKit
 
 // A dynamic pill once its query is answered, drawn to bitmaps in light and dark and zoomed out:
 // every dynamic pill leads with the magnifier; a first-match one trails the first match's kind
-// symbol in its tint, an All one its count in a capsule, one that found nothing (or was refused) a
+// symbol in its color, an All one its count in a capsule, one that found nothing (or was refused) a
 // "0", dashed, one that found only shapes that aren't public the eye, dashed, and one whose answer
 // failed the warning, dashed; while it's looked for it's solid with
 // its words dimmed. And a direct pill's width keeps room for what may come to trail it: a short name
@@ -105,7 +105,7 @@ private func trailingBox(of frame: CGRect) -> CGRect {
                 case .nothing:
                     expectEqual(inked, 0, "\(what): nothing trails")
                 case .symbol:
-                    expect(tinted(drawn, in: trailing, orange: true) > 6, "\(what): the first match's symbol, in the box's orange")
+                    expect(inked > 6, "\(what): the first match's symbol")
                 case .badge:
                     expect(inked > 6, "\(what): a count")
                     expectEqual(tinted(drawn, in: trailing, orange: true), 0, "\(what): no symbol, no warning")

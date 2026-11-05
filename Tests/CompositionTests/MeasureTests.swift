@@ -8,6 +8,7 @@ import DrawScript
 import Foundation
 import Geometry
 import LanguageModels
+import References
 import ShippedTesting
 import StickyNotes
 import TestKit
@@ -119,7 +120,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         let widths = references.compactMap { size($0["size"])?.first }
         expect(widths[0] < widths[1] && widths[1] < widths[2], "wider for a longer title: \(widths)")
         expectEqual(widths[2], 280, "clamped")
-        expectEqual(references.compactMap { size($0["size"])?.last }, [32, 32, 32])
+        expectEqual(references.compactMap { size($0["size"])?.last }, [40, 40, 40])
         // An edge that doesn't say via: is no reference to measure: whether it goes through one depends on the boards.
         let none = try measured("sticky-note \"A\"\nsticky-note \"B\"\nedge \"A\" -> \"B\"\n", in: shippedEditor()).get()
         expectEqual(none["references"]?.arrayValue?.count, 0)
@@ -257,7 +258,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
                 ["line": 2, "title": "Region", "kind": "frame", "size": [400, 300], "above": 9],
                 ["line": 3, "title": "Hub", "kind": "sticky-note", "size": [260, 200], "above": 27],
             ],
-            "references": [["line": 4, "for": "Hub", "size": [91, 32]]],
+            "references": [["line": 4, "for": "Hub", "size": [91, 40]]],
             "constants": [
                 "gaps": ["none": 0, "tight": 40, "normal": 80, "wide": 160],
                 "defaultGap": 80, "listStep": 64, "referenceStep": 16, "horizontalClearance": 40, "verticalClearance": 64,
@@ -383,6 +384,71 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         // A format's own refusal, a blank mention, still refuses the whole script.
         let blank = try canvas(server, ["measure", "-"], input: #"sticky-note "D" text: "@[]""#)
         expect(blank.status != 0, "a blank @[] is refused")
+    },
+    test("every end is seated as draw seats every pill: a shape of the open file on another board, named by its title or its id, measures as wide as the pill drawn, with its place over its name, and 40 tall") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        expectEqual(try canvas(server, ["draw", "-"], input: "subboard \"Payments\"\nsticky-note \"Checkout\" right of \"Payments\"\n").status, 0)
+        expectEqual(try canvas(server, ["draw", #"sticky-note "Auth" in "Payments" public: true"#]).status, 0)
+        let auth = try require(board.editor.file.children.values.flatMap { $0.shapes }.first { $0[TitleProperty.self] == "Auth" }).id
+        // Auth's title is its alone: no other shape of the file has it, and its pill says where it is all the same.
+        let script = "edge \"Checkout\" -> \"Auth\" via: reference\nedge \"Checkout\" -> #\(auth) via: reference\n"
+        let asked = try JSON(text: canvas(server, ["measure", "-"], input: script).output)
+        let sizes = try require(asked["references"]?.arrayValue).map { size($0["size"]) }
+        expectEqual(sizes.count, 2)
+        expectEqual(sizes[0], sizes[1], "a title and an id name the same shape: the same pill")
+        expectEqual(sizes[0]?.last, 40, "40 tall")
+        let drew = try canvas(server, ["draw", #"edge "Checkout" -> "Auth""#])
+        expectEqual(drew.status, 0, drew.error)
+        let pill = try require(try JSON(text: drew.output)["changes"]?.arrayValue?.first { $0["kind"] == "reference" })
+        expectEqual(drawnSize(pill), sizes[0], "measured as drawn")
+        let drawn = try require(board.editor.document.shapes.compactMap { $0.typed(as: Reference.self) }.first)
+        expect(drawn.props.frame.width > ReferenceEdits.width(of: drawn.props), "wider than its name: it says where Auth is")
+        // The same end on the board it is on says nothing more: as wide as its name.
+        let near = try JSON(text: canvas(server, ["measure", "-", "--board", "\(board.number)"], input: "sticky-note \"Start\"\nsticky-note \"Auth\" public: true\nedge \"Start\" -> \"Auth\" via: reference\n").output)
+        expect((size(near["references"]?.arrayValue?.first?["size"])?.first ?? 0) < (sizes[0]?.first ?? 0), "an end in the script, on the start's own board, says no place")
+    },
+    test("an end at the top of the root board, from a start on a subboard's board: its pill is led by the file's name, measured as drawn") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        board.editor.nameRoot("Customer accounts and billing")
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        expectEqual(try canvas(server, ["draw", "-"], input: "subboard \"Payments\"\nsticky-note \"Q\" public: true right of \"Payments\"\n").status, 0)
+        expectEqual(try canvas(server, ["draw", #"sticky-note "Start" in "Payments""#]).status, 0)
+        let asked = try JSON(text: canvas(server, ["measure", "-"], input: "edge \"Start\" -> \"Q\" via: reference\n").output)
+        let measured = size(try require(asked["references"]?.arrayValue?.first)["size"])
+        let drew = try canvas(server, ["draw", #"edge "Start" -> "Q""#])
+        expectEqual(drew.status, 0, drew.error)
+        let pill = try require(try JSON(text: drew.output)["changes"]?.arrayValue?.first { $0["kind"] == "reference" })
+        expectEqual(drawnSize(pill), measured, "measured as drawn, the file's name and all")
+        let drawn = try require(board.editor.file.children.values.flatMap { $0.shapes }.compactMap { $0.typed(as: Reference.self) }.first)
+        expect(drawn.props.frame.width > ReferenceEdits.width(of: drawn.props), "wider than its name: it says the board Q is on")
+    },
+    test("a frame of the script's own is a frame whatever the file holds: a pill for a shape in it measures the same with a subboard of its title in the file and without") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = newBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let name = "Customer accounts and billing api"
+        let script = "frame \(quoted(name))\nsticky-note \"Q\" in \(quoted(name)) public: true\nsticky-note \"Main\"\nedge \"Main\" -> \(quoted(name)) > \"Q\" via: reference\n"
+        @MainActor func pill() throws -> [Double]? {
+            size(try require(try JSON(text: canvas(server, ["measure", "-"], input: script).output)["references"]?.arrayValue?.first)["size"])
+        }
+        let without = try pill()
+        expectEqual(try canvas(server, ["draw", "subboard \(quoted(name))"]).status, 0)
+        expectEqual(try pill(), without, "the file's subboard of the title changes nothing: the script's own shape is a frame")
     },
     test("an id finds a shape of the open file as a title does: an edge's end by id is laid with the script, and with none open, or for an id nothing has, it is a warning and the edge is left out") {
         let pasteboard = NSPasteboard.withUniqueName()

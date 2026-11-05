@@ -8,7 +8,7 @@ export const NOTE_W = 300;
 export const TITLE_PILL = (title) => 27 + 10.2 * title.length;   // the title pill above a frame (an estimate; a frame is never narrower than its title)
 
 /** What the tool assumes until a measurement says otherwise: draw's own numbers, which `constants` of the measure JSON replace. */
-export const DEFAULT_CONSTANTS = { pillHeight: 32, pillStep: 16, pillGap: 80, frameInset: 40, tightGap: 40, frameMin: { w: 96, h: 64 } };
+export const DEFAULT_CONSTANTS = { pillHeight: 40, pillStep: 16, pillGap: 80, frameInset: 40, tightGap: 40, frameMin: { w: 96, h: 64 } };
 
 /** A note's width: 300, or wider for a long title, with room for a Public chip. */
 export function noteWidth(title) {
@@ -43,24 +43,24 @@ export const pillKey = (target, container) => target + '\u0000' + container;
  * ignored by measure, and so is the container a path leads through; a title that more than one node has is written as the path of the node, which
  * measure keeps as a shape of its own (two statements of one title with different paths are two shapes).
  *
- * A pill for a shape whose title another shape of the file has says where the shape is beside its name, from where the pill sits, and is as wide as
- * that (language.md, "Through a reference"): once every board is drawn, another shape is another node, a shape the file holds beside the drawing
- * (`existing`, its titles) or the card it all goes in (`into`). For such an end there is also an edge from each container a start of an edge to it is
- * in (a start there, both ends written as their paths from the top), its pill's line keyed by `pillKey`; what draws the pill then says the same.
+ * Every pill says where its shape is over its name, from where the pill sits (language.md, "Through a reference"), and is as wide as that, so every
+ * end a pill may be drawn for has an edge from each container a start of an edge to it is in (a start there, both ends written as their paths from
+ * the top), its pill's line keyed by `pillKey`; what draws the pill then says the same. The edge from the first other leaf, by titles where they are
+ * unique, is the pill's height and the width of one that says nothing (a shape right where its pill is).
  */
 export function measurePlan(model, opts = {}) {
   const items = toMeasure(model);
+  const into = opts.into ? fold(opts.into) : null;
   const lines = [], shapeAt = new Map(), pillAt = new Map();
   const count = new Map();
   for (const n of model.nodes.values()) count.set(n.title, (count.get(n.title) || 0) + 1);
-  const beside = new Set([...(opts.existing || [])].map(fold));
-  if (opts.into) beside.add(fold(opts.into));
-  const shared = (key) => { const title = model.node(key).title; return count.get(title) > 1 || beside.has(title); };
-  const path = (key) => { const n = model.node(key); return written((n.chain.length ? [] : [BOARD]).concat(n.chain.map((c) => model.node(c).title), [n.title])); };
+  // from the top of the board the digest is drawn on: the `--into` card's own board, which the script declares, else the first board (`board`)
+  const path = (key) => { const n = model.node(key); return written((into ? [into] : n.chain.length ? [] : [BOARD]).concat(n.chain.map((c) => model.node(c).title), [n.title])); };
   const name = (key) => (count.get(model.node(key).title) === 1 ? q(model.node(key).title) : path(key));
   const stmt = (it, place) => it.kind === 'subboard'
     ? `subboard ${name(it.key)}${place}`
     : `sticky-note ${name(it.key)}${place} size: ${it.w}x` + (it.text ? ` text: ${lit(it.text)}` : '') + (it.typing || '');
+  if (into) lines.push(`subboard ${q(into)}`);   // the board every path starts at, a card the digest is drawn into: where a pill's place leads with it
   items.forEach((it, i) => { lines.push(stmt(it, i ? ` below ${name(items[0].key)}` : '')); shapeAt.set(it.key, lines.length); });
   const leaves = items.map((it) => it.key);
   const note = (t) => { const n = model.node(t); return n && n.kind === 'sticky-note'; };
@@ -71,7 +71,6 @@ export function measurePlan(model, opts = {}) {
   for (const t of pillTargets(model)) {
     const from = leaves.find((x) => x !== t);
     if (from) { lines.push(`edge ${name(from)} -> ${name(t)} via: reference`); pillAt.set(lines.length, t); }
-    if (!shared(t)) continue;
     const seats = new Map();   // container -> the first start in it, by key
     for (const e of model.inn.get(t) || []) {
       if (e.end || e.atFrame || e.from === t) continue;
@@ -87,7 +86,7 @@ export const measureScript = (model, opts) => measurePlan(model, opts).text;
 
 /**
  * The sizes the layout uses, from `canvas measure`'s JSON: {shapes: {key: {w, h, above}}, pillWidth: {key}, constants}. Its rows are read by their line
- * (see measurePlan, given the `opts` the script was made with: `into` and `existing`).
+(see measurePlan, given the `opts` the script was made with: `into`).
  */
 export function sizesFrom(model, measure, opts) {
   const at = measurePlan(model, opts);

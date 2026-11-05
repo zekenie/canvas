@@ -24,7 +24,7 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
             /// Where the shape it stands for is, from where it is.
             var path: [ContentsPathName] {
                 (shape.props.target.flatMap { state?.rowPath(of: shape.id, to: $0.id) } ?? [])
-                    .map { ContentsPathName($0.text, isPlaceholder: $0.isPlaceholder) }
+                    .map { ContentsPathName($0.text, isPlaceholder: $0.isPlaceholder, opensBoard: $0.opensBoard) }
             }
             return switch state?.state(of: shape.props, id: shape.id) ?? .empty {
             case .empty:

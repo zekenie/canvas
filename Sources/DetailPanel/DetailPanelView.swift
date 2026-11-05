@@ -596,12 +596,19 @@ public struct DetailHeaderLabel<Title: View>: View {
     let subtitle: String?
     let systemImage: String?
     let title: Title
+    let place: [PlaceStep]
+    let lead: String
     @Environment(\.detailKindSymbol) private var kindSymbol
     @Environment(\.paneTitleRow) private var row
+    @State private var width: CGFloat?
 
-    public init(subtitle: String? = nil, systemImage: String? = nil, @ViewBuilder title: () -> Title) {
+    /// `place`: when the subtitle is an address after `lead` ("Note · "), its steps, which the line folds in the room it has
+    /// (`PlaceFold`, boards semibold) with `subtitle`, the whole, as its help; the header stays one line.
+    public init(subtitle: String? = nil, systemImage: String? = nil, place: [PlaceStep] = [], lead: String = "", @ViewBuilder title: () -> Title) {
         self.subtitle = subtitle
         self.systemImage = systemImage
+        self.place = place
+        self.lead = lead
         self.title = title()
     }
 
@@ -617,18 +624,44 @@ public struct DetailHeaderLabel<Title: View>: View {
             VStack(alignment: .leading, spacing: 1) {
                 title.font(titleType.font).lineLimit(1)
                     .environment(\.detailHeaderTitleType, titleType)
-                if let subtitle {
+                if !place.isEmpty {
+                    let size = row == nil ? DetailStyle.captionSize : DetailStyle.rowSubtitleSize
+                    let shortened = DetailPlaceText.line(place, lead: lead, room: placeRoom, size: size).isShortened
+                    DetailPlaceText(steps: place, lead: lead, room: placeRoom, size: size)
+                        .help(shortened ? subtitle ?? "" : "")
+                        .accessibilityLabel(subtitle ?? "")
+                        .allowsHitTesting(shortened)
+                } else if let subtitle {
                     Text(subtitle).font(row == nil ? DetailStyle.caption : DetailStyle.rowSubtitle).foregroundStyle(.secondary).lineLimit(1)
                         .allowsHitTesting(false)
                 }
             }
         }
+        .frame(maxWidth: place.isEmpty ? nil : .infinity, alignment: .leading)
+        .background {
+            if !place.isEmpty {
+                GeometryReader { geometry in Color.clear.preference(key: DetailHeaderWidthKey.self, value: geometry.size.width) }
+            }
+        }
+        .onPreferenceChange(DetailHeaderWidthKey.self) { if !place.isEmpty, width != $0 { width = $0 } }
+    }
+
+    /// What the subtitle may take: the header's width less the symbol's column; all of it until it is read.
+    private var placeRoom: CGFloat {
+        guard let width else { return .infinity }
+        return max(0, width - (systemImage ?? kindSymbol == nil ? 0 : DetailStyle.headerSymbolWidth + DetailStyle.pairSpacing))
     }
 
     private var titleType: DetailHeaderTitleType {
         guard row != nil else { return .header }
         return subtitle == nil ? .row : .rowOverSubtitle
     }
+}
+
+/// The width a header was given.
+private struct DetailHeaderWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// The type a header's title is set in: the header's, or in the window's title bar's row the window's title's, alone or over a

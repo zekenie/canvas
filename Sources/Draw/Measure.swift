@@ -2,6 +2,7 @@ import Adornments
 import Canvas
 import CoreGraphics
 import DrawScript
+import Foundation
 import Topology
 
 // `canvas measure`: how big a draw script's shapes would be, and what they reach, without drawing it.
@@ -132,6 +133,10 @@ public func measure(script text: String, program: String, in registry: Registry,
     }
 
     let standIns = registry.standIns
+    // The open file's names, read when a pill is seated from a path, and once: which of a path's containers own a board.
+    var fileNames: FileNames?
+    // The script's own containers, by whether each owns a board, read once for every pill.
+    let written = drawing.writtenContainerNames()
     var references: [MeasureResult.Reference] = []
     for (statement, edge) in through {
         guard let word = edge.via else { continue }
@@ -146,10 +151,12 @@ public func measure(script text: String, program: String, in registry: Registry,
         guard var record = standIns.make(kind, standingFor: ShapeID(), label: label), record.box != nil else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(quoted(label))")
         }
-        // An end named by its path is one whose title another shape has: its pill says where it is from where the pill sits,
-        // the container of the shape the edge starts at, as draw's pill for a shared title does (`Drawing.sharesName`).
-        if case .path(let path) = edge.to, let shape = drawing.writtenContainers(of: path), let seat = drawing.writtenSeat(of: edge.from) {
-            standIns.seat(&record, at: .written(shape: shape, seat: seat), in: scratch.shapeContext)
+        // Every pill says where its shape is over its name, from where the pill sits (the container of the shape the edge
+        // starts at), as draw's does: seated as written, where the end and the start can be read, so it is as wide as the one drawn.
+        if fileNames == nil, let editor, let naming = drawing.naming { fileNames = FileNames(editor, naming: naming) }
+        if let shape = drawing.writtenContainers(ofEnd: edge.to, among: fileNames), let seat = drawing.writtenSeat(of: edge.from, among: fileNames) {
+            let opening = drawing.writtenOpening(shape + seat, written: written, among: fileNames)
+            standIns.seat(&record, at: .written(shape: shape, seat: seat, opening: opening, root: editor?.rootName ?? ""), in: scratch.shapeContext)
         }
         let size = record.box!.size
         references.append(MeasureResult.Reference(line: statement.line, target: label, size: [size.width, size.height]))
@@ -182,13 +189,76 @@ extension Drawing {
         return (head + path.rest.dropLast()).map { fold($0) ?? $0 }
     }
 
-    /// Where the pill an edge starting at `start` makes sits, as a measure reads it: the containers its path names (none for a
-    /// lone title, read as the top of the board), nil for an id.
-    func writtenSeat(of start: ShapeName) -> [String]? {
+    /// The titles of the script's own containers, folded, by whether each owns a board (a subboard's) or not (a frame's): what
+    /// a path's names are first (`writtenOpening`). Read once a measure.
+    func writtenContainerNames() -> (boards: Set<String>, regions: Set<String>) {
+        let owners = registry.boardOwningKinds, containing = registry.containingKinds
+        var boards: Set<String> = [], regions: Set<String> = []
+        for item in items {
+            guard let title = item.title else { continue }
+            if owners.contains(item.kind) { boards.insert(title) } else if containing.contains(item.kind) { regions.insert(title) }
+        }
+        return (boards, regions)
+    }
+
+    /// Which of the containers a path names (folded, as `writtenContainers` gives them) own a board: the script's own container
+    /// of that title, when it has one (`written`: a subboard does, a frame doesn't, whatever the file holds), else, in the open
+    /// file, a subboard of that title. A place says those in their own weight, so a pill measured for a path is as wide as the
+    /// one drawn once its subboards exist.
+    func writtenOpening(_ names: [String], written: (boards: Set<String>, regions: Set<String>), among fileNames: FileNames?) -> Set<String> {
+        let owners = registry.boardOwningKinds
+        return Set(names.filter { name in
+            if written.boards.contains(name) { return true }
+            if written.regions.contains(name) { return false }
+            return fileNames?.places[name]?.contains { place in
+                fileNames?.editor.file.record(place.id).map { !$0.isOpaque && owners.contains($0.kind) } ?? false
+            } ?? false
+        })
+    }
+
+    /// The containers the shape an edge's end names is in, as a path names them (`writtenContainers(of:)`): a path's own; a
+    /// title's, read from the script's own shape of that title (its path, none for one written by its title alone, which is read
+    /// at the top of the board) else from the one shape the open file has under it; an id's, from the open file. Nil where it
+    /// can't be read: an id the file doesn't have, a title that is nowhere or on more than one shape of the file.
+    func writtenContainers(ofEnd end: ShapeName, among fileNames: FileNames?) -> [String]? {
+        switch end {
+        case .path(let path):
+            return writtenContainers(of: path)
+        case .title(let written):
+            guard let title = fold(written) else { return nil }
+            if let drawn = (itemsByTitle[title] ?? []).first(where: { items[$0].existing == nil }) {
+                return items[drawn].pathKey.flatMap { writtenContainers(of: $0) } ?? []
+            }
+            guard let fileNames, let places = fileNames.places[title], places.count == 1 else { return nil }
+            return writtenContainers(ofFileShape: places[0].id, among: fileNames)
+        case .id(let text):
+            guard let fileNames, let uuid = UUID(uuidString: text), let place = fileNames.place(ofID: ShapeID(uuid)) else { return nil }
+            return writtenContainers(ofFileShape: place.id, among: fileNames)
+        }
+    }
+
+    /// The titles of the containers the open file's shape `id` is in, outermost first, folded, as a path names them: none for
+    /// a shape at the top of the root board; nil where one has no title, which a path can't name.
+    func writtenContainers(ofFileShape id: ShapeID, among fileNames: FileNames) -> [String]? {
+        guard let naming else { return nil }
+        let editor = fileNames.editor
+        var names: [String] = []
+        for container in Self.containers(above: id, in: editor).reversed() {
+            guard let record = editor.file.record(container), let name = naming.name(record, editor.registry) else { return nil }
+            names.append(fold(name) ?? name)
+        }
+        return names
+    }
+
+    /// Where the pill an edge starting at `start` makes sits, as a measure reads it: the containers its path names, those of a
+    /// title's shape (as `writtenContainers(ofEnd:among:)` reads one, none for a title that names no shape of the file: the top
+    /// of the board), nil for an id the file doesn't have.
+    func writtenSeat(of start: ShapeName, among fileNames: FileNames?) -> [String]? {
         switch start {
-        case .title: []
-        case .id: nil
-        case .path(let path): writtenContainers(of: path)
+        case .title(let written):
+            return writtenContainers(ofEnd: start, among: fileNames) ?? (fold(written) == nil ? nil : [])
+        case .id: return writtenContainers(ofEnd: start, among: fileNames)
+        case .path(let path): return writtenContainers(of: path)
         }
     }
 }

@@ -102,7 +102,7 @@ extension RelayDefinition: DerivedProps {
     switch seat {
     case .file(let container, _):
         props.says += " in " + (container.flatMap { context.document[$0]?.typed(as: Pen.self)?.props.label } ?? "the board")
-    case .written(let shape, let seat):
+    case .written(let shape, let seat, _, _):
         props.says += " in " + shape.joined(separator: " > ") + (seat.isEmpty ? "" : " from " + seat.joined(separator: " > "))
     }
     props.frame.size.width = Relay.width(saying: props.says)

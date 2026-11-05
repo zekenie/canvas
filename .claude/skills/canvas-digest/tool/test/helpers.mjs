@@ -19,11 +19,10 @@ export const pillEstimate = (title, place) => Math.min(280, Math.max(64, Math.ce
 
 /**
  * A note is as tall as its text needs, at least 200 (the app measures the real height); a pill's width is its label's and its place's, 64..280.
- * `opts` are measurePlan's (the titles beside the drawing).
  */
-export function estimateMeasure(model, opts) {
+export function estimateMeasure(model) {
   const shapes = [], references = [];
-  const at = measurePlan(model, opts);   // the line of each statement in the script `canvas measure` is given: its rows are read by line
+  const at = measurePlan(model);   // the line of each statement in the script `canvas measure` is given: its rows are read by line
   for (const it of toMeasure(model)) {
     const line = at.shapeAt.get(it.key);
     if (it.kind === 'subboard') { shapes.push({ line, title: it.title, kind: 'subboard', size: [240, 160], above: 30 }); continue; }

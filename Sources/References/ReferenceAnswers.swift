@@ -82,6 +82,14 @@ struct Finding {
     var asked: ForwardingKey?
     /// Whether its answer may be out of date: asked at the next batch.
     var dirty = true
+    /// The colors its last answer is drawn in (`ReferenceState.answerColors`): the first match's, or the one every match shares;
+    /// nil for none. Kept while the question changes, so a pill looked for again keeps the color of its last answer, dimmed.
+    var colors: PillColors?
+    /// The matches `colors` were worked out from (at most `ReferenceStyle.sharedColorMost`; none past it, where the pill is gray
+    /// whatever they hold), so a commit that changes one of them says the colors may be out of date (`colorsStale`) and a commit that
+    /// changes none costs nothing of them.
+    var colorSources: Set<ShapeID> = []
+    var colorsStale = false
 }
 
 /// What came back for one reference of a batch.
@@ -191,6 +199,7 @@ extension ReferenceState {
     /// the others.
     func hearDynamic(_ changes: ChangeSet, touched: [ShapeID: AnyShapeRecord?]) {
         if changes.replacedDocument { return rebuildDynamic() }
+        noteColorSources(changes)
         var own: Set<ShapeID> = []
         for (id, record) in touched where noteDynamic(id, record) { own.insert(id) }
         // Each shape the commit names, as often as it names it, that isn't a reference whose own
@@ -222,6 +231,7 @@ extension ReferenceState {
         finding.all = props.all
         finding.dirty = true
         finding.outcome = remembered(key, for: id).map { .answered($0.matches) }
+        if case .answered(let matches)? = finding.outcome { takeColors(&finding, from: matches) }
         dynamic[id] = finding
         answered.bump(id)
         return true
@@ -436,6 +446,9 @@ extension ReferenceState {
                 (status, found) = (.refused(message), QueryMatches(canonical: "", ids: [], count: 0, revision: revision))
             case .failed(let failure):
                 finding.outcome = .failed(failure)
+                // A failed pill is neutral, as every pill that stands for nothing is, zoomed out as in full.
+                finding.colors = nil
+                finding.colorSources = []
                 dynamic[id] = finding
                 changed.insert(id)
                 continue
@@ -449,13 +462,21 @@ extension ReferenceState {
                 continue
             }
             finding.applied[key] = found.revision
-            let before = finding.outcome
+            let before = finding.outcome, colorsBefore = finding.colors
             finding.outcome = status
+            // Every commit lands every reference again: its colors are read again only for an answer that is new, or when a
+            // commit changed a match (`colorsStale`).
+            if case .answered(let matches) = status {
+                if !Self.says(status, theSameAs: before) || finding.colorsStale { takeColors(&finding, from: matches) }
+            } else {
+                finding.colors = nil
+                finding.colorSources = []
+            }
             dynamic[id] = finding
             if case .answered(let matches) = status { remember(RememberedAnswer(key: key, matches: matches), for: id) }
             answers[id] = ProvidedForwarding(key: key, shapes: stoodFor(found, all: finding.all), revision: found.revision)
             // Every commit asks every reference again: only an answer that says something new is told.
-            if !Self.says(status, theSameAs: before) { changed.insert(id) }
+            if !Self.says(status, theSameAs: before) || finding.colors !== colorsBefore { changed.insert(id) }
         }
         if batch == nil {
             isSlow = false
@@ -473,6 +494,34 @@ extension ReferenceState {
         land([(id, key, .matches(matches))], revision: matches.revision)
     }
     #endif
+
+    /// The file's colors, or what gives a shape one, changed: what each answer is drawn in is worked out again.
+    func refreshAnswerColors() {
+        for (id, finding) in dynamic {
+            guard case .answered(let matches)? = finding.outcome else { continue }
+            var finding = finding
+            takeColors(&finding, from: matches)
+            dynamic[id] = finding
+        }
+    }
+
+    /// Works out the color an answer is drawn in and the matches it is read from.
+    private func takeColors(_ finding: inout Finding, from matches: QueryMatches) {
+        finding.colors = answerColors(matches, all: finding.all)
+        finding.colorsStale = false
+        let count = finding.all ? matches.ids.count : min(1, matches.ids.count)
+        finding.colorSources = matches.count <= ReferenceStyle.sharedColorMost || !finding.all ? Set(matches.ids.prefix(count)) : []
+    }
+
+    /// A commit changed shapes: an answer drawn in a color read from a match it changed (or removed) may be drawn in another now.
+    func noteColorSources(_ changes: ChangeSet) {
+        for (id, finding) in dynamic where !finding.colorSources.isEmpty && !finding.colorsStale {
+            let source = finding.colorSources
+            if !changes.changed.isDisjoint(with: source) || !changes.removed.isDisjoint(with: source) || !changes.elsewhere.isDisjoint(with: source) {
+                dynamic[id]?.colorsStale = true
+            }
+        }
+    }
 
     /// Whether two answers to one question say the same: the same matches, count and matches held back
     /// (the revision they were taken at is no part of what a pill, a panel or a row shows).

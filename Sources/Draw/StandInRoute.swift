@@ -222,30 +222,16 @@ extension StandInRoute {
                            step: end == nil ? GapName.normal.value : LayoutProblem.impliedListStep, level: level)
     }
 
-    /// Tells a pill `make` made for `far` where it sits when another shape has `far`'s title (`sharesTitle`), so it says where
-    /// its shape is beside its name and is as wide as that (`StandIns.seat`): in the frame `near`, the shape it goes beside, is
-    /// in, else on `near`'s board. What `canvas draw` does with a pill it puts beside a shape (`Drawing.addStandIn`), for a writer
-    /// that is not a script, so a pick and a script leave the same pill. Asked before the pill's spot and landing, which go by
-    /// its size.
-    public func seat(_ pill: inout AnyShapeRecord, for far: AnyShapeRecord, beside near: ShapeID, in editor: CanvasEditor) {
-        guard sharesTitle(far, in: editor), let board = editor.file.board(containing: near), let reading = editor.reading(of: board) else { return }
+    /// Tells a pill `make` made where it sits, so it says where its shape is over its name and is as wide as that
+    /// (`StandIns.seat`): in the frame `near`, the shape it goes beside, is in, else on `near`'s board. What `canvas draw` does
+    /// with every pill it puts beside a shape (`Drawing.addStandIn`), for a writer that is not a script, so a pick and a script
+    /// leave the same pill, whether the title is the shape's alone or not. Asked before the pill's spot and landing, which go
+    /// by its size.
+    public func seat(_ pill: inout AnyShapeRecord, beside near: ShapeID, in editor: CanvasEditor) {
+        guard let board = editor.file.board(containing: near), let reading = editor.reading(of: board) else { return }
         let kinds = registry.containingKinds
         let container = kinds.isEmpty ? nil : reading.document.container(of: near, containingKinds: kinds)
         standIns.seat(&pill, at: .file(container: container, board: board), in: reading.shapes)
-    }
-
-    /// Whether another shape than `shape`, on a board `editor` can show, has its title as a script names shapes
-    /// (`registry.drawNaming`; none without it), the file as it is: the rule a run's pill goes by too, over what the run
-    /// deletes and draws (`Drawing.sharesName`). A pass over the file's shapes, to the first one called alike.
-    public func sharesTitle(_ shape: AnyShapeRecord, in editor: CanvasEditor) -> Bool {
-        guard let naming = registry.drawNaming, let title = naming.name(shape, registry) else { return false }
-        let file = editor.file
-        for board in [BoardID.root] + file.children.keys.map({ BoardID(owner: $0) }) where editor.canShow(board) {
-            for record in file[board].shapes where record.id != shape.id && !record.isOpaque && naming.name(record, registry) == title {
-                return true
-            }
-        }
-        return false
     }
 
     /// Where a pill of `size` lands at `spot`, as `canvas draw` lands a pill: placed against `near`, or

@@ -33,7 +33,7 @@ import TextEditing
         direct.target = ReferenceTarget(id: ShapeID(), label: "payment notes about launch")
         expectEqual(ReferenceEdits.width(of: words), ReferenceEdits.width(of: direct) + 43 - 17, "the reserved count, where a direct pill keeps its glyph's")
         expectEqual(widths.last, ReferenceEdits.width(of: words))
-        expectEqual(try require(h.editor.document[field.id]?.box).height, 32)
+        expectEqual(try require(h.editor.document[field.id]?.box).height, 40)
     },
 
     test("never under 64 or over 280: no name is 64, 200 characters is 280, and the text past it scrolls with the caret") {

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Chrome
 import TextEditing
 
 /// One name of a row's path: a container's title, or, for one with none, what its kind is called,
@@ -10,11 +11,14 @@ public struct JumpToSegment: Hashable, Sendable {
     public var isPlaceholder: Bool
     /// The characters the query matched, as ranges of `Character` offsets in `text`.
     public var matched: [Range<Int>]
+    /// Whether it owns a board (a subboard), said in semibold: what is inside it is on another board.
+    public var opensBoard: Bool
 
-    public init(text: String, isPlaceholder: Bool = false, matched: [Range<Int>] = []) {
+    public init(text: String, isPlaceholder: Bool = false, matched: [Range<Int>] = [], opensBoard: Bool = false) {
         self.text = text
         self.isPlaceholder = isPlaceholder
         self.matched = matched
+        self.opensBoard = opensBoard
     }
 }
 
@@ -34,6 +38,12 @@ public struct JumpToCandidate {
     /// The path as the row shows it, its names separated by ›; empty for a shape on the root, in no
     /// container.
     public var pathText: String { path.map(\.text).joined(separator: JumpToStyle.separator) }
+
+    /// The path as steps for the row to fold when it is too narrow for all of it, the names the query matched kept.
+    public var place: CaretPlace? {
+        path.isEmpty ? nil : CaretPlace(steps: path.map { PlaceStep(name: $0.text, opensBoard: $0.opensBoard, isPlaceholder: $0.isPlaceholder) },
+                                        matched: path.map(\.matched))
+    }
 
     /// The path's matched and dimmed characters as ranges of `Character` offsets in `pathText`.
     var pathRanges: (matched: [Range<Int>], dimmed: [Range<Int>]) {
@@ -81,7 +91,7 @@ extension JumpToRow {
                 let path = candidate.pathText
                 let place = path.isEmpty ? "" : ", in \(path)"
                 return .item(CaretListItem(candidate.title, matched: candidate.titleMatched, symbol: candidate.systemImage, tint: candidate.tint,
-                                           detail: path.isEmpty ? nil : path, detailMatched: ranges.matched, detailDimmed: ranges.dimmed,
+                                           detail: path.isEmpty ? nil : path, detailMatched: ranges.matched, detailDimmed: ranges.dimmed, place: candidate.place,
                                            spoken: "\(candidate.title), \(candidate.kindName)\(place), \(position) of \(shapes)"))
             }
         }

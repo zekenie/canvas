@@ -72,8 +72,10 @@ public enum StandInSeat: Sendable, Equatable {
     /// In the file: in `container` (a frame), else directly on `board`. The kind reads the file to say where its shape is.
     case file(container: ShapeID?, board: BoardID)
     /// As a script wrote it, where there's no file to read (a measure): the names of the containers the shape it stands for
-    /// is inside, outermost first, and of those where it sits.
-    case written(shape: [String], seat: [String])
+    /// is inside, outermost first, and of those where it sits; `opening`, the names among them that a board of the open file
+    /// is known to be owned by (a subboard's), which a place says in its own weight; `root`, what the open file calls its top
+    /// board (the host's name for it), which a place led by the top board says: empty where there's no file, or it has none.
+    case written(shape: [String], seat: [String], opening: Set<String> = [], root: String = "")
 }
 
 /// How a stand-in kind's shape, made to stand for a shape (`ForwardingMaker`), takes where it sits: it shows where that shape

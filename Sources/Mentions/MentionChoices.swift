@@ -17,8 +17,8 @@ public struct MentionChoice: Hashable, Sendable {
     /// The lines a list shows for these: a shape's symbol in its tint, its name with the matched
     /// characters, and where it is at the trailing end ("Alpha › Beta"; an untitled container by its kind, fainter),
     /// or "Kind · Alpha › Beta" when two are called alike (the place's part only when it isn't the board shown). A place
-    /// too long for its room is cut at its start, the kind first: what tells two alike apart is the container each is in,
-    /// which is last. Said as "Groceries, Note, in Alpha › Beta, 2 of 7".
+    /// too long for its room is folded (`PlaceFold`, as the pill's line and the table of contents' rows are): the
+    /// first name, "…", the nearest, the nearest always whole; the kind first. Said as "Groceries, Note, in Alpha › Beta, 2 of 7".
     @MainActor public static func items(_ choices: [MentionChoice]) -> [CaretListItem] {
         var counts: [String: Int] = [:]
         for choice in choices { counts[choice.candidate.appearance.label.lowercased(), default: 0] += 1 }
@@ -34,6 +34,7 @@ public struct MentionChoice: Hashable, Sendable {
             }
             return CaretListItem(appearance.label, matched: choice.candidate.matched, symbol: appearance.systemImage, tint: appearance.tint,
                                  detail: detail?.text, detailMatched: detail?.matched ?? [], detailDimmed: detail?.dimmed ?? [], detailTruncatesHead: place != nil,
+                                 place: place?.caretPlace(lead: shared ? appearance.kindName + " · " : ""),
                                  spoken: "\(appearance.label), \(appearance.kindName)\(place.map { ", " + $0.spoken } ?? ""), \(position + 1) of \(choices.count)")
         }
     }
@@ -47,9 +48,9 @@ extension MentionState {
 
     /// The name of the board a shape is on, nil on the board shown: what Boards calls it
     /// (`editor.name(of:root:)`: its owner's title, else its kind's placeholder, "Untitled Subboard",
-    /// else its kind's name), "Board" for the root (whose name is the file's, which the host knows).
+    /// else its kind's name), the file's name for the root ("Board" when it has none).
     public func boardName(ofShape id: ShapeID) -> String? {
         guard let board = editor.file.board(containing: id), board != editor.board else { return nil }
-        return editor.name(of: board, root: MentionStyle.rootBoardName)
+        return editor.name(of: board)
     }
 }

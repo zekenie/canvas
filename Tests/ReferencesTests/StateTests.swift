@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Chrome
 import CoreGraphics
 import Mentions
 import Publishing
@@ -179,7 +180,8 @@ import Titles
         expectEqual(state.header(of: props), ReferenceHeaderContent(symbol: "shippingbox", title: "shapes", subtitle: kind))
         let (inside, _) = try boxInPocket(h, title: "inside", pocketTitle: "Drawer")
         let far = try require(h.reference(h.addReference(to: inside, label: "inside")))
-        expectEqual(state.header(of: far), ReferenceHeaderContent(symbol: "shippingbox", title: "inside", subtitle: kind + " · Drawer"),
-                    "the kind, then the board it's on")
+        expectEqual(state.header(of: far), ReferenceHeaderContent(symbol: "shippingbox", title: "inside", subtitle: kind + " · Drawer", lead: kind + " · ",
+                                                                  place: [PlaceStep(name: "Drawer", opensBoard: true)]),
+                    "the kind, then the board it's on, which the header folds at its width")
     },
 ])

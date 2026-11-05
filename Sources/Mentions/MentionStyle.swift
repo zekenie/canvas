@@ -64,9 +64,6 @@ enum MentionStyle {
     static let missingHelp = "Deleted"
     static let unavailableHelp = "Not available"
 
-    /// What the root board is called where a list names a shape's board: no owner gives it a name.
-    static let rootBoardName = "Board"
-
     // MARK: The picker
 
     /// Its size (`pickerMetrics`): its look is every caret list's (DetailPanel's `CaretListWindow`).

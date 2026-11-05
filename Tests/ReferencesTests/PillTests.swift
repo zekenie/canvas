@@ -71,7 +71,7 @@ private struct Places {
                 // Wide, so what's at its trailing end is alone there.
                 h.editor.transact { $0.update(id, as: Reference.self) { $0.props.frame.size.width = 220 } }
                 let places = Places(frame: try require(h.editor.document[id]).box ?? .zero)
-                expectEqual(places.frame.height, 32, "\(item.name): a pill is 32 tall")
+                expectEqual(places.frame.height, 40, "\(item.name): a pill is 40 tall")
                 let drawn = render(h.editor, dark: dark)
                 let what = "\(item.name), \(dark ? "dark" : "light")"
                 if item.dashed {
@@ -93,20 +93,22 @@ private struct Places {
             }
         }
     },
-    test("the symbol is the kind's tint blended toward the label, in both appearances; a pill that stands for nothing leads with a dashed square at two thirds") {
+    test("a pill for a shape with no color leads with a gray symbol, in both appearances: the kind's tint is the color book's to give") {
         for dark in [false, true] {
             let h = try referenceHarness()
             let live = h.addReference(to: h.addBox("shapes"), label: "shapes")
             let frame = try require(h.editor.document[live]).box ?? .zero
             let drawn = render(h.editor, dark: dark)
-            var orange = 0
+            var colored = 0, inked = 0
             for y in Int(frame.midY - 8)..<Int(frame.midY + 8) {
                 for x in Int(frame.minX + 10)..<Int(frame.minX + 26) {
                     let p = pixel(drawn, at: CGPoint(x: x, y: y))
-                    if p[0] > p[2] + 40 { orange += 1 }
+                    if abs(p[0] - p[2]) > 30 { colored += 1 }
+                    if abs(p[0] - (dark ? 44 : 255)) > 40 { inked += 1 }
                 }
             }
-            expect(orange > 10, "the box's orange shows in its symbol (\(dark ? "dark" : "light")): \(orange) pixels")
+            expect(inked > 10, "the symbol is drawn (\(dark ? "dark" : "light")): \(inked) pixels")
+            expectEqual(colored, 0, "and it is gray, as the neutral pill's: \(dark ? "dark" : "light")")
         }
     },
     test("a label that doesn't fit is cut off with an ellipsis, never wider than the pill: a long name's pill is 280 wide at most") {

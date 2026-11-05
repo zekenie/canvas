@@ -487,11 +487,11 @@ public struct ContentsLabel: View {
     public let standsIn: Bool
     /// Where what the row names is, for a row that names a shape somewhere else (a reference's
     /// original): the shapes it's inside, outermost first, each by its name (`ContentsPathName`: one
-    /// that is only what its kind is called, an untitled frame's, fainter). Shown before the
+    /// that is only what its kind is called, an untitled frame's, fainter; a board's in semibold). Shown before the
     /// title, dimmed, with "›" between, "Alpha › Beta › Checkout", and the first to give way in a
-    /// narrow list: the names between the first and the last fold into "…" (`folded(_:)`), past
-    /// that each name is cut short, to no less than a few letters, and only then the title
-    /// (`ContentsPathTitle`). The tooltip has it whole.
+    /// narrow list: it takes at most half the row, folded as every address is (`PlaceFold`: the first, "…", the
+    /// nearest, the nearest whole), and only then is the title cut (`ContentsPathTitle`). The tooltip and VoiceOver
+    /// have it whole.
     public let path: [ContentsPathName]
 
     @Environment(\.contentsSymbol) private var kindSymbol
@@ -517,12 +517,10 @@ public struct ContentsLabel: View {
 
     public var isPlaceholder: Bool { title.allSatisfy(\.isWhitespace) && placeholder != nil }
 
-    /// A path as a row too narrow for all of it shows it: its first and last names, "…" for those
-    /// between (the path over the canvas folds its middle the same way); nil for a path of two
-    /// names or fewer, which has no middle.
-    public static func folded(_ path: [ContentsPathName]) -> [ContentsPathName]? {
-        guard path.count > 2 else { return nil }
-        return [path[0], ContentsPathName(ContentsStyle.pathFold), path[path.count - 1]]
+    /// The path as a row `width` points wide says it (all of it for nil), at the sidebar's medium rows: folded to what the
+    /// title leaves, and never less than half the width, "Alpha › … › Delta".
+    @MainActor public func pathText(inRow width: CGFloat?) -> String {
+        ContentsStyle.pathLine(path, before: text, in: width, rowSize: .medium).text
     }
 
     /// The row's tooltip: its text, after its path if it has one, for a row the list cuts short
@@ -613,47 +611,46 @@ struct ContentsSectionLabel: View {
     }
 }
 
-/// A row's title after the path to what it names, "Alpha › Beta › Checkout": the path dimmed, whole
-/// where the row has the room, else with its middle folded (`ContentsLabel.folded(_:)`), so the
-/// first and the nearest are always said. A row too narrow for that cuts its names short, each on
-/// its own and never to less than a few letters ("Alp… › … › Gam… › Checkout"), and only then the
-/// title (`ContentsPathLine`). A name that is only what its kind is called is fainter than a title,
-/// as in Jump To's rows. Said as "Checkout, in Alpha › Beta".
+/// A row's title after the path to what it names, "Alpha › Beta › Checkout": the path dimmed, boards in semibold, whole
+/// where it fits in at most half the row, else folded as every address is (`PlaceFold`, in the row's fonts:
+/// `ContentsStyle.pathLine`), so the first and the nearest are always said; the title takes the rest. A name that is only
+/// what its kind is called is fainter than a title, as in Jump To's rows. Said as "Checkout, in Alpha › Beta".
 struct ContentsPathTitle: View {
     let path: [ContentsPathName]
     let title: String
     let isPlaceholder: Bool
     @Environment(\.sidebarRowSize) private var rowSize
+    @State private var width: CGFloat?
 
     var body: some View {
-        Group {
-            if let folded = ContentsLabel.folded(path) {
-                // The last that's tried is shown whatever the room, cut short.
-                ViewThatFits(in: .horizontal) {
-                    line(path, fold: nil)
-                    line(folded, fold: 1)
-                }
-            } else {
-                line(path, fold: nil)
-            }
+        let line = ContentsStyle.pathLine(path, before: title, in: width, rowSize: rowSize)
+        HStack(spacing: 0) {
+            line.pieces.reduce(Text("")) { text, piece in text + Self.text(of: piece) }
+                .fixedSize()
+            Text(ContentsStyle.pathSeparator).foregroundStyle(.tertiary).fixedSize()
+            Text(title).foregroundStyle(isPlaceholder ? .secondary : .primary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GeometryReader { geometry in Color.clear.preference(key: ContentsRowWidthKey.self, value: geometry.size.width) })
+        .onPreferenceChange(ContentsRowWidthKey.self) { if width != $0 { width = $0 } }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(ContentsStyle.pathSpoken(title, in: path.map(\.text)))
     }
 
-    /// The names, each a text of its own with "›" after it, then the title; `fold` is which of
-    /// `names` is the "…" that stands for the names left out.
-    private func line(_ names: [ContentsPathName], fold: Int?) -> some View {
-        ContentsPathLine(nameFloor: ContentsStyle.pathNameFloor * ContentsStyle.standInScale(rowSize)) {
-            ForEach(names.indices, id: \.self) { index in
-                Text(names[index].text).foregroundStyle(names[index].isPlaceholder ? .tertiary : .secondary)
-                    .layoutValue(key: ContentsPathPart.self, value: index == fold ? .fixed : .name)
-                Text(ContentsStyle.pathSeparator).foregroundStyle(.secondary)
-            }
-            Text(title).foregroundStyle(isPlaceholder ? .secondary : .primary)
-                .layoutValue(key: ContentsPathPart.self, value: .title)
+    private static func text(of piece: PlacePiece) -> Text {
+        switch piece.kind {
+        case .separator, .ellipsis:
+            Text(piece.text).foregroundStyle(.tertiary)
+        case .step(_, let opensBoard, let isPlaceholder):
+            Text(piece.text).fontWeight(opensBoard ? .semibold : .regular).foregroundStyle(isPlaceholder ? .tertiary : .secondary)
         }
     }
+}
+
+/// The width the row's text was given: what its path folds in.
+private struct ContentsRowWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// A name on a row's path (`ContentsLabel.path`): what a shape the row's is inside is called. A
@@ -664,72 +661,17 @@ public struct ContentsPathName: Hashable, Sendable, ExpressibleByStringLiteral {
     /// "Untitled Subboard"): drawn fainter than a title, so a frame nobody named doesn't read as
     /// one named "Frame".
     public let isPlaceholder: Bool
+    /// Whether it opens a board (a subboard, or the board that leads a place), not a region of one (a frame): drawn in
+    /// semibold.
+    public let opensBoard: Bool
 
-    public init(_ text: String, isPlaceholder: Bool = false) {
+    public init(_ text: String, isPlaceholder: Bool = false, opensBoard: Bool = false) {
         self.text = text
         self.isPlaceholder = isPlaceholder
+        self.opensBoard = opensBoard
     }
 
     public init(stringLiteral value: String) { self.init(value) }
-}
-
-/// What a text on a path's line is: a name, which gives way first; the title, which gives way once
-/// the names have; or what never does (a "›", the fold's "…").
-enum ContentsPathPart: LayoutValueKey {
-    case name, title, fixed
-    static let defaultValue = ContentsPathPart.fixed
-}
-
-/// A path's line, its texts side by side at their own widths while there's room. With less, the
-/// names give way first, the longest first, each to no less than `nameFloor` (or its own width, if
-/// that's less), so every name still starts and every "›" shows; with less than that, the title.
-/// A stack would let the title push the names down to nothing between their "›"s.
-struct ContentsPathLine: Layout {
-    let nameFloor: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
-        return CGSize(width: widths(in: proposal.width, subviews).reduce(0, +), height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
-        for (subview, width) in zip(subviews, widths(in: bounds.width, subviews)) {
-            subview.place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: ProposedViewSize(width: width, height: bounds.height))
-            x += width
-        }
-    }
-
-    /// How wide each text is in `available` (nil: all the room it wants).
-    private func widths(in available: CGFloat?, _ subviews: Subviews) -> [CGFloat] {
-        var widths = subviews.map { $0.sizeThatFits(.unspecified).width }
-        guard let available, available.isFinite else { return widths }
-        let over = widths.reduce(0, +) - available
-        guard over > 0 else { return widths }
-        let parts = subviews.map { $0[ContentsPathPart.self] }
-        let names = parts.indices.filter { parts[$0] == .name }
-        let floors = names.map { min(widths[$0], nameFloor) }
-        /// What the names may have between them, and the least they take.
-        let room = names.reduce(0) { $0 + widths[$1] } - over, least = floors.reduce(0, +)
-        if room >= least {
-            // No name wider than `cap`, the widest that fits: the longest give way first.
-            var low: CGFloat = 0, high = names.map { widths[$0] }.max() ?? 0
-            for _ in 0..<24 {
-                let cap = (low + high) / 2
-                let used = zip(names, floors).reduce(0) { $0 + max($1.1, min(widths[$1.0], cap)) }
-                if used > room { high = cap } else { low = cap }
-            }
-            for (name, floor) in zip(names, floors) { widths[name] = max(floor, min(widths[name], low)) }
-        } else {
-            for (name, floor) in zip(names, floors) { widths[name] = floor }
-            if let title = parts.firstIndex(of: .title) { widths[title] = max(0, widths[title] - (least - room)) }
-        }
-        // A text cut short is as wide as what it still says, so the next begins right after it.
-        for index in parts.indices where parts[index] != .fixed {
-            widths[index] = min(widths[index], subviews[index].sizeThatFits(ProposedViewSize(width: widths[index], height: nil)).width)
-        }
-        return widths
-    }
 }
 
 /// A stand-in's arrow at the symbol's bottom-leading corner, in the title's color (dimmed with a
@@ -880,11 +822,23 @@ enum ContentsStyle {
     }
     /// A row's path (`ContentsLabel.path`): what's between its names and before the title, what
     /// stands for the names a narrow row folds, and how a row with one is said.
-    static let pathSeparator = " › "
-    static let pathFold = "…"
-    /// The least of a path's name a narrow row shows, at the sidebar's medium rows (scaled with them,
-    /// as a stand-in's arrow is): a few letters and "…".
-    static let pathNameFloor: CGFloat = 34
+    static let pathSeparator = PlaceFold.separator
+    /// How much of a row's text its path has at least, however long the title (the rest is the title's).
+    static let pathShare: CGFloat = 0.5
+    /// The text's size at the sidebar's row sizes (`rowFontSize(_: NSTableView.RowSizeStyle)`'s).
+    static func rowFontSize(_ rows: SidebarRowSize) -> CGFloat { 13 * standInScale(rows) }
+    /// A path folded for a row `width` points wide (all of it until the width is read) at `rowSize`, before `title`: in what
+    /// the title whole leaves of it, but never less than half of it, less the "›" before the title; the names in the row's
+    /// font, a board's in its semibold.
+    static func pathLine(_ path: [ContentsPathName], before title: String, in width: CGFloat?, rowSize: SidebarRowSize) -> PlaceLine {
+        let size = rowFontSize(rowSize)
+        func measure(_ text: String, _ isBoard: Bool) -> CGFloat {
+            ceil(NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: size, weight: isBoard ? .semibold : .regular)]).size().width)
+        }
+        let steps = path.map { PlaceStep(name: $0.text, opensBoard: $0.opensBoard, isPlaceholder: $0.isPlaceholder) }
+        let room = width.map { max($0 - measure(title, false), $0 * pathShare) - measure(pathSeparator, false) } ?? .infinity
+        return PlaceFold.line(for: steps, room: room, measure: measure)
+    }
     static func pathSpoken(_ title: String, in path: [String]) -> String { "\(title), in \(path.joined(separator: pathSeparator))" }
     /// How many rows a section's row says it holds (`ContentsSectionLabel`), shown and said.
     static func sectionCount(_ count: Int) -> String { count.formatted() }

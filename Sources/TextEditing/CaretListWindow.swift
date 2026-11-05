@@ -1,4 +1,5 @@
 import AppKit
+import Chrome
 
 /// Posts a notification to VoiceOver, as `NSAccessibility.post` does: what a caret list says, which
 /// its owner may route through a hook of its own (Mentions counts what its picker says).
@@ -422,9 +423,10 @@ final class CaretListRowsView: NSView {
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: TextEditingStyle.caretListDetailSize, weight: .regular)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [secondary])))
         let trailingWidth = trailing.map { $0.size.width + TextEditingStyle.caretListGap } ?? 0
-        let detail = Self.detail(item, color: secondary)
         let leftByTitle = row.maxX - TextEditingStyle.caretListTextInset - x - ceil(label.size().width) - chipPadding - trailingWidth - TextEditingStyle.caretListGap
-        let detailWidth = max(0, min(ceil(detail.size().width), max(leftByTitle, row.width * TextEditingStyle.caretListDetailShare)))
+        let detailRoom = max(leftByTitle, row.width * TextEditingStyle.caretListDetailShare)
+        let detail = Self.detail(item, color: secondary, room: detailRoom)
+        let detailWidth = max(0, min(ceil(detail.size().width), detailRoom))
         let detailX = row.maxX - TextEditingStyle.caretListTextInset - detailWidth
         let detailHeight = detail.size().height
         detail.draw(with: CGRect(x: detailX, y: row.midY - detailHeight / 2, width: detailWidth, height: detailHeight),
@@ -471,8 +473,10 @@ final class CaretListRowsView: NSView {
         return string
     }
 
-    /// An item's detail, its matched characters in semibold and its dimmed ones fainter.
-    static func detail(_ item: CaretListItem, color: NSColor) -> NSAttributedString {
+    /// An item's detail, its matched characters in semibold and its dimmed ones fainter; an address (`place`) folded
+    /// to fit `room`, its boards in semibold.
+    static func detail(_ item: CaretListItem, color: NSColor, room: CGFloat = .infinity) -> NSAttributedString {
+        if let place = item.place { return placeDetail(place, color: color, room: room) }
         let text = item.detail ?? ""
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = item.detailTruncatesHead ? .byTruncatingHead : .byTruncatingTail
@@ -488,6 +492,116 @@ final class CaretListRowsView: NSView {
             string.addAttribute(.foregroundColor, value: color.withAlphaComponent(color.alphaComponent * TextEditingStyle.caretListDimmedAlpha), range: r)
         }
         return string
+    }
+
+    /// The detail's font and its semibold.
+    static func detailFonts() -> (regular: NSFont, bold: NSFont) {
+        (NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize), NSFont.systemFont(ofSize: TextEditingStyle.caretListDetailSize, weight: .semibold))
+    }
+
+    /// The address as the row says it in `room` points: the lead, then the steps folded, a name's matched characters
+    /// semibold, and measured so for the fold, so the line is never wider than the room.
+    static func placeDetail(_ place: CaretPlace, color: NSColor, room: CGFloat) -> NSAttributedString {
+        let (regular, bold) = detailFonts()
+        let width = placeWidth(place, regular: regular, bold: bold)
+        let lead = ceil(NSAttributedString(string: place.lead, attributes: [.font: regular]).size().width)
+        let line = placeLine(place, room: room - lead, width: width)
+        let faint = color.withAlphaComponent(color.alphaComponent * TextEditingStyle.caretListDimmedAlpha)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let string = NSMutableAttributedString(string: place.lead, attributes: [.font: regular, .foregroundColor: color, .paragraphStyle: paragraph])
+        for piece in line.pieces {
+            var attributes: [NSAttributedString.Key: Any] = [.font: regular, .foregroundColor: color, .paragraphStyle: paragraph]
+            let part: NSMutableAttributedString
+            switch piece.kind {
+            case .separator, .ellipsis:
+                attributes[.foregroundColor] = faint
+                part = NSMutableAttributedString(string: piece.text, attributes: attributes)
+            case .step(let index, let opensBoard, let isPlaceholder):
+                if opensBoard { attributes[.font] = bold }
+                if isPlaceholder { attributes[.foregroundColor] = faint }
+                part = NSMutableAttributedString(string: piece.text, attributes: attributes)
+                if let origin = line[index] {
+                    for range in place.matched(at: origin) {
+                        guard let r = characterRange(range, in: piece.text) else { continue }
+                        part.addAttribute(.font, value: bold, range: r)
+                    }
+                }
+            }
+            string.append(part)
+        }
+        return string
+    }
+
+    /// The width of a text of the address as the row sets it, for the fold: a board's name semibold, and the characters the
+    /// query matched in a name semibold too, wherever the text is the name, a start of it the fold cut, or its head and leaf.
+    static func placeWidth(_ place: CaretPlace, regular: NSFont, bold: NSFont) -> (String, Bool) -> CGFloat {
+        let matched = place.steps.indices.filter { !place.matched(at: $0).isEmpty }
+        return { text, board in
+            let string = NSMutableAttributedString(string: text, attributes: [.font: board ? bold : regular])
+            let start = Self.namePart(of: text)
+            // Every matched name the text could be the start of (two may start alike): their matches together, so the width
+            // is never under the drawn one. A head and a leaf ("nexus…/caller") isn't the name's start: all of it.
+            let names = text == PlaceFold.ellipsis || start.isEmpty || board ? [] : matched.filter { place.steps[$0].name.hasPrefix(start) }
+            let ranges = names.isEmpty ? [] : text.contains(PlaceFold.ellipsis) && !text.hasSuffix(PlaceFold.ellipsis)
+                ? [0..<text.count] : names.flatMap { place.matched(at: $0) }
+            for range in ranges {
+                if let r = characterRange(range, in: text) { string.addAttribute(.font, value: bold, range: r) }
+            }
+            return ceil(string.size().width)
+        }
+    }
+
+    /// What of `text` is a name's own start: all of it, or what comes before the "…" a cut put in it.
+    private static func namePart(of text: String) -> String {
+        guard let cut = text.range(of: PlaceFold.ellipsis) else { return text }
+        return String(text[..<cut.lowerBound])
+    }
+
+    /// Whether a piece of the line shows every character the query matched in its step's name: a name the fold cut keeps
+    /// only its start.
+    private static func showsMatches(_ piece: PlacePiece, of ranges: [Range<Int>]) -> Bool {
+        guard piece.wasCut else { return true }
+        let kept = namePart(of: piece.text).count
+        return ranges.allSatisfy { $0.upperBound <= kept }
+    }
+
+    /// The address folded in `room`. When the query matched a name the fold leaves out, or cuts where it matched, the names
+    /// it matched are kept instead and each run of the others between them is a "…" (so a search for a middle frame still
+    /// shows it).
+    static func placeLine(_ place: CaretPlace, room: CGFloat, width: (String, Bool) -> CGFloat) -> OriginLine {
+        let whole = PlaceFold.line(for: place.steps, room: room, measure: width)
+        let line = OriginLine(line: whole, origins: Array(place.steps.indices.map { Optional($0) }))
+        let pinned = Set(place.steps.indices.filter { !place.matched(at: $0).isEmpty })
+        guard whole.isShortened, !pinned.isEmpty else { return line }
+        let shown = Set(whole.pieces.compactMap { piece -> Int? in
+            if case .step(let index, _, _) = piece.kind, showsMatches(piece, of: place.matched(at: index)) { index } else { nil }
+        })
+        guard !pinned.isSubset(of: shown) else { return line }
+        var reduced: [PlaceStep] = [], origins: [Int?] = []
+        var inRun = false
+        for index in place.steps.indices {
+            if index == 0 || index == place.steps.count - 1 || pinned.contains(index) {
+                reduced.append(place.steps[index]); origins.append(index); inRun = false
+            } else if !inRun {
+                reduced.append(PlaceStep(name: PlaceFold.ellipsis, isPlaceholder: true)); origins.append(nil); inRun = true
+            }
+        }
+        let kept = OriginLine(line: PlaceFold.line(for: reduced, room: room, measure: width), origins: origins)
+        // The reduced address is said only when it keeps every name the query matched.
+        let keptShown = Set(kept.pieces.compactMap { piece -> Int? in
+            guard case .step(let index, _, _) = piece.kind, let origin = kept[index], showsMatches(piece, of: place.matched(at: origin)) else { return nil }
+            return origin
+        })
+        return pinned.isSubset(of: keptShown) ? kept : line
+    }
+
+    /// A folded line and which of the address's steps each of its steps is (nil: a "…" standing for a run).
+    struct OriginLine {
+        var line: PlaceLine
+        var origins: [Int?]
+        var pieces: [PlacePiece] { line.pieces }
+        subscript(index: Int) -> Int? { origins.indices.contains(index) ? origins[index] : nil }
     }
 
     /// A font's heavier face, the size it is: what AppKit makes of it bold, which for the system's

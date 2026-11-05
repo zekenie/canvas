@@ -1,6 +1,8 @@
 import AppKit
+import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
+import Chrome
 import Mentions
 import TestKit
 import TextEditing
@@ -92,5 +94,28 @@ import Titles
         let alone = MentionChoice.items(choices.filter { $0.candidate.appearance.label == "Ann Lee" && $0.place?.text == "Board" })
         expectEqual(alone.map(\.detail), ["Board"], "one alone is its place: the board's name")
         expectEqual(alone.map(\.spoken), ["Ann Lee, Plate, in Board, 1 of 1"])
+    },
+
+    test("the top board goes by the file's name, \"Board\" only while it has none; a row's place is its steps, boards semibold, folded in the row's room") {
+        let r = try Boards()
+        r.h.editor.nameRoot("Shop")
+        expectEqual(r.state.boardName(ofShape: r.onRoot), "Shop")
+        let found = r.state.candidates(matching: "an", in: AnyMentionable.self, for: r.owner).matches
+        let choices = r.state.choices(found)
+        let items = MentionChoice.items(choices)
+        expect(choices.contains { $0.place?.text == "Shop" }, "a shape on the root: the file's name")
+        for (item, choice) in zip(items, choices) {
+            expectEqual(item.place?.steps, choice.place.map { $0.steps }, "the row folds the steps")
+            if choice.place != nil { expectEqual(item.place?.lead, item.title == "Ann Lee" ? "Plate · " : "", "two alike: the kind leads") }
+        }
+        let root = try require(choices.first { $0.place?.text == "Shop" }.flatMap { MentionChoice.items([$0]).first?.place })
+        expectEqual(root.steps, [PlaceStep(name: "Shop", opensBoard: true)], "the board that leads is a board")
+        let long = MentionPlace(names: [ContainerName(title: "Shop", placeholder: "Subboard", opensBoard: true), ContainerName(title: "Payments and disputes", placeholder: "Frame"),
+                                        ContainerName(title: "Chargebacks in review", placeholder: "Frame"), ContainerName(title: "Disputes", placeholder: "Frame")])
+        let place = try require(long.caretPlace(lead: "Note · "))
+        expectEqual(place.text(in: 1000), "Note · Shop › Payments and disputes › Chargebacks in review › Disputes")
+        let folded = place.text(in: 170)
+        expect(folded.hasPrefix("Note · Shop") && folded.contains("…") && folded.hasSuffix("Disputes"), "folded: \(folded)")
+        expectEqual(MentionPlace(text: "elsewhere").caretPlace(), nil, "a place that is only text is cut as before")
     },
 ])

@@ -161,7 +161,7 @@ struct NeighborRowView: View, Equatable {
     var body: some View {
         let id = row.id
         let line = list.line(for: row, in: group)
-        DetailShapeRow(symbol: line.symbol, tint: line.tint, name: line.name, detail: line.detail, lines: line.caption.map { [$0] } ?? [])
+        DetailShapeRow(symbol: line.symbol, tint: line.tint, name: line.name, detail: line.detail, place: line.place, lines: line.caption.map { [$0] } ?? [])
             .foregroundStyle(.primary)
             .detailRowAccessibility(label: line.spoken, activate: activate)
             .onHover { inside in

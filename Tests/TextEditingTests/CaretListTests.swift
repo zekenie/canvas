@@ -1,5 +1,6 @@
 import AppKit
 import CanvasTesting
+import Chrome
 import TestKit
 import TextEditing
 
@@ -429,6 +430,45 @@ private final class ListingTextView: EditingTextView {
         }
         expect(ink(row: 1) > 0)
         expect(ink(row: 2) < ink(row: 1) * 0.8, "fainter: \(ink(row: 2)) against \(ink(row: 1))")
+    },
+
+    test("a detail that is an address is folded in the room the row has, as every address is; its boards are semibold, and what the query matched is kept") {
+        let steps = [PlaceStep(name: "Shop", opensBoard: true), PlaceStep(name: "Mmmmmmmm"), PlaceStep(name: "Mmmmmmmm"), PlaceStep(name: "Disputes")]
+        let place = CaretPlace(lead: "Note · ", steps: steps)
+        expectEqual(place.text(in: 1000), "Note · Shop › Mmmmmmmm › Mmmmmmmm › Disputes", "the lead, then all of it with the room")
+        expectEqual(place.text(in: 110), "Note · … › Disputes", "with less room, the nearest alone")
+        expectEqual(place.text(in: 160), "Note · Shop › … › Disputes", "the first and the nearest")
+        let matched = CaretPlace(steps: steps, matched: [[], [], [0..<3], []])
+        expectEqual(matched.text(in: 200), "Shop › … › Mmmmmmmm › Disputes", "a name the query matched is kept, a run of the others a \"…\"")
+        expectEqual(matched.text(in: 150), "Shop › … › Disputes", "when it can't be kept, the fold's")
+        expectEqual(CaretPlace(steps: []).text(in: 100), "")
+
+        // Drawn in a list whose rows leave the detail 96 points: the middle is folded away, so what it says isn't drawn; a board is heavier.
+        let text = ListedText()
+        func item(_ steps: [PlaceStep]) -> CaretListRow {
+            .item(CaretListItem("fig", detail: steps.map(\.name).joined(separator: " › "), place: CaretPlace(steps: steps)))
+        }
+        var other = steps
+        other[1] = PlaceStep(name: "Wwwwwwww")
+        var plain = steps
+        plain[0] = PlaceStep(name: "Shop")
+        text.open([.item(CaretListItem("kiwi")), item(steps), item(other), item(plain)])
+        let rows = try require(text.rowsView)
+        let rep = try require(rows.bitmapImageRepForCachingDisplay(in: rows.bounds))
+        NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance { rows.cacheDisplay(in: rows.bounds, to: rep) }
+        @MainActor func ink(row: Int) -> CGFloat {
+            let scale = CGFloat(rep.pixelsWide) / rows.bounds.width
+            var total: CGFloat = 0
+            for y in Int(CGFloat(row * 20) * scale)..<Int(CGFloat(row * 20 + 20) * scale) {
+                for x in Int(70 * scale)..<Int(230 * scale) { total += rep.colorAt(x: x, y: y)?.alphaComponent ?? 0 }
+            }
+            return total
+        }
+        expect(ink(row: 1) > 0)
+        expectEqual(ink(row: 1), ink(row: 2), "folded: the middle isn't drawn")
+        expect(ink(row: 1) > ink(row: 3) * 1.02, "a board is semibold: \(ink(row: 1)) against \(ink(row: 3))")
+        let spoken = (rows.accessibilityChildren() ?? []).compactMap { ($0 as? NSAccessibilityElement)?.accessibilityLabel() }
+        expectEqual(spoken[1], "fig, Shop › Mmmmmmmm › Mmmmmmmm › Disputes", "VoiceOver hears the whole place")
     },
 
     test("the pointer over an item's row highlights it, and a click picks its index; headers and empty states do neither") {

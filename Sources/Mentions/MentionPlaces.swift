@@ -1,5 +1,7 @@
 import Boards
 import Canvas
+import Chrome
+import TextEditing
 
 /// Where a shape is, as a list of shapes says it beside the shape's name: the names of the containers
 /// it is inside, outermost first, "Alpha › Beta" (`ShapePath`'s way of saying them, a container with no
@@ -14,11 +16,18 @@ public struct MentionPlace: Hashable, Sendable {
     public let dimmed: [Range<Int>]
     /// The characters of `text` the query matched, when it matched this shape by its path.
     public let matched: [Range<Int>]
+    /// The containers as steps, outermost first, when the place is made of them (a list folds them in its row's room,
+    /// `PlaceFold`); empty for a place that is only text.
+    public let steps: [PlaceStep]
+    /// The characters of each step's name the query matched (parallel to `steps`).
+    public let stepMatched: [[Range<Int>]]
 
-    public init(text: String, dimmed: [Range<Int>] = [], matched: [Range<Int>] = []) {
+    public init(text: String, dimmed: [Range<Int>] = [], matched: [Range<Int>] = [], steps: [PlaceStep] = [], stepMatched: [[Range<Int>]] = []) {
         self.text = text
         self.dimmed = dimmed
         self.matched = matched
+        self.steps = steps
+        self.stepMatched = stepMatched
     }
 
     /// The containers, outermost first, with the characters of each name the query matched (a range of
@@ -40,12 +49,22 @@ public struct MentionPlace: Hashable, Sendable {
             text += name.text
             offset += length
         }
-        self.init(text: text, dimmed: dimmed, matched: found)
+        self.init(text: text, dimmed: dimmed, matched: found,
+                  steps: names.map { PlaceStep(name: $0.text, opensBoard: $0.opensBoard, isPlaceholder: $0.isPlaceholder) },
+                  stepMatched: names.indices.map { index in
+                      names[index].isPlaceholder || !matched.indices.contains(index) ? [] : matched[index]
+                  })
     }
 
     /// A place that is a board's name.
     public init(board: String) {
-        self.init(text: board)
+        self.init(text: board, steps: [PlaceStep(name: board, opensBoard: true)], stepMatched: [[]])
+    }
+
+    /// The place as a list's row says it after `lead` ("Note · ", for a shape called like another): its steps folded in
+    /// the row's room; nil for a place that is only text.
+    public func caretPlace(lead: String = "") -> CaretPlace? {
+        steps.isEmpty ? nil : CaretPlace(lead: lead, steps: steps, matched: stepMatched)
     }
 
     /// How VoiceOver says it, after the kind: "in Alpha › Beta".

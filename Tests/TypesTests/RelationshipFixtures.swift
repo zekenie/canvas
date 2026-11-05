@@ -164,7 +164,7 @@ struct RelaysPlugin: CanvasPlugin {
                            seats: { props, seat, _ in
                                switch seat {
                                case .file(let container, _): props.seat = container == nil ? "board" : "frame"
-                               case .written(let shape, _): props.seat = shape.joined(separator: " › ")
+                               case .written(let shape, _, _, _): props.seat = shape.joined(separator: " › ")
                                }
                            }) { shape, _ in
                 shape.props.stands.isEmpty ? nil : .shapes(shape.props.stands.map(\.shape))

@@ -1,10 +1,13 @@
 import AppKit
 import Boards
 import Canvas
+import Chrome
+import Colors
 import Connections
 import Geometry
 import LanguageModels
 import Mentions
+import Palette
 import Publishing
 import Queries
 import Selection
@@ -34,10 +37,18 @@ public final class ReferenceState {
     /// out for (`drawnCondition(of:target:_:)`): a frame of a thousand pills looks up none of their
     /// shapes again. A commit lets go of those it changed and those that name a shape it changed
     /// (Topology's `standIns(naming:)`, as the rows' `affected`), a file put in place of all.
-    /// With where its shape is when that isn't where the pill is (`drawnPlace(of:)`), and the shapes that was read
-    /// from (the containers the shape is inside: a change to one lets go of the places kept).
-    private var drawnConditions: [ShapeID: (target: ReferenceTarget, condition: ReferenceCondition, place: String?)] = [:]
+    /// With where its shape is when that isn't where the pill is (`drawnPlace(of:)`: the steps and the line they fold to
+    /// in the pill's room), the width the pill had, and the shapes the place was read from (the containers the shape is
+    /// inside: a change to one lets go of the places kept).
+    private var drawnConditions: [ShapeID: (target: ReferenceTarget, condition: ReferenceCondition, width: CGFloat, place: DrawnPlace?)] = [:]
     private var drawnPlaceSources: Set<ShapeID> = []
+    /// The colors each direct pill wears, kept beside its condition and let go of exactly when it is (a commit to the pill or to a
+    /// shape it names, a file put in place, the file's colors or what gives a color changing: `shapeTintsDidChange`), so a frame of a
+    /// thousand pills looks up no color; and the place a dynamic pill of its first match says, for the width it had.
+    private var drawnColorsKept: [ShapeID: (target: ReferenceTarget, colors: PillColors?)] = [:]
+    private var dynamicPlaces: [ShapeID: (first: ShapeID, width: CGFloat, place: DrawnPlace?)] = [:]
+    /// What each color's pill wears, made once a color and shared (a pure function of its roles, so it is never stale).
+    private var pillColors: [Swatch: PillColors] = [:]
     /// The containment tree's names, for the places and the rows' paths (Boards' `ShapePaths`).
     var paths: ShapePaths
     /// What each pill drawn shows of a channel mismatch (`drawnMismatch(of:)`), kept until a change to
@@ -150,36 +161,177 @@ public final class ReferenceState {
     /// What a direct reference's pill stands for, for a render: kept from the frame before unless a
     /// commit changed it or what it names; `compute` works it out (with the render's lookups) when
     /// it isn't kept, or was kept for another target (a record drawn that isn't the one committed).
-    func drawnCondition(of id: ShapeID, target: ReferenceTarget, _ compute: () -> ReferenceCondition) -> ReferenceCondition {
-        if let kept = drawnConditions[id], kept.target == target { return kept.condition }
+    /// `width` is the pill's, whose room (less the pad, the symbol and the gap round it) the place is folded in, so a kept
+    /// condition is for one width.
+    func drawnCondition(of id: ShapeID, target: ReferenceTarget, width: CGFloat, _ compute: () -> ReferenceCondition) -> ReferenceCondition {
+        if let kept = drawnConditions[id], kept.target == target, kept.width == width, !isStale(kept.place) { return kept.condition }
         let condition = compute()
-        var place: String?
-        if condition.appearance != nil { place = placeOfTarget(from: id, target.id) }
-        drawnConditions[id] = (target, condition, place)
+        var place: DrawnPlace?
+        if condition.appearance != nil {
+            // What trails a direct pill (the eye, a warning) sits on the name's line, so the place has the whole room.
+            place = makePlace(pill: id, target: target.id, room: width - ReferenceStyle.padding)
+        }
+        drawnConditions[id] = (target, condition, width, place)
         return condition
     }
 
-    /// Where the shape a pill stands for is, from where the pill is: the containers it is inside less those the
-    /// pill is inside too (`rowPath`'s), joined as a path says them; for a shape in none, on another board, that board's
-    /// name; nil for a shape in the pill's own place. Notes the shapes it was read from (`drawnPlaceSources`).
-    private func placeOfTarget(from pill: ShapeID, _ target: ShapeID) -> String? {
-        let above = paths.containers(of: target), own = paths.containers(of: pill)
-        let names = Self.pathBeyond(own, above).map { paths.node($0).name.text }
-        if !names.isEmpty {
-            drawnPlaceSources.formUnion(above)
-            drawnPlaceSources.formUnion(own)
-            return names.joined(separator: ShapePath.separator)
-        }
-        guard let there = editor.file.board(containing: target), there != editor.file.board(containing: pill) else { return nil }
-        if let owner = there.owner { drawnPlaceSources.insert(owner) }
-        return editor.name(of: there, root: ReferenceStyle.rootBoardName)
+    /// The place of `target` seen from the pill `pill`, folded in `room`; nil for the same place. On the root, nothing in the place
+    /// opens a board but its lead, the file's name, which changes with no commit.
+    private func makePlace(pill: ShapeID, target: ShapeID, room: CGFloat) -> DrawnPlace? {
+        let steps = placeOfTarget(from: pill, target)
+        guard !steps.isEmpty else { return nil }
+        let onRoot = editor.file.board(containing: target)?.isRoot == true && steps[0].opensBoard
+        return DrawnPlace(steps: steps, line: ReferenceStyle.placeLine(steps, room: room), rootName: onRoot ? editor.rootName : nil)
     }
 
-    /// Where the shape a direct pill stands for is, when it isn't where the pill is (the pill says it, after the
-    /// shape's name, "Alpha › Beta"; the name of its board for a shape in no container); nil for a pill in the same
-    /// place as its shape, or one whose shape isn't there. As `drawnCondition` kept it: a rename of a container, or
-    /// of the board, lets go of it.
-    public func drawnPlace(of id: ShapeID) -> String? { drawnConditions[id]?.place }
+    /// Whether a place kept led with the file's name and the file has been renamed since (the name isn't a shape's, and
+    /// changes with no commit).
+    private func isStale(_ place: DrawnPlace?) -> Bool {
+        guard let name = place?.rootName else { return false }
+        return name != editor.rootName
+    }
+
+    /// Where the shape a pill stands for is, from where the pill is: the containers it is inside less those the
+    /// pill is inside too (`rowPath`'s), outermost first, each called as every path calls a container, whether going
+    /// into it opens a board or not. When the shape is on another board than the pill and no step opens a board, that
+    /// board leads (`leadStep(of:)`): the file's name for the root, else its owner's. Empty for a shape in the pill's
+    /// own place. Notes the shapes it was read from (`drawnPlaceSources`).
+    private func placeOfTarget(from pill: ShapeID, _ target: ShapeID) -> [PlaceStep] {
+        let above = paths.containers(of: target), own = paths.containers(of: pill)
+        drawnPlaceSources.formUnion(above)
+        drawnPlaceSources.formUnion(own)
+        return placeSteps(of: target, beyond: own, from: editor.file.board(containing: pill), noting: true)
+    }
+
+    /// The steps from where a viewer inside `own` (outermost first) on `board` is to `target`: the containers `target` is
+    /// inside that the viewer isn't, then the board that leads when `target` is on another board and none of them opens one.
+    func placeSteps(of target: ShapeID, beyond own: [ShapeID], from board: BoardID?, noting: Bool) -> [PlaceStep] {
+        let above = paths.containers(of: target)
+        var steps = Self.pathBeyond(own, above).map { paths.node($0).name.placeStep }
+        guard let there = editor.file.board(containing: target), there != board, !steps.contains(where: \.opensBoard) else { return steps }
+        if noting, let owner = there.owner { drawnPlaceSources.insert(owner) }
+        steps.insert(leadStep(of: there), at: 0)
+        return steps
+    }
+
+    /// The board that leads a place: the file's name for the root (as Boards names it everywhere, "Board" when the file has
+    /// none), else its owner's name, as a path calls a container.
+    private func leadStep(of board: BoardID) -> PlaceStep {
+        let name = leadName(of: board)
+        return PlaceStep(name: name.text, opensBoard: true, isPlaceholder: name.isPlaceholder)
+    }
+
+    /// The board that leads a place, as a container is called (`leadStep(of:)`; the table of contents' row says it too).
+    func leadName(of board: BoardID) -> ContainerName {
+        if let owner = board.owner, let record = editor.file.record(owner) {
+            let name = editor.registry.containerName(of: record)
+            return ContainerName(title: name.title, placeholder: name.placeholder, opensBoard: true)
+        }
+        return ContainerName(title: editor.name(of: board), placeholder: editor.name(of: board), opensBoard: true)
+    }
+
+    /// Where the shape a direct pill stands for is, when it isn't where the pill is, folded to the pill's room (`PlaceFold`,
+    /// what the pill says over the shape's name); nil for a pill in the same place as its shape, or one whose shape isn't
+    /// there. As `drawnCondition` kept it: a rename of a container, or of the board, lets go of it.
+    public func drawnPlace(of id: ShapeID) -> PlaceLine? { (drawnConditions[id]?.place ?? dynamicPlaces[id]?.place)?.line }
+
+    /// The steps of that place, whole (`drawnPlace(of:)` is their fold).
+    public func drawnPlaceSteps(of id: ShapeID) -> [PlaceStep]? { (drawnConditions[id]?.place ?? dynamicPlaces[id]?.place)?.steps }
+
+    /// The place a pill says over its name, as the condition it is drawn as has it: a direct pill's, kept with its condition; a
+    /// query's first match's, kept for the width the pill had; none for any other (finding, every match, nothing).
+    func drawnPlace(for condition: ReferenceCondition, of shape: ShapeRecord<Reference>) -> DrawnPlace? {
+        switch condition {
+        case .live, .notPublic:
+            return drawnConditions[shape.id]?.place
+        case .found(_, let found) where !found.all:
+            guard let first = found.ids.first else { return nil }
+            let width = shape.props.frame.width
+            if let kept = dynamicPlaces[shape.id], kept.first == first, kept.width == width, !isStale(kept.place) { return kept.place }
+            let place = makePlace(pill: shape.id, target: first, room: width - ReferenceStyle.padding - ReferenceStyle.badgeRoom)
+            dynamicPlaces[shape.id] = (first, width, place)
+            return place
+        default:
+            return nil
+        }
+    }
+
+    // MARK: Color
+
+    /// What the pill of `shape` wears, as the condition it is drawn as has it: its original's color (a direct pill's, kept with its
+    /// condition), the color its query's answer has (a first match's, or the one every match shares), the last answer's while it is
+    /// looked for again; none for any other, the neutral pill.
+    func drawnColors(of shape: ShapeRecord<Reference>, _ condition: ReferenceCondition) -> PillColors? {
+        switch condition {
+        case .live, .notPublic:
+            guard let target = shape.props.target else { return nil }
+            return originalColors(of: shape.id, target)
+        case .found, .finding:
+            return dynamic[shape.id]?.colors
+        default:
+            return nil
+        }
+    }
+
+    /// The colors of the block a pill is zoomed out: as `drawnColors`, for a pill whose condition isn't worked out there.
+    func skeletonColors(of shape: ShapeRecord<Reference>) -> PillColors? {
+        switch shape.props.mode {
+        case .direct:
+            guard let target = shape.props.target else { return nil }
+            return originalColors(of: shape.id, target)
+        case .dynamic:
+            guard let finding = dynamic[shape.id] else { return nil }
+            if finding.outcome == nil { return finding.colors?.dimmed }
+            return finding.colors
+        case .empty:
+            return nil
+        }
+    }
+
+    /// The colors the shape `target` is drawn in, as the pill `id` wears them, kept until the pill changes or a shape it names does.
+    private func originalColors(of id: ShapeID, _ target: ReferenceTarget) -> PillColors? {
+        if let kept = drawnColorsKept[id], kept.target == target { return kept.colors }
+        let colors = colors(ofShape: target.id)
+        drawnColorsKept[id] = (target, colors)
+        return colors
+    }
+
+    /// The colors a shape the pill can stand for is drawn in: its own color, else what another plugin gives it (a type's), else its
+    /// kind's, through the color book; nil for one drawn as its kind looks (a frame with no color), a kind with no colors, a shape that
+    /// isn't there and one that can't be named.
+    private func colors(ofShape id: ShapeID) -> PillColors? {
+        guard let book = editor.colors, let record = editor.shape(inFile: id), !record.isOpaque, editor.registry.isMentionable(record.kind),
+              let swatch = book.swatch(of: record) else { return nil }
+        return pillColors(for: swatch)
+    }
+
+    func pillColors(for swatch: Swatch) -> PillColors {
+        if let known = pillColors[swatch] { return known }
+        if pillColors.count >= ReferenceStyle.memoCapacity { pillColors.removeAll(keepingCapacity: true) }
+        let made = PillColors(swatch)
+        pillColors[swatch] = made
+        return made
+    }
+
+    /// The color a query's answer is drawn in: the first match's when it stands for it alone; the one every match shares when it
+    /// stands for them all, none when they differ or one has none, or when there are more than `ReferenceStyle.sharedColorMost`.
+    func answerColors(_ matches: QueryMatches, all: Bool) -> PillColors? {
+        guard matches.count > 0, let first = matches.ids.first else { return nil }
+        guard all else { return colors(ofShape: first) }
+        guard matches.count <= ReferenceStyle.sharedColorMost, matches.ids.count <= ReferenceStyle.sharedColorMost else { return nil }
+        guard let book = editor.colors, let shared = colors(ofShape: first), let color = shapeColor(of: first, book) else { return nil }
+        // The color's name or value is compared, one lookup of the book a match; only a match that holds another is read as roles.
+        for id in matches.ids.dropFirst() where shapeColor(of: id, book) != color {
+            if colors(ofShape: id)?.swatch != shared.swatch { return nil }
+        }
+        return shared
+    }
+
+    /// The color the book says a shape a pill can stand for is drawn in; nil for none, and for a shape that can't be stood for.
+    private func shapeColor(of id: ShapeID, _ book: ColorBook) -> ShapeColor? {
+        guard let record = editor.shape(inFile: id), !record.isOpaque, editor.registry.isMentionable(record.kind) else { return nil }
+        return book.color(of: record)
+    }
 
     /// `mismatchedChannel(of:)`, for a render: kept until a change to the edges touches the reference.
     func drawnMismatch(of id: ShapeID) -> ChannelID? {
@@ -202,15 +354,31 @@ public final class ReferenceState {
     /// A commit: the conditions drawn of the references it touched (`touched`) and of those that name
     /// a shape it changed are worked out again, and the mismatches of those it removed let go of.
     private func forgetDrawn(_ changes: ChangeSet, touched: [ShapeID: AnyShapeRecord?]) {
-        if !drawnConditions.isEmpty {
-            for id in touched.keys { drawnConditions.removeValue(forKey: id) }
-            for id in references(namingWhatChanged: changes) { drawnConditions.removeValue(forKey: id) }
+        if !drawnConditions.isEmpty || !drawnColorsKept.isEmpty || !dynamicPlaces.isEmpty {
+            for id in touched.keys {
+                drawnConditions.removeValue(forKey: id)
+                drawnColorsKept.removeValue(forKey: id)
+                dynamicPlaces.removeValue(forKey: id)
+            }
+            for id in references(namingWhatChanged: changes) {
+                drawnConditions.removeValue(forKey: id)
+                drawnColorsKept.removeValue(forKey: id)
+            }
+            // A query's pill names no shape in its record: the place of its first match is let go of when that match changes
+            // (put in another frame, onto another board).
+            for (id, kept) in dynamicPlaces where changes.changed.contains(kept.first) || changes.removed.contains(kept.first)
+                || changes.elsewhere.contains(kept.first) {
+                dynamicPlaces.removeValue(forKey: id)
+            }
             // A place changes with the containers it was read from (renamed, put elsewhere, deleted, a board's
             // owner): the places kept are worked out again.
             if !drawnPlaceSources.isEmpty, changes.changed.contains(where: { drawnPlaceSources.contains($0) })
                 || changes.removed.contains(where: { drawnPlaceSources.contains($0) })
                 || changes.elsewhere.contains(where: { drawnPlaceSources.contains($0) }) {
-                for (id, kept) in drawnConditions where kept.place != nil { drawnConditions.removeValue(forKey: id) }
+                // Every condition whose place was worked out, one that came to none (the pill in its shape's place) too: a
+                // container moved can part them.
+                for (id, kept) in drawnConditions where kept.condition.appearance != nil { drawnConditions.removeValue(forKey: id) }
+                dynamicPlaces.removeAll(keepingCapacity: true)
                 drawnPlaceSources = []
             }
         }
@@ -278,6 +446,8 @@ public final class ReferenceState {
     /// rows the list kept, but for the references that went.
     private func filePutInPlace() {
         drawnConditions = [:]
+        drawnColorsKept = [:]
+        dynamicPlaces = [:]
         drawnPlaceSources = []
         paths.forgetAll()
         drawnMismatches = [:]
@@ -296,12 +466,13 @@ public final class ReferenceState {
     private func referencesTouched(by changes: ChangeSet) -> [ShapeID: AnyShapeRecord?] {
         var touched: [ShapeID: AnyShapeRecord?] = [:]
         guard let topology = editor.topology,
-              topology.hasStandIns || !pathSources.of.isEmpty || !dynamic.isEmpty || !drawnConditions.isEmpty else { return touched }
+              topology.hasStandIns || !pathSources.of.isEmpty || !dynamic.isEmpty || !drawnConditions.isEmpty || !drawnColorsKept.isEmpty
+        else { return touched }
         let file = editor.file
         forEachChanged(by: changes) { id in
             if Self.isReference(id, in: topology) {
                 touched.updateValue(file.record(id), forKey: id)
-            } else if pathSources.of[id] != nil || dynamic[id] != nil || drawnConditions[id] != nil {
+            } else if pathSources.of[id] != nil || dynamic[id] != nil || drawnConditions[id] != nil || drawnColorsKept[id] != nil {
                 touched.updateValue(nil, forKey: id)
             }
         }
@@ -446,20 +617,111 @@ public final class ReferenceState {
 
     // MARK: The pointer resting on a pill
 
-    /// What a pill that stands for nothing says while the pointer rests on it.
+    /// What the pointer resting on a pill says: the whole place and then the name when the line over the name is folded or cut (or,
+    /// zoomed out past `ReferenceStyle.placeZoom`, isn't there), the place's boards semibold; "Not public" for a pill that stands
+    /// for a shape that isn't, or a query whose matches all aren't, under them. "Deleted" and "Not available" are on the pill, and
+    /// said here too where the pill can't say them whole (`cutWord`).
     func popover(on record: AnyShapeRecord) -> CanvasPopover? {
-        guard let reference = record.typed(as: Reference.self), editor.editingShapeID != record.id,
-              let help = Self.help(for: state(of: reference.props, id: record.id)) else { return nil }
-        let text = NSAttributedString(string: help, attributes: [.font: ReferenceStyle.helpFont, .foregroundColor: ReferenceStyle.label])
+        guard let reference = record.typed(as: Reference.self), editor.editingShapeID != record.id else { return nil }
+        let condition = state(of: reference.props, id: record.id)
+        let lines = whole(placeOf: condition, of: reference) + (Self.help(for: condition).map { [Self.helpLine($0)] } ?? [])
+            + (cutWord(of: condition, width: reference.props.frame.width).map { [Self.helpLine($0)] } ?? [])
+        guard !lines.isEmpty else { return nil }
+        let text = NSMutableAttributedString()
+        for line in lines {
+            if text.length > 0 { text.append(NSAttributedString(string: "\n", attributes: [.font: ReferenceStyle.helpFont])) }
+            text.append(line)
+        }
         return CanvasPopover(id: record.id, anchor: reference.frame, text: text)
+    }
+
+    /// The whole place and the name, when what the pill shows of the place is folded or cut, or isn't shown: two lines; else none.
+    private func whole(placeOf condition: ReferenceCondition, of reference: ShapeRecord<Reference>) -> [NSAttributedString] {
+        let width = reference.props.frame.width
+        let target: ShapeID, name: String, room: CGFloat
+        switch condition {
+        case .live(let appearance):
+            guard let id = reference.props.target?.id else { return [] }
+            (target, name, room) = (id, appearance.label, width - ReferenceStyle.padding)
+        case .notPublic(let appearance):
+            guard let id = reference.props.target?.id else { return [] }
+            (target, name, room) = (id, appearance.label, width - ReferenceStyle.padding)
+        case .found(let text, let found) where !found.all:
+            guard let id = found.ids.first else { return [] }
+            (target, name, room) = (id, text, width - ReferenceStyle.padding - ReferenceStyle.badgeRoom)
+        default:
+            return []
+        }
+        let steps = placeOfPick(from: reference.id, target)
+        guard !steps.isEmpty else { return [] }
+        let line = ReferenceStyle.placeLine(steps, room: room)
+        guard line.isShortened || line.isEmpty || !ReferenceStyle.showsPlace(atZoom: editor.camera.zoom) else { return [] }
+        let place = NSMutableAttributedString()
+        for (index, step) in steps.enumerated() {
+            if index > 0 { place.append(NSAttributedString(string: PlaceFold.separator, attributes: [.font: ReferenceStyle.helpFont, .foregroundColor: ReferenceStyle.placeFaintColor])) }
+            place.append(NSAttributedString(string: step.name, attributes: [
+                .font: step.opensBoard ? ReferenceStyle.placeBoardFont : ReferenceStyle.helpFont,
+                .foregroundColor: step.isPlaceholder ? ReferenceStyle.placeFaintColor : ReferenceStyle.placeColor]))
+        }
+        let label = NSAttributedString(string: name, attributes: [.font: ReferenceStyle.helpNameFont, .foregroundColor: ReferenceStyle.label])
+        return [place, label]
+    }
+
+    /// "Deleted" or "Not available" when the pill doesn't say it whole: zoomed out past `ReferenceStyle.placeZoom`, or cut in a
+    /// pill too narrow for it (its width is its name's, fitted while the original was there).
+    private func cutWord(of condition: ReferenceCondition, width: CGFloat) -> String? {
+        let word: String
+        switch condition {
+        case .missing: word = ReferenceStyle.deletedHelp
+        case .unavailable: word = ReferenceStyle.unavailableHelp
+        default: return nil
+        }
+        let fits = ReferenceMemo.shared.word(word).size().width <= width - ReferenceStyle.padding
+        return fits && ReferenceStyle.showsPlace(atZoom: editor.camera.zoom) ? nil : word
+    }
+
+    private static func helpLine(_ help: String) -> NSAttributedString {
+        NSAttributedString(string: help, attributes: [.font: ReferenceStyle.helpFont, .foregroundColor: ReferenceStyle.label])
     }
 
     static func help(for condition: ReferenceCondition) -> String? {
         switch condition {
-        case .missing: ReferenceStyle.deletedHelp
-        case .unavailable: ReferenceStyle.unavailableHelp
         case .notPublic, .privateMatches: ReferenceStyle.privateHelp
         default: nil
+        }
+    }
+
+    // MARK: What VoiceOver hears
+
+    /// What VoiceOver says of a pill: its name, "reference" (the kind), and where its original is, the whole place, never folded
+    /// ("in Shop › Policies › Refunds"); a query its words and what it found; a gone original "Deleted" or "Not available".
+    func accessibleTraits(of reference: ShapeRecord<Reference>) -> AccessibleTraits {
+        let condition = state(of: reference.props, id: reference.id)
+        func place(of target: ShapeID) -> String? {
+            let steps = placeOfPick(from: reference.id, target)
+            return steps.isEmpty ? nil : "in " + steps.map(\.name).joined(separator: PlaceFold.separator)
+        }
+        switch condition {
+        case .empty:
+            return AccessibleTraits()
+        case .live(let appearance):
+            return AccessibleTraits(name: appearance.label, labelParts: reference.props.target.flatMap { place(of: $0.id) }.map { [$0] } ?? [])
+        case .notPublic(let appearance):
+            let parts = reference.props.target.flatMap { place(of: $0.id) }.map { [$0] } ?? []
+            return AccessibleTraits(name: appearance.label, labelParts: parts + [ReferenceStyle.privateHelp.lowercased()])
+        case .missing(let label):
+            return AccessibleTraits(name: label, labelParts: [ReferenceStyle.deletedHelp])
+        case .unavailable(let label):
+            return AccessibleTraits(name: label, labelParts: [ReferenceStyle.unavailableHelp])
+        case .found(let text, let found):
+            let there = found.all ? nil : found.ids.first.flatMap { place(of: $0) }
+            return AccessibleTraits(name: text, labelParts: [ReferenceStyle.matchesLine(found)] + (there.map { [$0] } ?? []))
+        case .noMatches(let text), .refused(let text, _):
+            return AccessibleTraits(name: text, labelParts: [ReferenceStyle.noMatches])
+        case .privateMatches(let text, _):
+            return AccessibleTraits(name: text, labelParts: [ReferenceStyle.privateHelp.lowercased()])
+        case .notInterpreted(let text), .interpreting(let text), .finding(let text), .failed(let text, _), .cannotFind(let text):
+            return AccessibleTraits(name: text)
         }
     }
 
@@ -474,7 +736,8 @@ public final class ReferenceState {
         case .empty:
             return ReferenceHeaderContent(symbol: ReferenceStyle.systemImage, title: ReferenceStyle.placeholder, subtitle: nil)
         case .live(let appearance):
-            return ReferenceHeaderContent(symbol: appearance.systemImage, title: appearance.label, subtitle: kindAndPlace(appearance, of: props.target))
+            let (subtitle, lead, steps) = kindAndPlace(appearance, of: props.target)
+            return ReferenceHeaderContent(symbol: appearance.systemImage, title: appearance.label, subtitle: subtitle, lead: lead, place: steps)
         case .missing(let label):
             return ReferenceHeaderContent(symbol: ReferenceStyle.missingSymbol, title: label, subtitle: ReferenceStyle.deletedHelp)
         case .unavailable(let label):
@@ -493,17 +756,22 @@ public final class ReferenceState {
     }
 
     /// "Note · Payments › Invoices": the kind, then where the shape is when that isn't the board shown, directly:
-    /// the containers it is inside (`MentionState.place(ofShape:)`), else its board's name.
-    private func kindAndPlace(_ appearance: MentionAppearance, of target: ReferenceTarget?) -> String {
-        guard let target, let place = place(ofShape: target.id) else { return appearance.kindName }
-        return appearance.kindName + " · " + place
+    /// the containers it is inside (`MentionState.place(ofShape:)`), else its board's name (the file's, for the root).
+    /// The whole line, the kind and its dot, and the place's steps, for the header to fold at its width.
+    private func kindAndPlace(_ appearance: MentionAppearance, of target: ReferenceTarget?) -> (text: String, lead: String, steps: [PlaceStep]) {
+        guard let target, let place = mentionPlace(ofShape: target.id) else { return (appearance.kindName, "", []) }
+        let lead = appearance.kindName + " · "
+        return (lead + place.text, lead, place.steps)
     }
 
     /// Where a shape is from the board shown, as lists of shapes say it (nil: directly on the board shown).
-    func place(ofShape id: ShapeID) -> String? {
-        if let place = editor.mentions?.place(ofShape: id) { return place.text }
+    func place(ofShape id: ShapeID) -> String? { mentionPlace(ofShape: id)?.text }
+
+    /// The same as steps too.
+    func mentionPlace(ofShape id: ShapeID) -> MentionPlace? {
+        if let place = editor.mentions?.place(ofShape: id) { return place }
         guard let board = editor.file.board(containing: id), board != editor.board else { return nil }
-        return editor.name(of: board, root: ReferenceStyle.rootBoardName)
+        return MentionPlace(board: editor.name(of: board))
     }
 }
 
@@ -511,12 +779,19 @@ public final class ReferenceState {
 public struct ReferenceHeaderContent: Equatable {
     public var symbol: String
     public var title: String
+    /// The line under the title, whole: "Note · Payments › Invoices".
     public var subtitle: String?
+    /// For a line that says where the original is: what comes before the place ("Note · ") and the place's steps, which
+    /// the header folds at its width (`PlaceFold`); `subtitle` is the whole, its help.
+    public var lead: String
+    public var place: [PlaceStep]
 
-    public init(symbol: String, title: String, subtitle: String?) {
+    public init(symbol: String, title: String, subtitle: String?, lead: String = "", place: [PlaceStep] = []) {
         self.symbol = symbol
         self.title = title
         self.subtitle = subtitle
+        self.lead = lead
+        self.place = place
     }
 }
 
@@ -541,6 +816,8 @@ extension ReferenceState: EditorService {
     /// tint, so the kept ones are let go of and the pills drawn again.
     public func shapeTintsDidChange(in editor: CanvasEditor) {
         drawnConditions.removeAll(keepingCapacity: true)
+        drawnColorsKept.removeAll(keepingCapacity: true)
+        refreshAnswerColors()
         editor.setNeedsDisplay()
     }
 
@@ -589,4 +866,10 @@ extension ReferenceState: EditorService {
 extension CanvasEditor {
     /// References' state; nil without ReferencesPlugin.
     public var references: ReferenceState? { service(ReferenceState.self) }
+}
+
+
+extension ContainerName {
+    /// The step a place says for this container.
+    var placeStep: PlaceStep { PlaceStep(name: text, opensBoard: opensBoard, isPlaceholder: isPlaceholder) }
 }

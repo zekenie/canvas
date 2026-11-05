@@ -1,11 +1,12 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Geometry
 import Titles
 import References
 import TestKit
 
-// What a pill that stands for nothing says while the pointer rests on it, and what drawing a frame of
+// What a pill that isn't public says while the pointer rests on it, and what drawing a frame of
 // pills costs once they've been drawn: nothing built again.
 
 @MainActor private func popover(over id: ShapeID, in h: EditorHarness) throws -> String? {
@@ -16,14 +17,14 @@ import TestKit
 }
 
 @MainActor let helpTests = Suite("Resting on a pill, and drawing many", [
-    test("a pill that stands for nothing says why: Deleted, Not available, Not public; a live one and words say nothing") {
+    test("a pill that isn't public says so; a gone or unavailable one, a live one and words say nothing (Deleted and Not available are on the pill)") {
         let h = try referenceHarness()
         let gone = h.addReference(to: ShapeID(), label: "Old roadmap")
-        expectEqual(try popover(over: gone, in: h), "Deleted")
+        expectEqual(try popover(over: gone, in: h), nil, "Deleted is the word on the pill")
         let nowhere = ShapeID()
         let hidden = ShapeRecord(Box(boxFrame))
         let other = try referenceHarness(file: CanvasFile(root: CanvasDocument(), children: [nowhere: CanvasDocument(shapes: [AnyShapeRecord(hidden)])]))
-        expectEqual(try popover(over: other.addReference(to: hidden.id, label: "Out of sight"), in: other), "Not available")
+        expectEqual(try popover(over: other.addReference(to: hidden.id, label: "Out of sight"), in: other), nil, "Not available is the word on the pill")
         let secret = h.addBox("secret", public: false, at: CGRect(x: 100, y: 400, width: 100, height: 100))
         let notPublic = h.addReference(to: secret, label: "secret", at: CGPoint(x: 400, y: 400))
         expectEqual(try popover(over: notPublic, in: h), "Not public")
@@ -33,6 +34,20 @@ import TestKit
         let live = h.addReference(to: h.addBox("shapes"), label: "shapes", at: CGPoint(x: 400, y: 500))
         expectEqual(try popover(over: live, in: h), nil)
         expectEqual(try popover(over: h.addReference(words: "stuff", at: CGPoint(x: 400, y: 600)), in: h), nil)
+    },
+    test("a pill too narrow for Deleted or Not available, or zoomed out past its line, says it on the pointer") {
+        let h = try referenceHarness()
+        expectEqual(try popover(over: h.addReference(to: ShapeID(), label: "Q"), in: h), "Deleted", "cut in the narrowest pill")
+        expectEqual(try popover(over: h.addReference(to: ShapeID(), label: "Old roadmap", at: CGPoint(x: 400, y: 300)), in: h), nil, "whole on a wider one")
+        let nowhere = ShapeID()
+        let hidden = ShapeRecord(Box(boxFrame))
+        let other = try referenceHarness(file: CanvasFile(root: CanvasDocument(), children: [nowhere: CanvasDocument(shapes: [AnyShapeRecord(hidden)])]))
+        let narrow = other.addReference(to: hidden.id, label: "Q")
+        expectEqual(try popover(over: narrow, in: other), "Not available", "cut on the pill: said whole here")
+        let roomy = other.addReference(to: hidden.id, label: "Out of sight", at: CGPoint(x: 400, y: 400))
+        expectEqual(try popover(over: roomy, in: other), nil, "whole on the pill")
+        other.editor.camera = Camera(origin: .zero, zoom: 0.5)
+        expectEqual(try popover(over: roomy, in: other), "Not available", "zoomed out the line isn't drawn")
     },
     test("a frame of pills drawn again builds no label and no symbol: they're kept") {
         let h = try referenceHarness()

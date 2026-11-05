@@ -4,6 +4,7 @@ import Boards
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
+import Chrome
 import Clipboard
 import CoreGraphics
 import Foundation
@@ -87,7 +88,7 @@ extension CanvasEditor {
         let references = try require(h.editor.references)
         expectEqual(references.header(of: props, id: pill).subtitle, "Note · Untitled Subboard", "the reference's header")
         _ = renderBitmap(h.editor, size: CGSize(width: 1000, height: 700))
-        expectEqual(references.drawnPlace(of: pill), "Untitled Subboard", "and its pill")
+        expectEqual(references.drawnPlaceSteps(of: pill)?.map(\.name), ["Untitled Subboard"], "and its pill")
     },
     test("rows and pills that name notes on other boards stay right across switches: renamed away, undone, deleted with their board, undone") {
         let pasteboard = NSPasteboard.withUniqueName()

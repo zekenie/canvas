@@ -43,6 +43,7 @@ extension JumpToState {
         let id: ShapeID
         let title: String?
         let placeholder: String
+        let opensBoard: Bool
     }
 
     /// The rows for `text`: for an empty query, recent picks and the shapes nearby; else the best matches.
@@ -137,7 +138,7 @@ extension JumpToState {
     private func path(of id: ShapeID) -> [Segment] {
         paths.containers(of: id).map { ancestor in
             let name = paths.node(ancestor).name
-            return Segment(id: ancestor, title: name.title, placeholder: name.placeholder)
+            return Segment(id: ancestor, title: name.title, placeholder: name.placeholder, opensBoard: name.opensBoard)
         }
     }
 
@@ -183,7 +184,7 @@ extension JumpToState {
         let entry = catalog.entries[ranked.found.slot]
         let title = catalog.titles[ranked.found.slot]
         var titleMatched = ranked.leafMatched
-        var segments = ranked.path.map { JumpToSegment(text: $0.title ?? $0.placeholder, isPlaceholder: $0.title == nil) }
+        var segments = ranked.path.map { JumpToSegment(text: $0.title ?? $0.placeholder, isPlaceholder: $0.title == nil, opensBoard: $0.opensBoard) }
         if let match = ranked.match {
             titleMatched = match.matched.last ?? []
             for index in segments.indices where segments[index].isPlaceholder == false { segments[index].matched = match.matched[index] }

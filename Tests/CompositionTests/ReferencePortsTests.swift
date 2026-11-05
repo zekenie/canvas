@@ -137,13 +137,13 @@ extension EditorHarness {
     }
 }
 
-/// How many pixels in `rect` are the warning's orange: red, some green, no blue.
+/// How many pixels in `rect` are the warning's orange (`#B96B00` in light, the system's in dark): red, some green, no blue.
 @MainActor private func orange(_ rep: NSBitmapImageRep, in rect: CGRect) -> Int {
     var count = 0
     for y in Int(rect.minY)..<Int(rect.maxY) {
         for x in Int(rect.minX)..<Int(rect.maxX) {
             let p = pixel(rep, at: CGPoint(x: x, y: y))
-            if p[0] > 200 && p[1] > 90 && p[1] < 190 && p[2] < 90 { count += 1 }
+            if p[0] > 170 && p[1] > 90 && p[1] < 190 && p[2] < 90 { count += 1 }
         }
     }
     return count

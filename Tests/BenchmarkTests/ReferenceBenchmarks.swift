@@ -35,7 +35,10 @@ extension Budget {
     /// (reading and resolving the twenty, taking up the file once, the slices that read every name once,
     /// `referenceBatchMain`) and the landing's (one provide, the pills, rows and panels told). The
     /// thread's CPU time.
-    static let referenceAnswersMain = SizedBudget(thousand: 1, tenThousand: 5)
+    /// At 1,000 shapes one answer that changes with each commit (`sticky-note:not([title])`, every untitled note, a few hundred) has its
+    /// matches' color read (`ReferenceState.answerColors`, the color every match shares, a scan of at most 2,000 matches, some 3 µs a
+    /// match): 0.3 ms became 1.0 to 1.6, so 1 became 2.5. At 10,000 shapes that answer is past the 2,000 and is not scanned (0.4 ms).
+    static let referenceAnswersMain = SizedBudget(thousand: 2.5, tenThousand: 5)
 }
 
 extension Budget {

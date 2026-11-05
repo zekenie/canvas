@@ -177,7 +177,8 @@ private func digestFile(_ name: String, _ text: String, in folder: URL) throws -
     expectEqual(summary["shapesWithin1"], summary["shapes"], "\(label): every shape within 1 unit of its place, worst \(summary["worstShape"] ?? .null)")
     expect((summary["pills"]?.numberValue ?? 0) > 0, "\(label): pills planned")
     expectEqual(summary["pillsWithin1"], summary["pills"], "\(label): every pill within 1 unit of its place, worst \(summary["worstPill"] ?? .null)")
-    expect((summary["pillWidthError"]?["max"]?.numberValue ?? 99) <= 1, "\(label): every pill as wide as planned: \(summary["pillWidthError"] ?? .null)")
+    let wrongWidth = (try require(JSON(text: verified.output)["rows"]?.arrayValue)).filter { abs($0["delta"]?["w"]?.numberValue ?? 0) > 1 }.map { "\($0["title"] ?? .null) planned \($0["planned"]?["w"] ?? .null) landed \($0["landed"]?["w"] ?? .null)" }
+    expect((summary["pillWidthError"]?["max"]?.numberValue ?? 99) <= 1, "\(label): every pill as wide as planned: \(summary["pillWidthError"] ?? .null) \(wrongWidth)")
     expectEqual(summary["missing"], [], "\(label): nothing missing")
     expectEqual(summary["wrongFrame"], [], "\(label): every shape in its frame")
     expectEqual(summary["edgesMissing"], [], "\(label): every arrow drawn")
@@ -1325,12 +1326,12 @@ private func isByDesign(_ message: String) -> Bool {
         expect((plan["boards"]?.arrayValue ?? []).flatMap { $0["pills"]?.arrayValue ?? [] }.count > 0, "an edge to a note of the same title on another board is a pill")
 
         // measured on the board that holds the titles, as on none: the same script, the same sizes, each row read by its line (two statements of a
-        // title are two shapes); a title the board holds too (Config) has its pill measured again from where it sits, as it will say where Config is
+        // title are two shapes); every pill is measured from where it sits, as it will say where its shape is
         let spare = windowedBoard(), other = windowedBoard()
         defer { spare.close(); other.close() }
         let alone = try startCommandServer(boards: [spare, other], frontmost: nil)
         defer { alone.stop() }
-        let bare = try runDigest("measure", "repeats", server: alone, target: [], out: folder.appendingPathComponent("measure-none"))
+        let bare = try runDigest("measure", "repeats", server: alone, target: ["--into", "Repeats map"], out: folder.appendingPathComponent("measure-none"))
         expectEqual(bare.process.status, 0, bare.process.output + bare.process.error)
         let withTitles = try json(run.out.appendingPathComponent("measure.json")), without = try json(bare.out.appendingPathComponent("measure.json"))
         expect(withTitles["board"] != nil && without["board"] == nil, "the first was measured on the board that holds the titles, the second on none")
@@ -1342,8 +1343,8 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(withTitles["warnings"], nil, "and said nothing of the board's titles")
         expectEqual(withTitles["shapes"], without["shapes"], "the shapes are the same whatever titles the file holds")
         let pills = { (measured: JSON) in (measured["references"]?.arrayValue ?? []).filter { $0["for"] == "Config" }.count }
-        expectEqual(pills(without), 1, "Config's title is its own in the digest")
-        expectEqual(pills(withTitles), 2, "and the board's Config makes it another's: measured again from where its pill sits")
+        expectEqual(pills(without), 2, "Config's pill is measured as the end alone and from where its pill sits, as every pill is")
+        expectEqual(pills(withTitles), 2, "and the board's Config changes neither: it says where Config is whatever the file holds")
 
         // the scripts name a shape by a path wherever its title is the file's or repeats, and bare only where nothing else can be meant
         let runs = try require(plan["runs"]?.arrayValue?.compactMap(\.stringValue))

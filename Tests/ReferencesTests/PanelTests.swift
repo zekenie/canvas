@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Chrome
 import DetailPanel
 import Mentions
 import Publishing
@@ -21,6 +22,16 @@ import Titles
 
 @MainActor private func header(_ h: EditorHarness, _ id: ShapeID) throws -> ReferenceHeaderContent {
     try require(try layout(h, id).header(as: ReferenceHeader.self)).content
+}
+
+@MainActor private func pocketBox(_ h: EditorHarness) throws -> (box: ShapeID, pocket: ShapeID) {
+    var pocket = ShapeRecord(Pocket(CGRect(x: 600, y: 100, width: 100, height: 100)))
+    pocket[TitleProperty.self] = "Drawer"
+    h.editor.transact { $0.insert(pocket) }
+    expect(h.enter(pocket.id))
+    let box = h.addBox("inside")
+    expect(h.editor.showBoard(.root))
+    return (box, pocket.id)
 }
 
 @MainActor private final class ReferencePanel {
@@ -78,6 +89,27 @@ import Titles
         let id = h.addReference(to: box, label: "inside")
         let kind = try require(h.state(of: id)?.appearance).kindName
         expectEqual(try header(h, id).subtitle, kind + " · Drawer")
+    },
+    test("the header's line leads with the file's name for a shape on the top board, \"Board\" only while the file has none; the Reference tab says the whole place, boards in semibold") {
+        let h = try referenceHarness([PocketsPlugin(), pocketTitles])
+        let (inner, pocket) = try pocketBox(h)
+        let kind = try require(h.state(of: h.addReference(to: inner, label: "inside"))?.appearance).kindName
+        // A pill on the pocket's board for a shape on the top board.
+        let top = h.addBox("Ledger")
+        expect(h.enter(pocket))
+        let id = h.addReference(to: top, label: "Ledger")
+        let content = try header(h, id)
+        expectEqual(content.subtitle, kind + " · Board", "no name, no lead but the fallback")
+        expectEqual(content.place, [PlaceStep(name: "Board", opensBoard: true)])
+        h.editor.nameRoot("Shop")
+        expectEqual(try header(h, id).subtitle, kind + " · Shop", "the file's name")
+        expectEqual(try header(h, id).lead, kind + " · ")
+        let whole = try require(h.editor.references?.panelPlace(of: try require(h.reference(id)), id: id))
+        expectEqual(whole, [PlaceStep(name: "Shop", opensBoard: true)], "the tab's place, whole")
+        // A shape in the pill's own place has none.
+        let beside = h.addBox("Beside", at: CGRect(x: 300, y: 300, width: 100, height: 100))
+        let near = h.addReference(to: beside, label: "Beside", at: CGPoint(x: 400, y: 400))
+        expectEqual(h.editor.references?.panelPlace(of: try require(h.reference(near)), id: near)?.isEmpty, true, "nothing to say")
     },
     test("a rename shows in the header as it happens: laid out again, it says the new name") {
         let h = try referenceHarness()

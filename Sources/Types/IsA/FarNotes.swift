@@ -163,7 +163,7 @@ extension CanvasEditor {
                     refuseChanges(to: [note])
                     return nil
                 }
-                route.seat(&made, for: far, beside: note, in: self)
+                route.seat(&made, beside: note, in: self)
                 guard let size = made.box?.size, let surroundings = Surroundings(on: board, moving: size, in: self) else {
                     refuseChanges(to: [note])
                     return nil

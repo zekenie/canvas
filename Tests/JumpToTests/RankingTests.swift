@@ -1,6 +1,7 @@
 import Canvas
 import CanvasTesting
 import AppKit
+import Chrome
 import CoreGraphics
 import JumpTo
 import Selection
@@ -96,6 +97,22 @@ import TextEditing
         expectEqual(item.matched, [0..<8])
         expect(item.spoken.hasPrefix("Checkout, "), item.spoken)
         expect(item.spoken.hasSuffix("in Alpha › Beta › Gamma, 1 of 2"), item.spoken)
+    },
+    test("the path is the row's steps, folded only when the row is too narrow, keeping the names the query matched") {
+        let h = try storyHarness()
+        _ = h.candidates("alpha gamma checkout")
+        let rows = h.jump.list.rows.compactMap(\.item)
+        let near = try require(rows[0].place), far = try require(rows[1].place)
+        expectEqual(near.steps.map(\.name), ["Alpha", "Beta", "Gamma"])
+        expectEqual(far.steps.map(\.name), ["Alpha", "Beta", "Gamma", "Epsilon"])
+        expectEqual(far.matched, [[0..<5], [], [0..<5], []], "what the query matched in each name")
+        expectEqual(far.text(in: 1000), "Alpha › Beta › Gamma › Epsilon", "all of it with the room")
+        // Too narrow for all of it: the names the query matched stay, the others between them fold into "…".
+        let narrow = far.text(in: 160)
+        expectEqual(narrow, "Alpha › … › Gamma › Epsilon", "Gamma was matched")
+        expectEqual(near.text(in: 160), "Alpha › Beta › Gamma", "the near one fits whole")
+        expect(far.text(in: 100).hasSuffix("Epsilon"), "with less room still the nearest: \(far.text(in: 100))")
+        expectEqual(h.candidates("alpha")[0].place?.steps, nil, "a shape on the root has no path")
     },
     test("a container nobody titled is on the path by its kind's name, dimmed, and is never matched") {
         let h = try storyHarness()

@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Chrome
 import Mentions
 import Publishing
 import QueryTranslation
@@ -24,6 +25,11 @@ private let corralTitles = Contributor(id: "corral-titles") { $0.title(Corral.se
 }
 
 extension EditorHarness {
+    /// The pill `id` as wide as a pill is, so its place is said whole.
+    fileprivate func widen(_ ids: ShapeID...) {
+        for id in ids { editor.transact { $0.update(id, as: Reference.self) { $0.props.frame.size.width = 280 } } }
+    }
+
     /// A corral or a pocket titled `title` on the board shown, `at` its top left.
     @discardableResult
     fileprivate func addCorral(_ title: String?, at origin: CGPoint = CGPoint(x: 0, y: 0)) -> ShapeID {
@@ -58,7 +64,7 @@ extension EditorHarness {
 @MainActor private func path(_ h: EditorHarness, _ id: ShapeID) throws -> [String] { try label(h, id).path.map(\.text) }
 
 @MainActor let pathTests = Suite("The path a reference's row says before its name", [
-    test("on a subboard, a reference to a shape in a frame on the root says the frame; in a frame of its own it nests there and says the same") {
+    test("on a subboard, a reference to a shape in a frame on the root says the top board, as its pill does, and the frame; in a frame of its own it nests there and says the same") {
         let h = try pathHarness()
         let foo = h.addCorral("foo"), bar = h.addBox("bar")
         h.editor.put([bar], in: foo)
@@ -66,19 +72,19 @@ extension EditorHarness {
         expect(h.enter(sub))
         let reference = h.addReference(to: bar, label: "bar")
         let other = h.addBox("something else", at: CGRect(x: 700, y: 400, width: 100, height: 100))
-        expectEqual(try path(h, reference), ["foo"])
+        expectEqual(try path(h, reference), ["Board", "foo"])
         expectEqual(try label(h, reference).text, "bar")
-        expectEqual(try label(h, reference).help, "foo › bar", "the tooltip has it whole")
+        expectEqual(try label(h, reference).help, "Board › foo › bar", "the tooltip has it whole")
         expectEqual(try label(h, other).path, [], "a shape's own row has none")
-        expectEqual(try label(h, reference).path.map(\.isPlaceholder), [false], "a title, at the path's strength")
+        expectEqual(try label(h, reference).path.map(\.isPlaceholder), [false, false], "a title, at the path's strength")
         let ffff = h.addCorral("ffff", at: CGPoint(x: 300, y: 200))
         h.editor.put([reference], in: ffff)
         let contents = try require(h.editor.tableOfContents)
         let frameRow = try require(contents.entries.first { $0.id == ffff }, "the frame's row")
         expectEqual(frameRow.children?.map(\.id), [reference], "nested under its own frame, as any shape is")
-        expectEqual(try path(h, reference), ["foo"], "where its original is, not where it is")
+        expectEqual(try path(h, reference), ["Board", "foo"], "where its original is, not where it is")
     },
-    test("only what the reference isn't inside too: nothing for a shape in its frame, on its board or above it; the frames and boards between otherwise") {
+    test("only what the reference isn't inside too: nothing for a shape in its frame or on its board; the board it is on for one above it; the frames and boards between otherwise") {
         let h = try pathHarness()
         let zone = h.addCorral("zone"), inner = h.addCorral("inner", at: CGPoint(x: 20, y: 20))
         let near = h.addBox("near"), deep = h.addBox("deep", at: CGRect(x: 40, y: 40, width: 50, height: 50))
@@ -97,7 +103,7 @@ extension EditorHarness {
         h.editor.put([up], in: inner)
         expectEqual(try path(h, up), [], "a shape above it")
         // Boards: a shape on another subboard's board is under that subboard; one on the board
-        // above is nowhere the reference isn't.
+        // above is led by that board, as the pill says it.
         let a = h.addPocket("A"), b = h.addPocket("B", at: CGPoint(x: 800, y: 0))
         expect(h.enter(b))
         let pen = h.addCorral("pen"), far = h.addBox("far")
@@ -108,8 +114,40 @@ extension EditorHarness {
         expectEqual(try path(h, h.addReference(to: far, label: "far", at: CGPoint(x: 400, y: 600))), ["B", "pen"])
         expect(h.enter(a))
         expectEqual(try path(h, h.addReference(to: far, label: "far")), ["B", "pen"], "from a sibling board")
-        expectEqual(try path(h, h.addReference(to: loose, label: "loose", at: CGPoint(x: 400, y: 400))), [], "on the board above")
-        expectEqual(try path(h, h.addReference(to: deep, label: "deep", at: CGPoint(x: 400, y: 500))), ["zone", "inner"])
+        expectEqual(try path(h, h.addReference(to: loose, label: "loose", at: CGPoint(x: 400, y: 400))), ["Board"], "on the board above: its name")
+        expectEqual(try path(h, h.addReference(to: deep, label: "deep", at: CGPoint(x: 400, y: 500))), ["Board", "zone", "inner"])
+    },
+    test("a pill inside a frame inside its original's says nothing, pill and row alike, until its frame is taken out: then the original's frame") {
+        let h = try pathHarness()
+        let outer = h.addCorral("Outer"), inner = h.addCorral("Inner", at: CGPoint(x: 400, y: 0))
+        let acme = h.addBox("Acme")
+        h.editor.put([acme, inner], in: outer)
+        let pill = h.addReference(to: acme, label: "Acme", at: CGPoint(x: 420, y: 40))
+        h.editor.put([pill], in: inner)
+        h.widen(pill)
+        _ = render(h.editor)
+        let state = try require(h.editor.references)
+        expectEqual(state.drawnPlace(of: pill)?.text, nil, "in its original's frame: nothing to say")
+        expectEqual(try path(h, pill), [], "and its row nothing")
+        h.editor.transact { $0.setContainer(inner, to: nil) }
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: pill)?.text, "Outer", "the frame between taken out: the pill says where its original is")
+        expectEqual(try path(h, pill), ["Outer"], "and so does its row")
+    },
+    test("a query's pill says where its first match is, and follows it into another frame") {
+        let h = try pathHarness()
+        let drawer = h.addCorral("Drawer"), bin = h.addCorral("Bin", at: CGPoint(x: 0, y: 400))
+        let acme = h.addBox("Acme")
+        h.editor.put([acme], in: drawer)
+        let first = h.addReference(words: "acme", query: "\"Acme\"", at: CGPoint(x: 400, y: 200))
+        h.widen(first)
+        h.answer()
+        _ = render(h.editor)
+        let state = try require(h.editor.references)
+        expectEqual(state.drawnPlace(of: first)?.text, "Drawer")
+        h.editor.transact { $0.setContainer(acme, to: bin) }
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: first)?.text, "Bin", "the match moved: its place is read again")
     },
     test("an untitled frame or board is called by its kind; a shape gone private keeps its path, one deleted has none") {
         let h = try pathHarness()
@@ -127,7 +165,8 @@ extension EditorHarness {
         expectEqual(try path(h, into), [registry.label(of: Pocket.kind).name])
         expectEqual(try label(h, into).path.map(\.isPlaceholder), [true])
         h.editor.transact { $0.update(pocket) { $0[TitleProperty.self] = "Plans" } }
-        expectEqual(try label(h, into).path, ["Plans"], "named: a title")
+        expectEqual(try label(h, into).path, [ContentsPathName("Plans", opensBoard: true)], "named: a title, and a board")
+        expectEqual(try label(h, reference).path.map(\.opensBoard), [false], "a frame is a region of its board")
         h.editor.transact { $0.update(box) { $0[PublicProperty.self] = nil } }
         expect(try label(h, reference).isPlaceholder, "not public: dimmed")
         expectEqual(try path(h, reference).count, 1, "still where it is")
@@ -183,17 +222,17 @@ extension EditorHarness {
         expect(h.enter(sub))
         let reference = h.addReference(to: bar, label: "bar")
         let contents = try require(h.editor.tableOfContents)
-        expectEqual(try path(h, reference), ["zone", "foo"])
+        expectEqual(try path(h, reference), ["Board", "zone", "foo"])
         h.editor.transact(on: .root) { $0.update(foo) { $0[TitleProperty.self] = "food" } }
-        expectEqual(try path(h, reference), ["zone", "food"], "a write to the board above")
+        expectEqual(try path(h, reference), ["Board", "zone", "food"], "a write to the board above")
         h.editor.transact(on: .root) { $0.setContainer(sub, to: zone) }
-        expectEqual(try path(h, reference), ["food"], "its board is in the zone now, as its original is")
+        expectEqual(try path(h, reference), ["Board", "food"], "its board is in the zone now, as its original is")
         // Away, on the root: what changes there reaches the row when its board is shown again.
         expect(h.editor.showBoard(.root))
         h.editor.transact { $0.update(foo) { $0[TitleProperty.self] = "feed" } }
-        expectEqual(try require(contents.outline(of: BoardID(owner: sub)).first { $0.id == reference }?.label).path.map(\.text), ["feed"], "under its subboard's row")
+        expectEqual(try require(contents.outline(of: BoardID(owner: sub)).first { $0.id == reference }?.label).path.map(\.text), ["Board", "feed"], "under its subboard's row")
         expect(h.enter(sub))
-        expectEqual(try path(h, reference), ["feed"])
+        expectEqual(try path(h, reference), ["Board", "feed"])
     },
 
     // MARK: Where a shape is, in the pill, the header, the list and the matches
@@ -211,24 +250,24 @@ extension EditorHarness {
         h.editor.put([inItems], in: items)
         _ = render(h.editor)
         let state = try require(h.editor.references)
-        expectEqual(state.drawnPlace(of: outside), "Cart › Items")
-        expectEqual(state.drawnPlace(of: inCart), "Items", "the frame it is in is left out")
-        expectEqual(state.drawnPlace(of: inItems), nil, "in the same frame: as it always looked")
+        expectEqual(state.drawnPlace(of: outside)?.text, "Cart › Items")
+        expectEqual(state.drawnPlace(of: inCart)?.text, "Items", "the frame it is in is left out")
+        expectEqual(state.drawnPlace(of: inItems)?.text, nil, "in the same frame: as it always looked")
         // A rename of a frame its path was read from is said at the next draw, in the pills that read it.
         h.editor.transact { $0.update(cart) { $0[TitleProperty.self] = "Basket" } }
         _ = render(h.editor)
-        expectEqual(state.drawnPlace(of: outside), "Basket › Items")
-        expectEqual(state.drawnPlace(of: inCart), "Items")
+        expectEqual(state.drawnPlace(of: outside)?.text, "Basket › Items")
+        expectEqual(state.drawnPlace(of: inCart)?.text, "Items")
         // The pill's own frame put in the frame its shape is in changes what it shares.
         h.editor.put([cart], in: nil)
         h.editor.put([items], in: nil)
         _ = render(h.editor)
-        expectEqual(state.drawnPlace(of: outside), "Items", "the frame taken out of Basket")
-        expectEqual(state.drawnPlace(of: inCart), "Items")
-        expectEqual(state.drawnPlace(of: inItems), nil)
+        expectEqual(state.drawnPlace(of: outside)?.text, "Items", "the frame taken out of Basket")
+        expectEqual(state.drawnPlace(of: inCart)?.text, "Items")
+        expectEqual(state.drawnPlace(of: inItems)?.text, nil)
         h.editor.put([note], in: nil)
         _ = render(h.editor)
-        expectEqual(state.drawnPlace(of: outside), nil, "on the board directly, as the pill is")
+        expectEqual(state.drawnPlace(of: outside)?.text, nil, "on the board directly, as the pill is")
         // A shape in no frame on another board says that board's name.
         let pocket = h.addPocket("Clients")
         expect(h.enter(pocket))
@@ -236,19 +275,110 @@ extension EditorHarness {
         expect(h.editor.showBoard(.root))
         let farPill = h.addReference(to: far, label: "Acme", at: CGPoint(x: 800, y: 500))
         _ = render(h.editor)
-        expectEqual(state.drawnPlace(of: farPill), "Clients")
+        expectEqual(state.drawnPlace(of: farPill)?.text, "Clients")
         // And a frame on that board adds to it, as a path does.
         expect(h.enter(pocket))
         let drawer = h.addCorral("Drawer", at: CGPoint(x: 300, y: 300))
         h.editor.put([far], in: drawer)
         expect(h.editor.showBoard(.root))
         _ = render(h.editor)
-        expectEqual(state.drawnPlace(of: farPill), "Clients › Drawer")
+        expectEqual(state.drawnPlaceSteps(of: farPill)?.map(\.name), ["Clients", "Drawer"])
+        expectEqual(state.drawnPlaceSteps(of: farPill)?.map(\.opensBoard), [true, false], "the pocket opens a board, the corral does not")
     },
 
+    test("when the shape is on another board and no step opens one, that board leads: the file's name for the root, \"Board\" with none, else its owner") {
+        let h = try pathHarness()
+        let drawer = h.addCorral("Drawer")
+        let plan = h.addBox("Plan", at: CGRect(x: 40, y: 40, width: 50, height: 50))
+        h.editor.put([plan], in: drawer)
+        let loose = h.addBox("Loose", at: CGRect(x: 500, y: 400, width: 50, height: 50))
+        let clients = h.addPocket("Clients")
+        expect(h.enter(clients))
+        let inFrame = h.addReference(to: plan, label: "Plan")
+        let onRoot = h.addReference(to: loose, label: "Loose", at: CGPoint(x: 400, y: 400))
+        h.editor.nameRoot("Shop")
+        h.widen(inFrame, onRoot)
+        _ = render(h.editor)
+        let state = try require(h.editor.references)
+        expectEqual(state.drawnPlace(of: inFrame)?.text, "Shop › Drawer", "a frame on the root, from a pocket's board")
+        expectEqual(state.drawnPlaceSteps(of: inFrame)?.map(\.opensBoard), [true, false], "the lead is a board, the frame is not")
+        expectEqual(state.drawnPlace(of: onRoot)?.text, "Shop", "a shape on the root in no frame: the root alone")
+        expectEqual(state.drawnPlaceSteps(of: onRoot), [PlaceStep(name: "Shop", opensBoard: true)])
+        // The file renamed, with no commit: said at the next draw.
+        h.editor.nameRoot("Atlas")
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: inFrame)?.text, "Atlas › Drawer")
+        expectEqual(state.drawnPlace(of: onRoot)?.text, "Atlas")
+        // A file with no name: "Board", as Boards names the root everywhere.
+        h.editor.nameRoot("")
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: onRoot)?.text, "Board")
+    },
+    test("the board that leads is its owner's when it isn't the root: a pill on a pocket's inner board, its shape in a frame on the pocket's own board") {
+        let h = try pathHarness()
+        let clients = h.addPocket("Clients")
+        expect(h.enter(clients))
+        let drawer = h.addCorral("Drawer")
+        let plan = h.addBox("Plan", at: CGRect(x: 40, y: 40, width: 50, height: 50))
+        h.editor.put([plan], in: drawer)
+        let inner = h.addPocket("Inner")
+        expect(h.enter(inner))
+        let pill = h.addReference(to: plan, label: "Plan")
+        h.widen(pill)
+        _ = render(h.editor)
+        let state = try require(h.editor.references)
+        expectEqual(state.drawnPlace(of: pill)?.text, "Clients › Drawer")
+        expectEqual(state.drawnPlaceSteps(of: pill)?.map(\.opensBoard), [true, false])
+        // Untitled, it is called as its board is.
+        h.editor.transact(on: BoardID.root) { $0.update(clients) { $0[TitleProperty.self] = nil } }
+        _ = render(h.editor)
+        let lead = try require(state.drawnPlaceSteps(of: pill)?.first)
+        expect(lead.isPlaceholder && lead.opensBoard, "untitled, a placeholder that opens a board")
+        expectEqual(lead.name, h.editor.registry.label(of: Pocket.kind).name, "called as a path calls a container of its kind")
+    },
+    test("a step that opens a board leads on its own: the original on a pocket's board, from the root, gets no other lead") {
+        let h = try pathHarness()
+        let clients = h.addPocket("Clients")
+        expect(h.enter(clients))
+        let drawer = h.addCorral("Drawer")
+        let plan = h.addBox("Plan", at: CGRect(x: 40, y: 40, width: 50, height: 50))
+        h.editor.put([plan], in: drawer)
+        expect(h.editor.showBoard(.root))
+        h.editor.nameRoot("Shop")
+        let pill = h.addReference(to: plan, label: "Plan")
+        h.widen(pill)
+        _ = render(h.editor)
+        let state = try require(h.editor.references)
+        expectEqual(state.drawnPlace(of: pill)?.text, "Clients › Drawer", "not Shop › Clients › Drawer")
+        expectEqual(state.drawnPlaceSteps(of: pill)?.map(\.name), ["Clients", "Drawer"])
+    },
+    test("the line a pill keeps is folded at its width less 46, so a wider pill says more of a long place, and a frame folds nothing") {
+        let h = try pathHarness()
+        let outer = h.addCorral("Platform layer"), middle = h.addCorral("Horizontals: shape traits", at: CGPoint(x: 10, y: 10)), inner = h.addCorral("Types", at: CGPoint(x: 20, y: 20))
+        h.editor.put([middle], in: outer)
+        h.editor.put([inner], in: middle)
+        let note = h.addBox("Fields", at: CGRect(x: 40, y: 40, width: 50, height: 50))
+        h.editor.put([note], in: inner)
+        let narrow = h.addReference(to: note, label: "Fields", at: CGPoint(x: 800, y: 100))
+        let wide = h.addReference(to: note, label: "Fields", at: CGPoint(x: 800, y: 200))
+        h.editor.transact { $0.update(narrow, as: Reference.self) { $0.props.frame.size.width = 160 } }
+        h.editor.transact { $0.update(wide, as: Reference.self) { $0.props.frame.size.width = 280 } }
+        _ = render(h.editor)
+        let state = try require(h.editor.references)
+        let whole = ["Platform layer", "Horizontals: shape traits", "Types"]
+        expectEqual(state.drawnPlaceSteps(of: narrow)?.map(\.name), whole, "the steps are whole")
+        let short = try require(state.drawnPlace(of: narrow)), long = try require(state.drawnPlace(of: wide))
+        expect(short.isFolded || short.isCut, "folded at 114: \(short.text)")
+        expect(short.width <= 160 - 46, "within the room: \(short.width)")
+        expect(long.width <= 280 - 46 && long.width > short.width, "a wider pill, a longer line: \(long.text)")
+        // A pill in the frame the shape is in folds nothing: it has no place.
+        h.editor.put([narrow], in: inner)
+        _ = render(h.editor)
+        expectEqual(state.drawnPlace(of: narrow)?.text, nil)
+    },
     test("a pill made by name and told where it sits is as wide as what it will say there, as a pick is fitted; with nothing to say, as wide as its name") {
         let h = try pathHarness()
-        let cart = h.addCorral("Cart"), items = h.addCorral("Items", at: CGPoint(x: 20, y: 20))
+        let cart = h.addCorral("Shopping cart"), items = h.addCorral("Items in the cart", at: CGPoint(x: 20, y: 20))
         h.editor.put([items], in: cart)
         let note = h.addBox("Checkout", at: CGRect(x: 40, y: 40, width: 50, height: 50))
         h.editor.put([note], in: items)
@@ -259,28 +389,28 @@ extension EditorHarness {
             return try require(record.typed(as: Reference.self))
         }
         let named = try require(standIns.make(Reference.kind, standingFor: note, label: "Checkout")?.typed(as: Reference.self)).props
-        @MainActor func width(_ place: String?) -> CGFloat { ReferenceEdits.width(of: named, place: place) }
-        expect(width("Cart › Items") > width(nil))
-        expectEqual(named.frame.width, width(nil), "made, it is as wide as its name")
-        expectEqual(try made(for: note, "Checkout", .file(container: nil, board: .root)).props.frame.width, width("Cart › Items"))
-        expectEqual(try made(for: note, "Checkout", .file(container: cart, board: .root)).props.frame.width, width("Items"), "the frame it sits in is left out")
-        expectEqual(try made(for: note, "Checkout", .file(container: items, board: .root)).props.frame.width, width(nil), "in its shape's own frame")
-        expectEqual(try made(for: note, "Checkout", .written(shape: ["Cart", "Items"], seat: [])).props.frame.width, width("Cart › Items"), "as a measure writes it")
-        expectEqual(try made(for: note, "Checkout", .written(shape: ["Cart", "Items"], seat: ["Cart"])).props.frame.width, width("Items"))
-        expectEqual(try made(for: note, "Checkout", .written(shape: ["Cart"], seat: ["Cart", "Bag"])).props.frame.width, width(nil))
+        @MainActor func width(_ place: [String]) -> CGFloat { ReferenceEdits.width(of: named, place: place.map { PlaceStep(name: $0) }) }
+        expect(width(["Shopping cart", "Items in the cart"]) > width([]))
+        expectEqual(named.frame.width, width([]), "made, it is as wide as its name")
+        expectEqual(try made(for: note, "Checkout", .file(container: nil, board: .root)).props.frame.width, width(["Shopping cart", "Items in the cart"]))
+        expectEqual(try made(for: note, "Checkout", .file(container: cart, board: .root)).props.frame.width, width(["Items in the cart"]), "the frame it sits in is left out")
+        expectEqual(try made(for: note, "Checkout", .file(container: items, board: .root)).props.frame.width, width([]), "in its shape's own frame")
+        expectEqual(try made(for: note, "Checkout", .written(shape: ["Shopping cart", "Items in the cart"], seat: [])).props.frame.width, width(["Shopping cart", "Items in the cart"]), "as a measure writes it")
+        expectEqual(try made(for: note, "Checkout", .written(shape: ["Shopping cart", "Items in the cart"], seat: ["Shopping cart"])).props.frame.width, width(["Items in the cart"]))
+        expectEqual(try made(for: note, "Checkout", .written(shape: ["Shopping cart"], seat: ["Shopping cart", "Bag"])).props.frame.width, width([]))
         // Put down where it was told it sits, it says what it was fitted for.
         var outside = try made(for: note, "Checkout", .file(container: nil, board: .root))
         outside.props.frame.origin = CGPoint(x: 800, y: 400)
         h.editor.transact { $0.insert(outside) }
         _ = render(h.editor)
-        expectEqual(try require(h.editor.references).drawnPlace(of: outside.id), "Cart › Items")
+        expectEqual(try require(h.editor.references).drawnPlace(of: outside.id)?.text, "Shopping cart › Items in the cart")
         // A shape on a pocket's board in no frame is where that board is, seen from the root; from its own board, nowhere.
         let pocket = h.addPocket("Clients")
         expect(h.enter(pocket))
         let far = h.addBox("Acme")
         expect(h.editor.showBoard(.root))
         let acme = try require(standIns.make(Reference.kind, standingFor: far, label: "Acme")?.typed(as: Reference.self)).props
-        expectEqual(try made(for: far, "Acme", .file(container: nil, board: .root)).props.frame.width, ReferenceEdits.width(of: acme, place: "Clients"))
+        expectEqual(try made(for: far, "Acme", .file(container: nil, board: .root)).props.frame.width, ReferenceEdits.width(of: acme, place: [PlaceStep(name: "Clients", opensBoard: true)]))
         expectEqual(try made(for: far, "Acme", .file(container: nil, board: BoardID(owner: pocket))).props.frame.width, acme.frame.width)
     },
     test("a pill told where it sits keeps the width it was fitted to, whatever that comes to, the width a pill is placed at among them") {
@@ -294,7 +424,7 @@ extension EditorHarness {
                 var record = try require(standIns.make(Reference.kind, standingFor: note, label: name))
                 standIns.seat(&record, at: .written(shape: [place], seat: []), in: h.editor.shapeContext)
                 let props = try require(record.typed(as: Reference.self)).props
-                expectEqual(props.frame.width, ReferenceEdits.width(of: props, place: place), "\(name) in \(place)")
+                expectEqual(props.frame.width, ReferenceEdits.width(of: props, place: [PlaceStep(name: place)]), "\(name) in \(place)")
             }
         }
     },

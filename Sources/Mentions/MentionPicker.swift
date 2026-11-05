@@ -201,7 +201,7 @@ public final class MentionPicker {
                 let place = candidate.place
                 return .item(CaretListItem(appearance.label, matched: candidate.matched, symbol: appearance.systemImage, tint: appearance.tint,
                                            detail: place?.text ?? appearance.detail, detailMatched: place?.matched ?? [], detailDimmed: place?.dimmed ?? [],
-                                           detailTruncatesHead: place != nil,
+                                           detailTruncatesHead: place != nil, place: place?.caretPlace(),
                                            trailingSymbol: candidate.isReadOnly ? MentionStyle.readOnlySymbol : nil,
                                            spoken: "\(appearance.label), \(appearance.kindName)\(place.map { ", " + $0.spoken } ?? ""), \(position) of \(shapes)"))
             }

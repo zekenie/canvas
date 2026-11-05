@@ -20,6 +20,28 @@ import Queries
 // commits nothing. The groups and ungroups (DrawGroups.swift) are applied last of the writes, once every shape and edge
 // the script draws is where it goes.
 
+/// What a column of stand-ins is beside: the clauses its pills are placed by, and the boxes those name, found. Two shapes of
+/// one title in two frames are two columns, though their pills' clauses read alike (`right of "index.ts"`).
+private struct ColumnKey: Hashable {
+    let clauses: [Clause]
+    let targets: [[String]]
+
+    init(_ item: ShapeItem) {
+        clauses = item.shape.clauses
+        targets = item.targets.map { placement in
+            placement.map { found in
+                switch found {
+                case .item(let index): "item \(index)"
+                case .shape(let record): "shape \(record.id)"
+                case .board: "board"
+                case .view: "view"
+                case .origin: "origin"
+                }
+            }
+        }
+    }
+}
+
 extension Drawing {
     func apply(to transaction: inout Transaction, reveals: Bool) throws(DrawError) -> DrawResult {
         var changes: [DrawChange] = []
@@ -139,10 +161,21 @@ extension Drawing {
         var nudges: [ShapeID: CGPoint] = [:]
         if !registry.containingKinds.isEmpty, transaction.document.shapes.contains(where: registry.isContainer) {
             let holding = order.filter { registry.isContainer(items[$0].record) }
+            // The stand-ins put beside one shape are a column: put down together, so one over a container's edge takes the
+            // others along (nudged in or out as one, by one translation), never alone, which would leave it apart from them.
+            var columns: [ColumnKey: [Int]] = [:]
+            for index in order where items[index].implied && !items[index].shape.clauses.isEmpty && !registry.isContainer(items[index].record) {
+                columns[ColumnKey(items[index]), default: []].append(index)
+            }
             for index in order.filter({ !registry.isContainer(items[$0].record) }) + holding {
                 let item = items[index]
                 if let existing = item.existing, !item.moves, item.record.box?.size == existing.box?.size { continue }
-                try settle(item, in: &transaction, nudges: &nudges, warnings: &warnings)
+                var column: [ShapeItem] = []
+                if item.implied, let members = columns[ColumnKey(item)], members.count > 1 {
+                    guard members[0] == index else { continue }
+                    column = members.dropFirst().map { items[$0] }
+                }
+                try settle(item, along: column, in: &transaction, nudges: &nudges, warnings: &warnings)
             }
         }
 
@@ -285,12 +318,12 @@ extension Drawing {
     /// it nudged kept for the glide. A container put down takes in what it lands on, and what it holds
     /// over its edge goes wholly in or out: said too, as what moved that the script didn't name. A
     /// read-only container (a locked frame) takes nothing: the run is refused.
-    private func settle(_ item: ShapeItem, in transaction: inout Transaction, nudges: inout [ShapeID: CGPoint],
+    private func settle(_ item: ShapeItem, along column: [ShapeItem] = [], in transaction: inout Transaction, nudges: inout [ShapeID: CGPoint],
                         warnings: inout [DrawWarning]) throws(DrawError) {
         guard !registry.containingKinds.isEmpty else { return }
         let id = item.record.id
         let before = transaction.document[id]?.box.map { CGRect(origin: CGPoint(x: $0.minX + item.roomOffset.x, y: $0.minY + item.roomOffset.y), size: item.room) }
-        switch transaction.settle([id]) {
+        switch transaction.settle([id] + column.map(\.record.id)) {
         case .refused(let container):
             let named = transaction.document[container].map { self.named($0) } ?? "a container"
             // A stand-in put beside an end has no placement of its own to change: where it goes is the side of what it's

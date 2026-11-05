@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Chrome
 import FuzzyMatching
 import Observation
 import Queries
@@ -53,6 +54,9 @@ public struct NeighborLine: Equatable {
     /// Where it is, when that isn't the board shown or the subject's own: the containers it is inside, outermost first
     /// ("Alpha › Beta"), else the name of its board.
     public let detail: String?
+    /// The same as steps, outermost first, for the row to fold in the room it has (`PlaceFold`, as every address is);
+    /// empty when `detail` is nil.
+    public let place: [PlaceStep]
     public let caption: String?
 
     /// What assistive apps read of the row: its name, where it is, and its caption, as the row
@@ -255,10 +259,11 @@ public final class NeighborList {
         // drawn again as an answer lands, never on every commit. What's inside the subject (what a
         // subboard holds) needs no saying.
         let isElsewhere = row.board != editor.board && row.board != subject.map { BoardID(owner: $0) }
+        let steps = editor.withoutObservingDocument { place(of: row, isElsewhere: isElsewhere) }
         return editor.withoutObservingDocument {
             NeighborLine(symbol: label.systemImage ?? NeighborStyle.fallbackSymbol,
                          tint: editor.shape(inFile: row.id).flatMap { editor.tint(of: $0) } ?? label.tint, name: name(of: row),
-                         detail: place(of: row, isElsewhere: isElsewhere),
+                         detail: steps.isEmpty ? nil : steps.map(\.name).joined(separator: NeighborStyle.pathSeparator), place: steps,
                          caption: subject.flatMap { groups[group].caption?(editor, $0, row.id) })
         }
     }
@@ -278,22 +283,25 @@ public final class NeighborList {
     /// Where a row is: the containers it is inside less those the board shown is inside and the subject is, when the row
     /// is inside them (the rows of a subboard's own list, and the shapes on the board shown, say nothing of what holds
     /// them all), joined as a path; else, on another board, that board's name; nil if it needs no saying.
-    private func place(of row: NeighborRow, isElsewhere: Bool) -> String? {
-        var names = row.inside[...]
+    private func place(of row: NeighborRow, isElsewhere: Bool) -> [PlaceStep] {
+        var steps = row.inside.map { PlaceStep(name: $0) }
         if let topology = editor.topology {
             // The ids of what the row is inside, outermost first, when they are the names `inside` has.
             let above = Array(topology.ancestors(of: row.id).reversed())
             if above.count == row.inside.count {
+                for (index, id) in above.enumerated() {
+                    steps[index].opensBoard = editor.shape(inFile: id).map { editor.registry.ownsShowableBoard($0) } ?? false
+                }
                 var dropped = 0
                 for held in [editor.board.owner, subject].compactMap({ $0 }) {
                     let chain = Array(topology.ancestors(of: held).reversed()) + [held]
                     if chain.count > dropped, above.starts(with: chain) { dropped = chain.count }
                 }
-                names = row.inside[dropped...]
+                steps = Array(steps[dropped...])
             }
         }
-        if !names.isEmpty { return names.joined(separator: NeighborStyle.pathSeparator) }
-        return isElsewhere ? boardName(of: row) : nil
+        if !steps.isEmpty { return steps }
+        return isElsewhere ? [PlaceStep(name: boardName(of: row), opensBoard: true)] : []
     }
 
     /// What the board a row is on is called: its owner's name, as the engine named it among what

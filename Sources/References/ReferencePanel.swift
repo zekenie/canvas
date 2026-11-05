@@ -1,6 +1,7 @@
 import AppKit
 import Boards
 import Canvas
+import Chrome
 import DetailPanel
 import Mentions
 import Queries
@@ -25,7 +26,7 @@ public struct ReferenceHeader: View {
 
     public var body: some View {
         let content = content
-        DetailHeaderLabel(subtitle: content.subtitle, systemImage: content.symbol) { Text(content.title) }
+        DetailHeaderLabel(subtitle: content.subtitle, systemImage: content.symbol, place: content.place, lead: content.lead) { Text(content.title) }
     }
 }
 
@@ -37,8 +38,9 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
     /// Match ☐ All) and, while it found shapes, the Matches section.
     mutating func referencePanel() {
         details(header: { $reference in ReferenceHeader(id: $reference.shapeID, props: reference, state: $reference.service(ReferenceState.self)) }) {
-            DetailSection(in: ReferenceTab.self, when: { $0.target != nil }) { _ in
+            DetailSection(in: ReferenceTab.self, when: { $0.target != nil }) { $reference in
                 DetailCommandButton(command: .goToOriginal, systemImage: "arrow.up.forward.square")
+                ReferencePlaceView(id: $reference.shapeID, props: reference, state: $reference.service(ReferenceState.self))
             }
             .enabledWhileReadOnly()
             DetailSection(ReferenceStyle.querySection, in: ReferenceTab.self, id: "reference.query", when: { $0.mode == .dynamic }) { $reference in
@@ -52,6 +54,28 @@ extension ShapeRegistrar where Definition == ReferenceDefinition {
             .shownWhile { shape, context in context.service(ReferenceState.self)?.matches(of: shape.id) != nil }
             .enabledWhileReadOnly()
         }
+    }
+}
+
+/// Where the original is, whole and wrapped, under Go to Original: the steps from where the pill sits, boards semibold
+/// (what the pill's line and the header fold); nothing for an original in the pill's own place.
+struct ReferencePlaceView: View {
+    let id: ShapeID?
+    let props: Reference
+    let state: ReferenceState?
+
+    var body: some View {
+        if let steps = state?.panelPlace(of: props, id: id), !steps.isEmpty {
+            DetailPlaceText(steps: steps, wraps: true)
+        }
+    }
+}
+
+extension ReferenceState {
+    /// The whole place the Reference tab shows: the original's, from where the pill sits; nil with no original.
+    public func panelPlace(of props: Reference, id: ShapeID?) -> [PlaceStep]? {
+        guard let id, let target = props.target, state(of: props, id: id).hasOriginal else { return nil }
+        return placeOfPick(from: id, target.id)
     }
 }
 

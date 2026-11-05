@@ -318,13 +318,13 @@ extension RelationScene {
         expectEqual(shown.first?.via, pill.id)
         expectEqual(s.editor.board, .root)
     },
-    test("a far note whose title another shape has: its pill is told where it sits beside the note, as a draw run's is; one whose title is its own, nothing") {
+    test("a far note: its pill is told where it sits beside the note, as a draw run's is, whether another shape has its title or not") {
         let s = try RelationScene.drawn()
         s.setOpen(s.awayLayer)
         s.editor.transact { $0.update(inFile: s.awayLayer) { $0[TitleProperty.self] = "Down" } }
         s.editor.undoHistory.seal()
         _ = try require(s.editor.relate(s.note, to: s.awayLayer, in: try s.featureRow()))
-        expectEqual(try require(s.relays().first).props.seat, "", "a title its own: told nothing")
+        expectEqual(try require(s.relays().first).props.seat, "board", "a title its own: told as well")
         s.editor.undo()
         expectEqual(s.relays().count, 0)
         var twin = slipRecord(at: CGPoint(x: 1600, y: 1600))

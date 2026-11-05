@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Chrome
 import CoreGraphics
 import DetailPanel
 import Keyboard
@@ -146,6 +147,10 @@ extension EditorHarness {
         expectEqual(h.line(town.y, in: Lists.wiredTo)?.spoken, "Yard, Park › Ring")
         expectEqual(h.line(town.m, in: Lists.quotedBy)?.spoken.hasPrefix("Mill, "), true)
         expectEqual(h.line(town.y, in: Lists.wiredTo)?.detail, "Park › Ring", "in a corral on the pocket's board: its path, the pocket's name and the corral's")
+        expectEqual(h.line(town.y, in: Lists.wiredTo)?.place, [PlaceStep(name: "Park", opensBoard: true), PlaceStep(name: "Ring")],
+                    "the steps the row folds in its room: the pocket is a board, the corral a region")
+        expectEqual(h.line(town.x, in: Lists.wiredTo)?.place, [PlaceStep(name: "Park", opensBoard: true)], "the board it is on")
+        expectEqual(bank?.place, [], "no place, no steps")
         expectEqual(h.line(town.m, in: Lists.quotedBy)?.caption, "Mill quotes \(town.s.description.prefix(4))", "what its light says of the two shapes")
         // From the pocket's board, a shape on the root is on the board the file names.
         expect(h.enter(town.p))
@@ -154,6 +159,7 @@ extension EditorHarness {
         expectEqual(h.line(town.s, in: Lists.wiredFrom)?.detail, "Board", "the root, while the file has no name")
         h.editor.nameRoot("Plan")
         expectEqual(h.line(town.s, in: Lists.wiredFrom)?.detail, "Plan")
+        expectEqual(h.line(town.s, in: Lists.wiredFrom)?.place, [PlaceStep(name: "Plan", opensBoard: true)], "the file's name leads, a board")
         expectEqual(h.rows(Lists.inside), [town.p])
         expectEqual(h.line(town.p, in: Lists.inside)?.detail, "Plan", "the pocket's card is on the root")
     },

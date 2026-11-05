@@ -340,13 +340,12 @@ step_check() {
   do_check loud || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
 }
 
-# The script canvas measure is given, written to $1: the digest's shapes and a pill for each end, and, for an end whose title another shape
-# has (another node, the subboard it goes in, a title the file holds beside the drawing, which do_check has read), a pill from each place it
-# is pointed at from, since such a pill says where its shape is.
+# The script canvas measure is given, written to $1: the digest's shapes and a pill for each end, and a pill from each place the end is
+# pointed at from, since every pill says where its shape is. It is the digest's alone (no title the file holds changes it), and starts at the
+# --into card's board when there is one, which a place leads with where the shape is on another board than its pill.
 measure_script() {
   set -- "$1" measure-script "$GRAPH"
   if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
-  if [ -n "$BOARD" ] && [ -s "$OUT/titles.json" ]; then set -- "$@" --existing "$OUT/titles.json"; fi
   tool_to "$@"
 }
 
@@ -373,7 +372,7 @@ step_plan() {
     do_check quiet || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
   fi
   # measured when there is no measurement, and again when the digest has changed since (a title or a text the old one never saw) or the
-  # script it would measure now isn't the one it measured (a title the file holds came or went)
+  # script it would measure now isn't the one it measured (another --into card)
   if [ ! -s "$OUT/measure.json" ] || [ "$GRAPH" -nt "$OUT/measure.json" ]; then step_measure
   else
     measure_script "$OUT/measure.now.draw"
