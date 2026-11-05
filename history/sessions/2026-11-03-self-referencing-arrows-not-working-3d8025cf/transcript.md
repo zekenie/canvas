@@ -1,6 +1,6 @@
 # Self-referencing arrows not working
 
-Claude Code session `3d8025cf-422e-4900-b10f-4261b9d5c2f6`, 2026-11-03 13:56 to 2026-11-03 16:43 UTC, on `claude/self-referencing-arrows-bug-0c004c`.
+Claude Code session `3d8025cf-422e-4900-b10f-4261b9d5c2f6`, 2026-11-03 13:56 to 2026-11-05 15:54 UTC, on `claude/self-referencing-arrows-bug-0c004c`, `main`, `self-loops-stickies`.
 
 Condensed: the owner's messages, questions and answers, the assistant's prose, plans, agent briefs and git commands. Tool output is left out.
 
@@ -369,3 +369,193 @@ git status --short && echo "--- HEAD/main/merge-base" && git rev-parse --short H
 
 [2026-11-03 16:43] GIT:
 git rev-parse HEAD main && git merge-base HEAD main && echo "--- branch commits" && git log --oneline main..HEAD && echo "--- main ahead" && git log --oneline HEAD..main && echo "--- main checkout" && git -C /Users/zekenie/code/native-canvas status --short --branch | head -20
+
+[2026-11-03 16:43] ASSISTANT:
+Writing the session record now; next I squash, rebase onto main and fast-forward.
+
+[2026-11-03 16:44] COMMIT MESSAGE FILE commit-message.txt:
+A drag from a shape's dot let go back on the shape draws a loop arrow from the shape to itself
+
+The owner asked for this once already: "there's no good way to create a self reference. i try
+draging from the portal and dropping on the shape but it doesn't work". That round read "self
+reference" as a type related to itself, and 46de99cd let only a type's drag end on itself, turning
+it into a relationship type; on every other shape the drag still ended nowhere. Trying it again, the
+owner got no arrow and asked what went wrong: the narrowing was ours, said in one line of a long
+message and taken as approved. What they want is the general thing: drag from any dot, let go on
+the same shape, and get an arrow that loops back to it.
+
+The rule that refused it, "a port's drag never ends where it starts", came over with data-canvas's
+ports and was never a decision of the owner's. tldraw keeps an arrow bound to one shape at both
+ends, drawn straight between its two anchors through the shape. Here such an arrow is a loop on one
+side: both anchors precise on the side of the dot pulled, on the outline (a pill's round end is
+short of its bounds), and a bend that bows it out past the side, clockwise round the shape, so
+tldraw's own geometry draws it out of the side and back in. The side of the dot, rather than a line
+from the dot to wherever the drag was let go, so every loop on a side has one shape and the dot
+pulled says where it goes. The bend and anchors are tldraw's properties, so geometry stays a pure
+function of the arrow and a person reshapes a loop by its handles; only where the anchors go and how
+far it bows are ours (ArrowLoops.swift). A second loop on a side goes round the first, as a second
+arrow between two shapes is bent apart from the first, and a delete frees its place; a loop whose
+ends a person swapped or moved holds none. The drag shows the loop as soon as its end is back on the
+shape (in the commit that binds the end, through bindTerminal's reshape, so no extra commit a move),
+and the shape is outlined as a target from the drag's start, so the gesture can be seen before it
+is made. Shift snaps the angle around the start shape's middle, so the loop moving the arrow's start
+never moves the snap.
+
+One rule for every shape: Connections asks the start as any other end, and SelfConnections, the
+type-only switch, goes; whether and how a shape joined to itself is drawn is the connector's to say
+(AutomationTests' fixture connector still refuses one). The release still says what the arrow is: a
+type's loop becomes a relationship type to itself, as before (kept plain where that can't be made,
+as a drag between two types keeps its arrow), and a note's takes the one relationship type that
+fits, as any drag between two notes does. A note's loop is a relation at both of its ends: with a
+type related to itself whose ends are named apart (parent, child) it is in both of the note's rows,
+and counted once in a row both ends share, in the committed reading and in a run's alike, so a
+Needed row never calls a note with the loop empty.
+
+The keyboard way is Connect (⌘L) on one shape, a loop on its right side; its right-click item stays
+for two shapes, since every one-shape menu would carry it for a rare loop. canvas draw's
+edge "A" -> "A" draws the same loop through the same maker instead of no_channel, on the side from:
+(else to:) names, and refuses a self edge that names two different sides, since a loop is on one;
+so agents can draw what people draw. A row's pick still lists no note itself: a row is a list of
+other notes. Letting go back on the shape no longer cancels a drag; Escape and empty canvas do.
+
+Left as is: loops nested on a very short side (a reference pill's) share their two anchors, still
+drawn nested.
+
+Session: history/sessions/2026-11-03-self-referencing-arrows-not-working-3d8025cf/
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+[2026-11-03 16:44] ASSISTANT:
+Squashing the two commits into one; first fixing one sentence in the arrows rules that overstates when a loop gives up its slot.
+
+[2026-11-03 16:45] COMMIT MESSAGE FILE commit-message.txt:
+arrow between two shapes is bent apart from the first, and a delete frees its place; a loop whose
+ends a person swapped, or whose bend they changed, holds none. The drag
+
+[2026-11-03 16:45] GIT:
+git reset --soft 2df47fee4fd89cee7b92996828552d21647f607c && git add -A Sources .claude/rules history/sessions/2026-11-03-self-referencing-arrows-not-working-3d8025cf && git status --short | grep -v '^[MADR] ' ; git commit -q -F /private/tmp/claude-501/-Users-zekenie-code-native-canvas--claude-worktrees-self-referencing-arrows-bug-0c004c/3d8025cf-422e-4900-b10f-4261b9d5c2f6/scratchpad/commit-message.txt && git log --oneline -2 && git show --stat --format= HEAD | tail -5
+
+[2026-11-03 16:45] GIT:
+git status --short && echo "(clean)" && git rebase main 2>&1 | tail -5 && git log --oneline -3
+
+[2026-11-03 16:45] ASSISTANT:
+It's merged into main; now removing the worktree and branch.
+
+[2026-11-03 16:45] WRAP-UP:
+Self-referencing arrows are on main as 29e9ee4b: one squashed commit carrying this session's record. The worktree and its branch are removed. The loops still haven't been tried in the app on screen.
+Ask:
+
+[2026-11-03 16:45] ASSISTANT:
+It's on main as 29e9ee4b.
+
+[2026-11-05 15:31] USER:
+still does not work for regular stickies
+
+[2026-11-05 15:34] ASSISTANT:
+Checking whether the four commits since the fix landed could have broken it; next I'll test current main.
+
+[2026-11-05 15:37] ASSISTANT:
+I've confirmed none of the four commits since the fix landed touch the loop's code. Now writing a test that drives plain sticky notes through the app's real canvas view with mouse events.
+
+[2026-11-05 15:38] ASSISTANT:
+While those run: once they pass, I'll rebuild the main checkout's app, the one your board files open in, so you have a build that has the fix.
+
+[2026-11-05 15:38] WRAP-UP:
+The main checkout's app was built Nov 2, a day before the loop fix landed on Nov 3, so it can't make loops. A test of plain sticky notes through the app's real canvas view is running on current main. Rebuilding main's app comes after it passes.
+Ask:
+
+[2026-11-05 15:38] ASSISTANT:
+The likeliest cause is an old build. The fix landed on main Nov 3, but the app in the main checkout (the build your board files open in) was last built Nov 2. That build has none of it.
+
+I'm not taking that on trust, given this is round 3. A new test is running on current main: it drives plain sticky notes through the app's real canvas view, using the mouse events a window sends. It covers:
+- a drag from each of the four dots, out and back
+- a drag straight into the note, slow or held on the note
+- a note with a title and several lines, selected first
+- letting go back on the dot itself, outside the note. That draws nothing, and might be what you saw.
+
+If it passes, I'll rebuild the main checkout's app so you can try it there. If it fails, I'll have the real bug.
+
+[2026-11-05 15:38] NOTICE:
+background task completed: Background command "Run the ports suites and the loop tests on current main" completed (exit code 0)
+
+[2026-11-05 15:39] ASSISTANT:
+Only a missing import (`Selection`). Fixing it and running again.
+
+[2026-11-05 15:39] WRAP-UP:
+The ports and arrow-ports suites pass on current main. The first run of the new canvas-view loop test didn't compile because of a missing import. That's fixed, and the test is running again before main's app gets rebuilt.
+Ask:
+
+[2026-11-05 15:39] ASSISTANT:
+The port and arrow-port tests pass on current main (232 tests), so the loop code is intact. The new test, which drags on plain sticky notes through the app's real canvas view, didn't compile on its first run: I'd left out an import. It's fixed and running again, and I'll report when it finishes.
+
+[2026-11-05 15:39] NOTICE:
+background task completed: Background command "Run the loop tests in the composition suite again" completed (exit code 0)
+
+[2026-11-05 15:41] GIT:
+python3 - <<'EOF'
+from pathlib import Path
+p = Path(".claude/rules/connections.md")
+t = p.read_text()
+old = "nesting and the slot a delete frees, Escape and a free release, a disc on its own channel) hold it."
+assert t.count(old) == 1, t.count(old)
+new = ("nesting and the slot a delete frees, Escape and a free release, a disc on its own channel) hold it, and CompositionTests' "
+       "`loopWindowTests` the same on plain notes through the app's canvas view, with the mouse events its window hands on (from each dot "
+       "out and back, straight in slowly or held past the precise timer, a selected note with a title and several lines, and a release "
+       "back on the dot, off the note, which draws nothing).")
+p.write_text(t.replace(old, new))
+print("ok")
+EOF
+git add Tests/CompositionTests/LoopWindowTests.swift Tests/CompositionTests/main.swift .claude/rules/connections.md && git commit -q -F - <<'EOF'
+Hold a plain note's loop through the app's canvas view, with real mouse events
+
+The owner tried a sticky's loop again after it landed and got none: the app they ran was built before
+the loop landed, and nothing on main had broken it. Every loop test so far drove the editor itself
+(the arrow-ports fixtures, the shipped notes through the harness), so nothing held the path the app
+takes, mouse events through the canvas view. These hand the events to the app's CanvasView in an
+unshown window, as its window does, on plain notes with the shipped plugins: a drag from each dot out
+past the note and back, straight in slowly or held past the precise timer, a selected note with a
+title and several lines, and a release back on the dot it started from, off the note, which draws
+nothing, so a person who lets go there sees nothing by design.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+EOF
+git log --oneline -1
+
+[2026-11-05 15:41] WRAP-UP:
+Plain sticky loops work on current main, tested through the app's real canvas view with mouse events. The main checkout's app was built Nov 2, before the fix landed, and needs a rebuild in your shell. The new test is committed on branch self-loops-stickies, not on main.
+Ask: Does the rebuilt app make the loop?
+
+[2026-11-05 15:41] ASSISTANT:
+The loop code on main works. The app you tried was built on Nov 2, a day before the fix landed on Nov 3, so it has none of it. None of the four commits on main since then touch the loop's code.
+
+I tested current main on plain sticky notes, sending mouse events through the app's real canvas view, and all four new tests pass:
+- a drag from each of the four dots, out past the note and back
+- a drag straight into the note, slow or resting on it
+- a note with a title and several lines, selected first
+
+The port and arrow-port suites pass too.
+
+This session is held to its worktree, so I can't rebuild your app from here. Run this in your shell:
+
+```bash
+cd /Users/zekenie/code/native-canvas && ./build.sh && open build/InfiniteCanvas.app
+```
+
+The menu bar should read plain "Infinite Canvas"; a copy built in a worktree has the worktree's name in parentheses. Then press a dot, drag, come back over the note, and let go. The note gets the target outline and the loop appears before you release. If you let go on the dot itself, which sits just outside the note, nothing is drawn, by design.
+
+The new test is committed on branch `self-loops-stickies` and isn't on main.
+
+[2026-11-05 15:52] USER:
+i rebuilt justopen app
+
+[2026-11-05 15:53] ASSISTANT:
+Main's app was rebuilt today at 9:44, so it has the fix. It isn't running yet; opening it now.
+
+[2026-11-05 15:53] WRAP-UP:
+The main checkout's app, rebuilt today with the loop fix, is open. Loops haven't been tried in it yet. The new canvas-view test is committed on branch self-loops-stickies, not on main.
+Ask: Does a sticky's loop work now?
+
+[2026-11-05 15:53] USER:
+[Request interrupted by user]
+
+[2026-11-05 15:53] USER:
+Works, land the test
