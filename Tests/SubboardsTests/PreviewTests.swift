@@ -2,6 +2,8 @@ import AppKit
 import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
+import Colors
+import Palette
 import Subboards
 import TestKit
 
@@ -20,6 +22,22 @@ private let canvasSize = CGSize(width: 320, height: 240)
     h.wait(0)
     return (asking, renderBitmap(h.editor, size: canvasSize))
 }
+
+/// A color as the light appearance draws it, 0 to 255 a channel, as a pixel reads.
+@MainActor private func components(of color: NSColor) -> [Int] {
+    var made: [Int] = []
+    NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+        guard let srgb = color.usingColorSpace(.sRGB) else { return }
+        made = [srgb.redComponent, srgb.greenComponent, srgb.blueComponent].map { Int(($0 * 255).rounded()) }
+    }
+    return made
+}
+
+private func components(of color: RGB) -> [Int] { [color.red, color.green, color.blue].map { Int(($0 * 255).rounded()) } }
+
+/// Where the card draws the first shape of a board four times as wide as tall, its left end: the
+/// first test's board fitted into the card.
+private let leftEnd = CGPoint(x: 78, y: 120)
 
 @MainActor let previewCardTests = Suite("The card's preview", [
     test("once built, the card shows the board's shapes as silhouettes where they are, fitted; until then, the count") {
@@ -98,6 +116,60 @@ private let canvasSize = CGSize(width: 320, height: 240)
         let undone = twoFrames(h)
         expect(darkest(undone.asking, in: captionMiddle) < 170, "after the undo, the count, not the edited board's preview")
         expectEqual(changedPixels(original, undone.built, in: previewRect), 0, "then the board as it was")
+    },
+    test("each shape on its board is drawn in the color it's listed in, quieted toward the gray a box with none is drawn in: a subboard's indigo, a green one's green") {
+        let sub = ShapeRecord(Subboard(frame: cardFrame))
+        var green = ShapeRecord(Subboard(frame: CGRect(x: 3000, y: 0, width: 1000, height: 1000)))
+        green[ColorProperty.self] = .named("green")
+        // The first test's board: a subboard at the left end, a box in the middle, a green subboard at the right end.
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]),
+                              children: [sub.id: CanvasDocument(shapes: [record(ShapeID(), Subboard(frame: CGRect(x: 0, y: 0, width: 1000, height: 1000))),
+                                                                         record(ShapeID(), Box(CGRect(x: 1500, y: 0, width: 1000, height: 1000))),
+                                                                         AnyShapeRecord(green)])])
+        let h = try EditorHarness(plugins: subboardPlugins(), file: file)
+        let muting = h.editor.boardPreviews.muting
+        h.editor.boardPreviews.muting = 0
+        let built = twoFrames(h).built
+        expectColor(pixel(built, at: leftEnd), components(of: .systemIndigo), "a subboard, in its kind's indigo", within: 4)
+        let box = pixel(built, at: CGPoint(x: 160, y: 120))
+        expect(box[0] < 225 && abs(box[0] - box[2]) < 20, "a box, with no color, in a muted gray: \(box)")
+        let greenSolid = BuiltInColors.green.swatch.solid.light
+        expectColor(pixel(built, at: CGPoint(x: 240, y: 120)), components(of: greenSolid), "a green subboard, in green's solid", within: 4)
+        // As shipped, each quieted toward that gray (Palette's `muted(by:toward:)`), and the gray as it was.
+        let quiet = try EditorHarness(plugins: subboardPlugins(), file: file)
+        expectEqual(quiet.editor.boardPreviews.muting, muting)
+        let shipped = twoFrames(quiet).built
+        let gray = OKLCH(RGB(Double(box[0]) / 255, Double(box[1]) / 255, Double(box[2]) / 255)).lightness
+        expectColor(pixel(shipped, at: CGPoint(x: 160, y: 120)), Array(box.prefix(3)), "the box, the gray as it is", within: 1)
+        expectColor(pixel(shipped, at: CGPoint(x: 240, y: 120)), components(of: greenSolid.muted(by: muting, toward: gray)),
+                    "the green subboard, green's solid quieted toward the gray", within: 4)
+        let indigo = components(of: .systemIndigo)
+        let indigoRGB = RGB(Double(indigo[0]) / 255, Double(indigo[1]) / 255, Double(indigo[2]) / 255)
+        expectColor(pixel(shipped, at: leftEnd), components(of: indigoRGB.muted(by: muting, toward: gray)),
+                    "the subboard, its indigo quieted", within: 4)
+    },
+    test("a file's color given another value, no commit reaching the board: the card shows the preview it had until it's built again in it") {
+        let sub = ShapeRecord(Subboard(frame: cardFrame))
+        var branded = ShapeRecord(Subboard(frame: CGRect(x: 0, y: 0, width: 1000, height: 1000)))
+        branded[ColorProperty.self] = .named("Brand")
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]),
+                              children: [sub.id: CanvasDocument(shapes: [AnyShapeRecord(branded),
+                                                                         record(ShapeID(), Box(CGRect(x: 3000, y: 0, width: 1000, height: 1000)))])])
+        let h = try EditorHarness(plugins: subboardPlugins(), file: file)
+        h.editor.boardPreviews.muting = 0
+        let red = RGB(hex: 0xC8281E), blue = RGB(hex: 0x1E5AC8), board = BoardID(owner: sub.id)
+        expect(h.editor.defineColor(named: "Brand", value: red))
+        expectColor(pixel(twoFrames(h).built, at: leftEnd), components(of: Swatch(red).solid.light), "the subboard in the brand's red", within: 4)
+        let revision = h.editor.file.revision(of: board)
+        expect(h.editor.setColorValue(of: "Brand", to: blue))
+        expectEqual(h.editor.file.revision(of: board), revision, "no commit to the card's board")
+        let during = renderBitmap(h.editor, size: canvasSize)
+        expectColor(pixel(during, at: leftEnd), components(of: Swatch(red).solid.light), "the frame after: the preview it had", within: 4)
+        expectEqual(darkest(during, in: captionMiddle), 255, "and never its count")
+        h.wait(0)
+        expectColor(pixel(renderBitmap(h.editor, size: canvasSize), at: leftEnd), components(of: Swatch(blue).solid.light),
+                    "then in the brand's blue", within: 4)
+        expectEqual(h.scheduler.pendingCount, 0, "no frame asked for once it's drawn")
     },
     test("a card with no room for a preview asks for none, whatever its board holds") {
         let nest = Nest()

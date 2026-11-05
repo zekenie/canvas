@@ -318,10 +318,10 @@ public struct Registry {
     /// contributions filtered, say). The key names the value and its kind: a plugin's own type and
     /// the kind.
     public func memo<Key: Hashable, Value>(_ key: Key, _ make: () -> Value) -> Value {
-        let key = AnyHashable(key)
-        if let known = memos.values[key] { return known as! Value }
+        let table = memos.table(Key.self, Value.self)
+        if let known = table.values[key] { return known }
         let made = make()
-        memos.values[key] = made
+        table.values[key] = made
         return made
     }
 
@@ -656,8 +656,26 @@ private struct KindTintMemo: Hashable { let kind: ShapeKind }
 private struct StepRulesMemo: Hashable { let kind: ShapeKind }
 private struct CapabilityKindKey: Hashable { let capability: ShapeCapability; let kind: ShapeKind }
 
-/// The values `Registry.memo(_:_:)` keeps: a class, so the registry's copies share them.
+/// The values `Registry.memo(_:_:)` keeps: a class, so the registry's copies share them. A table
+/// for each key type and value type (`MemoTable`), found by the table's own type, so an ask hashes
+/// its key as it is: one dictionary of every key as `AnyHashable` boxed each key and cast each value
+/// out of `Any`, some 0.5 to 1.6 µs an ask (measured), more than most of the values cost to make,
+/// where a board's preview asks two for each of its shapes.
 @MainActor
 private final class RegistryMemos {
-    var values: [AnyHashable: Any] = [:]
+    var tables: [ObjectIdentifier: AnyObject] = [:]
+
+    func table<Key: Hashable, Value>(_: Key.Type, _: Value.Type) -> MemoTable<Key, Value> {
+        let id = ObjectIdentifier(MemoTable<Key, Value>.self)
+        if let known = tables[id] { return unsafeDowncast(known, to: MemoTable<Key, Value>.self) }
+        let made = MemoTable<Key, Value>()
+        tables[id] = made
+        return made
+    }
+}
+
+/// The values kept for one key type and value type.
+@MainActor
+private final class MemoTable<Key: Hashable, Value> {
+    var values: [Key: Value] = [:]
 }

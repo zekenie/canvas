@@ -175,23 +175,31 @@ public enum Style {
     // Pictures of boards: the minimap's, and boards' previews (`BoardPreviews`). Sizes in pixels.
     /// A shape under this many pixels across is drawn as its bounds (`Silhouettes`).
     static let detailedSilhouette: CGFloat = 4
-    /// A preview's silhouettes: the default skeleton's gray (`skeleton`), as the minimap's are on a
+    /// A preview's silhouette of a shape with no tint (no color of its own and none its kind's: an
+    /// arrow with no color): the default skeleton's gray (`skeleton`), as the minimap's are on a
     /// light canvas, and darker in the dark, for an owner's dark body.
     static let boardPreview = skeleton
-    /// No preview's mask is larger on either side; a board's longest side is drawn this long.
+    /// How far a preview's tints are taken toward that gray, their lightness and their chroma alike,
+    /// their hue kept (`RGB.muted(by:toward:)`): at full strength a tint is a symbol's color, which
+    /// shouted from a card at a tenth of its board (the owner: "colors too bright"), and at 45% it
+    /// still did ("even more muted?"). At 70% every color is a dusty one about as heavy as a shape
+    /// with none, blue, green, red, purple and yellow still apart in both appearances, where at 80%
+    /// the warm ones ran into one beige and fading them over the card went murky in the dark.
+    static let previewTintMuting = 0.7
+    /// No preview's picture is larger on either side; a board's longest side is drawn this long.
     static let previewSide: CGFloat = 256
-    /// An open shape's line in a preview, in the mask's pixels, or the screen's where it's drawn as
+    /// An open shape's line in a preview, in the picture's pixels, or the screen's where it's drawn as
     /// paths.
     static let previewLineWidth: CGFloat = 1.5
-    /// How many previews are kept, the one drawn longest ago going first: 64 KB of mask each at
-    /// most, and their paths, some 80 bytes a shape.
+    /// How many previews are kept, the one drawn longest ago going first: 256 KB of picture each at
+    /// most (four bytes a pixel, for its colors), and their paths, some 80 bytes a shape.
     static let keptPreviews = 64
     /// A preview's paths are in cells of a grid over its board, about this many shapes to a cell
     /// and at most this many cells a side, so a frame draws only those in view.
     static let previewCellShapes = 32
     static let previewCellsAcross = 16
-    /// How many shapes a frame draws as paths, over all the previews drawn larger than their masks
-    /// (some 2 µs a shape, measured); those in view past it draw their masks.
+    /// How many shapes a frame draws as paths, over all the previews drawn larger than their pictures
+    /// (some 2 µs a shape, measured); those in view past it draw their pictures.
     static let previewPathShapes = 1_000
     /// A preview's rect narrower or shorter than this on screen, in view points, shows none: there's
     /// nothing to see, and a board zoomed out over many owners asks for no builds.

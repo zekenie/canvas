@@ -3579,6 +3579,10 @@ TestKit alone.
   same color, where moving sRGB's components, or HSL's lightness, turns its hue. `OKLCH(rgb)` and
   `.rgb` convert, and `.rgb` of a color too colorful for sRGB is the most colorful one of the same
   lightness and hue, so lightening a color only pales it where it must and never turns it.
+  `rgb.muted(by:toward:)` quiets a color toward a gray of an OKLCH lightness, its lightness taken
+  that far there and its chroma cut by as much, its hue kept: what a board's preview draws each
+  shape's color in, 70% of the way to its gray. `RGB(cgColor)` reads a resolved color back,
+  converted to sRGB.
 - **`Tone`** is a color in the light appearance and in the dark (`tone[dark: isDark]`).
 - **`Swatch`** is the looks one color is drawn in. A color is a starting point: what draws it draws
   one of seven roles worked out from it, each a `Tone`, so the same color suits a line, a surface,
@@ -10486,28 +10490,41 @@ the core's, host API, which the minimap draws with too): every shape on the boar
 its geometry (its outline filled, or stroked when it's open, or a container's, a frame's, so what
 it holds shows on it; under 4 pixels both ways, its bounds, or a line from its first point to its
 last when it's open; under a pixel, the pixel it's in: the rule, `Silhouettes.form`, that the
-default [skeleton](#skeletons) goes by too), all in one muted gray, and nothing of what a shape
-draws, no text and no colors, so a subboard inside is its rectangle, and a shape costs the same
-whatever its kind. It's the core's
+default [skeleton](#skeletons) goes by too), each in the color it's listed in, its tint
+(`editor.tint(of:)`: its own color's solid, the color it's given, a type's, else its kind's: a
+note's yellow, a subboard's indigo, a frame's line its gray), quieted toward the muted gray one with
+none (an arrow with no color, a reference) is drawn in (70% of the way, Palette's
+`RGB.muted(by:toward:)`: a tint at full strength shouted from a card at a tenth of its board),
+painted in the board's order a run of one color at a time, so what's in front shows in front. Nothing else of what a shape draws (no text, no paper or surface, no
+shadow), so a subboard inside is its rectangle in its color, and a shape costs the same whatever
+its kind. It's the core's
 `BoardPreviews` ([BoardPreviews.swift](../Sources/Canvas/Rendering/BoardPreviews.swift), host API,
 `editor.boardPreviews`):
 
 - **Kept by board and revision.** A preview is of the board as one revision of the file had it
-  (`file.revision(of:)`), a mask at most 256 pixels on a side. Asked for once the board has changed,
-  by an edit or an undo (a revision never comes back), it's dropped, never drawn, and built again.
+  (`file.revision(of:)`), a picture at most 256 pixels on a side, four bytes a pixel. Asked for once
+  the board has changed, by an edit or an undo (a revision never comes back), it's dropped, never
+  drawn, and built again.
+- **Colors that change with no commit.** A preview's colors are those of the appearance it was
+  built in and of the tints as they were then (`Look`): asked for in the other appearance, or after
+  tints changed with no commit to the board (the file's colors, a type's color its shapes take:
+  `editor.shapeTintsDidChange()`, which tells the previews), it's drawn as it is while it's built
+  again, taking its own place (it needs no room), so a card never goes back to its count.
   The 64 drawn last are kept, the one drawn longest ago going first, but never one the frame before
   drew: with more owners in view than that, those past the number show their count until there's
   room, instead of each frame building one by evicting another, and asking for another frame,
   forever.
-- **Sharp up close.** A preview shown larger than its mask (zoomed in, or on a 2× screen, where
-  a card at 100% already is) is drawn as paths instead: every shape its outline, kept with the mask
-  in cells of a grid over the board, so only the cells in view are drawn, lines 1.5 device pixels
-  wide as the mask's are its pixels. Paths cost a shape each (some 1 to 2 µs), so a frame draws
-  1,000 that way at most (`pathShapes`), over every preview it shows; past that, the mask, enlarged,
-  as for a board of 10,000 shown whole, until zooming in leaves fewer of its shapes in view.
+- **Sharp up close.** A preview shown larger than its picture (zoomed in, or on a 2× screen, where
+  a card at 100% already is) is drawn as paths instead: every shape its outline, kept with the
+  picture in cells of a grid over the board, each cell's shapes in runs of one color in the board's
+  order, so only the cells in view are drawn, a fill and a stroke a run (runs of one color one after
+  another together), lines 1.5 device pixels wide as the picture's are its pixels. Paths cost a shape
+  each (some 1 to 2 µs), so a frame draws 1,000 that way at most (`pathShapes`), over every preview
+  it shows; past that, the picture, enlarged, as for a board of 10,000 shown whole, until zooming in
+  leaves fewer of its shapes in view.
 - **Built a chunk at a time.** A board asked for waits its turn, those asked for longest ago first.
   At the start of each frame the editor builds for 2 ms (`frameBudget`), a chunk of shapes at a time
-  (the shapes' geometry, from a `ShapeContext` with no index, then their silhouettes), as many as
+  (the shapes' geometry and tints, from a `ShapeContext` with no index, then their silhouettes), as many as
   fit at what shapes have cost so far, and at least one chunk (16 shapes); while any wait, it asks
   for another frame (`editor.scheduler`). One finished at the start of a frame is drawn in it. One
   whose board changed before it was built is dropped unbuilt, and so is one no shape asked for in
@@ -13614,7 +13631,9 @@ by its id. It is the color of the shapes of it that hold none (the first color i
 later type first and a type before what it builds on, through types alone, as fields resolve, else
 the one its first type's id says), and of the type itself where its note holds none. A listed
 shape's symbol (Find, Jump To, a mention's pill, the table of contents, the Connections tab) is in
-its own color where it has one, else the one it's given, through the core's `registrar.shapeTints`.
+its own color where it has one, else the one it's given, through the core's `registrar.shapeTints`,
+and so is its silhouette in a board's preview, a subboard's card's picture of its board
+([board previews](#the-cores-part-board-previews)).
 
 ## Language models
 
@@ -16470,10 +16489,11 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   commands](#testing-slash-commands).
 - **Board previews.** CanvasTests' PreviewTests drive a `BoardPreviews` of their own over a
   `CanvasFile` (`preview(of:in:)`, `build(in:until:)`: a deadline already past builds one chunk,
-  one far off everything; `waiting`, `keptKeys`, and the mask's pixels), and an editor's through
-  `renderBitmap`: the first frame asks, and with `editor.boardPreviews.frameBudget` lengthened, the
-  next (after `h.wait(0)`, the frame it asked for) draws them. SubboardsTests hold the card's
-  pixels the same way.
+  one far off everything; `waiting`, `keptKeys`, and the picture's pixels; `tint` set to black where
+  a pixel should say how much a silhouette covers), and an editor's through `renderBitmap`: the first
+  frame asks, and with `editor.boardPreviews.frameBudget` lengthened, the next (after `h.wait(0)`, the
+  frame it asked for) draws them; an appearance is pinned with `performAsCurrentDrawingAppearance`.
+  SubboardsTests hold the card's pixels the same way.
 - **Arrow behavior is pinned to the proof of concept.** CompositionTests replays 28 arrow
   scenarios through `CanvasView` with real events and compares where every arrow ends up, byte for
   byte, with a transcript recorded from the POC. It also compares eight renders pixel for pixel:

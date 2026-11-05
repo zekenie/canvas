@@ -1,8 +1,9 @@
 import AppKit
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
 import LanguageModels
+import Palette
 import ShippedTesting
 import StickyNotes
 import Subboards
@@ -53,9 +54,21 @@ private func isNoteYellow(_ color: [Int]) -> Bool { color[0] > 235 && (190...245
         let size = picture.size(within: CGSize(width: 1600, height: 1200))
         expectEqual(size, CGSize(width: 304, height: 224))
         let bitmap = render(picture, size: size)
+        // In the color a note is listed in, its kind's system yellow (`NoteStyle.tint`), in the light, quieted
+        // toward the gray a shape with none is drawn in (the default skeleton's, 0.6 0.62 0.64), as far as the
+        // previews quiet a color.
+        var system: RGB?
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance {
+            guard let srgb = NSColor.systemYellow.usingColorSpace(.sRGB) else { return }
+            system = RGB(Double(srgb.redComponent), Double(srgb.greenComponent), Double(srgb.blueComponent))
+        }
+        let muting = CanvasEditor(registry: try shippedRegistry()).boardPreviews.muting
+        let quiet = try require(system).muted(by: muting, toward: OKLCH(RGB(0.6, 0.62, 0.64)).lightness)
+        let yellow = [quiet.red, quiet.green, quiet.blue].map { Int(($0 * 255).rounded()) }
         for point in [CGPoint(x: 152, y: 112), CGPoint(x: 145, y: 105), CGPoint(x: 159, y: 119)] {
             let silhouette = pixel(bitmap, at: point)
-            expect(silhouette[0] < 225 && abs(silhouette[0] - silhouette[2]) < 20, "the note's silhouette at \(point), in a muted gray: \(silhouette)")
+            expect(zip(silhouette, yellow).allSatisfy { abs($0 - $1) <= 4 },
+                   "the note's silhouette at \(point), in the yellow it's listed in, quieted: \(silhouette), not \(yellow)")
         }
     },
     test("a board file as saved, in an older format too, is read as the app reads it and drawn") {

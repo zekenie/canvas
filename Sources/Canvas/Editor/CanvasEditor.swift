@@ -452,6 +452,8 @@ public final class CanvasEditor {
         undoHistory.editor = self
         undoHistory.participants = serviceOrder.compactMap { $0 as? any UndoParticipant }
         toldDrawsSkeletons = drawsSkeletons
+        // A board's preview draws each shape in the color it's listed in.
+        boardPreviews.tint = { [weak self] record in self?.tint(of: record) }
     }
 
     /// An editor of a file of this one board.
@@ -807,7 +809,8 @@ public final class CanvasEditor {
 
     /// The color a shape's symbol has wherever it is listed: the first color a plugin gives it
     /// (`registrar.shapeTints`: Colors', for a shape with a color of its own), else its kind's
-    /// (`registry.label(of:).tint`); nil for a shape with neither. Asked per row shown, never per
+    /// (`registry.label(of:).tint`); nil for a shape with neither. Asked per row shown, and once a
+    /// shape as a board's preview is built (`boardPreviews`, which draws each shape in it), never per
     /// frame for every shape.
     public func tint(of record: AnyShapeRecord) -> NSColor? {
         ownTint(of: record) ?? registry.kindTint(of: record.kind)
@@ -830,8 +833,10 @@ public final class CanvasEditor {
 
     /// Services hear that shapes' tints changed with no commit to them (the file's colors did): a
     /// plugin that gives tints (`registrar.shapeTints`) calls it, and a service that keeps what
-    /// shows one makes it again (`EditorService.shapeTintsDidChange`).
+    /// shows one makes it again (`EditorService.shapeTintsDidChange`). Boards' previews are built
+    /// again in them as they're next drawn, each drawn as it was until then.
     public func shapeTintsDidChange() {
+        boardPreviews.tintsDidChange()
         for service in serviceOrder { service.shapeTintsDidChange(in: self) }
     }
 

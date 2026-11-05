@@ -67,3 +67,15 @@ public struct OKLCH: Hashable, Sendable {
         return RGB(linear: min(max(r, 0), 1), min(max(g, 0), 1), min(max(b, 0), 1))
     }
 }
+
+extension RGB {
+    /// This color quieted toward a gray of `lightness` (OKLCH's, 0 to 1): its lightness taken
+    /// `amount` of the way there and its chroma cut by as much, its hue kept. So colors quieted
+    /// together come out about as heavy as the gray and still apart by hue: 0 is the color, 1 the
+    /// gray. What a board's preview draws a shape's color in.
+    public func muted(by amount: Double, toward lightness: Double) -> RGB {
+        let color = OKLCH(self)
+        return OKLCH(lightness: color.lightness + (lightness - color.lightness) * amount, chroma: color.chroma * (1 - amount),
+                     hue: color.hue).rgb
+    }
+}

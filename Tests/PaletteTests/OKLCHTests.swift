@@ -50,4 +50,18 @@ import TestKit
         expectClose(OKLCH(lightness: -0.2, chroma: 0.1, hue: 1).rgb, .black, within: 1e-4)
         expectClose(OKLCH(lightness: 1.3, chroma: 0.1, hue: 1).rgb, .white, within: 1e-4)
     },
+    test("a color muted toward a gray: none of the way is the color, all of it the gray, half of it half its chroma and half way there in lightness, its hue kept") {
+        for color in sampleColors where OKLCH(color).chroma > 0.02 {
+            let there = OKLCH(color), gray = 0.68
+            expectClose(color.muted(by: 0, toward: gray), color, within: 1e-5)
+            let all = OKLCH(color.muted(by: 1, toward: gray))
+            expect(all.chroma < 1e-4, "\(color.hexString) all the way is no gray: chroma \(all.chroma)")
+            expectClose(CGFloat(all.lightness), CGFloat(gray), within: 1e-4)
+            let half = OKLCH(color.muted(by: 0.5, toward: gray))
+            expectClose(CGFloat(half.lightness), CGFloat((there.lightness + gray) / 2), within: 1e-4)
+            expectClose(CGFloat(half.chroma), CGFloat(there.chroma / 2), within: 1e-4)
+            let turned = abs(remainder(half.hue - there.hue, 2 * .pi)) * 180 / .pi
+            expect(turned < 0.5, "\(color.hexString) turned \(turned)° muted")
+        }
+    },
 ])

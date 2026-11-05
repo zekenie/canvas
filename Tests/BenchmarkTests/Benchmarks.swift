@@ -1505,12 +1505,12 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             }
         }
     },
-    test("previews shown larger than their masks are drawn as paths, a frame's worth of shapes: ten cards on a 2× screen, and one zoomed in") {
+    test("previews shown larger than their pictures are drawn as paths, a frame's worth of shapes: ten cards on a 2× screen, and one zoomed in") {
         let viewport = CGSize(width: 1200, height: 800)
         let context = try bitmapContext(viewport, scale: 2)
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        // A frame once every preview is built, as paths where they'd be enlarged and as masks alone.
-        @MainActor func frames(_ file: CanvasFile, camera: Camera = Camera()) -> (paths: Double, masks: Double) {
+        // A frame once every preview is built, as paths where they'd be enlarged and as pictures alone.
+        @MainActor func frames(_ file: CanvasFile, camera: Camera = Camera()) -> (paths: Double, pictures: Double) {
             let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
             h.editor.camera = camera
@@ -1519,8 +1519,8 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
             h.wait(0)
             let paths = median(runs: 11, onThread: true) { draw(h.editor, into: context, size: viewport) }
             h.editor.boardPreviews.pathShapes = 0
-            let masks = median(runs: 11, onThread: true) { draw(h.editor, into: context, size: viewport) }
-            return (paths, masks)
+            let pictures = median(runs: 11, onThread: true) { draw(h.editor, into: context, size: viewport) }
+            return (paths, pictures)
         }
         // Ten cards at 100% on a 2× screen, 432 pixels of preview each, every board 100 shapes: the frame's 1,000 as paths.
         let subs = (0..<10).map { i in
@@ -1529,13 +1529,13 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
         let ten = CanvasFile(root: CanvasDocument(shapes: subs.map(AnyShapeRecord.init)),
                              children: Dictionary(uniqueKeysWithValues: subs.map { ($0.id, generatedBoard(shapes: 100)) }))
         let cards = frames(ten)
-        report(String(format: "ten subboards of 100 shapes on a 2× screen: a frame with their 1,000 as paths %.1f ms, with masks %.1f (budget %.0f)",
-                      cards.paths, cards.masks, Budget.frame))
+        report(String(format: "ten subboards of 100 shapes on a 2× screen: a frame with their 1,000 as paths %.1f ms, with pictures %.1f (budget %.0f)",
+                      cards.paths, cards.pictures, Budget.frame))
         // One card of the board's worth zoomed in to 800% on its middle: its preview drawn alone, the cells in view as
-        // paths, and the mask for the control; and the frame, against the card with nothing on its board.
+        // paths, and the picture for the control; and the frame, against the card with nothing on its board.
         let sub = ShapeRecord(Subboard(frame: CGRect(x: 0, y: 0, width: 2400, height: 1600)))
         let middle = camera(centering: CGRect(x: 1100, y: 700, width: 200, height: 200), at: 8, in: viewport)
-        let alone = frames(CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)])), camera: middle).masks
+        let alone = frames(CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)])), camera: middle).pictures
         for size in sizes {
             let one = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(sub)]), children: [sub.id: generatedBoard(shapes: size)])
             let zoomed = frames(one, camera: middle)
@@ -1549,15 +1549,15 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                     context.saveGState()
                     context.scaleBy(x: middle.zoom, y: middle.zoom)
                     context.translateBy(x: -middle.origin.x, y: -middle.origin.y)
-                    previews.draw(preview, in: context, fitting: sub.props.frame.insetBy(dx: 12, dy: 12), maxScale: 0.1, color: CGColor(gray: 0.6, alpha: 1))
+                    previews.draw(preview, in: context, fitting: sub.props.frame.insetBy(dx: 12, dy: 12), maxScale: 0.1)
                     context.restoreGState()
                 }
             }
             let paths = drawing()
             previews.pathShapes = 0
-            let mask = drawing()
-            report(String(format: "%6d shapes in a subboard 2400 × 1600 at 800%% on a 2× screen: its preview, what's in view as paths %.2f ms, its mask %.1f; the frame %.1f, the card alone %.1f",
-                          size, paths, mask, zoomed.paths, alone))
+            let picture = drawing()
+            report(String(format: "%6d shapes in a subboard 2400 × 1600 at 800%% on a 2× screen: its preview, what's in view as paths %.2f ms, its picture %.1f; the frame %.1f, the card alone %.1f",
+                          size, paths, picture, zoomed.paths, alone))
             if holdsToBudgets {
                 expect(paths < Budget.previewPaths, "the preview zoomed in on a subboard of \(size), as paths, took \(paths) ms")
             }

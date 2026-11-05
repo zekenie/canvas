@@ -44,4 +44,13 @@ extension RGB {
     public var cgColor: CGColor {
         CGColor(srgbRed: red, green: green, blue: blue, alpha: 1)
     }
+
+    /// A color's components in sRGB (one outside sRGB's range brought into it), its alpha dropped;
+    /// nil for one Core Graphics can't convert (a pattern).
+    public init?(_ color: CGColor) {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let components = color.converted(to: space, intent: .defaultIntent, options: nil)?.components, components.count >= 3
+        else { return nil }
+        self.init(min(max(components[0], 0), 1), min(max(components[1], 0), 1), min(max(components[2], 0), 1))
+    }
 }

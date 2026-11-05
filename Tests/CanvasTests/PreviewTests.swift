@@ -23,6 +23,12 @@ extension Showcase {
     var drawn: [Bool] = []
 }
 
+/// The color a test gives shapes, which it changes with no commit.
+@MainActor private final class Paint {
+    var color: NSColor
+    init(_ color: NSColor) { self.color = color }
+}
+
 struct ShowcaseDefinition {
     let log: PreviewLog
 }
@@ -113,13 +119,81 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
            width: preview.frame.width * scale, height: preview.frame.height * scale)
 }
 
-/// Whether the mask is white (a silhouette) at a world point of its board.
-@MainActor private func isShape(_ preview: BoardPreviews.Preview, at point: CGPoint) throws -> Bool {
-    let mask = try require(preview.mask)
-    let data = try require(mask.dataProvider?.data as Data?)
-    let scale = CGFloat(mask.width) / preview.frame.width
+/// The picture's pixel at a world point of its board: red, green, blue and alpha, 0 to 255,
+/// premultiplied, in sRGB.
+@MainActor private func color(of preview: BoardPreviews.Preview, at point: CGPoint) throws -> [Int] {
+    let image = try require(preview.image)
+    let width = image.width, height = image.height
+    var bytes = [UInt8](repeating: 0, count: width * height * 4)
+    let space = try require(CGColorSpace(name: CGColorSpace.sRGB))
+    try bytes.withUnsafeMutableBytes { buffer in
+        // The picture's first row at the buffer's first, as a bitmap's memory starts at its top.
+        let cg = try require(CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                       space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        cg.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+    let scale = CGFloat(width) / preview.frame.width
     let column = Int((point.x - preview.frame.minX) * scale), row = Int((point.y - preview.frame.minY) * scale)
-    return data[row * mask.bytesPerRow + column * mask.bitsPerPixel / 8] > 128
+    return (0..<4).map { Int(bytes[(row * width + column) * 4 + $0]) }
+}
+
+/// Whether the picture has a silhouette at a world point of its board.
+@MainActor private func isShape(_ preview: BoardPreviews.Preview, at point: CGPoint) throws -> Bool {
+    try color(of: preview, at: point)[3] > 128
+}
+
+/// Previews that draw every shape in black, whatever its tint: a sheet's pixel then says how much of
+/// it a silhouette covers.
+@MainActor private func blackPreviews(_ registry: Registry, capacity: Int? = nil) -> BoardPreviews {
+    let previews = BoardPreviews(registry: registry, capacity: capacity)
+    previews.tint = { _ in .black }
+    previews.muting = 0
+    return previews
+}
+
+/// `body`, drawing in the appearance named, whatever this Mac's is.
+@MainActor private func drawing<T>(in name: NSAppearance.Name, _ body: () throws -> T) throws -> T {
+    var result: Result<T, any Error>?
+    try require(NSAppearance(named: name)).performAsCurrentDrawingAppearance { result = Result { try body() } }
+    return try require(result).get()
+}
+
+/// Colors given as sRGB, so the picture holds them exactly; and how a preview draws a color (made in
+/// an appearance), as its sRGB components, 0 to 255.
+@MainActor private let red = NSColor(srgbRed: 0.85, green: 0.15, blue: 0.1, alpha: 1)
+@MainActor private let blue = NSColor(srgbRed: 0.1, green: 0.3, blue: 0.9, alpha: 1)
+@MainActor private let green = NSColor(srgbRed: 0.1, green: 0.65, blue: 0.3, alpha: 1)
+@MainActor private func components(of color: NSColor, in name: NSAppearance.Name = .aqua) throws -> [Int] {
+    try drawing(in: name) {
+        let srgb = try require(color.cgColor.converted(to: try require(CGColorSpace(name: CGColorSpace.sRGB)), intent: .defaultIntent, options: nil))
+        return try require(srgb.components).prefix(3).map { Int(($0 * 255).rounded()) }
+    }
+}
+
+@MainActor private func expectColor(_ actual: [Int], _ expected: [Int], _ what: String, within tolerance: Int = 2,
+                                    file: StaticString = #fileID, line: UInt = #line) {
+    expect(actual.count >= 3 && zip(actual, expected).allSatisfy { abs($0 - $1) <= tolerance }, "\(what): \(actual) is not \(expected)",
+           file: file, line: line)
+}
+
+/// A board's preview drawn into an sRGB sheet, `size` points at `scale` pixels to a point, fitted to
+/// `rect` (paths where that's larger than the picture, unless `pathShapes` is 0): the pixel at `point`,
+/// red, green, blue, alpha, over white.
+@MainActor private func drawn(_ preview: BoardPreviews.Preview, fitting rect: CGRect, scale: CGFloat, pathShapes: Int = .max,
+                              at point: CGPoint, size: CGSize = CGSize(width: 400, height: 400)) throws -> [Int] {
+    let width = Int(size.width * scale), height = Int(size.height * scale)
+    let space = try require(CGColorSpace(name: CGColorSpace.sRGB))
+    let cg = try require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    cg.setFillColor(gray: 1, alpha: 1)
+    cg.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    cg.translateBy(x: 0, y: CGFloat(height))
+    cg.scaleBy(x: scale, y: -scale)
+    var left = pathShapes
+    expect(preview.draw(in: cg, fitting: rect, pathShapes: &left))
+    let bytes = try require(cg.data).assumingMemoryBound(to: UInt8.self)
+    let i = Int(point.y * scale) * width * 4 + Int(point.x * scale) * 4
+    return (0..<4).map { Int(bytes[i + $0]) }
 }
 
 // What an owner draws of the board it holds (`RenderContext.drawBoardPreview`): the core's previews,
@@ -135,9 +209,9 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
         expect(!previews.isPending)
         let preview = try require(previews.preview(of: boards[0], in: file))
         expectEqual(preview.key, key)
-        let mask = try require(preview.mask)
-        expect(mask.width <= 256 && mask.height <= 256 && max(mask.width, mask.height) >= 250, "\(mask.width) × \(mask.height)")
-        expect(abs(CGFloat(mask.width) / CGFloat(mask.height) - 4) < 0.3, "the board's proportions: \(mask.width) × \(mask.height)")
+        let image = try require(preview.image)
+        expect(image.width <= 256 && image.height <= 256 && max(image.width, image.height) >= 250, "\(image.width) × \(image.height)")
+        expect(abs(CGFloat(image.width) / CGFloat(image.height) - 4) < 0.3, "the board's proportions: \(image.width) × \(image.height)")
         expect(preview.frame.contains(CGRect(x: 0, y: 0, width: 400, height: 100)), "\(preview.frame)")
         expect(try isShape(preview, at: CGPoint(x: 50, y: 50)), "the first box")
         expect(try isShape(preview, at: CGPoint(x: 350, y: 50)), "the second")
@@ -148,7 +222,7 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
     },
     test("drawn no larger than its maximum scale, a board of little is small in the middle of the rect; without one, it fills it") {
         let (file, boards) = pocketFile([[CGRect(x: 0, y: 0, width: 100, height: 100)]])
-        let previews = BoardPreviews(registry: try previewRegistry())
+        let previews = blackPreviews(try previewRegistry())
         _ = previews.preview(of: boards[0], in: file)
         previews.build(in: file, until: later)
         let preview = try require(previews.preview(of: boards[0], in: file))
@@ -158,7 +232,7 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
                                            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue))
             cg.setFillColor(gray: 1, alpha: 1)
             cg.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
-            expect(preview.draw(in: cg, fitting: CGRect(x: 0, y: 0, width: 400, height: 400), maxScale: maxScale, color: CGColor(gray: 0, alpha: 1)))
+            expect(preview.draw(in: cg, fitting: CGRect(x: 0, y: 0, width: 400, height: 400), maxScale: maxScale))
             let image = try require(cg.makeImage()), data = try require(image.dataProvider?.data as Data?)
             return points.map { data[Int($0.y) * image.bytesPerRow + Int($0.x)] < 128 }
         }
@@ -225,18 +299,18 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
         let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
                               children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(first), AnyShapeRecord(second), AnyShapeRecord(link)])])
         let board = BoardID(owner: pocket.id)
-        let previews = BoardPreviews(registry: try Registry(plugins: [FixturesPlugin(), PocketsPlugin(), LinksPlugin()]))
+        let previews = blackPreviews(try Registry(plugins: [FixturesPlugin(), PocketsPlugin(), LinksPlugin()]))
         _ = previews.preview(of: board, in: file)
         previews.build(in: file, until: later)
         let preview = try require(previews.preview(of: board, in: file))
-        expect(try require(preview.mask).width <= 256, "a mask of 400 world units: under a pixel each")
+        expect(try require(preview.image).width <= 256, "a picture of 400 world units: under a pixel each")
         // At 8×, the first box's right edge (100, 40) in the sheet's middle: the edge down x = 200,
         // the link along y = 280 from x = 200 on.
         let fitted = rect(drawing: preview, at: 8, putting: CGPoint(x: 100, y: 40), at: CGPoint(x: 200, y: 200))
         let edge = { (sheet: Sheet) in sheet.blurred(sheet.pixels(from: CGPoint(x: 180, y: 200), to: CGPoint(x: 220, y: 200))) }
         let line = { (sheet: Sheet) in sheet.painted(sheet.pixels(from: CGPoint(x: 300, y: 260), to: CGPoint(x: 300, y: 300))) }
         let paths = try Sheet()
-        expect(preview.draw(in: paths.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1)))
+        expect(preview.draw(in: paths.cg, fitting: fitted))
         expect(edge(paths) <= 1, "the edge, a pixel at most between the box and the clear: \(edge(paths))")
         expect((1...2).contains(line(paths)), "the line, 1.5 pixels: \(line(paths))")
         expectEqual(paths.value(at: CGPoint(x: 150, y: 200)), 0, "inside the box, painted")
@@ -244,12 +318,12 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
         // The mask at the same size, for the control: its pixels 12 points across.
         let mask = try Sheet()
         var none = 0
-        expect(preview.draw(in: mask.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1), pathShapes: &none))
+        expect(preview.draw(in: mask.cg, fitting: fitted, pathShapes: &none))
         expect(edge(mask) >= 4, "the mask enlarged blurs the edge: \(edge(mask))")
         expect(line(mask) >= 8, "and thickens the line: \(line(mask))")
         // On a 2× screen, the line is 1.5 of its pixels, not of its points.
         let retina = try Sheet(scale: 2)
-        expect(preview.draw(in: retina.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1)))
+        expect(preview.draw(in: retina.cg, fitting: fitted))
         expect((1...2).contains(line(retina)), "the line on a 2× screen, 1.5 device pixels: \(line(retina))")
         expect(edge(retina) <= 1, "the edge as sharp: \(edge(retina))")
     },
@@ -257,7 +331,7 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
         // A hundred boxes, 50 across and 100 apart: a grid of 2 × 2 cells of 25.
         let many = (0..<100).map { i in CGRect(x: CGFloat(i % 10) * 100, y: CGFloat(i / 10) * 100, width: 50, height: 50) }
         let (file, boards) = pocketFile([many])
-        let previews = BoardPreviews(registry: try previewRegistry())
+        let previews = blackPreviews(try previewRegistry())
         _ = previews.preview(of: boards[0], in: file)
         previews.build(in: file, until: later)
         let preview = try require(previews.preview(of: boards[0], in: file))
@@ -267,7 +341,7 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
         // Its edge across the middle row: sharp drawn as paths, blurred as the mask.
         @MainActor func sharp(_ fitted: CGRect, edgeAt x: CGFloat = 200) throws -> Bool {
             let sheet = try Sheet()
-            expect(previews.draw(preview, in: sheet.cg, fitting: fitted, color: CGColor(gray: 0, alpha: 1)))
+            expect(previews.draw(preview, in: sheet.cg, fitting: fitted))
             return sheet.blurred(sheet.pixels(from: CGPoint(x: x - 20, y: 200), to: CGPoint(x: x + 20, y: 200))) <= 1
         }
         expect(try sharp(corner), "25 shapes in view: paths")
@@ -463,9 +537,184 @@ private func rect(drawing preview: BoardPreviews.Preview, at scale: CGFloat, put
         expectEqual(h.scheduler.pendingCount, 0, "none asked for once they're done")
         let silhouette = pixel(second, at: CGPoint(x: 40, y: 40))
         expect(silhouette != pixel(first, at: CGPoint(x: 40, y: 40)), "the square drawn: \(silhouette)")
-        expect(abs(silhouette[0] - silhouette[2]) < 20 && silhouette[0] < 200, "in one muted gray: \(silhouette)")
+        expect(abs(silhouette[0] - silhouette[2]) < 20 && silhouette[0] < 200, "in the muted gray of a shape with no tint: \(silhouette)")
         expectEqual(pixel(second, at: CGPoint(x: 160, y: 60)), pixel(first, at: CGPoint(x: 160, y: 60)), "nothing on the right")
         expectEqual(pixel(second, at: CGPoint(x: 40, y: 100)), pixel(first, at: CGPoint(x: 40, y: 100)), "nor below the square: it's the right way up")
         expectEqual(changedPixels(first, second, in: CGRect(x: 0, y: 0, width: 240, height: 18)), 0, "nothing outside the rect")
+    },
+    test("each shape is drawn in the color it's listed in: a plugin's for it, else its kind's; one with neither in the muted gray, a container's line in its color") {
+        let own = ShapeRecord(Card(CGRect(x: 0, y: 0, width: 100, height: 100)))
+        let card = ShapeRecord(Card(CGRect(x: 200, y: 0, width: 100, height: 100)))
+        let plain = ShapeRecord(Box(CGRect(x: 400, y: 0, width: 100, height: 100)))
+        let corral = ShapeRecord(Corral(CGRect(x: 600, y: 0, width: 200, height: 100)))
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(own), AnyShapeRecord(card), AnyShapeRecord(plain),
+                                                                            AnyShapeRecord(corral)])])
+        let h = try EditorHarness(plugins: [
+            FixturesPlugin(), PocketsPlugin(), CorralsPlugin(),
+            CardsPlugin { card, _ in card.tint(blue) },
+            Contributor(id: "own") { $0.shapeTints { record, _ in record.id == own.id ? red : record.kind == Corral.kind ? green : nil } },
+        ], file: file)
+        let board = BoardID(owner: pocket.id), previews = h.editor.boardPreviews
+        previews.muting = 0
+        let preview = try drawing(in: .aqua) {
+            _ = previews.preview(of: board, in: h.editor.file)
+            previews.build(in: h.editor.file, until: later)
+            return try require(previews.preview(of: board, in: h.editor.file))
+        }
+        expectColor(try color(of: preview, at: CGPoint(x: 50, y: 50)), try components(of: red), "a card a plugin gives a color, in it, over its kind's")
+        expectColor(try color(of: preview, at: CGPoint(x: 250, y: 50)), try components(of: blue), "a card, in its kind's")
+        let gray = try color(of: preview, at: CGPoint(x: 450, y: 50))
+        expect(gray[3] == 255 && (130...190).contains(gray[0]) && abs(gray[0] - gray[2]) < 20, "a box, with neither, in the muted gray: \(gray)")
+        // The corral's left edge, 1.5 pixels of line: the most covered pixel across it, its alpha undone.
+        let edge = try (0..<12).map { try color(of: preview, at: CGPoint(x: 594 + CGFloat($0), y: 50)) }.max { $0[3] < $1[3] } ?? []
+        expect(edge.count == 4 && edge[3] > 128, "the corral's line: \(edge)")
+        if edge.count == 4, edge[3] > 0 {
+            expectColor(edge.prefix(3).map { $0 * 255 / edge[3] }, try components(of: green), "a container's line, in its color", within: 6)
+        }
+        expectEqual(try color(of: preview, at: CGPoint(x: 700, y: 50))[3], 0, "and its inside clear")
+    },
+    test("what's in front stays in front: a board's shapes painted in its order, a run of one color at a time, in the picture and as paths") {
+        // A red box at the back, a blue one over it, and a red one over that.
+        let back = Box(CGRect(x: 0, y: 0, width: 300, height: 300)), middle = ShapeRecord(Box(CGRect(x: 100, y: 100, width: 300, height: 300)))
+        let front = Box(CGRect(x: 200, y: 200, width: 200, height: 200))
+        let pocket = ShapeRecord(Pocket(CGRect(x: 0, y: 0, width: 240, height: 160)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(pocket)]),
+                              children: [pocket.id: CanvasDocument(shapes: [AnyShapeRecord(ShapeRecord(back)), AnyShapeRecord(middle),
+                                                                            AnyShapeRecord(ShapeRecord(front))])])
+        let board = BoardID(owner: pocket.id)
+        let previews = BoardPreviews(registry: try previewRegistry())
+        previews.tint = { record in record.id == middle.id ? blue : red }
+        previews.muting = 0
+        let preview = try drawing(in: .aqua) {
+            _ = previews.preview(of: board, in: file)
+            previews.build(in: file, until: later)
+            return try require(previews.preview(of: board, in: file))
+        }
+        let expected: [(CGPoint, NSColor, String)] = [
+            (CGPoint(x: 50, y: 50), red, "the back box alone"), (CGPoint(x: 150, y: 150), blue, "the middle one over it"),
+            (CGPoint(x: 350, y: 150), blue, "the middle one alone"), (CGPoint(x: 250, y: 250), red, "the front one over both"),
+            (CGPoint(x: 350, y: 350), red, "the front one over the middle"),
+        ]
+        // As paths: a world unit a point on a 2× sheet, 800 pixels across where the picture has 256.
+        let worldSize = rect(drawing: preview, at: 1, putting: .zero, at: .zero)
+        for (point, shade, what) in expected {
+            expectColor(try color(of: preview, at: point), try components(of: shade), "the picture, \(what)")
+            expectColor(try drawn(preview, fitting: worldSize, scale: 2, at: point), try components(of: shade), "as paths, \(what)")
+            expectColor(try drawn(preview, fitting: worldSize, scale: 2, pathShapes: 0, at: point), try components(of: shade),
+                        "the picture enlarged, for the control, \(what)")
+        }
+    },
+    test("built in one appearance and asked for in another, a preview is drawn as it is while it's built again in that one's colors") {
+        let (file, boards) = pocketFile([[CGRect(x: 0, y: 0, width: 100, height: 100)]])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        // Blue in the light, red in the dark.
+        let either = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? NSColor(srgbRed: 0.85, green: 0.15, blue: 0.1, alpha: 1)
+                                                                        : NSColor(srgbRed: 0.1, green: 0.3, blue: 0.9, alpha: 1)
+        }
+        previews.tint = { _ in either }
+        previews.muting = 0
+        let key = BoardPreviews.Key(board: boards[0], revision: file.revision(of: boards[0]))
+        let light = try drawing(in: .aqua) {
+            _ = previews.preview(of: boards[0], in: file)
+            previews.build(in: file, until: later)
+            return try require(previews.preview(of: boards[0], in: file))
+        }
+        expectEqual(light.look.appearance, .aqua)
+        expectColor(try color(of: light, at: CGPoint(x: 50, y: 50)), try components(of: either), "in the light, its blue")
+        let asked = try drawing(in: .darkAqua) { previews.preview(of: boards[0], in: file) }
+        expect(asked?.look == light.look, "in the dark, the light one, drawn meanwhile")
+        expectEqual(previews.waiting, [key], "and asked for again")
+        previews.endFrame()
+        expectEqual(previews.waiting, [key], "waiting still as the frame ends")
+        let dark = try drawing(in: .darkAqua) {
+            previews.build(in: file, until: later)
+            return try require(previews.preview(of: boards[0], in: file))
+        }
+        expectEqual(dark.look.appearance, .darkAqua)
+        expectColor(try color(of: dark, at: CGPoint(x: 50, y: 50)), try components(of: either, in: .darkAqua), "built again in the dark's red")
+        expectEqual(previews.keptKeys, [key], "in its board's place")
+        expect(!previews.isPending)
+        expect(try drawing(in: .darkAqua) { previews.preview(of: boards[0], in: file) } != nil)
+        expect(!previews.isPending, "and not asked for again in the dark")
+    },
+    test("tints changed with no commit to say so: a preview is drawn as it was while it's built again in them, its owner never showing none") {
+        let log = PreviewLog()
+        let owner = ShapeRecord(Showcase(frame: CGRect(x: 20, y: 20, width: 200, height: 100)))
+        let file = CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(owner)]),
+                              children: [owner.id: CanvasDocument(shapes: [box(CGRect(x: 0, y: 0, width: 200, height: 100))])])
+        let paint = Paint(red)
+        let registry = try Registry(plugins: [FixturesPlugin(), PocketsPlugin(), Contributor(id: "showcases") { $0.shape(ShowcaseDefinition(log: log)) },
+                                              Contributor(id: "paint") { $0.shapeTints { record, _ in record.kind == Box.kind ? paint.color : nil } }])
+        let h = EditorHarness { CanvasEditor(registry: registry, file: file, scheduler: $0) }
+        h.editor.boardPreviews.frameBudget = .seconds(60)
+        h.editor.boardPreviews.muting = 0
+        let size = CGSize(width: 240, height: 140), middle = CGPoint(x: 120, y: 70)
+        _ = renderBitmap(h.editor, size: size)
+        h.wait(0)
+        expectColor(pixel(renderBitmap(h.editor, size: size), at: middle), try components(of: red), "built: the box in red", within: 4)
+        paint.color = blue
+        h.editor.shapeTintsDidChange()
+        log.drawn = []
+        expectColor(pixel(renderBitmap(h.editor, size: size), at: middle), try components(of: red), "the frame after: as it was", within: 4)
+        expect(h.editor.boardPreviews.isPending, "while it's built again")
+        expect(h.scheduler.pendingCount > 0, "another frame asked for")
+        h.wait(0)
+        expectColor(pixel(renderBitmap(h.editor, size: size), at: middle), try components(of: blue), "then in blue", within: 4)
+        expectEqual(log.drawn, [true, true], "the owner drew a preview each frame")
+        expect(!h.editor.boardPreviews.isPending)
+        expectEqual(h.scheduler.pendingCount, 0, "and asks for no frame after")
+    },
+    test("with every preview it keeps drawn, each is built again in tints that changed: one takes its own place, so needs no room") {
+        let square = [CGRect(x: 0, y: 0, width: 100, height: 100)]
+        let (file, boards) = pocketFile([square, square])
+        let previews = BoardPreviews(registry: try previewRegistry(), capacity: 2)
+        let paint = Paint(red)
+        previews.tint = { _ in paint.color }
+        previews.muting = 0
+        try drawing(in: .aqua) {
+            for board in boards { _ = previews.preview(of: board, in: file) }
+            previews.build(in: file, until: later)
+            for board in boards { expect(previews.preview(of: board, in: file) != nil, "built") }
+        }
+        previews.endFrame()
+        paint.color = blue
+        previews.tintsDidChange()
+        try drawing(in: .aqua) {
+            for board in boards { expect(previews.preview(of: board, in: file) != nil, "drawn as it was") }
+        }
+        expectEqual(previews.waiting.count, 2, "both asked for again")
+        previews.endFrame()
+        expectEqual(previews.waiting.count, 2, "both waiting still, though the two it keeps were drawn")
+        let rebuilt = try drawing(in: .aqua) { () -> [BoardPreviews.Preview] in
+            previews.build(in: file, until: later)
+            return try boards.map { try require(previews.preview(of: $0, in: file)) }
+        }
+        for preview in rebuilt {
+            expectColor(try color(of: preview, at: CGPoint(x: 50, y: 50)), try components(of: blue), "built again in blue")
+        }
+        expectEqual(Set(previews.keptKeys.map(\.board)), Set(boards), "each in its board's place")
+        expect(!previews.isPending)
+    },
+    test("a tint is quieted toward the gray a shape with none is drawn in: its hue kept, its strength cut, the gray as it is") {
+        let (file, boards) = pocketFile([[CGRect(x: 0, y: 0, width: 100, height: 100), CGRect(x: 200, y: 0, width: 100, height: 100)]])
+        let previews = BoardPreviews(registry: try previewRegistry())
+        // The first box red, the second with no tint: the gray.
+        previews.tint = { record in record.box?.minX == 0 ? red : nil }
+        expect(previews.muting > 0 && previews.muting < 1, "quieted by default, and not to the gray itself: \(previews.muting)")
+        let preview = try drawing(in: .aqua) {
+            _ = previews.preview(of: boards[0], in: file)
+            previews.build(in: file, until: later)
+            return try require(previews.preview(of: boards[0], in: file))
+        }
+        let shown = try color(of: preview, at: CGPoint(x: 50, y: 50)), gray = try color(of: preview, at: CGPoint(x: 250, y: 50))
+        let tint = try components(of: red)
+        expect(abs(gray[0] - gray[2]) < 20 && (130...190).contains(gray[0]), "the box with none, the gray: \(gray)")
+        expect(shown[0] > shown[1] + 30 && shown[0] > shown[2] + 30, "still red: \(shown)")
+        let spread = { (c: [Int]) in c.prefix(3).max()! - c.prefix(3).min()! }
+        expect(spread(shown) < spread(tint) * 3 / 4, "less strong than the tint: \(shown) against \(tint)")
+        expect(spread(shown) > spread(gray) + 30, "and not the gray: \(shown)")
     },
 ])

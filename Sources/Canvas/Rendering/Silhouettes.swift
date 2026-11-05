@@ -7,7 +7,8 @@ import CoreGraphics
 /// outline is stroked, as an open shape's is, so what it holds shows on it. What a picture of a
 /// board draws, the minimap's and a board's preview (`BoardPreviews`): from shapes' geometry alone,
 /// so a silhouette costs the same for every kind, and shows none of what a shape draws (its text, its
-/// colors).
+/// fills): all in the one color it's drawn in, the minimap's, or a preview's run of shapes of one
+/// color.
 @_spi(Host) @MainActor
 public final class Silhouettes {
     private struct Pixel: Hashable {
@@ -89,19 +90,24 @@ public final class Silhouettes {
         return (filled, lines.copy() ?? lines)
     }
 
-    /// Into a context in world units. `lineWidth` is in world units too.
+    /// Into a context in world units. `lineWidth` is in world units too. What has nothing in it isn't
+    /// drawn (a preview draws a run of notes, which has no lines, and a run of arrows, no fills).
     public func draw(into context: CGContext, color: CGColor, lineWidth: CGFloat) {
         for spot in pixels {
             fills.addRect(CGRect(x: CGFloat(spot.x) * pixel, y: CGFloat(spot.y) * pixel, width: pixel, height: pixel))
         }
-        context.setFillColor(color)
-        context.addPath(fills)
-        context.fillPath()
-        context.setStrokeColor(color)
-        context.setLineWidth(lineWidth)
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-        context.addPath(lines)
-        context.strokePath()
+        if !fills.isEmpty {
+            context.setFillColor(color)
+            context.addPath(fills)
+            context.fillPath()
+        }
+        if !lines.isEmpty {
+            context.setStrokeColor(color)
+            context.setLineWidth(lineWidth)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            context.addPath(lines)
+            context.strokePath()
+        }
     }
 }

@@ -234,15 +234,18 @@ public struct RenderContext {
     /// Draws a rough picture of the board a shape owns into `rect` (world units), fitted: the
     /// board's proportions kept, centered, and no larger than `maxScale` times its own size, so a
     /// board of a few shapes is drawn small in the middle of the rect rather than as big as one of
-    /// hundreds (a card's preview at 0.1 shows its board as the canvas does at 10%). Every shape there is a silhouette of its geometry, all in
-    /// one muted gray (none of their text or colors; a shape that owns a board is its outline), as
-    /// the minimap draws: a picture of 256 pixels at most, and shown larger than that (zoomed in, or
-    /// on a sharper screen), the shapes in view as paths, sharp at any size, up to a frame's worth
-    /// of them. Returns false, having drawn nothing, while the picture isn't ready, for a
-    /// board with nothing to show (none, or empty), and for a rect too small on screen to show one
-    /// (under 16 view points either way): draw something else then (a count). A picture
-    /// takes a few frames to build (the core builds them within a budget each frame, and redraws
-    /// until they're done), and one of a board as it was before an edit or an undo is never drawn.
+    /// hundreds (a card's preview at 0.1 shows its board as the canvas does at 10%). Every shape there is a silhouette of its geometry, as
+    /// the minimap draws, in the color it's listed in (`editor.tint(of:)`: its own color, the one it's
+    /// given, else its kind's), one with none in a muted gray, what's in front over what's behind (none
+    /// of their text or fills; a shape that owns a board is its silhouette): a picture of 256 pixels at
+    /// most, and shown larger than that (zoomed in, or on a sharper screen), the shapes in view as paths,
+    /// sharp at any size, up to a frame's worth of them. Returns false, having drawn nothing, while the
+    /// picture isn't ready, for a board with nothing to show (none, or empty), and for a rect too small
+    /// on screen to show one (under 16 view points either way): draw something else then (a count). A
+    /// picture takes a few frames to build (the core builds them within a budget each frame, and redraws
+    /// until they're done), and one of a board as it was before an edit or an undo is never drawn; one
+    /// in the colors of another appearance, or from before the file's colors changed, is drawn while
+    /// it's built again.
     public func drawBoardPreview(ofBoardOwnedBy owner: ShapeID, in rect: CGRect, maxScale: CGFloat = .infinity) -> Bool {
         boardPreview(owner, rect, maxScale, cg)
     }

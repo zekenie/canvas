@@ -63,4 +63,15 @@ import TestKit
         expectEqual(cg.colorSpace?.name, CGColorSpace.sRGB)
         expectEqual(cg.components?.map { Double($0) } ?? [], [blue.red, blue.green, blue.blue, 1])
     },
+    test("a CGColor's sRGB components, read back as an RGB, from sRGB and from another space, converted, its alpha dropped, held to sRGB's range") {
+        let blue = RGB(hex: 0x4465E9)
+        expectClose(try require(RGB(blue.cgColor)), blue)
+        expectClose(try require(RGB(CGColor(srgbRed: 0.2, green: 0.4, blue: 0.6, alpha: 0.5))), RGB(0.2, 0.4, 0.6))
+        // A gray space's 50% is sRGB's 57% (its own curve): converted, never taken as the number it holds.
+        let gray = try require(RGB(CGColor(gray: 0.5, alpha: 1)))
+        expect(abs(gray.red - gray.green) < 1e-3 && abs(gray.green - gray.blue) < 1e-3 && (0.5...0.65).contains(gray.red), "\(gray.hexString)")
+        let wide = try require(CGColor(colorSpace: try require(CGColorSpace(name: CGColorSpace.extendedSRGB)), components: [1.2, -0.1, 0.5, 1]))
+        let held = try require(RGB(wide))
+        for component in [held.red, held.green, held.blue] { expect((0...1).contains(component), "\(component) is out of range") }
+    },
 ])
