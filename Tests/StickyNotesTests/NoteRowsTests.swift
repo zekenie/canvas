@@ -427,7 +427,8 @@ private let petFields = #"{"type": "object", "properties": {"name": {"type": "st
         let last = try require(rows.last)
         let paper = try require(b.editor.shapeContext.frame(of: id))
         expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: block.minY, width: block.width, height: TypesStyle.rowsLead - 1)), by: 6), 0, "no hairline zoomed out")
-        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: last.rect.maxY + 2, width: block.width, height: paper.maxY - last.rect.maxY - 4)), by: 6), 0,
+        // Clear of the paper's edge, a hairline a view point wide.
+        expectEqual(ink(drawn, in: view(CGRect(x: block.minX, y: last.rect.maxY + 2, width: block.width, height: paper.maxY - last.rect.maxY - 2 - 2 / zoom)), by: 6), 0,
                     "nothing under the last row")
         expect(ink(drawn, in: view(CGRect(x: paper.minX, y: paper.minY, width: paper.width, height: block.minY - paper.minY)), by: 6) > 0, "the words' bars, above the rows")
         // A fold is three dots from the left edge.

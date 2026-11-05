@@ -13053,7 +13053,8 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   one) and makes each shape that may take it one of it, in the one step, "New Type".
 - **A type's note is white paper**: StickyNotes draws a note that holds a schema in white (the
   dark appearance: 0.92), not its yellow, in full and zoomed out (the skeleton resolves the dynamic
-  color once for the appearance drawn), and gives its cover's ink the paper to read on
+  color once for the appearance drawn, and in the light rings it with a hairline just inside its
+  edge, standing for the shadow that parts its white from a frame's), and gives its cover's ink the paper to read on
   (`titlePillLook` with `coverSurface`); the plain note stays yellow in both appearances. It is
   yellow again once the schema goes.
 - **A type's color and pill**: a type's color (`TypeColors`) is the color its note holds (Colors'

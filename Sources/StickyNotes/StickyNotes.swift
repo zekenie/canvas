@@ -238,20 +238,22 @@ enum NoteStyle {
     static let typePaper = NSColor(name: nil) { $0.isDark ? typePaperDark : .white }
     static let typePaperDark = NSColor(white: 0.92, alpha: 1)
 
-    /// The paper as the appearance being drawn resolves it, for a skeleton, which draws thousands a
-    /// frame: a dynamic color costs half a microsecond to resolve, so it's resolved once for the
-    /// appearance last drawn in (a frame in the other appearance resolves it again, and so does one
-    /// whose appearance is another object).
-    static var typePaperCG: CGColor {
+    /// The paper and its skeleton's edge (`typeSkeletonEdge`, nil where it's clear) as the appearance
+    /// being drawn resolves them, for a skeleton, which draws thousands a frame: a dynamic color costs
+    /// half a microsecond to resolve, so they're resolved once for the appearance last drawn in (a
+    /// frame in the other appearance resolves them again, and so does one whose appearance is
+    /// another object).
+    static var typeSkeleton: (paper: CGColor, edge: CGColor?) {
         let appearance = NSAppearance.currentDrawing()
         if appearance !== resolvedAppearance {
-            resolvedPaper = typePaper.cgColor
+            let edge = typeSkeletonEdge.cgColor
+            resolvedSkeleton = (typePaper.cgColor, edge.alpha > 0 ? edge : nil)
             resolvedAppearance = appearance
         }
-        return resolvedPaper
+        return resolvedSkeleton
     }
     private static var resolvedAppearance: NSAppearance?
-    private static var resolvedPaper = CGColor(gray: 1, alpha: 1)
+    private static var resolvedSkeleton: (paper: CGColor, edge: CGColor?) = (CGColor(gray: 1, alpha: 1), nil)
     /// Every line of a note's text is this tall, in the render and the editor alike. It's string
     /// drawing's own pitch for the font, so the render is as it was; TextKit 2, which lays out the
     /// editor, would set lines a point closer, so the text moved when editing started.

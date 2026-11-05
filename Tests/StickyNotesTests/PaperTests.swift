@@ -12,8 +12,8 @@ import Titles
 import Types
 
 // A type's note is white paper in the light appearance and a light paper (0.92) in the dark, in full
-// and zoomed out; a plain note is its yellow in both, as it was; the text's ink is the note's on
-// both; and a titled type's cover reads on the paper.
+// and zoomed out, where in the light it has an edge of its own; a plain note is its yellow in both, as
+// it was; the text's ink is the note's on both; and a titled type's cover reads on the paper.
 
 private let paperFrame = CGRect(x: 50, y: 50, width: 200, height: 200)
 private let paperCanvas = CGSize(width: 300, height: 300)
@@ -106,6 +106,19 @@ private let yellow = [255, 222, 115]
         expectPaper(pixel(render(type, dark: true), at: spot), [235, 235, 235], "dark")
         expectPaper(pixel(render(plain, dark: false), at: spot), yellow, "plain, light")
         expectPaper(pixel(render(plain, dark: true), at: spot), yellow, "plain, dark")
+    },
+    test("zoomed out, a type's note has an edge in the light appearance, a view point wide at any zoom; none in the dark, nor on a plain note") {
+        for zoom in [0.3, 0.1] {
+            let (type, _) = try paperEditor(isType: true, zoom: zoom), (plain, _) = try paperEditor(isType: false, zoom: zoom)
+            // The note's left edge on screen, its first pixel and the one after it.
+            let left = (paperFrame.minX * zoom).rounded(.down), y = paperFrame.midY * zoom
+            let edge = CGPoint(x: left, y: y), inside = CGPoint(x: left + 1, y: y)
+            let light = render(type, dark: false)
+            expect(pixel(light, at: edge).prefix(3).allSatisfy { $0 <= 225 }, "an edge at \(zoom): \(pixel(light, at: edge))")
+            expectPaper(pixel(light, at: inside), [255, 255, 255], "the paper a pixel in, at \(zoom)")
+            expectPaper(pixel(render(type, dark: true), at: edge), [235, 235, 235], "no edge in the dark, at \(zoom)")
+            expectPaper(pixel(render(plain, dark: false), at: edge), yellow, "none on a plain note, at \(zoom)")
+        }
     },
     test("Remove Type makes it yellow again, and undo white") {
         let (editor, id) = try paperEditor(isType: true)

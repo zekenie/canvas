@@ -402,6 +402,24 @@ private func middle(_ rect: CGRect) -> CGPoint { CGPoint(x: rect.midX, y: rect.m
             }
         }
     },
+    test("zoomed out to 30%, a type's note in a frame keeps an edge: its white paper on the frame's white, and on a colored frame's") {
+        let h = frameBoard()
+        let frame = h.frame()
+        let type = h.editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 150, y: 150, width: 200, height: 200))
+        h.editor.put([type], in: frame)
+        h.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        let size = CGSize(width: 300, height: 240)
+        // The note is 45 to 105 on screen: its left edge's pixel, the frame's surface just outside it, and its paper inside.
+        let edge = CGPoint(x: 45, y: 75), outside = CGPoint(x: 42, y: 75), paper = CGPoint(x: 90, y: 95)
+        for color in [nil, ShapeColor.teal] {
+            h.editor.setColor(color, of: [frame])
+            let drawn = renderBitmap(h.editor, size: size)
+            let surface = pixel(drawn, at: outside), rim = pixel(drawn, at: edge), sheet = pixel(drawn, at: paper)
+            expectEqual(Array(sheet.prefix(3)), [255, 255, 255], "the paper is white, color \(String(describing: color))")
+            expect(zip(surface.prefix(3), sheet.prefix(3)).allSatisfy { abs($0 - $1) <= 16 }, "the frame's surface is about the paper's white: \(surface)")
+            expect(rim.prefix(3).allSatisfy { $0 <= 230 }, "an edge between them: \(rim), on \(surface), color \(String(describing: color))")
+        }
+    },
     test("two notes and the bent arrow between them, selected: Create Frame, first in their menu, puts a frame around all three that holds the notes, the arrow bound to them as it was, and takes in a note it mostly covers; one step, and Undo takes it all back") {
         let h = frameBoard()
         let milk = h.note(at: CGPoint(x: 100, y: 100), "Milk"), eggs = h.note(at: CGPoint(x: 500, y: 100), "Eggs")
