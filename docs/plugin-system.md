@@ -13056,11 +13056,14 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   never sent it (`HeldDirectives.stripped`), and a color change alone asks it nothing. It is the
   type's own: a type built on it keeps its own color, and no note of the type holds anything for it.
 - **A type's color on its notes**: a shape of a type that holds no color of its own (a note's paper,
-  a relationship type's arrow) is drawn in the color its type's note holds, never the one its id
-  says (`TypeColorsPlugin`, a plugin value of its own, through Colors' `InheritedColors`:
-  [Colors](#colors)); with several types, or a type built on another, the first its chain holds, in
-  the order its fields resolve (`TypeIndex.color(inheritedBy:)`). Nothing is written to the notes: a
-  type recolored, deleted or taken off a note recolors them with no step of their own.
+  a relationship type's arrow) is drawn in its type's color, the one its type's pill shows: the
+  color its type's note holds, else the one its id says (`TypeColorsPlugin`, a plugin value of its
+  own, through Colors' `InheritedColors`: [Colors](#colors)); with several types, or a type built on
+  another, the first color its chain holds, in the order its fields resolve, else the one its first
+  type's id says (`TypeIndex.color(inheritedBy:)`). A type that holds none is given the one its id
+  says, so its symbol in a list and the panel's row show its pill's color; its note stays white.
+  Nothing is written to the notes: a type recolored, deleted or taken off a note recolors them with
+  no step of their own.
 - **A type's pill**: a type's note shows a
   pill, Titles' own (`registrar.forShapes(holding: TypeSchemaProperty.self) { $0.titlePillLook { … } }`): its
   title after `curlybraces` (`arrow.right` for a relationship type), solid in the type's color; untitled, a dimmed gray `Untitled`.
@@ -13546,7 +13549,8 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
 - **A color given.** A shape with no color of its own takes the one another plugin gives it, before
   its kind's default: `InheritedColors`, a face on the kinds a scope reaches, answered from what a
   service keeps, since it's asked whenever such a shape is drawn or listed. Types gives the shapes of
-  a type the color its type's shape holds:
+  a type their type's color, the one its pill shows (the color its type's shape holds, else the one
+  its id says), and a type that holds none the one its id says:
 
   ```swift
   registrar.forShapes(holding: IsAProperty.self) { typeable in
@@ -13555,7 +13559,7 @@ func render(_ shape: ShapeRecord<StickyNote>, in context: RenderContext) {
   ```
 
   The first answer the file has wins, in plugin order; nothing is written to the shape. When what a
-  plugin gives changes with no commit naming the shapes (a type given another color), it calls
+  plugin gives changes with no commit naming the shapes (a type given another color, or deleted), it calls
   `editor.colors?.inheritedColorsDidChange()`, and the canvas, the lists' tints and the panel's row
   follow.
 - **`editor.colors`** (`ColorBook`) is what another plugin asks: `names` (the built-in ones, then
@@ -13587,11 +13591,11 @@ its own, else yellow; a type's note stays white), a frame's surface and border a
 `solid` (none without one), a subboard's card and border likewise (indigo without one), an arrow's
 line is `solid` and its label `ink` (its relationship type's color without one of its own), and a
 type's color is the color its note holds, written in its schema as `$color`, else one of eight names
-by its id. Only a color a type's note holds passes to the shapes of it (the first its chain holds, a
-later type first and a type before what it builds on, as fields resolve); the one its id says is its
-pill's and chips' alone. A listed shape's symbol (Find, Jump To, a mention's pill, the table of
-contents, the Connections tab) is in its own color where it has one, else the one it's given,
-through the core's `registrar.shapeTints`.
+by its id. It is the color of the shapes of it that hold none (the first color its chain holds, a
+later type first and a type before what it builds on, through types alone, as fields resolve, else
+the one its first type's id says), and of the type itself where its note holds none. A listed
+shape's symbol (Find, Jump To, a mention's pill, the table of contents, the Connections tab) is in
+its own color where it has one, else the one it's given, through the core's `registrar.shapeTints`.
 
 ## Language models
 

@@ -8,12 +8,12 @@ extension PluginID {
     public static let typeColors: PluginID = "type-colors"
 }
 
-/// Types' color for Colors: a shape of a type that holds no color of its own is drawn in the color its
-/// type was given (`TypeIndex.color(inheritedBy:)`, through Colors' `InheritedColors`), wherever its
-/// color shows: a note's paper, a relationship's line, its symbol in a list, the panel's row. Only a
-/// color a type's shape holds is given: a type whose shape holds none gives none (the one its id says
-/// is its pill's and its chips', never its notes'), and a type keeps its own. A plugin value of its
-/// own, after Colors and Types, so a list without Colors leaves it out.
+/// Types' color for Colors: a shape of a type that holds no color of its own is drawn in its type's color
+/// (`TypeIndex.color(inheritedBy:)`, through Colors' `InheritedColors`), the one its type's pill shows,
+/// wherever its color shows: a note's paper, a relationship's line, its symbol in a list, the panel's row.
+/// A color set on a type comes first, the nearest up its chain; with none set, the one its type's id says.
+/// A type that holds none is given the one its id says, as its pill is, and takes nothing from the types
+/// it is built on. A plugin value of its own, after Colors and Types, so a list without Colors leaves it out.
 public struct TypeColorsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .typeColors }
@@ -29,8 +29,8 @@ public struct TypeColorsPlugin: ListedPlugin {
 /// one of eight built-in names worked out from its id, so two types can share one. The same
 /// everywhere the type shows (`TypeLook`): its pill is solid in it, the chips of the shapes that
 /// are it are light in it, a row of `/is-a`'s list is a capsule in it. Without `ColorsPlugin`
-/// a type's color is always the one its id says. The color its shape holds is its notes' too, where
-/// they hold none of their own (`TypeColorsPlugin`).
+/// a type's color is always the one its id says. It is its notes' too, where they hold none of their own
+/// (`TypeColorsPlugin`).
 @MainActor
 public enum TypeColors {
     /// The eight a type's id chooses among, in the order of the index: never gray, which reads as no

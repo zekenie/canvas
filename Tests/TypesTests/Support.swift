@@ -173,8 +173,9 @@ struct MemosPlugin: CanvasPlugin {
 extension CanvasEditor {
     /// Adds a type: a memo with `schema`.
     @discardableResult
-    func addType(_ schema: String, words: String = "", title: String? = nil, at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240) -> ShapeID {
-        let record = typeRecord(schema, words: words, title: title, at: origin, width: width)
+    func addType(_ schema: String, words: String = "", title: String? = nil, at origin: CGPoint = CGPoint(x: 40, y: 40), width: CGFloat = 240,
+                 id: ShapeID = ShapeID()) -> ShapeID {
+        let record = typeRecord(schema, words: words, title: title, at: origin, width: width, id: id)
         transact { $0.insert(record) }
         return record.id
     }

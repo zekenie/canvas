@@ -86,6 +86,9 @@ private func colorBoard(_ stage: GalleryStage) {
 
 private let boardSize = CGSize(width: 910, height: 570)
 
+/// A type's id, fixed, so the color it says is the same every run: Employee's indigo, Company's purple.
+private func typeID(_ uuid: String) -> ShapeID { ShapeID(UUID(uuidString: uuid)!) }
+
 /// A type given blue and the notes of it, one in its blue and one red of its own; a type built on it, holding no
 /// color, and a note of that one; a type that holds no color, and a note of it.
 @MainActor
@@ -95,10 +98,10 @@ private func typeNotes(_ stage: GalleryStage) {
                                     frame: CGRect(x: 40, y: 40, width: 320, height: 160))
     editor.setColor(.blue, of: [person])
     let employee = editor.addTypeNote(colorSchema, text: MentionText(plain: "Someone who works here"), title: "Employee",
-                                      frame: CGRect(x: 720, y: 40, width: 320, height: 160))
+                                      frame: CGRect(x: 720, y: 40, width: 320, height: 160), id: typeID("00000001-0000-0000-0000-000000000000"))
     editor.addTypeLink(person, to: employee)
     let company = editor.addTypeNote(colorSchema, text: MentionText(plain: "A company: its name"), title: "Company",
-                                     frame: CGRect(x: 1060, y: 40, width: 320, height: 160))
+                                     frame: CGRect(x: 1060, y: 40, width: 320, height: 160), id: typeID("E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))
     for (name, x, type, color) in [("Ann Lee", 40, person, nil), ("Bo Park", 380, person, ShapeColor.red), ("Cy Ng", 720, employee, nil),
                                    ("Acme", 1060, company, nil)] as [(String, CGFloat, ShapeID, ShapeColor?)] {
         let note = stage.coloredNote(name, CGRect(x: x, y: 330, width: 320, height: 160), color)
@@ -163,7 +166,7 @@ private let typeNotesSize = CGSize(width: 1420, height: 560)
         stage.window.settle()
         return .image(try stage.pictureWithList(of: view))
     },
-    GalleryState("colors-type-notes", "a type given blue and its notes: Ann blue, as her type is; Bo red, his own; Cy, an Employee, blue from Person, which Employee is built on, Employee's pill in its id's color; Acme, a Company, which holds no color, yellow", size: typeNotesSize) { stage in
+    GalleryState("colors-type-notes", "a type given blue and its notes: Ann blue, as her type is; Bo red, his own; Cy, an Employee, blue from Person, which Employee is built on, Employee's pill in its id's color; Acme, a Company, which holds no color, in the color Company's id says, as its pill is", size: typeNotesSize) { stage in
         typeNotes(stage)
         return .image(stage.render(at: .zero))
     },

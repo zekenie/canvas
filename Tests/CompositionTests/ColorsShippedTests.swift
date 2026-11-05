@@ -182,7 +182,7 @@ import Types
         let note = kinds.arrayValue?.first { $0["kind"]?.stringValue == "sticky-note" }
         expectEqual(note?["attributes"]?["color"], "text (a color's name or #RRGGBB)")
     },
-    test("a note of a type is drawn in the color its type was given, its own color winning, and an arrow of a relationship type in its; a type with none set leaves its notes yellow") {
+    test("a note of a type is drawn in its type's color, its own color winning, and an arrow of a relationship type in its; a type with none set gives them the one its id says, as its pill") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -210,7 +210,9 @@ import Types
         expectEqual(book.color(of: try shape("Ann")), .blue)
         expectEqual(try shape("Ann").ownColor, nil, "nothing is written to the note")
         expectEqual(book.color(of: try shape("Bo")), .red, "its own wins")
-        expectEqual(book.color(of: try shape("Acme")), .yellow, "Company holds no color: a note's yellow")
+        let company = try shape("Company").id, types = try require(editor.types)
+        expectEqual(book.color(of: try shape("Acme")), TypeColors.name(of: company), "Company holds no color: the one its id says, as its pill")
+        expectEqual(book.color(of: try shape("Company")), TypeColors.name(of: company), "and Company's own")
         let job = try require(editor.document.shapes.first { $0.kind == Arrow.kind && $0[IsAProperty.self]?.isEmpty == false })
         expectEqual(book.color(of: job), .green, "a relationship's arrow is its relationship type's")
         // The paper, where the note leaves it bare, under its words and anything over it.
@@ -227,8 +229,22 @@ import Types
         }
         try expectPaper("Ann", BuiltInColors.blue.swatch.paper.light)
         try expectPaper("Bo", BuiltInColors.red.swatch.paper.light)
-        try expectPaper("Acme", BuiltInColors.notePaper)
+        try expectPaper("Acme", types.look(of: company).swatch.paper.light)
         try expectPaper("Person", RGB(white: 1))
+        try expectPaper("Company", RGB(white: 1))
+        // Company's id is the script's, so the color it says may be a note's yellow: a type whose id says purple,
+        // and a note of it, hold the paper to the id's color whatever ids the script drew.
+        let guild = editor.addTypeNote(#"{"type": "object"}"#, text: "A guild", title: "Guild", frame: CGRect(x: 3000, y: 3000, width: 200, height: 160),
+                                       id: ShapeID(try require(UUID(uuidString: "E621E1F8-C36C-495A-93FC-0C247A3E6E5F"))))
+        expectEqual(TypeColors.name(of: guild), .purple)
+        var member = ShapeRecord(StickyNote(frame: CGRect(x: 3000, y: 3300, width: 200, height: 200), text: "Ida"))
+        member[TitleProperty.self] = "Member"
+        let added = AnyShapeRecord(member)
+        editor.transact { $0.insert(added) }
+        editor.addTypeLink(guild, to: added.id)
+        expectEqual(book.color(of: try shape("Member")), .purple)
+        try expectPaper("Member", BuiltInColors.purple.swatch.paper.light)
+        try expectPaper("Guild", RGB(white: 1))
         // Zoomed out, the note's skeleton is the same paper.
         let ann = try require(editor.shapeContext.frame(of: try shape("Ann").id))
         editor.camera = Camera(origin: CGPoint(x: ann.minX - 20, y: ann.minY - 20), zoom: 0.3)
@@ -237,5 +253,9 @@ import Types
         let blue = BuiltInColors.blue.swatch.paper.light
         let wanted = [blue.red, blue.green, blue.blue].map { Int(($0 * 255).rounded()) }
         expect(zip(small.prefix(3), wanted).allSatisfy { abs($0 - $1) <= 2 }, "Ann at 30%: \(Array(small.prefix(3))) isn't \(wanted)")
+        // Its color taken away, a relationship type's arrow is the one its id says, as its pill.
+        let employment = try shape("Employment").id
+        editor.setColor(nil, of: [employment])
+        expectEqual(book.color(of: try require(editor.document[job.id])), TypeColors.name(of: employment))
     },
 ])
