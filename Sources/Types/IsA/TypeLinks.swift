@@ -250,8 +250,8 @@ extension CanvasEditor {
 /// kinds that can be types, across the file, never the shape itself, a type it is already, one that is it in turn, or a pill; an
 /// arrow is offered relationship types, any other shape plain types), and a pick runs at once: `Type` makes the
 /// shape one ("Make Type"), `Relationship Type` one that relates ("Make Relationship Type"), a type adds it to the
-/// shape's types ("Add Type"; an arrow's relationship type is replaced). On any kind that holds `is`: a note, and an
-/// arrow in its label. On several shapes it is `.together` (`SlashCommand.together`): the rows are Is a ▸'s for a selection less what
+/// shape's types ("Add Type"; an arrow's relationship type is replaced). On any kind that holds `is`: a note, an
+/// arrow in its label, a subboard in its description, a frame in the command bar alone. On several shapes it is `.together` (`SlashCommand.together`): the rows are Is a ▸'s for a selection less what
 /// every shape is already (`TypeChoices.rows(for:in:)`, a type some would take saying how many: `2 of 3`), `Type` and
 /// `Relationship Type` only while every shape can be one and none is, `New type` while they are all arrows that relate or none
 /// is, and a pick goes to the shapes that may take it, in one step.

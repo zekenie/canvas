@@ -289,9 +289,10 @@ private func groups(of pattern: String, in text: String) -> [String]? {
             let connections = try require(text.range(of: "</instances>\n\n<connections>\n"), "the connections after the instances: " + text)
             expect(text.hasSuffix("</connections>"), "and last")
             // Ann is an Employee card, and so a Person too, by title; the types with no shape of them have no line; and the
-            // titled notes of no type last, in the boards' order (the untitled ones aren't named).
+            // titled shapes of no type last, subboards and frames included, in the boards' order (the untitled ones aren't named):
+            // Payments and Checkout on the top board, Refunds on Payments' (a subboard, so titled), Refund policy on Refunds'.
             expectEqual(text[instances.upperBound..<connections.lowerBound].split(separator: "\n").map(String.init),
-                        [#"Employee card: "Ann""#, #"Person: "Ann""#, #"Of no type: "API gateway", "Auth", "Ledger", "Checkout", "Refund policy""#])
+                        [#"Employee card: "Ann""#, #"Person: "Ann""#, #"Of no type: "Payments", "API gateway", "Auth", "Ledger", "Checkout", "Refunds", "Refund policy""#])
             // The story's one arrow bound at both ends joins two notes of no type: by their kind, and no title.
             expectEqual(text[connections.upperBound...].split(separator: "\n").dropLast().map(String.init), ["sticky-note → sticky-note: 1 arrow"])
             let fields = String(text[titles.upperBound..<end.lowerBound]).split(separator: "\n").map(String.init)

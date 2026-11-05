@@ -102,12 +102,22 @@ private func turned(_ x: CGFloat, _ y: CGFloat, _ length: CGFloat) -> Tab {
         }
         expect(placed > 1000, "most are placed: \(placed)")
     },
-    test("a shape's tab reaches 9 above its edge, where nothing in the row above reaches further") {
+    test("a shape's tab reaches 9 above its edge, and the row over it 31: lifted 4 clear of the tab") {
         expectEqual(AdornmentLayout.extent(of: [text(60)], in: 200), 9)
-        expectEqual(AdornmentLayout.extent(of: [text(60), Item(.aboveTopRight, width: 18, isText: false)], in: 200), 27)
+        expectEqual(AdornmentLayout.extent(of: [text(60), Item(.aboveTopRight, width: 18, isText: false)], in: 200), 31)
         expectEqual(AdornmentLayout.extent(of: [text(60)], in: 40), 0, "no room for it: no reach")
         expectEqual(AdornmentLayout.extent(of: [text(60)], in: 200, height: 11), 0, "too short for one: no reach")
         expectEqual(AdornmentLayout.extent(of: [text(100)], in: 40, height: 400), 0, "turned down the left edge: none above")
+    },
+    test("over a tab the row is 4 above it, and its left end starts where the tab does: a frame's type chips sit over its title") {
+        let chip = Item(.aboveTopLeft, width: 40, isText: false), lock = Item(.aboveTopRight, width: 18, isText: false)
+        let frames = AdornmentLayout.frames(of: [text(60), chip, lock], width: 200)
+        expectEqual(frames[1], CGRect(x: 10, y: -31, width: 40, height: 18), "from the tab's inset, its bottom 4 above the tab's top (9 above the edge)")
+        expectEqual(frames[2], CGRect(x: 182, y: -31, width: 18, height: 18), "the whole row lifted, its right end too")
+        expectEqual(AdornmentLayout.frames(of: [chip, lock], width: 200), [CGRect(x: 0, y: -27, width: 40, height: 18), CGRect(x: 182, y: -27, width: 18, height: 18)],
+                    "with no tab, the row as it was")
+        let narrow = AdornmentLayout.frames(of: [text(60), Item(.aboveTopLeft, width: 60, isText: true)], width: 45)
+        expectEqual(narrow[1], CGRect(x: 10, y: -31, width: 35, height: 18), "text at the left end gives way in the room after the inset")
     },
     test("a point is on a tab as its rounded rect is drawn: its corners are a tab's, not a capsule's") {
         let frame = CGRect(x: 0, y: 0, width: 100, height: 18)

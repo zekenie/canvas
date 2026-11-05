@@ -25,7 +25,7 @@ import Types
 
 // Colors as shipped: which kinds have one, `/color` typed in a note's editor in the app's canvas
 // view, Color ▸ in a shape's menu, a color drawn and queried through `canvas` over a socket of
-// its own, and a type's color on the notes and arrows of it.
+// its own, and a type's color on the notes, arrows, subboards and frames of it.
 
 @MainActor let colorsShippedTests = Suite("Colors, as shipped", [
     test("a note, a subboard, a frame and an arrow have a color, a reference has none; a note is yellow and a subboard indigo without one") {

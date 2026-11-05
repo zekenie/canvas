@@ -10,7 +10,8 @@ extension PluginID {
 
 /// Types' color for Colors: a shape of a type that holds no color of its own is drawn in its type's color
 /// (`TypeIndex.color(inheritedBy:)`, through Colors' `InheritedColors`), the one its type's pill shows,
-/// wherever its color shows: a note's paper, a relationship's line, its symbol in a list, the panel's row.
+/// wherever its color shows: a note's paper, a relationship's line, a typed subboard's card (in place of its
+/// indigo) or a typed frame's border and surface, its symbol in a list, the panel's row.
 /// A color set on a type comes first, the nearest up its chain; with none set, the one its type's id says.
 /// A type that holds none is given the one its id says, as its pill is, and takes nothing from the types
 /// it is built on. A plugin value of its own, after Colors and Types, so a list without Colors leaves it out.
@@ -29,8 +30,8 @@ public struct TypeColorsPlugin: ListedPlugin {
 /// one of eight built-in names worked out from its id, so two types can share one. The same
 /// everywhere the type shows (`TypeLook`): its pill is solid in it, the chips of the shapes that
 /// are it are light in it, a row of `/is-a`'s list is a capsule in it. Without `ColorsPlugin`
-/// a type's color is always the one its id says. It is its notes' too, where they hold none of their own
-/// (`TypeColorsPlugin`).
+/// a type's color is always the one its id says. It is its shapes' too (notes, arrows, subboards, frames), where
+/// they hold none of their own (`TypeColorsPlugin`).
 @MainActor
 public enum TypeColors {
     /// The eight a type's id chooses among, in the order of the index: never gray, which reads as no

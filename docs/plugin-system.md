@@ -4363,8 +4363,8 @@ registrar.forShapes(holding: FieldValuesProperty.self) { notes in
 Types fills it (`IssueRowValuesPlugin`, a plugin value of its own listed right after `TypeDetailsPlugin`, so a
 list without Validation leaves it out) for the shapes that hold `fieldValues`: a note of a type gives the first
 text Find would find on it (`RowBook.findTexts(of:)`: its first field that holds a value, as its row shows it), an
-arrow of a relationship type the first of its values (`findTexts(ofRelationship:)`, so a Vote arrow's row reads
-"Nay"), and a shape with none gives none, so its row is its name alone (a text that is the shape's own title, as with a
+shape whose kind draws no rows (an arrow of a relationship type, a frame, a subboard) the first of its values in its
+fields' order (`findTexts(byFields:)`, so a Vote arrow's row reads "Nay"), and a shape with none gives none, so its row is its name alone (a text that is the shape's own title, as with a
 `$title` taken from the first field, is skipped for the next field's). The list draws the value with
 `DetailShapeRow(detailTruncation: .tail)`, keeping its start; the default `.head` is for paths. LanguageRules adds nothing to the list: a
 rule's walk is the same list with the rule's flagged shapes in it, and the evidence under it is the same Issues tab
@@ -5716,7 +5716,9 @@ go by):
   where they start (what would is left out, with what comes after it), and the row's left end stays
   within the shape's width, so every adornment is within x `min(0, width − 200)` … `width + 6` and
   y −27 … 8 of the shape's top-left corner (its anchor's, for an open shape), which culling and hit
-  testing go by.
+  testing go by. On a shape with a tab on its top edge (a frame's title) the row is lifted 4 points
+  (`tabRowLift`) to clear the tab and its left end starts where the tab does (`tabInset`), so a
+  frame's type chips sit over its title's tab, and the header says y −31 … 8.
 
 Not guaranteed: two shapes' adornments may overlap, and stack as their shapes do; an adornment and
 another shape may overlap too, and the adornment is drawn over it (and takes presses there). On a
@@ -8935,8 +8937,8 @@ registrar.edges(in: BlockedByProperty.self, as: BlockedByEdge.self)
   (what a task is blocked by): every shape a value of `P` names is an edge of type `T` from the
   shape that holds it, in the slot `P`'s key names, on every kind that opts into `P`
   (`forShapes(holding: P.self)`, inside). It doesn't declare `T`: `edgeType` does. Types uses it for `is`: `registrar.edgeType(IsAEdge.self)` and
-  `registrar.edges(in: IsAProperty.self, as: IsAEdge.self)`, so every note and arrow that is a type's
-  instance has an `is-a` edge to it, in the slot `is`.
+  `registrar.edges(in: IsAProperty.self, as: IsAEdge.self)`, so every shape that is a type's
+  instance (a note, an arrow, a subboard, a frame) has an `is-a` edge to it, in the slot `is`.
 - **`registry.edges(of: record)`** is what one record carries, as its kind's sources say, pure: for
   code that holds a record the index doesn't (a transaction's), and for tests.
 
@@ -10329,6 +10331,8 @@ registrar.shape(SubboardDefinition()) { sub in                     // SubboardDe
     sub.title(symbolInPill: true)                                   // Titles keeps its name, in a pill after the symbol
     sub.opensBoard(placeholder: "Untitled Subboard", systemImage: "rectangle.stack")
     sub.mentionable(following: .opens)                              // Mentions: by its title; followed, it's entered
+    sub.typeWords(\.description, drawnIn: { _ in nil })             // Types: its description is its words, drawn nowhere
+    sub.typeable()                                                  // it can be of types: chips on the card, its values in the panel
     sub.contentsRow { _ in                                          // in the card's indigo, as its mentions are
         ContentsLabel("", placeholder: "Untitled Subboard", systemImage: "rectangle.stack", color: Color(nsColor: SubboardStyle.border))
     }
@@ -10369,6 +10373,7 @@ as SwiftUI sugar is, and the channel and the ports in `SubboardLinks.swift`.)
   them, a mention of what can't be mentioned is warned of, a copy that takes a target along renames
   its mention, queries read it (`:mentions`, `[description*="…"]`), and `canvas draw` writes it
   (`subboard "Payments" description: "Owned by @[Billing]"`).
+- **It can be of types**, never one (`sub.typeWords(\.description, drawnIn: { _ in nil })`, `sub.typeable()`; Subboards depends on Types, and a list with `SubboardsPlugin` installs `TypesPlugin`): it holds `is`, `fieldValues` and `autofill`, its description being the words its fields are filled from as a note's text is. Its type chips follow its title's pill, its values are in the Types tab of its panel (after Description, before Connections and Style) and no rows are drawn on the card; a type's color replaces its indigo while it holds none of its own. `/is-a` is on an empty line of its Description box, Is a ▸ in its menu, and `canvas draw` writes `is:` and `fieldValues:`.
 - **B places one** where the canvas is pressed, following the pointer until release, as every box
   tool does: one undo step, "Add Subboard".
 - **The card** (`SubboardDefinition.render`, `SubboardStyle`, world units) is the whole frame, and
@@ -10531,6 +10536,7 @@ registrar.shape(FrameDefinition()) { frame in                     // FrameDefini
     frame.title(placeholderInPill: "Frame")                        // Titles keeps its name; untitled, a dimmed tab to grab
     frame.titleTab { shape, context in TitleTabLook(…) }           // said in a tab on its top edge, at every zoom, in its own colors
     frame.mentionable()                                            // Mentions: by its title; followed, it's gone to
+    frame.typeable(fillsFromWords: false)                          // Types: of types, chips over its tab, values in the panel; no words to fill them from
     frame.resizable(minimumSize: place.minimumSize)                // Selection's eight handles, no smaller than it's drawn
     frame.frameRow()                                               // the table of contents, named by Titles
     frame.frameHeader()                                            // renamed in the panel's header
@@ -10647,6 +10653,7 @@ deleting one, pressing its inside, its pill, the tool, Create Frame around two n
 arrow between them, a locked frame's contents, the skeleton, the file, and a note mentioning one in
 the app's canvas view; TransformShippedTests turn one into a
 subboard ([Transform](#transform)).
+- **It can be of types**, never one (`frame.typeable(fillsFromWords: false)`; Frames depends on Types, and a list with `FramesPlugin` installs `TypesPlugin`): it holds `is` and `fieldValues` and no `autofill`, having no words to fill from. Its type chips sit over its title's tab ([Adornments](#adornments)), its values are in the Types tab of its panel, which a typed frame opens on, and no rows are drawn on it; a type's color colors it while it holds none of its own, and a relationship's rules on its rows (Needed, Only one) are issues on the frame. Its ports are frame-link only, so a relationship between a note and a frame is never drawn.
 
 ## Transform
 
@@ -12965,17 +12972,17 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   brings the schema back. An agent makes a type with `canvas draw`'s `schema:` (an added
   property's attribute, as every one is): `sticky-note "Order" schema: "…"`.
 - **What a shape is**: `is`, an added property (`IsAProperty`, an ordered list of `TypeLink`s, none
-  twice, empty is none) on the kinds that call `typeable()` (it needs `typeWords` too): a note, and
+  twice, empty is none) on the kinds that call `typeable()`: a note, a subboard, a frame and
   an arrow, whose label is its words (`arrow.typeWords(\.text, drawnIn: { arrow, shapes in … })`, the
   overload whose `drawnIn` is given the `ShapeContext`, since a label is placed against the shapes
-  around it). `TypeLink` is a one-field wrapper of a `ShapeID`, a name (`ShapeNaming`) coded as the
+  around it). A subboard's description is its words (`sub.typeWords(\.description, drawnIn: { _ in nil })`, drawn nowhere), and a frame has none (`frame.typeable(fillsFromWords: false)`), so only a note can be a type while any of them is of types. `TypeLink` is a one-field wrapper of a `ShapeID`, a name (`ShapeNaming`) coded as the
   bare uuid string, so a copy of an instance copied with its type is an instance of the copy and a
   type that is deleted leaves its name behind until the delete is undone; `ShapeID` itself is not
   `ShapeNaming` (an arrow's bindings are ids). Types declares the `is-a` edge (a root) and derives it
   with [the property rule](#sources). `Fixtures/added/is.v0.json` is its fixture.
 - **What a shape holds for its types' fields**: `fieldValues`, an added property (`FieldValuesProperty`,
   a `FieldValues`: one JSON object, a member for each field with a value) that `typeable()` opts the
-  same kinds into. A value that is empty is not kept, at any depth (null, text with no characters, a
+  same kinds into (and `autofill` into those that fill from words: not a frame). A value that is empty is not kept, at any depth (null, text with no characters, a
   list or group left with nothing once its own empties go; `false`, `0` and text of spaces are
   values), and every way in prunes, so the stored object never holds one. It is written by people and
   agents and never `readOnly`: `canvas draw`'s `fieldValues: {"status": "paid"}` is joined with what the
@@ -13056,7 +13063,8 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   never sent it (`HeldDirectives.stripped`), and a color change alone asks it nothing. It is the
   type's own: a type built on it keeps its own color, and no note of the type holds anything for it.
 - **A type's color on its notes**: a shape of a type that holds no color of its own (a note's paper,
-  a relationship type's arrow) is drawn in its type's color, the one its type's pill shows: the
+  a relationship type's arrow, a typed subboard's card in place of its indigo, a typed frame's border and
+  surface) is drawn in its type's color, the one its type's pill shows: the
   color its type's note holds, else the one its id says (`TypeColorsPlugin`, a plugin value of its
   own, through Colors' `InheritedColors`: [Colors](#colors)); with several types, or a type built on
   another, the first color its chain holds, in the order its fields resolve, else the one its first
@@ -13310,8 +13318,8 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
 - **A row's first value in the issue walk's list.** Types' `IssueRowValuesPlugin` (a plugin value of its own, right
   after `TypeDetailsPlugin`; the report's `IssueRowValues → every shape holding fieldValues`) fills Validation's
   [list](#the-list-stops-by-board-under-the-band): a flagged note ends its row in the first thing it holds
-  (`RowBook.findTexts(of:)`), a flagged arrow of a relationship type in the first of its values
-  (`findTexts(ofRelationship:)`: "Nay"), a shape with no values in nothing. The same texts Find reads, from the
+  (`RowBook.findTexts(of:)`), a flagged arrow of a relationship type, frame or subboard in the first of its values
+  in its fields' order (`findTexts(byFields:)`: "Nay"), a shape with no values in nothing. The same texts Find reads, from the
   record and the types alone.
 - **For [Neighbors](#neighbors)**, `TypeLightsPlugin` (a plugin value of Types' own, after Neighbors, and after
   mentions' lights in the shipped list) gives two lights in one pink (`TypesStyle.instancesLight`), only while the
@@ -15581,8 +15589,8 @@ selection            service SelectionState · service RefusalShake · tool sele
 topology             service TopologyIndex · edge type stands-for
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · shortcut ⇧↩ → command insert:sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
-subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
-framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
+subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
+framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
 references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits

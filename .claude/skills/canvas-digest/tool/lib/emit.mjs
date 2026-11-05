@@ -6,7 +6,7 @@
 import { q, lit, byTitle, slug, pad2, fold, label } from './util.mjs';
 import { Spelling } from './names.mjs';
 import { fanTargets } from './moves.mjs';
-import { noteTyping, arrowTyping, typeRounds, isType, isInstance } from './types.mjs';
+import { noteTyping, arrowTyping, typeRounds, isType, isInstance, isTypedContainer } from './types.mjs';
 
 /** What the plan makes public by its moves: the promoted nodes, and what the fanned-out nodes' pills stand for. */
 export function madePublic(model, results) {
@@ -157,15 +157,19 @@ export function buildPlan(model, results, opts) {
     const lines = sortedOf.get(board).filter((t) => isInstance(model.node(t))).map(stmts.get(board));
     if (lines.length) addRun(board, 'notes', lines);
   }
-  // a subboard's `text` is its description, written once every shape it may mention is drawn (a mention names a shape of any board, in a run after its
-  // own), by a statement of the card with nothing else in it, which restates the card as it is
-  const subsOn = new Map();   // board -> its subboards that have a description, by key (two cards of one title are two)
-  for (const n of model.nodes.values()) if (n.kind === 'subboard' && n.text) subsOn.set(n.board, (subsOn.get(n.board) || []).concat([n.key]));
-  const described = {};       // run -> the keys of the cards it describes
+  // a subboard's `text` is its description, and a frame or a subboard may be of types: each is written once every shape it may mention is drawn (a
+  // mention names a shape of any board, in a run after its own) and every type it is has been (a type is found anywhere in the file), by a statement of
+  // the shape with nothing else in it, which restates it as it is
+  const subsOn = new Map();   // board -> its subboards that have a description and its frames and subboards of a type, by key (two shapes of one title are two)
+  for (const n of model.nodes.values()) if ((n.kind === 'subboard' && n.text) || isTypedContainer(n)) subsOn.set(n.board, (subsOn.get(n.board) || []).concat([n.key]));
+  const described = {};       // run -> the keys of the shapes it restates
   for (const board of model.boards) {
     const subs = (subsOn.get(board) || []).sort(byTitle);
     if (!subs.length) continue;
-    addRun(board, 'describe', subs.map((t) => said(`subboard ${sp.name(t, board)} description: ${lit(model.node(t).text)}`, { describe: t })));
+    addRun(board, 'describe', subs.map((t) => {
+      const n = model.node(t);
+      return said(`${n.kind} ${sp.name(t, board)}` + (n.kind === 'subboard' && n.text ? ` description: ${lit(n.text)}` : '') + (isTypedContainer(n) ? noteTyping(n) : ''), { describe: t });
+    }));
     described[runs[runs.length - 1].name] = subs;
   }
   if (Object.keys(described).length) plan.described = described;

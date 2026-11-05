@@ -5,7 +5,8 @@ import Geometry
 /// down): pure geometry, the same for drawing and for hit testing. Three places, each a run of
 /// adornments packed `spacing` apart, so on one shape none overlaps another by construction:
 ///
-/// - the row above the top edge (`rowGap` above it, `rowHeight` tall): its right end leftward from
+/// - the row above the top edge (`rowGap` above it, `rowHeight` tall; on a shape with a tab on its top
+///   edge, `tabRowLift` higher, clear of the tab, its left end from where the tab starts): its right end leftward from
 ///   the right edge, whole, then its left end rightward from the left edge, in the room left (text
 ///   gives way, ending in "…", and needs `minTextRoom`, and its `lead` more (a symbol before it, a number after it), or
 ///   it and the rest are left out), unless it isn't shown whole and a right-end item's compact face
@@ -44,7 +45,7 @@ import Geometry
 /// more). The row's right end and the corner reach no more than `maxRun` from their starts:
 /// whatever would is left out, with what comes after it. The row's left end stays within the
 /// shape's width, less what the right end holds. So everything is within x `min(0, width − 200)` …
-/// `width + 6`, y −27 … 8, which culling and hit testing go by.
+/// `width + 6`, y −31 … 8 (−27 … 8 on a shape with no tab), which culling and hit testing go by.
 public enum AdornmentLayout {
     // View points.
     /// The row's height: a title's pill's, a lock's disc.
@@ -53,6 +54,13 @@ public enum AdornmentLayout {
     public static let cornerHeight: CGFloat = 16
     /// Between the row and the top edge: clear of the corner, which reaches half its height above it.
     public static let rowGap: CGFloat = cornerHeight / 2 + 1
+    /// How much higher the row sits on a shape with a tab on its top edge (a frame's title), which reaches half its
+    /// height above the edge, as high as `rowGap`: the row clears the tab by `spacing`, as two adornments in a run are
+    /// apart, and its left end starts where the tab does (`tabInset`), so a frame's type chips sit over its
+    /// title's tab as a note's sit after its pill.
+    public static let tabRowLift: CGFloat = spacing
+    /// The farthest the row reaches above the top edge, a tab's lift included: what culling goes by.
+    public static let rowReach: CGFloat = rowGap + rowHeight + tabRowLift
     /// How far the corner reaches past the right edge.
     public static let cornerOverhang: CGFloat = 6
     /// Between adornments in a run.
@@ -234,7 +242,7 @@ public enum AdornmentLayout {
 
     /// How far above its top edge a shape `width` points wide reaches with these adornments, in view
     /// points (so in world units at 100%, where adornments keep their size): what the row above holds
-    /// reaches `rowGap + rowHeight`, a chip on the corner `cornerHeight / 2`, nothing 0. Only what is
+    /// reaches `rowGap + rowHeight` (and `tabRowLift` more over a tab), a chip on the corner `cornerHeight / 2`, nothing 0. Only what is
     /// shown counts: text left out for want of room reaches nowhere.
     /// `height` is the shape's, in view points: a shape too short for a tab, or so narrow and tall that its
     /// tab turns down its left edge, has none above it.
@@ -328,18 +336,22 @@ public enum AdornmentLayout {
     /// The row and the corner, with the compact faces where they give the left end's text the most room.
     private static func placeRow(_ items: [Item], width: CGFloat, into slots: inout [Slot?]) {
         var compactable = 0
-        for item in items where item.placement == .aboveTopRight && item.compact != nil { compactable += 1 }
-        place(items, width: width, compacting: 0, into: &slots)
+        var overTab = false
+        for item in items {
+            if item.placement == .aboveTopRight && item.compact != nil { compactable += 1 }
+            if item.placement == .onTopEdge { overTab = true }
+        }
+        place(items, width: width, compacting: 0, overTab: overTab, into: &slots)
         guard compactable > 0, !leftText(items, slots).isWhole else { return }
         // The most the text gets: every face compact. If it shows none even then, that's the layout.
-        place(items, width: width, compacting: compactable, into: &slots)
+        place(items, width: width, compacting: compactable, overTab: overTab, into: &slots)
         let most = leftText(items, slots)
         guard most.shown > 0 else { return }
         for count in 0..<compactable {
-            place(items, width: width, compacting: count, into: &slots)
+            place(items, width: width, compacting: count, overTab: overTab, into: &slots)
             if leftText(items, slots).shown == most.shown { return }
         }
-        place(items, width: width, compacting: compactable, into: &slots)
+        place(items, width: width, compacting: compactable, overTab: overTab, into: &slots)
     }
 
     /// How the row's left end's texts are shown: whether every one is at its full width, and how
@@ -363,11 +375,12 @@ public enum AdornmentLayout {
     }
 
     /// The layout itself, with the first `compacting` of the right end's compactable items (in the
-    /// order they're claimed) in their compact faces.
-    private static func place(_ items: [Item], width: CGFloat, compacting: Int, into slots: inout [Slot?]) {
+    /// order they're claimed) in their compact faces; `overTab`, the shape has a tab on its top edge.
+    private static func place(_ items: [Item], width: CGFloat, compacting: Int, overTab: Bool, into slots: inout [Slot?]) {
         slots.removeAll(keepingCapacity: true)
         slots.append(contentsOf: repeatElement(Slot?.none, count: items.count))
-        let rowY = -(rowGap + rowHeight)
+        // Over a tab on the top edge the row is lifted clear of it, and its left end starts where the tab does.
+        let rowY = -(rowGap + rowHeight + (overTab ? tabRowLift : 0))
         // The row's right end, leftward from the right edge: whole; one that would end past
         // `maxRun` is left out, with the rest.
         var right: CGFloat = 0
@@ -393,8 +406,8 @@ public enum AdornmentLayout {
             slots[i] = Slot(frame: CGRect(x: x, y: -cornerHeight / 2, width: items[i].width, height: cornerHeight), isFromRight: true)
             corner = x - spacing
         }
-        // The row's left end, rightward from the left edge, in the room the right end leaves.
-        var left: CGFloat = 0
+        // The row's left end, rightward from the left edge (from the tab's start over a tab), in the room the right end leaves.
+        var left: CGFloat = overTab ? tabInset : 0
         var folded: Int?
         for i in items.indices where items[i].placement == .aboveTopLeft {
             let item = items[i]
@@ -530,7 +543,7 @@ public enum AdornmentLayout {
         let reachUp = cornerHeight / 2
         return CGRect(x: visible.minX - reachLeft, y: visible.minY - reachUp * scale,
                width: visible.width + reachLeft + reachRight,
-               height: visible.height + (reachUp + rowGap + rowHeight) * scale)
+               height: visible.height + (reachUp + rowReach) * scale)
     }
 
     /// How far past its frame a slot's drawing can reach, in view points: a dashed line's half, a descender, a wave. A slot whose frame grown by this misses the view draws nothing in it.
@@ -544,7 +557,7 @@ public enum AdornmentLayout {
     /// nothing to make or draw.
     public static func reach(ofClosed bounds: CGRect, scale: CGFloat) -> CGRect {
         let left = min(bounds.minX, bounds.maxX - maxRun * scale), right = bounds.maxX + cornerOverhang * scale
-        let top = bounds.minY - (rowGap + rowHeight) * scale, bottom = bounds.minY + cornerHeight / 2 * scale
+        let top = bounds.minY - rowReach * scale, bottom = bounds.minY + cornerHeight / 2 * scale
         return CGRect(x: left, y: top, width: right - left, height: bottom - top)
     }
 

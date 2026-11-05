@@ -8,6 +8,7 @@ import Palette
 import Selection
 import Titles
 import Transform
+import Types
 
 extension PluginID {
     /// Not "frames", which DetailPanelTests' fixture plugin goes by: an id two modules write is
@@ -52,7 +53,8 @@ extension Frame {
 /// opts into Titles (its name, in a tab on its top edge at every zoom, dimmed "Frame" while untitled), Mentions (by its
 /// name; following a mention goes to it), Selection's resizing, the table of
 /// contents (a row Titles names), the detail panel (a header that renames it), Transform (it offers
-/// the container channel, so it can be turned into whatever takes that: a subboard, in the app) and
+/// the container channel, so it can be turned into whatever takes that: a subboard, in the app), Types
+/// (it can be of types: it has no words, so its values are set in the panel, never filled from words) and
 /// Ports (on its own channel, `FrameLink`, so an arrow joins two frames, or a frame and a subboard).
 /// Create Frame, in the context menu, puts one down around the shapes it's for, holding them.
 public struct FramesPlugin: ListedPlugin {
@@ -81,6 +83,7 @@ public struct FramesPlugin: ListedPlugin {
             frame.frameRow()                                                // the table of contents, named by Titles
             frame.frameHeader()                                             // renamed in the panel's header
             frame.turnable(through: ContainerChannel.self)                  // turned through the container channel: into a subboard, where Subboards takes it
+            frame.typeable(fillsFromWords: false)                           // of types: chips above it, its values in the panel's Types tab (no words to fill them from)
             frame.accessibility { frame, editor in                          // VoiceOver reads what it holds as its value: "3 shapes"
                 editor.document[frame.id] == nil ? nil : AccessibleTraits(value: FrameStyle.accessibleContents(editor.shapeContext.contents(of: frame.id).count))
             }

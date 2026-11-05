@@ -37,15 +37,15 @@ import Titles
         expect(h.editor.document.shapes.isEmpty)
         expect(!h.editor.canUndo, "placing and following the pointer were one step")
     },
-    test("its schema is its frame and its description, the title Titles adds and the color Colors adds, and says its shapes own boards") {
+    test("its schema is its frame and its description, the title Titles adds, the color Colors adds and the type and values Types adds, and says its shapes own boards") {
         let registry = try Registry(plugins: subboardPlugins())
         let schema = try require(registry.schema(for: Subboard.kind)).json
         expectEqual(schema["x-canvas-board"], true)
         expectEqual(schema["title"]?.stringValue, "Subboard")
-        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "description", "title", "color"])
+        expectEqual(Set(schema["properties"]?.objectValue?.keys.map { $0 } ?? []), ["frame", "description", "title", "color", "is", "fieldValues", "autofill"])
         expectEqual(schema["required"], ["frame"])
         expectEqual(schema["properties"]?["title"]?["x-canvas-owner"]?.stringValue, "titles")
-        expectEqual(Set(registry.properties(for: Subboard.kind).map(\.rawValue)), ["title", "color"])
+        expectEqual(Set(registry.properties(for: Subboard.kind).map(\.rawValue)), ["title", "color", "is", "fieldValues", "autofill"])
     },
     // What a board writes of one at its version (CompositionTests hold the shipped kinds to their
     // fixtures, Fixtures/kinds/subboard.v1.json among them).

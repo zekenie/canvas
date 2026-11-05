@@ -11,7 +11,7 @@ public struct RelationNaming {
     public var label: (ShapeID) -> String
     /// A shape's own types that are types, in list order.
     public var directTypes: (ShapeID) -> [ShapeID]
-    /// The lower-case name of the shape's kind when it holds no `is` (it can have no type); nil otherwise.
+    /// The lower-case name of the shape's kind when it holds no `is` (it can have no type); nil for a typeable kind.
     public var kindName: (ShapeID) -> String?
 
     public init(label: @escaping (ShapeID) -> String, directTypes: @escaping (ShapeID) -> [ShapeID], kindName: @escaping (ShapeID) -> String?) {

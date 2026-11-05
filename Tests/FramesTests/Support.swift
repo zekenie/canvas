@@ -16,6 +16,7 @@ import TestKit
 import Titles
 import Topology
 import Transform
+import Types
 
 /// Every plugin a frame contributes to (Selection's resizing and marquee; Titles, and through it
 /// Adornments and slash commands; Mentions, and through it the panel, the context menu and Topology;
@@ -24,7 +25,7 @@ import Transform
 /// read-only shapes (a locked frame, without Locking).
 @MainActor func framePlugins(_ refusals: RefusalLog = RefusalLog()) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), FramesPlugin(), ColorsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), PortsPlugin(), TitlesPlugin(), MentionsPlugin(), TransformPlugin(),
+     SlashCommandsPlugin(), TableOfContentsPlugin(), AdornmentsPlugin(), PortsPlugin(), TitlesPlugin(), MentionsPlugin(), TransformPlugin(), TypesPlugin(),
      FreezingPlugin(log: refusals)]
 }
 

@@ -9,6 +9,7 @@ import LanguageModels
 import Mentions
 import ShippedTesting
 import StickyNotes
+import Subboards
 import TestKit
 import Titles
 import Types
@@ -96,7 +97,7 @@ import Types
     },
     // The types a shape is, an ordered list of the types' ids (Types' added property): read back in the
     // order written, each a name of its type, as a mention is.
-    test("a shape's types read as the ids' list they were, in order, each naming its type; notes and arrows can hold them") {
+    test("a shape's types read as the ids' list they were, in order, each naming its type; notes, arrows, subboards and frames can hold them") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         expectEqual(codec.version(ofProperty: IsAProperty.key), 0)
@@ -108,14 +109,13 @@ import Types
         var named: [ShapeID] = []
         types.forEachNamedShape { named.append($0) }
         expectEqual(named, [groceries, review], "an entry names its type")
-        for kind in [StickyNote.kind, Arrow.kind] {
+        for kind in [StickyNote.kind, Arrow.kind, Subboard.kind, Frame.kind] {
             expect(registry.properties(for: kind).contains(IsAProperty.key), "\(kind) can be an instance of a type")
         }
-        expect(!registry.properties(for: Frame.kind).contains(IsAProperty.key))
     },
     // What a shape holds for the fields of its types: a bare JSON object, nothing empty in it, on the
     // kinds that can be instances.
-    test("a shape's values read as the object they were; notes and arrows can hold them, a frame can't") {
+    test("a shape's values read as the object they were; notes, arrows, subboards and frames can hold them; a frame holds no autofill, a subboard does") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         expectEqual(codec.version(ofProperty: FieldValuesProperty.key), 0)
@@ -128,10 +128,11 @@ import Types
         expectEqual(values["lineItems"]?.arrayValue?.last?["price"], .number(0), "a 0 is a value")
         expectEqual(values["tags"], .array(["gift", "mugs"]))
         expectEqual(FieldValues.pruned(.object(values.values)), .object(values.values), "nothing in a fixture is empty")
-        for kind in [StickyNote.kind, Arrow.kind] {
+        for kind in [StickyNote.kind, Arrow.kind, Subboard.kind, Frame.kind] {
             expect(registry.properties(for: kind).contains(FieldValuesProperty.key), "\(kind) can hold the values of its types' fields")
         }
-        expect(!registry.properties(for: Frame.kind).contains(FieldValuesProperty.key))
+        expect(registry.properties(for: Subboard.kind).contains(AutofillProperty.key), "a subboard's description is its words")
+        expect(!registry.properties(for: Frame.kind).contains(AutofillProperty.key), "a frame has no words to fill from")
     },
     test("the sample board, and a board of every shipped kind, read back as they were") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())

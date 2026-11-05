@@ -135,8 +135,8 @@ public final class FieldWriter {
     }
 
     /// What the title becomes when the values go from `old` to `new` (`FieldTitling.retitle`); nil leaves it.
-    /// Only a kind that holds a title is asked (a set on another kind is dropped silently), and only a note
-    /// that is one with a `$title` that works (never a type's own note).
+    /// Only a kind that holds a title is asked (a set on another kind is dropped silently), and only a shape
+    /// of a type with a `$title` that works (never a type's own note).
     private func titling(_ record: AnyShapeRecord, old: FieldValues, new: FieldValues) -> String?? {
         guard let editor, editor.registry.properties(for: record.kind).contains(TitleProperty.key),
               let source = editor.fieldBook?.titleSource(of: record) else { return nil }

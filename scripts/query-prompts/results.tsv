@@ -3173,3 +3173,361 @@ claude-code-2	c18	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-
 claude-code-2	c19	claude-haiku-5-5	1	0	0	0	"After school" sticky-note:contains("axolotl")		7306	7541	1222
 claude-code-2	c19	claude-haiku-5-5	2	0	0	0	"After school" sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="axolotl"]))		11286	7541	2189
 claude-code-2	c19	claude-haiku-5-5	3	0	0	0	"After school" sticky-note:contains("axolotl")		7629	7541	1335
+subboards-1	s01	claude-haiku-5-5	1	1	0	1	sticky-note		1082	6812	49
+subboards-1	s01	claude-haiku-5-5	2	1	0	1	sticky-note		762	6812	34
+subboards-1	s01	claude-haiku-5-5	3	1	0	1	sticky-note		759	6812	30
+subboards-1	s02	claude-haiku-5-5	1	1	0	1	[locked]		1159	6813	39
+subboards-1	s02	claude-haiku-5-5	2	1	0	1	[locked]		1068	6813	106
+subboards-1	s02	claude-haiku-5-5	3	1	0	1	*[locked]		843	6813	48
+subboards-1	s03	claude-haiku-5-5	1	1	0	1	sticky-note[locked=false]		1211	6814	90
+subboards-1	s03	claude-haiku-5-5	2	1	0	1	sticky-note[locked=false]		976	6814	105
+subboards-1	s03	claude-haiku-5-5	3	1	0	1	sticky-note[locked=false]		843	6814	61
+subboards-1	s04	claude-haiku-5-5	1	1	0	1	sticky-note[title=""]		945	6813	36
+subboards-1	s04	claude-haiku-5-5	2	1	0	1	sticky-note[title=""]		678	6813	37
+subboards-1	s04	claude-haiku-5-5	3	1	0	1	sticky-note[title=""]		767	6813	71
+subboards-1	s05	claude-haiku-5-5	1	1	0	1	arrow[channel=""]		901	6813	81
+subboards-1	s05	claude-haiku-5-5	2	1	0	1	arrow[channel=""]		770	6813	104
+subboards-1	s05	claude-haiku-5-5	3	1	0	1	arrow[channel=""]		1742	6813	92
+subboards-1	s06	claude-haiku-5-5	1	1	0	1	arrow[channel=note-link]		968	6815	115
+subboards-1	s06	claude-haiku-5-5	2	1	0	1	arrow[channel=note-link]		1192	6815	180
+subboards-1	s06	claude-haiku-5-5	3	1	0	1	arrow[channel=note-link]		1188	6815	165
+subboards-1	s07	claude-haiku-5-5	1	1	0	1	sticky-note"Checkout"		1058	6813	148
+subboards-1	s07	claude-haiku-5-5	2	1	0	1	sticky-note"Checkout"		870	6813	87
+subboards-1	s07	claude-haiku-5-5	3	1	0	1	sticky-note"Checkout"		718	6813	75
+subboards-1	s08	claude-haiku-5-5	1	1	0	1	[title^="API"]		1074	6818	117
+subboards-1	s08	claude-haiku-5-5	2	1	0	1	[title^="API"]		1791	6818	97
+subboards-1	s08	claude-haiku-5-5	3	1	0	1	[title^="API"]		1029	6818	151
+subboards-1	s09	claude-haiku-5-5	1	1	0	1	sticky-note"Order"[schema]		2557	6813	485
+subboards-1	s09	claude-haiku-5-5	2	1	0	1	sticky-note"Order"[schema]		2482	6813	448
+subboards-1	s09	claude-haiku-5-5	3	1	0	1	"Order"[schema]		2384	6813	415
+subboards-1	s10	claude-haiku-5-5	1	1	0	1	sticky-note"Checkout"		1307	6814	208
+subboards-1	s10	claude-haiku-5-5	2	1	0	1	sticky-note"Checkout"		1761	6814	240
+subboards-1	s10	claude-haiku-5-5	3	1	0	1	sticky-note"Checkout"		1343	6814	212
+subboards-1	s11	claude-haiku-5-5	1	1	0	1	sticky-note:mentioned-by("API gateway")		669	6817	20
+subboards-1	s11	claude-haiku-5-5	2	1	0	1	sticky-note:mentioned-by("API gateway")		733	6817	20
+subboards-1	s11	claude-haiku-5-5	3	1	0	1	sticky-note:mentioned-by("API gateway") ⏎  ⏎ Wait, that is wrong: "notes that mention API gateway" means notes whose text mentions API gateway, so the query is sticky-note:mentions("API gateway"). ⏎  ⏎ sticky-note:mentions("API gateway")		803	6817	91
+subboards-1	s12	claude-haiku-5-5	1	0	1	1	sticky-note:mentions("TODO")	sticky-note:contains("TODO")	1857	13726	184
+subboards-1	s12	claude-haiku-5-5	2	0	1	1	sticky-note:mentions("TODO")	sticky-note:contains("TODO")	2329	13726	242
+subboards-1	s12	claude-haiku-5-5	3	0	1	1	sticky-note:mentions("TODO")	sticky-note:contains("TODO")	4279	13726	306
+subboards-1	s13	claude-haiku-5-5	1	1	0	1	:mentions("Checkout")		1112	6817	165
+subboards-1	s13	claude-haiku-5-5	2	1	0	1	:mentions("Checkout")		1320	6817	194
+subboards-1	s13	claude-haiku-5-5	3	1	0	1	:mentions("Checkout")		1122	6817	153
+subboards-1	s14	claude-haiku-5-5	1	1	0	1	sticky-note:dangling		823	6816	81
+subboards-1	s14	claude-haiku-5-5	2	1	0	1	sticky-note:dangling		814	6816	85
+subboards-1	s14	claude-haiku-5-5	3	1	0	1	sticky-note:dangling		1202	6816	179
+subboards-1	s15	claude-haiku-5-5	1	1	0	1	sticky-note:not(:mentions(*))		710	6816	54
+subboards-1	s15	claude-haiku-5-5	2	1	0	1	sticky-note:not(:mentions(*))		825	6816	81
+subboards-1	s15	claude-haiku-5-5	3	1	0	1	sticky-note:not(:mentions(*))		785	6816	91
+subboards-1	s16	claude-haiku-5-5	1	1	0	1	"Payments" > *		1230	6817	76
+subboards-1	s16	claude-haiku-5-5	2	1	0	1	"Payments" > *		1220	6817	125
+subboards-1	s16	claude-haiku-5-5	3	1	0	1	"Payments" > *		725	6817	55
+subboards-1	s17	claude-haiku-5-5	1	1	0	1	"Payments" *		857	6815	96
+subboards-1	s17	claude-haiku-5-5	2	1	0	1	"Payments" *		881	6815	98
+subboards-1	s17	claude-haiku-5-5	3	1	0	1	"Payments" *		912	6815	86
+subboards-1	s18	claude-haiku-5-5	1	1	0	1	"Refund policy":inside("Payments")		771	6820	69
+subboards-1	s18	claude-haiku-5-5	2	1	0	1	"Refund policy":inside("Payments")		847	6820	88
+subboards-1	s18	claude-haiku-5-5	3	1	0	1	"Refund policy":inside("Payments")		838	6820	92
+subboards-1	s19	claude-haiku-5-5	1	1	0	1	"Checkout":inside("Refunds")		1429	6820	215
+subboards-1	s19	claude-haiku-5-5	2	1	0	1	"Checkout":inside("Refunds")		1352	6820	213
+subboards-1	s19	claude-haiku-5-5	3	1	0	1	"Checkout":inside("Refunds")		1286	6820	226
+subboards-1	s20	claude-haiku-5-5	1	0	0	0	subboard > "Refund policy"		1497	6822	278
+subboards-1	s20	claude-haiku-5-5	2	0	0	0	subboard > "Refund policy"		2383	6822	419
+subboards-1	s20	claude-haiku-5-5	3	1	0	1	subboard:has(> "Refund policy")		3412	6822	604
+subboards-1	s21	claude-haiku-5-5	1	1	0	1	"Payments":has("Refund policy")		1010	6824	132
+subboards-1	s21	claude-haiku-5-5	2	1	0	1	"Payments":has("Refund policy")		1199	6824	180
+subboards-1	s21	claude-haiku-5-5	3	1	0	1	"Payments":has("Refund policy")		1160	6824	185
+subboards-1	s22	claude-haiku-5-5	1	1	0	1	sticky-note:current-board		1762	6814	279
+subboards-1	s22	claude-haiku-5-5	2	1	0	1	sticky-note:top-level		770	6814	75
+subboards-1	s22	claude-haiku-5-5	3	1	0	1	sticky-note:current-board		1780	6814	310
+subboards-1	s23	claude-haiku-5-5	1	1	0	1	:current-board		1129	6810	132
+subboards-1	s23	claude-haiku-5-5	2	1	0	1	:current-board		1025	6810	99
+subboards-1	s23	claude-haiku-5-5	3	1	0	1	:current-board		836	6810	103
+subboards-1	s24	claude-haiku-5-5	1	1	0	1	:edge-from("API gateway", arrow)		1128	6817	158
+subboards-1	s24	claude-haiku-5-5	2	1	0	1	:edge-from("API gateway", arrow)		1092	6817	156
+subboards-1	s24	claude-haiku-5-5	3	1	0	1	:edge-from("API gateway", arrow)		999	6817	156
+subboards-1	s25	claude-haiku-5-5	1	1	0	1	:edge-to("Auth", arrow)		1029	6815	155
+subboards-1	s25	claude-haiku-5-5	2	1	0	1	:edge-to("Auth", arrow)		1311	6815	196
+subboards-1	s25	claude-haiku-5-5	3	1	0	1	:edge-to("Auth", arrow)		793	6815	122
+subboards-1	s26	claude-haiku-5-5	1	1	0	1	:edge-to("Payments", arrow)		1345	6815	237
+subboards-1	s26	claude-haiku-5-5	2	1	0	1	:edge-to("Payments", arrow)		1378	6815	219
+subboards-1	s26	claude-haiku-5-5	3	1	0	1	:edge-to("Payments", arrow)		1796	6815	293
+subboards-1	s27	claude-haiku-5-5	1	1	0	1	:connected-to("Checkout")		1118	6818	161
+subboards-1	s27	claude-haiku-5-5	2	1	0	1	:connected-to("Checkout")		1046	6818	136
+subboards-1	s27	claude-haiku-5-5	3	1	0	1	:connected-to("Checkout")		1007	6818	142
+subboards-1	s28	claude-haiku-5-5	1	1	0	1	sticky-note:mentioned-by("Checkout")		1247	6819	221
+subboards-1	s28	claude-haiku-5-5	2	1	0	1	sticky-note:mentioned-by("Checkout")		1309	6819	224
+subboards-1	s28	claude-haiku-5-5	3	1	0	1	sticky-note:mentioned-by("Checkout")		1430	6819	272
+subboards-1	s29	claude-haiku-5-5	1	1	0	1	"Checkout":mentioned-by("API gateway")		923	6823	115
+subboards-1	s29	claude-haiku-5-5	2	1	0	1	"Checkout":mentioned-by("API gateway")		1071	6823	122
+subboards-1	s29	claude-haiku-5-5	3	1	0	1	"Checkout":mentioned-by("API gateway")		1085	6823	110
+subboards-1	s30	claude-haiku-5-5	1	1	0	1	arrow:starts-at("Warehouse")		1042	6819	126
+subboards-1	s30	claude-haiku-5-5	2	1	0	1	arrow:starts-at("Warehouse")		865	6819	117
+subboards-1	s30	claude-haiku-5-5	3	1	0	1	arrow:starts-at("Warehouse")		824	6819	119
+subboards-1	s31	claude-haiku-5-5	1	1	0	1	arrow:between("Auth", "API gateway")		907	6821	84
+subboards-1	s31	claude-haiku-5-5	2	1	0	1	arrow:between("Auth", "API gateway")		992	6821	83
+subboards-1	s31	claude-haiku-5-5	3	1	0	1	arrow:between("Auth", "API gateway")		871	6821	86
+subboards-1	s32	claude-haiku-5-5	1	1	0	1	:downstream-of("Checkout")		1302	6818	179
+subboards-1	s32	claude-haiku-5-5	2	1	0	1	:downstream-of("Checkout")		1348	6818	121
+subboards-1	s32	claude-haiku-5-5	3	1	0	1	:downstream-of("Checkout")		1227	6818	191
+subboards-1	s33	claude-haiku-5-5	1	1	0	1	:upstream-of("Auth")		1536	6820	227
+subboards-1	s33	claude-haiku-5-5	2	1	0	1	:upstream-of("Auth")		1765	6820	230
+subboards-1	s33	claude-haiku-5-5	3	1	0	1	:upstream-of("Auth")		1326	6820	204
+subboards-1	s34	claude-haiku-5-5	1	1	0	1	:component-of("Warehouse")		1066	6821	148
+subboards-1	s34	claude-haiku-5-5	2	1	0	1	:component-of("Warehouse")		1164	6821	160
+subboards-1	s34	claude-haiku-5-5	3	1	0	1	:component-of("Warehouse")		1046	6821	155
+subboards-1	s35	claude-haiku-5-5	1	1	0	1	sticky-note:selected		624	6812	10
+subboards-1	s35	claude-haiku-5-5	2	1	0	1	sticky-note:selected		568	6812	10
+subboards-1	s35	claude-haiku-5-5	3	1	0	1	sticky-note:selected		640	6812	10
+subboards-1	s36	claude-haiku-5-5	1	1	0	1	:invalid		1705	6814	54
+subboards-1	s36	claude-haiku-5-5	2	1	0	1	:invalid		1249	6814	65
+subboards-1	s36	claude-haiku-5-5	3	1	0	1	:invalid		1618	6814	87
+subboards-1	s37	claude-haiku-5-5	1	1	0	1	:invalid, :warned		2214	6814	413
+subboards-1	s37	claude-haiku-5-5	2	1	0	1	:invalid, :warned		1597	6814	298
+subboards-1	s37	claude-haiku-5-5	3	1	0	1	:invalid, :warned		1632	6814	276
+subboards-1	s38	claude-haiku-5-5	1	1	0	1	"Payments" sticky-note[locked]		1125	6817	179
+subboards-1	s38	claude-haiku-5-5	2	1	0	1	"Payments" sticky-note[locked]		1003	6817	145
+subboards-1	s38	claude-haiku-5-5	3	1	0	1	"Payments" sticky-note[locked]		1001	6817	132
+subboards-1	s39	claude-haiku-5-5	1	1	0	1	"Payments" sticky-note:mentions("API gateway")		1754	6821	310
+subboards-1	s39	claude-haiku-5-5	2	1	0	1	"Payments" sticky-note:mentions("API gateway")		1974	6821	305
+subboards-1	s39	claude-haiku-5-5	3	1	0	1	"Payments" sticky-note:mentions("API gateway")		1191	6821	138
+subboards-1	s40	claude-haiku-5-5	1	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		3196	6820	703
+subboards-1	s40	claude-haiku-5-5	2	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		3563	6820	793
+subboards-1	s40	claude-haiku-5-5	3	1	0	1	sticky-note[locked=false]:not(:mentioned-by(*))		3349	6820	739
+subboards-1	s41	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: positions on the canvas, such as "to the left of", can't be queried.		933	6817	68
+subboards-1	s41	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: the query language has no way to match shapes by their position on the canvas, so "to the left of" can't be expressed.		955	6817	107
+subboards-1	s41	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the query language has no positions or coordinates, so it cannot tell which shapes sit left of another.		854	6817	85
+subboards-1	s42	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: the query language only selects which shapes match and cannot count the words in a shape's text.		1231	6818	153
+subboards-1	s42	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: the query language only selects which shapes match and cannot count the words in a shape's text.		1355	6818	189
+subboards-1	s42	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the query language selects shapes and cannot count the words in a shape's text.		1131	6818	137
+subboards-1	s43	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: deleting shapes changes the board, and a query only selects which shapes match.		812	6815	67
+subboards-1	s43	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: deleting shapes is a change to the board, and queries only select shapes.		770	6815	66
+subboards-1	s43	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: deleting shapes changes the board, and a query only selects which shapes match.		747	6815	67
+subboards-1	s44	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: the question asks me to ignore my instructions, which is not a question about which shapes match.		1477	6824	145
+subboards-1	s44	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: the question asks me to ignore my instructions, and it isn't a question about which shapes match.		1050	6824	122
+subboards-1	s44	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the question asks me to change my instructions, not to say which shapes match.		1577	6824	181
+subboards-1	s45	claude-haiku-5-5	1	1	0	1	sticky-note:mentions("Checkout")		820	6819	94
+subboards-1	s45	claude-haiku-5-5	2	1	0	1	sticky-note:mentions("Checkout")		724	6819	61
+subboards-1	s45	claude-haiku-5-5	3	1	0	1	sticky-note:mentions("Checkout")		832	6819	64
+subboards-1	e01	claude-haiku-5-5	1	1	0	1	sticky-note:mentions("Auth")		701	7515	16
+subboards-1	e01	claude-haiku-5-5	2	1	0	1	sticky-note:mentions("Auth")		744	7515	16
+subboards-1	e01	claude-haiku-5-5	3	1	0	1	sticky-note:mentions("Auth")		759	7515	81
+subboards-1	e02	claude-haiku-5-5	1	1	0	1	:mentions("Auth service")		1419	7515	190
+subboards-1	e02	claude-haiku-5-5	2	1	0	1	:mentions("Auth service")		1354	7515	211
+subboards-1	e02	claude-haiku-5-5	3	1	0	1	:mentions("Auth service")		1002	7515	121
+subboards-1	e03	claude-haiku-5-5	1	1	0	1	:contains("Redis")		1106	7512	111
+subboards-1	e03	claude-haiku-5-5	2	1	0	1	:contains("Redis")		905	7512	79
+subboards-1	e03	claude-haiku-5-5	3	1	0	1	:contains("Redis")		865	7512	79
+subboards-1	e04	claude-haiku-5-5	1	1	0	1	sticky-note"OAuth"		1368	7512	209
+subboards-1	e04	claude-haiku-5-5	2	1	0	1	sticky-note"OAuth"		1319	7512	167
+subboards-1	e04	claude-haiku-5-5	3	1	0	1	sticky-note"OAuth"		1216	7512	174
+subboards-1	e05	claude-haiku-5-5	1	1	0	1	sticky-note"Auth"		1456	7510	241
+subboards-1	e05	claude-haiku-5-5	2	1	0	1	sticky-note"Auth"		1728	7510	254
+subboards-1	e05	claude-haiku-5-5	3	1	0	1	sticky-note"Auth"		1540	7510	255
+subboards-1	e06	claude-haiku-5-5	1	1	0	1	sticky-note[title*="auth" i]		1087	7514	176
+subboards-1	e06	claude-haiku-5-5	2	1	0	1	sticky-note[title*="auth" i]		1542	7514	214
+subboards-1	e06	claude-haiku-5-5	3	1	0	1	sticky-note[title*="auth" i]		1330	7514	184
+subboards-1	e07	claude-haiku-5-5	1	1	0	1	"Identity" sticky-note		997	7513	80
+subboards-1	e07	claude-haiku-5-5	2	1	0	1	"Identity" sticky-note		898	7513	102
+subboards-1	e07	claude-haiku-5-5	3	1	0	1	"Identity" sticky-note		984	7513	104
+subboards-1	e08	claude-haiku-5-5	1	1	0	1	"Password reset":inside("Identity")		1085	7517	131
+subboards-1	e08	claude-haiku-5-5	2	1	0	1	"Password reset":inside("Identity")		1436	7517	89
+subboards-1	e08	claude-haiku-5-5	3	1	0	1	"Password reset":inside("Identity")		1096	7517	66
+subboards-1	e09	claude-haiku-5-5	1	1	0	1	"Billing" > "Tax"		1333	7514	243
+subboards-1	e09	claude-haiku-5-5	2	1	0	1	"Billing" > "Tax"		1488	7514	193
+subboards-1	e09	claude-haiku-5-5	3	1	0	1	"Billing" > "Tax"		1452	7514	249
+subboards-1	e10	claude-haiku-5-5	1	1	0	1	"Billing" subboard		992	7517	134
+subboards-1	e10	claude-haiku-5-5	2	1	0	1	"Billing" subboard		851	7517	98
+subboards-1	e10	claude-haiku-5-5	3	1	0	1	"Billing" subboard		1316	7517	234
+subboards-1	e11	claude-haiku-5-5	1	1	0	1	:current-board		978	7516	113
+subboards-1	e11	claude-haiku-5-5	2	1	0	1	:current-board		1044	7516	143
+subboards-1	e11	claude-haiku-5-5	3	1	0	1	:current-board		1111	7516	152
+subboards-1	e12	claude-haiku-5-5	1	1	0	1	:edge-from("Kubernetes", arrow)		1349	7517	251
+subboards-1	e12	claude-haiku-5-5	2	1	0	1	:edge-from("Kubernetes")		1343	7517	206
+subboards-1	e12	claude-haiku-5-5	3	1	0	1	:edge-from("Kubernetes", arrow)		1826	7517	326
+subboards-1	e13	claude-haiku-5-5	1	1	0	1	sticky-note[schema]:connected-to("Customer")		3207	7513	692
+subboards-1	e13	claude-haiku-5-5	2	0	0	0	sticky-note[relationship]:connected-to("Customer", arrow)		4813	7513	1082
+subboards-1	e13	claude-haiku-5-5	3	0	0	0	sticky-note[relationship]:connected-to("Customer", arrow)		2799	7513	576
+subboards-1	e14	claude-haiku-5-5	1	1	0	1	arrow:between("Payments API", "Stripe")		1161	7520	169
+subboards-1	e14	claude-haiku-5-5	2	1	0	1	arrow:between("Payments API", "Stripe")		1169	7520	131
+subboards-1	e14	claude-haiku-5-5	3	1	0	1	arrow:between("Payments API", "Stripe")		1059	7520	145
+subboards-1	e15	claude-haiku-5-5	1	1	0	1	:downstream-of("Frontend")		1368	7516	201
+subboards-1	e15	claude-haiku-5-5	2	1	0	1	:downstream-of("Frontend")		1530	7516	248
+subboards-1	e15	claude-haiku-5-5	3	1	0	1	:downstream-of("Frontend")		1213	7516	184
+subboards-1	e16	claude-haiku-5-5	1	1	0	1	sticky-note[locked]		695	7510	59
+subboards-1	e16	claude-haiku-5-5	2	1	0	1	sticky-note[locked]		809	7510	61
+subboards-1	e16	claude-haiku-5-5	3	1	0	1	sticky-note[locked]		708	7510	60
+subboards-1	e17	claude-haiku-5-5	1	1	0	1	"Infra" arrow[channel=""]		1470	7515	220
+subboards-1	e17	claude-haiku-5-5	2	1	0	1	"Infra" arrow[channel=""]		1283	7515	176
+subboards-1	e17	claude-haiku-5-5	3	1	0	1	"Infra" arrow[channel=""]		1128	7515	195
+subboards-1	e18	claude-haiku-5-5	1	1	0	1	:warned		828	7513	63
+subboards-1	e18	claude-haiku-5-5	2	1	0	1	:warned		744	7513	5
+subboards-1	e18	claude-haiku-5-5	3	1	0	1	:warned		830	7513	5
+subboards-1	e19	claude-haiku-5-5	1	1	0	1	:edge-from(:selected, arrow)		1224	7528	147
+subboards-1	e19	claude-haiku-5-5	2	1	0	1	:edge-from(:selected, arrow)		1235	7528	178
+subboards-1	e19	claude-haiku-5-5	3	1	0	1	:edge-from(:selected, arrow)		1605	7528	203
+subboards-1	s46	claude-haiku-5-5	1	1	0	1	:is-a("Person")		1098	6815	160
+subboards-1	s46	claude-haiku-5-5	2	1	0	1	:is-a("Person")		1048	6815	120
+subboards-1	s46	claude-haiku-5-5	3	1	0	1	:is-a("Person")		1227	6815	150
+subboards-1	s47	claude-haiku-5-5	1	1	0	1	:edge-from("Ann", is-a)		1748	6814	255
+subboards-1	s47	claude-haiku-5-5	2	1	0	1	:edge-from("Ann", is-a)		2862	6814	544
+subboards-1	s47	claude-haiku-5-5	3	1	0	1	:edge-from("Ann", is-a)		2175	6814	382
+subboards-1	s48	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Employee card")		1215	6815	179
+subboards-1	s48	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Employee card")		882	6815	115
+subboards-1	s48	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Employee card")		1133	6815	160
+subboards-1	s49	claude-haiku-5-5	1	1	0	1	"Ann":is-a("Person")		1177	6816	151
+subboards-1	s49	claude-haiku-5-5	2	1	0	1	"Ann":is-a("Person")		1140	6816	150
+subboards-1	s49	claude-haiku-5-5	3	1	0	1	"Ann":is-a("Person")		1074	6816	143
+subboards-1	s50	claude-haiku-5-5	1	1	0	1	sticky-note[text*="person" i]		1235	6815	164
+subboards-1	s50	claude-haiku-5-5	2	1	0	1	sticky-note[text*="person" i]		1169	6815	146
+subboards-1	s50	claude-haiku-5-5	3	1	0	1	sticky-note:contains("person")		756	6815	13
+subboards-1	s51	claude-haiku-5-5	1	1	0	1	sticky-note[schema]		1142	6814	122
+subboards-1	s51	claude-haiku-5-5	2	1	0	1	sticky-note[schema]		862	6814	88
+subboards-1	s51	claude-haiku-5-5	3	1	0	1	sticky-note[schema]		931	6814	117
+subboards-1	f01	claude-haiku-5-5	1	1	0	1	:is-a("Order"):incomplete		1324	6888	207
+subboards-1	f01	claude-haiku-5-5	2	1	0	1	:is-a("Order"):incomplete		1138	6888	152
+subboards-1	f01	claude-haiku-5-5	3	1	0	1	:is-a("Order"):incomplete		1173	6888	142
+subboards-1	f02	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order"):invalid		1822	6891	198
+subboards-1	f02	claude-haiku-5-5	2	1	0	1	:is-a("Order"):invalid		1564	6891	171
+subboards-1	f02	claude-haiku-5-5	3	1	0	1	:is-a("Order"):invalid		1906	6891	214
+subboards-1	f03	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order")[fieldValues.lineItems.product="Mug" i]		1709	6889	256
+subboards-1	f03	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order")[fieldValues.lineItems.product="Mug"]		1789	6889	279
+subboards-1	f03	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order")[fieldValues.lineItems.product="Mug" i]		2004	6889	395
+subboards-1	f04	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order")[fieldValues.due<"2026-11-01"]		1432	6889	251
+subboards-1	f04	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order")[fieldValues.due<"2026-11-01"]		1311	6889	219
+subboards-1	f04	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order")[fieldValues.due<"2026-11-01"]		1288	6889	201
+subboards-1	f05	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2899	6890	601
+subboards-1	f05	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		3975	6890	918
+subboards-1	f05	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		3611	6890	731
+subboards-1	f06	claude-haiku-5-5	1	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Bo Park"))		1896	6889	363
+subboards-1	f06	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Bo Park"))		2604	6889	533
+subboards-1	f06	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Bo Park"))		3221	6889	676
+subboards-1	f07	claude-haiku-5-5	1	1	0	1	:is-a("Person")[fieldValues.dob<"2000-01-01"]		1394	6887	216
+subboards-1	f07	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Person")[fieldValues.dob<"2000-01-01"]		1269	6887	224
+subboards-1	f07	claude-haiku-5-5	3	1	0	1	:is-a("Person")[fieldValues.dob<"2000-01-01"]		1345	6887	199
+subboards-1	f08	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: no such field. Orders have no priority field.		870	6890	87
+subboards-1	f08	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: Order has no priority field; its fields are number, customer, status, due, total, lineItems, gift and giftNote.		1122	6890	175
+subboards-1	f08	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: no such field. Orders have no priority field.		800	6890	89
+subboards-1	f09	claude-haiku-5-5	1	1	0	1	sticky-note:mentions("Ann Lee")		792	6893	95
+subboards-1	f09	claude-haiku-5-5	2	1	0	1	sticky-note:mentions("Ann Lee")		1064	6893	134
+subboards-1	f09	claude-haiku-5-5	3	1	0	1	sticky-note:mentions("Ann Lee")		864	6893	84
+subboards-1	r01	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Friendship"):starts-at("Ann Lee")), :start-of(arrow:is-a("Friendship"):ends-at("Ann Lee"))		3903	6893	800
+subboards-1	r01	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Friendship"):starts-at("Ann Lee")), :start-of(arrow:is-a("Friendship"):ends-at("Ann Lee"))		5230	6893	1062
+subboards-1	r01	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Friendship"):starts-at("Ann Lee")), :start-of(arrow:is-a("Friendship"):ends-at("Ann Lee"))		5027	6893	1091
+subboards-1	r02	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order"):start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2877	6893	638
+subboards-1	r02	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		1921	6893	385
+subboards-1	r02	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Placed by"):ends-at("Ann Lee"))		2183	6893	457
+subboards-1	r03	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Placed by"):starts-at("Order 12"))		1331	6889	223
+subboards-1	r03	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Placed by"):starts-at("Order 12"))		1322	6889	209
+subboards-1	r03	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Placed by"):starts-at("Order 12"))		1269	6889	192
+subboards-1	r04	claude-haiku-5-5	1	1	0	1	arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]		1025	6891	128
+subboards-1	r04	claude-haiku-5-5	2	1	0	1	arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]		1068	6891	144
+subboards-1	r04	claude-haiku-5-5	3	1	0	1	arrow:is-a("Friendship")[fieldValues.since<"2020-01-01"]		933	6891	129
+subboards-1	r05	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))		3519	6889	763
+subboards-1	r05	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))		3487	6889	729
+subboards-1	r05	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))		3027	6889	586
+subboards-1	r06	claude-haiku-5-5	1	1	0	1	arrow:misfit		798	6892	86
+subboards-1	r06	claude-haiku-5-5	2	1	0	1	arrow:misfit		1017	6892	96
+subboards-1	r06	claude-haiku-5-5	3	1	0	1	arrow:misfit		809	6892	77
+subboards-1	r07	claude-haiku-5-5	1	1	0	1	sticky-note[relationship]:connected-to("Order", arrow)		1295	6891	172
+subboards-1	r07	claude-haiku-5-5	2	1	0	1	sticky-note[relationship]:connected-to("Order", arrow)		1510	6891	260
+subboards-1	r07	claude-haiku-5-5	3	1	0	1	sticky-note[relationship]:connected-to("Order", arrow)		1261	6891	164
+subboards-1	r08	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: finding the most friends means counting each person's friendship arrows and comparing the totals, and the query language can't count or compare totals.		1940	6888	253
+subboards-1	r08	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: finding who has the most friends needs counting and ranking, and the query language only says which shapes match.		1667	6888	229
+subboards-1	r08	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the query language can count nothing and compare no totals, so it can't pick the person with the most friends.		1884	6888	222
+subboards-1	r09	claude-haiku-5-5	1	1	0	1	:mentioned-by("Ann Lee")		1126	6892	141
+subboards-1	r09	claude-haiku-5-5	2	1	0	1	:mentioned-by("Ann Lee")		1245	6892	188
+subboards-1	r09	claude-haiku-5-5	3	1	0	1	:mentioned-by("Ann Lee")		1173	6892	168
+subboards-1	r10	claude-haiku-5-5	1	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		3536	6889	742
+subboards-1	r10	claude-haiku-5-5	2	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		2364	6889	491
+subboards-1	r10	claude-haiku-5-5	3	1	0	1	:end-of(arrow:starts-at(sticky-note[relationship]:connected-to("Order", arrow)))		2992	6889	575
+subboards-1	c01	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):edge-to(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))		4893	7224	1127
+subboards-1	c01	claude-haiku-5-5	2	0	0	0	sticky-note:is-a("Teacher"):edge-from(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i], arrow), arrow)		5191	7224	1199
+subboards-1	c01	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		4132	7224	952
+subboards-1	c02	claude-haiku-5-5	1	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))))		5152	7220	1182
+subboards-1	c02	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))))		5322	7220	1273
+subboards-1	c02	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))))		4440	7220	1083
+subboards-1	c03	claude-haiku-5-5	1	1	0	1	:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.color="blue" i]))		4258	7213	815
+subboards-1	c03	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.color="blue" i]))		3568	7213	705
+subboards-1	c03	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.color="blue" i]))		5974	7213	1327
+subboards-1	c04	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))		1666	7220	293
+subboards-1	c04	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))		1583	7220	297
+subboards-1	c04	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))		1572	7220	312
+subboards-1	c05	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at("Carlos"))		1723	7217	324
+subboards-1	c05	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at("Carlos"))		2271	7217	438
+subboards-1	c05	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at("Carlos"))		1953	7217	337
+subboards-1	c06	claude-haiku-5-5	1	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at("Carlos"))		1840	7215	344
+subboards-1	c06	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at("Carlos"))		2054	7215	343
+subboards-1	c06	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at("Carlos"))		2695	7215	427
+subboards-1	c07	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Student")[fieldValues.grade=3]		1561	7212	245
+subboards-1	c07	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Student")[fieldValues.grade=3]		1272	7212	192
+subboards-1	c07	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Student")[fieldValues.grade=3]		1390	7212	165
+subboards-1	c08	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher")[fieldValues.subject="science"]		1171	7210	177
+subboards-1	c08	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Teacher")[fieldValues.subject="science"]		1505	7210	227
+subboards-1	c08	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Teacher")[fieldValues.subject="science"]		1108	7210	176
+subboards-1	c09	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Student"):not(:start-of(arrow:is-a("Has pet")))		3105	7214	658
+subboards-1	c09	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Student"):not(:start-of(arrow:is-a("Has pet")))		2752	7214	546
+subboards-1	c09	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Student"):not(:start-of(arrow:is-a("Has pet")))		2812	7214	525
+subboards-1	c10	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="dog"]))))		5348	7215	1309
+subboards-1	c10	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="dog"]))))		4932	7215	1213
+subboards-1	c10	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="dog"]))))		4466	7215	1086
+subboards-1	c11	claude-haiku-5-5	1	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at(:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))))		2624	7220	515
+subboards-1	c11	claude-haiku-5-5	2	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at(:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))))		2247	7220	453
+subboards-1	c11	claude-haiku-5-5	3	1	0	1	:end-of(arrow:is-a("Has pet"):starts-at(:end-of(arrow:is-a("Teaches"):starts-at("Ms. Frizzle"))))		2671	7220	609
+subboards-1	c12	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Student"):not(:end-of(arrow:is-a("Teaches")))		3124	7214	572
+subboards-1	c12	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Student"):not(:end-of(arrow:is-a("Teaches")))		2653	7214	450
+subboards-1	c12	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Student"):not(:end-of(arrow:is-a("Teaches")))		2788	7214	571
+subboards-1	c13	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Pet")[fieldValues.species="beta fish"]		1194	7212	200
+subboards-1	c13	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Pet")[fieldValues.species="beta fish"]		1430	7212	247
+subboards-1	c13	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Pet")[fieldValues.species="beta fish"]		1316	7212	207
+subboards-1	c14	claude-haiku-5-5	1	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		4350	7219	911
+subboards-1	c14	claude-haiku-5-5	2	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		7040	7219	1515
+subboards-1	c14	claude-haiku-5-5	3	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		5158	7219	976
+subboards-1	c15	claude-haiku-5-5	1	1	0	1	:contains("coach"):connected-to(:connected-to(:contains("axolotl")))		4169	7220	811
+subboards-1	c15	claude-haiku-5-5	2	1	0	1	:contains("coach"):connected-to(:connected-to(:contains("axolotl")))		4649	7220	977
+subboards-1	c15	claude-haiku-5-5	3	1	0	1	:contains("coach"):connected-to(:connected-to(:contains("axolotl")))		4023	7220	796
+subboards-1	c16	claude-haiku-5-5	1	1	0	1	:selected:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))		4214	7290	924
+subboards-1	c16	claude-haiku-5-5	2	1	0	1	:selected:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"]))		3933	7290	810
+subboards-1	c16	claude-haiku-5-5	3	1	0	1	:selected:edge-to(:is-a("Pet")[fieldValues.species="beta fish"], arrow)		5222	7290	1111
+subboards-1	c17	claude-haiku-5-5	1	1	0	1	UNANSWERABLE: the query language has no way to count a teacher's students, so "more than 3" can't be tested.		2375	7216	367
+subboards-1	c17	claude-haiku-5-5	2	1	0	1	UNANSWERABLE: the query language can't count a teacher's student arrows, so it can't test "more than 3".		2685	7216	451
+subboards-1	c17	claude-haiku-5-5	3	1	0	1	UNANSWERABLE: the query language cannot count a teacher's students, so "more than 3" has no expression.		1901	7216	311
+subboards-1	c18	claude-haiku-5-5	1	0	0	0	sticky-note:is-a("Teacher"):edge-from(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i], arrow), arrow)		4974	7224	1048
+subboards-1	c18	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		6951	7224	1584
+subboards-1	c18	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		5417	7224	1243
+subboards-1	c19	claude-haiku-5-5	1	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		6326	7219	1267
+subboards-1	c19	claude-haiku-5-5	2	0	0	0	"After school" > sticky-note:is(:contains("axolotl"), :connected-to(:contains("axolotl")))		6470	7219	1307
+subboards-1	c19	claude-haiku-5-5	3	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		4366	7219	779
+subboards-1	s52	claude-haiku-5-5	1	1	0	1	subboard:not([is])		2549	6809	415
+subboards-1	s52	claude-haiku-5-5	2	1	0	1	subboard:not(:is-a(*))		1702	6809	309
+subboards-1	s52	claude-haiku-5-5	3	1	0	1	subboard:not(:is-a(*))		3320	6809	389
+subboards-1	s53	claude-haiku-5-5	1	1	0	1	"Payments" subboard		912	6811	83
+subboards-1	s53	claude-haiku-5-5	2	1	0	1	"Payments" subboard		989	6811	132
+subboards-1	s53	claude-haiku-5-5	3	1	0	1	"Payments" subboard		1099	6811	131
+subboards-1	s54	claude-haiku-5-5	1	0	0	0	:edge-from("Payments", is-a)		2588	6806	477
+subboards-1	s54	claude-haiku-5-5	2	1	0	1	"Payments"		3636	6806	694
+subboards-1	s54	claude-haiku-5-5	3	1	0	1	"Payments"		2009	6806	308
+subboards-1-rerun	e13	claude-haiku-5-5	1	0	0	0	sticky-note[relationship]:connected-to("Customer", arrow)		2188	7513	426
+subboards-1-rerun	e13	claude-haiku-5-5	2	1	0	1	sticky-note[schema]:connected-to("Customer", arrow)		4918	7513	976
+subboards-1-rerun	e13	claude-haiku-5-5	3	1	0	1	sticky-note[schema]:connected-to("Customer")		2775	7513	536
+subboards-1-rerun	e13	claude-haiku-5-5	4	1	0	1	sticky-note[schema]:connected-to("Customer", arrow)		5109	7513	1034
+subboards-1-rerun	e13	claude-haiku-5-5	5	1	0	1	sticky-note[schema]:connected-to("Customer")		5037	7513	1018
+subboards-1-rerun	c01	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):edge-to(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue"], arrow), arrow)		8172	7224	1894
+subboards-1-rerun	c01	claude-haiku-5-5	2	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		9960	7224	2317
+subboards-1-rerun	c01	claude-haiku-5-5	3	1	0	1	sticky-note:is-a("Teacher"):edge-to(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i], arrow), arrow)		5681	7224	1166
+subboards-1-rerun	c01	claude-haiku-5-5	4	1	0	1	sticky-note:is-a("Teacher"):edge-to(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish" i][fieldValues.color="blue" i], arrow), arrow)		5687	7224	1289
+subboards-1-rerun	c01	claude-haiku-5-5	5	1	0	1	sticky-note:is-a("Teacher"):start-of(arrow:is-a("Teaches"):ends-at(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i], arrow)))		5323	7224	1259
+subboards-1-rerun	c18	claude-haiku-5-5	1	1	0	1	sticky-note:is-a("Teacher"):edge-to(sticky-note:is-a("Student"):edge-to(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i], arrow), arrow)		6171	7224	1360
+subboards-1-rerun	c18	claude-haiku-5-5	2	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		7513	7224	1673
+subboards-1-rerun	c18	claude-haiku-5-5	3	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		7862	7224	1735
+subboards-1-rerun	c18	claude-haiku-5-5	4	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		5503	7224	1292
+subboards-1-rerun	c18	claude-haiku-5-5	5	1	0	1	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(sticky-note:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))		10052	7224	2422
+subboards-1-rerun	c19	claude-haiku-5-5	1	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		5532	7219	1088
+subboards-1-rerun	c19	claude-haiku-5-5	2	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		4346	7219	813
+subboards-1-rerun	c19	claude-haiku-5-5	3	1	0	1	"After school" > sticky-note:connected-to(:contains("axolotl"))		4296	7219	798
+subboards-1-rerun	c19	claude-haiku-5-5	4	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		4536	7219	916
+subboards-1-rerun	c19	claude-haiku-5-5	5	1	0	1	"After school" sticky-note:connected-to(:contains("axolotl"))		2884	7219	589
+subboards-1-rerun	s54	claude-haiku-5-5	1	0	0	0	:edge-from("Payments", is-a)		2463	6806	436
+subboards-1-rerun	s54	claude-haiku-5-5	2	0	0	0	:edge-from("Payments", is-a)		3004	6806	527
+subboards-1-rerun	s54	claude-haiku-5-5	3	1	0	1	"Payments"		2389	6806	411
+subboards-1-rerun	s54	claude-haiku-5-5	4	0	0	0	:edge-from("Payments", is-a)		2467	6806	393
+subboards-1-rerun	s54	claude-haiku-5-5	5	0	0	0	:edge-from("Payments", is-a)		3886	6806	727

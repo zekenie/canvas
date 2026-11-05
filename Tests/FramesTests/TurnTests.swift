@@ -63,7 +63,7 @@ private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
     test("a frame offers the container channel and knows nothing of what takes it: it turns into nothing until a kind does, and brings no Turn into item or command of its own") {
         let registry = try Registry(plugins: framePlugins())
         let framing = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("framing") })
-        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup"), "\(framing)")
+        expect(framing.hasSuffix("ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup"), "\(framing)")
         expectEqual(registry.turnTargets(of: Frame.kind), [])
 
         let h = try frameHarness()
@@ -71,7 +71,7 @@ private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
         h.addBox(CGRect(x: 120, y: 120, width: 80, height: 60), in: frame)
         expectEqual(h.editor.transforms?.targets(of: frame), [])
         expect(h.editor.transforms?.turn([frame], into: Pocket.kind) == false, "nothing to turn into")
-        expectEqual(h.editor.slashCommands?.commands(for: frame).map(\.name), ["color", "title"], "a target brings /turn-into-…, not the kind that offers")
+        expectEqual(h.editor.slashCommands?.commands(for: frame).map(\.name), ["color", "title", "is-a"], "a target brings /turn-into-…, not the kind that offers")
         expectEqual(try require(h.secondaryClick(at: CGPoint(x: 300, y: 101))).outline, ["Create Frame", "—"] + frameColorItems + ["—", "Delete"], "Create Frame is Frames' own, for any shapes")
 
         let turning = try Registry(plugins: framePlugins() + framesTurnIntoPockets())
@@ -109,7 +109,7 @@ private let frameColorItems = ["Color ▸", "  Gray", "  Red", "  Orange", "  Ye
     test("a frame's menu has the target's item once a kind takes the channel, and /turn-into-pocket is offered; either turns it") {
         let s = Sprint(try turnHarness())
         let h = s.h
-        expectEqual(h.editor.slashCommands?.commands(for: s.sprint).map(\.name), ["color", "title", "turn-into-pocket"])
+        expectEqual(h.editor.slashCommands?.commands(for: s.sprint).map(\.name), ["color", "title", "is-a", "turn-into-pocket"])
         expectEqual(h.editor.slashCommands?.commands(for: s.z).map(\.name), [], "a box offers no channel")
         let menu = try require(h.secondaryClick(at: s.edge))
         expectEqual(menu.outline, ["Turn into Pocket", "—", "Create Frame", "—"] + frameColorItems + ["—", "Delete"])

@@ -8,6 +8,7 @@ import Mentions
 import Palette
 import Titles
 import Transform
+import Types
 
 extension PluginID {
     public static let subboards: PluginID = "subboards"
@@ -56,7 +57,8 @@ extension Subboard {
 /// in a pill above the card after the kind's symbol), Mentions (by its name; following a mention
 /// enters it; its description is mention text, so it mentions shapes as a note's text does), the
 /// table of contents (a row Titles names), the detail panel (a header that renames it, and its
-/// description in a tab of its own) and ports (a link on a channel of its own, `SubboardLink`, and
+/// description in a tab of its own), Types (it can be of types, its description its words, its
+/// values in the panel) and ports (a link on a channel of its own, `SubboardLink`, and
 /// on every other: anything with ports connects to a subboard, and a subboard to anything). Going
 /// back up, and the path, are Boards'. It takes Transform's container channel: a shape that holds
 /// shapes (a frame) can be turned into a subboard, a subboard's size at its top-left corner,
@@ -80,6 +82,8 @@ public struct SubboardsPlugin: ListedPlugin {
             sub.subboardRow()                              // the table of contents, named by Titles
             sub.subboardPanel()                            // renamed in the panel's header; its description in a tab
             sub.subboardLinks()                            // and ports: arrows to and from a subboard, on its channel and every other
+            sub.typeWords(\.description, drawnIn: { _ in nil })   // its description is its words, drawn nowhere: what a type's fields fill from
+            sub.typeable()                                 // and it can be of types: chips above it, its values in the panel's Types tab
             sub.accessibility { sub, editor in             // VoiceOver reads what its board holds as its value, as its card says it: "3 shapes"
                 AccessibleTraits(value: SubboardStyle.caption(of: editor.file[BoardID(owner: sub.id)].shapes.count))
             }

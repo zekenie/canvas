@@ -107,3 +107,6 @@ c16	school	the ones with a beta fish	/query, Arnold, Wanda, Carlos	Wanda, Carlos
 c17	school	teachers with more than 3 students	-	UNANSWERABLE	unanswerable	-
 c18	school	all teachers who have students who have a blue pet beta fish	/query	Ms. Frizzle	types	:start-of(arrow:is-a("Teaches"):ends-at(:start-of(arrow:is-a("Has pet"):ends-at(:is-a("Pet")[fieldValues.species="beta fish"][fieldValues.color="blue" i]))))
 c19	school	which kids at after school have an axolotl?	/query	Sam	direction	"After school" sticky-note:edge-to(:contains("axolotl"))
+s52	story	which subboards are of no type?	-	Payments, Refunds	types	subboard
+s53	story	which subboards are inside Payments?	-	Refunds	inside	"Payments" subboard
+s54	story	what is Payments?	-	Payments	titles	subboard"Payments"

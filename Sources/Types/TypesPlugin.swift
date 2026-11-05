@@ -55,7 +55,7 @@ public struct TypesPlugin: ListedPlugin {
         registrar.service { FieldDefiner(editor: $0) }
         registrar.service { editor in
             let registry = editor.registry
-            return FieldChecks(editor: editor, rowKinds: Set(registry.kinds.filter { registry.typeRows(of: $0) != nil }))
+            return FieldChecks(editor: editor, endKinds: Set(registry.kinds.filter { registry.isTypeable($0) && !registry.relates($0) }))
         }
         registrar.service { FieldCards(editor: $0) }
         // And the card that defines a relationship type, under its pill.

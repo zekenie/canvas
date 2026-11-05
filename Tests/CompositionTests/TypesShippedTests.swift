@@ -131,7 +131,7 @@ private let petAnswer = """
         expectEqual(editor.document[note]?[PublicProperty.self], nil)
         expect(editor.types?.isType(note) == true)
     },
-    test("Is a ▸ sits in a shape's menu right after Lock, with no line between; an arrow's has it with the relationship types and no Type, a frame's none; a locked note reads Unlock, Is a") {
+    test("Is a ▸ sits in a shape's menu right after Lock, with no line between; an arrow's has it with the relationship types and no Type, a frame's has the plain types and no Type; a locked note reads Unlock, Is a") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
@@ -152,7 +152,8 @@ private let petAnswer = """
         expect(arrowMenu.contains("Is a ▸") && arrowMenu.contains("  Employment") && !arrowMenu.contains("  Person") && !arrowMenu.contains("  Type")
                && !arrowMenu.contains("  Relationship Type"), "an arrow: relationship types, \(arrowMenu)")
         let frameMenu = outline(at: CGPoint(x: 200, y: 700), 3)
-        expect(!frameMenu.contains("Is a ▸"), "\(frameMenu)")
+        expect(frameMenu.contains("Is a ▸") && frameMenu.contains("  Person") && !frameMenu.contains("  Type")
+               && !frameMenu.contains("  Relationship Type"), "a frame: plain types, and it can't be one, \(frameMenu)")
         _ = (arrow, frame)
         editor.lock([note])
         let locked = outline(at: CGPoint(x: 200, y: 200), 4)
@@ -429,7 +430,7 @@ private let petAnswer = """
         expectEqual(editor.undoHistory.undoName, "New Type")
         window.pressEscape()
     },
-    test("/is-a on ten notes selected: New type “Feat” puts one type note beside them and makes all ten Feats, in one step, New Type; a frame selected with them is not one of the shapes it acts on; undo takes the note and the ten links") {
+    test("/is-a on ten notes selected: New type “Feat” puts one type note beside them and makes all ten Feats and the frame one too, in one step, New Type; a frame selected with them is one of the shapes it acts on, and so it is a Feat too; undo takes the note and the ten links") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
@@ -442,10 +443,10 @@ private let petAnswer = """
         editor.selectedShapeIDs = notes + [frame]
         let state = try require(editor.slashCommands)
         let command = try require(state.command(named: "is-a", for: .selection(notes + [frame])), "/is-a is offered for the selection")
-        expectEqual(command.shapes, notes, "a frame holds no `is`")
+        expectEqual(command.shapes, notes + [frame], "a frame can be of a type")
         expectEqual(command.targetCount, 11)
-        expect(command.isPartial)
-        expectEqual(command.choices().map(\.title), ["Type", "Relationship Type"], "no types in the file yet")
+        expect(!command.isPartial)
+        expectEqual(command.choices().map(\.title), [], "no types in the file yet, and a frame can't be one: Type is offered when every shape can be")
         let row = try require(command.choice(otherwise: "feat"), "the New type row")
         expectEqual(row.title, "New type “Feat”")
         expect(state.run(command, choosing: row))
@@ -455,18 +456,18 @@ private let petAnswer = """
         expectEqual(editor.document[feat]?[TypeSchemaProperty.self]?.text, TypeSchemaProperty.starter)
         expectEqual(editor.document[feat]?[PublicProperty.self], nil, "not public")
         for note in notes { expectEqual(editor.document[note]?[IsAProperty.self]?.map(\.shape), [feat], "Note \(notes.firstIndex(of: note) ?? -1) is a Feat") }
-        expectEqual(editor.document[frame]?[IsAProperty.self], nil)
-        expectEqual(editor.types?.instances(of: feat), Set(notes))
+        expectEqual(editor.document[frame]?[IsAProperty.self]?.map(\.shape), [feat], "the frame is a Feat")
+        expectEqual(editor.types?.instances(of: feat), Set(notes + [frame]))
         expectEqual(editor.undoHistory.undoName, "New Type")
         expectEqual(editor.selectedShapeIDs, [feat])
         // Beside the box around the ten, clear of each.
-        let around = notes.compactMap { editor.document[$0]?.box }.reduce(CGRect.null) { $0.union($1) }
+        let around = (notes + [frame]).compactMap { editor.document[$0]?.box }.reduce(CGRect.null) { $0.union($1) }
         let box = try require(editor.document[feat]?.box)
         expect(!box.intersects(around), "beside the ten: \(box) and \(around)")
         editor.endEditing()
         editor.undo()
         expectEqual(editor.document[feat], nil, "the note goes")
-        for note in notes { expectEqual(editor.document[note]?[IsAProperty.self], nil, "and the links, in the one step") }
+        for note in notes + [frame] { expectEqual(editor.document[note]?[IsAProperty.self], nil, "and the links, in the one step") }
     },
     test("New type from an arrow's label puts a note beside the arrow; in a frame the new note is in the frame") {
         let pasteboard = NSPasteboard.withUniqueName()

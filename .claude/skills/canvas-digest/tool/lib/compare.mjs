@@ -53,8 +53,8 @@ export function compareRun(plan, result, runName, statements) {
       out.typedMessages.push(`${name}: ${p.message}`);
     }
     if (st.describe != null) {
-      // a description is written on a card that is drawn already: it must be changed by it, and it is where it was
-      if (c.did === 'unchanged') { out.ok = false; out.mismatches.push(`${nameOf(st.describe)} was unchanged: its description was not written`); }
+      // a description or the types of a shape are written on a shape that is drawn already: it must be changed by it, and it is where it was
+      if (c.did === 'unchanged') { out.ok = false; out.mismatches.push(`${nameOf(st.describe)} was unchanged: its description or types were not written`); }
       else out.described++;
       continue;
     }

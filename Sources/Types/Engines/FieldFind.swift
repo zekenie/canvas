@@ -37,7 +37,7 @@ public struct FieldFindPlugin: ListedPlugin {
                                 followsZoom: true,
                                 affected: { changes, context in context.service(RowBook.self)?.reached(by: changes) ?? [] },
                                 texts: { record, context in
-                                    if context.editor.registry.relates(record.kind) { return context.service(RowBook.self)?.findTexts(ofRelationship: record) ?? [] }
+                                    if context.editor.registry.relates(record.kind) { return context.service(RowBook.self)?.findTexts(byFields: record) ?? [] }
                                     return context.service(RowBook.self)?.findTexts(of: record) ?? []
                                 },
                                 rects: { record, field, ranges, context in
@@ -99,10 +99,12 @@ extension RowBook {
         return FieldFind.texts(of: values, fields: fields, in: book, types: editor?.types)
     }
 
-    /// What an arrow says of its values, as text for Find: a text for each field of the types it is of that holds a value, named by the
-    /// field's key (a relationship's, which its card says). A function of the arrow and the types alone, so the mark of a
-    /// relationship type moves nothing here. The arrow's notes are not in it: their names are found on the notes.
-    func findTexts(ofRelationship record: AnyShapeRecord) -> [FindableText] {
+    /// What a shape of a type whose values no row shows says of them, as text: an arrow of a relationship type (its card
+    /// says them, so Find reads them) and a frame or a subboard (its panel does; the issue list's first value): a text for
+    /// each field of the types it is of that holds a value, in the chain's order, named by the field's key. A function of the
+    /// shape and the types alone, so the mark of a relationship type moves nothing here. An arrow's notes are not in it: their
+    /// names are found on the notes.
+    func findTexts(byFields record: AnyShapeRecord) -> [FindableText] {
         guard let values = record[FieldValuesProperty.self], !values.isEmpty, let book = editor?.fieldBook,
               let links = record[IsAProperty.self], !links.isEmpty else { return [] }
         return FieldFind.texts(of: values, fields: book.fields(types: links.map(\.shape)).fields, in: book, types: editor?.types)

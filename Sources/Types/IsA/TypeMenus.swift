@@ -69,7 +69,7 @@ struct IsAMenu {
 /// relationship type is replaced); a checked one takes it from all ("Remove Type"; `Relationship Type`
 /// takes the mark off alone, "Make Plain Type", and the shape stays a type). Never dimmed: a read-only shape is
 /// refused by the core and shakes, while the rest of the selection changes in the one step. Left out
-/// where it would hold nothing, and, by its scope, where a selected shape holds no `is` (a frame, a subboard).
+/// where it would hold nothing, and, by its scope, where a selected shape holds no `is` (a kind that isn't `typeable()`).
 @MainActor
 func registerTypeMenus(into registrar: inout PluginRegistrar) {
     // The offers in a type's words (`RelateOffers`): Relate to ▸, a type for each, the same pick the click on a pill opens, so the

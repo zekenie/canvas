@@ -8,7 +8,7 @@ import { lit, byTitle, label } from './util.mjs';
 /** `is:` as draw takes it: a title, or several as JSON. */
 export const isLit = (titles) => (titles.length === 1 ? lit(titles[0]) : JSON.stringify(titles));
 
-/** The attributes a note writes for what it is: its schema (as the quoted string draw reads), the mark of a relationship type, the types it is and its values. */
+/** The attributes a note (or a frame or a subboard) writes for what it is: its schema (as the quoted string draw reads), the mark of a relationship type, the types it is and its values. */
 export function noteTyping(n) {
   let s = '';
   if (n.schema) s += ` schema: ${lit(JSON.stringify(n.schema))}` + (n.relationship ? ' relationship: true' : '');
@@ -37,6 +37,9 @@ export const isType = (n) => n.kind === 'sticky-note' && !!n.schema;
 
 /** Whether a node is a note of a type: one that says `is` and is no type itself (a type's `is` is what it builds on). */
 export const isInstance = (n) => n.kind === 'sticky-note' && n.is.length > 0 && !n.schema;
+
+/** Whether a node is a frame or a subboard of a type: drawn as ever, then restated with what it is once the types are drawn (its panel shows the values; nothing is drawn on the canvas for them, so it keeps its size). */
+export const isTypedContainer = (n) => (n.kind === 'frame' || n.kind === 'subboard') && n.is.length > 0;
 
 /** Whether an edge between these two nodes is an end of a relationship type: it joins a relationship type and a type, whichever way it points. */
 export function isEndOf(a, b) {
@@ -300,7 +303,7 @@ function ringFrom(start, next) {
 
 /**
  * Everything wrong with how a model's shapes and edges are typed, as {errors, warnings} of sentences that name the shape. An `is` that names no type
- * in the digest (or a relationship type on a note, or a plain type on an arrow); `is` on a frame or a subboard; a type that builds on a type of the
+ * in the digest (or a relationship type on a note, or a plain type on an arrow); a schema or `relationship` on a frame or a subboard; a type that builds on a type of the
  * other sort (a relationship type on a type, or a type on a relationship type), or on itself, however far; `relationship` without a `schema`; a
  * `schema` that is no object, or on a shape that is no note; a `$ref` to a shape's id; `endRule` on an arrow that is no end of a relationship type;
  * an end of one that sits on another board than the relationship type; values on a type, values with no type, or that don't fit their types
@@ -336,10 +339,8 @@ export function typeProblems(model) {
   };
   for (const n of nodes) {
     const q = `"${label(n.key)}"`;
-    const typing = n.schemaGiven || n.relationshipGiven || n.is.length || n.isBad || n.fieldValuesGiven;
-    if (typing && n.kind !== 'sticky-note') {
-      const what = n.is.length || n.isBad || n.fieldValuesGiven ? `a ${n.kind} can't be a type's instance (only notes and arrows are)` : `a ${n.kind} can't be a type (a type is a note)`;
-      errors.push(`${q}: ${what}`);
+    if ((n.schemaGiven || n.relationshipGiven) && n.kind !== 'sticky-note') {
+      errors.push(`${q}: a ${n.kind} can't be a type (a type is a note; a ${n.kind} can only be of one)`);
       continue;
     }
     if (n.schemaGiven) {

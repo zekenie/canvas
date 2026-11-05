@@ -11,7 +11,7 @@ shipped plugins, shows its board, selects its shapes, and asks its question the 
 compares the set of shapes it matched with the case's. Any query that finds those shapes passes,
 whatever its form.
 
-- `cases.tsv` is the cases: 51 on the story file (`QueryStory.swift`, the file every query example
+- `cases.tsv` is the cases: 54 on the story file (s52 to s54: subboards of no type, and what a subboard is) (`QueryStory.swift`, the file every query example
   runs on), 19 on the eval board (`QueryEvalBoard.swift`, 59 shapes on six boards, with
   look-alike titles, plain arrows, and a note mentioned from two boards away), 19 on the fields
   board (`QueryFieldsBoard.swift`: two types, two relationship types (Placed by, Friendship) and six notes
@@ -310,3 +310,40 @@ The same day the word moved to Validation, which keeps what a shape still needs 
 its own level: in `<vocabulary>` it now comes after `:invalid` and `:warned`, summarised "it still
 needs something", and the prompt's own text did not change. The same lite run again: 12 runs, 12
 first try. Neither is appended to `results.tsv`.
+
+## Subboards and frames of no type (2026-11-04)
+
+A subboard or frame can now be of a type, so `<instances>`'s `Of no type:` lists the titled subboards and
+frames of no type as well as the notes, and the prompt says "shape" where it said "note" for those lines
+(the `<instances>` line, the field-keys bullet, "Not every shape is of a type", `:incomplete`, the rule on
+shapes of no type). Nothing else in the prompt changed. Its test expectation now includes Payments and
+Refunds under `Of no type`.
+
+Three cases on the story file, where Payments and Refunds are untyped subboards: s52 "which subboards are
+of no type?" (`subboard`), s53 "which subboards are inside Payments?" (`"Payments" subboard`), s54 "what is
+Payments?" (`subboard"Payments"`, expected Payments). The story has no typed subboard and no frame, and
+neither eval board has one either: a typed subboard or frame needs a fixture on one of the boards, which
+this round did not change, so typed ones are not evaluated yet.
+
+Round `subboards-1`, the prompt as shipped, Haiku 5.5 at `high` (the shipped model), 2026-11-04, 333 runs
+(every case, three runs): 322 first try (96.7%), 325 after repair (97.6%), 8 failed; every category at or
+above 90% after repair (`inside` 95%, `direction` 93%, `titles` 96%, `types` 98%), and the bar met. Its
+misses, against `connections-1`, the last full round (322 of 324 after repair):
+
+- `c01`, `c18` and `c19` each missed once (the nested `:edge-from` of c01 and c18, and c19's `"After
+  school" > sticky-note:is(...)`). Asked five times more each, `c01` and `c18` passed 5 of 5 and `c19` 5 of 5:
+  noise, not the prompt.
+- `e13` ("types linked to Customer") passed 1 of 3 in the round and 4 of 5 in the rerun. It is the case
+  already noted above as read as the relationship types of Customer (`sticky-note[relationship]:connected-to
+  ("Customer", arrow)`). Same day, the previous prompt (`git show HEAD:Shipped/ask-prompt.txt`) asked eight
+  times: 7 of 8. Five of eight against seven of eight is not a clear difference at this size; it is the case
+  to watch.
+- `s54` ("what is Payments?") is new and fails with both prompts: 3 of 8 with the new (2 of 3 in the round,
+  1 of 5 in the rerun), 3 of 8 with the previous. It writes `:edge-from("Payments", is-a)`, the types Payments
+  is, as "what is Ann?" asks its types (s47); a subboard of no type has no type to be, and nothing in the prompt
+  says a shape of no type is itself. Left as a known miss: the prompt's wording is not changed for it here.
+- `s20` missed twice, as before; `s12` repaired three times, as in `connections-1`.
+
+Rows are in `results.tsv` as `subboards-1` (the round) and `subboards-1-rerun` (c01, c18, c19, e13 and s54, five
+runs each). The previous prompt's eight runs of `e13`, `c01`, `c18` and `s54` were not recorded.
+

@@ -2,7 +2,7 @@ import Canvas
 import Mentions
 
 // The words a kind's shapes say what a type holds in, as Types reads and writes them without knowing
-// the kind: a note's text, and later an arrow's label. A kind hands them over once, through
+// the kind: a note's text, an arrow's label, a subboard's description. A kind hands them over once, through
 // `typeWords(_:drawnIn:fitting:)` (a key path to its `MentionText`, where it draws them, and what
 // writing them changes besides: a note's height), and Types reads, writes and highlights them
 // through `TypeWords` alone. Nothing in Types names a note.
@@ -23,15 +23,17 @@ extension TypeWords: KeyedExtensionPoint {
     public static func uniqueKeys(of _: TypeWordsContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
     public static func summary(of _: TypeWordsContribution, for target: ShapeTarget) -> String { "type words → \(target)" }
 
-    /// A kind that can be a type, or an instance of one, says what it holds in words: `canBeType()`
-    /// and `typeable()` need `typeWords`. The mark of a relationship type needs `schema`, and a kind that
-    /// relates (`relating()`, `endRule`) is an instance of types: it holds `is` and `fieldValues`.
+    /// A kind that can be a type says what it holds in words: `canBeType()` needs `typeWords`. An
+    /// instance of types needs none (a frame has no words), but one that fills its fields from its words
+    /// (`autofill`, which `typeable()` opts a kind into unless it says it has none) does. The mark of a
+    /// relationship type needs `schema`, and a kind that relates (`relating()`, `endRule`) is an
+    /// instance of types: it holds `is` and `fieldValues`.
     public static func check(_ registry: Registry) throws(RegistryError) {
         for kind in registry.kinds {
             let properties = registry.properties(for: kind)
             if registry.contributions(to: TypeWords.self, for: kind).isEmpty {
                 if properties.contains(TypeSchemaProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds schema but has no typeWords") }
-                if properties.contains(IsAProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds is but has no typeWords") }
+                if properties.contains(AutofillProperty.key) { throw .invalid(point: "TypeWords", reason: "\(kind) holds autofill but has no typeWords") }
             }
             if properties.contains(RelationshipProperty.key), !properties.contains(TypeSchemaProperty.key) {
                 throw .invalid(point: "TypeWords", reason: "\(kind) holds relationship but not schema")

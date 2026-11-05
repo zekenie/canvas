@@ -82,9 +82,11 @@ func rect(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CG
                 let frames = AdornmentLayout.frames(of: items, width: width)
                 cases += 1
                 shown += frames.compactMap { $0 }.count
+                // The row reaches 27 above the edge, and 31 over a tab on it, which it clears.
+                let top: CGFloat = items.contains { $0.placement == .onTopEdge } ? 31 : 27
                 for (i, frame) in frames.enumerated() {
                     guard let frame else { continue }
-                    let reach = CGRect(x: min(0, width - 200), y: -27, width: width + 6 - min(0, width - 200), height: 35)
+                    let reach = CGRect(x: min(0, width - 200), y: -top, width: width + 6 - min(0, width - 200), height: top + 8)
                     expect(reach.contains(frame), "\(frame) past \(reach), width \(width): \(items)")
                     if items[i].placement == .aboveTopLeft {
                         expect(frame.minX >= 0 && frame.maxX <= width, "\(frame) off the shape, width \(width): \(items)")
@@ -103,8 +105,9 @@ func rect(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) -> CG
                 let bounds = CGRect(x: 30, y: 40, width: width * scale, height: 100)
                 let reach = AdornmentLayout.reach(ofClosed: bounds, scale: scale)
                 let least = min(0, width - 200)
-                let expected = CGRect(x: bounds.minX + least * scale, y: bounds.minY - 27 * scale,
-                                      width: (width + 6 - least) * scale, height: 35 * scale)
+                // As high as the row reaches over a tab: what it is, a closed shape's, may hold one.
+                let expected = CGRect(x: bounds.minX + least * scale, y: bounds.minY - 31 * scale,
+                                      width: (width + 6 - least) * scale, height: 39 * scale)
                 expect(abs(reach.minX - expected.minX) + abs(reach.minY - expected.minY) + abs(reach.width - expected.width)
                        + abs(reach.height - expected.height) < 1e-6, "width \(width) at \(scale): \(reach) is not \(expected)")
             }

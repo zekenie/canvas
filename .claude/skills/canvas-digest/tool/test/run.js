@@ -1369,7 +1369,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var bad = JSON.parse(JSON.stringify(results)), name = r.runs.find(function (x) { return /-describe\.draw$/.test(x.name); }).name;
     bad[name].changes[0].did = 'unchanged';
     var fail = rpl.replay(r.plan, bad, null, r.statements);
-    assert(!fail.ok && /was unchanged: its description was not written/.test(fail.problems.join()), 'said: ' + fail.problems.join(' | '));
+    assert(!fail.ok && /was unchanged: its description or types were not written/.test(fail.problems.join()), 'said: ' + fail.problems.join(' | '));
     // the driver names a run as the plan does less `.draw`, and a dry run too: the same run, the same description
     var cmpm = await import('../lib/compare.mjs');
     eq([cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, '') + ' (dry run)', r.statements).described, cmpm.compareRun(r.plan, results[name], name.replace(/\.draw$/, ''), r.statements).described], [1, 1], 'a description is a description under either name');
@@ -1610,13 +1610,13 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     [{ from: 'A', to: 'B', endRule: { needed: true } }, { from: 'C', to: 'D', is: 'Workflow' }, { from: 'C', to: 'D', is: 'Nobody' }, { from: 'Workflow', to: 'writes', is: 'writes' }, { from: 'Workflow', to: 'reads', endRule: { needed: 'yes' } }, { from: 'Workflow', to: 'reads', endRule: { many: true } }]);
     var e = errorsOf(d);
     said(e, /^"Ghost": is "Nobody", which names no type in the digest/, 'is naming no type');
-    said(e, /^"Region": a frame can't be a type's instance/, 'is on a frame');
-    said(e, /^"Card": a subboard can't be a type's instance/, 'is on a subboard');
+    assert(!e.some(function (x) { return /^"(Region|Card)"/.test(x); }), 'a frame or a subboard may be of a type: ' + JSON.stringify(e));
     said(e, /^"Orphan": relationship: true needs a schema/, 'relationship without schema');
     said(e, /^"Rel note": is "writes", a relationship type: only an arrow is one/, 'a note of a relationship type');
     assert(!e.some(function (x) { return /^"Typed type"/.test(x); }), 'a type that is of a type builds on it: ' + JSON.stringify(e));
     said(e, /^"Refd": the schema has a \$ref to urn:uuid:7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11/, 'a $ref to an id');
     said(e, /^"Frame type": a frame can't be a type/, 'a schema on a frame');
+    said(errorsOf(typed([{ title: 'Card type', kind: 'subboard', schema: { type: 'object' } }])), /^"Card type": a subboard can't be a type/, 'a schema on a subboard');
     said(e, /^"No schema object": schema is a JSON object/, 'a schema that is text');
     said(e, /^"Bad rel": relationship is true or false/, 'relationship that is not boolean');
     said(e, /^edge "A" -> "B": endRule is only for an end of a relationship type/, 'endRule on an edge that is no end');
@@ -1690,6 +1690,20 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     // an untyped digest has the script it always had
     var plain = sizes.measureScript(model.buildModel(fixture('tree')));
     assert(!/schema|relationship|is: |fieldValues|endRule/.test(plain), 'nothing typed in an untyped digest');
+  });
+
+  await test('a frame or a subboard of a type is drawn as ever, then restated with its types and values in the script that describes cards, once the types are drawn; a note is not the only instance', async function () {
+    var d = typed([{ title: 'Region', kind: 'frame', is: 'Workflow', fieldValues: { name: 'r' } }, { title: 'Card', kind: 'subboard', is: ['Table'] }, { title: 'inner', in: 'Region' }]);
+    eq(errorsOf(d), [], 'a typed frame and subboard check');
+    var r = await planOf(d, { into: 'Map' });
+    var all = r.runs.map(function (x) { return x.text; }).join('\n');
+    var withTyping = all.split('\n').filter(function (l) { return /^(frame|subboard) /.test(l) && / is: /.test(l); });
+    eq(withTyping.length, 2, 'each is typed once: ' + withTyping.join(' | '));
+    assert(withTyping.some(function (l) { return /^frame "Region".* is: "Workflow" fieldValues: \{"name":"r"\}$/.test(l); }), 'the frame: ' + withTyping.join(' | '));
+    assert(withTyping.some(function (l) { return /^subboard "Card".* is: "Table"$/.test(l); }), 'the subboard: ' + withTyping.join(' | '));
+    var last = r.runs.filter(function (x) { return /-describe\.draw$/.test(x.name); })[0];
+    assert(last && /frame "Region"/.test(last.text) && /subboard "Card"/.test(last.text), 'in the script drawn after the types');
+    eq(Object.values(r.plan.described)[0].length, 2, 'both are counted as restated');
   });
 
   await test('the order of runs: a board\'s types, relationship types and ends are one script; the notes of a type come after every such script, in a script of their board; the arrows of relationships last', async function () {

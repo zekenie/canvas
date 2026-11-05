@@ -12,7 +12,7 @@ import Types
 // `is`, the types a shape is, and the `is-a` edge derived from it: over a memo that opts in as a
 // note does (`typeable()`), and a stand-in of the tests' own.
 
-/// A box that says where its words are but opts into nothing: `typeable()` is refused on it.
+/// A box that may say where its words are, and opts into what the test says.
 private struct Scrap: BoxShapeProps {
     static let kind: ShapeKind = "scrap"
     static let properties = Properties<Scrap>(title: "Scrap") {
@@ -30,11 +30,14 @@ private struct Scrap: BoxShapeProps {
 
 private struct ScrapsPlugin: CanvasPlugin {
     var words: Bool
+    var fillsFromWords = true
+    var canBeType = false
     var id: PluginID { "scraps" }
     func register(into registrar: inout PluginRegistrar) {
         registrar.shape(ScrapDefinition()) { scrap in
             if words { scrap.typeWords(\.text, drawnIn: { _ in nil }) }
-            scrap.typeable()
+            if canBeType { scrap.canBeType() }
+            scrap.typeable(fillsFromWords: fillsFromWords)
         }
     }
 }
@@ -73,7 +76,7 @@ struct EchoesPlugin: CanvasPlugin {
 }
 
 @MainActor let isAPropertyTests = Suite("What a shape is", [
-    test("a kind that opts in holds `is`, and the report says so; typeable() needs typeWords, like canBeType() does") {
+    test("a kind that opts in holds `is`, and the report says so; typeable() with autofill needs typeWords, typeable(fillsFromWords: false) and canBeType() differ") {
         let registry = try Registry(plugins: typePlugins())
         expect(registry.properties(for: Memo.kind).contains(IsAProperty.key))
         expect(registry.isTypeable(Memo.kind))
@@ -82,8 +85,19 @@ struct EchoesPlugin: CanvasPlugin {
         expect(report.contains("edge type is-a"), report)
         let plain = try Registry(plugins: typePlugins() + [ScrapsPlugin(words: true)])
         expect(plain.isTypeable(Scrap.kind))
-        expectThrows(RegistryError.invalid(point: "TypeWords", reason: "scrap holds is but has no typeWords")) {
+        expect(plain.properties(for: Scrap.kind).contains(AutofillProperty.key))
+        expectThrows(RegistryError.invalid(point: "TypeWords", reason: "scrap holds autofill but has no typeWords")) {
             _ = try Registry(plugins: typePlugins() + [ScrapsPlugin(words: false)])
+        }
+        // No words to fill from: it is typeable, holds the types and their values, and not autofill.
+        let wordless = try Registry(plugins: typePlugins() + [ScrapsPlugin(words: false, fillsFromWords: false)])
+        expect(wordless.isTypeable(Scrap.kind))
+        let held = wordless.properties(for: Scrap.kind)
+        expect(held.contains(IsAProperty.key) && held.contains(FieldValuesProperty.key))
+        expect(!held.contains(AutofillProperty.key))
+        // A type is words: it can't be one without.
+        expectThrows(RegistryError.invalid(point: "TypeWords", reason: "scrap holds schema but has no typeWords")) {
+            _ = try Registry(plugins: typePlugins() + [ScrapsPlugin(words: false, fillsFromWords: false, canBeType: true)])
         }
     },
     test("its schema: an array of strings said to be types, none twice; `ShapeID` itself names nothing") {

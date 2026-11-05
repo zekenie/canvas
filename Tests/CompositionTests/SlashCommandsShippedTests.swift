@@ -40,13 +40,13 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         editor.lock([locked])
         @MainActor func listed(_ ids: [ShapeID]) -> [String] { state.commands(for: .selection(ids)).map(\.name) }
         expectEqual(listed([note]), ["title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "a note's text lists the same")
-        expectEqual(listed([frame]), ["turn-into-subboard", "title", "lock", "public", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "typeable nowhere before: a frame has no text")
-        expectEqual(listed([subboard]), ["title", "lock", "public", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
+        expectEqual(listed([frame]), ["turn-into-subboard", "title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "a frame can be of a type, though it has no text")
+        expectEqual(listed([subboard]), ["title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
         expectEqual(listed([arrow]), ["lock", "is-a", "color"], "its label's list, and its color")
         expectEqual(listed([reference]), ["lock", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
         expectEqual(listed([locked]), ["unlock"], "a locked note only what can act on it")
         let mixed = state.commands(for: .selection([note, frame, arrow])).map { "\($0.name) \($0.shapes.count) of \($0.targetCount)" }
-        expectEqual(mixed, ["lock 3 of 3", "public 2 of 3", "is-a 2 of 3", "color 3 of 3", "move-to 2 of 3", "move-near 2 of 3",
+        expectEqual(mixed, ["lock 3 of 3", "public 2 of 3", "is-a 3 of 3", "color 3 of 3", "move-to 2 of 3", "move-near 2 of 3",
                             "bring-to-front 2 of 3", "send-to-back 2 of 3", "bring-in-front-of 2 of 3", "send-behind 2 of 3", "turn-into-subboard 1 of 3",
                             "query 3 of 3"],
                     "the first shape's order, then what only later shapes offer; title, one shape's, left out; /query, about them all, last")

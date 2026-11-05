@@ -183,7 +183,7 @@ private func tangent(_ degrees: CGFloat) -> CGFloat { tan(degrees * CGFloat.pi /
         expectEqual(area.minX, -400, "the row slid: 2 x maxRun from the middle")
         expectEqual(area.maxX, 800)
         expectEqual(area.minY, -8, "the corner's reach under the top edge")
-        expectEqual(area.maxY, 300 + 27)
+        expectEqual(area.maxY, 300 + 31, "the row's reach over a tab")
         expectEqual(AdornmentLayout.area(showing: visible, scale: 0.125).minX, -200.75, "at 800% the row's world reach, maxSlide and the overhang, is what counts")
     },
 ])

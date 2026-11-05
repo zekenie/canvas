@@ -640,7 +640,33 @@ private func isByDesign(_ message: String) -> Bool {
         expectEqual(try queried(server, board, ":incomplete"), ["Trailer truck"])
     },
 
-    test("digest check refuses what a typed digest cannot be drawn with, naming the shape: an is with no type, is on a frame, a relationship without a schema, an endRule that is no end, a $ref to an id, values that don't fit, ends on another board, a type built on itself") {
+    test("digest all on a frame and a subboard of a type: drawn as ever, then restated with their types and values, so the app answers :is-a for them") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = windowedBoard()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let folder = try scratchFolder("typed-containers")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let digest = """
+            {"title": "Containers", "nodes": [
+              {"title": "Service", "schema": {"type": "object", "properties": {"owner": {"type": "string"}}}, "text": "A service: who owns it"},
+              {"title": "Payments", "kind": "subboard", "is": "Service", "fieldValues": {"owner": "Ann"}},
+              {"title": "Billing", "kind": "frame", "is": "Service", "fieldValues": {"owner": "Bo"}},
+              {"title": "Invoices", "in": "Billing", "text": "Sent monthly"}
+            ], "edges": []}
+            """
+        let file = try digestFile("containers", digest, in: folder)
+        let run = try runDigest("all", file: file, server: server, target: ["--board", "\(board.number)", "--into", "Containers map"], out: folder.appendingPathComponent("out"))
+        expectEqual(run.process.status, 0, run.process.output + run.process.error)
+        expectEqual(try queried(server, board, #":is-a("Service")"#).sorted(), ["Billing", "Payments"], "a frame and a subboard are of the type")
+        expectEqual(try queried(server, board, #"[fieldValues.owner="Bo"]"#), ["Billing"], "and hold their values")
+        expectEqual(try queried(server, board, #""Billing" sticky-note"#), ["Invoices"], "the frame still holds what it did")
+    },
+
+    test("digest check refuses what a typed digest cannot be drawn with, naming the shape: an is with no type, a schema on a frame, a relationship without a schema, an endRule that is no end, a $ref to an id, values that don't fit, ends on another board, a type built on itself") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -655,7 +681,8 @@ private func isByDesign(_ message: String) -> Bool {
               {"title": "Thing", "schema": {"type": "object", "properties": {"n": {"type": "integer"}}, "required": ["n"]}, "text": "A thing"},
               {"title": "Links", "relationship": true, "schema": {"type": "object"}, "text": "Links"},
               {"title": "Orphan", "relationship": true, "text": "no schema"},
-              {"title": "Region", "kind": "frame", "is": "Thing"},
+              {"title": "Region", "kind": "frame", "schema": {"type": "object"}, "text": "A frame is no type"},
+              {"title": "Card", "kind": "subboard", "is": "Thing", "fieldValues": {"n": 2}},
               {"title": "Ghost", "is": "Nobody"},
               {"title": "Odd", "is": "Thing", "fieldValues": {"n": "three"}},
               {"title": "Refd", "schema": {"type": "object", "properties": {"x": {"$ref": "urn:uuid:7c1e2a04-4b9e-4e0c-9d8c-5b0e7f3a2c11"}}}, "text": "Refs an id"},
@@ -675,7 +702,7 @@ private func isByDesign(_ message: String) -> Bool {
         let said = checked.process.output
         for expected in [
             #""Orphan": relationship: true needs a schema"#,
-            #""Region": a frame can't be a type's instance"#,
+            #""Region": a frame can't be a type (a type is a note; a frame can only be of one)"#,
             #""Ghost": is "Nobody", which names no type in the digest"#,
             #""Odd": fieldValues.n is "three", and the schema wants integer"#,
             #""Refd": the schema has a $ref to urn:uuid:"#,

@@ -99,8 +99,9 @@ public final class FieldChecks {
     /// The arrows with no type that `looseEnd` calls a loose end: they keep no answer, so a recheck of everything
     /// names them by this.
     @ObservationIgnored private var looseEnds: Set<ShapeID> = []
-    /// The kinds that say where their rows go: a note of one holds relationships in rows, and the rules of its rows are checked.
-    @ObservationIgnored private let rowKinds: Set<ShapeKind>
+    /// The kinds whose shapes are a relationship's ends: of types and not arrows that relate (a note, a subboard, a frame). The
+    /// rules of a shape's rows (Needed, Only one) are checked on one, whether or not its kind draws the rows.
+    @ObservationIgnored private let endKinds: Set<ShapeKind>
     /// By row: the notes whose kept answer holds an Only one issue of it (an error), each with the name the issue says. A rename
     /// of a row is a change in the words of those issues and names no note (it leaves the partition equal), so a commit that
     /// changed rows checks the rows' names against these and makes again the notes of the rows that are called otherwise.
@@ -127,14 +128,14 @@ public final class FieldChecks {
     /// The most checkers a run keeps for types it changes.
     private static let scratchCapacity = 16
 
-    /// `rowKinds` are the kinds that say where their rows go (`TypeRows`, which this part sits below): a note of one holds its
-    /// relationships in rows, and the rules of its rows are checked.
-    public init(editor: CanvasEditor, rowKinds: Set<ShapeKind> = []) {
+    /// `endKinds` are the kinds whose shapes are a relationship's ends (of types, and not arrows that relate): the rules of a
+    /// shape's rows are checked on one, as a note's are, where its kind draws no rows too (a frame's are said as its issues).
+    public init(editor: CanvasEditor, endKinds: Set<ShapeKind> = []) {
         self.editor = editor
         book = editor.fieldBook
         index = editor.types
         relationships = editor.relationships
-        self.rowKinds = rowKinds
+        self.endKinds = endKinds
         lastChain = editor.types?.chainRevision ?? 0
         editor.types?.onChange { [weak self] change in
             // Only a change to a type: a mark or a list alone changes nothing a chain resolves to.
@@ -191,7 +192,7 @@ public final class FieldChecks {
         }
         let namesAType = base.problems.contains { $0.path.isRoot }
         var answer = Answer(links: links, values: values, checker: checker, stamp: revision, nameStamp: namesAType ? names : nil, check: base, base: base, relation: nil)
-        if let editor, editor.registry.relates(record.kind) || rowKinds.contains(record.kind) {
+        if let editor, editor.registry.relates(record.kind) || endKinds.contains(record.kind) {
             // The checker was made again (the type's text changed): the ends are as they were, if the index says so.
             let part: RelationPart
             if let old, old.links == links, let kept = old.relation, relationCurrent(old, id) { part = kept } else { part = relationPart(of: record, links: links) }
@@ -609,9 +610,9 @@ public final class FieldChecks {
 
     /// What a note's ruled rows lack or hold too many of, as a reading has the file: a note the script draws or changes, or whose
     /// relationships it changes, is judged against the rows and the arrows the run has written (a row the script gives Only one,
-    /// a second arrow it draws). Nothing for a kind that draws no rows.
+    /// a second arrow it draws). Nothing for a kind whose shapes are no ends.
     private func noteProblems(of record: AnyShapeRecord, links: [TypeLink], reading: LayoutReading, relationships: RelationshipIndex) -> [FieldProblem] {
-        guard rowKinds.contains(record.kind) else { return [] }
+        guard endKinds.contains(record.kind) else { return [] }
         let graph = relationships.graph(in: reading)
         guard !graph.ends.rows.isEmpty else { return [] }
         let rows = graph.rows(for: links.map(\.shape), isType: false).filter { !$0.rule.isNone }

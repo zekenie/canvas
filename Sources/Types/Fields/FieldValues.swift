@@ -116,13 +116,17 @@ extension FieldValuesProperty: ShapeProperty {
 }
 
 extension ShapeRegistrar {
-    /// This kind's shapes can be instances of types: each may hold `is`, the types it is,
-    /// `fieldValues`, what it holds for their fields, and `autofill`, whether it fills them from its
-    /// words (on a type of a kind that can be one, whether its shapes do). Needs `typeWords`
-    /// (`TypeWords.check`): a shape's types are typed on a line of its words (`/is-a`).
-    public mutating func typeable() {
+    /// This kind's shapes can be instances of types: each may hold `is`, the types it is, and
+    /// `fieldValues`, what it holds for their fields; and, unless `fillsFromWords` is false,
+    /// `autofill`, whether it fills them from its words (on a type of a kind that can be one, whether
+    /// its shapes do), which needs `typeWords` (`TypeWords.check`). A kind with no words (a frame)
+    /// passes false: its values are set in the panel and by agents, and nothing fills them.
+    ///
+    ///     note.typeable()
+    ///     frame.typeable(fillsFromWords: false)
+    public mutating func typeable(fillsFromWords: Bool = true) {
         optIn(to: IsAProperty.self)
         optIn(to: FieldValuesProperty.self)
-        optIn(to: AutofillProperty.self)
+        if fillsFromWords { optIn(to: AutofillProperty.self) }
     }
 }

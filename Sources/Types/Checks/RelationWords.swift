@@ -9,7 +9,8 @@ import Canvas
 public enum EndDescription: Equatable, Sendable {
     /// The end is a type's own note.
     case type
-    /// The end holds no `is` at all: a shape of this kind (`subboard`, lower case).
+    /// The end holds no `is` at all: a shape of this kind (`pocket`, lower case). A typeable kind (a note, a subboard,
+    /// a frame) is never named so: with no type it reads as having none.
     case kind(String)
     /// The end's own types, those that are types, in list order (a nil title: untitled).
     case types([String?])

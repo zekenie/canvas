@@ -166,7 +166,7 @@ The row has `problems` for the end, and the run an error warning, so the arrow i
 {"line": 1, "severity": "error", "attribute": "jobs", "message": "\"Ann\": jobs has 2 notes, and should have at most 1"}
 ```
 
-An end that is a note of a type that builds on one of the side's types fits, and so does any note on a side no arrow names. An end that cannot be read (an arrow to a reference whose note is gone, or is not public now) is not a misfit: it is said as a warning. `:misfit` finds the arrows that are misfits, and `:invalid` says why:
+An end that is a shape of a type that builds on one of the side's types fits (any shape of a type can be an end, a subboard or a frame too: it fits by its types, and its row is in its panel, none drawn on the canvas; a frame's arrows only join frames and subboards, so an arrow between a note and a frame is never drawn), and so does any note on a side no arrow names. An end that cannot be read (an arrow to a reference whose note is gone, or is not public now) is not a misfit: it is said as a warning. `:misfit` finds the arrows that are misfits, and `:invalid` says why:
 
 ```query
 /* matches: (arrow) */

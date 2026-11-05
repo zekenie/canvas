@@ -13,7 +13,8 @@ import Titles
 /// own pill (Titles', solid in its color) and then the chips of the types it builds on. A click on a
 /// chip opens a small menu below it: for a type it is, Go to it and Remove it (Remove left out while
 /// the shape can't change); for "+N", the same for every type it is. On the kinds that hold `is`; on
-/// an arrow the row sits above its label (Adornments' anchor), and nothing is shown on a shape drawn
+/// a frame the row sits over its title's tab, lifted clear of it (Adornments), on
+/// an arrow above its label (Adornments' anchor), and nothing is shown on a shape drawn
 /// as a skeleton.
 ///
 /// On an arrow of a relationship type the chip is the relationship's: it says after its name how many fields the type gives

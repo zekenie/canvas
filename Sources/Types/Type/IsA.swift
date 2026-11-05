@@ -53,7 +53,7 @@ extension TypeLink: ShapeNaming {
 
 /// What a shape is: an ordered list of the types it is, in the order they were added, none twice
 /// (`uniqueItems`). Empty is none, so emptying the list takes the property off the shape. Added to
-/// the kinds that opt in (`typeable()`).
+/// the kinds that opt in (`typeable()`: a note, an arrow, a subboard, a frame).
 public enum IsAProperty {}
 
 extension IsAProperty: ShapeProperty {
