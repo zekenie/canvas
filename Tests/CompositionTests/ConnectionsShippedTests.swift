@@ -356,8 +356,7 @@ extension ConnectionGroup {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let (target, x, r) = (ShapeID(), ShapeID(), ShapeID())
-        var orders = card(target, "Orders", 2, 0)
-        orders[PublicProperty.self] = true
+        let orders = card(target, "Orders", 2, 0)
         var props = Reference(frame: CGRect(x: 800, y: 600, width: Reference.defaultSize.width, height: Reference.defaultSize.height))
         ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: "Orders"))
         let h = try connected([orders, AnyShapeRecord(ShapeRecord(id: r, props)), card(x, "Checkout", 0, 1)], pasteboard)
@@ -384,8 +383,7 @@ extension ConnectionGroup {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let (s, r) = (ShapeID(), ShapeID())
-        var plans = titled(s, Subboard(frame: CGRect(x: 0, y: 0, width: 240, height: 160)), "Plans")
-        plans[PublicProperty.self] = true
+        let plans = titled(s, Subboard(frame: CGRect(x: 0, y: 0, width: 240, height: 160)), "Plans")
         var props = Reference(frame: CGRect(x: 600, y: 0, width: Reference.defaultSize.width, height: Reference.defaultSize.height))
         ReferenceEdits.pick(&props, ReferenceTarget(id: s, label: "Plans"))
         let h = try connected([plans, AnyShapeRecord(ShapeRecord(id: r, props))], pasteboard)
@@ -400,7 +398,7 @@ extension ConnectionGroup {
         expect(try current() != tab, "on another tab first")
         expectEqual(h.editor.makePrivate([s]), [s], "held: refused")
         expectEqual(try current(), tab, "the panel is on Connections now")
-        expectEqual(h.editor.document[s]?[PublicProperty.self], true, "nothing else changes")
+        expectEqual(h.editor.document[s]?[PrivateProperty.self], nil, "nothing else changes")
         expectEqual(try h.editor.connections(of: s).map(\.ids), [[r]], "and it lists the pill")
     },
     test("folding a list keeps its count and takes its rows away, and the next shape listed has it folded; unfolding brings the rows back") {

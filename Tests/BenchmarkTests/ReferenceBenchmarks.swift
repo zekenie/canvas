@@ -68,7 +68,6 @@ extension Budget {
         func note(_ index: Int, y: CGFloat) -> AnyShapeRecord {
             var record = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(index % 50) * 260, y: y, width: 200, height: 200), text: "")))
             record[TitleProperty.self] = "Target \(index)"
-            record[PublicProperty.self] = true
             return record
         }
         let near = (0..<pills / 2).map { note($0, y: 20_000) }, far = (0..<pills / 2).map { note($0, y: 20_000) }
@@ -151,9 +150,8 @@ extension Budget {
             let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
             h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
             let every = document.shapes.filter { $0.kind == StickyNote.kind }.map(\.id)
-            h.editor.makePublic(every)
-            // The locked ones stay private: a reference stands for the public ones.
-            let open = h.editor.document.shapes.filter { $0.kind == StickyNote.kind && $0[PublicProperty.self] == true }.count
+            // Every note is public, locked or not: a reference stands for them all.
+            let open = h.editor.document.shapes.filter { $0.kind == StickyNote.kind && h.editor.registry.isPublic($0) }.count
             var props = Reference(frame: CGRect(x: 0, y: -200, width: 120, height: 32), all: true)
             ReferenceEdits.find(&props, words: "", query: "sticky-note")
             let pill = h.editor.add(props)
@@ -167,15 +165,16 @@ extension Budget {
             var same: [Double] = [], more: [Double] = []
             for run in 0..<11 {
                 // A note that isn't public: what the reference finds is as it was.
-                _ = h.editor.add(StickyNote(frame: CGRect(x: CGFloat(run) * 210, y: -500, width: 200, height: 200), text: ""))
+                var hidden = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(run) * 210, y: -500, width: 200, height: 200), text: "")))
+                hidden[PrivateProperty.self] = true
+                h.editor.transact("Add") { $0.insert(hidden) }
                 let (_, unchanged, _) = try cpu {
                     h.wait(250)
                     _ = await topology.settled(timeout: .seconds(600))
                 }
                 same.append(unchanged)
                 // A public one: one match more.
-                var note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(run) * 210, y: -800, width: 200, height: 200), text: "")))
-                note[PublicProperty.self] = true
+                let note = AnyShapeRecord(ShapeRecord(StickyNote(frame: CGRect(x: CGFloat(run) * 210, y: -800, width: 200, height: 200), text: "")))
                 h.editor.transact("Add") { $0.insert(note) }
                 let (_, added, _) = try cpu {
                     h.wait(250)

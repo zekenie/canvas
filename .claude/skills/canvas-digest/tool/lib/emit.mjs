@@ -2,26 +2,6 @@
 // (`buildDrawing`: the graph document as given, each node with the place of its room and its size, each edge through a pill with the pill's
 // place). Nothing is shifted: a place is from its frame's top-left, or from its board's origin, and may be negative.
 import { byTitle } from './util.mjs';
-import { fanTargets } from './moves.mjs';
-
-/** What the plan makes public by its moves: the promoted nodes, and what the fanned-out nodes' pills stand for. */
-export function madePublic(model, results) {
-  const made = new Map();   // key -> why
-  for (const r of results.values()) {
-    for (const t of r.report.promoted) if (!made.has(t)) made.set(t, 'promoted: its users reach it through pills');
-    for (const v of r.report.fanned || []) for (const t of fanTargets(model, v)) if (!made.has(t)) made.set(t, `${v} uses it, and points at so many shapes that its uses are pills beside it (fanned out)`);
-    for (const x of r.report.long || []) if (!made.has(x.to)) made.set(x.to, `an arrow to it would run ${x.length} units, longer than the dial allows, so it is a pill`);
-    for (const t of (r.layout && r.layout.plan.spined) || []) if (!made.has(t)) made.set(t, 'cards that point at many of the same shapes reach it through a pill (a spine)');
-  }
-  return made;
-}
-
-/** What is public by the document's own say: the far end of an edge between boards, and a pinned node, the latter only when a pill in the layout stands for it. */
-function forcedPublic(model, results) {
-  const pilled = new Set();
-  for (const r of results.values()) for (const p of r.layout.pills) pilled.add(p.target);
-  return [...model.forcedPublic].filter((t) => !model.node(t).pin || pilled.has(t));
-}
 
 /** The pill an edge's layout entry has: its host's own, one it shares, or a spine's, with whose pill it is. */
 function pillRoles(layout) {
@@ -34,9 +14,8 @@ function pillRoles(layout) {
 
 /** Every board's shapes and pills as the layout has them, in the board's own coordinates, and the moves the loop made: the plan the tests read. */
 export function buildBoards(model, results, opts) {
-  const publicSet = new Set([...forcedPublic(model, results), ...madePublic(model, results).keys()]);
   const shown = Object.assign({}, opts); delete shown.kinds; delete shown.current; delete shown.progress;
-  const plan = { drawing: model.drawing, options: shown, boards: [], promotions: [], stop: {}, cost: {}, public: [...publicSet].sort(byTitle) };
+  const plan = { drawing: model.drawing, options: shown, boards: [], promotions: [], stop: {}, cost: {} };
   for (const board of model.boards) {
     const { layout } = results.get(board);
     const shapes = [];
@@ -118,15 +97,11 @@ export function buildReport(model, results, timings) {
   for (const r of results.values()) for (const p of r.report.promotions) flat.push(p);
   const total = { pills: 0, arrows: 0, sharedArrows: 0 };
   for (const r of results.values()) { total.pills += r.report.end.pills; total.arrows += r.report.end.arrows; total.sharedArrows += r.report.end.sharedArrows; }
-  const made = madePublic(model, results);
-  const pub = [...new Set([...forcedPublic(model, results), ...made.keys()])].sort(byTitle);
-  const why = {};
-  for (const t of pub) why[t] = model.publicWhy.get(t) || made.get(t);
   // a board too crowded to search (promote.mjs's CROWD) is said, with the way out: the plan holds, and the board reads as a crowd
   const crowded = [...results].filter(([, r]) => r.report.crowded).map(([b, r]) => {
     const c = r.report.crowded;
     const what = c.shapes > c.mostShapes ? `it holds ${c.shapes} shapes, past ${c.mostShapes}` : `${c.container ? `its frame "${c.container}"` : 'it'} holds ${c.children} shapes side by side, past ${c.most}`;
     return `board "${b}" was laid out once and not searched: ${what}, and searching a board that crowded takes hours. Its arrows are drawn as arrows (those to other boards as pills), and it reads as a crowd: split it into subboards`;
   });
-  return { drawing: model.drawing, public: pub, publicWhy: why, promotions: flat, boards, totals: total, timings, warnings: model.warnings.concat(crowded) };
+  return { drawing: model.drawing, promotions: flat, boards, totals: total, timings, warnings: model.warnings.concat(crowded) };
 }

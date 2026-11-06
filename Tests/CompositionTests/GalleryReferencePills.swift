@@ -94,26 +94,26 @@ extension GalleryStage {
     frame "App layer" below "Product layer" size: 1500x260
     """)
     try stage.run("""
-    subboard "Canvas" in "Core layer" size: 170x80 public: true
-    subboard "Geometry" in "Core layer" right of "Canvas" size: 170x80 public: true
-    subboard "FuzzyMatching" in "Core layer" right of "Geometry" size: 170x80 public: true
-    subboard "TextEditing" in "Core layer" right of "FuzzyMatching" size: 170x80 public: true
+    subboard "Canvas" in "Core layer" size: 170x80
+    subboard "Geometry" in "Core layer" right of "Canvas" size: 170x80
+    subboard "FuzzyMatching" in "Core layer" right of "Geometry" size: 170x80
+    subboard "TextEditing" in "Core layer" right of "FuzzyMatching" size: 170x80
     frame "Things you do" in "Platform layer" size: 1380x520
     frame "Horizontals: in the window" in "Platform layer" below "Things you do" size: 1380x240
     frame "Horizontals: shape traits" in "Platform layer" below "Horizontals: in the window" size: 1380x220
     frame "Engines" in "Platform layer" below "Horizontals: shape traits" size: 1380x220
     """)
     try stage.run("""
-    subboard "Selection" in "Horizontals: in the window" size: 170x80 public: true
-    subboard "ContextMenus" in "Horizontals: in the window" right of "Selection" size: 170x80 public: true
-    subboard "Keyboard" in "Horizontals: in the window" right of "ContextMenus" size: 170x80 public: true
-    subboard "TableOfContents" in "Horizontals: in the window" right of "Keyboard" size: 170x80 public: true
-    subboard "SlashCommands" in "Horizontals: in the window" right of "TableOfContents" size: 170x80 public: true
-    subboard "Titles" in "Horizontals: shape traits" size: 170x80 public: true
-    subboard "Topology" in "Horizontals: shape traits" right of "Titles" size: 170x80 public: true
-    subboard "Boards" in "Horizontals: shape traits" right of "Topology" size: 170x80 public: true
-    subboard "Draw" in "Engines" size: 170x80 public: true
-    subboard "Placing" in "Engines" right of "Draw" size: 170x80 public: true
+    subboard "Selection" in "Horizontals: in the window" size: 170x80
+    subboard "ContextMenus" in "Horizontals: in the window" right of "Selection" size: 170x80
+    subboard "Keyboard" in "Horizontals: in the window" right of "ContextMenus" size: 170x80
+    subboard "TableOfContents" in "Horizontals: in the window" right of "Keyboard" size: 170x80
+    subboard "SlashCommands" in "Horizontals: in the window" right of "TableOfContents" size: 170x80
+    subboard "Titles" in "Horizontals: shape traits" size: 170x80
+    subboard "Topology" in "Horizontals: shape traits" right of "Titles" size: 170x80
+    subboard "Boards" in "Horizontals: shape traits" right of "Topology" size: 170x80
+    subboard "Draw" in "Engines" size: 170x80
+    subboard "Placing" in "Engines" right of "Draw" size: 170x80
     """)
     try stage.run("""
     subboard "Clipboard" in "Things you do" size: 150x70
@@ -153,21 +153,21 @@ extension GalleryStage {
     frame "Vendors" right of "Identity" size: 360x300
     """)
     try stage.run("""
-    sticky-note "Auth" in "Identity" color: blue public: true text: "Tokens and sessions" size: 180x100
-    sticky-note "Retry" in "Identity" right of "Auth" public: true text: "Back off, then try again" size: 180x100
-    subboard "Stripe" in "Vendors" public: true size: 200x100
-    sticky-note "Order" below "Identity" color: purple public: true schema: \(orderSchema) text: "An order has a total." size: 200x120
-    sticky-note "Order #1042" right of "Order" is: "Order" public: true text: "Two chairs" size: 200x120
+    sticky-note "Auth" in "Identity" color: blue text: "Tokens and sessions" size: 180x100
+    sticky-note "Retry" in "Identity" right of "Auth" text: "Back off, then try again" size: 180x100
+    subboard "Stripe" in "Vendors" size: 200x100
+    sticky-note "Order" below "Identity" color: purple schema: \(orderSchema) text: "An order has a total." size: 200x120
+    sticky-note "Order #1042" right of "Order" is: "Order" text: "Two chairs" size: 200x120
     subboard "Policies" right of "Vendors" size: 200x100
     subboard "Checkout" below "Policies" size: 200x100
     """)
     var orders = ""
-    for n in 0..<12 { orders += "sticky-note \"Order #\(2001 + n)\" is: \"Order\" public: true text: \"Open\" size: 120x80 right of \(n == 0 ? "\"Order #1042\"" : "\"Order #\(2000 + n)\"")\n" }
+    for n in 0..<12 { orders += "sticky-note \"Order #\(2001 + n)\" is: \"Order\" text: \"Open\" size: 120x80 right of \(n == 0 ? "\"Order #1042\"" : "\"Order #\(2000 + n)\"")\n" }
     try stage.run(orders)
-    try stage.run(#"frame "Refunds" in "Policies" color: green public: true size: 640x260"#)
+    try stage.run(#"frame "Refunds" in "Policies" color: green size: 640x260"#)
     try stage.run("""
-    sticky-note "Refund window" in "Refunds" public: true text: "Thirty days" size: 180x100
-    sticky-note "Retry" in "Refunds" right of "Refund window" public: true text: "Retry the refund" size: 180x100
+    sticky-note "Refund window" in "Refunds" text: "Thirty days" size: 180x100
+    sticky-note "Retry" in "Refunds" right of "Refund window" text: "Retry the refund" size: 180x100
     """)
     try stage.run("""
     sticky-note "Cart" in "Checkout" size: 160x100
@@ -176,8 +176,8 @@ extension GalleryStage {
     frame "Rules" in "Checkout" below "Confirm" (gap: 260) size: 340x220
     """)
     try stage.run("""
-    sticky-note "Pricing" in "Rules" color: orange public: true text: "Per seat" size: 200x120
-    sticky-note "Old checkout" in "Checkout" below "Cart" (gap: 500) public: true size: 160x100
+    sticky-note "Pricing" in "Rules" color: orange text: "Per seat" size: 200x120
+    sticky-note "Old checkout" in "Checkout" below "Cart" (gap: 500) size: 160x100
     edge "Cart" -> "Pay"
     edge "Pay" -> "Confirm"
     """)
@@ -218,18 +218,18 @@ extension GalleryStage {
     GalleryState("Pill-3-states", "every kind a pill stands for, and every state, on a board of its own", size: CGSize(width: 1200, height: 760)) { stage in
         try stage.run("""
         frame "Team" size: 800x420
-        frame "Green zone" right of "Team" color: green public: true size: 300x300
-        frame "Open zone" below "Team" public: true size: 300x200
+        frame "Green zone" right of "Team" color: green size: 300x300
+        frame "Open zone" below "Team" size: 300x200
         subboard "Holder" below "Green zone" size: 200x100
         """)
         try stage.run("""
-        sticky-note "Plan" in "Team" public: true text: "Ship in June" size: 180x100
-        sticky-note "Spec" in "Team" right of "Plan" color: blue public: true text: "What we build" size: 180x100
-        sticky-note "Draft" in "Team" below "Plan" public: true text: "Not final" size: 180x100
-        sticky-note "Gone" in "Team" right of "Draft" public: true text: "Soon deleted" size: 180x100
-        sticky-note "Order" below "Open zone" color: purple public: true schema: \(orderSchema) text: "An order has a total." size: 200x120
-        sticky-note "Order #7" right of "Order" is: "Order" public: true text: "Two chairs" size: 200x120
-        subboard "Billing" right of "Order #7" public: true size: 200x100
+        sticky-note "Plan" in "Team" text: "Ship in June" size: 180x100
+        sticky-note "Spec" in "Team" right of "Plan" color: blue text: "What we build" size: 180x100
+        sticky-note "Draft" in "Team" below "Plan" text: "Not final" size: 180x100
+        sticky-note "Gone" in "Team" right of "Draft" text: "Soon deleted" size: 180x100
+        sticky-note "Order" below "Open zone" color: purple schema: \(orderSchema) text: "An order has a total." size: 200x120
+        sticky-note "Order #7" right of "Order" is: "Order" text: "Two chairs" size: 200x120
+        subboard "Billing" right of "Order #7" size: 200x100
         """)
         try stage.show(try stage.board(of: "Holder"))
         stage.look(at: .zero)
@@ -238,7 +238,7 @@ extension GalleryStage {
             try stage.pickPill(name, at: CGPoint(x: 120 + CGFloat(n % 3) * 380, y: 60 + CGFloat(n / 3) * 80))
         }
         let draft = try stage.shape("Draft"), gone = try stage.shape("Gone")
-        stage.editor.transact("Make Private") { $0.update(inFile: draft) { $0[PublicProperty.self] = nil } }
+        stage.editor.transact("Make Private") { $0.update(inFile: draft) { $0[PrivateProperty.self] = true } }
         stage.editor.transact("Delete") { $0.delete(inFile: [gone]) }
         stage.editor.add(Reference(frame: CGRect(x: 60, y: 320, width: 120, height: 40)))
         stage.dynamicPill("open orders", query: #"sticky-note:is-a("Order")"#, all: true, at: CGPoint(x: 440, y: 320))
@@ -282,7 +282,7 @@ extension GalleryStage {
         """)
         let names = ["Auth", "Billing", "Catalog", "Search", "Mail", "Queue", "Cache", "Logging", "Metrics", "Storage", "Payments", "Reports"]
         var notes = ""
-        for (n, name) in names.enumerated() { notes += "sticky-note \"\(name)\" in \"Library\" public: true size: 120x70 \(n == 0 ? "" : "right of \"\(names[n - 1])\"")\n" }
+        for (n, name) in names.enumerated() { notes += "sticky-note \"\(name)\" in \"Library\" size: 120x70 \(n == 0 ? "" : "right of \"\(names[n - 1])\"")\n" }
         try stage.run(notes)
         try stage.run(#"subboard "Checkout" in "Work" inside "Work" left size: 170x80"#)
         try stage.run(names.map { "edge \"Checkout\" -> \"\($0)\" via: reference" }.joined(separator: "\n"))
@@ -317,21 +317,21 @@ extension GalleryStage {
     try stage.run("""
     subboard "Policies" size: 200x100
     subboard "Review" right of "Policies" size: 200x100
-    sticky-note "Chargeback reply 1" public: true size: 160x100 below "Policies"
+    sticky-note "Chargeback reply 1" size: 160x100 below "Policies"
     """)
     // One run a level: a shape goes in a container the file already has.
     let levels = [
         #"frame "Refunds" in "Policies" size: 1500x1200"#,
-        #"sticky-note "Chargeback reply 2" in "Policies" below "Refunds" public: true size: 160x100"#,
+        #"sticky-note "Chargeback reply 2" in "Policies" below "Refunds" size: 160x100"#,
         #"frame "Escalations" in "Refunds" size: 1300x900"#,
-        #"sticky-note "Chargeback reply 3" in "Refunds" below "Escalations" public: true size: 160x100"#,
+        #"sticky-note "Chargeback reply 3" in "Refunds" below "Escalations" size: 160x100"#,
         #"frame "EU" in "Escalations" size: 1100x450"#,
-        #"sticky-note "Chargeback reply 4" in "Escalations" below "EU" public: true size: 160x100"#,
+        #"sticky-note "Chargeback reply 4" in "Escalations" below "EU" size: 160x100"#,
         #"subboard "Disputes" in "EU" size: 200x100"#,
-        #"sticky-note "Chargeback reply 5" in "EU" below "Disputes" public: true size: 160x100"#,
+        #"sticky-note "Chargeback reply 5" in "EU" below "Disputes" size: 160x100"#,
         #"frame "Q3 review" in "Disputes" size: 600x300"#,
-        #"sticky-note "Chargeback reply 6" in "Disputes" below "Q3 review" public: true size: 160x100"#,
-        #"sticky-note "Chargeback reply 7" in "Q3 review" public: true size: 160x100"#,
+        #"sticky-note "Chargeback reply 6" in "Disputes" below "Q3 review" size: 160x100"#,
+        #"sticky-note "Chargeback reply 7" in "Q3 review" size: 160x100"#,
     ]
     for level in levels { try stage.run(level) }
     try stage.show(try stage.board(of: "Review"))
@@ -355,7 +355,7 @@ private let builtInColors = ["gray", "red", "orange", "yellow", "green", "teal",
         var script = ""
         for (n, color) in builtInColors.enumerated() {
             let title = "\(container.dropLast()) \(color)"
-            script += "\(kind) \"\(title)\" in \"\(container)\" color: \(color) public: true size: 120x70\(n == 0 ? "" : " right of \"\(container.dropLast()) \(builtInColors[n - 1])\"")\n"
+            script += "\(kind) \"\(title)\" in \"\(container)\" color: \(color) size: 120x70\(n == 0 ? "" : " right of \"\(container.dropLast()) \(builtInColors[n - 1])\"")\n"
         }
         try stage.run(script)
     }

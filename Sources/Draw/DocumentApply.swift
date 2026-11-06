@@ -9,8 +9,9 @@ import Topology
 // on a rehearsal of the editor (`editor.rehearsal()`), in `draw`'s own runs, a board at a time and in the order only the
 // app knows: what holds shapes before what it holds, every shape before any property is written, a property naming a type
 // after the type has its schema (a run that refuses a name not yet written is put off to a later round, so types come
-// before their notes whatever board each is on), every shape and property before the edges, and a pill's shape made what
-// the pill needs (public) before the edge through it; a pill an edge drew before is put where the document says now, and an
+// before their notes whatever board each is on), every shape and property before the edges, and a pill's shape stood for as
+// it is (one a pill can't stand for until a person changes it, a private one, is refused, never changed); a pill an edge drew
+// before is put where the document says now, and an
 // edge drawn otherwise than the document draws it now (straight, or through a pill) is drawn anew. Each shape is named by its id, the drawing's from its record for a key
 // it has, a new one picked here for any other (`DrawOptions.reserved`), placed exactly where the document says
 // (`DrawOptions.places`), and a value may name a node by its key (`DrawOptions.keys`). What the drawing made whose key is gone
@@ -82,8 +83,6 @@ struct DocumentRun {
     private var warned: Set<String> = []
     /// The edges whose pill was put where the document says now.
     private var movedPills: Set<Int> = []
-    /// The nodes made what a pill needs to stand for them (public): a change of theirs that no run's row says.
-    private var readied: Set<String> = []
 
     init(document: DrawDocument, name: String, records: DrawRecording, program: String, editor: CanvasEditor) {
         self.document = document
@@ -326,7 +325,7 @@ struct DocumentRun {
         try deleteGone(on: copy)
         try drawShapes(on: copy)
         try writeProperties(on: copy)
-        let kinds = try readyPills(on: copy)
+        let kinds = try pillKinds(on: copy)
         let drawnEdges = try drawEdges(on: copy, standIns: kinds)
         placePills(on: copy)
         try audit(on: copy)
@@ -526,32 +525,36 @@ struct DocumentRun {
         return false
     }
 
-    /// Each pill's shape made what the kind of pill that stands for it needs (public), and the kind each edge's pill is.
-    private mutating func readyPills(on copy: CanvasEditor) throws(DocumentError) -> [Int: ShapeKind] {
+    /// The kind each edge's pill is: the first maker that stands for the pill's shape as the shape is. A shape no maker
+    /// stands for until it's changed (a private one: a person made it so) is refused and left as it is, since making it
+    /// what the pill needs (public) is the person's call, as for `canvas draw`; a kind no pill stands for is refused too.
+    private func pillKinds(on copy: CanvasEditor) throws(DocumentError) -> [Int: ShapeKind] {
         let standIns = registry.standIns
         var kinds: [Int: ShapeKind] = [:]
         for edge in document.edges {
             guard let pill = edge.pill else { continue }
             let far = pill.standsFor ?? edge.to
-            guard let id = ids[far], let board = copy.file.board(containing: id), let record = copy.file.record(id) else { continue }
-            var made = record, chosen: ShapeKind?
-            for maker in standIns.makers {
+            guard let id = ids[far], let record = copy.file.record(id) else { continue }
+            if let chosen = standIns.makers.first(where: { standIns.admits($0, record) }) {
+                kinds[edge.index] = chosen
+                continue
+            }
+            // A maker that would stand for it once changed, asked of a copy and never written: what the shape lacks.
+            let wanting = standIns.makers.first { maker in
                 var probe = record
-                if standIns.fulfil(maker, &probe) { made = probe; chosen = maker; break }
+                return standIns.fulfil(maker, &probe)
             }
-            guard let chosen else {
+            if let wanting {
+                // What the shape lacks is the person's to give it, said in the kind's word where it has one.
+                let (lacks, ask) = standIns.needs(wanting).map { need in
+                    ("which isn't \(need), and only \(indefinite(need)) shape can be stood for", "ask the user to make \(quoted(far)) \(need) (it's theirs to say)")
+                } ?? ("which no pill stands for as it is", "ask the user whether \(quoted(far)) may be stood for (it's theirs to say)")
                 throw DocumentError(key: far, edge: edge.index, reason: ScriptError.Reason.invalidValue.rawValue,
-                                    message: "edges[\(edge.index)] goes through a pill for \(quoted(far)), \(indefinite(record.kind)), and no pill can stand for one",
-                                    hint: "canvas kinds says which kinds a pill can stand for (via); draw the edge straight")
+                                    message: "edges[\(edge.index)] goes through a pill for \(quoted(far)), \(lacks)", hint: "\(ask), or leave the edge out")
             }
-            kinds[edge.index] = chosen
-            if made != record {
-                copy.transact(on: board, DrawStyle.stepName) { transaction in
-                    transaction.byAgent = true
-                    transaction.update(id) { $0 = made }
-                }
-                readied.insert(far)
-            }
+            throw DocumentError(key: far, edge: edge.index, reason: ScriptError.Reason.invalidValue.rawValue,
+                                message: "edges[\(edge.index)] goes through a pill for \(quoted(far)), \(indefinite(record.kind)), and no pill can stand for one",
+                                hint: "canvas kinds says which kinds a pill can stand for (via); draw the edge straight")
         }
         return kinds
     }
@@ -791,7 +794,7 @@ struct DocumentRun {
         for node in document.nodes {
             guard let id = ids[node.key] else { continue }
             let rows = nodeRows[node.key] ?? []
-            let did = made.contains(id) ? "created" : rows.contains(where: { $0.did != .unchanged }) || readied.contains(node.key) ? "updated" : "unchanged"
+            let did = made.contains(id) ? "created" : rows.contains(where: { $0.did != .unchanged }) ? "updated" : "unchanged"
             var overrode: [String]?
             if let then = before?.shapes[id.description]?.wrote, let now = current[id], let after = DrawnState.of(id, in: copy.file, registry: registry) {
                 let theirs = now.changes(from: then), ours = Set(after.changes(from: now))

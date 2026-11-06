@@ -39,14 +39,14 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         let locked = editor.add(StickyNote(frame: CGRect(x: 100, y: 800, width: 200, height: 200), text: "Locked"))
         editor.lock([locked])
         @MainActor func listed(_ ids: [ShapeID]) -> [String] { state.commands(for: .selection(ids)).map(\.name) }
-        expectEqual(listed([note]), ["title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "a note's text lists the same")
-        expectEqual(listed([frame]), ["turn-into-subboard", "title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "a frame can be of a type, though it has no text")
-        expectEqual(listed([subboard]), ["title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
+        expectEqual(listed([note]), ["title", "lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "a note's text lists the same")
+        expectEqual(listed([frame]), ["turn-into-subboard", "title", "lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "a frame can be of a type, though it has no text")
+        expectEqual(listed([subboard]), ["title", "lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
         expectEqual(listed([arrow]), ["lock", "is-a", "color"], "its label's list, and its color")
         expectEqual(listed([reference]), ["lock", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
         expectEqual(listed([locked]), ["unlock"], "a locked note only what can act on it")
         let mixed = state.commands(for: .selection([note, frame, arrow])).map { "\($0.name) \($0.shapes.count) of \($0.targetCount)" }
-        expectEqual(mixed, ["lock 3 of 3", "public 2 of 3", "is-a 3 of 3", "color 3 of 3", "move-to 2 of 3", "move-near 2 of 3",
+        expectEqual(mixed, ["lock 3 of 3", "private 2 of 3", "is-a 3 of 3", "color 3 of 3", "move-to 2 of 3", "move-near 2 of 3",
                             "bring-to-front 2 of 3", "send-to-back 2 of 3", "bring-in-front-of 2 of 3", "send-behind 2 of 3", "turn-into-subboard 1 of 3",
                             "query 3 of 3"],
                     "the first shape's order, then what only later shapes offer; title, one shape's, left out; /query, about them all, last")
@@ -72,11 +72,11 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         window.type("/")
         expect(editing.slashCommands?.picker == nil, "mid-line")
         window.pressDelete()
-        // On a new line it lists what the note offers: /title, then /lock, then /public, then /is-a, then /color, then Moving's two and Reordering's four.
+        // On a new line it lists what the note offers: /title, then /lock, then /private, then /is-a, then /color, then Moving's two and Reordering's four.
         window.pressReturn()
         window.type("/")
         let picker = try require(editing.slashCommands?.picker, "the list is open")
-        expectEqual(picker.listed.map(\.name), ["title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
+        expectEqual(picker.listed.map(\.name), ["title", "lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"])
         expect(editing.caretListWindow === editing.slashCommands?.window)
         expect(editing.holdsKeys)
         window.type("lo")
@@ -198,37 +198,37 @@ private let noteFrame = CGRect(x: 100, y: 100, width: 200, height: 200)
         window.pressEscape()
     },
 
-    test("/public typed on a new line of a note and entered makes it public, /private takes that back: one step each, named as the menu's items are, with editing going on") {
+    test("/private typed on a new line of a note and entered makes it private, /public takes that back: one step each, named as the menu's items are, with editing going on") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), pasteboard: pasteboard, model: ScriptedLanguageModel())
         let (window, _) = windowed(editor)
         let note = editor.add(StickyNote(frame: noteFrame, text: "keep"))
         @MainActor func text() -> String? { editor.document[note]?.typed(as: StickyNote.self)?.props.text.plainText() }
-        @MainActor func isPublic() -> Bool { editor.document[note]?[PublicProperty.self] == true }
+        @MainActor func isPrivate() -> Bool { editor.document[note]?[PrivateProperty.self] == true }
         editor.selection = note
         expect(editor.beginEditing(note))
         let editing = try require(window.firstResponder as? MentionTextView<AnyMentionable>, "the note's editor has the keyboard")
         editing.setSelectedRange(NSRange(location: 4, length: 0))
         window.pressReturn()
         window.type("/")
+        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "public, as every note starts: /private, not /public")
+        window.type("private")
+        window.pressReturn()
+        window.settle()
+        expect(isPrivate(), "private")
+        expectEqual(editor.editingShapeID, note, "editing goes on")
+        expectEqual(text(), "keep\n", "the line is gone from its text")
+        expectEqual(editor.undoHistory.undoName, "Make Private")
+        window.type("/")
         expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "public", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "private: /public, not /private")
         window.type("public")
         window.pressReturn()
         window.settle()
-        expect(isPublic(), "public")
-        expectEqual(editor.editingShapeID, note, "editing goes on")
-        expectEqual(text(), "keep\n", "the line is gone from its text")
+        expect(!isPrivate(), "public again")
         expectEqual(editor.undoHistory.undoName, "Make Public")
-        window.type("/")
-        expectEqual(try require(editing.slashCommands?.picker).listed.map(\.name), ["title", "lock", "private", "is-a", "color", "move-to", "move-near", "bring-to-front", "send-to-back", "bring-in-front-of", "send-behind"], "public: /private, not /public")
-        window.type("private")
-        window.pressReturn()
-        window.settle()
-        expect(!isPublic(), "private again")
-        expectEqual(editor.undoHistory.undoName, "Make Private")
         editor.undo()
-        expect(isPublic(), "undone")
+        expect(isPrivate(), "undone")
         window.pressEscape()
     },
 

@@ -96,7 +96,7 @@ private func answerOf(_ status: ReferenceStatus?) -> String {
                 case 3:
                     guard let box = pick(Box.kind), h.editor.document[box] != nil else { continue }
                     what = "public or not"
-                    h.editor.transact { $0.update(box) { $0[PublicProperty.self] = $0[PublicProperty.self] == true ? nil : true } }
+                    h.editor.transact { $0.update(box) { $0[PrivateProperty.self] = $0[PrivateProperty.self] == true ? nil : true } }
                 case 4:
                     guard let box = pick(Box.kind), h.editor.document[box] != nil else { continue }
                     what = "a rename"
@@ -106,7 +106,6 @@ private func answerOf(_ status: ReferenceStatus?) -> String {
                     what = "a box in the pocket"
                     var box = ShapeRecord(Box(frame()))
                     box[TitleProperty.self] = titles.randomElement(using: &random)!
-                    box[PublicProperty.self] = true
                     h.editor.transact(on: BoardID(owner: pocket)) { $0.insert(box) }
                 case 6:
                     guard let box = pick(Box.kind) else { continue }

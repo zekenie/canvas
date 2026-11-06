@@ -323,7 +323,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Go to shapes, as following a link does (select them, bring them into view, ⌘[ returns), or only bring them into view | Selection's `editor.goTo(_:)`, `editor.reveal(_:)` | [Selection](#selection) |
 | Keep a kind from being copied | `x.uncopyable()`, or `x.copyable { ... }` | [The clipboard](#the-clipboard) |
 | Keep some shapes from changing (a lock), and say why when something tries | `registrar.readOnlyShapes { ... }`; `EditorService.didRefuseChanges` | [Locking](#locking) |
-| Say which shapes another shape may stand for (public), and show what stands for one | `PublicProperty`, `NeverPublic`, `AlwaysPublic`, `editor.publishing`; what stands for a shape is in its Connections tab (Neighbors') | [Publishing](#publishing), [Neighbors](#neighbors) |
+| Say which shapes another shape may stand for (every shape, unless made private), and show the private ones | `PrivateProperty`, `NeverPublic`, `AlwaysPublic`, `editor.publishing`; what stands for a shape is in its Connections tab (Neighbors') | [Publishing](#publishing), [Neighbors](#neighbors) |
 | Put a pill that stands for a public shape, so an arrow into it is an arrow into the shape | `ReferencesPlugin`: the Reference tool (R); `x.standsIn` is what it declares, Publishing says what it may stand for | [References](#references) |
 | Put a button on the canvas that a click does something with (a chip), or a drag starts something from (a port's dot) | Selection's `registrar.canvasButtons(at:click:)` or `canvasButtons(at:drag:)`, drawn in an overlay with `editor.hoveredButton` and `editor.pressedButton`; or make an adornment a `ClickableAdornment` | [Canvas buttons](#canvas-buttons), [Locking](#locking), [Ports](#ports) |
 | Make what you draw for a shape outside it count as the shape (a press, a hover, a right-click) | Selection's `registrar.decorationHits`; adornments already do | [DecorationHits](#drawn-for-a-shape-decorationhits) |
@@ -411,7 +411,7 @@ show the selected shape. So are the keys: [Keyboard](#keyboard-shortcuts) holds 
 and a plugin whose tool or command has a key registers it there. So is [locking](#locking): any
 shape can be locked, and Locking owns the lock and its chip (an adornment; the shake a refused change gives is Selection's, the fade Adornments'), while the
 core only refuses to change the shapes a plugin says are read-only. So is [publishing](#publishing): any
-kind can be public, and Publishing owns which are, its chip and what stands for a shape, while Topology only forwards through the
+kind can be private, and Publishing owns which are, its chip and what stands for a shape, while Topology only forwards through the
 stand-ins a kind declares. So is [referencing](#references): any public shape can be stood for by a
 pill, a kind written after References too, and the pill holds nothing of its own, only another shape
 shown in a second place, so References is a horizontal though it declares a kind. So are [ports](#ports): any
@@ -2971,7 +2971,7 @@ registrar.forShapes(holding: LinkProperty.self) { link in
   by 3, its corners as round as a chip's (`SelectionStyle.partRingWidth`, `partRingStandoff`), and a
   part out of view comes into it (`revealIfOffscreen`, over the part's rect).
 - **Adornments lists every clickable adornment** by itself, in the scope it is registered in
-  ([Adornments](#adornments)): the lock, public and type chips, "+N", the relationship pill and its offer
+  ([Adornments](#adornments)): the lock, private and type chips, "+N", the relationship pill and its offer
   are parts with no code of their own.
 ## Describing a shape for VoiceOver
 
@@ -5821,7 +5821,7 @@ the place starts: the row's left end, its right end, the corner's outer end. As 
 |---|---|
 | A kind's own; one a horizontal's feature brings to the kinds that opt in (`TitlePill`) | none |
 | Types' chips (`TypeChips`): what a shape is, after what it's called | `.after(TitlePill.self)` |
-| A state of the shape that comes and goes (`LockChip`; Publishing's `PublicChip`, after it in plugin order) | `.last`: farthest out, so the others keep their places |
+| A state of the shape that comes and goes (`LockChip`; Publishing's `PrivateChip`, after it in plugin order) | `.last`: farthest out, so the others keep their places |
 
 So a flag a kind shows of its own keeps its place at the row's right end whether a lock is beside it
 or not, and plugins that don't know each other never need to agree on anything.
@@ -5849,8 +5849,8 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
 - **`opacity(_:)`**: the same label drawn lighter, 0 to 1 (Locking's open lock, fading); a compact
   face (below) goes with it.
 - **`brightSymbol()`**: the symbol before the text drawn in full white, as the text is, where it
-  is otherwise a little softer (a mark, not news): Publishing's globe; a compact face's too.
-- **`compact(_:)`**: `AdornmentLabel("Public · 3", systemImage: "globe").compact(AdornmentLabel(systemImage: "globe"))`,
+  is otherwise a little softer (a mark, not news); a compact face's too.
+- **`compact(_:)`**: `AdornmentLabel("Draft · 3", systemImage: "doc").compact(AdornmentLabel("3", systemImage: "doc"))` (a made-up label: no shipped chip has a compact face now; Publishing's had one while it said "Public · 3"),
   a narrower face the label may take at the row's right end (`aboveTopRight`). The row's left end
   (a title's pill) gives way to what's at the right, ending in "…" and needing 30 points, so a
   text chip there can cut a title short or push it out. Whenever the title wouldn't show whole,
@@ -5859,14 +5859,11 @@ plugin's look alike, as `ContentsLabel` keeps rows alike:
   of them do (one already whole goes no farther), and every one when even that shows no title. A
   title the full chips show whole, or none at all, leaves them in full. So as the shape widens,
   however narrow it starts, the face changes once: compact (no title, then the title cut short,
-  ending in "…", then whole) until the full chip and the whole title fit together, then full. A
-  public note's title zoomed out to 50% has the compact chip from the narrowest shape, no title
-  below 92 points, "Payments ro…" beside the globe and the count from there, the whole title from
-  179, and the full "Public · 3" from 221. Nothing of the
+  ending in "…", then whole) until the full chip and the whole title fit together, then full. Nothing of the
   kind is drawn otherwise, and a chip with no compact face costs nothing. The compact face is laid
   out and drawn in the same place, in its own look (a symbol alone, where the label is text with
   a figure), is made with the label (its face is counted in `adornmentFacesMade`), and is the
-  label `adornmentFrames(of:)` reports where it's taken. Publishing's chip has one.
+  label `adornmentFrames(of:)` reports where it's taken.
 
 - **`tagged(_:)`** and **`missing()`**: which of a group's labels it is, and the look of a name
   that is gone ([above](#several-labels-a-group)).
@@ -7052,83 +7049,84 @@ Ports are the part of data-canvas's that notes and subboards need to prove the A
 
 ## Publishing
 
-A public shape is one another shape may stand for, so what a lot of shapes point at (a pricing
-note, a glossary) needs no arrow from each of them: a pill that stands for it takes theirs, and an
-arrow to the pill counts, for queries, the table of contents and everything that reads
-[Topology](#topology), as an arrow to the shape. Only a public shape can be stood for. Publishing
+Every shape is public unless it is made private, and a public shape is one another shape may stand
+for, so what a lot of shapes point at (a pricing note, a glossary) needs no arrow from each of them: a
+pill that stands for it takes theirs, and an arrow to the pill counts, for queries, the table of
+contents and everything that reads [Topology](#topology), as an arrow to the shape. Only a public
+shape can be stood for. Publishing
 ([`Sources/Publishing`](../Sources/Publishing), a horizontal, on Adornments, ContextMenus, DetailPanel,
-Neighbors, Selection, SlashCommands, TableOfContents, Titles and Topology) says which shapes are, shows it,
-and sends the panel to what stands for one, in Neighbors' Connections tab; it knows no kind that stands in (no reference), only
+Neighbors, Selection, SlashCommands, TableOfContents, Titles and Topology) says which shapes are not,
+shows it, and sends the panel to what stands for one, in Neighbors' Connections tab; it knows no kind that stands in (no reference), only
 what Topology says stands for a shape (`topology.standIns(for:)`), and no core knows of it.
 
 ```swift
-registrar.declare(PublicProperty.self)                  // `public: true` on a public shape; nothing on the rest
-registrar.optInEveryShape(to: PublicProperty.self, where: { !($0 is any NeverPublic) && !($0 is any AlwaysPublic) })
+registrar.declare(PrivateProperty.self)                 // `private: true` on a private shape; nothing on the rest
+registrar.optInEveryShape(to: PrivateProperty.self, where: { !($0 is any NeverPublic) && !($0 is any AlwaysPublic) })
 registrar.contribute(true, to: PublishingDials.self)    // so the registry checks no definition adopts both
-registrar.service { PublishingState(editor: $0) }       // what stands for each shape, the chips showing Private, `admitting`; what is public is the records'
-registrar.command(.makePublic, title: "Make Public", isEnabled: { … }) { … }   // and .makePrivate: the menu, `/public` and the chip run them
+registrar.service { PublishingState(editor: $0) }       // the chips showing the open eye, `admitting`; what is private is the records'
+registrar.command(.makePublic, title: "Make Public", isEnabled: { … }) { … }   // and .makePrivate: the menu, `/public`, `/private` and the chip run them
 registrar.contextMenuForCanvas { MenuItem(command: .makePublic, in: PublishMenuGroup.self, when: { … }, dims: true); MenuItem(command: .makePrivate, …) }   // every menu's: on a mix, what can be
-registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Publishing puts on shapes goes on the kinds that can be public, and no other
-    publishable.adornment(PublicChip.self) { shape, context in … }
-    publishable.contentsMark { shape, context in … }                   // a globe on a public shape's row
+registrar.forShapes(holding: PrivateProperty.self) { publishable in   // what Publishing puts on shapes goes on the kinds that can be private, and no other
+    publishable.adornment(PrivateChip.self) { shape, context in … }
+    publishable.contentsMark { shape, context in … }                   // a crossed eye on a private shape's row
     publishable.slashCommands { SlashCommand("public", command: .makePublic, when: { … }); SlashCommand("private", command: .makePrivate, when: { … }, tries: true) }
 }
 ```
 
-- **Public is something the shape knows**, as locked is: an [added property](#added-properties),
-  `public`, a boolean whose default is nil, so private is stored as no value and only public shapes
-  carry one (`"added" : { "public" : true }`; a draw that says `public: false` stores `false`, which
-  is private too). `editor.makePublic(ids)` is one transaction, "Make Public", writing each record, on whichever board of the file it is (`transaction.update(inFile:)`), with `registry.makePublic(&record)` (the one writer of `public` on a record: true when it's public after, false for a kind that can't be). `registry.isPublic(record)` is the
-  value, or an always-public kind (one dictionary hit and a cast, for what holds a registry and no
+- **Private is something the shape knows**, as locked is: an [added property](#added-properties),
+  `private`, a boolean whose default is nil, so public is stored as no value and only private shapes
+  carry one (`"added" : { "private" : true }`; a draw that says `private: false` stores `false`, which
+  is public too). Boards written when public was the stored side kept their `public` values aside.
+  `editor.makePublic(ids)` is one transaction, "Make Public", writing each record, on whichever board of the file it is (`transaction.update(inFile:)`), with `registry.makePublic(&record)` (the one writer of `private` on a record: it takes it off, and is true when the record is public after). `registry.isPublic(record)` is the
+  value: the kind holds the property and the record isn't private and isn't kept aside, or the kind is
+  always public (one lookup in a table the registry keeps, for what holds a registry and no
   editor: a stand-in's admission), and `registry.canBePublic(kind)` whether shapes of the kind can be
-  (they hold the property, or every one is).
+  made private or public (they hold the property, or every one is public).
 - **Two dials, both capabilities on a kind's definition**, in an extension: `NeverPublic` (the kind
-  holds no `public`: the arrow adopts it, since nothing binds to an arrow, and a kind that stands in
-  should, since a stand-in is never stood for) and `AlwaysPublic` (every shape of the kind is public:
+  holds no `private`: the arrow adopts it, since nothing binds to an arrow, and a kind that stands in
+  should, since a stand-in is never stood for; such a shape is never public) and `AlwaysPublic` (every shape of the kind is public:
   it holds no property, so no chip, no menu item, no command; no shipped kind is). They are
   capabilities because `optInEveryShape`'s `where:` sees only definitions, while the property table
   is built. A definition adopting both is refused when the registry is built
   (`PublishingDials.check`, which runs because Publishing always contributes to it).
-- **`PublishingState`** (`editor.publishing`, a service) keeps the chips showing "Private", and no
-  copy of which shapes are public: a commit that makes one private is told from one that never was
-  by what the shape was before it (`ChangeSet.before`). `admitting` is what the query engine, or anything off the main actor, asks of a
-  shape to know whether it may be stood for: made once, when the editor is, from the always-public
-  kinds and `topology.standInKinds`, `@Sendable` (`admittingMade`, debug builds, counts the makings: one).
-  `admittable`, made with it, is what `admitting` turns away that Make Public would admit (not public,
+- **`PublishingState`** (`editor.publishing`, a service) keeps the chips showing the open eye, and no
+  copy of which shapes are public: a commit that makes one public is told from one that never was
+  private by what the shape was before it (`ChangeSet.before`). `admitting` is what the query engine, or anything off the main actor, asks of a
+  shape to know whether it may be stood for: made once, when the editor is, from the kinds that hold
+  the property, the always-public kinds and `topology.standInKinds`, `@Sendable` (`admittingMade`, debug builds, counts the makings: one).
+  `admittable`, made with it, is what `admitting` turns away that Make Public would admit (private,
   of a kind that holds the property, not kept aside, not a stand-in): what a query that stands for
-  public shapes alone holds back, and counts.
-  It follows Topology (`topology.follow`) for the shapes a change to `stands-for` edges touches, a
-  commit's or a provide's alike, and tells Adornments and the table of contents to make their
-  chips and rows again (`adornmentsDidChange(for:)`, `contentsDidChange(for:)`).
-- **The chip** (`PublicChip`, a clickable adornment at the right end of the row, `.last` as the lock
+  public shapes alone holds back, and counts. Nothing Publishing draws depends on what stands for a
+  shape, so it does not follow Topology's `stands-for` edges: the chip and the row are made again with
+  the commit that changes the shape, as any shape's are, and the state tells Adornments
+  (`adornmentsDidChange(for:)`) only when an open eye comes or goes.
+- **The chip** (`PrivateChip`, a clickable adornment at the right end of the row, `.last` as the lock
   is: the lock, before it in plugin order, is nearest the end, this 4 points left of it, a title's pill
-  stops short of both). A text chip
-  on every kind that holds the property, never on an always-public kind's (nothing to toggle), never on
-  a shape drawn as a skeleton. It reads "Public" with a globe, "Public · 3" once three things stand for
-  the shape (direct and dynamic: what `standIns(for:)` says), and "Private" with the globe, fading, for a
-  moment after the shape went private (Adornments' [`ChipFade`](#a-chip-that-fades-chipfade): 1.5 s,
-  longer while the pointer's on it, then 0.3 s), however it went private: an undo too, but not a shape
-  that arrives private (a paste). Where it would make the title's pill truncate or vanish, it takes a
-  compact face ([the compact face](#the-label)): the globe alone, or the count with the globe, and for
-  "Private" the globe at the fading opacity.
-- **A click**: on a public shape nothing stands for, it makes the shape private ("Make Private"). On
-  one that something stands for, it writes nothing and takes no step: `editor.refuseChanges(to:)`, so
+  stops short of both). A symbol alone in a disc, as the lock chip is a lock alone: the crossed eye
+  (`eye.slash`), on private shapes only, on every kind that holds the property, never on an always-public kind's (nothing to toggle), never on
+  a shape drawn as a skeleton. Public shapes wear nothing. VoiceOver calls it "Private". For a
+  moment after a shape goes public its chip is an open eye (`eye`), fading (Adornments' [`ChipFade`](#a-chip-that-fades-chipfade): 1.5 s,
+  longer while the pointer's on it, then 0.3 s), however it went public: an undo too, but not a shape
+  that arrives public (a paste). The chip has one face, so it takes no compact face
+  ([the compact face](#the-label)).
+- **A click**: on the crossed eye makes the shape public ("Make Public"). On the open eye while it
+  lingers it makes the shape private again ("Make Private"), and if something stands for the shape it
+  writes nothing and takes no step: `editor.refuseChanges(to:)`, so
   Selection's `RefusalShake` shakes the shape, and, when the detail panel shows that shape alone, its
-  panel switches to the Connections tab (Neighbors', `detailPanel.choose`), where the stand-ins, among what points to the shape, say why. A click on
-  "Private" while it lingers makes the shape public again ("Make Public"). `editor.makePrivate(ids)`
+  panel switches to the Connections tab (Neighbors', `detailPanel.choose`), where the stand-ins, among what points to the shape, say why. `editor.makePrivate(ids)`
   is the guarded way (the chip, the menu and `/private` use it): the shapes nothing stands for go
   private in one step, the held ones are refused and shake, and it returns those it left public.
   What makes a shape private some other way, with no guard (undo, redo, a paste, a board edited by hand,
-  `canvas draw`), is written: the stand-ins let go of it in that commit (admission), the count drops, the
-  chip reads Private; making it public again heals them. A locked shape is refused by the core,
+  `canvas draw`'s `private: true`), is written: the stand-ins let go of it in that commit (admission),
+  the chip reads the crossed eye; making it public again heals them. A locked shape is refused by the core,
   held or not.
 - **Make Public and Make Private are two [commands](#commands)** (`.makePublic`, `.makePrivate`,
   no key), which the menu, `/public` and `/private` and the chip run. The menu has one item, in
   `PublishMenuGroup` (`.after(StateMenuGroup.self)`: between Lock's and Delete's), a toggle as Lock's: Make
-  Public while any shape the menu is for that can be public isn't, which makes the rest public, else
-  Make Private (`MenuItem(command:… dims: true)`). Each is dimmed while its command can do nothing:
-  every shape it would change is read-only, and, for Make Private, every public shape is held. On a
-  mix, the free shapes go private in one step and the held ones shake. A shape that can't be public
+  Public while any shape the menu is for is private, which makes those public, else
+  Make Private (`MenuItem(command:… dims: true)`), so on a new shape it reads Make Private. Each is dimmed while its command can do nothing:
+  every shape it would change is read-only (Make Private on a held shape is a try, enabled: it shakes the shape and shows Connections). On a
+  mix, the free shapes go private in one step and the held ones shake. A shape that can't be made private
   (a seal, a draft) has neither. `/public` (while a shape is private: the command's rule, and its
   `when`, so that it reaches exactly the shapes it would make public) and `/private` (while it's
   public, `tries: true`, so a held one is tried and shakes, as at the chip) are [slash
@@ -7139,23 +7137,20 @@ registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Pub
   shakes the held one, writes nothing for it, and sends the free one private, in one step. A locked
   shape in the selection is reached by neither, not even the try. The chip's click is a try of the
   one its face shows (`editor.attempt`).
-- **The table of contents** marks a public shape's row with a globe (`ContentsMark`, "Public" or
-  "Public · 3 references"), on the kinds that hold the property.
+- **The table of contents** marks a private shape's row with the crossed eye (`ContentsMark`, "Private"), on the kinds that hold the property, and a public shape's with nothing.
 - **What stands for a shape** is listed by [Neighbors](#neighbors)' Connections tab, to which Publishing adds
   nothing: a stand-in points to the shape it stands for (arrows' light names `stands-for`), so it is a row
   under Pointed To By like any shape that points to it, the kind's symbol and its name (a title, else the
   kind's), with the board it's on when that isn't the board shown. The pointer on a row hovers the
   stand-in, a click goes to it. Publishing's part is the tab a refusal sends the panel to: it imports
   Neighbors for `NeighborsTab`, and nothing else of it.
-- **Testing.** PublishingTests use fixtures only: `Plaque` (public by choice, titled), `Seal`
+- **Testing.** PublishingTests use fixtures only: `Plaque` (public by default, titled), `Seal`
   (`AlwaysPublic`), `Draft` (`NeverPublic`), `Holder`, `Lens` and `Relay` standing in (with CanvasTesting's
   `Link` carrying a fixture wire), a fixture chip standing in for the lock's, and CanvasTesting's
   `FreezingPlugin(log:)` for read-only shapes and the refusals services heard. They hold the dials
-  (both adopted refused, `admitting` built once), the chip (its place beside the lock, none for a seal,
-  a draft, a stand-in or a skeleton, the count through every change to the edges including a provide, the
-  compact face over a sweep of title lengths and, zoomed out to 50%, over a sweep of widths from the
-  narrowest: the face changes once, compact to full), clicks (the steps, the fade's timings on the
-  `ManualScheduler`, the linger while hovered, public again during it, a refusal with no step, a
+  (both adopted refused, `admitting` built once), the chip (its place beside the lock, none for a public shape, a seal,
+  a draft, a stand-in or a skeleton, the crossed eye through every change to `private`), clicks (the steps, the fade's timings on the
+  `ManualScheduler`, the linger while hovered, private again during it, a refusal with no step, a
   shake, no write and the panel's tab (Connections, only when the panel shows the held shape alone),
   locked shapes), the menu (items, dimming, a mix, locked shapes), the slash commands (in a shape's text, and
   for the shapes selected: a public and a private plaque each `1 of 2`, three plaques alike reached
@@ -7163,10 +7158,10 @@ registrar.forShapes(holding: PublicProperty.self) { publishable in   // what Pub
   reached), the rows in the
   table of contents, the panel on a refused click (hosted in an unshown window, with Neighbors'
   `NeighborDetailsPlugin()` added: Connections lists the shape, Neighbors' list being told which shape is
-  on screen; a click that makes the shape private leaves the panel where it was), the unguarded paths
+  on screen; a click that makes the shape public leaves the panel where it was), the unguarded paths
   and boards. CompositionTests' `publishingShippedTests` hold which shipped kinds can
-  be public (all but the arrow) and are mentionable (the picker offers what's mentionable), the chip beside
-  a real lock, a copy, and `canvas draw`'s `public:`.
+  be private (all but the arrow and the reference) and are mentionable (the picker offers what's mentionable), the chip beside
+  a real lock, a copy, and `canvas draw`'s `private:`.
 
 ## Mentions
 
@@ -8621,12 +8616,12 @@ following a mention shows it. VoiceOver hears how many, and how many more are on
   of two (`reach: .one`), run for one.
 - **CompositionTests' `slashCommandsShippedTests`** type `/lock`, `/title`, `/public` and
   `/private` into a note's editor in the app's canvas view: a slash mid-line is a slash, on a new
-  line it lists `title`, `lock`, `public`, `is-a`, `color`, `move-to`, `move-near` and Reordering's four, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
+  line it lists `title`, `lock`, `private`, `is-a`, `color`, `move-to`, `move-near` and Reordering's four, Return locks the note, ends editing and takes the line out of its text, "Undo Lock" is
   followed by the typing, and `/lock now` stays text; `/title Groceries` names the note and
   editing goes on, "Undo Title" is followed by the typing, and `/title ` alone is a new line. The
   registry's report (ShippedTests, and the guide's copy of it) holds `slash-commands`, Titles'
   `/title → every shape holding title`, Locking's `/lock /unlock → every shape holding locked`, Publishing's
-  `/public /private → every shape holding public`, Subboards' `/turn-into-subboard → every shape that
+  `/public /private → every shape holding private`, Subboards' `/turn-into-subboard → every shape that
   can turn into subboard`, Moving's `/move-to /move-near → every shape with a box` and Reordering's
   `/bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order`.
 
@@ -11029,7 +11024,7 @@ registrar.forShapes(adopting: .box) { boxes in
   a shape with no box (a link, an arrow) or that is read-only is not among them (`1 of 2`); the report's line is
   `moving /move-to /move-near → every shape with a box · CanvasContextMenu → every shape with a box · ContentsMoves`. It's right before
   Reordering in the shipped list, after every plugin with a command for many kinds, so a note's `/`
-  list ends `title, lock, public, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
+  list ends `title, lock, private, move-to, move-near`. Both steps are "Move", a drag's name ("Undo
   Move To" would read badly). It also puts Move To ▸ in the selection's menu (the Shape
   menu's too) on the same kinds: the frames, subboards and enclosing boards the selection can go to as
   the table of contents' drop would take it, nearest first, at most twenty; two places called alike say
@@ -12125,7 +12120,7 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
 - **Whether.** A statement says so with `via: <kind>`: a kind word that must be one of `makers`
   (else `invalid_value`, with the one it's like and the kinds there are) and admit the end it stands
   for (else `invalid_value`, saying what the kind `needs`: "only a public shape can be stood for", and
-  to ask the user, since `public:` is theirs to set and a script never makes a shape public to get an
+  to ask the user, since making a shape public is theirs to say and a script never does it to get an
   edge across). Otherwise **`Drawing.goesThroughStandIn(from:to:)` decides, the one function that
   does**, and the place to grow: today an edge goes through a stand-in when its ends are on different
   boards, and nothing else decides (a rule about distance or kinds would go there, and nowhere else).
@@ -13012,7 +13007,7 @@ note.canBeType()        // opts the kind into TypeSchemaProperty: its shapes may
   with them, as for an edit. If the words are a JSON object (no mention in them, not an array or a
   scalar) they are the schema instead, as written but for the whitespace around them, with no
   model call, and the sync then writes the words from the schema. `editor.removeType(_:)` takes it
-  back, one step, "Remove Type": the schema goes, the words, title and public stay, and undo
+  back, one step, "Remove Type": the schema goes, the words, title and whether it's private stay, and undo
   brings the schema back. An agent makes a type with `canvas draw`'s `schema:` (an added
   property's attribute, as every one is): `sticky-note "Order" schema: "…"`.
 - **What a shape is**: `is`, an added property (`IsAProperty`, an ordered list of `TypeLink`s, none
@@ -15667,7 +15662,7 @@ path-validation      service PathIndex · ValidationRules → every shape with a
 grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
 clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command duplicate after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
 locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock /unlock → every shape holding locked
-publishing           property public · property public → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PublicChip last → every shape holding public · parts PublicChip → every shape holding public · ContentsMarks → every shape holding public · /public /private → every shape holding public
+publishing           property private · property private → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PrivateChip last → every shape holding private · parts PrivateChip → every shape holding private · ContentsMarks → every shape holding private · /public /private → every shape holding private
 types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
 type-validation      ValidationRules → every shape holding schema · ValidationRules → every shape holding is · ValidationRules → every shape holding schema
 type-details         ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding is · ShapeDetails in Types → every shape holding autofill · ShapeDetails in Schema after Connections → every shape holding schema · ShapeDetails in Types → every shape holding endRule
@@ -15734,11 +15729,11 @@ member it kept, hand its title over, and make its text mention text ("text may m
 which escapes what would now read as a mention). Validation's `ValidationRules → every shape`
 is its schema rule ([Checking shapes](#checking-shapes-against-their-schemas)). Locking opts every
 kind in itself (`property locked → every shape`), and `read-only shapes` is its rule for the core.
-`publishing` is the same for `public` (`property public → every shape`, but for the kinds that
+`publishing` is the same for `private` (`property private → every shape`, but for the kinds that
 adopt `NeverPublic` or `AlwaysPublic`), with `public dials`, its check that no definition adopts
-both, the state (`PublishingState`), the chip (`adornment PublicChip → every shape holding public`),
-its menu items, `/public` and `/private`, and a globe at the end of
-a public shape's row (`ContentsMarks → every shape holding public`). `references` is the Reference kind: its state
+both, the state (`PublishingState`), the chip (`adornment PrivateChip → every shape holding private`),
+its menu items, `/public` and `/private`, and a crossed eye at the end of
+a private shape's row (`ContentsMarks → every shape holding private`). `references` is the Reference kind: its state
 (`ReferenceState`), the hover and pressed looks of its leading symbol
 (`overlay ReferenceButtonOverlay`, with `CanvasButtons` for the click and `command goToOriginal`
 and `command interpretReference`, the panel's Interpret), the popover a pill that stands for
@@ -15778,7 +15773,7 @@ words and a text format, each by what it adds), and `query-commands` is `canvas 
 (`SlashCommandState`, which hears no commit) and contributes no command; the ones that ship are
 Titles', Locking's, Publishing's and Transform's, which Subboards brings, the last entry on their
 lines (`/title → every shape holding title`, `/lock /unlock → every shape holding locked`, `/public /private →
-every shape holding public`, `/turn-into-subboard → every shape that can turn into subboard`: each call
+every shape holding private`, `/turn-into-subboard → every shape that can turn into subboard`: each call
 of the sugar is one entry, its commands as `/name`, then the kind or the scope they're for:
 [Registering commands](#registering-commands)), and Moving's, its line's one entry
 (`moving /move-to /move-near → every shape with a box · CanvasContextMenu → every shape with a box`, [Moving](#moving)).
@@ -15861,7 +15856,7 @@ kind's own, then the rest in plugin order), puts the first ones before the rest 
 after, and puts one placed beside another right beside it: several beside one in the order they
 appear, and so on down. A thing can name only what its module imports, so:
 
-- **Two that don't know each other** go where they first appear: Locking's lock and Publishing's globe
+- **Two that don't know each other** go where they first appear: Locking's lock and Publishing's crossed eye
   are both `.last`, and Locking comes first in the list. Where that isn't the order wanted, the point
   gives a thing for both to be placed against: ContextMenus' `ActionsMenuGroup`, which no item is in (the
   registry refuses one),
@@ -16285,7 +16280,7 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   (`QueryStory.document(windowed: false)`, 1440 × 900; a first line `<!-- board: <name> -->` names
   the board among `skillStories`, each the board of exactly one file: `query-story` is
   `reference/query.md`'s, `reference-story` `reference/references.md`'s, `QueryReferenceStory`,
-  "Services", a public note, a pill that stands for it and two channel-less arrows into the pill,
+  "Services", a note, a pill that stands for it and two channel-less arrows into the pill,
   whose `via` the page shows and a test holds to what the app says), and its blocks are held to
   the design's table of every construct (`StoryQuery.table`) and its tables of words and edge
   types to `canvas query-vocabulary`; and SKILL.md's description is held to 1,024 characters.

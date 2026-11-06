@@ -50,7 +50,7 @@ Node hints:
 | `layout.` | meaning |
 |---|---|
 | `rank` | a number. A container's ranked children run as rows (the lowest rank on top, key order within a row) or as columns (the lowest at the left), whatever the arrows ask. A frame alone in its row is stretched to the widest row; one alone in its column to the tallest. A child with no rank goes after them. |
-| `public` | `true` pins the node as a pill target (the app makes it public); `false` rules it out: never promoted, never fanned out, no edge to it is a pill. Not for a node that holds shapes. |
+| `pill` | `true` pins the node as a pill target; `false` rules it out: never promoted, never fanned out, no edge to it is a pill. Not for a node that holds shapes. A node the document makes private (`props.private: true`) wants `false`, and no edge from another board: the app refuses a pill for it. |
 
 ## Edges
 
@@ -67,7 +67,7 @@ Edges the layout can't draw are left out with a warning, in the app's words wher
 
 ## Pills
 
-A node many arrows point at, or an edge between boards, is drawn as a **reference pill** beside the start, standing for the far end (`to`). The app makes the far end public. You say nothing of it; `layout.public` and `layout.direct` are the only controls. The result is in drawing.json: an edge's `place.pill` is `{"at": [x, y], "in": "<frame key>"}` where the pill sits, or `{"share": "<node key>"}` to draw into the pill that node's edge makes.
+A node many arrows point at, or an edge between boards, is drawn as a **reference pill** beside the start, standing for the far end (`to`). `layout.pill` and `layout.direct` are the only controls. The result is in drawing.json: an edge's `place.pill` is `{"at": [x, y], "in": "<frame key>"}` where the pill sits, or `{"share": "<node key>"}` to draw into the pill that node's edge makes.
 
 ## What `digest plan` writes: drawing.json
 

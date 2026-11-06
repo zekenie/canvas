@@ -43,7 +43,7 @@ import Topology
     },
     test("what it stands for goes with what the shape is: made private, the link falls back to the pill in that commit, and public again heals it") {
         let w = try Wired()
-        w.h.editor.transact { $0.update(w.a) { $0[PublicProperty.self] = nil } }
+        w.h.editor.transact { $0.update(w.a) { $0[PrivateProperty.self] = true } }
         expectEqual(w.h.editor.wired(from: w.b), [w.reference], "a private shape isn't stood for")
         expectEqual(w.h.editor.topology?.forwards(of: w.reference), [])
         w.h.editor.makePublic([w.a])
@@ -105,7 +105,7 @@ import Topology
         let publishing = try require(w.h.editor.publishing)
         expect(publishing.isHeld(w.a))
         expectEqual(w.h.editor.makePrivate([w.a]), [w.a], "refused while a pill stands for it")
-        expect(w.h.editor.document[w.a]?[PublicProperty.self] == true, "nothing was written")
+        expectEqual(w.h.editor.document[w.a]?[PrivateProperty.self], nil, "nothing was written")
         expectEqual(publishing.standIns(for: w.a), [w.reference])
         let words = w.h.addReference(words: "stuff", at: CGPoint(x: 600, y: 300))
         // Words stand for nothing, so they hold nothing (a dynamic pill holds the shape once it is answered for).
@@ -127,14 +127,14 @@ import Topology
     test("a private shape is fulfilled for a pill by being made public, on the record alone: the document is the caller's to write") {
         let w = try Wired()
         let tile = w.h.addTile("Pricing")
-        w.h.editor.transact { $0.update(tile) { $0[PublicProperty.self] = nil } }
+        w.h.editor.transact { $0.update(tile) { $0[PrivateProperty.self] = true } }
         let standIns = w.h.editor.registry.standIns
         var record = try require(w.h.editor.document[tile])
         expect(!standIns.admits(Reference.kind, record))
         expect(standIns.fulfil(Reference.kind, &record))
-        expectEqual(record[PublicProperty.self], true)
+        expectEqual(record[PrivateProperty.self], nil)
         expect(standIns.admits(Reference.kind, record))
-        expectEqual(w.h.editor.document[tile]?[PublicProperty.self], nil, "not written")
+        expectEqual(w.h.editor.document[tile]?[PrivateProperty.self], true, "not written")
         var pill = try require(w.h.editor.document[w.reference])
         expect(!standIns.fulfil(Reference.kind, &pill), "a pill is never stood for, nor public")
     },

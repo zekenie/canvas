@@ -52,7 +52,7 @@ private let clientsAccounts = [clients, PlaceStep(name: "Accounts receivable")]
         h.editor.transact { $0.update(pocket) { $0[TitleProperty.self] = "Accounts" } }
         _ = render(h.editor)
         expectEqual(state.drawnPlace(of: pill)?.text, "Accounts")
-        h.editor.transact(on: BoardID(owner: pocket)) { $0.update(far) { $0[PublicProperty.self] = nil } }
+        h.editor.transact(on: BoardID(owner: pocket)) { $0.update(far) { $0[PrivateProperty.self] = true } }
         _ = render(h.editor)
         expectEqual(state.drawnPlace(of: pill)?.text, "Accounts", "dashed, and still says where")
     },

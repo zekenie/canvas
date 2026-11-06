@@ -166,7 +166,7 @@ private struct Places {
         h.editor.transact { $0.update(box) { $0[TitleProperty.self] = "renamed" } }
         let renamed = render(h.editor)
         expect(changedPixels(live, renamed, in: places.frame) > 20, "the new name")
-        h.editor.transact { $0.update(box) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(box) { $0[PrivateProperty.self] = true } }
         let hidden = render(h.editor)
         expectEqual(pixel(hidden, at: places.inside), pixel(try blank(dark: false), at: places.inside), "dashed: no fill once the shape is private")
     },

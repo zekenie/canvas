@@ -1,7 +1,7 @@
 // The promotion loop. Every same-board edge is a plain arrow at first. Make the move that cuts the board's cost most: promote a node
 // many arrows point at (every user of it then reaches it through a pill, all of them, whether or not the hub uses them back; the tie
 // counts only in the score that picks the candidates to try; the users of it in one container share one pill), or fan out a node that
-// points at many (each of its uses becomes a pill beside it, and what they stand for is made public: moves.mjs). First, while the
+// points at many (each of its uses becomes a pill beside it, and what they stand for: moves.mjs). First, while the
 // board is not good enough as it is and a node is popular (the dial's `popular` arrows or more would turn into pills), the most popular
 // one is moved, whatever its trial measures: a measured gain is noisy, and a node that many arrows meet at is the case the loop is for.
 // A board that is good enough with every arrow plain is left alone: pills are for a mess. Then the judgment calls: repeat until
@@ -11,7 +11,7 @@
 //   - a safety cap is reached: the dial's share of the board's leaves moved, 0.5 (1 - mess), promoted and fanned out and the popular
 //     ones among them (the report says so if it is hit).
 // A shared pill whose arrows are long or cross notes is split into pills for nearer clusters of its users, if that lowers C.
-// Then take back each judgment call that does not pay for itself: a popular node's move stays, and so does a pin (`public: true`).
+// Then take back each judgment call that does not pay for itself: a popular node's move stays, and so does a pin (`pill: true`).
 // Last, on the final layout: each arrow longer than the dial's `longest` is set apart as a pill of its own beside its start, and the
 // board laid out again from where it is, until none is left.
 // While it searches the loop lays containers out again from where they are (Layouter.warm): ELK's layouts are new draws, whose

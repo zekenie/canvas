@@ -275,8 +275,8 @@ def root_runs(h):
     for i, b in enumerate(h["bills"]):
         place = 'below "Place" (gap: 200)' if i == 0 else f'below {q(h["bills"][i - 1]["title"])}'
         text = f' text: {q(b["words"])}' if b.get("words") else ""
-        # Public, so a state's board can stand for it: this trial's own shapes, made public in the run that makes them.
-        lines.append(f'sticky-note {q(b["title"])} {place} is: "Bill" public: true fieldValues: '
+        # Public, as every shape is, so a state's board can stand for it.
+        lines.append(f'sticky-note {q(b["title"])} {place} is: "Bill" fieldValues: '
                      f'{values({"number": b["number"], "date": b["date"], "result": b["result"]})}{text}')
     runs.append(("bills", "\n".join(lines)))
     lines = []

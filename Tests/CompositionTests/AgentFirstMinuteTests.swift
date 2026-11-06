@@ -181,13 +181,11 @@ private let inLayer = scripted(#"{"type": "object", "properties": {"since": {"ty
         expectEqual(board.editor.document.shapes.count, 7, "the relationship is gone, the notes stay")
         _ = try draw(relate)
 
-        // A note with no title on another board, and public: an edge to its id goes through a pill.
+        // A note with no title on another board, public as every shape is: an edge to its id goes through a pill.
         _ = try draw(#"subboard "Archive" below board"#)
         _ = try draw(#"sticky-note is: "Layer" fieldValues: {"depth": 9} in "Archive""#)
         let everything = try query(#"sticky-note:not([title]):is-a("Layer")"#)
         let far = try require(try require(everything["rows"]?.arrayValue).first { $0["board"] != "root" }?["id"]?.stringValue)
-        let published = try draw("sticky-note #\(far) public: true")
-        expectEqual(rows(published).first?["did"], "updated", "restated by its id, on the board it is on")
         let through = try draw("edge #\(featureID) -> #\(far) is: \"In layer\"")
         expectEqual(rows(through).map { $0["did"] }, ["created", "connected"])
         expectEqual(rows(through).last?["via"], "reference")

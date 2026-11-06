@@ -27,7 +27,7 @@ import Titles
         @MainActor func note(_ id: ShapeID, _ title: String, at point: CGPoint, public isPublic: Bool = false) -> AnyShapeRecord {
             var record = AnyShapeRecord(ShapeRecord(id: id, StickyNote(frame: CGRect(origin: point, size: CGSize(width: 200, height: 200)), text: MentionText(plain: title))))
             record[TitleProperty.self] = title
-            if isPublic { record[PublicProperty.self] = true }
+            if !isPublic { record[PrivateProperty.self] = true }
             return record
         }
         var subboard = AnyShapeRecord(ShapeRecord(id: payments, Subboard(frame: CGRect(x: 800, y: 500, width: 240, height: 160))))

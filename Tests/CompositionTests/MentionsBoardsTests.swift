@@ -80,7 +80,6 @@ extension CanvasEditor {
         expectEqual(h.editor.name(of: f.plansBoard), "Untitled Subboard", "the path's")
         expectEqual(try require(h.editor.mentions).boardName(ofShape: f.alpha), "Untitled Subboard", "the @ picker's line")
         expect(h.enter(f.plans))
-        h.editor.makePublic([f.alpha])
         h.editor.goToEnclosingBoard()
         var props = Reference(frame: CGRect(origin: CGPoint(x: 600, y: 400), size: Reference.defaultSize))
         ReferenceEdits.pick(&props, ReferenceTarget(id: f.alpha, label: "Alpha"))

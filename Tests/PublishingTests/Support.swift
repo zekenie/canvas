@@ -16,10 +16,9 @@ import TableOfContents
 import Topology
 
 // Fixtures only (CanvasTesting's boxes and links, and the kinds below), so every test here shows
-// Publishing knows no real kind: a plaque is public by choice (it holds `public`, and a name a
-// stand-in title pill says, `StubTitle`), a
-// seal is always public, a draft is never; a holder and a relay stand in for the shapes they cite;
-// a link carries a wire between what it joins.
+// Publishing knows no real kind: a plaque is public until made private (it holds `private`, and a
+// name a stand-in title pill says, `StubTitle`), a seal is always public, a draft is never; a holder
+// and a relay stand in for the shapes they cite; a link carries a wire between what it joins.
 
 struct Plaque: BoxShapeProps {
     static let kind: ShapeKind = "plaque"
@@ -240,6 +239,9 @@ let plaqueFrame = CGRect(x: 100, y: 100, width: 150, height: 100)
 extension EditorHarness {
     /// Makes a shape public: a transaction of its own, whatever the shape.
     func publish(_ ids: ShapeID...) { editor.makePublic(ids) }
+
+    /// Makes a shape private, as a person asks (refused while something stands for it).
+    func conceal(_ ids: ShapeID...) { editor.makePrivate(ids) }
 
     /// A lens asking `asks`, answered with `shapes` (provided as topology would be by whoever asks).
     @discardableResult

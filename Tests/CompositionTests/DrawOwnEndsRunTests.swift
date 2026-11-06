@@ -170,8 +170,8 @@ private func agree(_ server: CommandServer, _ board: BoardDocument, _ script: St
         defer { board.close(); server.stop(); pasteboard.releaseGlobally() }
         // The relationship type and Layer on the root, public; a subboard to draw on.
         let root = """
-        sticky-note "In layer" relationship: true public: true schema: "\(held)" text: "Which layer"
-        sticky-note "Layer" right of "In layer" public: true schema: "\(big)" text: "A layer"
+        sticky-note "In layer" relationship: true schema: "\(held)" text: "Which layer"
+        sticky-note "Layer" right of "In layer" schema: "\(big)" text: "A layer"
         edge "In layer" -> "Layer" text: "features"
         subboard "Sub" below "In layer"
         """
@@ -257,7 +257,7 @@ private func agree(_ server: CommandServer, _ board: BoardDocument, _ script: St
         defer { board.close(); server.stop(); pasteboard.releaseGlobally() }
         let model = """
         sticky-note "Feature" schema: "\(big)" text: "A feature"
-        sticky-note "In layer" right of "Feature" (gap: 600) relationship: true public: true schema: "\(held)" text: "Which layer"
+        sticky-note "In layer" right of "Feature" (gap: 600) relationship: true schema: "\(held)" text: "Which layer"
         """
         let end = #"edge "Feature" -> "In layer" via: reference text: "layer" endRule: {"needed": true}"#
         let instances = """
@@ -465,7 +465,7 @@ private func agree(_ server: CommandServer, _ board: BoardDocument, _ script: St
         for (from, to) in [("subboard", "sticky-note"), ("sticky-note", "subboard"), ("subboard", "subboard"), ("sticky-note", "sticky-note")] {
             let (board, server, pasteboard) = try stage()
             defer { board.close(); server.stop(); pasteboard.releaseGlobally() }
-            let script = "\(from) \"S\"\n\(to) \"Hub\" right of \"S\" (gap: 600) public: true\nedge \"S\" -> \"Hub\" via: reference"
+            let script = "\(from) \"S\"\n\(to) \"Hub\" right of \"S\" (gap: 600)\nedge \"S\" -> \"Hub\" via: reference"
             // (A debug build holds the arrow drawn to the one laid out, and stops the process if they differ.)
             let made = try canvas(server, ["draw", "-"], input: script)
             expectEqual(made.status, 0, "\(from) to \(to): \(made.error)")
@@ -481,7 +481,7 @@ private func agree(_ server: CommandServer, _ board: BoardDocument, _ script: St
             defer { board.close(); server.stop(); pasteboard.releaseGlobally() }
             let script = """
             sticky-note "Feature" schema: "\(big)" text: "A feature"
-            sticky-note "In layer" right of "Feature" (gap: 600) relationship: true public: true schema: "\(held)" text: "Which layer"
+            sticky-note "In layer" right of "Feature" (gap: 600) relationship: true schema: "\(held)" text: "Which layer"
             edge "Feature" -> "In layer" via: reference text: "layer" \(written)
             sticky-note "Checkout" below "Feature" is: "Feature" fieldValues: {"f1": "Pay"}
             sticky-note "Later" below "Checkout" text: "Placed below"

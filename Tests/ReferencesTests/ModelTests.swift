@@ -83,11 +83,11 @@ private let placed = CGRect(origin: origin, size: Reference.defaultSize)
         expectEqual(properties["words"]?.objectValue?["maxLength"], 500)
         expectEqual(schema["required"], ["frame"], "only its frame must be written")
     },
-    test("it's never public, and holds no `public` property: nothing could stand for it") {
+    test("it's never public, and holds no `private` property: nothing could stand for it") {
         let h = try referenceHarness()
         let registry = h.editor.registry
         expect(!registry.canBePublic(Reference.kind))
-        expect(!registry.properties(for: Reference.kind).contains(PublicProperty.key))
+        expect(!registry.properties(for: Reference.kind).contains(PrivateProperty.key))
     },
     test("it's made to stand for a shape as picking it does, for a plugin that puts shapes down by name: a direct pill fitted to the name, for a public shape only") {
         let h = try referenceHarness()

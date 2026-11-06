@@ -88,7 +88,7 @@ extension EditorHarness {
     func addBox(_ title: String? = nil, public isPublic: Bool = true, at frame: CGRect = boxFrame, id: ShapeID = ShapeID()) -> ShapeID {
         var box = ShapeRecord(id: id, Box(frame))
         box[TitleProperty.self] = title
-        if isPublic { box[PublicProperty.self] = true }
+        if !isPublic { box[PrivateProperty.self] = true }
         editor.transact { $0.insert(box) }
         return id
     }
@@ -98,7 +98,7 @@ extension EditorHarness {
     func addTile(_ title: String? = nil, public isPublic: Bool = true, at frame: CGRect = CGRect(x: 100, y: 400, width: 120, height: 80)) -> ShapeID {
         var tile = ShapeRecord(Tile(frame))
         tile[TitleProperty.self] = title
-        if isPublic { tile[PublicProperty.self] = true }
+        if !isPublic { tile[PrivateProperty.self] = true }
         editor.transact { $0.insert(tile) }
         return tile.id
     }

@@ -308,7 +308,6 @@ final class Minute {
     test("Feature and a pill that stands for Feature: the type is made between them, the second arrow runs to the pill, and Feature's notes have the row") {
         let m = try Minute()
         defer { m.close() }
-        m.editor.transact { $0.update(m.feature) { $0[PublicProperty.self] = true } }
         var props = Reference(frame: CGRect(x: 1000, y: 600, width: Reference.defaultSize.width, height: Reference.defaultSize.height))
         ReferenceEdits.pick(&props, ReferenceTarget(id: m.feature, label: "Feature"))
         let pill = AnyShapeRecord(ShapeRecord(props))

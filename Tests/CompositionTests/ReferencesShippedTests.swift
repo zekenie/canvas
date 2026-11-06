@@ -37,7 +37,7 @@ import Validation
 
 @MainActor private func note(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = false) -> ShapeID {
     let id = h.editor.add(StickyNote(frame: CGRect(origin: origin, size: CGSize(width: 200, height: 200)), text: MentionText(plain: title)), title: title)
-    if isPublic { h.editor.makePublic([id]) }
+    if !isPublic { h.editor.makePrivate([id]) }
     return id
 }
 
@@ -79,14 +79,14 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
 
 @MainActor private func subboard(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
     let id = h.editor.add(Subboard(frame: CGRect(origin: origin, size: Subboard.defaultSize)), title: title)
-    if isPublic { h.editor.makePublic([id]) }
+    if !isPublic { h.editor.makePrivate([id]) }
     return id
 }
 
 /// A frame, which takes frame links and no note link.
 @MainActor private func frameShape(_ h: EditorHarness, _ title: String, at origin: CGPoint, isPublic: Bool = true) -> ShapeID {
     let id = h.editor.add(Frame(frame: CGRect(origin: origin, size: CGSize(width: 240, height: 160))), title: title)
-    if isPublic { h.editor.makePublic([id]) }
+    if !isPublic { h.editor.makePrivate([id]) }
     return id
 }
 
@@ -140,7 +140,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         expectEqual(h.editor.makePrivate([shapes]), [shapes])
         expect(h.editor.publishing?.isHeld(shapes) == true)
         // Not public any more (an unguarded path), the arrow is into the pill again.
-        h.editor.transact { $0.update(shapes) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(shapes) { $0[PrivateProperty.self] = true } }
         expectEqual(try storyAnswer(#"arrow:ends-at("shapes")"#, on: queries).get().rows.map(\.id), [], "a private shape isn't stood for")
     },
     test("a port drag from a note ends on a pill standing for a note, and not on one standing for a frame: the pill takes what it stands for takes") {
@@ -261,7 +261,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         expectEqual(parent(of: pill), nil, "the pill's own row stays where it is")
         h.editor.transact { $0.update(pill, as: Reference.self) { ReferenceEdits.pick(&$0.props, ReferenceTarget(id: other, label: "other")) } }
         expectEqual(parent(of: out), other, "re-pointed, its row moves in the same commit")
-        h.editor.transact { $0.update(other) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(other) { $0[PrivateProperty.self] = true } }
         expectEqual(parent(of: out), pill, "a private shape isn't stood for: under the pill, as for any shape")
         h.editor.undo()
         expectEqual(parent(of: out), other)
@@ -304,7 +304,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let copyOfShapes = try require(copies.first { $0.copiedFrom == shapes }?.id)
         let copyOfPill = try require(copies.first { $0.copiedFrom == pill }?.typed(as: Reference.self))
         expectEqual(copyOfPill.props.target?.id, copyOfShapes, "renamed with what was copied along")
-        expect(h.editor.document[copyOfShapes]?[PublicProperty.self] == true, "pasted public, as every added property is")
+        expect(h.editor.document[copyOfShapes].map(h.editor.registry.isPublic) == true, "pasted public, as A is")
         // A cut and pasted keeps its id, so a reference to it heals.
         h.editor.selectedShapeIDs = [shapes]
         h.editor.cutSelection()
@@ -361,7 +361,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let login = note(h, "Login", at: CGPoint(x: 300, y: 0), isPublic: true)
         _ = note(h, "Draft", at: CGPoint(x: 600, y: 0))
         let checkout = note(h, "Checkout", at: CGPoint(x: 0, y: 400))
-        _ = try drawnInProcess(#"reference right of "Checkout" query: "sticky-note[public]" all: true"#, on: h.editor)
+        _ = try drawnInProcess(#"reference right of "Checkout" query: "sticky-note" all: true"#, on: h.editor)
         let pill = try require(h.editor.document.shapes.first { $0.kind == Reference.kind }?.id)
         _ = arrow(h, from: checkout, to: pill)
         let topology = try require(h.editor.topology), queries = try require(h.editor.queries)
@@ -382,7 +382,7 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let login = note(h, "Login", at: CGPoint(x: 300, y: 0), isPublic: true)
         _ = note(h, "Draft", at: CGPoint(x: 600, y: 0))
         let checkout = note(h, "Checkout", at: CGPoint(x: 0, y: 400))
-        let made = try drawnInProcess(#"reference right of "Checkout" query: "sticky-note[public]" all: true"#, on: h.editor)
+        let made = try drawnInProcess(#"reference right of "Checkout" query: "sticky-note" all: true"#, on: h.editor)
         let pill = try require(h.editor.document.shapes.first { $0.kind == Reference.kind }?.id)
         expectEqual(made["changes"]?.arrayValue?.first?["id"], .string(pill.description), "its row gives the id a later script names it by")
         let mark = "#\(pill)"
@@ -433,13 +433,13 @@ private func rightDot(of frame: CGRect) -> CGPoint { CGPoint(x: frame.maxX + 12,
         let state = try require(h.editor.references)
         h.wait(0)
         _ = spinRunLoop(until: { !state.isFinding })
-        expectEqual(state.state(of: pill), .privateMatches(text: "billing notes", count: 3), "new notes start private")
+        expectEqual(state.state(of: pill), .privateMatches(text: "billing notes", count: 3), "the notes are private")
         let held = try require(h.editor.document[pill]?.typed(as: Reference.self)?.props)
         expectEqual(state.header(of: held, id: pill).subtitle, "Not public")
         expectEqual(state.queryContent(of: held, id: pill).status?.text, "3 not public")
         expectEqual(h.editor.topology?.forwards(of: pill), [])
         state.makeMatchesPublic(of: pill)
-        _ = spinRunLoop(until: { billing.allSatisfy { h.editor.document[$0]?[PublicProperty.self] == true } })
+        _ = spinRunLoop(until: { billing.allSatisfy { h.editor.document[$0]?[PrivateProperty.self] == nil } })
         expectEqual(h.editor.undoHistory.undoName, "Make Public")
         h.wait(250)
         _ = spinRunLoop(until: { !state.isFinding })

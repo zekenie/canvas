@@ -44,7 +44,7 @@ private func rows(_ result: JSON) -> [JSON] { result["changes"]?.arrayValue ?? [
         let editor = board.editor
         for script in [
             #"subboard "Sub""#,
-            "sticky-note \"Employment\" in \"Sub\" relationship: true public: true schema: \"\(relSchema)\"",
+            "sticky-note \"Employment\" in \"Sub\" relationship: true schema: \"\(relSchema)\"",
             "sticky-note \"Person\" right of \"Sub\" schema: \"\(personSchema)\"",
             #"edge "Person" -> "Employment" text: "employer""#,
         ] {
@@ -83,7 +83,7 @@ private func rows(_ result: JSON) -> [JSON] { result["changes"]?.arrayValue ?? [
         let editor = board.editor
         for script in [
             #"subboard "Sub""#,
-            "sticky-note \"Employment\" right of \"Sub\" relationship: true public: true schema: \"\(relSchema)\"",
+            "sticky-note \"Employment\" right of \"Sub\" relationship: true schema: \"\(relSchema)\"",
             "sticky-note \"Person\" in \"Sub\" schema: \"\(personSchema)\"",
             #"edge "Person" -> "Employment" text: "employer""#,
         ] {

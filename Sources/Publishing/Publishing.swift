@@ -5,80 +5,103 @@ import TableOfContents
 
 /// Publishing, as a plugin: a shape is public or private. Only a public shape can be stood for by
 /// another (`Topology`'s stand-ins admit it, `PublishingState.admitting`), so what a lot of shapes
-/// point at doesn't need an arrow from each: a stand-in for it takes theirs. Whether a shape is
-/// public is something it knows, as whether it's locked: an added property every kind opts into
-/// (`public: true`, nil while private), set from the context menu, with `/public` and `/private`,
-/// or from the chip a public shape wears (a text chip, "Public", with how many things stand for the
-/// shape: "Public · 3"). Making a shape private is refused while anything stands for it (the chip
-/// shakes the shape, and its panel shows what, in its Connections tab); a click on the "Private" a shape
-/// just went to for a moment, before it fades, makes it public again. Publishing knows no kind that
+/// point at doesn't need an arrow from each: a stand-in for it takes theirs. Every shape is public
+/// until a person makes it private, and being private is something the shape knows, as being locked
+/// is: an added property every kind opts into (`private: true`, nil while public), set from the
+/// context menu, with `/private` and `/public`, or from the chip a private shape wears (the crossed
+/// eye, as a locked shape wears the lock). Making a shape private is refused while anything stands for
+/// it (the shape shakes, and its panel shows what, in its Connections tab); a click on the open eye a
+/// shape just went public with, before it fades, makes it private again. Publishing knows no kind that
 /// stands in, and no reference: it asks Topology what stands for a shape.
 extension PluginID {
     public static let publishing: PluginID = "publishing"
 }
 
-/// Whether a shape is public: `true` on a public shape, and nothing on the rest (making it private
-/// takes it away), so a board holds it only for the shapes that are.
-public enum PublicProperty {}
+/// Whether a shape is private: `true` on a private shape, and nothing on the rest (making it public
+/// takes it away), so a board holds it only for the shapes a person made private.
+public enum PrivateProperty {}
 
-extension PublicProperty: ShapeProperty {
-    public static let key: PropertyKey = "public"
+extension PrivateProperty: ShapeProperty {
+    public static let key: PropertyKey = "private"
     public static var defaultValue: Bool? { nil }
 }
 
 /// A kind whose shapes are never public: its definition adopts it, in an extension, and the kind
-/// holds no `public` property (nothing could stand for one: an arrow). One dial of two; a
+/// holds no `private` property (nothing could stand for one: an arrow). One dial of two; a
 /// definition that adopts both is refused when the registry is built.
 public protocol NeverPublic {}
 
 /// A kind whose every shape is public: its definition adopts it, in an extension, and the kind
-/// holds no `public` property, so there's nothing to toggle, no chip and no menu item. The other
+/// holds no `private` property, so there's nothing to toggle, no chip and no menu item. The other
 /// dial; see `NeverPublic`.
 public protocol AlwaysPublic {}
 
 extension Registry {
-    /// Whether the shape is public: `public: true` on it, or its kind's every shape is (`AlwaysPublic`).
-    /// One dictionary hit and a cast, for the places that hold a registry and no editor (a
-    /// stand-in's admission).
+    /// Whether the shape is public: its kind holds `private` and the shape isn't private (nor kept
+    /// aside), or its kind's every shape is (`AlwaysPublic`). One lookup in a table the registry keeps,
+    /// for the places that hold a registry and no editor (a stand-in's admission).
     public func isPublic(_ record: AnyShapeRecord) -> Bool {
-        record[PublicProperty.self] == true || definition(for: record.kind) is any AlwaysPublic
+        privacyKinds.admits(record)
     }
 
-    /// `isPublic` for any thread, the kinds whose every shape is public read once here: what a
-    /// stand-in kind admits (`standsIn(admitting: { $0.publicShapes })`), which Topology reads off the
-    /// main actor too.
+    /// `isPublic` for any thread, the kinds read once here: what a stand-in kind admits
+    /// (`standsIn(admitting: { $0.publicShapes })`), which Topology reads off the main actor too.
     public var publicShapes: @Sendable (AnyShapeRecord) -> Bool {
-        let always = Set(kinds.filter { definition(for: $0) is any AlwaysPublic })
-        return { record in record[PublicProperty.self] == true || always.contains(record.kind) }
+        let kinds = privacyKinds
+        return { record in kinds.admits(record) }
     }
 
     /// Whether shapes of the kind can be public: they hold the property, or every one is.
     public func canBePublic(_ kind: ShapeKind) -> Bool {
-        definition(for: kind) is any AlwaysPublic || holdsPublic(kind)
+        privacyKinds.always.contains(kind) || privacyKinds.holding.contains(kind)
     }
 
-    /// Makes the record public, the one writer of `public` on a record (`editor.makePublic` calls it,
-    /// and a stand-in kind asks it through `standsIn(fulfilling:)`, as a person picking a private
-    /// shape would): true when the record is public afterward, already or now; false for a kind that
-    /// holds no `public` and isn't always public (`NeverPublic`). Whether the record may be written
-    /// is its caller's transaction's to say.
+    /// Makes the record public, the one writer that takes `private` off a record (`editor.makePublic`
+    /// calls it, and a stand-in kind asks it through `standsIn(fulfilling:)`, as a person picking a
+    /// private shape would): true when the record is public afterward, already or now; false for a
+    /// kind that holds no `private` and isn't always public (`NeverPublic`), and for a shape kept aside.
+    /// Whether the record may be written is its caller's transaction's to say.
     public func makePublic(_ record: inout AnyShapeRecord) -> Bool {
         if isPublic(record) { return true }
-        guard !record.isOpaque, holdsPublic(record.kind) else { return false }
-        record[PublicProperty.self] = true
+        guard !record.isOpaque, holdsPrivate(record.kind) else { return false }
+        record[PrivateProperty.self] = nil
         return true
     }
 
-    /// Whether the kind holds `PublicProperty`: its shapes can be made public and private.
-    func holdsPublic(_ kind: ShapeKind) -> Bool { properties(for: kind).contains(PublicProperty.key) }
+    /// Whether the kind holds `PrivateProperty`: its shapes can be made private and public again.
+    func holdsPrivate(_ kind: ShapeKind) -> Bool { privacyKinds.holding.contains(kind) }
+
+    /// Which kinds hold the property and which are always public, read once a registry.
+    var privacyKinds: PrivacyKinds {
+        memo(PrivacyKindsKey()) {
+            PrivacyKinds(holding: Set(kinds.filter { properties(for: $0).contains(PrivateProperty.key) }),
+                         always: Set(kinds.filter { definition(for: $0) is any AlwaysPublic }))
+        }
+    }
 }
+
+/// The kinds that hold `private` and those whose every shape is public: what says whether a shape is
+/// public, on any thread.
+struct PrivacyKinds: Sendable {
+    let holding: Set<ShapeKind>
+    let always: Set<ShapeKind>
+
+    /// Whether the shape is public.
+    func admits(_ record: AnyShapeRecord) -> Bool {
+        if always.contains(record.kind) { return true }
+        return holding.contains(record.kind) && record[PrivateProperty.self] != true && !record.isOpaque
+    }
+}
+
+/// The key `privacyKinds` is kept under.
+private struct PrivacyKindsKey: Hashable {}
 
 extension CanvasEditor {
     /// Publishing's service for this editor; nil without PublishingPlugin.
     public var publishing: PublishingState? { service(PublishingState.self) }
 
     /// Makes these shapes public, on whichever board of the file each is, in one transaction (an undo
-    /// step "Make Public", unless it's part of another). A kind that holds no `public` property takes
+    /// step "Make Public", unless it's part of another). A kind that holds no `private` property takes
     /// nothing; a read-only shape is refused by the core, and shakes.
     public func makePublic(_ ids: [ShapeID]) {
         let registry = registry
@@ -95,8 +118,9 @@ extension CanvasEditor {
     @discardableResult
     public func makePrivate(_ ids: [ShapeID]) -> [ShapeID] {
         guard let publishing else {
+            let registry = registry
             transact("Make Private") { transaction in
-                for id in ids { transaction.update(id) { $0[PublicProperty.self] = nil } }
+                for id in ids { transaction.update(id) { if registry.holdsPrivate($0.kind) { $0[PrivateProperty.self] = true } } }
             }
             return []
         }
@@ -133,22 +157,20 @@ public struct PublishingPlugin: ListedPlugin {
     public var id: PluginID { .publishing }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.declare(PublicProperty.self)
+        registrar.declare(PrivateProperty.self)
         // Every kind that's neither: a kind that's never public holds none, and one that's always
         // public has nothing to toggle.
-        registrar.optInEveryShape(to: PublicProperty.self, where: { !($0 is any NeverPublic) && !($0 is any AlwaysPublic) })
+        registrar.optInEveryShape(to: PrivateProperty.self, where: { !($0 is any NeverPublic) && !($0 is any AlwaysPublic) })
         registrar.contribute(true, to: PublishingDials.self)
         registrar.service { PublishingState(editor: $0) }
         registerPublishMenus(into: &registrar)
-        // What Publishing puts on shapes goes on the kinds that can be public, and no other.
-        registrar.forShapes(holding: PublicProperty.self) { publishable in
-            registerPublicChip(into: &publishable)
-            // A globe at the end of a public shape's row, saying how many things stand for the shape:
-            // its row is made again when they change (`contentsDidChange(for:)`, from the state's
-            // follower of Topology).
-            publishable.contentsMark { shape, context in
-                guard shape[PublicProperty.self] == true else { return nil }
-                return ContentsMark(symbol: PublicStyle.symbol, color: .secondary, help: PublicStyle.help(references: context.service(PublishingState.self)?.count(for: shape.id) ?? 0))
+        // What Publishing puts on shapes goes on the kinds that can be private, and no other.
+        registrar.forShapes(holding: PrivateProperty.self) { publishable in
+            registerPrivateChip(into: &publishable)
+            // The crossed eye at the end of a private shape's row, as on the shape.
+            publishable.contentsMark { shape, _ in
+                guard shape[PrivateProperty.self] == true else { return nil }
+                return ContentsMark(symbol: PublicStyle.privateSymbol, color: .secondary, help: PublicStyle.privateWord)
             }
             registerPublishSlashCommands(into: &publishable)
         }

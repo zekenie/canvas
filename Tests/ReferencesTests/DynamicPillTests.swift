@@ -213,7 +213,7 @@ private func trailingBox(of frame: CGRect) -> CGRect {
         let room = frame.width - 10 - 16 - 6 - 14 - 11 - 6
         expect(room >= whole, "the label's room beside the eye, \(room), takes the name in italic, \(whole)")
         let canvas = render(try referenceHarness().editor)
-        h.editor.transact { $0.update(secret) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(secret) { $0[PrivateProperty.self] = true } }
         let drawn = render(h.editor)
         // The name, whole, reaches the end of its room's width; an ellipsis after "S" would leave most of it bare.
         let tail = CGRect(x: frame.minX + 32 + whole * 0.6, y: frame.midY - 8, width: whole * 0.35, height: 16)

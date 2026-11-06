@@ -37,8 +37,8 @@ THE MESS DIAL: --mess 0..1 (or "layout": {"mess": 0.5} in the graph; the flag wi
   aspect      2     2.4   3     3.6   4      = 2 + 2 mess            good enough: the board at most this many times too wide for the view's shape, or too tall
 The popular moves come in the same order at every mess; the dial says how far down them the loop goes. --cap, --margin and --popular override the dial's.
 --promote off: no hub is promoted, only the pills that cross boards. --prefer N (default 2): each extra pill of a hub in one frame must save N pills' prices.
-A move promotes a node many point at (it is made public, and each user reaches it through a pill beside the user) or fans out a node that points at many (each of
-its uses is a pill beside it, and what they stand for is made public). After the popular ones, the loop stops when the board is good enough, when the best candidates
+A move promotes a node many point at (it becomes a pill target, and each user reaches it through a pill beside the user) or fans out a node that points at many (each of
+its uses is a pill beside it, and what they stand for are pill targets). After the popular ones, the loop stops when the board is good enough, when the best candidates
 cut the cost by no more than the margin, or at the cap (the report says which).
 
 THE VIEW: --view WxH is the room the window has for a board fit to it. Every board is laid out toward that shape, so that it fills the view when it is fit to it: its
@@ -153,14 +153,13 @@ export function appliedText(res, drawing) {
   return lines.join('\n');
 }
 
-/** The few lines an agent can relay: what is drawn, what goes public and why, where the loop stopped. */
+/** The few lines an agent can relay: what is drawn, what is promoted and fanned out, where the loop stopped. */
 export function summarize(r) {
   const rep = r.report, t = rep.totals;
   const shapes = r.plan.boards.reduce((s, b) => s + b.shapes.length, 0);
   const v = rep.view;
   const lines = [`plan: ${r.plan.boards.length} board(s), ${shapes} shapes, ${t.pills} pills (${t.sharedArrows} arrows into shared ones), ${t.arrows} plain arrows; mess ${r.model.dial.mess}`
     + (v ? `; laid out for a view of ${Math.round(v.w)} x ${Math.round(v.h)}` + (v.from === 'assumed' ? ' (assumed: no view was given)' : '') : '')];
-  lines.push(`public (${rep.public.length}), all made by this run: ` + (rep.public.length ? rep.public.map((p) => `${p} (${rep.publicWhy[p]})`).join('; ') : 'none'));
   // the moves the plan keeps: one the loop took back again is in its board's demotions
   const back = new Set(Object.values(rep.boards).flatMap((x) => (x.demotions || []).map((d) => [d.board, d.mode, d.node].join('\u0000'))));
   const kept = rep.promotions.filter((p) => !back.has([p.board, p.mode || 'in', p.node].join('\u0000')));

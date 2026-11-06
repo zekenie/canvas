@@ -392,7 +392,7 @@ private func noteNode(_ key: String, _ title: String, at: [Double], in container
 }
 
 /// What the review of the drawing-layers rewrite found, held: a document's deletes at every depth, a kind changed, edge keys, line
-/// separators in a text, a node made public for a pill, a plan that shares a pill otherwise, a redraw of a relationship type, and
+/// separators in a text, a pill for a private node refused, a plan that shares a pill otherwise, a redraw of a relationship type, and
 /// a measure that knows the document's own types and the board it lands on.
 @MainActor let applyReviewTests = Suite("canvas apply, as the review left it", [
     test("subboards gone two deep with a note on the inner board are deleted, whatever order their boards come in") {
@@ -442,12 +442,28 @@ private func noteNode(_ key: String, _ title: String, at: [Double], in container
         let b = try require(answer["nodes"]?.arrayValue?.last?["id"]?.stringValue.flatMap(UUID.init(uuidString:)).map(ShapeID.init))
         expectEqual(editor.file.record(b)?.box?.origin, CGPoint(x: 500, y: 40), "the next node where its place says")
     },
-    test("a node a pill is drawn for is made public, and said updated") {
+    test("a pill stands for its node as the node is: nothing is written to it, and it says unchanged; a private node is refused by its key, never made public, and nothing is drawn") {
         let editor = emptyEditor()
         _ = try applied(["drawing": "P", "nodes": [noteNode("a", "A", at: [0, 0]), noteNode("hub", "Hub", at: [900, 0])], "edges": []], on: editor)
         let second = try applied(["drawing": "P", "nodes": [noteNode("a", "A", at: [0, 0]), noteNode("hub", "Hub", at: [900, 0])],
                                   "edges": [["from": "a", "to": "hub", "place": ["pill": ["at": [300, 0]]]]]], on: editor)
-        expectEqual(second["nodes"]?.arrayValue?.first { $0["key"] == "hub" }?["did"], "updated", "made public: \(second.compactText)")
+        expectEqual(second["nodes"]?.arrayValue?.first { $0["key"] == "hub" }?["did"], "unchanged", "public as every shape is: \(second.compactText)")
+        let before = editor.file
+        let secret: JSON = ["drawing": "P", "nodes": [noteNode("a", "A", at: [0, 0]), noteNode("hub", "Hub", at: [900, 0]),
+                                                      noteNode("secret", "Secret", at: [900, 400], more: ["private": true])],
+                            "edges": [["from": "a", "to": "hub", "place": ["pill": ["at": [300, 0]]]],
+                                      ["from": "a", "to": "secret", "place": ["pill": ["at": [300, 100]]]]]]
+        do throws(DocumentError) {
+            _ = try apply(document: document(secret), dryRun: false, on: nil, program: "canvas", in: editor)
+            expect(false, "a pill for a private node")
+        } catch {
+            expectEqual(error.first.key, "secret")
+            expectEqual(error.first.edge, 1)
+            expectEqual(error.reason, "invalid_value")
+            expect(error.first.message.contains("isn't public"), error.first.message)
+            expect(error.first.hint?.contains("ask the user") == true, error.first.hint ?? "")
+        }
+        expect(editor.file == before, "nothing drawn, nothing made public")
     },
     test("a plan that gives a sharer a pill of its own draws one, and leaves the pill it shared where its maker's plan puts it") {
         let editor = emptyEditor()

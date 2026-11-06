@@ -112,7 +112,7 @@ edge "Ann" -> "Acme" is: "Employment"
         defer { w.stop() }
         _ = try w.run([model])
         _ = try w.run([#"subboard "Area" right of "Company""#])
-        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company" public: true fieldValues: {"name": "Initech"}"#])
+        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company" fieldValues: {"name": "Initech"}"#])
         _ = try w.run([#"edge "Ann" -> "Initech" is: "Employment""#])
         let before = kept(w.board)
         let script = #"delete "Area""#
@@ -130,7 +130,7 @@ edge "Ann" -> "Acme" is: "Employment"
         defer { w.stop() }
         _ = try w.run([model])
         _ = try w.run([#"subboard "Area" right of "Company""#])
-        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company" public: true fieldValues: {"name": "Initech"}"#])
+        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company" fieldValues: {"name": "Initech"}"#])
         _ = try w.run([#"edge "Ann" -> "Initech" is: "Employment""#])
         let editor = w.board.editor
         let pills = Set(editor.document.shapes.filter { $0.kind == "reference" }.map(\.id))
@@ -265,7 +265,7 @@ edge "Ann" -> "Acme" is: "Employment"
         defer { w.stop() }
         _ = try w.run([model])
         _ = try w.run([#"subboard "Area" right of "Company""#])
-        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company" public: true fieldValues: {"name": "Initech"}"#])
+        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company" fieldValues: {"name": "Initech"}"#])
         _ = try w.run([#"edge "Ann" -> "Initech" is: "Employment""#])
         for dry in [true, false] {
             let result = try w.run((dry ? ["--dry-run"] : []) + [#"delete "Area""#])
@@ -280,7 +280,7 @@ edge "Ann" -> "Acme" is: "Employment"
         _ = try w.run([model])
         _ = try w.run([#"edge "Employment" -> "Company" text: "staff" endRule: {"needed": true}"#])
         _ = try w.run([#"subboard "Area" right of "Company""#])
-        _ = try w.run([#"sticky-note "Hooli" in "Area" is: "Company" public: true"#])
+        _ = try w.run([#"sticky-note "Hooli" in "Area" is: "Company""#])
         _ = try w.run([#"edge "Ann" -> "Hooli" is: "Employment""#])
         let editor = w.board.editor
         let area = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Area" }, "Area").id
@@ -298,7 +298,7 @@ edge "Ann" -> "Acme" is: "Employment"
         defer { w.stop() }
         _ = try w.run([model])
         _ = try w.run([#"subboard "Area" right of "Company""#])
-        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company" public: true"#])
+        _ = try w.run([#"sticky-note "Initech" in "Area" is: "Company""#])
         _ = try w.run([#"edge "Ann" -> "Initech" is: "Employment""#])
         let editor = w.board.editor
         let ann = try require(editor.document.shapes.first { editor.registry.title(of: $0) == "Ann" }, "Ann").id

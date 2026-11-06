@@ -56,7 +56,7 @@ private struct Clients {
             record[TitleProperty.self] = title
             record[IsAProperty.self] = [TypeLink(type)]
             record[FieldValuesProperty.self] = FieldValues(["name": .string(title)])
-            if isPublic { record[PublicProperty.self] = true }
+            if !isPublic { record[PrivateProperty.self] = true }
             return AnyShapeRecord(record)
         }
         func end(_ from: ShapeID, _ to: ShapeID, _ name: String) -> AnyShapeRecord {
@@ -196,14 +196,14 @@ private final class FarWorld {
         // Step 5.
         w.window.pressReturn()
         expectEqual(editor.undoHistory.undoName, "Add Relationship")
-        expectEqual(editor.file.record(world.borealis)?[PublicProperty.self], true, "made public in the step")
+        expectEqual(editor.file.record(world.borealis)?[PrivateProperty.self], nil, "made public in the step")
         expectEqual(w.references.count, 1)
         // Step 6.
         let atFive = try w.bytes()
         editor.endEditing()
         editor.undo()
         expect(try w.bytes() == atFour, "both boards byte-equal to step 4's")
-        expectEqual(editor.file.record(world.borealis)?[PublicProperty.self], nil)
+        expectEqual(editor.file.record(world.borealis)?[PrivateProperty.self], true)
         editor.redo()
         expect(try w.bytes() == atFive, "Redo repeats")
     },
@@ -226,7 +226,7 @@ private final class FarWorld {
         let employer = try require(editor.relationships?.rows(for: [world.person], isType: false).first { $0.key.type == world.employment })
         let arrow = try require(editor.relate(world.ann, to: world.borealis, in: employer))
         expectEqual(editor.farIssues(arrow).map(\.message), [])
-        editor.transact { $0.update(inFile: world.borealis) { $0[PublicProperty.self] = nil } }
+        editor.transact { $0.update(inFile: world.borealis) { $0[PrivateProperty.self] = true } }
         let pill = try require(w.pills(of: world.ann, "employer").first)
         expect(!pill.isLive, "dashed")
         expectEqual(pill.label, "Borealis", "the note's live name")
@@ -234,7 +234,7 @@ private final class FarWorld {
         expectEqual(said.count, 1)
         expectEqual(said.first?.severity, .warning, "not red")
         expect(said.first?.message.contains("isn’t public") == true, "\(String(describing: said.first?.message))")
-        editor.transact { $0.update(inFile: world.borealis) { $0[PublicProperty.self] = true } }
+        editor.transact { $0.update(inFile: world.borealis) { $0[PrivateProperty.self] = nil } }
         expectEqual(editor.farIssues(arrow).map(\.message), [], "made public again heals")
         editor.transact(on: world.board, "Delete") { $0.delete([world.borealis]) }
         let gone = try require(w.pills(of: world.ann, "employer").first)
@@ -261,7 +261,7 @@ private final class FarWorld {
         expectEqual(editor.undoHistory.undoName, "Remove Relationship")
         expectEqual(w.references.count, 0)
         expectEqual(w.relationships.count, 0)
-        expectEqual(editor.file.record(world.acme)?[PublicProperty.self], true, "Acme still public")
+        expectEqual(editor.file.record(world.acme)?[PrivateProperty.self], nil, "Acme still public")
         editor.endEditing()
         editor.undo()
         expect(try w.bytes() == related, "undo restores both")

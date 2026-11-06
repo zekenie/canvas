@@ -10,49 +10,52 @@ import Topology
         let h = try publishingHarness()
         let registry = h.editor.registry
         for kind: ShapeKind in ["plaque", "box", "disc"] {
-            expect(registry.properties(for: kind).contains("public"), "\(kind) holds it")
+            expect(registry.properties(for: kind).contains("private"), "\(kind) holds it")
             let properties = try require(registry.schema(for: kind)?.json["properties"]?.objectValue)
-            expectEqual(properties["public"], ["type": "boolean", "x-canvas-owner": "publishing"], "\(kind)")
+            expectEqual(properties["private"], ["type": "boolean", "x-canvas-owner": "publishing"], "\(kind)")
         }
         for kind: ShapeKind in ["seal", "draft", "holder", "relay"] {
-            expect(!registry.properties(for: kind).contains("public"), "\(kind) holds none")
+            expect(!registry.properties(for: kind).contains("private"), "\(kind) holds none")
         }
     },
-    test("isPublic and canBePublic: the value, or an always-public kind") {
+    test("isPublic and canBePublic: a shape of a kind that holds the property until it's made private, and an always-public kind's") {
         let h = try publishingHarness()
         let registry = h.editor.registry
         let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame))
         let record = { (id: ShapeID) in h.editor.document[id]! }
-        expect(!registry.isPublic(record(plaque)), "a plaque is private until it's made public")
+        expect(registry.isPublic(record(plaque)), "a plaque is public until it's made private")
+        expectEqual(record(plaque)[PrivateProperty.self], nil, "and holds nothing for it")
         expect(registry.isPublic(record(seal)), "a seal always is")
         expect(!registry.isPublic(record(draft)))
-        h.publish(plaque)
-        expect(registry.isPublic(record(plaque)))
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], true)
+        h.conceal(plaque)
+        expect(!registry.isPublic(record(plaque)))
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], true)
         expect(registry.canBePublic("plaque") && registry.canBePublic("seal"))
         expect(!registry.canBePublic("draft"), "never")
         expect(!registry.canBePublic("holder"))
     },
-    test("makePublic on a record is the one writer of public: a kind that holds it takes it, an always-public one already is, a never-public one refuses and is left as it was") {
+    test("makePublic on a record is the one writer that takes private away: a private shape is made public, a public or always-public one already is, a never-public one refuses and is left as it was") {
         let h = try publishingHarness()
         let registry = h.editor.registry
         let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame))
+        h.conceal(plaque)
         var record = try require(h.editor.document[plaque])
         expect(registry.makePublic(&record))
-        expectEqual(record[PublicProperty.self], true)
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil, "a record, not the document")
+        expectEqual(record[PrivateProperty.self], nil)
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], true, "a record, not the document")
         expect(registry.makePublic(&record), "already public")
         var sealed = try require(h.editor.document[seal])
+        let sealedBefore = sealed
         expect(registry.makePublic(&sealed), "always public")
-        expectEqual(sealed[PublicProperty.self], nil, "and nothing written")
+        expect(sealed == sealedBefore, "and nothing written")
         var drafted = try require(h.editor.document[draft])
         let before = drafted
         expect(!registry.makePublic(&drafted), "never public")
         expect(drafted == before)
         // The editor's writer goes through it.
         h.editor.makePublic([plaque, draft])
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], true)
-        expectEqual(h.editor.document[draft]?[PublicProperty.self], nil)
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], nil)
+        expectEqual(h.editor.document[draft]?[PrivateProperty.self], nil)
     },
     test("a definition that adopts both dials is refused when the registry is built") {
         do {
@@ -68,10 +71,10 @@ import Topology
         let h = try publishingHarness()
         let admitting = try require(h.editor.publishing).admitting
         let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame))
-        let holder = h.hold([plaque])
-        expect(!admitting(h.editor.document[plaque]!))
-        h.publish(plaque)
-        expect(admitting(h.editor.document[plaque]!), "once it's made public, by the same closure")
+        let holder = h.hold([seal])
+        expect(admitting(h.editor.document[plaque]!), "public, as every plaque starts")
+        h.conceal(plaque)
+        expect(!admitting(h.editor.document[plaque]!), "once it's made private, by the same closure")
         expect(admitting(h.editor.document[seal]!))
         expect(!admitting(h.editor.document[draft]!))
         expect(!admitting(h.editor.document[holder]!), "a stand-in is never stood for")
@@ -83,23 +86,23 @@ import Topology
         let h = try publishingHarness()
         let admittable = try require(h.editor.publishing).admittable
         let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame))
-        let holder = h.hold([plaque])
-        expect(admittable(h.editor.document[plaque]!), "private, of a kind that can be public")
-        h.publish(plaque)
+        let holder = h.hold([seal])
         expect(!admittable(h.editor.document[plaque]!), "public: admitted already")
+        h.conceal(plaque)
+        expect(admittable(h.editor.document[plaque]!), "private, of a kind that can be public")
         expect(!admittable(h.editor.document[seal]!), "always public")
         expect(!admittable(h.editor.document[draft]!), "never public")
         expect(!admittable(h.editor.document[holder]!), "a stand-in is never stood for")
     },
-    test("only a public shape is stood for: an arrow of one, a private one's, and a seal's, always") {
+    test("only a public shape is stood for: a plaque from the start, let go of in the commit that makes it private, and a seal's always") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame)), seal = h.add(Seal(plaqueFrame))
         let holder = h.hold([plaque, seal])
         let topology = try require(h.editor.topology)
-        expectEqual(topology.forwards(of: holder), [seal], "the seal, not the private plaque")
-        h.publish(plaque)
-        expectEqual(topology.forwards(of: holder), [plaque, seal], "made public, the plaque is stood for in that commit")
+        expectEqual(topology.forwards(of: holder), [plaque, seal], "every plaque is public until it's made private")
+        h.editor.transact { $0.update(plaque) { $0[PrivateProperty.self] = true } }        // a path with no guard: a hand-edited board
+        expectEqual(topology.forwards(of: holder), [seal], "made private, the plaque drops out in that commit, nothing asked")
         h.editor.undo()
-        expectEqual(topology.forwards(of: holder), [seal], "private by undo: it drops out, nothing is asked")
+        expectEqual(topology.forwards(of: holder), [plaque, seal], "public again by undo")
     },
 ])

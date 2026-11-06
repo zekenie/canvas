@@ -36,14 +36,14 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   function eq(a, b, m) { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error((m || 'not equal') + ': ' + JSON.stringify(a) + ' vs ' + JSON.stringify(b)); }
 
   // Graph documents, written compactly: a node by its title (which is also its key), the notes' words in props.text. `old` shapes of the digest tests
-  // ({title, kind, in, text, rank, public}) become nodes ({key, kind, in, props, layout}), and an edge's weight and direct move under `layout`.
+  // ({title, kind, in, text, rank, pill}) become nodes ({key, kind, in, props, layout}), and an edge's weight and direct move under `layout`.
   function note(t, f, text) { var n = { title: t, kind: 'sticky-note', text: text || '' }; if (f) n.in = f; return n; }
   function nodeOf(n) {
     var out = { key: n.key || n.title };
     if (n.in) out.in = n.in;
     out.kind = n.kind || 'sticky-note';
     var props = Object.assign({}, n.props || {}), lay = Object.assign({}, n.layout || {});
-    for (var k in n) { if (['key', 'title', 'kind', 'in', 'props', 'layout'].indexOf(k) >= 0) continue; if (k === 'rank' || k === 'public') lay[k] = n[k]; else props[k] = n[k]; }
+    for (var k in n) { if (['key', 'title', 'kind', 'in', 'props', 'layout'].indexOf(k) >= 0) continue; if (k === 'rank' || k === 'pill') lay[k] = n[k]; else props[k] = n[k]; }
     if (n.title != null) props.title = n.title;
     out.props = props;
     if (Object.keys(lay).length) out.layout = lay;
@@ -463,7 +463,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
       eq(p.at, [pl.x - band.x, pl.y - band.y], k.join(' ') + ' is where the plan has it');
     });
     assert(rows.indexOf(edgeOf('A', 'X')) < rows.indexOf(edgeOf('B', 'X')), 'the maker before the edges that share its pill');
-    eq(r.report.public.filter(function (t) { return 'VWXYZ'.indexOf(t) >= 0; }), ['V', 'W', 'X', 'Y', 'Z'], 'what a spine points at is public');
+    eq(r.plan.boards[0].pills.map(function (p) { return p.for; }).filter(function (t) { return 'VWXYZ'.indexOf(t) >= 0; }).filter(function (t, i, a) { return a.indexOf(t) === i; }).sort(), ['V', 'W', 'X', 'Y', 'Z'], 'what a spine points at is reached through pills');
     checkPlan(r.plan);
     // byte for byte the same, and the same in another order
     var again = await planOf(spineFixture());
@@ -529,15 +529,14 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(r.plan);
   });
 
-  await test('promote off: every arrow plain, only the pills between boards; edges between boards are pills, public first', async function () {
+  await test('promote off: every arrow plain, only the pills between boards; edges between boards are pills', async function () {
     var nodes = [{ title: 'Sub', kind: 'subboard' }, note('Inner A', 'Sub'), note('Inner B', 'Sub'), note('Top A'), note('Top B')];
     var edges = [{ from: 'Top A', to: 'Top B' }, { from: 'Top A', to: 'Inner B' }, { from: 'Inner A', to: 'Top B' }, { from: 'Inner A', to: 'Inner B' }];
     var r = await planOf(digest(nodes, edges), { promote: false });
     eq(r.report.promotions.length, 0);
     var ps = pillSet(r.plan);
     eq(ps, ['Sub|Inner A>Top B', 'root|Top A>Inner B'], 'pills');
-    assert(r.report.public.indexOf('Top B') >= 0 && r.report.public.indexOf('Inner B') >= 0, 'public: ' + r.report.public);
-    // the document keeps the nodes and the edges as given, an edge through a pill saying where its pill is; the app makes what a pill stands for public
+    // the document keeps the nodes and the edges as given, an edge through a pill saying where its pill is
     eq(r.drawing.nodes.map(function (n) { return n.key; }), nodes.map(function (n) { return n.title; }), 'the nodes, in the order given');
     eq(r.drawing.edges.filter(function (e) { return pillOf(e); }).map(function (e) { return e.from + '>' + e.to; }).sort(), ['Inner A>Top B', 'Top A>Inner B'], 'the edges through pills');
     eq(r.drawing.edges.filter(function (e) { return !pillOf(e); }).map(function (e) { return e.from + '>' + e.to; }).sort(), ['Inner A>Inner B', 'Top A>Top B'], 'the arrows');
@@ -709,7 +708,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var r = await planOf(d, { marginPills: 100000 });   // a margin no measured gain beats
     eq(r.report.promotions.map(function (p) { return [p.mode, p.node, !!p.popular, p.arrows]; }), [['in', 'Hub', true, 20]], 'the hub, as popular, with its 20 arrows');
     eq(r.plan.boards[0].edges.filter(function (e) { return !e.via && e.to === 'Hub'; }).length, 0, 'no plain arrow into it is left');
-    assert(r.report.public.indexOf('Hub') >= 0, 'and it is public');
+    assert(r.plan.boards[0].pills.some(function (p) { return p.for === 'Hub'; }), 'and its users have pills for it');
     // under the count, it is a judgment call again: with that margin, nothing
     var few = hubFixture(1, 4);   // 4 users, under the 5 of mess 0.1, on a board that isn't good enough as it is (two arrows over notes)
     eq((await planOf(digest(few.nodes, few.edges), { marginPills: 100000 })).report.promotions.length, 0, 'four arrows are not popular at 0.1');
@@ -740,7 +739,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
   });
 
   await test('the summary names the moves the plan keeps: one the loop took back is not said to be promoted or fanned out', async function () {
-    var rep = { totals: { pills: 0, sharedArrows: 0, arrows: 0 }, public: [], publicWhy: {}, warnings: [],
+    var rep = { totals: { pills: 0, sharedArrows: 0, arrows: 0 }, warnings: [],
       promotions: [{ board: 'root', mode: 'in', node: 'Kept' }, { board: 'root', mode: 'in', node: 'Back' }, { board: 'Part', mode: 'out', node: 'Fan' }, { board: 'Part', mode: 'out', node: 'Fan back' }, { board: 'Part', mode: 'in', node: 'Back' }],
       boards: { root: { stop: 'little-gain', demotions: [{ board: 'root', mode: 'in', node: 'Back' }] }, Part: { stop: 'good-enough', demotions: [{ board: 'Part', mode: 'out', node: 'Fan back' }] } } };
     var text = clim.summarize({ report: rep, plan: { boards: [] }, model: { dial: { mess: 0.1, longest: 1300 } } });
@@ -748,19 +747,18 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     assert(/fanned out 1: Fan$/m.test(text), 'and so is the fan-out taken back: ' + text);
   });
 
-  await test('a node that points at many is fanned out: each of its uses a pill beside it, what they stand for public; never to a shape that is never public, nor an edge that is never a pill', async function () {
+  await test('a node that points at many is fanned out: each of its uses a pill beside it; never to a shape kept off pills, nor an edge that is never a pill', async function () {
     var targets = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8'];
-    var nodes = [note('Joiner')].concat(targets.map(function (t) { return note(t); })).concat([{ title: 'Private', kind: 'sticky-note', text: 'x', public: false }, note('Plain')]);
+    var nodes = [note('Joiner')].concat(targets.map(function (t) { return note(t); })).concat([{ title: 'Private', kind: 'sticky-note', text: 'x', pill: false }, note('Plain')]);
     var edges = targets.map(function (t) { return { from: 'Joiner', to: t }; }).concat([{ from: 'Joiner', to: 'Private' }, { from: 'Joiner', to: 'Plain', direct: true }]);
     var r = await planOf(digest(nodes, edges), { marginPills: 100000 });
     eq(r.report.promotions.map(function (p) { return [p.mode, p.node, !!p.popular, p.arrows]; }), [['out', 'Joiner', true, 8]], 'the joiner, fanned out, for its 8 uses that may be pills');
     eq(r.report.boards.root.fanned, ['Joiner']); eq(r.report.boards.root.promoted, [], 'nothing is promoted');
     var out = r.plan.boards[0].edges.filter(function (e) { return e.from === 'Joiner'; });
     eq(out.filter(function (e) { return e.via; }).map(function (e) { return e.to; }).sort(), targets, 'each use is an edge through a reference');
-    eq(out.filter(function (e) { return !e.via; }).map(function (e) { return e.to; }).sort(), ['Plain', 'Private'], 'the direct edge and the one to a shape that is never public stay arrows');
+    eq(out.filter(function (e) { return !e.via; }).map(function (e) { return e.to; }).sort(), ['Plain', 'Private'], 'the direct edge and the one to a shape kept off pills stay arrows');
     eq(r.plan.boards[0].pills.filter(function (p) { return p.start === 'Joiner'; }).length, 8, 'eight pills beside it');
-    eq(r.report.public.slice().sort(), targets, 'what the pills stand for is public, and the joiner is not');
-    assert(/fanned out/.test(r.report.publicWhy.t1), 'and the report says why: ' + r.report.publicWhy.t1);
+    eq(r.plan.boards[0].pills.map(function (p) { return p.for; }).sort(), targets, 'the pills stand for the uses, and none for the joiner');
     assert(r.drawing.edges.filter(function (e) { return e.from === 'Joiner' && pillOf(e); }).length === 8, 'drawn that way: eight edges through pills');
     assert(/fanned out 1: Joiner/.test(clim.summarize(r)), 'the summary says so');
     // the same node, pointed at by many, is promoted instead: the two ways round are counted apart
@@ -780,7 +778,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(b.long.map(function (x) { return x.from + '>' + x.to; }), ['n0>n6'], 'the long one');
     assert(b.long[0].length > 1300 && b.longLeft === 0, JSON.stringify(b.long));
     eq(r.plan.boards[0].edges.map(function (e) { return e.from + '>' + e.to + (e.via ? ' via' : ''); }).sort(), ['n0>n1', 'n0>n6 via'], 'the long arrow is a pill, the short one an arrow');
-    assert(r.report.public.indexOf('n6') >= 0 && /longer than the dial allows/.test(r.report.publicWhy.n6), 'n6 is public, and the report says why');
+    assert(r.plan.boards[0].pills.some(function (p) { return p.for === 'n6'; }), 'n6 has a pill');
     assert(/long arrows: 1 made pills/.test(clim.summarize(r)), 'the summary says so');
     // an edge the digest says is never a pill stays an arrow, however long
     var keep = digest(nodes, [{ from: 'n0', to: 'n6', direct: true }]);
@@ -967,10 +965,10 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     var names = await import('./names-lib.mjs');
     var scanned = names.scan(io.readText);
     eq(scanned.bad.map(names.say), [], 'string literals naming the app');
-    ['frame', 'sticky-note', 'subboard', 'reference', 'text', 'description', 'public', 'fieldValues', 'frame-link', 'note-link', 'subboard-link'].forEach(function (n) { assert(scanned.names[n], n + ' is collected from the kinds'); });
+    ['frame', 'sticky-note', 'subboard', 'reference', 'text', 'description', 'private', 'fieldValues', 'frame-link', 'note-link', 'subboard-link'].forEach(function (n) { assert(scanned.names[n], n + ' is collected from the kinds'); });
     var found = function (src) { return names.offences('x.mjs', src, scanned.names).map(function (o) { return o.line + ':' + o.text; }); };
-    eq(found("var a = 'frame';\nvar b = \"text\";\nvar c = `public`;"), ['1:frame', '2:text', '3:public'], 'single, double and backtick');
-    eq(found("// 'frame' in a comment\n/* \"text\" too */\nvar a = 'a frame in words'; var b = x.public; var r = /frame/;"), [], 'comments, longer strings, property names and regular expressions are not literals');
+    eq(found("var a = 'frame';\nvar b = \"text\";\nvar c = `private`;"), ['1:frame', '2:text', '3:private'], 'single, double and backtick');
+    eq(found("// 'frame' in a comment\n/* \"text\" too */\nvar a = 'a frame in words'; var b = x.private; var r = /frame/;"), [], 'comments, longer strings, property names and regular expressions are not literals');
     // the modules named in names-lib are the ones in lib/ (jsc cannot list a folder; node can)
     if (isNode) eq(fsr.readdirSync(base + '/lib').filter(function (f) { return /\.mjs$/.test(f); }).map(function (f) { return f.replace(/\.mjs$/, ''); }).sort(), names.LIB_MODULES.slice().sort(), 'the modules names-lib scans');
   });
@@ -1005,10 +1003,10 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     said(errorsOf(d), /"B" has no kind/);
     d = tiny(); delete d.drawing;
     said(errorsOf(d), /drawing is the drawing's name/);
-    d = tiny(); d.nodes[3].layout = { rank: 'high', public: 1 }; d.edges[0].layout = { weight: 'heavy', direct: 'yes' }; d.layout = { mess: 3, ranks: 'sideways' };
+    d = tiny(); d.nodes[3].layout = { rank: 'high', pill: 1 }; d.edges[0].layout = { weight: 'heavy', direct: 'yes' }; d.layout = { mess: 3, ranks: 'sideways' };
     eq(errorsOf(d).length, 6, 'hints of the wrong type: ' + JSON.stringify(errorsOf(d)));
-    d = tiny(); d.nodes[3].layout = { public: true }; d.nodes.push({ key: 'Ref', kind: 'reference' }); d.nodes[4].layout = { public: true };
-    said(errorsOf(d), /"Ref" is public: true, and no pill can stand for the kind reference/, 'public: true where no pill stands');
+    d = tiny(); d.nodes[3].layout = { pill: true }; d.nodes.push({ key: 'Ref', kind: 'reference' }); d.nodes[4].layout = { pill: true };
+    said(errorsOf(d), /"Ref" is layout.pill: true, and no pill can stand for the kind reference/, 'pill: true where no pill stands');
     d = tiny(); d.nodes.push({ key: 'root', kind: 'subboard' });
     said(errorsOf(d), /"root" names the drawing's own board/);
   });
@@ -1119,7 +1117,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
         assert(Math.abs(px - (near.x + near.w)) < 700 && Math.abs(py - near.y) < 700, 'the pill of ' + e.from + ' > ' + e.to + ' is beside its start: ' + [px, py] + ' vs ' + JSON.stringify(near));
       }
     });
-    // an edge between boards is a pill for its far end, whose node is public (the app makes it so)
+    // an edge between boards is a pill for its far end, through which the far end is reached
     var crossing = d.edges.filter(function (e) { return r.model.node(e.from).board !== r.model.node(e.to).board && !r.model.dropped.has(d.edges.indexOf(e)); });
     assert(crossing.length >= 1, 'the tree has edges between boards');
     crossing.forEach(function (e) { assert(pillOf(r.drawing.edges.find(function (x) { return x.from === e.from && x.to === e.to; })), e.from + ' > ' + e.to + ' goes through a pill'); });
@@ -1265,15 +1263,23 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     checkPlan(m.plan);
   });
 
-  await test('a pinned node is public in the report only when a pill stands for it', async function () {
+  await test('a pinned node has a pill drawn for it, and none with promotion off', async function () {
     var d = fixture('acme');
-    d.nodes.find(function (n) { return n.key === 'Platform team'; }).layout = { public: true };
+    d.nodes.find(function (n) { return n.key === 'Platform team'; }).layout = { pill: true };
     var off = await planOf(d, { promote: false });
     assert(off.drawing.edges.every(function (e) { return !(e.place && e.place.pill); }), 'no pill is drawn with promotion off');
-    assert(off.report.public.indexOf('Platform team') < 0 && off.plan.public.indexOf('Platform team') < 0, 'no pill, so not public: ' + JSON.stringify(off.report.public));
     var on = await planOf(d);
-    var pilled = on.drawing.edges.some(function (e) { return e.to === 'Platform team' && e.place && e.place.pill; });
-    eq(on.report.public.indexOf('Platform team') >= 0, pilled, 'public exactly when a pill is drawn for it');
+    assert(on.drawing.edges.some(function (e) { return e.to === 'Platform team' && e.place && e.place.pill; }), 'a pill is drawn for the pinned node');
+  });
+
+  await test('props are the app\'s: a hub whose props say private: true is laid out as any other hub, and the document keeps what it says', async function () {
+    // whether a pill may stand for a shape is the app's to say (canvas apply refuses one for a private node, by key); the layout reads no props
+    var fx = hubFixture(4, 5), marked = hubFixture(4, 5);
+    marked.nodes.forEach(function (n) { if (n.title === 'Hub') n.props = Object.assign({}, n.props, { private: true }); });
+    var plain = await planOf(digest(fx.nodes, fx.edges), { marginPills: 100000 });
+    var r = await planOf(digest(marked.nodes, marked.edges), { marginPills: 100000 });
+    eq(JSON.stringify(r.plan.boards), JSON.stringify(plain.plan.boards), 'the same boards, pills and moves');
+    eq(r.drawing.nodes.find(function (n) { return n.key === 'Hub'; }).props.private, true, 'its props passed through');
   });
 
   // ---- the commands ----
@@ -1295,9 +1301,9 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     eq(JSON.parse(mem.printed.pop()), { errors: [], warnings: [] });
     await clim.run(['plan', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH, '--view', '1440x900'], mem.io);
     var summary = mem.printed.pop();
-    assert(/^plan: 1 board\(s\), 29 shapes, \d+ pills/.test(summary) && /laid out for a view of 1440 x 900/.test(summary) && /public \(\d+\), all made by this run/.test(summary), summary);
+    assert(/^plan: 1 board\(s\), 29 shapes, \d+ pills/.test(summary) && /laid out for a view of 1440 x 900/.test(summary) && !/public/.test(summary), summary);
     var drawing = JSON.parse(mem.files['/out/drawing.json']), report = JSON.parse(mem.files['/out/report.json']);
-    eq(drawing.nodes.length, 29); eq(drawing.drawing, 'acme'); assert(report.totals && report.public.length && report.view.w === 1440 && report.timings.engine === 'test', 'report.json');
+    eq(drawing.nodes.length, 29); eq(drawing.drawing, 'acme'); assert(report.totals && report.promotions && report.view.w === 1440 && report.timings.engine === 'test', 'report.json');
     eq(Object.keys(mem.files).sort(), ['/g.json', '/m.json', '/out/drawing.json', '/out/report.json'], 'two files written, and nothing else');
     var threw = ''; try { await clim.run(['plan', '/g.json', '/m.json', '/out', '--kinds', KINDS_PATH, '--records', 'x'], mem.io); } catch (e) { threw = e.message; }
     assert(/unknown option --records/.test(threw), threw);

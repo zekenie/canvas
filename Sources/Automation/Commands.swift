@@ -31,7 +31,7 @@ public struct AutomationPlugin: ListedPlugin {
                 subboard's), or in X, where X holds shapes on its own board (a frame's): a run draws on the board \
                 what it names is on, else the one the window shows, without \
                 moving the window (the result's on says which). An edge to a shape on another board goes into a \
-                reference to it, put beside the shape on this board, when the shape is public (via: reference asks \
+                reference to it, put beside the shape on this board, unless the shape is private (via: reference asks \
                 for one on a single board too). The language is taught \
                 by the repository's canvas skill (.claude/skills/canvas); `\(canvas) kinds` lists what can be drawn, \
                 and with what.

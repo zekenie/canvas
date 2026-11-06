@@ -55,7 +55,7 @@ export async function planGraph(graph, sizesOrFn, options, elk, now) {
   const ranks = opts.ranks || model.ranks || 'auto';
   const t0 = (now || Date.now)();
   const results = new Map();
-  // inner boards first: what is public there costs less on the outer ones
+  // inner boards first: what is a pill target there costs less on the outer ones
   const order = model.boards.slice().sort((a, b) => model.boardDepth.get(b) - model.boardDepth.get(a) || byTitle(a, b));
   let done = 0;
   for (const board of order) {

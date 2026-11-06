@@ -81,7 +81,7 @@ private func farBoard(_ stage: GalleryStage) -> (ann: ShapeID, acme: ShapeID, bo
         record[TitleProperty.self] = title
         record[IsAProperty.self] = [TypeLink(type)]
         record[FieldValuesProperty.self] = FieldValues(["name": .string(title)])
-        if isPublic { record[PublicProperty.self] = true }
+        if !isPublic { record[PrivateProperty.self] = true }
         return AnyShapeRecord(record)
     }
     func end(_ from: ShapeID, _ to: ShapeID, _ name: String) -> AnyShapeRecord {

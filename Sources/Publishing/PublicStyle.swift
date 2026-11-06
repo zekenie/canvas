@@ -3,26 +3,14 @@ import AppKit
 /// Publishing's words and symbols, in one place.
 @MainActor
 enum PublicStyle {
-    /// The chip's and the row mark's symbol, and the symbol of the "Private" a shape just went to.
-    static let symbol = "globe"
-    static let publicWord = "Public"
-    static let privateWord = "Private"
+    /// A private shape's chip and row mark: the eye crossed out, as a reference pill trails it for a
+    /// shape that isn't public.
+    static let privateSymbol = "eye.slash"
+    /// The chip a shape shows for a moment after it went public: the eye open, fading.
+    static let publicSymbol = "eye"
+    /// What VoiceOver calls the chip (asked off the main actor too: `ClickableAdornment.partTitle`), and the row
+    /// mark's tooltip.
+    nonisolated static let privateWord = "Private"
     static let makePublic = "Make Public"
     static let makePrivate = "Make Private"
-    /// Between "Public" and how many things stand for the shape.
-    static let countSeparator = " · "
-
-    /// "Public", or "Public · 3" once three things stand for the shape.
-    static func face(references count: Int) -> String {
-        count > 0 ? publicWord + countSeparator + String(count) : publicWord
-    }
-
-    /// The tooltip of a row's mark: "Public", or "Public · 3 references".
-    static func help(references count: Int) -> String {
-        switch count {
-        case 0: publicWord
-        case 1: publicWord + countSeparator + "1 reference"
-        default: publicWord + countSeparator + "\(count) references"
-        }
-    }
 }

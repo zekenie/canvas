@@ -188,16 +188,11 @@ private func idsOf(_ apply: JSON) -> [String: ShapeID] {
     return ids
 }
 
-/// The keys of the shapes of the drawing that are public, and the count of all public shapes on the file.
-@MainActor private func publicKeys(in editor: CanvasEditor, ids: [String: ShapeID]) -> (keys: Set<String>, all: Int) {
-    let publicShapes = allRecords(editor).filter { $0[PublicProperty.self] == true }
-    let byID = Dictionary(uniqueKeysWithValues: ids.map { ($1, $0) })
-    return (Set(publicShapes.compactMap { byID[$0.id] }), publicShapes.count)
-}
-
-/// What the report says is made public, as keys.
-private func reportedPublic(_ run: DigestRun) throws -> Set<String> {
-    Set(try run.report["public"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+/// Whether a shape is public is the person's: the digest draws nothing private (every shape is public until a
+/// person says otherwise), and its report says nothing of what is public.
+@MainActor private func expectNothingPrivate(_ run: DigestRun, in editor: CanvasEditor, _ label: String) throws {
+    expectEqual(allRecords(editor).filter { $0[PrivateProperty.self] == true }.count, 0, "\(label): nothing is private")
+    expect(try run.report["public"] == nil, "\(label): the report says nothing of public")
 }
 
 /// The whole file, to say a redraw changed nothing: every shape's record.
@@ -219,7 +214,7 @@ private func warnings(_ run: DigestRun) -> String {
 }
 
 @MainActor let digestSmallTests = Suite("canvas-digest: digest all on Acme, a tree, a spine and arrows at frames, into a subboard", [
-    test("digest all on Acme into a subboard of an open board: every node, pill and arrow where the plan says, all created, only what the report makes public is public, one undo step takes it back") {
+    test("digest all on Acme into a subboard of an open board: every node, pill and arrow where the plan says, all created, nothing private, one undo step takes it back") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -238,12 +233,8 @@ private func warnings(_ run: DigestRun) -> String {
         expect(try (run.drawing["edges"]?.arrayValue ?? []).contains { $0["place"]?["pill"] != nil }, "Acme has hubs worth a pill")
         expectEqual(board.editor.file.shapeCount, before + ids.count + (try (run.drawing["edges"]?.arrayValue ?? []).filter { $0["place"]?["pill"]?["at"] != nil }.count)
                     + (try (run.drawing["edges"]?.arrayValue ?? []).count), "the shapes of the drawing, its pills and its arrows")
-        // the app makes a pill's target public; what the report says is public is what is
-        let made = publicKeys(in: board.editor, ids: ids)
-        let reported = try reportedPublic(run)
-        expect(!reported.isEmpty, "something is public")
-        expectEqual(made.keys, reported, "the public shapes are the report's")
-        expectEqual(made.all, reported.count, "and nothing else is public")
+        // every shape is public, so a pill stands for its target as it is: nothing is made public or private
+        try expectNothingPrivate(run, in: board.editor, "Acme")
         // one step takes the whole drawing back
         board.editor.undo()
         expectEqual(board.editor.file.shapeCount, before, "one undo step takes the drawing back")
@@ -267,9 +258,7 @@ private func warnings(_ run: DigestRun) -> String {
         expectEqual(run.process.status, 0, run.said)
         let ids = try expectDrawn(run, in: board, top: top, "tree")
         expect(Set(try run.drawing["nodes"]?.arrayValue?.compactMap { $0["kind"]?.stringValue } ?? []).isSuperset(of: ["subboard", "frame", "sticky-note"]), "a subboard, frames and notes")
-        let made = publicKeys(in: board.editor, ids: ids)
-        expectEqual(made.keys, try reportedPublic(run))
-        expectEqual(made.all, made.keys.count)
+        try expectNothingPrivate(run, in: board.editor, "tree")
         // the subboard's text names two notes by key; the app wrote it as mentions of them
         let backend = try require(ids["Backend"].flatMap { board.editor.file.record($0) })
         let description = backend.propertiesJSON?["description"]?.stringValue ?? backend.propertiesJSON?["text"]?.stringValue ?? ""
@@ -327,8 +316,7 @@ private func warnings(_ run: DigestRun) -> String {
         // a shared pill is one shape: one pill for X, however many cards point at it
         let pills = allRecords(board.editor).compactMap { $0.typed(as: Reference.self) }.filter { $0.props.target?.id == ids["X"] }
         expectEqual(pills.count, 1, "one pill for X")
-        let made = publicKeys(in: board.editor, ids: ids)
-        expectEqual(made.keys, try reportedPublic(run))
+        try expectNothingPrivate(run, in: board.editor, "spine")
     },
 
     test("digest all on a typed graph: types, notes of a type and relationship arrows pass through as the app takes them, every node and arrow on its plan") {
@@ -345,12 +333,11 @@ private func warnings(_ run: DigestRun) -> String {
 
         let run = try runDigest("all", fixture("typed"), server: server, target: ["--board", "\(board.number)", "--on", "Home"], out: folder)
         expectEqual(run.process.status, 0, run.said)
-        let ids = try expectDrawn(run, in: board, top: top, "typed")
+        _ = try expectDrawn(run, in: board, top: top, "typed")
         // the types are found by the app: a note of a type answers for it
         let types = try require(JSON(text: canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "10000", ":is-a(*)"]).output)["rows"]?.arrayValue)
         expect(!types.isEmpty, "notes of a type, as the app reads is: by key")
-        let made = publicKeys(in: board.editor, ids: ids)
-        expectEqual(made.keys, try reportedPublic(run))
+        try expectNothingPrivate(run, in: board.editor, "typed")
     },
 ])
 
@@ -368,10 +355,8 @@ private func warnings(_ run: DigestRun) -> String {
 
         let run = try runDigest("all", fixture("acme"), server: server, target: ["--board", "\(board.number)"], out: folder)
         expectEqual(run.process.status, 0, run.said)
-        let ids = try expectDrawn(run, in: board, top: .root, "Acme on the board")
-        let made = publicKeys(in: board.editor, ids: ids)
-        expectEqual(made.keys, try reportedPublic(run))
-        expectEqual(made.all, made.keys.count)
+        _ = try expectDrawn(run, in: board, top: .root, "Acme on the board")
+        try expectNothingPrivate(run, in: board.editor, "Acme on the board")
         board.editor.undo()
         expectEqual(board.editor.file.shapeCount, 0, "one undo step takes the drawing back")
         expect(!board.editor.canUndo, "and it was the only step")
@@ -405,9 +390,7 @@ private func warnings(_ run: DigestRun) -> String {
         let ids = try expectDrawn(run, in: board, top: .root, "flat60")
         expectEqual(ids.count, 60)
         expect(try (run.drawing["edges"]?.arrayValue ?? []).contains { $0["place"]?["pill"] != nil }, "hubs promoted")
-        let public_ = publicKeys(in: board.editor, ids: ids)
-        expectEqual(public_.keys, try reportedPublic(run))
-        expectEqual(public_.all, public_.keys.count)
+        try expectNothingPrivate(run, in: board.editor, "flat60")
         expectEqual(first.editor.file.shapeCount, 0, "the other board is as it was")
     },
 ])

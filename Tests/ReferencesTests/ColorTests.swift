@@ -214,7 +214,6 @@ private struct Spots {
             for index in 0..<2_001 {
                 var box = ShapeRecord(Box(CGRect(x: CGFloat(index % 50) * 20, y: 2_000 + CGFloat(index / 50) * 20, width: 10, height: 10)))
                 box[TitleProperty.self] = "B\(index)"
-                box[PublicProperty.self] = true
                 editor.insert(box)
             }
         }

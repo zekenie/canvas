@@ -103,9 +103,9 @@ return g.finish()
 
 **Titles** are what the code calls things: two `index.ts` in two folders are both `index.ts`, two services each have a `syncWorkflow`. Nothing renames one. A title is `props["title"]`.
 
-**`props`** is for the app: any attribute `canvas kinds` lists for the kind, as JSON, with the value `canvas draw` takes (a string, number, boolean, null, list or object: `"is": ["type:File"]`, `"fieldValues": {...}`, `"color": "green"`, `"public": true`, `"schema": {...}`; a text attribute given an object or list takes its JSON text). A new attribute a plugin adds works the day the app has it, with no change to lenskit. A value that names another shape names it **by key**: `"is": ["type:File"]`, a mention `@[table:orders]` in a text (`lenskit.text.mention`). A note's words are `text`, a subboard's `description`; a frame has neither.
+**`props`** is for the app: any attribute `canvas kinds` lists for the kind, as JSON, with the value `canvas draw` takes (a string, number, boolean, null, list or object: `"is": ["type:File"]`, `"fieldValues": {...}`, `"color": "green"`, `"private": true` (keeps a shape from being stood for, so its `layout` says `pill: false` too), `"schema": {...}`; a text attribute given an object or list takes its JSON text). A new attribute a plugin adds works the day the app has it, with no change to lenskit. A value that names another shape names it **by key**: `"is": ["type:File"]`, a mention `@[table:orders]` in a text (`lenskit.text.mention`). A note's words are `text`, a subboard's `description`; a frame has neither.
 
-**`layout`** is for the render layer, never the app: on a node `rank` (a number: rows with the lowest on top, or columns), `public` (`true` pins a pill target, `false` rules one out), `direct` (`true`: never a pill); on an edge `weight` and `direct`. Place nothing: no coordinates, no sizes.
+**`layout`** is for the render layer, never the app: on a node `rank` (a number: rows with the lowest on top, or columns), `pill` (`true` pins a pill target, `false` rules one out), `direct` (`true`: never a pill); on an edge `weight` and `direct`. Place nothing: no coordinates, no sizes.
 
 A document's limits are canvas-digest's: about 15 shapes a frame, about 150 a board (`digest check` warns past them). One `canvas query` lists at most 10,000 titles, so keep a document well under that.
 
@@ -224,7 +224,7 @@ g.edge("activity:src/a.ts#createOrder", "table:orders", {"is": ["type:writes"], 
 - `is` is a list of type keys. A type's `text` and its `schema` say the same thing, in words and as JSON Schema. Its title is its name: no `"title"` in the schema.
 - A type with `is` builds on those types (a relationship type on relationship types): its notes have their fields too, with its own, and its schema holds only what it adds or restates. A note of Local activity is an Activity, so `:is-a("Activity")` finds it, an end at Activity gives it its row, and a relationship whose end is an Activity fits it. What a type builds on may be on any board.
 - A frame or a subboard can be of a type too (`"is": ["type:Collection"]` and `"fieldValues"` on the frame's node): its type's chips are on the canvas, its values in its panel's Types tab, and `canvas query ':is-a("Collection")'` finds it. A note is the only kind that can be a type.
-- A relationship type and the types at its ends are on one board (a frame on the root is the usual place). Notes of a type can be on any board; a relationship to a note on another board is drawn into a pill, and the note is made public.
+- A relationship type and the types at its ends are on one board (a frame on the root is the usual place). Notes of a type can be on any board; a relationship to a note on another board is drawn into a pill.
 - Values are held to the schema's `type`, `properties`, `required`, `enum` and `items`, and the app says when one isn't. Leave an empty value out (None counts as none). Lists of strings read well in a note's row.
 - `endRule` `{"needed": true}` makes every note at that end need such a relationship, and one without is `:incomplete`, said by the drawing as a warning by design. Use it for what the team wants found (an activity no workflow runs).
 - Title the types as people say them, and the things queries name (tables, workflows) as the code says them. A type is named by its key in `is`, so two types may share a title, though a query by title finds both.
@@ -288,7 +288,7 @@ RUNS_DIRECT = True
 - **The code names the rule's constant**, so a reader goes from the rule to the code and back. Keep the rules together at the top of the lens, in the order they apply.
 - **Make it general.** A user who points at one shape is showing a case of something: write the rule for the case ("activities with no workflow go last"), never for the shape.
 - **Read the rules before changing the lens.** A request that goes against a rule: name the rule and its reason to the user, and ask which wins. Then change that rule's text and code, and its round. Never add a rule that undoes another.
-- **Art direction is often a field.** Order is `rank` on frames or nodes; a part to open is a `subboard`, a group to see at a glance a `frame`; a line that must stay a line is `layout={"direct": True}`; a hub that must be a pill target is `layout={"public": True}`, one kept off pills `False`. Tidiness as a whole is the `mess` setting, and which way the root's bands run the `ranks` setting, not rules.
+- **Art direction is often a field.** Order is `rank` on frames or nodes; a part to open is a `subboard`, a group to see at a glance a `frame`; a line that must stay a line is `layout={"direct": True}`; a hub that must be a pill target is `layout={"pill": True}`, one kept off pills `False`. Tidiness as a whole is the `mess` setting, and which way the root's bands run the `ranks` setting, not rules.
 
 ## What a lens's conventions miss
 

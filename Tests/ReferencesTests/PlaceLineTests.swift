@@ -131,7 +131,7 @@ import Titles
         let state = try require(h.editor.references)
         _ = render(h.editor)
         expectEqual(state.drawnPlace(of: pill)?.text, "Board › Team", "live")
-        h.editor.transact(on: try require(h.editor.file.board(containing: far))) { $0.update(far) { $0[PublicProperty.self] = nil } }
+        h.editor.transact(on: try require(h.editor.file.board(containing: far))) { $0.update(far) { $0[PrivateProperty.self] = true } }
         _ = render(h.editor)
         expectEqual(state.drawnPlace(of: pill)?.text, "Board › Team", "not public: the eye beside the name, the place still whole")
     },

@@ -47,9 +47,9 @@ extension EditorHarness {
 }
 
 extension EditorHarness {
-    /// The public chip as it's laid out now on a shape, if it shows.
+    /// The private chip as it's laid out now on a shape, if it shows.
     func chip(of id: ShapeID) -> AdornmentFrame? {
-        editor.adornmentFrames(of: id).first { $0.adornment == .of(PublicChip.self) }
+        editor.adornmentFrames(of: id).first { $0.adornment == .of(PrivateChip.self) }
     }
 
     /// The middle of the chip, in view points: where a click on it lands.
@@ -58,130 +58,111 @@ extension EditorHarness {
         return view(CGPoint(x: rect.midX, y: rect.midY))
     }
 
-    /// What the chip says, "" when it shows only a symbol, nil without one.
-    func chipText(of id: ShapeID) -> String? { chip(of: id).map { $0.label.text ?? "" } }
+    /// The symbol the chip shows: the crossed eye on a private shape, the open one fading on one just made public; nil
+    /// without a chip.
+    func chipSymbol(of id: ShapeID) -> String? { chip(of: id)?.label.systemImage }
 }
 
 /// Out of the way of any chip, for the pointer.
 let elsewhere = CGPoint(x: 600, y: 20)
 
-@MainActor let chipTests = Suite("The public chip", [
-    test("a public shape has a chip, Public with a globe, 4 points left of the lock's; a private one has none") {
+@MainActor let chipTests = Suite("The private chip", [
+    test("a private shape has a chip, the crossed eye alone, 4 points left of the lock's; a public one, as every shape starts, has none") {
         let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
-        expectEqual(h.chip(of: plaque), nil, "private: none")
-        h.publish(plaque)
+        expectEqual(h.chip(of: plaque), nil, "public: none")
+        h.conceal(plaque)
         let chip = try require(h.chip(of: plaque))
-        expectEqual(chip.label.text, "Public")
-        expectEqual(chip.label.systemImage, "globe")
-        expect(chip.label.hasBrightSymbol, "the globe in full white, as the text is")
+        expectEqual(chip.label.text, nil, "a symbol alone, as the lock is")
+        expectEqual(chip.label.systemImage, "eye.slash")
+        expectEqual(chip.label.compactFace, nil, "the eye is its own smallest face")
         let lock = try require(h.editor.adornmentFrames(of: plaque).first { $0.adornment == .of(StubLock.self) })
         expectEqual(chip.rect.maxX, lock.rect.minX - 4, "beside the lock, which is nearest the end")
         expectEqual(lock.rect.maxX, plaqueFrame.maxX)
         expectEqual(chip.rect.minY, lock.rect.minY, "in its row")
-        expect(chip.label.compactFace != nil, "a compact face to fall back on")
+        expectEqual(chip.rect.size, lock.rect.size, "the same size as the lock: a symbol alone each")
     },
-    test("every face of the chip, full and compact, has its globe in full white: public, counted, and Private lingering and fading") {
+    test("made public, the eye opens for a moment and fades, a symbol alone as the open lock is") {
         let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
-        @MainActor func expectBright(_ message: String) {
-            let label = h.chip(of: plaque)?.label
-            expect(label?.hasBrightSymbol == true, "\(message): the full face's globe")
-            expectEqual(label?.compactFace?.systemImage, "globe", "\(message): the compact face's symbol")
-            expect(label?.compactFace?.hasBrightSymbol == true, "\(message): the compact face's globe")
-        }
-        expectBright("public, nothing standing for it")                              // the globe alone
-        let holder = h.hold([plaque])
-        expectBright("public, counted")                                              // "1" with the globe
-        expectEqual(h.chip(of: plaque)?.label.compactFace?.text, "1")
-        h.editor.transact { $0.delete([holder]) }
+        h.conceal(plaque)
         h.click(at: try h.chipPoint(of: plaque))
         h.move(to: elsewhere)
-        expectEqual(h.chipText(of: plaque), "Private")
-        expectBright("Private lingering")
+        let open = try require(h.chip(of: plaque))
+        expectEqual(open.label.systemImage, "eye")
+        expectEqual(open.label.text, nil)
+        expectEqual(open.label.opacity, 1, "lingering")
         h.wait(1380 + 100 + 150)
         let fading = try require(h.chip(of: plaque)).label.opacity
         expect(fading < 1, "fading: \(fading)")
-        expectBright("Private fading")
     },
-    test("a seal (always public), a draft (never) and a stand-in have no chip: nothing to toggle") {
+    test("a seal (always public), a draft (never) and a stand-in have no chip: nothing to toggle, and nothing makes them private") {
         let h = try publishingHarness([stubTitle], before: [stubLock])
         let seal = h.add(Seal(plaqueFrame)), draft = h.add(Draft(plaqueFrame)), holder = h.hold([seal])
+        h.conceal(seal, draft, holder)
         for id in [seal, draft, holder] {
             expectEqual(h.chip(of: id), nil)
+            expectEqual(h.editor.document[id]?[PrivateProperty.self], nil, "nothing written")
             expect(h.editor.adornmentFrames(of: id).contains { $0.adornment == .of(StubLock.self) }, "the others' chips are still there")
         }
     },
     test("below 35%, where shapes are skeletons, no chip is laid out, so a click where it would be changes nothing; at 35% it's there") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(CGRect(x: 100 / 0.3, y: 100 / 0.3, width: 150 / 0.3, height: 100 / 0.3)))
-        h.publish(plaque)
+        h.conceal(plaque)
         h.editor.camera = Camera(origin: .zero, zoom: 0.3)
         expectEqual(h.editor.adornmentFrames(of: plaque), [], "none laid out")
         expectEqual(h.chip(of: plaque), nil)
         h.editor.skeletonZoom = 0.2
         expect(h.chip(of: plaque) != nil, "in full at 30%")
     },
-    test("the chip counts what stands for the shape, direct or dynamic: Public · 3") {
+    test("a public shape wears nothing however many things stand for it, direct or dynamic: they are what holds it public, listed in Connections") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
-        expectEqual(h.chipText(of: plaque), "Public")
+        let publishing = try require(h.editor.publishing)
         let first = h.hold([plaque])
-        expectEqual(h.chipText(of: plaque), "Public · 1")
         let second = h.add(Relay(plaqueFrame, stands: [Citation(plaque)]))
         let lens = h.lens("what", answering: [plaque])
-        expectEqual(h.chipText(of: plaque), "Public · 3", "a direct stand-in of each kind and a dynamic one")
+        expectEqual(publishing.standIns(for: plaque).count, 3, "a direct stand-in of each kind and a dynamic one")
+        expectEqual(h.chip(of: plaque), nil)
         h.editor.transact { $0.delete([first]) }
-        expectEqual(h.chipText(of: plaque), "Public · 2")
+        expectEqual(publishing.standIns(for: plaque).count, 2)
         h.editor.undo()
-        expectEqual(h.chipText(of: plaque), "Public · 3", "undo")
+        expectEqual(publishing.standIns(for: plaque).count, 3, "undo")
         h.editor.transact { $0.update(second, as: Relay.self) { $0.props.stands = [] } }
-        expectEqual(h.chipText(of: plaque), "Public · 2", "a stand-in re-pointed")
+        expectEqual(publishing.standIns(for: plaque).count, 2, "a stand-in re-pointed")
         h.provide(lens, "what", [])
-        expectEqual(h.chipText(of: plaque), "Public · 1", "an answer provided, with no commit")
-        h.provide(lens, "what", [plaque], revision: 2)
-        expectEqual(h.chipText(of: plaque), "Public · 2")
+        expectEqual(publishing.standIns(for: plaque).count, 1, "an answer provided, with no commit")
+        expect(publishing.isHeld(plaque))
+        expectEqual(h.chip(of: plaque), nil, "still nothing")
     },
-    test("an arrow-like link into a stand-in is no stand-in: the count stays") {
+    test("an arrow-like link into a stand-in is no stand-in: one thing still holds the shape") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame)), other = h.add(Plaque(CGRect(x: 400, y: 100, width: 50, height: 50)))
-        h.publish(plaque)
         let holder = h.hold([plaque])
         h.add(CanvasTesting.Link(from: other, to: holder))
-        expectEqual(h.chipText(of: plaque), "Public · 1")
+        expectEqual(try require(h.editor.publishing).standIns(for: plaque), [holder])
     },
-    test("with a title, the chip takes its compact face as soon as the full one would leave the title cut short, and keeps it for every longer title") {
+    test("with a title of any length the chip keeps its one face and its place, and the title has the rest of the row") {
         let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
-        h.hold([plaque])
-        h.hold([plaque])
-        h.hold([plaque])
-        var compact: [Int] = []
+        h.conceal(plaque)
+        let alone = try require(h.chip(of: plaque))
         for length in 1...40 {
             h.name(plaque, String(repeating: "W", count: length))
             let chip = try require(h.chip(of: plaque))
-            if chip.label.text == "3" { compact.append(length) } else { expectEqual(chip.label.text, "Public · 3", "full at \(length)") }
+            expectEqual(chip.label.systemImage, "eye.slash", "at \(length)")
+            expectEqual(chip.label.text, nil, "at \(length)")
+            expectEqual(chip.rect, alone.rect, "the same place at \(length)")
+            if let pill = h.editor.adornmentFrames(of: plaque).first(where: { $0.adornment == .of(StubTitle.self) }) {
+                expect(pill.rect.maxX <= chip.rect.minX - AdornmentLayout.spacing, "the title stops short of the chip at \(length)")
+            }
         }
-        expect(!compact.isEmpty, "some title lengths take the compact face: \(compact)")
-        expect(compact.first! > 1, "not for a short title: the full chip leaves it room whole")
-        expectEqual(compact, Array(compact.first!...40), "from the first the full chip would cut short to every longer one: it changes once")
-        h.name(plaque, String(repeating: "W", count: compact.first!))
-        let lone = try require(h.editor.adornmentFrames(of: plaque).first { $0.adornment == .of(PublicChip.self) })
-        expectEqual(lone.label.systemImage, "globe", "with its globe")
     },
-    test("zoomed out to 50%, the chip is compact from the narrowest shape until the full chip and the whole title fit together, and full after: it changes once") {
-        // "Payments roadmap" on a public shape three things stand for, with a lock, as the shape widens. The
-        // full chip ("Public · 3") is 78 points, the compact (the globe and 3) 36, the lock 18, the title
-        // whole 117, the room a title needs 30, the gap between them 4.
+    test("zoomed out to 50%, the title shows from the least room beside the eye and the lock, and the eye is the same at every width") {
         let h = try publishingHarness([stubTitle], before: [stubLock])
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
-        h.hold([plaque])
-        h.hold([plaque])
-        h.hold([plaque])
+        h.conceal(plaque)
         h.name(plaque, "Payments roadmap")
         h.editor.camera = Camera(origin: .zero, zoom: 0.5)
         @MainActor func title(atWidth viewPoints: CGFloat) throws -> (pill: AdornmentFrame?, chip: AdornmentFrame) {
@@ -189,106 +170,61 @@ let elsewhere = CGPoint(x: 600, y: 20)
             let pill = h.editor.adornmentFrames(of: plaque).first { $0.adornment == .of(StubTitle.self) }
             return (pill, try require(h.chip(of: plaque)))
         }
-        // What each is, in view points, measured: the whole title and the full chip beside it, the compact chip, the lock.
         let wide = try title(atWidth: 300)
-        expectEqual(wide.chip.label.text, "Public · 3", "wide: the full chip, the whole title")
-        let (whole, full) = (try require(wide.pill).rect.width / 2, wide.chip.rect.width / 2)
-        let compactChip = try title(atWidth: 180).chip
-        expectEqual(compactChip.label.text, "3")
-        let compactWidth = compactChip.rect.width / 2
+        let eye = wide.chip.rect.width / 2
         let lock = try require(h.editor.adornmentFrames(of: plaque).first { $0.adornment == .of(StubLock.self) }).rect.width / 2
         let gap = AdornmentLayout.spacing
-        // The title shows from the least room beside the compact chip; the chip is compact until the whole title and the full chip fit together.
-        let titleFrom = AdornmentLayout.minTextRoom + gap + compactWidth + gap + lock
-        let fullFrom = whole + gap + full + gap + lock
-        expectEqual([titleFrom, fullFrom], [92, 221], "the boundaries, in view points")
-        var faces: [Bool] = []                                                        // compact, at each width
+        let titleFrom = AdornmentLayout.minTextRoom + gap + eye + gap + lock
         for width in stride(from: CGFloat(10), through: 300, by: 1) {
             let (pill, chip) = try title(atWidth: width)
-            let isCompact = chip.label.text == "3"
-            faces.append(isCompact)
+            expectEqual(chip.label.systemImage, "eye.slash", "at \(width)")
+            expectEqual(chip.rect.width / 2, eye, "one face at \(width)")
             expectEqual(pill != nil, width >= titleFrom, "the title shows from \(titleFrom) points: at \(width)")
-            // Compact whether or not a title shows: it's the most room, and the face doesn't change as the shape narrows.
-            expectEqual(isCompact, width < fullFrom, "compact below \(fullFrom): at \(width)")
-            if let pill, isCompact { expect(pill.rect.width <= whole * 2, "never wider than the title: \(width)") }
         }
-        let toFull = zip(faces, faces.dropFirst()).filter { $0 && !$1 }.count
-        let toCompact = zip(faces, faces.dropFirst()).filter { !$0 && $1 }.count
-        expectEqual(faces.first, true, "compact from the narrowest")
-        expectEqual(faces.last, false)
-        expectEqual(toFull, 1, "compact to full once across the sweep")
-        expectEqual(toCompact, 0, "and never back: one change in all")
-        // The cases the sweep passes through: cut short where it would have vanished, cut short where the full
-        // chip would have cut it, whole beside the compact chip, whole beside the full one.
-        let vanished = try title(atWidth: 95)
-        expectEqual(vanished.chip.label.text, "3")
-        let shown = try require(vanished.pill, "the title, where it vanished")
-        expect(shown.rect.width / 2 >= AdornmentLayout.minTextRoom && shown.rect.width / 2 < whole, "cut short: \(shown.rect.width)")
-        expectEqual(vanished.chip.rect.minX - shown.rect.maxX, gap * 2, "4 points before the chip, in world units at 50%")
-        expectEqual(try title(atWidth: 91).pill, nil, "a point under it, no title, and the chip is compact all the same")
-        expectEqual(try title(atWidth: 91).chip.label.text, "3")
-        expectEqual(try title(atWidth: 60).chip.label.text, "3")
-        let cut = try title(atWidth: 140)
-        expectEqual(cut.chip.label.text, "3", "where the full chip would have cut the title short, the compact one gives it more room")
-        expect(try require(cut.pill).rect.width > (try require(vanished.pill)).rect.width)
-        expectEqual(try title(atWidth: 180).chip.label.text, "3")
-        expectEqual(try require(try title(atWidth: 180).pill).rect.width / 2, whole, "whole beside the compact chip")
-        expectEqual(try title(atWidth: 221).chip.label.text, "Public · 3", "the first width the full chip and the whole title fit together")
-    },
-    test("unreferenced, the compact face is the globe alone") {
-        let h = try publishingHarness([stubTitle], before: [stubLock])
-        let plaque = h.add(Plaque(CGRect(x: 100, y: 100, width: 80, height: 100)))
-        h.publish(plaque)
-        h.name(plaque, "W")
-        expectEqual(h.chipText(of: plaque), "", "a short title beside the globe: the disc, no text")
-        expectEqual(h.chip(of: plaque)?.label.systemImage, "globe")
-        h.name(plaque, nil)
-        expectEqual(h.chipText(of: plaque), "Public", "no title: room for the words")
     },
 ])
 
-// Clicking the chip. A click on a public shape's makes it private, and the chip reads Private for
-// 1.5 s (longer while the pointer's on it), then fades over 0.3 s, a frame every 16 ms; a click
-// during that makes it public again. A click while anything stands for the shape is refused.
+// Clicking the chip. A click on a private shape's makes it public, and the chip shows the open eye for
+// 1.5 s (longer while the pointer's on it), then fades over 0.3 s, a frame every 16 ms; a click during
+// that makes it private again, unless something has come to stand for it meanwhile: then it is refused.
 
-@MainActor let chipClickTests = Suite("Clicking the public chip", [
-    test("with the keys alone: ⌥Tab reaches the chip, Space makes the shape private, and the Private that fades is no part, so the focus is the shape's again") {
+@MainActor let chipClickTests = Suite("Clicking the private chip", [
+    test("with the keys alone: ⌥Tab reaches the chip, Space makes the shape public, and the open eye that fades is no part, so the focus is the shape's again") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
+        h.conceal(plaque)
         h.editor.selection = plaque
         expect(h.key(Chord.optionTab))
-        expectEqual(h.editor.focusedPart?.title, "Public")
+        expectEqual(h.editor.focusedPart?.title, "Private", "named for VoiceOver as the state it shows")
         expect(h.key(Chord.space))
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil)
-        expectEqual(h.editor.undoHistory.undoName, "Make Private")
-        expectEqual(h.chip(of: plaque)?.label.text, "Private", "it shows")
-        expect(!h.editor.hasFocusedPart, "but its click has a command: Make Public")
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], nil)
+        expectEqual(h.editor.undoHistory.undoName, "Make Public")
+        expectEqual(h.chipSymbol(of: plaque), "eye", "it shows")
+        expect(!h.editor.hasFocusedPart, "but its click has a command: Make Private")
         expectEqual(h.editor.selectedShapeIDs, [plaque])
     },
-    test("a click makes the shape private, in one step named Make Private; the chip reads Private, and a click on that makes it public again") {
+    test("a click makes the shape public, in one step named Make Public; the eye opens, and a click on that makes it private again") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
+        h.conceal(plaque)
         h.click(at: try h.chipPoint(of: plaque))
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil)
-        expectEqual(h.editor.undoHistory.undoName, "Make Private")
-        h.move(to: elsewhere)
-        let chip = try require(h.chip(of: plaque))
-        expectEqual(chip.label.text, "Private")
-        expectEqual(chip.label.systemImage, "globe")
-        expectEqual(chip.label.opacity, 1)
-        h.click(at: try h.chipPoint(of: plaque))
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], true)
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], nil)
         expectEqual(h.editor.undoHistory.undoName, "Make Public")
         h.move(to: elsewhere)
+        let chip = try require(h.chip(of: plaque))
+        expectEqual(chip.label.systemImage, "eye")
+        expectEqual(chip.label.opacity, 1)
+        h.click(at: try h.chipPoint(of: plaque))
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], true)
+        expectEqual(h.editor.undoHistory.undoName, "Make Private")
+        h.move(to: elsewhere)
         h.wait(3000)
-        expectEqual(h.chipText(of: plaque), "Public", "public, as it was, and it stays")
+        expectEqual(h.chipSymbol(of: plaque), "eye.slash", "private, as it was, and it stays")
     },
-    test("Private lingers 1.5 s, fades over 0.3 s and goes; a click where it was is then a click on the canvas") {
+    test("the open eye lingers 1.5 s, fades over 0.3 s and goes; a click where it was is then a click on the canvas") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
+        h.conceal(plaque)
         h.click(at: try h.chipPoint(of: plaque))
         let point = try h.chipPoint(of: plaque)
         h.move(to: elsewhere)
@@ -297,58 +233,58 @@ let elsewhere = CGPoint(x: 600, y: 20)
         h.wait(100 + 150)                                                                // 150 ms into the fade
         let fading = try require(h.chip(of: plaque)).label.opacity
         expect(fading > 0.2 && fading < 0.8, "halfway: \(fading)")
-        expect(h.chip(of: plaque)?.label.compactFace?.opacity == fading, "its compact face fades with it")
         h.wait(400)
         expectEqual(h.chip(of: plaque), nil, "gone")
         h.click(at: point)
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil, "nothing to click")
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], nil, "nothing to click: it stays public")
     },
-    test("while the pointer's on Private it stays, and it goes once the pointer leaves") {
+    test("while the pointer's on the open eye it stays, and it goes once the pointer leaves") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
+        h.conceal(plaque)
         h.click(at: try h.chipPoint(of: plaque))                                         // the pointer stays on it
         h.wait(3000)
-        expectEqual(h.chipText(of: plaque), "Private", "still there")
+        expectEqual(h.chipSymbol(of: plaque), "eye", "still there")
         expectEqual(h.chip(of: plaque)?.label.opacity, 1)
         h.move(to: elsewhere)
         h.wait(2000)
         expectEqual(h.chip(of: plaque), nil, "gone")
     },
-    test("a click on a held shape's chip writes nothing, takes no step, and shakes the shape") {
+    test("a click on the open eye of a shape something has come to stand for writes nothing, takes no step, selects nothing and shakes the shape") {
         let log = RefusalLog()
         let h = try publishingHarness([FreezingPlugin(log: log)])
-        let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
+        let plaque = h.add(Plaque(plaqueFrame)), other = h.add(Plaque(CGRect(x: 400, y: 100, width: 100, height: 100)))
+        h.conceal(plaque)
+        h.click(at: try h.chipPoint(of: plaque))                                         // public, the pointer on the open eye
         h.hold([plaque])
+        h.editor.selection = other
         let before = h.editor.document
         let step = h.editor.undoHistory.undoName
         h.click(at: try h.chipPoint(of: plaque))
-        h.move(to: elsewhere)
         expectEqual(h.editor.document, before, "nothing written")
         expectEqual(h.editor.undoHistory.undoName, step, "no step")
+        expectEqual(h.editor.selection, other, "a button: the selection stays")
         expectEqual(log.refusals, [[plaque]], "refused once, to the shape")
         h.wait(16)
         expect(h.editor.drawingOffset(of: plaque) != .zero, "shaking")
-        h.wait(1000)
-        expectEqual(h.chipText(of: plaque), "Public · 1", "it stays public, and says why")
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], nil, "it stays public")
     },
-    test("held by a dynamic stand-in too: the answer holds it, and when the answer goes the chip makes it private") {
+    test("held by a dynamic stand-in too: the answer holds it, and when the answer goes the open eye's click makes it private") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))
-        h.publish(plaque)
+        h.conceal(plaque)
+        h.click(at: try h.chipPoint(of: plaque))                                         // public, the pointer on the open eye
         let lens = h.lens("what", answering: [plaque])
         h.click(at: try h.chipPoint(of: plaque))
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], true, "held")
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], nil, "held")
         h.wait(1000)
         h.provide(lens, "what", [], revision: 2)
         h.click(at: try h.chipPoint(of: plaque))
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], nil)
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], true)
     },
-    test("the refused click switches the panel, when it's showing that shape alone, to Connections; nothing else changes") {
+    test("Make Private refused switches the panel, when it's showing that shape alone, to Connections; nothing else changes") {
         let h = try publishingHarness([NeighborDetailsPlugin()])
         let plaque = h.add(Plaque(plaqueFrame)), other = h.add(Plaque(CGRect(x: 400, y: 100, width: 100, height: 100)))
-        h.publish(plaque, other)
         h.hold([plaque, other])
         let panel = try require(h.editor.detailPanel)
         let tab = DetailTabID.of(NeighborsTab.self)
@@ -359,49 +295,44 @@ let elsewhere = CGPoint(x: 600, y: 20)
         expect(panel.layout(for: h.editor.document[plaque]!).tabs.contains(tab), "Connections is on the shape, held or not")
         expect(current(plaque) != tab, "the plaque's own tab first")
         h.editor.selection = other
-        h.click(at: try h.chipPoint(of: plaque))                                         // selects nothing: it's a button
-        expectEqual(h.editor.selection, other, "the selection stays")
+        expectEqual(h.editor.makePrivate([plaque]), [plaque], "refused")
         expect(current(plaque) != tab, "the panel shows another shape: nothing to switch")
-        h.move(to: elsewhere)
-        h.wait(1000)
         h.editor.selectedShapeIDs = [plaque, other]
-        h.click(at: try h.chipPoint(of: plaque))
-        expectEqual(h.editor.selectedShapeIDs, [plaque, other], "the selection stays")
+        expectEqual(h.editor.makePrivate([plaque]), [plaque])
         expect(current(plaque) != tab, "the panel shows no one shape: nothing to switch")
         expect(current(other) != tab)
-        h.move(to: elsewhere)
-        h.wait(1000)
         h.editor.selection = plaque
-        h.click(at: try h.chipPoint(of: plaque))
+        expectEqual(h.editor.makePrivate([plaque]), [plaque])
         expectEqual(h.editor.selection, plaque)
         expectEqual(current(plaque), tab, "Connections")
-        expectEqual(h.editor.document[plaque]?[PublicProperty.self], true)
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], nil)
     },
-    test("a locked shape: its chip click is refused by the core, whether held or not, with no step") {
+    test("a locked private shape: its chip's click is refused by the core, with no step, and it shakes") {
         let log = RefusalLog()
         let h = try publishingHarness([FreezingPlugin(log: log)])
-        let free = h.add(Plaque(plaqueFrame)), held = h.add(Plaque(CGRect(x: 400, y: 100, width: 100, height: 100)))
-        h.publish(free, held)
-        h.hold([held])
-        h.editor.freeze([free, held])
+        let plaque = h.add(Plaque(plaqueFrame))
+        h.conceal(plaque)
+        h.editor.freeze([plaque])
         let step = h.editor.undoHistory.undoName
-        h.click(at: try h.chipPoint(of: free))
-        expectEqual(h.editor.document[free]?[PublicProperty.self], true, "locked, so it stays public")
-        expectEqual(log.refusals.last, [free], "refused as read-only")
-        h.wait(1000)
-        h.click(at: try h.chipPoint(of: held))
-        expectEqual(h.editor.document[held]?[PublicProperty.self], true)
-        expectEqual(log.refusals.last, [held])
-        expectEqual(h.editor.undoHistory.undoName, step, "no step either way")
+        h.click(at: try h.chipPoint(of: plaque))
+        expectEqual(h.editor.document[plaque]?[PrivateProperty.self], true, "locked, so it stays private")
+        expectEqual(log.refusals.last, [plaque], "refused as read-only")
+        expectEqual(h.editor.undoHistory.undoName, step, "no step")
         h.wait(16)
-        expect(h.editor.drawingOffset(of: held) != .zero, "shaking")
+        expect(h.editor.drawingOffset(of: plaque) != .zero, "shaking")
     },
     test("a chip that comes with a commit under a still pointer is hovered at once, and the pointing hand shows over it") {
         let h = try publishingHarness()
         let plaque = h.add(Plaque(plaqueFrame))
-        h.move(to: CGPoint(x: 230, y: 82))
+        h.conceal(plaque)
+        let point = try h.chipPoint(of: plaque)
         h.publish(plaque)
-        expectEqual(h.editor.hoveredButton, AnyHashable(AdornmentButton(PublicChip.self, on: plaque)))
+        h.move(to: elsewhere)
+        h.wait(3000)
+        expectEqual(h.chip(of: plaque), nil, "public again, the open eye gone")
+        h.move(to: point)
+        h.conceal(plaque)
+        expectEqual(h.editor.hoveredButton, AnyHashable(AdornmentButton(PrivateChip.self, on: plaque)))
         expectEqual(h.editor.cursor, .pointingHand)
     },
 ])

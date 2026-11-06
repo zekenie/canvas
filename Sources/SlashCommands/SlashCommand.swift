@@ -221,7 +221,7 @@ public struct SlashCommand<Value> {
     /// whether it can act there (Unlock).
     ///
     ///     SlashCommand("lock", command: .lock)
-    ///     SlashCommand("private", command: .makePrivate, when: { $0[PublicProperty.self] == true }, tries: true)
+    ///     SlashCommand("private", command: .makePrivate, when: { $0[PrivateProperty.self] != true && !$0.isOpaque }, tries: true)
     public init(_ name: String, command: CanvasCommand, when isOffered: @escaping @MainActor (Value) -> Bool = { _ in true }, tries: Bool = false) {
         let run: @MainActor ([ShapeID], SlashArguments, CanvasEditor) -> Void = { ids, _, editor in editor.attempt(command, on: ids) }
         self.init(name: name, argument: nil, reach: .together, isOffered: isOffered, accepts: Self.defaultAccepts(takesArgument: false),

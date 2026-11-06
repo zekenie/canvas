@@ -5,7 +5,7 @@ import { buildModel, readGraph, kindsTable } from './model.mjs';
 /**
  * graph, and options {kinds: `canvas kinds`' answer}. Returns {errors, warnings}: errors stop the run. Refuses (naming keys) a key that is no non-empty
  * string or is used twice, a kind the app doesn't list or can't draw, an `in` that names no node or one whose kind holds neither shapes nor a board, a
- * cycle in `in`, an edge end that names no node, a layout hint of the wrong type, `layout.public: true` on a kind no pill stands for. Warns of the
+ * cycle in `in`, an edge end that names no node, a layout hint of the wrong type, `layout.pill: true` on a kind no pill stands for. Warns of the
  * edges the layout has no way to draw (the app's own refusals come with the measurement).
  */
 export function checkGraph(graph, opts = {}) {

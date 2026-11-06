@@ -33,8 +33,8 @@ let reachPending: [String] = []
 private let censusFields = #"{"type": "object", "properties": {"role": {"type": "string"}, "since": {"type": "string"}}}"#
 
 /// A board with a shape of every shipped kind in a window, the first minute's types and notes among them (`Minute`):
-/// two types with typed notes, a relationship type with fields, a relating arrow, a locked public note, a note that
-/// mentions it, an arrow between those two, a reference standing for the public note, a frame and a subboard.
+/// two types with typed notes, a relationship type with fields, a relating arrow, a locked note, a private note that
+/// mentions it, an arrow between those two, a reference standing for the locked note, a frame and a subboard.
 @MainActor
 final class CensusBoard {
     let m: Minute
@@ -91,7 +91,7 @@ final class CensusBoard {
             t.insert(arrow)
             t.insert(gig)
         }
-        editor.makePublic([budget.id])
+        editor.makePrivate([ask.id])
         editor.lock([budget.id])
         var names = [m.feature: "Feature", m.layer: "Layer", m.featureNote: "the Feature note", m.layerNote: "the Layer note", made: "in",
                  budget.id: "Budget", ask.id: "Ask", pill.id: "the reference", frame.id: "Plans", subboard.id: "Ship",
@@ -595,7 +595,7 @@ private struct PlantedFacePlugin: CanvasPlugin {
         b.walk.pending = reachPending.filter { !$0.hasPrefix("“") }
         b.walk.expectGaps(report.gaps)
         // What the board holds to be a census of: each of these found and reached.
-        for thing in ["LockChip button", "PublicChip", "TypeChips “+", "RelationshipPill", "GoButton button", "MentionFace face",
+        for thing in ["LockChip button", "PrivateChip", "TypeChips “+", "RelationshipPill", "GoButton button", "MentionFace face",
                       "DefinitionFace face", "RowFace face", "ResizeHandle handle", "ArrowHandle handle"] {
             expect(report.reached.contains { $0.hasPrefix(thing) }, "the census found no \(thing): \(report.reached)")
         }

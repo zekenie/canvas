@@ -8,7 +8,7 @@ import Selection
 import ShippedTesting
 import TestKit
 
-// A shape's parts as the app ships them, walked with the keys a keyboard sends: a locked public note's two
+// A shape's parts as the app ships them, walked with the keys a keyboard sends: a locked private note's two
 // chips (and the arrow joining it to the other note), reached with ⌥Tab with no key code in Locking or Publishing (principle 2), and the lock's click,
 // Unlock, done with Return.
 
@@ -23,22 +23,22 @@ extension NestedWindow {
 }
 
 @MainActor let partsShippedTests = Suite("Parts of a shape, shipped", [
-    test("on a locked public note ⌥Tab reaches both chips, round and back, and Return on the lock unlocks the note, which stays selected") {
+    test("on a locked private note ⌥Tab reaches both chips, round and back, and Return on the lock unlocks the note, which stays selected") {
         let w = try NestedWindow()
         defer { w.board.close() }
         let (note, other) = w.nest.notes(on: 1)
-        w.editor.makePublic([note])
+        w.editor.makePrivate([note])
         w.editor.lock([note])
         let walk = w.partsWalk(names: [note: "note", other: "other"])
         w.editor.selection = note
-        expectEqual(walk.press(.optionTab).id, "canvas/note/Public", "the row's right end: Public, then the lock, nearest the end")
+        expectEqual(walk.press(.optionTab).id, "canvas/note/Private", "the row's right end: the crossed eye, then the lock, nearest the end")
         // The note is joined to the other by an arrow, which is a part too (Connections hands every shape its arrows).
-        walk.expectCycle(["canvas/note/Public", "canvas/note/Locked", "canvas/note/Arrow to Note"], forward: .optionTab, back: .optionBackTab)
+        walk.expectCycle(["canvas/note/Private", "canvas/note/Locked", "canvas/note/Arrow to Note"], forward: .optionTab, back: .optionBackTab)
         walk.go("canvas/note/Locked", by: .optionTab)
         expectEqual(walk.press(.return).id, "canvas/note", "the lock opens and fades, a part no more")
         expect(!w.editor.isLocked(note))
         expectEqual(w.editor.undoHistory.undoName, "Unlock")
-        expectEqual(walk.press(.optionTab).id, "canvas/note/Public")
+        expectEqual(walk.press(.optionTab).id, "canvas/note/Private")
         expectEqual(walk.press(.escape).id, "canvas/note")
     },
     test("an arrow's part is the stretch of it where it leaves the shape, not the half of it up to its middle") {

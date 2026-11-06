@@ -102,7 +102,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         let titles = ["Auth", "Fraud review", Array(repeating: "A very long title for a note a pill stands for.", count: 4).joined(separator: " ")]
         var script = ""
         for (index, title) in titles.enumerated() {
-            script += "sticky-note \"Start \(index)\"\nsticky-note \"\(title)\" public: true\n"
+            script += "sticky-note \"Start \(index)\"\nsticky-note \"\(title)\"\n"
             script += "edge \"Start \(index)\" -> \"\(title)\" via: reference\n"
         }
         let asked = try measured(script, in: shippedEditor()).get()
@@ -172,8 +172,8 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
             frame "Region" size: 400x300 below "Other"
             """, on: editor)
         _ = try drawnInProcess("""
-            sticky-note "Far one" in "Other" public: true
-            sticky-note "Far two" in "Other" public: true below "Far one"
+            sticky-note "Far one" in "Other"
+            sticky-note "Far two" in "Other" below "Far one"
             """, on: editor)
         _ = try drawnInProcess("""
             edge "Start" -> "Far one"
@@ -216,7 +216,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
             delete "Gone"
             style loud size: 400x
             sticky-note "Four" style: loud
-            sticky-note "Five" public: true
+            sticky-note "Five"
             edge "One" -> "Five" via: reference in "Nowhere" right of "Nobody" left (gap: 20)
             edge "One" -> "Two" below "Nobody"
             """)
@@ -248,7 +248,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         let result = try canvas(server, ["measure", "-"], input: """
             sticky-note "Checkout v2" size: 300x text: "Takes a basket and a card, charges it, and sends the receipt."
             frame "Region" size: 400x300
-            sticky-note "Hub" public: true
+            sticky-note "Hub"
             edge "Checkout v2" -> "Hub" via: reference
             """)
         expectEqual(result.status, 0, result.error)
@@ -394,7 +394,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         expectEqual(try canvas(server, ["draw", "-"], input: "subboard \"Payments\"\nsticky-note \"Checkout\" right of \"Payments\"\n").status, 0)
-        expectEqual(try canvas(server, ["draw", #"sticky-note "Auth" in "Payments" public: true"#]).status, 0)
+        expectEqual(try canvas(server, ["draw", #"sticky-note "Auth" in "Payments""#]).status, 0)
         let auth = try require(board.editor.file.children.values.flatMap { $0.shapes }.first { $0[TitleProperty.self] == "Auth" }).id
         // Auth's title is its alone: no other shape of the file has it, and its pill says where it is all the same.
         let script = "edge \"Checkout\" -> \"Auth\" via: reference\nedge \"Checkout\" -> #\(auth) via: reference\n"
@@ -410,7 +410,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         let drawn = try require(board.editor.document.shapes.compactMap { $0.typed(as: Reference.self) }.first)
         expect(drawn.props.frame.width > ReferenceEdits.width(of: drawn.props), "wider than its name: it says where Auth is")
         // The same end on the board it is on says nothing more: as wide as its name.
-        let near = try JSON(text: canvas(server, ["measure", "-", "--board", "\(board.number)"], input: "sticky-note \"Start\"\nsticky-note \"Auth\" public: true\nedge \"Start\" -> \"Auth\" via: reference\n").output)
+        let near = try JSON(text: canvas(server, ["measure", "-", "--board", "\(board.number)"], input: "sticky-note \"Start\"\nsticky-note \"Auth\"\nedge \"Start\" -> \"Auth\" via: reference\n").output)
         expect((size(near["references"]?.arrayValue?.first?["size"])?.first ?? 0) < (sizes[0]?.first ?? 0), "an end in the script, on the start's own board, says no place")
     },
     test("an end at the top of the root board, from a start on a subboard's board: its pill is led by the file's name, measured as drawn") {
@@ -422,7 +422,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         board.editor.nameRoot("Customer accounts and billing")
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
-        expectEqual(try canvas(server, ["draw", "-"], input: "subboard \"Payments\"\nsticky-note \"Q\" public: true right of \"Payments\"\n").status, 0)
+        expectEqual(try canvas(server, ["draw", "-"], input: "subboard \"Payments\"\nsticky-note \"Q\" right of \"Payments\"\n").status, 0)
         expectEqual(try canvas(server, ["draw", #"sticky-note "Start" in "Payments""#]).status, 0)
         let asked = try JSON(text: canvas(server, ["measure", "-"], input: "edge \"Start\" -> \"Q\" via: reference\n").output)
         let measured = size(try require(asked["references"]?.arrayValue?.first)["size"])
@@ -442,7 +442,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
         let name = "Customer accounts and billing api"
-        let script = "frame \(quoted(name))\nsticky-note \"Q\" in \(quoted(name)) public: true\nsticky-note \"Main\"\nedge \"Main\" -> \(quoted(name)) > \"Q\" via: reference\n"
+        let script = "frame \(quoted(name))\nsticky-note \"Q\" in \(quoted(name))\nsticky-note \"Main\"\nedge \"Main\" -> \(quoted(name)) > \"Q\" via: reference\n"
         @MainActor func pill() throws -> [Double]? {
             size(try require(try JSON(text: canvas(server, ["measure", "-"], input: script).output)["references"]?.arrayValue?.first)["size"])
         }

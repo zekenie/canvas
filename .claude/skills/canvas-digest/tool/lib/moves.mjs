@@ -1,7 +1,7 @@
 // The loop's two moves on a node, and the state they change. A node is popular either way round: many arrows point at it, or it
-// points at many. Promoting a node that many point at makes it public, and each of its users reaches it through a pill beside the
+// points at many. Promoting a node that many point at makes it a pill target, and each of its users reaches it through a pill beside the
 // user (D17). Fanning out a node that points at many is the mirror: each of its uses becomes a pill beside it, standing for the shape
-// it uses, which is made public. Either way the arrows it had are gone, and the board says the same thing.
+// it uses. Either way the arrows it had are gone, and the board says the same thing.
 
 /**
  * The search's state: the promoted nodes (and the order they came in), the fanned-out ones (and theirs), the hosts and splits of shared
@@ -12,7 +12,7 @@ export const ext = (state, over) => Object.assign({
   apart: state.apart || new Set(),
 }, over);
 
-/** Whether an edge may be set apart as a pill of its own: any edge but one the digest says is never a pill, or to a shape that is never public. */
+/** Whether an edge may be set apart as a pill of its own: any edge but one the digest says is never a pill, or to a shape no pill stands for. */
 export function mayBeApart(model, e) {
   return !e.direct && !model.node(e.to).never;
 }
@@ -37,12 +37,12 @@ export function moveGroups(layouter, trial, c) {
     .filter((g) => (c.mode === 'out' ? g.edges.some((e) => e.from === c.node) : g.target === c.node)).map((g) => g.key));
 }
 
-/** Whether fanning out `from` turns its edge `e` into a pill: an edge on its board that may be a pill, to a shape that may be public. */
+/** Whether fanning out `from` turns its edge `e` into a pill: an edge on its board that may be a pill, to a shape a pill may stand for. */
 export function fansOut(model, e) {
   return !e.cross && !e.via && !e.direct && !model.node(e.to).never;
 }
 
-/** The shapes a fanned-out node's pills stand for on its board: what fanning it out makes public. */
+/** The shapes a fanned-out node's pills stand for on its board: what fanning it out makes pill targets. */
 export function fanTargets(model, v) {
   return (model.out.get(v) || []).filter((e) => fansOut(model, e)).map((e) => e.to);
 }

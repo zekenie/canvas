@@ -57,10 +57,10 @@ It needs `canvas`, the canvas skill's command, and the app running. Its Python i
 7. **Read the run before the user looks.** What `ingest` printed:
    - `scan:` lines, what the index left out: source files no project takes in, and packages it couldn't connect (fix the settings, and draw again);
    - `lens:` lines, what the lens warned of (a handler not found, a folder left out of a group);
-   - what `digest all` printed: `check`'s warnings (a frame over 15 shapes, a board over 150), the plan's boards, shapes and pills and what was made public and why (a board `laid out once and not searched` is too crowded to read: split it in the lens), and what `apply` did: created, updated, unchanged and deleted shapes, what it overrode, and the app's own warnings (a Needed row still empty, by design) ([canvas-digest](../canvas-digest/SKILL.md)).
+   - what `digest all` printed: `check`'s warnings (a frame over 15 shapes, a board over 150), the plan's boards, shapes and pills and what was promoted and fanned out (a board `laid out once and not searched` is too crowded to read: split it in the lens), and what `apply` did: created, updated, unchanged and deleted shapes, what it overrode, and the app's own warnings (a Needed row still empty, by design) ([canvas-digest](../canvas-digest/SKILL.md)).
 
    For more, the run's folder: `"$SKILL/ingest" --where` prints the cache, and the newest folder in its `runs/` has `graph.json` (what the lens made) and `out/` (the measure, the plan, the apply document and what the app answered). Fix the obvious in the lens (split a crowded frame, add a missed kind) and draw again: it updates its own last drawing in place.
-8. **Show it.** Tell the user what is on the root and on each board, the counts, what was made public and why, and the types, with queries they can ask (`:is-a("Workflow")`, `:start-of(arrow:is-a("writes"):ends-at("orders"))`, `:is-a("File")[fieldValues.lines>500]`). Say what the lens left out. Then ask what to change.
+8. **Show it.** Tell the user what is on the root and on each board, the counts, what was promoted and fanned out, and the types, with queries they can ask (`:is-a("Workflow")`, `:start-of(arrow:is-a("writes"):ends-at("orders"))`, `:is-a("File")[fieldValues.lines>500]`). Say what the lens left out. Then ask what to change.
 
 ## Later rounds: art direction
 

@@ -118,17 +118,17 @@ extension SampleBoardWindow {
             w.window.settle()
         })
     },
-    test("a shape's parts: from the lock of a locked public note joined to another, each key means what the table says, Tab going on to the next shape as the canvas's") {
+    test("a shape's parts: from the lock of a locked private note joined to another, each key means what the table says, Tab going on to the next shape as the canvas's") {
         let w = try NestedWindow()
         defer { w.board.close() }
         let (note, other) = w.nest.notes(on: 1)
-        w.editor.makePublic([note])
+        w.editor.makePrivate([note])
         w.editor.lock([note])
         w.editor.undoHistory.seal()
         let editor = w.editor, start = editor.file
         let walk = w.partsWalk(names: [note: "note", other: "other"])
         walk.pending = meaningsPending
-        let stops = ["canvas/note/Public", "canvas/note/Locked", "canvas/note/Arrow to Note"]
+        let stops = ["canvas/note/Private", "canvas/note/Locked", "canvas/note/Arrow to Note"]
         let surface = KeySurface("A shape's parts", overrides: [
             .init(.tab, [.shallower], exception: "canvas-tab"), .init(.backTab, [.shallower], exception: "canvas-tab"),
             .init(.up, [.acted, .none], exception: "canvas-arrows"), .init(.down, [.acted, .none], exception: "canvas-arrows"),

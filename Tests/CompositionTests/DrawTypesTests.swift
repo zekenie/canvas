@@ -25,7 +25,7 @@ import Types
         let made = try canvas(server, ["draw", #"sticky-note "Person" text: "A person: their name" schema: "\#(person)""#])
         expectEqual(made.status, 0, made.error)
         let type = try require(board.editor.document.shapes.first)
-        expectEqual(type[PublicProperty.self], nil, "a type draw makes does not start public")
+        expectEqual(type[PrivateProperty.self], nil, "a type draw makes is public, as every shape is")
         expectEqual(board.editor.undoHistory.undoName, "Draw")
         board.editor.undo()
         expectEqual(board.editor.document.shapes.count, 0, "one step takes the type back")
@@ -89,7 +89,7 @@ import Types
         expectEqual(said.status, 0, said.error)
         expectEqual(held().color, .red, "one that says one gives it")
     },
-    test("a type drawn with public: true is public, and a type; the queries find it as either") {
+    test("a type drawn with private: true is private, and a type; the queries find it as either") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -97,12 +97,12 @@ import Types
         defer { board.close() }
         let server = try startCommandServer(boards: [board], frontmost: board)
         defer { server.stop() }
-        let made = try canvas(server, ["draw", #"sticky-note "Open" schema: "{\"type\": \"object\"}" public: true"#])
+        let made = try canvas(server, ["draw", #"sticky-note "Open" schema: "{\"type\": \"object\"}" private: true"#])
         expectEqual(made.status, 0, made.error)
         let type = try require(board.editor.document.shapes.first)
-        expectEqual(type[PublicProperty.self], true)
+        expectEqual(type[PrivateProperty.self], true)
         expect(board.editor.types?.isType(type.id) == true)
-        let found = try JSON(text: canvas(server, ["query", "--brief", "sticky-note[schema][public]"]).output)
+        let found = try JSON(text: canvas(server, ["query", "--brief", "sticky-note[schema][private]"]).output)
         expectEqual(found["count"], 1)
     },
 

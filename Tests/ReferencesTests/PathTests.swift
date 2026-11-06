@@ -167,7 +167,7 @@ extension EditorHarness {
         h.editor.transact { $0.update(pocket) { $0[TitleProperty.self] = "Plans" } }
         expectEqual(try label(h, into).path, [ContentsPathName("Plans", opensBoard: true)], "named: a title, and a board")
         expectEqual(try label(h, reference).path.map(\.opensBoard), [false], "a frame is a region of its board")
-        h.editor.transact { $0.update(box) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(box) { $0[PrivateProperty.self] = true } }
         expect(try label(h, reference).isPlaceholder, "not public: dimmed")
         expectEqual(try path(h, reference).count, 1, "still where it is")
         expectEqual(try label(h, reference).help, "\(registry.label(of: Corral.kind).name) › bar")

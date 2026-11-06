@@ -97,7 +97,7 @@ extension Minute {
         expect(editor.menuToPopUp == nil, "menu dropped")
         expectEqual(editor.editingShapeID, m.feature)
     },
-    test("a type on a subboard: the offer says it will be made public, choosing makes its pill and the relationship type, the pill is Mentions' again, and one Undo returns both boards byte for byte") {
+    test("a private type on a subboard: the offer says it will be made public, choosing makes its pill and the relationship type, the pill is Mentions' again, and one Undo returns both boards byte for byte") {
         let m = try Minute()
         defer { m.close() }
         let editor = m.editor
@@ -108,6 +108,7 @@ extension Minute {
         var c = ShapeRecord(id: company, StickyNote(frame: CGRect(x: 0, y: 0, width: 200, height: 200), text: MentionText(plain: "A company")))
         c[TypeSchemaProperty.self] = SchemaText(TypeSchemaProperty.starter)
         c[TitleProperty.self] = "Company"
+        c[PrivateProperty.self] = true                                                   // a person made it private: the pick makes it public
         editor.transact(on: BoardID(owner: board), "Draw") { $0.insert(AnyShapeRecord(c)) }
         expect(editor.showBoard(BoardID(owner: board)))
         expect(editor.showBoard(.root))

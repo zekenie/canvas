@@ -53,7 +53,7 @@ import Titles
         let h = try referenceHarness()
         let box = h.addBox("shapes")
         let reference = h.addReference(to: box, label: "shapes")
-        h.editor.transact { $0.update(box) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(box) { $0[PrivateProperty.self] = true } }
         guard case .notPublic(let appearance)? = h.state(of: reference) else { return expect(false, "not public") }
         expectEqual(appearance.label, "shapes")
         expect(h.state(of: reference)?.standsForNothing == true)

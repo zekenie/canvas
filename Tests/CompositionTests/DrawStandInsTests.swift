@@ -35,7 +35,7 @@ import Topology
         func note(_ id: ShapeID, _ title: String, at point: CGPoint, public isPublic: Bool = false) -> AnyShapeRecord {
             var record = AnyShapeRecord(ShapeRecord(id: id, StickyNote(frame: CGRect(origin: point, size: CGSize(width: 200, height: 200)), text: MentionText(plain: title))))
             record[TitleProperty.self] = title
-            if isPublic { record[PublicProperty.self] = true }
+            if !isPublic { record[PrivateProperty.self] = true }
             return record
         }
         func subboard(_ id: ShapeID, _ title: String, at point: CGPoint) -> AnyShapeRecord {
@@ -521,7 +521,7 @@ extension CanvasEditor {
             expectEqual(try canvas(server, ["draw", "-"], input: frames).status, 0)
         }
         var notes = ""
-        for (n, name) in names.enumerated() { notes += "sticky-note \"\(name)\" in \"Library\" public: true size: 120x70 \(n == 0 ? "" : "right of \"\(names[n - 1])\"")\n" }
+        for (n, name) in names.enumerated() { notes += "sticky-note \"\(name)\" in \"Library\" size: 120x70 \(n == 0 ? "" : "right of \"\(names[n - 1])\"")\n" }
         let placed = try canvas(server, ["draw", "-"], input: notes)
         expectEqual(placed.status, 0, placed.error)
         let made = try canvas(server, ["draw", "-"], input: "subboard \"Checkout\" in \"Work\" inside \"Work\" left size: 170x80\nsubboard \"Top\" in \"Work\" size: 170x80\n")
@@ -557,8 +557,8 @@ extension CanvasEditor {
         let frames = try canvas(server, ["draw", "-"], input: "frame \"Library\" size: 1200x200\nframe \"web\" below \"Library\" size: 700x500\n"
                                 + "frame \"api\" right of \"web\" size: 700x500\n")
         expectEqual(frames.status, 0, frames.error)
-        let notes = try canvas(server, ["draw", "-"], input: "sticky-note \"Auth\" in \"Library\" public: true size: 120x70\n"
-                               + "sticky-note \"Billing\" in \"Library\" public: true size: 120x70 right of \"Auth\"\n")
+        let notes = try canvas(server, ["draw", "-"], input: "sticky-note \"Auth\" in \"Library\" size: 120x70\n"
+                               + "sticky-note \"Billing\" in \"Library\" size: 120x70 right of \"Auth\"\n")
         expectEqual(notes.status, 0, notes.error)
         let cards = try canvas(server, ["draw", "-"], input: "subboard \"index.ts\" in \"web\" size: 170x80\nsubboard \"index.ts\" in \"api\" size: 170x80\n")
         expectEqual(cards.status, 0, cards.error)

@@ -44,7 +44,7 @@ const hint = (what, bad) => `${what} is ${bad}`;
 /**
  * The document's structure, every refusal found, naming keys: a document with nodes (and edges), a key that is a non-empty string and unique, a kind
  * the app can draw, an `in` that names a node whose kind holds shapes or a board and does not lead back to the node, edges whose ends name nodes,
- * and the layout hints the tool itself reads (`rank`, `public`, `weight`, `direct`, the dial). What the app refuses of a value, it says.
+ * and the layout hints the tool itself reads (`rank`, `pill`, `weight`, `direct`, the dial). What the app refuses of a value, it says.
  */
 export function readGraph(graph, kinds) {
   const errors = [];
@@ -77,7 +77,7 @@ export function readGraph(graph, kinds) {
     if (l != null && !isPlain(l)) errors.push(`"${n.key}": layout is an object`);
     else if (l) {
       if (l.rank != null && !(typeof l.rank === 'number' && isFinite(l.rank))) errors.push(`"${n.key}": layout.rank is a number, not ${JSON.stringify(l.rank)}`);
-      if (l.public != null && typeof l.public !== 'boolean') errors.push(`"${n.key}": layout.public is true or false, not ${JSON.stringify(l.public)}`);
+      if (l.pill != null && typeof l.pill !== 'boolean') errors.push(`"${n.key}": layout.pill is true or false, not ${JSON.stringify(l.pill)}`);
     }
   });
   // what holds each node
@@ -140,10 +140,10 @@ export function buildModel(graph, mess, kinds, opts = {}) {
   const sorted = read.nodes.slice().sort((x, y) => byTitle(x.key, y.key));
   for (const it of sorted) {
     const n = it.raw, k = table.get(n.kind);
-    const rank = hints(n).rank, pub = hints(n).public;
+    const rank = hints(n).rank, pill = hints(n).pill;
     nodes.set(it.key, {
       key: it.key, index: it.index, kind: n.kind, holds: k.holds, parent: it.parent ? it.parent.key : null, children: [],
-      chain: [], pin: pub === true, never: pub === false || !k.via.length, rank: typeof rank === 'number' ? rank : null,
+      chain: [], pin: pill === true, never: pill === false || !k.via.length, rank: typeof rank === 'number' ? rank : null,
     });
   }
   for (const it of read.nodes) {
@@ -153,8 +153,8 @@ export function buildModel(graph, mess, kinds, opts = {}) {
   }
   for (const n of nodes.values()) if (n.parent) nodes.get(n.parent).children.push(n.key);
   for (const n of nodes.values()) {
-    if (n.pin && holdsShapes(n)) throw new Error(`"${n.key}" holds shapes, and the layout never makes one public: it draws edges at one only as arrows on one board`);
-    if (n.pin && !table.get(n.kind).via.length) throw new Error(`"${n.key}" is public: true, and no pill can stand for the kind ${n.kind} (canvas kinds)`);
+    if (n.pin && holdsShapes(n)) throw new Error(`"${n.key}" holds shapes, and the layout never makes one a pill target: it draws edges at one only as arrows on one board`);
+    if (n.pin && !table.get(n.kind).via.length) throw new Error(`"${n.key}" is layout.pill: true, and no pill can stand for the kind ${n.kind} (canvas kinds)`);
   }
   // which board, which frames, which container
   const place = (n) => {
@@ -212,12 +212,11 @@ export function buildModel(graph, mess, kinds, opts = {}) {
     node: (t) => nodes.get(t),
     boardIndex: new Map(boards.map((b, i) => [b, i])),
   };
-  // what is public no matter the loop: pinned, or the end of an edge that crosses boards
-  model.forcedPublic = new Set();
-  model.publicWhy = new Map();   // key -> why it is public, for the report
-  for (const e of edges) if (e.cross) { model.forcedPublic.add(e.to); if (!model.publicWhy.has(e.to)) model.publicWhy.set(e.to, 'an edge from another board points at it'); }
-  for (const n of nodes.values()) if (n.pin) { model.forcedPublic.add(n.key); model.publicWhy.set(n.key, 'layout.public in the document'); }
-  for (const t of model.forcedPublic) if (hints(graph.nodes[nodes.get(t).index]).public === false) throw new Error(`"${t}" is layout.public: false, but an edge reaches it through a pill`);
+  // what is a pill target no matter the loop: pinned, or the end of an edge that crosses boards
+  model.forcedTargets = new Set();
+  for (const e of edges) if (e.cross) model.forcedTargets.add(e.to);
+  for (const n of nodes.values()) if (n.pin) model.forcedTargets.add(n.key);
+  for (const t of model.forcedTargets) if (hints(graph.nodes[nodes.get(t).index]).pill === false) throw new Error(`"${t}" is layout.pill: false, but an edge reaches it through a pill`);
   return model;
 }
 

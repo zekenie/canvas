@@ -21,7 +21,7 @@ Called Frame, placed by the Frame tool
 | `fieldValues` | JSON {…} |
 | `is` | JSON [text] (<Title> of a type or shape) |
 | `locked` | true\|false |
-| `public` | true\|false |
+| `private` | true\|false |
 
 | edges leave by | channels |
 |---|---|
@@ -60,7 +60,7 @@ Called Sticky note, placed by the Note tool
 | `fieldValues` | JSON {…} |
 | `is` | JSON [text] (<Title> of a type or shape) |
 | `locked` | true\|false |
-| `public` | true\|false |
+| `private` | true\|false |
 | `relationship` | true\|false |
 | `schema` | text |
 | `text` | text (@[Title] mentions) |
@@ -90,7 +90,7 @@ Called Subboard, placed by the Subboard tool
 | `fieldValues` | JSON {…} |
 | `is` | JSON [text] (<Title> of a type or shape) |
 | `locked` | true\|false |
-| `public` | true\|false |
+| `private` | true\|false |
 
 | edges leave by | channels |
 |---|---|

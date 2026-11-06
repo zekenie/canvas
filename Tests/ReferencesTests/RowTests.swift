@@ -74,7 +74,7 @@ import Titles
         expectEqual(try text(h, id), "things")
         expectEqual(contents.rowsMade - made, 1, "the reference to it, and not the other reference")
         expectEqual(try text(h, aside), "other")
-        h.editor.transact { $0.update(box) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(box) { $0[PrivateProperty.self] = true } }
         expect(try require(try row(h, id).label).isPlaceholder, "no longer public: dimmed")
         expect(try require(try row(h, id).label).standsIn, "with its arrow")
         h.editor.undo()

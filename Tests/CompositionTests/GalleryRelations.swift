@@ -159,7 +159,7 @@ let relationStates: [GalleryState] = [
         }
         @MainActor func layer(_ words: String, public isPublic: Bool) -> ShapeID {
             let id = editor.instance(of: [layerType.id], words: words, at: CGPoint(x: away.x + 500 + 220 * CGFloat(editor.document.shapes.count), y: away.y + 800))
-            if isPublic { editor.transact("Public") { $0.update(id) { $0[PublicProperty.self] = true } } }
+            if !isPublic { editor.transact("Private") { $0.update(id) { $0[PrivateProperty.self] = true } } }
             return id
         }
         let spot = CGPoint(x: away.x, y: away.y + 1200)

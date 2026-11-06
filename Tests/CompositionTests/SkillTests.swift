@@ -356,7 +356,7 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
 
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let commands = registry.hostCommands
-        let script = "sticky-note \"A\" text: \"x\"\nsticky-note \"B\" public: true\nedge \"A\" -> \"B\" via: reference\nsticky-note \"C\" is: \"Nobody\""
+        let script = "sticky-note \"A\" text: \"x\"\nsticky-note \"B\"\nedge \"A\" -> \"B\" via: reference\nsticky-note \"C\" is: \"Nobody\""
         let answer = try awaitResult { try await commands.run("measure", ["script": .string(script)], nil) }
         let start = try require(reference.range(of: "## Measuring a script")), end = try require(reference.range(of: "## Errors"))
         let section = String(reference[start.lowerBound..<end.lowerBound])

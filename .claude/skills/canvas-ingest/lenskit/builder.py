@@ -11,7 +11,7 @@
 
 The format is `canvas-digest`'s graph document (its reference/graph.md): a node is `key`, `in` (the key of the node that holds it),
 `kind`, `props` (the app's attributes, as `canvas kinds` lists them for the kind) and `layout` (hints for the layout: `rank`,
-`direct`, `public`); an edge is `from`, `to`, optional `key`, `props` and `layout`. The builder holds no rule about kinds,
+`direct`, `pill`); an edge is `from`, `to`, optional `key`, `props` and `layout`. The builder holds no rule about kinds,
 attributes or titles: what it is given is what it writes, and the app says no to what it won't take. A value that names another
 shape names it by key (`"is": ["type:File"]`, a mention `@[table:orders]` in a text: `lenskit.text.mention`).
 

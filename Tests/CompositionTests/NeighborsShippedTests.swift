@@ -406,8 +406,7 @@ private struct Kinds {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let target = ShapeID(), x = ShapeID(), r = ShapeID(), into = ShapeID()
-        var public_ = note(target, 2, 0, "Orders")
-        public_[PublicProperty.self] = true
+        let public_ = note(target, 2, 0, "Orders")
         var props = Reference(frame: CGRect(x: 800, y: 600, width: Reference.defaultSize.width, height: Reference.defaultSize.height))
         ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: "Orders"))
         let pill = AnyShapeRecord(ShapeRecord(id: r, props))

@@ -61,9 +61,9 @@ export function evaluate(model, layout, mu) {
   const heights = [...boxes.values()].map((b) => b.h);
   const rank = (median(heights) || 200) + 64;
   const lenR = len / rank;
-  // pills: per start (a shared pill is its host's), a pill for a node public regardless counted at 0.8
+  // pills: per start (a shared pill is its host's), a pill for a node that is a pill target regardless counted at 0.8
   const perStart = new Map();
-  for (const p of pills) { let r = perStart.get(p.start); if (!r) perStart.set(p.start, r = { n: 0, w: 0 }); r.n++; r.w += model.forcedPublic.has(p.target) ? 0.8 : 1; }
+  for (const p of pills) { let r = perStart.get(p.start); if (!r) perStart.set(p.start, r = { n: 0, w: 0 }); r.n++; r.w += model.forcedTargets.has(p.target) ? 0.8 : 1; }
   let pillTerm = 0;
   for (const r of perStart.values()) pillTerm += r.w + 0.25 * r.n * (r.n - 1) / 2;
   // orphans: shapes with edges on this board and nothing shown for them (no arrow, no pill beside them)

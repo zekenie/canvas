@@ -24,11 +24,11 @@ import Topology
 // style, but a story of its own, since its expected rows would all move the Roadmap's.
 //
 //     Services (the top board), back to front:
-//       A  …01  sticky-note "Auth"      text: JWT, 15 min expiry   public
+//       A  …01  sticky-note "Auth"      text: JWT, 15 min expiry
 //       B  …02  sticky-note "Checkout"  text: Takes the payment
 //       C  …03  sticky-note "Billing"   text: Sends the invoice
 //       D  …04  sticky-note "Drafts"    text: Not for sharing yet   (private)
-//       R  …05  reference to Auth       (a pill: it stands for Auth while Auth is public)
+//       R  …05  reference to Auth       (a pill: it stands for Auth, which is public as every shape is but Drafts)
 //       X1 …06  arrow Checkout → R      no channel
 //       X2 …07  arrow Billing → R       no channel
 //
@@ -60,10 +60,10 @@ enum QueryReferenceStory {
     static let viewport = CGSize(width: 1440, height: 900)
 
     static func file(in registry: Registry) -> CanvasFile {
-        func note(_ id: ShapeID, _ title: String, at x: CGFloat, _ y: CGFloat, _ text: String, isPublic: Bool = false) -> AnyShapeRecord {
+        func note(_ id: ShapeID, _ title: String, at x: CGFloat, _ y: CGFloat, _ text: String, isPrivate: Bool = false) -> AnyShapeRecord {
             var note = ShapeRecord(id: id, StickyNote(frame: CGRect(origin: CGPoint(x: x, y: y), size: StickyNote.defaultSize), text: MentionText(plain: text)))
             note[TitleProperty.self] = title
-            note[PublicProperty.self] = isPublic ? true : nil
+            note[PrivateProperty.self] = isPrivate ? true : nil
             return AnyShapeRecord(note)
         }
         func bound(_ id: ShapeID) -> ArrowTerminal {
@@ -72,10 +72,10 @@ enum QueryReferenceStory {
         var pill = Reference(frame: CGRect(x: 1000, y: 240, width: 120, height: 32))
         ReferenceEdits.pick(&pill, ReferenceTarget(id: auth, label: "Auth"))
         let shapes = [
-            note(auth, "Auth", at: 1000, 520, "JWT, 15 min expiry", isPublic: true),
+            note(auth, "Auth", at: 1000, 520, "JWT, 15 min expiry"),
             note(checkout, "Checkout", at: 80, 80, "Takes the payment"),
             note(billing, "Billing", at: 80, 440, "Sends the invoice"),
-            note(drafts, "Drafts", at: 400, 80, "Not for sharing yet"),
+            note(drafts, "Drafts", at: 400, 80, "Not for sharing yet", isPrivate: true),
             AnyShapeRecord(ShapeRecord(id: reference, pill)),
             AnyShapeRecord(ShapeRecord(id: checkoutToReference, Arrow(start: bound(checkout), end: bound(reference)))),
             AnyShapeRecord(ShapeRecord(id: billingToReference, Arrow(start: bound(billing), end: bound(reference)))),
@@ -119,8 +119,8 @@ enum QueryReferenceStory {
         let queries = try require(h.editor.queries)
         let all = try storyAnswer("*", on: queries).get()
         expectEqual(all.rows.map(\.id), QueryReferenceStory.fileOrder)
-        expect(h.file.record(QueryReferenceStory.auth)?[PublicProperty.self] == true)
-        expectEqual(h.file.record(QueryReferenceStory.drafts)?[PublicProperty.self], nil)
+        expectEqual(h.file.record(QueryReferenceStory.auth)?[PrivateProperty.self], nil)
+        expectEqual(h.file.record(QueryReferenceStory.drafts)?[PrivateProperty.self], true)
         expectEqual(h.editor.topology?.standIns(for: QueryReferenceStory.auth), [QueryReferenceStory.reference], "the pill stands for Auth")
         expectEqual(h.file.record(QueryReferenceStory.checkoutToReference)?[ChannelProperty.self], nil, "no channel")
 

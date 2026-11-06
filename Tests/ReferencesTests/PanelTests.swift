@@ -70,7 +70,7 @@ import Titles
         let other = try referenceHarness(file: CanvasFile(root: CanvasDocument(), children: [nowhere: CanvasDocument(shapes: [AnyShapeRecord(hidden)])]))
         let away = other.addReference(to: hidden.id, label: "Out of sight")
         expectEqual(try header(other, away), ReferenceHeaderContent(symbol: "square.dashed", title: "Out of sight", subtitle: "Not available"))
-        h.editor.transact { $0.update(box) { $0[PublicProperty.self] = nil } }
+        h.editor.transact { $0.update(box) { $0[PrivateProperty.self] = true } }
         expectEqual(try header(h, live), ReferenceHeaderContent(symbol: "shippingbox", title: "shapes", subtitle: "Not public"))
         let words = h.addReference(words: "blocked work", at: CGPoint(x: 400, y: 500))
         expectEqual(try header(h, words), ReferenceHeaderContent(symbol: "magnifyingglass", title: "blocked work", subtitle: nil))

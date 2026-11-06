@@ -19,7 +19,7 @@ struct ArrowDefinition {
     }
 }
 
-/// Nothing binds to an arrow, so a stand-in for one would mean nothing: an arrow holds no `public`.
+/// Nothing binds to an arrow, so a stand-in for one would mean nothing: an arrow is never public, and holds no `private`.
 extension ArrowDefinition: NeverPublic {}
 
 extension ArrowDefinition: ShapeDefinition {

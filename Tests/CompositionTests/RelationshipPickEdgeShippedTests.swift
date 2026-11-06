@@ -45,7 +45,7 @@ private struct PickClients {
             record[TitleProperty.self] = title
             record[IsAProperty.self] = [TypeLink(type)]
             record[FieldValuesProperty.self] = FieldValues(["name": .string(title)])
-            if isPublic { record[PublicProperty.self] = true }
+            if !isPublic { record[PrivateProperty.self] = true }
             return AnyShapeRecord(record)
         }
         func end(_ from: ShapeID, _ to: ShapeID, _ name: String) -> AnyShapeRecord {
@@ -273,7 +273,7 @@ private final class PickWorld {
             expect(try w.bytes() == before, "refused, and something changed")
             expectEqual(w.editor.undoHistory.undoName, steps)
             expectEqual(w.editor.undoHistory.canUndo, canUndo)
-            expectEqual(w.editor.file.record(w.world.borealis)?[PublicProperty.self], nil, "Borealis stays private")
+            expectEqual(w.editor.file.record(w.world.borealis)?[PrivateProperty.self], true, "Borealis stays private")
         } else {
             let pill = try require(w.references.first)
             expect(!pill.props.frame.intersects(frame.props.frame), "the pill \(pill.props.frame) lies in the locked frame")
@@ -324,7 +324,7 @@ private final class PickWorld {
         expectEqual(w.editor.undoHistory.undoName, "Add Relationship")
         expectEqual(w.references.count, 1)
         expectEqual(w.relationships.count, 1)
-        expectEqual(w.editor.file.record(world.borealis)?[PublicProperty.self], true)
+        expectEqual(w.editor.file.record(world.borealis)?[PrivateProperty.self], nil, "made public in the step")
         let arrow = try require(w.relationships.first)
         expectEqual((w.editor.validation?.result(for: arrow.id)?.issues ?? []).map(\.message), [], "no issue")
         @MainActor func labels(_ note: ShapeID, _ name: String) -> [String] {
@@ -341,13 +341,14 @@ private final class PickWorld {
         w.editor.undo()
         expect(try w.bytes() == start && w.editor.file == startFile, "one Undo")
     },
-    test("a far note named by its values: the list names it by them with its board, the pill a pick makes is called by them, and a value changed on its board renames the pill in the near note's row") {
+    test("a far private note named by its values: the list names it by them with its board, the pill a pick makes is called by them, and a value changed on its board renames the pill in the near note's row") {
         let w = try PickWorld()
         defer { w.close() }
         let world = w.world
         var record = ShapeRecord(StickyNote(frame: CGRect(x: 0, y: 400, width: 200, height: 200), text: ""))
         record[IsAProperty.self] = [TypeLink(world.company)]
         record[FieldValuesProperty.self] = FieldValues(["name": "Zeta"])
+        record[PrivateProperty.self] = true                                              // a person made it private: the pick makes it public
         let zeta = record.id, inserted = AnyShapeRecord(record)
         w.editor.transact(on: world.board, "Draw") { $0.insert(inserted) }
         w.editor.undoHistory.seal()
@@ -433,7 +434,7 @@ private final class PickWorld {
         expectEqual(pill.props.target?.id, world.ann)
         expectEqual(made.props.start.binding?.shapeID, pill.id, "from the pill that stands for Ann")
         expectEqual(made.props.end.binding?.shapeID, world.acme)
-        expectEqual(w.editor.file.record(world.ann)?[PublicProperty.self], true, "Ann made public in the step")
+        expectEqual(w.editor.file.record(world.ann)?[PrivateProperty.self], nil, "Ann made public in the step")
         expectEqual((w.editor.validation?.result(for: arrow)?.issues ?? []).map(\.message), [], "no issue")
         let acme = try require(w.editor.shapeContext.frame(of: world.acme))
         expect(pill.props.frame.maxX <= acme.minX, "left of Acme: \(pill.props.frame)")
@@ -490,20 +491,20 @@ private final class PickWorld {
         expectEqual(moved.start.binding?.shapeID, ann)
         expectEqual(moved.end.binding?.shapeID, zed)
     },
-    test("a pill held by a pick counts on the far note and refuses Make Private; the delete that empties it frees the note, which stays public, and Make Private works") {
+    test("a pill held by a pick keeps the far note public, refusing Make Private; the delete that empties it frees the note, which stays public, and Make Private works") {
         let w = try PickWorld()
         defer { w.close() }
         let world = w.world
         let arrow = try require(w.editor.relate(world.ann, to: world.acme, in: try w.row(world.employment)))
-        expectEqual(w.editor.topology?.standIns(for: world.acme).count, 1, "Public · 1")
+        expectEqual(w.editor.topology?.standIns(for: world.acme).count, 1, "one stands for it")
         expect(w.editor.publishing?.isHeld(world.acme) == true)
         expectEqual(w.editor.makePrivate([world.acme]), [world.acme], "refused while the pill stands for it")
-        expectEqual(w.editor.file.record(world.acme)?[PublicProperty.self], true)
+        expectEqual(w.editor.file.record(world.acme)?[PrivateProperty.self], nil)
         expect(w.editor.unrelate([arrow], shaking: world.ann))
-        expectEqual(w.editor.topology?.standIns(for: world.acme).count, 0, "Public, with no count")
-        expectEqual(w.editor.file.record(world.acme)?[PublicProperty.self], true, "Acme stays public")
+        expectEqual(w.editor.topology?.standIns(for: world.acme).count, 0, "none stands for it")
+        expectEqual(w.editor.file.record(world.acme)?[PrivateProperty.self], nil, "Acme stays public")
         expect(w.editor.showBoard(world.board), "Acme's board, where Make Private reaches it")
         expectEqual(w.editor.makePrivate([world.acme]), [], "nothing holds it")
-        expectEqual(w.editor.file.record(world.acme)?[PublicProperty.self], nil)
+        expectEqual(w.editor.file.record(world.acme)?[PrivateProperty.self], true)
     },
 ])

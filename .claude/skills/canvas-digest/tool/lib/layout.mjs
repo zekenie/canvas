@@ -145,7 +145,7 @@ export class Layouter {
   /**
    * Which edges are pills and which arrows, and which pills are shared. state: {promoted, fanned, apart, hosts, splits}: an edge into a
    * promoted node, or out of a fanned-out one (moves.mjs), is a pill; one set apart is a pill of its own beside its start, shared with none;
-   * every edge of a spine's card is a pill (`spined`: what they point at, made public). A group is the edges of one target from one
+   * every edge of a spine's card is a pill (`spined`: what they point at, reached through pills). A group is the edges of one target from one
    * innermost container; two or more of them share a pill, in the column of the host (state.hosts, else the first title), and the others'
    * arrows run to that pill. In a spine a shared pill is a box of the spine's layout instead (`free`: its id `FREE` and the group's key,
    * its maker the first user by title), split by the spine's rows unless every card uses it; a part with one user is that user's own pill.

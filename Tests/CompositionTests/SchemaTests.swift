@@ -179,7 +179,7 @@ private let stickyNoteSchema = #"""
       "type" : "boolean",
       "x-canvas-owner" : "locking"
     },
-    "public" : {
+    "private" : {
       "type" : "boolean",
       "x-canvas-owner" : "publishing"
     },

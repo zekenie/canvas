@@ -3,7 +3,7 @@
 
 A **reference** is a pill that stands for another shape, anywhere in the file. A shape that many others point at (an auth service, a glossary entry, a pricing note) doesn't need an arrow from each of them across the board: each draws its arrow to a reference of it, wherever the reference is, and everything that reads the file counts an arrow into the reference as an arrow into the shape it stands for. [language.md](language.md) is where you draw; this page is what a reference does to what you read, so it's about `canvas query`. A query never changes anything.
 
-Only a **public** shape can be stood for. `public` is an attribute, `public: true` in a script, that a person sets from a shape's menu or its chip; a shape that isn't public can't be referenced, and a reference of one that stops being public stands for nothing.
+Only a **public** shape can be stood for, and every shape is public until it is made private. `private` is an attribute, `private: true` in a script, that a person sets from a shape's menu or its chip; a private shape can't be referenced, and a reference of one that is made private stands for nothing.
 
 A reference is **direct** (the person picked one shape) or **dynamic** (a query finds what it stands for). A script makes a dynamic one with `query:`, and a direct one only as the stand-in of an edge, to a public shape on another board or with `via: reference` ([language.md](language.md#through-a-reference)): what a reference names, and the words typed into it, are otherwise the person's to pick and type. A dynamic one has no title and stands for no one shape, so a later script names it by its id: an arrow into it, its query changed, its delete ([language.md](language.md#arrows-into-it)). A dynamic one stands for what its query finds among the public shapes, the first in file order or, with `all: true`, every one, however many; the app finds it a moment after it's drawn and again as the file changes, and `canvas query` waits for that (up to two seconds, for a query that reads edges) before it answers. Its query reads what's drawn and what direct references stand for, never what another dynamic one found, nor what the person has selected or the board they're on (`:selected`, `:current-board`): a script that writes one is refused, and a pill that holds one (typed by the person) finds nothing, and says why. The examples below are about a direct one, which is what a person makes first, and which reads the same way for you.
 
@@ -22,10 +22,10 @@ The examples on this page are all about one file, the story below. Each block ta
 
 ```text
 Services (the board), back to front:
-  sticky-note "Auth"       text: JWT, 15 min expiry   public
+  sticky-note "Auth"       text: JWT, 15 min expiry
   sticky-note "Checkout"   text: Takes the payment
   sticky-note "Billing"    text: Sends the invoice
-  sticky-note "Drafts"     text: Not for sharing yet
+  sticky-note "Drafts"     text: Not for sharing yet   private
   reference                stands for Auth
   arrow                    from Checkout to the reference, on no channel
   arrow                    from Billing to the reference, on no channel
@@ -92,23 +92,23 @@ A reference has no title, so a query names it by its kind, or by the `id` of its
 
 ## Which shapes can be stood for
 
-A shape that is `public` can be. The attribute is there for every kind that can be public, and a query reads it as any attribute: `[public]` is the shapes that are.
+A shape that is not `private` can be. The attribute is there for every kind that can be private, only on a shape that is, and a query reads it as any attribute: `[private]` is the shapes that are.
 
 ```query
-/* matches: "Auth" */
-[public]
+/* matches: "Drafts" */
+[private]
 ```
 
 ```query
-/* matches: "Checkout", "Billing", "Drafts" */
-sticky-note:not([public])
+/* matches: "Auth", "Checkout", "Billing" */
+sticky-note:not([private])
 ```
 
-A person can't make a shape private while something stands for it (the chip counts what does, and refuses), but a script can write `public:` on any shape that has it, and so can an undo or a paste. A shape that stops being public is no longer stood for: the reference shows it dashed, and its arrows are read at the pill again until the shape is public again. So read `[public]` rather than assuming, and expect a reference to a private shape to stand for nothing. `canvas query` waits up to two seconds for the answers that edges depend on, only for a query with an edge word, and says `pending` in its warnings if they were still arriving.
+A person can't make a shape private while something stands for it (Make Private refuses, and the panel goes to its Connections tab), but a script can write `private:` on any shape that has it, and so can an undo or a paste. A shape that is made private is no longer stood for: the reference shows it dashed, and its arrows are read at the pill again until the shape is public again. So read `[private]` rather than assuming, and expect a reference to a private shape to stand for nothing. `canvas query` waits up to two seconds for the answers that edges depend on, only for a query with an edge word, and says `pending` in its warnings if they were still arriving.
 
 ## What a script can and can't do
 
-A script draws a direct reference when an edge needs one: an edge between shapes on two boards goes into a reference for the end on the other board, put beside the end on this one, and `via: reference` asks for one on a single board. Each says over its name where its shape is. The reference stands for a public shape, so a shape that isn't public can't be reached, and a script never makes one public to get there (that's the user's call): the edge is refused, and the user is asked. The arrow's row says `via: "reference"`, and the pill has a row of its own. Reading it back is what this page is about. [language.md](language.md#through-a-reference) is how to draw it.
+A script draws a direct reference when an edge needs one: an edge between shapes on two boards goes into a reference for the end on the other board, put beside the end on this one, and `via: reference` asks for one on a single board. Each says over its name where its shape is. The reference stands for a public shape, so a private shape can't be reached, and a script never makes one public to get there (that's the user's call): the edge is refused, and the user is asked. The arrow's row says `via: "reference"`, and the pill has a row of its own. Reading it back is what this page is about. [language.md](language.md#through-a-reference) is how to draw it.
 
 A reference has no title, and a script names a shape by its title (or, for a shape that has none, by its id). A direct one is named by the shape it stands for, never by its id: not as an edge's end, in the script that draws it or in another, and its id is refused (`invalid_value`). A dynamic one stands for no one shape, so its id is its name, wherever a statement names a shape ([language.md](language.md#arrows-into-it)). A later run finds the one an edge went through by what it stands for (writing the edge again is `unchanged`), and `delete edge` takes the arrow and the pill, as `delete` of the shape at the arrow's other end does, once no arrow is left on the pill. Nothing else a script writes names a shape for a reference: what it names and the words typed into it are the person's, so a script can't write them:
 
@@ -122,7 +122,7 @@ reference target: "Auth"
 reference words: "everything about auth"
 ```
 
-A shape that isn't public can't be stood for, so `via:` for one is refused:
+A private shape can't be stood for, so `via:` for one is refused:
 
 ```draw-error
 // reason: invalid_value

@@ -29,7 +29,7 @@ import Validation
             if schema { record[TypeSchemaProperty.self] = SchemaText(#"{"type": "object", "properties": {}}"#) }
             if marked { record[RelationshipProperty.self] = true }
             if let type { record[IsAProperty.self] = [TypeLink(type)] }
-            if isPublic { record[PublicProperty.self] = true }
+            if !isPublic { record[PrivateProperty.self] = true }
             return record
         }
         var subboard = AnyShapeRecord(ShapeRecord(id: far, Subboard(frame: CGRect(x: 100, y: 900, width: 240, height: 160))))
