@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import os
 
 /// Listens on a Unix-domain socket for JSON-RPC requests, one a line, and answers each on the main
 /// actor, in the order it came on its connection. Reading and writing happen off the main thread,
@@ -14,6 +15,11 @@ import Foundation
 /// cancelled (`Task.isCancelled`), since no one is left to read their answers: `RPCClient` never
 /// stops sending before it stops reading, so nothing more to read means it's gone. A notification
 /// (no id) isn't: no one waits for it, and it runs to its end.
+///
+/// While it answers a request, from its line read to its answer written, the process holds an
+/// activity for it (`Answering`), so macOS doesn't nap the process while a client waits. Requests
+/// answered at once hold one each, and each ends however its request does: an answer, an error, a
+/// line that isn't a request, a hang-up, a notification run to its end.
 ///
 /// Only processes of the user the app runs as are answered: the socket is readable by no one else,
 /// its folder is made readable by no one else, and each connection's peer is checked.
@@ -202,7 +208,10 @@ private final class Connection: @unchecked Sendable {
     /// The requests with ids that haven't been answered yet, by the order they came in: what a
     /// hang-up cancels.
     private var running: [Int: Task<Void, Never>] = [:]
-    /// How many requests it has read: the next one's number in `running`.
+    /// The activity each request holds until its answer is written (`Answering`), by the order they
+    /// came in.
+    private var answering: [Int: any NSObjectProtocol] = [:]
+    /// How many requests it has read: the next one's number in `running` and `answering`.
     private var requestsRead = 0
     /// Nothing more will be read: the client's done sending, or gone.
     private var doneReading = false
@@ -250,6 +259,8 @@ private final class Connection: @unchecked Sendable {
     }
 
     private func handle(_ line: Data) {
+        // Held from the line read: decoding a document of megabytes is part of answering it.
+        let activity = Answering.begin()
         let request: RPCRequest
         do {
             request = try JSONDecoder().decode(RPCRequest.self, from: line)
@@ -261,11 +272,13 @@ private final class Connection: @unchecked Sendable {
                 ? RPCError(RPCError.parseError, reason: "parse_error", "The request isn't JSON.")
                 : RPCError(RPCError.invalidRequest, reason: "invalid_request", "The request isn't a JSON-RPC 2.0 request: \(error)")
             send(RPCResponse(id: id, outcome: .failure(failure)))
+            Answering.end(activity)
             return
         }
         pending += 1
         let handler = handler, before = last, number = requestsRead
         requestsRead += 1
+        answering[number] = activity
         let task = Task { @MainActor [self] in
             let outcome = await handler(request)
             // After the answer to the request before it, whichever finished first. That one wrote
@@ -275,6 +288,8 @@ private final class Connection: @unchecked Sendable {
                 pending -= 1
                 running[number] = nil
                 if let id = request.id { send(RPCResponse(id: id, outcome: outcome)) }
+                // Answered: written, or dropped for a client that's gone.
+                if let activity = answering.removeValue(forKey: number) { Answering.end(activity) }
                 closeIfDone()
             }
         }
@@ -306,3 +321,38 @@ private final class Connection: @unchecked Sendable {
         didFinish(self)
     }
 }
+
+/// What a request holds while it's answered: an activity of the process's, user-initiated (idle
+/// system sleep still allowed), so macOS doesn't nap the process while a client waits. An app
+/// whose windows can't be seen is napped (App Nap: its threads run at a low priority, its timers
+/// are put off) and stays napped while it works, and an app an agent drives is in the background as
+/// a rule, behind the terminal or the app the agent runs in, so napped it answered several times
+/// slower (what was measured is in the command line's topic file). Once no request holds one, the
+/// process naps again, within half a second.
+private enum Answering {
+    static func begin() -> any NSObjectProtocol {
+        #if DEBUG
+        held.withLock { $0 += 1 }
+        #endif
+        return ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Answering a request")
+    }
+
+    static func end(_ activity: any NSObjectProtocol) {
+        ProcessInfo.processInfo.endActivity(activity)
+        #if DEBUG
+        held.withLock { $0 -= 1 }
+        #endif
+    }
+
+    #if DEBUG
+    static let held = OSAllocatedUnfairLock(initialState: 0)
+    #endif
+}
+
+#if DEBUG
+extension RPCListener {
+    /// How many requests every listener of the process is answering now, each holding its activity
+    /// (`Answering`; debug builds), so tests can hold every one begun to its end.
+    public static var activitiesHeld: Int { Answering.held.withLock { $0 } }
+}
+#endif

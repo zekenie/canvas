@@ -588,6 +588,8 @@ edge "API" -> "Cache" channel: none
         expectEqual(error.reason, "board_closed")
         expectEqual(error.message, "The board was closed before the command finished.")
         spinRunLoop(until: { lingering.wasCancelled })
+        spinRunLoop(until: { RPCListener.activitiesHeld == 0 })
+        expect(lingering.isWaiting, "the request's activity ends with its answer, though the command runs on")
         lingering.letGo()
         spinRunLoop(until: { lingering.finished })
     },
@@ -604,6 +606,8 @@ edge "API" -> "Cache" channel: none
         expectEqual(try JSON(text: late.error)["error"]?["reason"], "timed_out")
         expect(lingering.isWaiting)
         spinRunLoop(until: { lingering.wasCancelled })
+        spinRunLoop(until: { RPCListener.activitiesHeld == 0 })
+        expect(lingering.isWaiting, "the request's activity ends as canvas hangs up, though the command runs on")
         lingering.letGo()
         spinRunLoop(until: { lingering.finished })
         board.close()

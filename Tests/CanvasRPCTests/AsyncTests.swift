@@ -154,6 +154,40 @@ final class RawConnection: Sendable {
         spinRunLoop(until: { holds.finished.contains("told") })
         expectEqual(holds.answered, ["hold", "hold"])
     },
+    test("a request holds an activity from its line to its answer, so macOS doesn't nap the process while a client waits; one each, and each ends") {
+        spinRunLoop(until: { RPCListener.activitiesHeld == 0 })
+        let path = temporarySocketPath(), holds = Holds()
+        let listener = holdingListener(at: path, holds)
+        try listener.start()
+        defer { listener.stop() }
+        expectEqual(request(path, "echo", params: "quick"), .success("quick"))
+        spinRunLoop(until: { RPCListener.activitiesHeld == 0 })
+        // Two clients waiting at once, and an answer waiting to go back after the one before it.
+        let first = try require(RawConnection(path)), second = try require(RawConnection(path))
+        first.send(line(1, "hold", ["name": "first"]) + line(2, "echo", ["n": 2]))
+        second.send(line(1, "hold", ["name": "second"]))
+        spinRunLoop(until: { holds.isWaiting("first") && holds.isWaiting("second") && holds.answered == ["echo", "echo"] })
+        expectEqual(RPCListener.activitiesHeld, 3, "one a request, the echo's until its answer is written")
+        holds.release("first")
+        spinRunLoop(until: { first.answeredIDs == [.number(1), .number(2)] })
+        spinRunLoop(until: { RPCListener.activitiesHeld == 1 })
+        // A client that hangs up (a timeout, ^C): its request is cancelled, and lets go.
+        second.hangUp()
+        spinRunLoop(until: { holds.cancelled == ["second"] })
+        spinRunLoop(until: { RPCListener.activitiesHeld == 0 })
+        // A notification holds one until it has run; a line that isn't a request, and a request with
+        // no method, until their errors are written.
+        let third = try require(RawConnection(path))
+        third.send(line(nil, "hold", ["name": "told"]))
+        spinRunLoop(until: { holds.isWaiting("told") })
+        expectEqual(RPCListener.activitiesHeld, 1)
+        holds.release("told")
+        spinRunLoop(until: { holds.finished.contains("told") })
+        spinRunLoop(until: { RPCListener.activitiesHeld == 0 })
+        third.send("not json\n" + #"{"jsonrpc":"2.0","id":5}"# + "\n" + line(6, "echo", ["n": 6]))
+        spinRunLoop(until: { third.lines.value?.count == 3 })
+        spinRunLoop(until: { RPCListener.activitiesHeld == 0 })
+    },
     test("a listener made with a synchronous handler answers as one that waits does") {
         let path = temporarySocketPath()
         let listener = RPCListener(path: path, synchronous: { request in .success(["method": .string(request.method)]) })
