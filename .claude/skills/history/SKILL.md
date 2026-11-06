@@ -31,7 +31,13 @@ When a change lands on main as one squashed commit:
    `Co-Authored-By`.
 
 The transcript keeps the owner's messages whole, the questions and answers, refusals, the
-assistant's prose, plans, agent briefs and git commands; it leaves tool output out. A plan file
+assistant's prose, plans, agent briefs and git commands; it leaves tool output out. A message of
+the owner's is kept whole, a command's arguments and a message sent mid-turn too, without what the
+app sent with it (its reminders and the view of a doc they had open as they wrote, which the app
+writes on lines of their own, so the owner's own mention of one in a sentence stays); what the
+app, another session or a program put in a turn is said for what it is (a notice, a session's
+message, a comment sent from a page, a prompt the SDK sent), never as the owner's: `HistoryTests`
+(SkillToolsTests) holds it. A plan file
 is taken from disk, or rebuilt from the transcript's writes and edits when it's gone; plans only
 accumulate, so one recorded before stays when it can no longer be found. Both redact
 anything shaped like a key. Read them before committing, as the commit publishes them to everyone

@@ -1,8 +1,9 @@
 """Write a Claude Code session's record to history/sessions/<date>-<title>-<session>/:
-transcript.md, its transcript condensed to what carries intent (the owner's messages in full, the
-questions asked and their answers, refusals, the assistant's prose, plans, agent briefs,
-design-doc writes and git commands; tool output is left out), and plans/, the plan files the
-session and its agents wrote. Anything shaped like a key is redacted from both.
+transcript.md, its transcript condensed to what carries intent (the owner's messages in full,
+without what the app sent with them; the questions asked and their answers, refusals, the
+assistant's prose, plans, agent briefs, design-doc writes and git commands; what the app, another
+session or a program put in a turn, said for what it is; tool output is left out), and plans/, the
+plan files the session and its agents wrote. Anything shaped like a key is redacted from both.
 
     python3 condense.py --self [--out DIR]           # this session (CLAUDE_CODE_SESSION_ID)
     python3 condense.py <session id> [--out DIR] [--commits FILE]
@@ -18,7 +19,14 @@ PROJECTS = os.path.expanduser("~/.claude/projects/")
 PLAN_MODE = os.path.expanduser("~/.claude/plans")
 SCRATCH = os.path.join(os.path.realpath("/tmp"), f"claude-{os.getuid()}")
 REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
-REFUSED = ("The user doesn't want to proceed", "The user rejected", "User rejected")
+# What the app sends with the owner's words, for the model and never typed by them: its reminders,
+# and the view of a page they had open as they wrote (a doc's tab and selection, before their words).
+# The app writes each on lines of its own, so a tag the owner names in a sentence stays.
+SENT_WITH = re.compile(r"^<(system-reminder|artifact-view-context)\b[^>\n]*>.*?</\1>$", re.S | re.M)
+SESSION_MESSAGE = re.compile(r"<cross-session-message\b([^>]*)>(.*?)</cross-session-message>", re.S)
+# A comment sent from a page's thread, quoted with ">" between lines the app marks with a token.
+PAGE_COMMENT = re.compile(r"^=== BEGIN ARTIFACT COMMENT (\S+) ===\n(.*?)^=== END ARTIFACT COMMENT \1 ===$", re.S | re.M)
+REFUSED =("The user doesn't want to proceed", "The user rejected", "User rejected")
 SECRETS = [
     re.compile(r"sk-ant-[A-Za-z0-9_\-]{16,}"),
     re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}"),
@@ -188,7 +196,9 @@ def read(sid):
             if t == "attachment":
                 a = d.get("attachment") or {}
                 if a.get("type") == "queued_command" and (a.get("origin") or {}).get("kind") == "human":
-                    entries.append((ts, "USER (sent mid-turn)", typed(a.get("prompt", ""))))
+                    kind, txt = user_text(typed(a.get("prompt", "")))
+                    if kind and txt:
+                        entries.append((ts, "USER (sent mid-turn)" if kind == "USER" else kind, txt))
             elif t == "user":
                 user_entries(d, ts, tools, entries)
             elif t == "assistant":
@@ -211,20 +221,33 @@ def typed(content):
 
 
 def user_text(txt):
-    """A user turn's text as the record keeps it: what the owner typed in full; what the app
-    or a finished agent put in a user turn cut down to what it says, or left out."""
+    """A user turn's text as the record keeps it, and the label it goes under: what the owner typed
+    in full, without what the app sent with it; what the app, a finished agent or another session
+    put in a user turn said for what it is and cut down to what it says, or left out."""
+    txt = SENT_WITH.sub("", txt).strip()
     if txt.startswith("<task-notification>"):
         summary = re.search(r"<summary>(.*?)</summary>", txt, re.S)
         status = re.search(r"<status>(.*?)</status>", txt, re.S)
         return "NOTICE", f"background task {status.group(1) if status else 'done'}: " + (summary.group(1).strip() if summary else "")
-    if txt.startswith("<command-name>"):
+    if txt.startswith("<side-sessions-event>"):
+        return "NOTICE", "no session this one started is working now"
+    message = SESSION_MESSAGE.match(txt)
+    if message:
+        name = re.search(r'\bname="([^"]*)"', message.group(1))
+        return (f'MESSAGE FROM SESSION "{name.group(1)}"' if name else "MESSAGE FROM A SESSION"), cap(message.group(2), 3000)
+    if txt.startswith("[Artifact comment sent to Claude]"):
+        # The comment alone, whoever wrote it, without the app's words on how to answer it.
+        page = re.search(r"^Artifact: (\S+)", txt, re.M)
+        said = "\n\n".join(re.sub(r"(?m)^> ?", "", body).rstrip("\n") for _, body in PAGE_COMMENT.findall(txt))
+        return (f"COMMENT on {page.group(1)}" if page else "COMMENT"), said or cap(txt, 1500)
+    if txt.startswith(("<command-name>", "<command-message>")):
         name = re.search(r"<command-name>(.*?)</command-name>", txt, re.S)
         args = re.search(r"<command-args>(.*?)</command-args>", txt, re.S)
-        return "USER", cap(f"{name.group(1) if name else ''} {args.group(1).strip() if args else ''}", 1500)
+        return "USER", f"{name.group(1) if name else ''} {args.group(1).strip() if args else ''}".strip()
     if txt.startswith("<bash-input>"):
         cmd = re.search(r"<bash-input>(.*?)</bash-input>", txt, re.S)
-        return "USER (shell)", cap(cmd.group(1) if cmd else "", 400)
-    if txt.startswith(("<local-command", "<bash-stdout", "<bash-stderr", "<artifact-view-context", "<create-pr-command")):
+        return "USER (shell)", (cmd.group(1) if cmd else "").strip()
+    if txt.startswith(("<local-command", "<bash-stdout", "<bash-stderr", "<create-pr-command")):
         return None, None
     return "USER", txt
 
@@ -236,15 +259,18 @@ def user_entries(d, ts, tools, entries):
     content = (d.get("message") or {}).get("content")
     if isinstance(content, str):
         content = [{"type": "text", "text": content}]
+    # A turn the SDK sent (the brief of the session that started this one, a program's prompt) is
+    # never the owner's, whatever it says.
+    owner = "PROMPT FROM A PROGRAM" if d.get("turnOrigin") == "sdk" else "USER"
     if not d.get("isMeta") and any(isinstance(b, dict) and b.get("type") in ("image", "document") for b in content or []):
-        entries.append((ts, "USER", "[image attached]"))
+        entries.append((ts, owner, "[image attached]"))
     for b in content or []:
         if not isinstance(b, dict):
             continue
         if b.get("type") == "text" and not d.get("isMeta"):
-            kind, txt = user_text(REMINDER.sub("", b.get("text", "")).strip())
+            kind, txt = user_text(b.get("text", ""))
             if kind and txt:
-                entries.append((ts, kind, txt))
+                entries.append((ts, owner if kind == "USER" else kind, txt))
         elif b.get("type") == "tool_result":
             name = tools.get(b.get("tool_use_id"), "")
             txt = REMINDER.sub("", text_of(b.get("content")))
