@@ -96,6 +96,27 @@ func rawServer(_ path: String, reply: String) -> Int32 {
         expectEqual(error.reason, "nope")
         expectEqual(error.message, "There's no nope.")
     },
+    test("a message of megabytes, which comes in many reads, is one line each way, whole") {
+        let path = temporarySocketPath()
+        let listener = echoListener(at: path)
+        try listener.start()
+        defer { listener.stop() }
+        // a long text that holds escapes as a JSON line does, and two calls on one connection so the buffer is used again after it
+        let text = String(repeating: "a document of megabytes \\ \" é\n", count: 120_000)
+        let results = offMain { () -> [Result<JSON, ClientError>] in
+            do throws(ClientError) {
+                let client = try RPCClient(path: path)
+                return [Result { () throws(ClientError) in try client.call("echo", params: ["text": .string(text)], timeout: 30) },
+                        Result { () throws(ClientError) in try client.call("echo", params: ["n": 2], timeout: 30) }]
+            } catch {
+                return [.failure(error)]
+            }
+        }
+        let got = try require(results)
+        expectEqual(got.count, 2)
+        expectEqual(try? got[0].get()["text"]?.stringValue == text, true, "the long text comes back as it went")
+        expectEqual(try? got[1].get(), ["n": 2], "and the next message on the connection after it")
+    },
     test("a line that isn't a request gets an error with no id; a notification gets nothing; the rest are answered") {
         let path = temporarySocketPath()
         let listener = echoListener(at: path)

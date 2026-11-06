@@ -227,6 +227,8 @@ final class Evaluation {
         let matched = countOnly ? [] : try inFileOrder(found)
         var rows = countOnly ? [] : try await self.rows(matched.prefix(limit), properties: properties)
         try await listProblems(on: &rows, words: plan.uses.pseudoClasses)
+        addMembers(to: &rows, words: plan.uses.pseudoClasses)
+        let absent = absent(words: plan.uses.pseudoClasses)
         var warnings: [QueryWarning] = []
         if !countOnly, found.count > rows.count {
             let more = limit > Int.max / 10 ? Int.max : limit * 10
@@ -239,7 +241,7 @@ final class Evaluation {
         }
         warnings += try await titleWarnings()
         return QueryResult(query: plan.canonical, count: found.count, rows: rows, warnings: warnings, shown: snapshot.shown,
-                           shownPath: snapshot.shownPath)
+                           shownPath: snapshot.shownPath, absent: absent)
     }
 
     /// What each request of a batch matches (`QueryState.matches(_:)`), in order, all over this one
@@ -827,6 +829,8 @@ final class Evaluation {
             return try dangling(types, among: candidates)
         case .pseudo(let word):
             return try await pseudo(word, among: candidates)
+        case .textPseudo(let key, _, _):
+            return try await pseudo(key, among: candidates)
         case .and(let nodes):
             return try await allOf(nodes, among: candidates)
         }
@@ -857,8 +861,8 @@ final class Evaluation {
     private func finds(_ node: PlanNode) -> Bool {
         switch node.op {
         case .id, .title, .scope: true
-        case .pseudo(let word):
-            if case .pseudoClass(let behavior)? = vocabulary.contributedWords[word]?.meaning { behavior.seeds != nil } else { false }
+        case .pseudo(let key), .textPseudo(let key, _, _):
+            if case .pseudoClass(let behavior)? = vocabulary.declaration(forKey: key)?.meaning { behavior.seeds != nil } else { false }
         default: false
         }
     }
@@ -967,7 +971,7 @@ final class Evaluation {
     /// A contributed pseudo-class: its seeds, if it has them, else the candidates, each asked
     /// `matches`; those it leaves to the main actor asked `onMain`, in slices, in file order.
     private func pseudo(_ word: String, among candidates: Candidates) async throws(QueryError) -> Set<ShapeID> {
-        guard case .pseudoClass(let behavior)? = vocabulary.contributedWords[word]?.meaning, let prepared = snapshot.words[word] else { return [] }
+        guard case .pseudoClass(let behavior)? = vocabulary.declaration(forKey: word)?.meaning, let prepared = snapshot.words[word] else { return [] }
         var pool: [ShapeID] = []
         if let seeds = behavior.seeds {
             for id in seeds(prepared) where admits(id, candidates) { pool.append(id) }
@@ -1439,7 +1443,7 @@ final class Evaluation {
             guard let entry = entry(id) else { continue }
             let kind = entry.kind
             var row = QueryRow(id: id, kind: entry.record.kind, title: name(id), board: entry.board,
-                               inside: ancestors(id).reversed().map(containerName))
+                               inside: ancestors(id).reversed().map(containerName), at: entry.record.box)
             (row.properties, row.cut) = listed(entry, kind: kind, wanted)
             if let edges = runs[id], let first = edges.first {
                 row.connection = QueryConnection(type: first.type, from: end(first.source), to: end(first.target))
@@ -1458,7 +1462,7 @@ final class Evaluation {
     /// these rows, and set on each that has any: the words with `problems`, in order of their names.
     private func listProblems(on rows: inout [QueryRow], words: Set<String>) async throws(QueryError) {
         let asking = words.sorted().filter { word in
-            if case .pseudoClass(let behavior)? = vocabulary.contributedWords[word]?.meaning { behavior.problems != nil } else { false }
+            if case .pseudoClass(let behavior)? = vocabulary.declaration(forKey: word)?.meaning { behavior.problems != nil } else { false }
         }
         guard !asking.isEmpty, !rows.isEmpty else { return }
         var found: [ShapeID: [ShapeProblem]] = [:]
@@ -1478,6 +1482,38 @@ final class Evaluation {
             rest = rest.dropFirst(asked.done)
         }
         for index in rows.indices { rows[index].problems = found[rows[index].id] }
+    }
+
+    /// The members the words the query names add to each row, off the main actor, in the order of the words' names: each
+    /// word's, for the shapes of the rows, among the keys it declared; a key an earlier word gave is not given again.
+    private func addMembers(to rows: inout [QueryRow], words: Set<String>) {
+        typealias Adding = (names: Set<String>, rowMembers: @Sendable (QueryShape, any Sendable) -> [String: JSON], prepared: any Sendable)
+        let adding: [Adding] = words.sorted().compactMap { key in
+            guard case .pseudoClass(let behavior)? = vocabulary.declaration(forKey: key)?.meaning, let rowMembers = behavior.rowMembers,
+                  let prepared = snapshot.words[key] else { return nil }
+            return (Set(behavior.memberNames), rowMembers, prepared)
+        }
+        guard !adding.isEmpty else { return }
+        for index in rows.indices {
+            guard let entry = entry(rows[index].id) else { continue }
+            let shape = QueryShape(record: entry.record, board: entry.board, topology: snapshot.topology)
+            var given: [String: JSON] = [:]
+            for word in adding {
+                for (key, value) in word.rowMembers(shape, word.prepared) where word.names.contains(key) && given[key] == nil { given[key] = value }
+            }
+            if !given.isEmpty { rows[index].members = given }
+        }
+    }
+
+    /// What the words the query names say the file no longer holds, each id once, in the order of the words' names.
+    private func absent(words: Set<String>) -> [QueryAbsent] {
+        var found: [QueryAbsent] = [], seen: Set<String> = []
+        for key in words.sorted() {
+            guard case .pseudoClass(let behavior)? = vocabulary.declaration(forKey: key)?.meaning, let absent = behavior.absent,
+                  let prepared = snapshot.words[key] else { continue }
+            for item in absent(prepared) where seen.insert(item.id).inserted { found.append(item) }
+        }
+        return found
     }
 
     /// An end of a connection, with its name if it has one (read already).
@@ -1600,7 +1636,7 @@ extension PlanNode {
             anchor.forEachNode(body)
         case .and(let nodes):
             for node in nodes { node.forEachNode(body) }
-        case .all, .kinds, .title, .id, .attribute, .contains, .topLevel, .currentBoard, .scope, .dangling, .pseudo:
+        case .all, .kinds, .title, .id, .attribute, .contains, .topLevel, .currentBoard, .scope, .dangling, .pseudo, .textPseudo:
             break
         }
     }

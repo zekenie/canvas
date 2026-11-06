@@ -36,7 +36,7 @@ import Types
         expectEqual(registry.defaultColor(of: Subboard.kind), .indigo)
         expectEqual(registry.defaultColor(of: Frame.kind), nil)
         expectEqual(registry.defaultColor(of: Arrow.kind), nil)
-        expectEqual(registry.declaredFileProperties, ["colors"])
+        expectEqual(registry.declaredFileProperties, ["colors", "drawings"])
     },
     test("/color typed on a new line of a note lists the named colors; a pick colors the note in one step, Change Color, takes the line out, and editing goes on") {
         let pasteboard = NSPasteboard.withUniqueName()

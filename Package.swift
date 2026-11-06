@@ -200,6 +200,9 @@ let ships = [
     // names, ports' connections for edges, validity for its warnings, mentions for text
     // (`@[Title]` in a note's text names the shape called that), and groups for `group` and `ungroup`.
     "Draw.DrawPlugin", "Automation.AutomationPlugin", "Titles.TitleNamesPlugin", "Connections.PortEdgesPlugin", "Validation.ValidationChecksPlugin", "Mentions.MentionTextsPlugin", "Types.TypeNamesPlugin", "Types.FieldValuesPlugin", "Colors.ColorNamesPlugin", "Grouping.GroupDrawPlugin",
+    // What a program drew, kept by name so its next pass finds its shapes by key and anyone can ask what changed since: the
+    // records `canvas apply` and `canvas draw --drawing` write, through the draw engine's point, so after it.
+    "Drawings.DrawingsPlugin",
     // Reading the file: `canvas query`, and the words each plugin that owns a meaning gives it:
     // titles for names, boards' names, mentions for text and relations, validity and the selection
     // for their words, each after Queries, whose points they fill. The translator of English into
@@ -207,6 +210,8 @@ let ships = [
     // binary).
     "Queries.QueriesPlugin", "QueryTranslation.QueryTranslationPlugin", "Titles.TitleQueriesPlugin", "Boards.BoardQueriesPlugin", "Mentions.MentionQueriesPlugin", "Validation.ValidationQueriesPlugin", "Types.TypeQueriesPlugin", "Colors.ColorQueriesPlugin", "Grouping.GroupQueriesPlugin",
     "Queries.SelectionQueriesPlugin",
+    // What reads drawings: `:drawn-by("NAME")` and `:changed`, after the engine and the drawings they read.
+    "Drawings.DrawingQueriesPlugin",
     "QueryCommands.QueryCommandsPlugin",
     // `canvas decide`: one yes-or-no question of the shapes a query finds, each with its state as a rule sees it. After
     // the commands, the queries and the checks it builds on.
@@ -330,6 +335,7 @@ let package = Package(
         .target(name: "ProseMaps", dependencies: ["Canvas", "LanguageModels"]),               // layer: platform
         .target(name: "Queries", dependencies: ["Canvas", "CanvasRPC", "FuzzyMatching", "QueryLanguage", "Selection", "Topology"]), // layer: platform
         .target(name: "Draw", dependencies: ["Adornments", "Canvas", "CanvasRPC", "DrawScript", "FuzzyMatching", "Geometry", "Queries", "QueryLanguage", "Topology"]), // layer: platform
+        .target(name: "Drawings", dependencies: ["Canvas", "CanvasRPC", "Draw", "Queries"]),                          // layer: platform
         .target(name: "QueryTranslation", dependencies: ["Canvas", "DetailPanel", "LanguageModels", "Queries", "QueryLanguage", "Selection", "SlashCommands"]), // layer: platform
         // Neighbors: an engine an edge's owner shows its edges on. Hovering a shape, on the canvas or by its row in the table of contents
         // (Selection's `hovered`, and `hoveredElsewhere` for a row of another board), outlines every shape connected to it in a color for each

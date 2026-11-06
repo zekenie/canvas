@@ -269,6 +269,8 @@ private let bracketsTest = "can't be read here: a test of an attribute is in bra
             Refused(#":contains("a" b)"#, .badArgument, ":contains takes the text to find, in quotes.", hint: #":contains("a b")"#, at: 10, 5),
             Refused(#":contains("")"#, .badArgument, #":contains("") finds nothing: it takes the text to find."#, hint: #":contains("retry")"#, at: 10, 2),
             Refused(#":contains("a", 'b')"#, .badArgument, ":contains takes one text.", hint: #":is(:contains("a"), :contains("b"))"#, at: 10, 8),
+            Refused(#":contains("a",)"#, .badArgument, ":contains takes the text to find, in quotes.", hint: #":contains("a")"#, at: 10, 4),
+            Refused(#":contains("a", )"#, .badArgument, ":contains takes the text to find, in quotes.", hint: #":contains("a")"#, at: 10, 5),
             Refused(":top-level(x)", .badArgument, ":top-level takes no argument.", hint: ":top-level", at: 0, 13),
             Refused(":current-board()", .badArgument, ":current-board takes no argument.", hint: ":current-board", at: 0, 16),
             Refused(":dangling()", .badArgument, ":dangling() holds no edge types: leave out the parentheses for every type.", hint: ":dangling", at: 0, 11),

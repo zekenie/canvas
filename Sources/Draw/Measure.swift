@@ -79,6 +79,15 @@ public struct MeasureResult: Encodable {
 /// any: the open file's names and types are read from it (`Drawing.namesBeyond`), never written.
 @MainActor
 public func measure(script text: String, program: String, in registry: Registry, namesBeyond editor: CanvasEditor?) throws(DrawError) -> MeasureResult {
+    try measured(script: text, program: program, options: DrawOptions(), in: registry, namesBeyond: editor).result
+}
+
+/// What `measure` answers, and the drawing and board it measured on: a document's measure (`DocumentMeasure.swift`) reads
+/// its items too. `options` are a program's (`DrawOptions`): a shape statement named by a reserved id is measured as the
+/// shape it names, which edges and keys then name.
+@MainActor
+func measured(script text: String, program: String, options: DrawOptions, in registry: Registry,
+              namesBeyond editor: CanvasEditor?) throws(DrawError) -> (result: MeasureResult, drawing: Drawing, scratch: CanvasEditor) {
     let script: Script
     do throws(ScriptErrors) {
         script = try Script(parsing: text)
@@ -98,7 +107,7 @@ public func measure(script text: String, program: String, in registry: Registry,
             // Every shape is new in a measure, as it is for a title the file has: one that names a shape by its id is measured as
             // a new shape of its kind with no title, and one a path names as a new shape titled by its last part (the container the
             // path leads through is left out as `in` is; two paths are two shapes, whatever their last parts are).
-            if shape.name?.id != nil { shape.name = nil }
+            if let id = shape.name?.id, !(UUID(uuidString: id).map { options.reserved.contains(ShapeID($0)) } ?? false) { shape.name = nil }
             statements.append(Statement(line: statement.line, text: statement.text, body: .shape(shape)))
         case .edge(var edge):
             // Through a reference, an edge is only the reference's size (a pill is sized, never drawn here: it may stand for a
@@ -118,12 +127,14 @@ public func measure(script text: String, program: String, in registry: Registry,
 
     // A board of its own, empty, so every title is new, as on a new file; the open file's types and names are read from the editor
     // it was given, if any (`namesBeyond`).
-    let scratch = CanvasEditor(registry: registry)
+    // Its clock never runs (`StoppedScheduler`): a measure is worked out at once, and nothing it holds (a type's words, a rule)
+    // may ask a model or wait on anything.
+    let scratch = CanvasEditor(registry: registry, scheduler: StoppedScheduler())
     guard let reading = scratch.reading(of: .root) else {
         throw DrawError("a board to measure on couldn't be made", reason: ScriptError.Reason.internal.rawValue)
     }
     let drawing = try Drawing(Script(statements: statements, styles: script.styles), editor: scratch, on: reading, namesBeyond: editor,
-                              measuring: true, program: program)
+                              measuring: true, options: options, program: program)
 
     let shapes = drawing.items.map { item in
         var record = item.record
@@ -168,12 +179,13 @@ public func measure(script text: String, program: String, in registry: Registry,
         smallest[kind.rawValue] = [least.width, least.height]
     }
     let gaps = Dictionary(uniqueKeysWithValues: GapName.allCases.map { ($0.rawValue, $0.value) })
-    return MeasureResult(shapes: shapes, references: references,
-                         constants: MeasureResult.Constants(
-                             gaps: gaps, defaultGap: LayoutProblem.defaultGap, listStep: LayoutProblem.listStep,
-                             referenceStep: LayoutProblem.impliedListStep, horizontalClearance: LayoutProblem.horizontalClearance,
-                             verticalClearance: LayoutProblem.verticalClearance, frameInset: LayoutProblem.insideGap, smallest: smallest),
-                         warnings: drawing.measureWarnings.isEmpty ? nil : drawing.measureWarnings.map { MeasureResult.Warning(line: $0.line, message: $0.message) })
+    let result = MeasureResult(shapes: shapes, references: references,
+                               constants: MeasureResult.Constants(
+                                   gaps: gaps, defaultGap: LayoutProblem.defaultGap, listStep: LayoutProblem.listStep,
+                                   referenceStep: LayoutProblem.impliedListStep, horizontalClearance: LayoutProblem.horizontalClearance,
+                                   verticalClearance: LayoutProblem.verticalClearance, frameInset: LayoutProblem.insideGap, smallest: smallest),
+                               warnings: drawing.measureWarnings.isEmpty ? nil : drawing.measureWarnings.map { MeasureResult.Warning(line: $0.line, message: $0.message) })
+    return (result, drawing, scratch)
 }
 
 extension Drawing {

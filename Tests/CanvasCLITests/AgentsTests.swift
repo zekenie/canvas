@@ -225,7 +225,7 @@ private func files(under folder: URL) -> [String] {
             try? FileManager.default.removeItem(at: log)
             try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
             let output = try run(URL(fileURLWithPath: "/bin/sh"),
-                                 ["-c", #"cd "$0" && exec "$@""#, cwd.path, copy.path, "ready", "graph.json", "--new-file", folder.appendingPathComponent("new.canvasboard").path,
+                                 ["-c", #"cd "$0" && exec "$@""#, cwd.path, copy.path, "ready",
                                   "--out", folder.appendingPathComponent("out-\(UUID().uuidString)").path],
                                  environment: ["PATH": (path.map(\.path) + ["/usr/bin", "/bin"]).joined(separator: ":"), "CANVAS_CLI": cli?.path ?? "",
                                                "CANVAS_TEST_LOG": log.path])
@@ -276,9 +276,10 @@ private func files(under folder: URL) -> [String] {
         let folder = try scratch("stale")
         defer { try? FileManager.default.removeItem(at: folder) }
         let driver = root.appendingPathComponent(".claude/skills/canvas-digest/digest")
+        /// A `canvas` that says the build `build` (none: says none) and that a board is open, as `ready` asks.
         func standIn(build: String?, at url: URL) throws {
             let status = build.map { "if [ \"$1\" = status ]; then printf 'app:     x\\nbuild:   %s\\n' '\($0)'; fi\n" } ?? ""
-            try write("#!/bin/sh\n\(status)", to: url, executable: true)
+            try write("#!/bin/sh\n\(status)if [ \"$1\" = boards ]; then printf '[{\"id\": 1}]\\n'; fi\n", to: url, executable: true)
         }
         @MainActor func driverRun(build id: String?, app: String?, name: String) throws -> ProcessOutput {
             let home = folder.appendingPathComponent(name)
@@ -289,8 +290,8 @@ private func files(under folder: URL) -> [String] {
             if let id { try write(id + "\n", to: home.appendingPathComponent("build-id")) }
             try standIn(build: app, at: bin.appendingPathComponent("canvas"))
             return try run(URL(fileURLWithPath: "/bin/sh"),
-                                   ["-c", #"cd "$0" && exec "$@""#, folder.path, home.appendingPathComponent("digest").path, "ready", "graph.json", "--new-file",
-                                    folder.appendingPathComponent("\(name).canvasboard").path, "--out", folder.appendingPathComponent("\(name)-out").path],
+                                   ["-c", #"cd "$0" && exec "$@""#, folder.path, home.appendingPathComponent("digest").path, "ready",
+                                    "--out", folder.appendingPathComponent("\(name)-out").path],
                                    environment: ["PATH": "\(bin.path):/usr/bin:/bin", "CANVAS_CLI": ""])
         }
         let stale = try driverRun(build: "old-1", app: "new-2", name: "stale")

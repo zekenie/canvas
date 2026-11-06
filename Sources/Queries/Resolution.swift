@@ -693,13 +693,23 @@ private struct Resolver {
         }
         switch declared.meaning {
         case .pseudoClass(let behavior):
-            if case .raw = pseudo.argument {
+            var key = declared.word, text: String?
+            if let argument = declared.argument {
+                do throws(QueryError) {
+                    text = try pseudo.text(argument: argument, example: declared.example)
+                } catch {
+                    problem(error)
+                    return nil
+                }
+                key = WordKey.make(declared.word, text: text)
+            } else if case .raw = pseudo.argument {
                 problem(QueryError(.badArgument, ":\(declared.word) takes \(declared.takes).", hint: ":\(declared.word)", span: pseudo.span))
                 return nil
             }
-            uses.pseudoClasses.insert(declared.word)
+            uses.pseudoClasses.insert(key)
             if behavior.settles { uses.settles = true }
             if declared.reads.contains(.editor) { uses.noteEditorWord(":\(declared.word)") }
+            if let text { return node(.textPseudo(key: key, word: declared.word, text: text), span: pseudo.span) }
             return node(.pseudo(word: declared.word), span: pseudo.span)
         case .fileRelation:
             let list: SelectorList
@@ -801,8 +811,8 @@ private struct Resolver {
             readers.contains { reader in
                 reader.source == .names && reader.kinds.contains { vocabulary.kind($0)?.names == .derived }
             } ? .main : .read
-        case .pseudo(let word):
-            switch vocabulary.contributedWords[word]?.meaning {
+        case .pseudo(let word), .textPseudo(let word, _, _):
+            switch vocabulary.declaration(forKey: word)?.meaning {
             case .pseudoClass(let behavior)?: behavior.seeds != nil ? .found : behavior.onMain != nil ? .main : .read
             default: .read
             }

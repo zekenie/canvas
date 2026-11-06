@@ -2,6 +2,7 @@ import Canvas
 import CanvasRPC
 import CoreGraphics
 import DrawScript
+import Foundation
 import Geometry
 import Queries
 
@@ -143,6 +144,10 @@ struct DrawChange: Sendable {
     var attributes: [String: JSONValue] = [:]
     /// What a plugin's report adds to the row (`DrawReports`' declared members), by key.
     var members: [String: JSONValue] = [:]
+    /// An edge's arrow, and the stand-in it runs into in place of an end, if one: never said, since a script can't name
+    /// either; what a program's run keeps of its edges (`DrawDocument`).
+    var arrow: ShapeID?
+    var standIn: ShapeID?
 }
 
 extension DrawChange: Encodable {
@@ -195,8 +200,17 @@ struct DrawWarning: Encodable, Sendable {
     var severity: Severity
     /// The property it's about, if one.
     var attribute: String?
+    /// It counts the shapes past those said that a run brought issues to (`Drawing.brought`): never said by a document's run, whose
+    /// phases bring what a later one mends.
+    var countsMore = false
+    /// The shape whose issue it says (a row's own, or one a run brought to a shape it did not write): a document's run says the
+    /// issues of the drawing's own shapes once, as its last phase leaves them, so it leaves out what a phase said of them mid-way.
+    var about: ShapeID?
 
     enum Severity: String, Encodable, Sendable { case error, warning, incomplete }
+
+    /// What a warning says: `countsMore` and `about` are the engine's own.
+    enum CodingKeys: String, CodingKey { case line, message, severity, attribute }
 
     init(line: Int?, _ message: String, severity: Severity = .warning, attribute: String? = nil) {
         self.line = line
@@ -205,14 +219,15 @@ struct DrawWarning: Encodable, Sendable {
         self.attribute = attribute
     }
 
-    /// An issue of the shape called `name`, at the level it has.
-    init(line: Int?, _ name: String, issue: DrawIssue) {
+    /// An issue of the shape called `name`, at the level it has; `about` the shape.
+    init(line: Int?, _ name: String, issue: DrawIssue, about: ShapeID? = nil) {
         let severity: Severity = switch issue.level {
         case .warning: .warning
         case .error: .error
         case .incomplete: .incomplete
         }
         self.init(line: line, "\(name): \(issue.message)", severity: severity, attribute: issue.field)
+        self.about = about
     }
 }
 
@@ -241,13 +256,55 @@ enum DrawStyle {
 /// `<program> kinds`.
 @MainActor
 public func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, program: String, in editor: CanvasEditor) throws(DrawError) -> DrawResult {
+    try draw(script: text, dryRun: dryRun, reveal: shouldReveal, program: program, options: DrawOptions(), in: editor)
+}
+
+/// As `draw`, and, with `drawing`, the run joins that drawing (`canvas draw --drawing NAME`): every shape its statements name,
+/// and every arrow it draws, is kept in the drawing's record with what it now is, keyed by its id, in the run's own step, so a
+/// later query says what changed since. Refused, `no_drawings`, where nothing keeps drawings.
+@MainActor
+public func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, program: String, drawing: String?,
+                 in editor: CanvasEditor) throws(DrawError) -> DrawResult {
+    var options = DrawOptions()
+    if let drawing {
+        guard editor.registry.drawRecording != nil else {
+            throw DrawError("nothing here keeps drawings, so a run can't join one", reason: "no_drawings", hint: "leave --drawing out")
+        }
+        guard !drawing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw DrawError("a drawing's name can't be blank", reason: ScriptError.Reason.invalidValue.rawValue, hint: "--drawing <name>")
+        }
+        options.drawing = drawing
+    }
+    return try draw(script: text, dryRun: dryRun, reveal: shouldReveal, program: program, options: options, in: editor)
+}
+
+/// What a program's run asks of the engine besides its script, none of which a script an agent types can say (a document's
+/// runs, `DrawDocument`): the shapes it may make with ids it picked (a shape statement named `#<id>` by one of `reserved`
+/// that the file hasn't makes a shape with that id), where each shape (or the stand-in of an edge) goes exactly, by its
+/// statement's line (`places`: its room's top-left, never solved, pushed or pushing), the keys a value may name a shape by
+/// (`keys`: in `is:` and in a mention, a key names the shape it's given for before a title is looked for), the board the run
+/// draws on when nothing it names says one (`board`), and that titles are only what it calls shapes (`program`: `title:`
+/// gives a shape it makes its title, and any shape a title another beside it has).
+struct DrawOptions {
+    var reserved: Set<ShapeID> = []
+    var places: [Int: CGPoint] = [:]
+    var keys: [String: ShapeID] = [:]
+    var board: BoardID?
+    var program = false
+    /// The drawing a real run joins (`draw --drawing`): what it names is kept in the drawing's record, in its step.
+    var drawing: String?
+}
+
+@MainActor
+func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, program: String, options: DrawOptions,
+          in editor: CanvasEditor) throws(DrawError) -> DrawResult {
     let script: Script
     do throws(ScriptErrors) {
         script = try Script(parsing: text)
     } catch {
         throw collected(error.errors.map { DrawError($0) })
     }
-    var (board, names) = try Drawing.board(for: script, in: editor)
+    var (board, names) = try Drawing.board(for: script, in: editor, pinned: options.board)
     let shown = board == editor.board
     if shown {
         // A drag moves shapes from where they were at its press, and its Escape puts them back: what
@@ -265,7 +322,7 @@ public func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, p
         guard let reading = editor.reading(of: board) else {
             throw DrawError("the board went away", reason: ScriptError.Reason.internal.rawValue)
         }
-        var drawing = try Drawing(script, editor: editor, on: reading, fileNames: names, program: program)
+        var drawing = try Drawing(script, editor: editor, on: reading, fileNames: names, options: options, program: program)
         try drawing.place()
         return drawing
     }
@@ -282,11 +339,11 @@ public func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, p
         editor.endEditing(discarding: false)
         if editor.revision != revision {
             // What was typed may have renamed a shape: the titles are read again, and the board with them.
-            (board, names) = try Drawing.board(for: script, in: editor)
+            (board, names) = try Drawing.board(for: script, in: editor, pinned: options.board)
             drawing = try worked()
         }
     }
-    var result = try apply(drawing, to: editor, reveals: shouldReveal, dryRun: dryRun)
+    var result = try apply(drawing, to: editor, reveals: shouldReveal, dryRun: dryRun, joining: options.drawing)
     // What was nudged into or out of a container glides there, as one put down by hand does (on
     // the board shown).
     if !dryRun { editor.glide(result.nudges) }
@@ -301,12 +358,15 @@ public func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, p
 /// it and throws it away: what it did (or would do), or why it can't. What's thrown away, or
 /// refused, commits nothing and makes no step, so what there was to redo stays.
 @MainActor
-private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, dryRun: Bool) throws(DrawError) -> DrawResult {
+private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, dryRun: Bool, joining name: String? = nil) throws(DrawError) -> DrawResult {
     do {
         let result = try editor.transact(on: drawing.target.board, DrawStyle.stepName) { transaction in
             // An agent's change, not the person's: what acts on a person's edits leaves it be.
             transaction.byAgent = true
             let result = try drawing.apply(to: &transaction, reveals: reveals)
+            if !dryRun, let name, let records = editor.registry.drawRecording {
+                join(name, result, on: drawing.target.board, records: records, file: editor.file, registry: editor.registry, in: &transaction)
+            }
             if dryRun {
                 // A shape the run would make has no id yet: a dry run's row would say one that never was.
                 let rows = result.changes.map { row -> DrawChange in
@@ -364,6 +424,8 @@ public struct DrawError: Error, Equatable, CustomStringConvertible {
     /// Whether it says a name a text writes (a title in a script's value) found no shape, or several, or one the
     /// value can't be: what `canvas measure` makes a warning, since it measures without the shape.
     var fromNameLookup = false
+    /// The name it was looked up by, when it is from the name lookup (`lookedFor`).
+    var lookedForName: String?
 
     public init(_ message: String, reason: String, hint: String? = nil, line: Int? = nil, statement: String? = nil, errors: [DrawError] = []) {
         self.message = message
@@ -380,6 +442,7 @@ public struct DrawError: Error, Equatable, CustomStringConvertible {
     public func with(hint: String?) -> DrawError {
         var changed = DrawError(message, reason: reason, hint: hint, line: line, statement: statement, errors: errors)
         changed.fromNameLookup = fromNameLookup
+        changed.lookedForName = lookedForName
         return changed
     }
 }
@@ -401,7 +464,31 @@ extension DrawError {
 func collected(_ errors: [DrawError]) -> DrawError {
     let sorted = errors.enumerated().sorted { ($0.element.line ?? 0, $0.offset) < ($1.element.line ?? 0, $1.offset) }.map(\.element)
     let kept = Array(sorted.prefix(ScriptErrors.limit))
+    // One problem is itself, with what it knows of the name it looked up.
+    if kept.count == 1 { return kept[0] }
     let first = kept[0]
-    return DrawError(first.message, reason: first.reason, hint: first.hint, line: first.line, statement: first.statement,
-                     errors: kept.count > 1 ? kept : [])
+    return DrawError(first.message, reason: first.reason, hint: first.hint, line: first.line, statement: first.statement, errors: kept)
+}
+
+/// A run's shapes kept in the drawing it joins (`draw --drawing`): each row's shape the run leaves on the board, and each arrow
+/// and pill it draws, with what it now is, keyed by its id where the drawing hasn't a key for it; a shape a statement deleted by
+/// its id is taken off the record.
+@MainActor
+private func join(_ name: String, _ result: DrawResult, on board: BoardID, records: DrawRecording, file: CanvasFile, registry: Registry,
+                  in transaction: inout Transaction) {
+    var record = records.read(name, file) ?? DrawingRecord(board: board.description)
+    func keep(_ id: ShapeID) {
+        guard let now = transaction.document[id], let state = DrawnState.of(now, on: board, registry: registry) else { return }
+        record.shapes[id.description] = DrawingRecord.Shape(key: record.shapes[id.description]?.key ?? RecordKey.joined(id), wrote: state)
+    }
+    for row in result.changes {
+        if row.did == .deleted {
+            if let text = row.id { record.shapes[text] = nil }
+            continue
+        }
+        if let arrow = row.arrow { keep(arrow) }
+        if let pill = row.standIn { keep(pill) }
+        if let text = row.id, let uuid = UUID(uuidString: text) { keep(ShapeID(uuid)) }
+    }
+    records.write(name, record, &transaction)
 }

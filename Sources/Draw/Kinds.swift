@@ -3,6 +3,7 @@ import CanvasRPC
 import CoreGraphics
 import DrawScript
 import FuzzyMatching
+import Topology
 
 // `canvas kinds`: what a script can draw, and with what. The kinds the app has, each as the language
 // sees it: whether a script can draw it (and why not), its names, size, attributes with their types,
@@ -33,7 +34,18 @@ public struct KindSummary: Encodable {
     let attributes: [String: String]
     /// The sides an edge may leave it by, and what it may carry from each.
     let edges: [String: [String]]?
+    /// The pills that can stand for one of its shapes, so that an edge to it from another board can go
+    /// through one: each kind of pill whose plugin can make a new shape of this kind one it stands for,
+    /// with what that takes, in the order pills are made (`registry.standIns`' makers). Nil for none.
+    let via: [StandInSummary]?
     let schema: JSONValue?
+}
+
+/// A kind of pill that can stand for a shape of a kind, as `kinds` lists it.
+public struct StandInSummary: Encodable {
+    let kind: String
+    /// What a shape must be before the pill can stand for it, in a word (`public`), or nil for nothing.
+    let needs: String?
 }
 
 /// Why a script can't place a kind no tool places: its tool draws one by hand (a line, by its
@@ -59,6 +71,7 @@ public func kinds(named: String? = nil, schema: Bool = false, in registry: Regis
         kinds = [kind]
     }
     let naming = registry.drawNaming, edging = registry.drawEdging, edgeKind = edging.flatMap { $0.kind(registry) }
+    let standIns = registry.standIns
     return kinds.map { kind in
         let vocabulary = KindVocabulary(kind, in: registry)
         let placement = registry.placement(for: kind)
@@ -78,6 +91,15 @@ public func kinds(named: String? = nil, schema: Bool = false, in registry: Regis
             attributes[name] = "\(vocabulary.compactType(of: name)) — can't be written: \(name): is one of the language's own keys"
         }
         let sides = (edging?.sides(kind, registry) ?? [:]).filter { !$0.value.isEmpty }
+        // Asked of a new shape of the kind, as its placement makes one: a pill can stand for the kind when the pill's
+        // plugin can make that shape one it admits (`fulfil`, which changes only a copy here).
+        let via: [StandInSummary] = placement.map { placement in
+            let blank = placement.shape(at: .zero)
+            return standIns.makers.compactMap { maker in
+                var probe = blank
+                return standIns.fulfil(maker, &probe) ? StandInSummary(kind: maker.rawValue, needs: standIns.needs(maker)) : nil
+            }
+        } ?? []
         return KindSummary(kind: kind.rawValue, title: vocabulary.root["title"]?.stringValue,
                            tool: registry.tools.first { $0.id == ToolID(placing: kind) }?.label,
                            drawable: why == nil, why: why, names: names,
@@ -86,6 +108,7 @@ public func kinds(named: String? = nil, schema: Bool = false, in registry: Regis
                            holds: registry.boardOwningKinds.contains(kind) ? "board" : registry.containingKinds.contains(kind) ? "shapes" : nil,
                            attributes: attributes,
                            edges: sides.isEmpty ? nil : Dictionary(uniqueKeysWithValues: sides.map { ($0.key.rawValue, $0.value) }),
+                           via: via.isEmpty ? nil : via,
                            schema: schema ? .object(vocabulary.root) : nil)
     }
 }

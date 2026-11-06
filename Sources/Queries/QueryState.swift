@@ -413,9 +413,9 @@ public final class QueryState {
         let preparation = QueryPreparation(editor: editor, file: QueryFilePreparation(snapshot: graph, registry: registry, editor: editor))
         var prepared: [String: any Sendable] = [:], verdicts: [String: MainFacts.Verdict] = [:], problemers: [String: MainFacts.Problemer] = [:]
         for word in words.sorted() {
-            switch vocabulary.contributedWords[word]?.meaning {
+            switch vocabulary.declaration(forKey: word)?.meaning {
             case .pseudoClass(let behavior)?:
-                let value = behavior.prepare(preparation)
+                let value = behavior.prepare(preparation, WordKey.text(of: word))
                 prepared[word] = value
                 if let onMain = behavior.onMain { verdicts[word] = MainFacts.Verdict(ask: onMain, prepared: value) }
                 if let problems = behavior.problems { problemers[word] = MainFacts.Problemer(ask: problems, prepared: value) }

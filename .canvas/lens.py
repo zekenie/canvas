@@ -112,11 +112,12 @@ HOLDING = "PropertyOptIns"
 # Rule "things-where-they-are-declared": a thing's note is in a frame, THINGS_FRAME, on the board that holds the note of the
 # file it is declared in: a plugin's type, a point's type, a kind's props, a property's type; the core, which is no type, is
 # where its registry is (CORE_AT). A relationship to a thing on another board is a pill there, as a use of its file is. The
-# types, File's among them since round 5, are a frame at the bottom of the root (TYPES_FRAME: the module Types has the title
-# "Types"). Why: a module's board shows what the module adds to the registry, and the 210 things and their 400 arrows on one
+# types, File's among them since round 5, are a frame at the bottom of the root (TYPES_FRAME, titled "Code types": the
+# module Types is called "Types"). Why: a module's board shows what the module adds to the registry, and the 210 things and
+# their 400 arrows on one
 # board of their own wouldn't read (round 4's plan).
 THINGS_FRAME = "Plugin system"
-TYPES_FRAME = "Code types"
+TYPES_FRAME = "frame:Code types"
 CORE_AT = "Sources/Canvas/Plugins/Registry.swift"
 
 # The longest a thing's note says of its doc comment, in characters: its first sentence, cut at a word past this.
@@ -696,145 +697,141 @@ class System:
             facts.update({"type": found["name"], "path": own["path"], "line": own["line"], "doc": doc})
 
 
-# ---- the digest ---------------------------------------------------------------------------------------------------------------
+# ---- the document --------------------------------------------------------------------------------------------------------------
 
 def digest(scan, repo):
     layer = {m: scan.modules[m].get('layer') for m in scan.production}
     bands = [(band_title(rung), [m for m in scan.production if layer[m] == rung]) for rung in RUNGS]
     bands = [band for band in bands if band[1]]
-    d = default.build(scan, repo, bands=bands)       # unfinished: the ids finish() gives, below, say where the cards ended up
-    nodes = d.nodes
+    d = default.build(scan, repo, bands=bands)       # unfinished: its nodes are moved and typed below
 
-    # each rung's band: the frame on the root whose rank is the band's place among them (the default lens's), and the
-    # module cards in it, by module (a card's source is its module's folder)
-    band = {}
-    for rank, (title, _) in enumerate(bands):
-        rung = next(r for r in RUNGS if band_title(r) == title)
-        band[rung] = next((n for n in nodes if n.get('kind') == 'frame' and 'in' not in n and n.get('rank') == rank), None)
-    module_at = {scan.modules[m].get('path'): m for m in scan.production}
-    card = {module_at[n['source']]: n for n in nodes if n.get('kind') == 'subboard' and n.get('source') in module_at}
-
-    def frames(into, wanted):
-        """New frames in the frame `into`, [(what, title)] in order, placed after it in the node list."""
-        made = [{'title': title, 'kind': 'frame', 'in': into} for _, title in wanted]
-        at = next(i for i, n in enumerate(nodes) if n is into) + 1
-        nodes[at:at] = made
-        return made
+    # each rung's band: the frame on the root the default lens keyed `band:<title>`, and the module cards in it (`module:<name>`)
+    band = {rung: d.get(f"band:{band_title(rung)}") for rung in RUNGS}
+    card = {m: d.get(f"module:{m}") for m in scan.production}
 
     # platform-in-groups
     if band.get(PLATFORM):
         into = band[PLATFORM]
         platform = [m for m in scan.production if layer[m] == PLATFORM and m in card]
         group_of = headings(repo.read(PACKAGE))
-        wanted = [(h, d.claim(f"the group {h}", t, f"{t} ({into['title']})", within=into))
-                  for h, t in PLATFORM_GROUPS if any(group_of.get(m) == h for m in platform)]
-        frame = dict(zip([h for h, _ in wanted], frames(into, wanted)))
+        frame = {h: d.node(f"group:{title}", "frame", {"title": title}, in_=into)
+                 for h, title in PLATFORM_GROUPS if any(group_of.get(m) == h for m in platform)}
         for m in platform:
             if m in group_of:
-                card[m]['in'] = frame[group_of[m]]
+                card[m]['in'] = frame[group_of[m]]['key']
             else:
-                d.warn(f"{m} is under no heading of {PACKAGE} that names a group: it stays loose in {into['title']}")
+                d.warn(f"{m} is under no heading of {PACKAGE} that names a group: it stays loose in {into['props']['title']}")
 
     # core-in-rows
-    private = private_modules(repo.read(PACKAGE))
+    private = {f"module:{m}" for m in private_modules(repo.read(PACKAGE))}
     for rung in IN_ROWS:
         if band.get(rung):
-            for node in nodes:
-                if node.get('in') is band[rung]:
-                    node['rank'] = 1 if module_at.get(node.get('source')) in private else 0
+            for node in d.nodes:
+                if node.get('in') == band[rung]['key']:
+                    node.setdefault('layout', {})['rank'] = 1 if node['key'] in private else 0
 
-    # the types first, in a frame below the bands: `is` names a type by its title, so each is unique among the types. Without
-    # a registry report there is no plugin system to draw, and File is the one type.
+    # the types first, in a frame below the bands. Without a registry report there is no plugin system to draw, and File is
+    # the one type.
     system = System(scan, repo, d.warn)
-    below = 1 + max(n.get('rank', -1) for n in nodes if n.get('kind') == 'frame' and 'in' not in n)   # under every band, an "Other modules" too
-    types = d.frame(d.claim("the frame of the types", TYPES_FRAME), rank=below)
+    below = 1 + max(n.get('layout', {}).get('rank', -1) for n in d.nodes if n['kind'] == 'frame' and 'in' not in n)   # under every band, an "Other modules" too
+    types = d.node(TYPES_FRAME, "frame", {"title": "Code types"}, layout={"rank": below})
     made = list(TYPES) + list(RELATIONSHIPS) if system.report else ["File"]
-    type_title = {t: d.claim(f"the type {t}", t, within=types, type=True) for t in made}
-    type_note = {}
     for t in made:
         words, color, properties = TYPES.get(t) or RELATIONSHIPS[t]
-        type_note[t] = d.note(type_title[t], types, words, schema=schema(color, properties), **({"relationship": True} if t in RELATIONSHIPS else {}))
+        d.node(type_key(t), "sticky-note", {"title": t, "text": words, "schema": schema(color, properties), **({"relationship": True} if t in RELATIONSHIPS else {})}, in_=types)
     for a, b, row, rule in ENDS:
-        if a in type_note and b in type_note:
-            d.edge(type_note[a], type_note[b], text=row, **({"endRule": rule} if rule else {}))
+        if a in made and b in made:
+            d.edge(type_key(a), type_key(b), text=row, **({"endRule": rule} if rule else {}))
 
-    # files-are-typed: a file's note has its path as its source; a folder drawn as one note has the folder's, which is no file's
-    by_path = {f["path"]: f for f in scan.files.values()}
-    for node in nodes:
-        source = node.get('source')
-        f = by_path.get(source) if node.get('kind') == 'sticky-note' and isinstance(source, str) else None
-        if f is not None:
-            node['text'] = as_text(file_text(f, scan.language, length=False)) or None
-            node['is'] = type_title["File"]
-            node['fieldValues'] = {"path": f["path"], "lines": f["lines"]}
+    # files-are-typed: a file's note is keyed `file:<path>`; a folder drawn as one note has another key, and stays plain
+    for f in scan.files.values():
+        note = d.get(f"file:{f['path']}")
+        if note is not None:
+            props = note['props']
+            text = as_text(file_text(f, scan.language, length=False))
+            if text:
+                props['text'] = text
+            else:
+                props.pop('text', None)
+            props['is'] = [type_key("File")]
+            props['fieldValues'] = {"path": f["path"], "lines": f["lines"]}
 
     if system.report:
-        plugin_system(d, system, type_title)
+        plugin_system(d, system)
     return d.finish()
 
 
-def plugin_system(d, system, title):
+def type_key(title):
+    return f"type:{title}"
+
+
+def plugin_system(d, system):
     """The plugin system in types: each thing's note in a frame of the board its file is on, with the arrows of what declares,
-    fills and holds what (plugin-system-in-types), and of the file each is declared in (things-in-their-files). `title` is the
-    types' titles."""
+    fills and holds what (plugin-system-in-types), and of the file each is declared in (things-in-their-files)."""
 
-    # the board each thing's file is on: the card its file's note is in, however deep in frames
-    note_at = {n['source']: n for n in d.nodes if n.get('kind') == 'sticky-note' and isinstance(n.get('source'), str)}
-
-    def board(path):
-        node, at = note_at.get(path), path
-        while node is None and "/" in at:     # a file of a folder drawn as one note: that note's board
+    def file_node(path):
+        """The note that stands for a file: its own, else the note of the folder drawn as one note that holds it."""
+        at = path
+        node = d.get(f"file:{at}")
+        while node is None and "/" in at:
             at = at.rpartition("/")[0]
-            node = note_at.get(at)
-        while node is not None and node.get('kind') != 'subboard':
-            node = node.get('in') if isinstance(node.get('in'), dict) else None
+            node = d.get(f"files:{at}")
         return node
 
-    frame_on = {}                         # a board's card (by id): its frame of things
+    def board(path):
+        """The card of the board a file's note is on, however deep in frames."""
+        node = file_node(path)
+        while node is not None and node['kind'] != 'subboard':
+            node = d.get(node['in']) if 'in' in node else None
+        return node
+
+    frame_on = {}                         # a board's card (by key): its frame of things
 
     def frame(card):
-        if id(card) not in frame_on:
-            frame_on[id(card)] = d.frame(d.claim(f"the plugin system of {card['title']}", THINGS_FRAME,
-                                                 f"{THINGS_FRAME} ({card['title']})", within=card), card)
-        return frame_on[id(card)]
+        if card['key'] not in frame_on:
+            frame_on[card['key']] = d.node(f"frame:{THINGS_FRAME}:{card['key']}", "frame", {"title": THINGS_FRAME}, in_=card)
+        return frame_on[card['key']]
 
-    def thing(what, wanted, path, line, doc, kind, values):
+    def thing(key, title, path, doc, kind, values):
         card = board(path)
         if card is None:
-            d.warn(f"{what} is declared in {path}, which no board of the drawing holds: left out")
+            d.warn(f"{title} is declared in {path}, which no board of the drawing holds: left out")
             return None
-        holder = frame(card)
-        return d.note(d.claim(what, wanted, f"{wanted} ({kind})", within=holder), holder, as_text(doc) if doc else None,
-                      source={"path": path, "line": line},
-                      **{"is": title[kind], "fieldValues": {k: v for k, v in values.items() if v not in (None, "", [])}})
+        props = {"title": title, "is": [type_key(kind)], "fieldValues": {k: v for k, v in values.items() if v not in (None, "", [])}}
+        if doc:
+            props["text"] = as_text(doc)
+        node = d.node(key, "sticky-note", props, in_=frame(card))
+        declared_in[key] = path
+        return node
 
+    declared_in = {}                      # a thing's key: the path of the file it is declared in
     note = {}                             # (kind of thing, key): its note
     for pid, p in system.plugins.items():
-        note[("plugin", pid)] = thing(f"the plugin {p['title']}", p["title"], p["path"], p["line"], p["doc"], "Plugin", {"id": pid})
+        note[("plugin", pid)] = thing(f"plugin:{pid}", p["title"], p["path"], p["doc"], "Plugin", {"id": pid})
     for name, p in sorted(system.points.items()):
-        note[("point", name)] = thing(f"the extension point {name}", name, p["path"], p["line"], p["doc"], "Extension point",
+        note[("point", name)] = thing(f"extension-point:{name}", name, p["path"], p["doc"], "Extension point",
                                       {"keyed": p["keyed"], "scope": p["scope"]})
     for kind, k in sorted(system.kinds.items()):
-        note[("kind", kind)] = thing(f"the kind {kind}", kind, k["path"], k["line"], k["doc"], "Kind",
+        note[("kind", kind)] = thing(f"kind:{kind}", kind, k["path"], k["doc"], "Kind",
                                      {"props": k["props"], "definition": k["definition"], "version": k["version"] or None,
                                       "capabilities": k["capabilities"]})
     for key, p in sorted(system.properties.items()):
-        note[("property", key)] = thing(f"the property {key}", key, p["path"], p["line"], p["doc"], "Property", {"type": p["type"]})
+        note[("property", key)] = thing(f"property:{key}", key, p["path"], p["doc"], "Property", {"type": p["type"]})
 
     def drawn(*keys):
         return all(note.get(k) is not None for k in keys)
 
     for pid, what, key in system.declares:
         if drawn(("plugin", pid), (what, key)):
-            d.edge(note[("plugin", pid)], note[(what, key)], **{"is": title["declares"]})
+            d.edge(note[("plugin", pid)], note[(what, key)], {"is": [type_key("declares")]})
     for (pid, point), lines in system.fills.items():
         if drawn(("plugin", pid), ("point", point)):
-            d.edge(note[("plugin", pid)], note[("point", point)], **{"is": title["fills"], "fieldValues": {"adds": lines}})
+            d.edge(note[("plugin", pid)], note[("point", point)], {"is": [type_key("fills")], "fieldValues": {"adds": lines}})
     for kind, key, pid in system.holds:
         if drawn(("kind", kind), ("property", key)):
-            d.edge(note[("kind", kind)], note[("property", key)], **{"is": title["holds"], "fieldValues": {"by": pid}})
+            d.edge(note[("kind", kind)], note[("property", key)], {"is": [type_key("holds")], "fieldValues": {"by": pid}})
     # things-in-their-files: each thing to its file's note, when that note is a File (not a folder drawn as one note)
-    for key, n in note.items():
-        file_note = note_at.get(n["source"]["path"]) if n is not None else None
-        if file_note is not None and file_note.get('is') == title["File"]:
-            d.edge(n, file_note, **{"is": title["declared in"]})
+    for n in note.values():
+        file_note = d.get(f"file:{declared_in[n['key']]}") if n is not None else None
+        if file_note is not None and type_key("File") in file_note['props'].get('is', []):
+            d.edge(n, file_note, {"is": [type_key("declared in")]})

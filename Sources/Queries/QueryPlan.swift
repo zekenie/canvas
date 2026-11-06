@@ -135,6 +135,9 @@ indirect enum PlanOp: Sendable {
     case dangling(PlanEdgeTypes)
     /// A plugin's pseudo-class (`:selected`), by its word: its behavior is the vocabulary's.
     case pseudo(word: String)
+    /// A plugin's pseudo-class that takes one text (`:drawn-by("Plans")`): `key` is what the capture and the evaluation
+    /// keep it by, a word used with another text being another.
+    case textPseudo(key: String, word: String, text: String)
     /// Every node matches: a compound's head and filters, cheapest first (`PlanCost`).
     case and([PlanNode])
 }
@@ -360,6 +363,7 @@ extension QueryPlan: CustomStringConvertible {
                 list(anchor, depth + 1)
             case .dangling(let types): lines.append(indent + "dangling \(types.planDescription)")
             case .pseudo(let word): lines.append(indent + ":" + word)
+            case .textPseudo(_, let word, let text): lines.append(indent + ":" + word + "(" + quoted(text) + ")")
             case .and(let nodes):
                 lines.append(indent + "all of")
                 for inner in nodes { node(inner, depth + 1) }

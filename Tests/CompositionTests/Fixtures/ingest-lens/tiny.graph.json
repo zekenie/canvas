@@ -1,0 +1,113 @@
+{
+ "drawing": "repo",
+ "nodes": [
+  {
+   "key": "band:Level 2",
+   "kind": "frame",
+   "props": {
+    "title": "Level 2"
+   },
+   "layout": {
+    "rank": 0
+   }
+  },
+  {
+   "key": "module:App",
+   "in": "band:Level 2",
+   "kind": "subboard",
+   "props": {
+    "title": "App",
+    "description": "App: level 2\nThe app.\n\n2 files, 60 lines"
+   }
+  },
+  {
+   "key": "band:Level 1",
+   "kind": "frame",
+   "props": {
+    "title": "Level 1"
+   },
+   "layout": {
+    "rank": 1
+   }
+  },
+  {
+   "key": "module:Core",
+   "in": "band:Level 1",
+   "kind": "subboard",
+   "props": {
+    "title": "Core",
+    "description": "Core: level 1\nWhat the app keeps.\n\n2 files, 90 lines"
+   }
+  },
+  {
+   "key": "file:Sources/App/Main.swift",
+   "in": "module:App",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Main.swift",
+    "text": "Starts the app.\n\n20 lines"
+   }
+  },
+  {
+   "key": "file:Sources/App/Screen.swift",
+   "in": "module:App",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Screen.swift",
+    "text": "Shows the store.\n\ninternal Screen\n40 lines"
+   }
+  },
+  {
+   "key": "file:Sources/Core/Model.swift",
+   "in": "module:Core",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Model.swift",
+    "text": "One model.\n\npublic Model\n40 lines"
+   }
+  },
+  {
+   "key": "file:Sources/Core/Store.swift",
+   "in": "module:Core",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Store.swift",
+    "text": "Holds the models.\n\npublic Store\n50 lines"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "module:App",
+   "to": "module:Core"
+  },
+  {
+   "from": "file:Sources/App/Main.swift",
+   "to": "file:Sources/App/Screen.swift",
+   "layout": {
+    "weight": 1
+   }
+  },
+  {
+   "from": "file:Sources/App/Main.swift",
+   "to": "file:Sources/Core/Store.swift",
+   "layout": {
+    "weight": 1
+   }
+  },
+  {
+   "from": "file:Sources/App/Screen.swift",
+   "to": "file:Sources/Core/Store.swift",
+   "layout": {
+    "weight": 1
+   }
+  },
+  {
+   "from": "file:Sources/Core/Store.swift",
+   "to": "file:Sources/Core/Model.swift",
+   "layout": {
+    "weight": 1
+   }
+  }
+ ]
+}

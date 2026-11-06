@@ -639,14 +639,22 @@ struct Parser {
     /// `:contains`'s argument: one string, not empty.
     func text(of range: Range<Int>, word: Word, span whole: QuerySpan) throws(QueryError) -> String {
         var reader = Lexer(lexer.text(range), at: lexer.base + range.lowerBound)
-        var strings: [String] = []
+        var strings: [String] = [], trailingComma = false
         _ = try reader.skipSpace()
         while reader.atQuote {
             strings.append(try reader.string())
             _ = try reader.skipSpace()
-            guard reader.current == ",", reader.peek(1) != nil else { break }
+            // A comma goes on to another string; with none after it (`"a",` or `"a", `), it is left where it is, so the argument is
+            // refused as one that isn't one text, never read as the strings before it.
+            guard reader.current == "," else { break }
+            let comma = reader.position
             reader.position += 1
             _ = try reader.skipSpace()
+            guard reader.atQuote else {
+                trailingComma = reader.atEnd
+                reader.position = comma
+                break
+            }
         }
         let argument = range.isEmpty ? whole : span(range)
         let name = ":" + word.rawValue
@@ -656,9 +664,12 @@ struct Parser {
             }
             return strings[0]
         }
-        if reader.atEnd, strings.count > 1 {
+        if reader.atEnd || trailingComma, strings.count > 1 {
             throw QueryError(.badArgument, "\(name) takes one text.",
                              hint: ":is(\(strings.map { "\(name)(\(Printer.quoted($0)))" }.joined(separator: ", ")))", span: argument)
+        }
+        if trailingComma, strings.count == 1 {
+            throw QueryError(.badArgument, "\(name) takes \(word.takes).", hint: "\(name)(\(Printer.quoted(strings[0])))", span: argument)
         }
         let words = lexer.text(range).trimmingWhitespace.filter { !Lexer.quotes.contains($0) }
         throw QueryError(.badArgument, "\(name) takes \(word.takes).", hint: words.isEmpty ? word.example : "\(name)(\(Printer.quoted(words)))",

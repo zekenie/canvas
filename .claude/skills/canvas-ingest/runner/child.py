@@ -3,8 +3,8 @@
     child.py RUN SCAN REPO COMMIT LENS OUT
 
 RUN is 1 or 2: the two runs see different hash seeds (the environment's) and a clock that reads a different instant in each.
-LENS is a lens file (`.canvas/lens.py`), or "-" for the default lens. The digest is written to OUT as JSON (indented by one
-space, in the lens's own order), the warnings the lens gathered to OUT.warnings. A lens that raises shows its traceback."""
+LENS is a lens file (`.canvas/lens.py`), or "-" for the default lens. The graph document is written to OUT as JSON (indented
+by one space, in the lens's own order), the warnings the lens gathered to OUT.warnings. A lens that raises shows its traceback."""
 import json, os, sys, time
 
 RUN, SCAN, REPO, COMMIT, LENS, OUT = sys.argv[1:7]
@@ -107,22 +107,39 @@ else:
     result = module.digest(scan, repo)
 repo.close()
 
-# the digest's basic shape: a title, and lists of nodes and edges
+# the document's basic shape: lists of nodes and edges, every node with a key of its own, every `in` and end a node's key. What
+# the nodes are, and what their attributes may hold, is the app's to say (digest check asks it); a lens writes what it wants.
 if not isinstance(result, dict):
-    fail(f"digest(scan, repo) returned {type(result).__name__}, not a dict (the digest: {{\"title\": ..., \"nodes\": [...], \"edges\": [...]}})")
-digest = dict(result)
-warnings = digest.pop('warnings', [])
-if not isinstance(digest.get('title'), str) or not digest['title'].strip():
-    fail("the digest has no \"title\": a string, what it is of")
+    fail(f"digest(scan, repo) returned {type(result).__name__}, not a dict (the document: {{\"nodes\": [...], \"edges\": [...]}}; lenskit.Graph builds one)")
+doc = dict(result)
+warnings = doc.pop('warnings', [])
 for key in ('nodes', 'edges'):
-    if not isinstance(digest.get(key), list):
-        fail(f"the digest's \"{key}\" is not a list")
+    if not isinstance(doc.get(key), list):
+        fail(f"the document's \"{key}\" is not a list")
+if doc.get('drawing') is not None and (not isinstance(doc['drawing'], str) or not doc['drawing'].strip()):
+    fail("the document's \"drawing\" is a non-empty string, the drawing's name")
+keys = {}
+for number, n in enumerate(doc['nodes']):
+    if not isinstance(n, dict) or not isinstance(n.get('key'), str) or not n['key']:
+        fail(f"nodes[{number}] has no \"key\": a non-empty string, the same from commit to commit")
+    if n['key'] in keys:
+        fail(f"nodes[{keys[n['key']]}] and nodes[{number}] have the key {n['key']!r}: a key names one node")
+    keys[n['key']] = number
+for number, n in enumerate(doc['nodes']):
+    if n.get('in') is not None and n['in'] not in keys:
+        fail(f"the `in` of {n['key']!r} (nodes[{number}]) names {n['in']!r}, which no node has")
+for number, e in enumerate(doc['edges']):
+    if not isinstance(e, dict):
+        fail(f"edges[{number}] is not an object")
+    for end in ('from', 'to'):
+        if e.get(end) not in keys:
+            fail(f"the `{end}` of edges[{number}] names {e.get(end)!r}, which no node has")
 if not isinstance(warnings, list) or not all(isinstance(w, str) for w in warnings):
-    fail("the digest's \"warnings\" is not a list of strings")
+    fail("the document's \"warnings\" is not a list of strings")
 try:
-    text = json.dumps(digest, indent=1) + '\n'
+    text = json.dumps(doc, indent=1) + '\n'
 except TypeError as e:
-    fail(f"the digest can't be written as JSON ({e}); a set becomes a sorted list")
+    fail(f"the document can't be written as JSON ({e}); a set becomes a sorted list")
 with open(OUT, 'w', encoding='utf-8') as f:
     f.write(text)
 with open(OUT + '.warnings', 'w', encoding='utf-8') as f:

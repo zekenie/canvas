@@ -30,6 +30,15 @@ public func example(_ path: String = "", in name: String = "orders") -> URL {
 
 public func json(_ url: URL) throws -> JSON { try JSON(text: String(contentsOf: url, encoding: .utf8)) }
 
+/// The app's kinds as the canvas-digest tool reads them (`canvas kinds`, through the tool's `extract kinds`), which the tool's own tests read the
+/// kinds by, and so does a test that runs the tool with no app. CompositionTests' DigestTests hold it to what the app answers.
+public func digestKinds() -> URL { digestSkill("tool/test/fixtures/kinds.json") }
+
+/// The canvas-digest tool's `check` of the digest at `digest`, under jsc, over the app's kinds as the tool reads them (`digestKinds()`).
+@MainActor public func digestCheck(_ digest: URL, timeout: TimeInterval = 240) throws -> ProcessOutput {
+    try run(URL(fileURLWithPath: jsc), [digestSkill("tool/main.js").path, "--", "check", digest.path, "--kinds", digestKinds().path], timeout: timeout)
+}
+
 /// A new folder in this user's temporary folder, named for the test that makes it; the test removes it.
 public func scratchFolder(_ name: String) throws -> URL {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent("SkillTests-\(UUID().uuidString)-\(name)")
@@ -104,26 +113,13 @@ public func runFolders(in cacheFolder: URL) -> [URL] {
     return names.map { cacheFolder.appendingPathComponent("runs/\($0)") }
 }
 
-/// The newest run's folder: its `digest.json`, and the driver's `out/`.
+/// The newest run's folder: its `graph.json`, and the driver's `out/`.
 @MainActor public func lastRun(in cacheFolder: URL) throws -> URL { try require(runFolders(in: cacheFolder).last, "no run was kept in \(cacheFolder.path)") }
 
-/// The lens runner as `ingest` runs it (`runner/run.py`): the repository's lens, else the default lens, run twice in isolation.
-@MainActor public func lensRunner(_ repo: URL, scan: URL, digest: URL, lens: URL? = nil, timeout: TimeInterval = 280) throws -> ProcessOutput {
-    try run(URL(fileURLWithPath: python), [ingestSkill("runner/run.py").path, repo.path, scan.path, digest.path] + (lens.map { ["--lens", $0.path] } ?? []), timeout: timeout)
-}
-
-/// How the digest at `digest` names its nodes, read as canvas-digest reads them (`namingScript`): the problems it finds, none when every
-/// title is unique in its container (spaces folded, case aside), a node has an `id` exactly where another node has its title, ids are
-/// unique, and each `in`, `from` and `to` names its node by its id where it has one, else by its title. Given `old`, a digest from
-/// when titles were given out once in the whole digest, also the ways it differs from that one which the rules of titles don't
-/// explain (the same nodes in the same order, every field but the title, the id and the container the same, the same edges in the
-/// same order, each reference naming the node it named), and how often each rule changed a title: "a file's name in place of a longer
-/// end of its path", "a (…) fallback gone", "a number gone"; any other change of a title is a problem.
-@MainActor public func namingReport(_ digest: URL, against old: URL? = nil) throws -> (problems: [String], rules: [String: Int]) {
-    let done = try run(URL(fileURLWithPath: python), ["-c", namingScript, digest.path] + (old.map { [$0.path] } ?? []), timeout: 120)
-    expectEqual(done.status, 0, done.error)
-    let report = try JSON(text: done.output)
-    return ((report["problems"]?.arrayValue ?? []).compactMap(\.stringValue), (report["rules"]?.objectValue ?? [:]).compactMapValues(\.intValue))
+/// The lens runner as `ingest` runs it (`runner/run.py`): the repository's lens, else the default lens, run twice in isolation, the graph
+/// document written to `graph`. The drawing is named `repo` unless the lens or `extra` (`--drawing NAME`, `--mess`, ...) names it.
+@MainActor public func lensRunner(_ repo: URL, scan: URL, graph: URL, lens: URL? = nil, extra: [String] = [], timeout: TimeInterval = 280) throws -> ProcessOutput {
+    try run(URL(fileURLWithPath: python), [ingestSkill("runner/run.py").path, repo.path, scan.path, graph.path, "--drawing-default", "repo"] + (lens.map { ["--lens", $0.path] } ?? []) + extra, timeout: timeout)
 }
 
 /// Two modules, App over Core, as a scanner writes the scan: App's Main.swift and Screen.swift use Core's Store.swift.
@@ -173,118 +169,3 @@ public func awkwardModel(long: String, big: Bool) -> String {
     return #"{"language": "typescript", "name": "Awkward @[names]", "modules": [\#(modules.joined(separator: ",\n"))], "files": [\#(files.joined(separator: ",\n"))], "uses": [\#(uses.joined(separator: ", "))]}"#
         .replacingOccurrences(of: "SURROGATE", with: #"\udcff"#)
 }
-
-/// A Python script that reads a digest as canvas-digest does, and prints, as JSON, the problems with how it names its nodes (see
-/// `namingReport`) and, given the digest an older default lens made too, how it differs from that one by the rules of titles.
-private let namingScript = #"""
-import json, re, sys
-
-RULES = ("a file's name in place of a longer end of its path", "a (…) fallback gone", "a number gone")
-
-
-def spaced(title):
-    return ' '.join(title.split())
-
-
-problems, used = [], {}
-new = json.load(open(sys.argv[1], encoding='utf-8'))
-nodes, edges = new['nodes'], new['edges']
-
-# what a reference names: a node's id, else the one node that has that title (None: no node, or several)
-ids, titles = {}, {}
-for position, node in enumerate(nodes):
-    if 'id' in node:
-        ids.setdefault(node['id'], []).append(position)
-    titles.setdefault(spaced(node['title']), []).append(position)
-
-
-def at(reference, by_id=ids, by_title=titles):
-    if len(by_id.get(reference, [])) == 1:
-        return by_id[reference][0]
-    return by_title[spaced(reference)][0] if len(by_title.get(spaced(reference), [])) == 1 else None
-
-
-# a title is unique in its container (spaces folded, case aside); a node has an id exactly when another node has its title, ids are
-# unique, and a reference names a node by its id where it has one, else by its title
-held = {}
-for position, node in enumerate(nodes):
-    container = at(node['in']) if 'in' in node else -1
-    if 'in' in node and container is None:
-        problems.append(f"node {position} ({node['title']!r}) is in {node['in']!r}, which names no one node")
-    key = (container, spaced(node['title']).lower())
-    if key in held:
-        problems.append(f"nodes {held[key]} and {position} are both called {node['title']!r} in one container")
-    held[key] = position
-    if ('id' in node) != (len(titles[spaced(node['title'])]) > 1):
-        problems.append(f"node {position} ({node['title']!r}) " + ("has an id, though no other node has its title" if 'id' in node else "lacks an id, though another node has its title"))
-if any(len(positions) > 1 for positions in ids.values()):
-    problems.append("two nodes have one id")
-
-
-def named(position):
-    return nodes[position].get('id', nodes[position]['title'])
-
-
-for position, node in enumerate(nodes):
-    if 'in' in node and at(node['in']) is not None and node['in'] != named(at(node['in'])):
-        problems.append(f"node {position}: its in is {node['in']!r}, which is not how its container is named ({named(at(node['in']))!r})")
-for position, edge in enumerate(edges):
-    for end in ('from', 'to'):
-        target = at(edge[end])
-        if target is None:
-            problems.append(f"edge {position}: its {end} {edge[end]!r} names no one node")
-        elif edge[end] != named(target):
-            problems.append(f"edge {position}: its {end} is {edge[end]!r}, which is not how its node is named ({named(target)!r})")
-
-if len(sys.argv) > 2:
-    old = json.load(open(sys.argv[2], encoding='utf-8'))
-    old_nodes, old_edges = old['nodes'], old['edges']
-    for key in sorted(set(old) | set(new)):
-        if key not in ('nodes', 'edges') and old.get(key) != new.get(key):
-            problems.append(f"the digest's {key} differs")
-    if (len(old_nodes), len(old_edges)) != (len(nodes), len(edges)):
-        problems.append(f"{len(old_nodes)} nodes and {len(old_edges)} edges became {len(nodes)} and {len(edges)}")
-        print(json.dumps({'problems': problems, 'rules': used}))
-        sys.exit(0)
-    old_titles = {}
-    for position, node in enumerate(old_nodes):
-        old_titles.setdefault(spaced(node['title']), []).append(position)
-    old_at = lambda reference: at(reference, {}, old_titles)
-
-    # the rules by which the title `was` may have become `now`, each at most once, in this order; None if no rules do
-    def rules(was, now, source):
-        steps = [(was, [])]
-        number = re.fullmatch(r'(.*) \(\d+\)', was)
-        if number:
-            steps.append((number.group(1), [RULES[2]]))
-        for title, by in list(steps):
-            fallback = re.fullmatch(r'(.*?) \([^()]*\)', title)
-            if fallback and not re.fullmatch(r'.* \(\d+\)', title):
-                steps.append((fallback.group(1), by + [RULES[1]]))
-        name = source.rsplit('/', 1)[-1] if source else None
-        for title, by in list(steps):
-            if name and (title == name or title.endswith('/' + name)):
-                steps.append((name, by + [RULES[0]]))
-        return next((by for title, by in steps if title == now), None)
-
-    for position, (was, now) in enumerate(zip(old_nodes, nodes)):
-        rest_was = {k: v for k, v in was.items() if k not in ('title', 'in', 'source')}
-        rest_now = {k: v for k, v in now.items() if k not in ('title', 'in', 'id', 'source')}
-        if json.dumps(rest_was) != json.dumps(rest_now):
-            problems.append(f"node {position} ({was['title']!r}): a field but its title, id and container differs: {json.dumps(rest_was)[:160]} became {json.dumps(rest_now)[:160]}")
-        if ('in' in was) != ('in' in now) or ('in' in was and old_at(was['in']) != at(now['in'])):
-            problems.append(f"node {position} ({was['title']!r}) is in another node than before")
-        if was['title'] != now['title']:
-            by = rules(was['title'], now['title'], now.get('source'))
-            if by is None:
-                problems.append(f"node {position}: the title {was['title']!r} became {now['title']!r}, which no rule explains")
-            for rule in by or []:
-                used[rule] = used.get(rule, 0) + 1
-    for position, (was, now) in enumerate(zip(old_edges, edges)):
-        if json.dumps({k: v for k, v in was.items() if k not in ('from', 'to')}) != json.dumps({k: v for k, v in now.items() if k not in ('from', 'to')}):
-            problems.append(f"edge {position}: a field but its ends differs")
-        for end in ('from', 'to'):
-            if old_at(was[end]) != at(now[end]):
-                problems.append(f"edge {position} ({was['from']!r} to {was['to']!r}): its {end} names another node than before")
-print(json.dumps({'problems': problems, 'rules': used}))
-"""#

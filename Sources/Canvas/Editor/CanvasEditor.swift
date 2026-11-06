@@ -303,6 +303,9 @@ public final class CanvasEditor {
     @ObservationIgnored private(set) var isTransacting = false
     /// Undo or redo is putting a step's records back: nothing may transact.
     @ObservationIgnored var isApplying = false
+    /// What a rehearsal was made from (`rehearsal()`): the editor and its file as it was then, which `adopt` holds the
+    /// editor's file to. Nil for an editor that isn't a rehearsal.
+    @ObservationIgnored var rehearsed: (of: ObjectIdentifier, file: CanvasFile)?
     /// A file is being put in place (`replaceFile`): what commits meanwhile, on the file it replaces,
     /// isn't an undo step, so it doesn't edit the file.
     @ObservationIgnored private var isReplacingFile = false

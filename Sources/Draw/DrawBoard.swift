@@ -36,20 +36,40 @@ public struct FileNames {
     typealias Place = (id: ShapeID, board: BoardID)
 
     /// Each name's shapes, with their boards, the board shown's first.
-    private(set) var places: [String: [Place]] = [:]
+    var places: [String: [Place]] { tables.places }
     /// Each name once, in the order `places` lists them: what "did you mean" picks from.
-    private(set) var titles: [String] = []
+    var titles: [String] { tables.titles }
     /// Each board's named shapes, in document order: what `BoardNames` is made from.
-    private var byBoard: [BoardID: [(name: String, id: ShapeID)]] = [:]
+    private var byBoard: [BoardID: [(name: String, id: ShapeID)]] { tables.byBoard }
     let editor: CanvasEditor
     let naming: DrawNaming
 
+    /// The names, read from every board the app can show the first time something asks for one (a title, a path, a list of
+    /// what is called alike) and shared by every copy: a run that names shapes by their ids alone (a program's, `canvas apply`'s,
+    /// a run a board) reads none, where reading them is a pass over the whole file.
+    private let read = Read()
+
+    private final class Read {
+        var tables: Tables?
+    }
+
+    private struct Tables {
+        var places: [String: [Place]] = [:]
+        var titles: [String] = []
+        var byBoard: [BoardID: [(name: String, id: ShapeID)]] = [:]
+    }
+
     public init(_ editor: CanvasEditor, naming: DrawNaming) {
+        self.editor = editor
+        self.naming = naming
+    }
+
+    private var tables: Tables {
+        if let tables = read.tables { return tables }
         #if DEBUG
         DrawPlugin.fileNamesRead += 1
         #endif
-        self.editor = editor
-        self.naming = naming
+        var tables = Tables()
         let file = editor.file, registry = editor.registry
         // The board shown, then the rest in file order: each owner's board right after the board
         // it's on, so a message lists boards alike every time.
@@ -64,12 +84,14 @@ public struct FileNames {
             var named: [(name: String, id: ShapeID)] = []
             for record in file[board].shapes where !record.isOpaque {
                 guard let name = naming.name(record, registry) else { continue }
-                if places[name] == nil { titles.append(name) }
-                places[name, default: []].append((record.id, board))
+                if tables.places[name] == nil { tables.titles.append(name) }
+                tables.places[name, default: []].append((record.id, board))
                 named.append((name, record.id))
             }
-            byBoard[board] = named
+            tables.byBoard[board] = named
         }
+        read.tables = tables
+        return tables
     }
 
     /// A board, as a message names it: by the shape that holds it (without names, by its kind).
@@ -499,8 +521,9 @@ extension Drawing {
     /// The board a script draws on, or why it can't draw on one: the board each statement's titles
     /// put it on agree, else the board shown. With it, the file's names, when the script names
     /// shapes.
-    static func board(for script: Script, in editor: CanvasEditor) throws(DrawError) -> (BoardID, FileNames?) {
-        let shown = editor.board
+    static func board(for script: Script, in editor: CanvasEditor, pinned: BoardID? = nil) throws(DrawError) -> (BoardID, FileNames?) {
+        // A program's run says which board it draws on when nothing it names does (`DrawOptions.board`).
+        let shown = pinned ?? editor.board
         guard let naming = editor.registry.drawNaming else {
             // `in` names a shape by its title: with nothing to name shapes, it can't be honored.
             let contained = script.statements.filter(\.isContained).map { statement in

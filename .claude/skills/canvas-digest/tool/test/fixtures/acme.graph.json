@@ -1,0 +1,609 @@
+{
+ "drawing": "acme",
+ "layout": {
+  "mess": 0.1
+ },
+ "nodes": [
+  {
+   "key": "Engineering",
+   "kind": "frame",
+   "props": {
+    "title": "Engineering"
+   }
+  },
+  {
+   "key": "Go-to-market",
+   "kind": "frame",
+   "props": {
+    "title": "Go-to-market"
+   }
+  },
+  {
+   "key": "Operations",
+   "kind": "frame",
+   "props": {
+    "title": "Operations"
+   }
+  },
+  {
+   "key": "Projects",
+   "kind": "frame",
+   "props": {
+    "title": "Projects"
+   }
+  },
+  {
+   "key": "CTO",
+   "in": "Engineering",
+   "kind": "sticky-note",
+   "props": {
+    "title": "CTO",
+    "text": "Owns the technical roadmap and the engineering budget. Weekly staff with every team lead."
+   }
+  },
+  {
+   "key": "Platform team",
+   "in": "Engineering",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Platform team",
+    "text": "Runs the build system, the deploy pipeline, the service mesh and the on-call rotation that every other team leans on. Office hours on Tuesdays."
+   }
+  },
+  {
+   "key": "Payments team",
+   "in": "Engineering",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Payments team",
+    "text": "Cards, wallets and the ledger. Owns the checkout API."
+   }
+  },
+  {
+   "key": "Web team",
+   "in": "Engineering",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Web team",
+    "text": "The customer site and the admin console."
+   }
+  },
+  {
+   "key": "Mobile team",
+   "in": "Engineering",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Mobile team",
+    "text": "iOS and Android apps, shared design system."
+   }
+  },
+  {
+   "key": "Search team",
+   "in": "Engineering",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Search team",
+    "text": "Indexing, ranking and the query service."
+   }
+  },
+  {
+   "key": "Data engineering",
+   "in": "Engineering",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Data engineering",
+    "text": "Pipelines into the warehouse, schema reviews, the nightly backfills."
+   }
+  },
+  {
+   "key": "CRO",
+   "in": "Go-to-market",
+   "kind": "sticky-note",
+   "props": {
+    "title": "CRO",
+    "text": "Revenue plan, pricing and the quarterly forecast."
+   }
+  },
+  {
+   "key": "Sales",
+   "in": "Go-to-market",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Sales",
+    "text": "Enterprise and mid-market. Forecast call every Monday."
+   }
+  },
+  {
+   "key": "Marketing",
+   "in": "Go-to-market",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Marketing",
+    "text": "Brand, demand generation and the launch calendar."
+   }
+  },
+  {
+   "key": "Customer success",
+   "in": "Go-to-market",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Customer success",
+    "text": "Onboarding, renewals and the health score."
+   }
+  },
+  {
+   "key": "Partnerships",
+   "in": "Go-to-market",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Partnerships",
+    "text": "Resellers and integration partners."
+   }
+  },
+  {
+   "key": "COO",
+   "in": "Operations",
+   "kind": "sticky-note",
+   "props": {
+    "title": "COO",
+    "text": "Operations, finance, legal and people."
+   }
+  },
+  {
+   "key": "Finance",
+   "in": "Operations",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Finance",
+    "text": "Close, budgets, revenue recognition."
+   }
+  },
+  {
+   "key": "Legal",
+   "in": "Operations",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Legal",
+    "text": "Contracts, privacy, export controls."
+   }
+  },
+  {
+   "key": "People",
+   "in": "Operations",
+   "kind": "sticky-note",
+   "props": {
+    "title": "People",
+    "text": "Hiring, leveling, benefits."
+   }
+  },
+  {
+   "key": "Support",
+   "in": "Operations",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Support",
+    "text": "Tier one and two. Escalates to the owning team through the on-call rotation."
+   }
+  },
+  {
+   "key": "Security review",
+   "in": "Projects",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Security review",
+    "text": "Every launch that touches customer data goes through this review before it ships: threat model, data flow, a pen test where it is warranted, and a sign-off the launch owner attaches to the ticket."
+   }
+  },
+  {
+   "key": "Data warehouse",
+   "in": "Operations",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Data warehouse",
+    "text": "The one place reporting reads from. Nightly loads, a semantic layer, and access reviewed quarterly."
+   }
+  },
+  {
+   "key": "Checkout v2",
+   "in": "Projects",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Checkout v2",
+    "text": "A single-page checkout with saved wallets. Target: the end of the quarter."
+   }
+  },
+  {
+   "key": "Mobile app 3",
+   "in": "Projects",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Mobile app 3",
+    "text": "The rewrite of both apps on the shared design system."
+   }
+  },
+  {
+   "key": "Search relaunch",
+   "in": "Projects",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Search relaunch",
+    "text": "New ranking, new index, and a public changelog."
+   }
+  },
+  {
+   "key": "EU expansion",
+   "in": "Projects",
+   "kind": "sticky-note",
+   "props": {
+    "title": "EU expansion",
+    "text": "Local payment methods, VAT, data residency in Frankfurt."
+   }
+  },
+  {
+   "key": "Billing migration",
+   "in": "Projects",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Billing migration",
+    "text": "Move invoices from the old system to the new ledger."
+   }
+  },
+  {
+   "key": "Partner portal",
+   "in": "Projects",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Partner portal",
+    "text": "Self-serve onboarding for resellers."
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "CTO",
+   "to": "Payments team",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CTO",
+   "to": "Web team",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CTO",
+   "to": "Mobile team",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CTO",
+   "to": "Search team",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CTO",
+   "to": "Data engineering",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CTO",
+   "to": "Platform team",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CRO",
+   "to": "Sales",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CRO",
+   "to": "Marketing",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CRO",
+   "to": "Customer success",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "CRO",
+   "to": "Partnerships",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "COO",
+   "to": "Finance",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "COO",
+   "to": "Legal",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "COO",
+   "to": "People",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "COO",
+   "to": "Support",
+   "props": {
+    "text": "leads"
+   }
+  },
+  {
+   "from": "Payments team",
+   "to": "Checkout v2",
+   "props": {
+    "text": "builds"
+   }
+  },
+  {
+   "from": "Web team",
+   "to": "Checkout v2",
+   "props": {
+    "text": "builds"
+   }
+  },
+  {
+   "from": "Sales",
+   "to": "Checkout v2",
+   "props": {
+    "text": "sells"
+   }
+  },
+  {
+   "from": "Mobile team",
+   "to": "Mobile app 3",
+   "props": {
+    "text": "builds"
+   }
+  },
+  {
+   "from": "Customer success",
+   "to": "Mobile app 3"
+  },
+  {
+   "from": "Search team",
+   "to": "Search relaunch",
+   "props": {
+    "text": "builds"
+   }
+  },
+  {
+   "from": "Marketing",
+   "to": "Search relaunch",
+   "props": {
+    "text": "launches"
+   }
+  },
+  {
+   "from": "Legal",
+   "to": "EU expansion"
+  },
+  {
+   "from": "Finance",
+   "to": "EU expansion"
+  },
+  {
+   "from": "Payments team",
+   "to": "EU expansion"
+  },
+  {
+   "from": "Payments team",
+   "to": "Billing migration",
+   "props": {
+    "text": "builds"
+   }
+  },
+  {
+   "from": "Finance",
+   "to": "Billing migration"
+  },
+  {
+   "from": "Billing migration",
+   "to": "Checkout v2",
+   "layout": {
+    "weight": 2
+   }
+  },
+  {
+   "from": "Partnerships",
+   "to": "Partner portal",
+   "props": {
+    "text": "sponsors"
+   }
+  },
+  {
+   "from": "Web team",
+   "to": "Partner portal",
+   "props": {
+    "text": "builds"
+   }
+  },
+  {
+   "from": "Checkout v2",
+   "to": "Security review"
+  },
+  {
+   "from": "Mobile app 3",
+   "to": "Security review"
+  },
+  {
+   "from": "EU expansion",
+   "to": "Security review"
+  },
+  {
+   "from": "Billing migration",
+   "to": "Security review"
+  },
+  {
+   "from": "Partner portal",
+   "to": "Security review"
+  },
+  {
+   "from": "Payments team",
+   "to": "Security review"
+  },
+  {
+   "from": "Web team",
+   "to": "Security review"
+  },
+  {
+   "from": "Partnerships",
+   "to": "Security review"
+  },
+  {
+   "from": "Finance",
+   "to": "Security review"
+  },
+  {
+   "from": "Support",
+   "to": "Security review"
+  },
+  {
+   "from": "Sales",
+   "to": "Security review",
+   "layout": {
+    "weight": 2
+   }
+  },
+  {
+   "from": "Legal",
+   "to": "Security review"
+  },
+  {
+   "from": "Security review",
+   "to": "Legal",
+   "props": {
+    "text": "advises"
+   }
+  },
+  {
+   "from": "Payments team",
+   "to": "Platform team"
+  },
+  {
+   "from": "Web team",
+   "to": "Platform team"
+  },
+  {
+   "from": "Mobile team",
+   "to": "Platform team"
+  },
+  {
+   "from": "Search team",
+   "to": "Platform team"
+  },
+  {
+   "from": "Data engineering",
+   "to": "Platform team"
+  },
+  {
+   "from": "Checkout v2",
+   "to": "Platform team"
+  },
+  {
+   "from": "Mobile app 3",
+   "to": "Platform team"
+  },
+  {
+   "from": "Search relaunch",
+   "to": "Platform team"
+  },
+  {
+   "from": "Billing migration",
+   "to": "Platform team"
+  },
+  {
+   "from": "Partner portal",
+   "to": "Platform team"
+  },
+  {
+   "from": "Support",
+   "to": "Platform team"
+  },
+  {
+   "from": "Platform team",
+   "to": "Mobile team",
+   "props": {
+    "text": "supports"
+   }
+  },
+  {
+   "from": "Sales",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "Marketing",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "Customer success",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "Finance",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "Support",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "Search team",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "People",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "Search relaunch",
+   "to": "Data warehouse"
+  },
+  {
+   "from": "Data engineering",
+   "to": "Data warehouse",
+   "props": {
+    "text": "loads"
+   },
+   "layout": {
+    "weight": 2
+   }
+  },
+  {
+   "from": "Data warehouse",
+   "to": "Finance",
+   "props": {
+    "text": "feeds"
+   }
+  }
+ ]
+}

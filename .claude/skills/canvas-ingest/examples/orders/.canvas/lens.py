@@ -1,5 +1,7 @@
 """The shop's lens: its services as boards, and the Temporal workflows and activities, the Lambdas, the Postgres tables and
-the services' files as types, so "which workflows write orders?" and "which file is the checkout in?" are canvas queries.
+the services' files as types, so "which workflows write orders?" and "which file is the checkout in?" are canvas queries. Every
+node is keyed by the code (`workflow:<path>#<name>`, `activity:<path>#<name>`, `lambda:<serverless.yml>#<name>`, `table:<name>`,
+`file:<path>`, `module:<service>`, `type:<Title>`), the same from commit to commit, and titled by what the code calls it.
 
 Everything is found by convention, through the scan and `repo` (the code at the commit drawn): workflows and activities by
 their folders and `proxyActivities`, Lambdas by serverless.yml, tables by the migrations, which table a function reads or
@@ -13,7 +15,7 @@ The rules are the team's decisions, each named, with its reason and the round it
 reason has changed; a new request is a new rule. Python 3.9: no `match`, no `X | Y` types."""
 import re
 
-from lenskit import Digest, default, sql, yaml
+from lenskit import Graph, sql, yaml
 from lenskit.text import as_text, file_text
 
 # ---- the rules -----------------------------------------------------------------------------------------------------------
@@ -84,14 +86,17 @@ SERVICES_FRAME, TABLES_FRAME, TYPES_FRAME = ROOT_FRAMES
 # its files below them (files-are-typed). Why: a service is read from what starts work down to what does it (round 1).
 SERVICE_FRAMES = ("Workflows", "Activities", "Lambdas", FILES_FRAME)
 
-# Rule "names-per-container": a title is given out once in the container that holds the shape, so two services may each have a
-# workflow called `syncWorkflow`, and every service's board a frame `Workflows`. The digest tells such nodes apart by an id that
-# `Digest.finish` gives (the title, then the containers it is in) and writes wherever one is named, so the lens names a node by
-# the node `add` returned and never by a title it shares. Only the types' titles are unique across the digest, among the types,
-# since `is` names a type by its title. Why: services repeat names as folders do, and a name reworded to be unique in the whole
-# file (`syncWorkflow (billing)`) is one nobody wrote (round 3: "I need multiple nodes to have the same name without a validation
-# error. Of course, they will be nested in frames that are unique, so their global path will be unique."). The code: the `within`
-# of each claim in `digest`, and `type=True` on the types'.
+# Rule "keys-are-the-code": a node's key is what the code calls it, where it is declared: `workflow:<file>#<name>`,
+# `activity:<file>#<name>`, `lambda:<serverless.yml>#<name>`, `table:<name>`, `file:<path>`, `module:<service>`,
+# `type:<Title>`; its title is the bare name. Why: the app keeps the drawing by key, so a workflow that is renamed or moved is
+# a different shape and everything else stays where it was; two services may each have a `syncWorkflow` and a board a frame
+# `Workflows`, since no title has to be unique (round 3: "I need multiple nodes to have the same name without a validation
+# error. Of course, they will be nested in frames that are unique, so their global path will be unique.").
+
+# Rule "collections-are-typed": a service's frames of workflows, activities, Lambdas and files are each of the type
+# Collection, `holds` saying what one holds. Why: the team asks which frames hold what ("every service's Lambdas"), and a frame
+# that is a Collection answers in a query as a note of a type does (round 4).
+COLLECTIONS = {"Workflows": "Workflow", "Activities": "Activity", "Lambdas": "Lambda", FILES_FRAME: "File"}
 
 # Rule "runs-are-arrows": a workflow's arrows to the activities it runs are drawn as arrows, never as pills beside it. Why:
 # a workflow's steps read as a flow only when the lines are there (round 2: the first drawing showed checkout's three steps
@@ -110,6 +115,7 @@ TYPES = {
     "Table": ("A Postgres table: its name, its columns as the migrations leave them, and the migrations that made it.",
               {"name": STRING_FIELD, "columns": LIST_OF_STRINGS, "migrations": LIST_OF_STRINGS}),
     "File": ("A file of a service's code: its path and how many lines it has.", {"path": STRING_FIELD, "lines": {"type": "integer"}}),
+    "Collection": ("A frame of the things of one kind that a service holds: the kind of thing.", {"holds": STRING_FIELD}),
 }
 RELATIONSHIPS = {
     "runs": ("A workflow runs an activity, at a step of its own.", {"step": {"type": "integer"}}),
@@ -126,8 +132,27 @@ ENDS = [("Workflow", "runs", "runs", None), ("runs", "Activity", "run by", {"nee
         ("Lambda", "declared in", "declared in", ONE_FILE), ("declared in", "File", "declares", None)]
 
 
+def short_names(paths):
+    """Each path's title in a frame of them (files-are-typed): its name, else the shortest end of its path that no other path in
+    the frame ends with, so two index.ts in one frame are activities/index.ts and workflows/index.ts."""
+    parts = {p: p.split("/") for p in paths}
+    names = {}
+    for p in sorted(parts):
+        steps = parts[p]
+        names[p] = p
+        for n in range(1, len(steps) + 1):
+            if not any(q != p and others[-n:] == steps[-n:] for q, others in parts.items()):
+                names[p] = "/".join(steps[-n:])
+                break
+    return names
+
+
 def schema(properties):
     return {"type": "object", "properties": properties, "required": [k for k in ("name", "path") if k in properties]}
+
+
+def type_key(title):
+    return f"type:{title}"
 
 
 # ---- reading the code ---------------------------------------------------------------------------------------------------
@@ -144,6 +169,8 @@ class Code:
             if a in scan.files and b in scan.files:
                 self.uses.setdefault(scan.files[a]["path"], []).append((scan.files[b]["path"], names))
         self.memo = {}
+        self.open = []                  # the functions being read, outermost first
+        self.low = None                 # the outermost of them that a call came back to
 
     def text(self, path):
         if path not in self.texts:
@@ -196,7 +223,13 @@ class Code:
         key = (path, name)
         if key in self.memo:
             return self.memo[key]
-        self.memo[key] = ({}, {})             # a call back into a function being read adds nothing
+        if key in self.open:                  # a call back into a function being read adds nothing
+            at = self.open.index(key)
+            self.low = at if self.low is None else min(self.low, at)
+            return {}, {}
+        mine = len(self.open)
+        self.open.append(key)
+        outer, self.low = self.low, None
         reads, writes = {}, {}
         body = self.body(path, name)
         for m in STRING.finditer(body):
@@ -225,7 +258,12 @@ class Code:
                     for table, via in got.items():
                         into.setdefault(table, []).extend(via)
         result = ({t: sorted(set(v)) for t, v in sorted(reads.items())}, {t: sorted(set(v)) for t, v in sorted(writes.items())})
-        self.memo[key] = result
+        self.open.pop()
+        if self.low is not None and self.low < mine:
+            self.low = self.low if outer is None else min(outer, self.low)    # cut short by a function still being read: not kept
+        else:
+            self.memo[key] = result
+            self.low = outer
         return result
 
 
@@ -268,7 +306,7 @@ def events(function):
 # ---- the digest -----------------------------------------------------------------------------------------------------------
 
 def digest(scan, repo):
-    d = Digest(scan.name or repo.name)
+    d = Graph()
     code = Code(scan, repo)
     tables, made_by = read_tables(repo)
     services = [m for m in scan.production if (scan.modules[m].get("path") or "").startswith(SERVICES)]
@@ -320,28 +358,27 @@ def digest(scan, repo):
                 d.warn(f"{config}: {name} is in {module}, which is not a service: left out")
                 continue
             line = next(l for n, l in code.functions(path) if n == export)
-            found[module]["lambdas"].append((path, export, line, name, handler, events(functions[name])))
+            found[module]["lambdas"].append((path, export, line, name, handler, events(functions[name]), config))
 
     # the root: the services, the tables and the types, as rows in that order
-    root = {f: d.frame(d.claim(f"the frame {f}", f), rank=rank) for rank, f in enumerate(ROOT_FRAMES)}
-    # the types' titles first: `is` names a type by its title, so each is unique among the types (and only there)
-    type_title = {t: d.claim(f"the type {t}", t, within=root[TYPES_FRAME], type=True) for t in list(TYPES) + list(RELATIONSHIPS)}
+    root = {f: d.node(f"frame:{f}", "frame", {"title": f}, layout={"rank": rank}) for rank, f in enumerate(ROOT_FRAMES)}
     card = {}
     for m in services:
         f = found[m]
         said = [f"{len(f[k])} {k if k != 'lambdas' else 'Lambdas'}" for k in ("workflows", "activities", "lambdas") if f[k]]
         text = as_text(f"{m}: " + (", ".join(said) or "nothing found") + (f".\nIts worker runs on the task queue {f['queue']}." if f["queue"] else "."))
-        card[m] = d.subboard(d.claim(f"the service {m}", m, most=74, within=root[SERVICES_FRAME]), root[SERVICES_FRAME], text, source=scan.modules[m]["path"])
+        card[m] = d.node(f"module:{m}", "subboard", {"title": m, "description": text}, in_=root[SERVICES_FRAME])
     table_note = {}
     for t, table in tables.items():
-        table_note[t] = d.note(d.claim(f"the table {t}", t, within=root[TABLES_FRAME]), root[TABLES_FRAME], as_text(f"The {t} table, as the migrations leave it."),
-                               **({"source": made_by[t][0]} if made_by[t] else {}),
-                               **typed("Table", type_title, {"name": t, "columns": [column_text(c) for c in table.columns], "migrations": made_by[t]}))
+        table_note[t] = d.node(f"table:{t}", "sticky-note",
+                               {"title": t, "text": as_text(f"The {t} table, as the migrations leave it."),
+                                **typed("Table", {"name": t, "columns": [column_text(c) for c in table.columns], "migrations": made_by[t]})},
+                               in_=root[TABLES_FRAME])
     type_note = {}
     for t, (words, properties) in TYPES.items():
-        type_note[t] = d.note(type_title[t], root[TYPES_FRAME], words, schema=schema(properties))
+        type_note[t] = d.node(type_key(t), "sticky-note", {"title": t, "text": words, "schema": schema(properties)}, in_=root[TYPES_FRAME])
     for t, (words, properties) in RELATIONSHIPS.items():
-        type_note[t] = d.note(type_title[t], root[TYPES_FRAME], words, schema=schema(properties), relationship=True)
+        type_note[t] = d.node(type_key(t), "sticky-note", {"title": t, "text": words, "schema": schema(properties), "relationship": True}, in_=root[TYPES_FRAME])
     for a, b, row, rule in ENDS:
         d.edge(type_note[a], type_note[b], text=row, **({"endRule": rule} if rule else {}))
 
@@ -353,27 +390,31 @@ def digest(scan, repo):
         held = {"Workflows": f["workflows"], "Activities": f["activities"], "Lambdas": f["lambdas"], FILES_FRAME: module_files[m]}
         frame = {}
         for rank, name in enumerate(n for n in SERVICE_FRAMES if held[n]):
-            frame[name] = d.frame(d.claim(f"the frame {name} of {m}", name, within=card[m]), card[m], rank=rank)
+            frame[name] = d.node(f"frame:{m}/{name}", "frame", {"title": name, **typed("Collection", {"holds": COLLECTIONS[name]})}, in_=card[m], layout={"rank": rank})
         for p, n, line in f["workflows"]:
-            note_of[(m, "workflows", n)] = d.note(d.claim(f"the workflow {n} of {m}", n, within=frame["Workflows"]), frame["Workflows"],
-                                                  as_text(code.doc(p, line)), source={"path": p, "line": line},
-                                                  **typed("Workflow", type_title, {"name": n, "taskQueue": f["queue"]}))
+            note_of[(m, "workflows", n)] = d.node(f"workflow:{p}#{n}", "sticky-note",
+                                                  {"title": n, "text": as_text(code.doc(p, line)), **typed("Workflow", {"name": n, "taskQueue": f["queue"]})},
+                                                  in_=frame["Workflows"])
         for p, n, line in f["activities"]:
-            note_of[(m, "activities", n)] = d.note(d.claim(f"the activity {n} of {m}", n, within=frame["Activities"]), frame["Activities"],
-                                                   as_text(code.doc(p, line)), source={"path": p, "line": line},
-                                                   **typed("Activity", type_title, {"name": n}))
-        for p, export, line, name, handler, said in f["lambdas"]:
-            note_of[(m, "lambdas", name)] = d.note(d.claim(f"the Lambda {name} of {m}", name, within=frame["Lambdas"]), frame["Lambdas"],
-                                                   as_text(code.doc(p, line)), source={"path": p, "line": line},
-                                                   **typed("Lambda", type_title, {"name": name, "handler": handler, "events": said}))
+            note_of[(m, "activities", n)] = d.node(f"activity:{p}#{n}", "sticky-note",
+                                                   {"title": n, "text": as_text(code.doc(p, line)), **typed("Activity", {"name": n})},
+                                                   in_=frame["Activities"])
+        for p, export, line, name, handler, said, config in f["lambdas"]:
+            note_of[(m, "lambdas", name)] = d.node(f"lambda:{config}#{name}", "sticky-note",
+                                                   {"title": name, "text": as_text(code.doc(p, line)),
+                                                    **typed("Lambda", {"name": name, "handler": handler, "events": said})},
+                                                   in_=frame["Lambdas"])
         # files-are-typed: a file's note says its doc and what it declares, and holds its path and length as values
-        files = {(code.by_path[p]["module"], code.by_path[p]["rel"]): code.by_path[p] for p in module_files[m]}
-        titles = default.file_titles(files)
-        for key, file in files.items():
-            p = file["path"]
-            file_note[p] = d.note(d.claim(f"the file {p}", titles[key], within=frame[FILES_FRAME]), frame[FILES_FRAME],
-                                  as_text(file_text(file, scan.language, length=False)) or None, source=p,
-                                  **typed("File", type_title, {"path": p, "lines": file["lines"]}))
+        titles = short_names(module_files[m])
+        for p in module_files[m]:
+            file = code.by_path[p]
+            file_note[p] = d.node(f"file:{p}", "sticky-note",
+                                  {"title": titles[p], "text": as_text(file_text(file, scan.language, length=False)),
+                                   **typed("File", {"path": p, "lines": file["lines"]})},
+                                  in_=frame[FILES_FRAME])
+    for n in d.nodes:                           # a note with no words has none
+        if n.get("props", {}).get("text") == "":
+            del n["props"]["text"]
 
     # the relationships: a workflow runs the activities it calls, in the order it first calls them; an activity or a Lambda
     # reads and writes the tables its SQL, and its callees', touch
@@ -404,27 +445,27 @@ def digest(scan, repo):
                     d.warn(f"{n} ({p}) runs {name}, which is no activity of {m}: passed over")
                     continue
                 step += 1
-                d.edge(note_of[(m, "workflows", n)], activity[name], direct=RUNS_DIRECT, **{"is": type_title["runs"], "fieldValues": {"step": step}})
+                d.edge(note_of[(m, "workflows", n)], activity[name], {"is": [type_key("runs")], "fieldValues": {"step": step}}, layout={"direct": RUNS_DIRECT})
             ran[p] = ran.get(p, 0) + step
         for p in sorted(ran):
             if not ran[p] and PROXY_MENTION.search(code.text(p)):
                 d.warn(f"{p} mentions proxyActivities and none of its workflows runs an activity of {m}: a form this lens doesn't read, or no calls")
         callers = [(note_of[(m, "activities", n)], p, n) for p, n, _ in f["activities"]]
-        callers += [(note_of[(m, "lambdas", name)], p, export) for p, export, _, name, _, _ in f["lambdas"]]
+        callers += [(note_of[(m, "lambdas", name)], p, export) for p, export, _, name, _, _, _ in f["lambdas"]]
         for note, p, n in callers:
             reads, writes = code.touches(p, n, tables, d.warn)
             for how, touched in (("reads", reads), ("writes", writes)):
                 for t, via in touched.items():
-                    d.edge(note, table_note[t], **{"is": type_title[how], "fieldValues": {"via": via}})
+                    d.edge(note, table_note[t], {"is": [type_key(how)], "fieldValues": {"via": via}})
         # things-in-their-files
         declared = [(note_of[(m, "workflows", n)], p) for p, n, _ in f["workflows"]]
         declared += [(note_of[(m, "activities", n)], p) for p, n, _ in f["activities"]]
-        declared += [(note_of[(m, "lambdas", name)], p) for p, _, _, name, _, _ in f["lambdas"]]
+        declared += [(note_of[(m, "lambdas", name)], p) for p, _, _, name, _, _, _ in f["lambdas"]]
         for note, p in declared:
-            d.edge(note, file_note[p], **{"is": type_title["declared in"]})
+            d.edge(note, file_note[p], {"is": [type_key("declared in")]})
     return d.finish()
 
 
-def typed(kind, type_title, values):
-    """A note's `is` and its values, the empty ones left out."""
-    return {"is": type_title[kind], "fieldValues": {k: v for k, v in values.items() if v not in (None, "", [])}}
+def typed(kind, values):
+    """A node's `is` and its values, the empty ones left out."""
+    return {"is": [type_key(kind)], "fieldValues": {k: v for k, v in values.items() if v not in (None, "", [])}}

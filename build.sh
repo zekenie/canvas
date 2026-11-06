@@ -836,10 +836,24 @@ zsystem flock -f AUDIT_LOCK $AUDITED/.lock
 [[ -f $AUDITED/passed && "$(<$AUDITED/passed)" == "$PASSED" ]] || audit_sources
 zsystem flock -u $AUDIT_LOCK
 
+# The render layer names no kind, attribute or channel of the app in its code (the contract between the layers): canvas-digest's
+# tool reads `canvas kinds` for what a kind holds and which pills stand for it, and passes everything else through. Its check
+# (`tool/test/names.js`, over the names `canvas kinds` answers, `tool/test/fixtures/kinds.answer.json`) runs beside the audit, under node,
+# else the system's jsc; not in the run that writes that answer (`mise run skill:kinds`, CANVAS_WRITE_KIND_PAGES=1), which the check reads.
+DIGEST_TOOL=.claude/skills/canvas-digest/tool
+JSC=/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc
+if [[ -f $DIGEST_TOOL/test/names.js && ${CANVAS_WRITE_KIND_PAGES:-} != 1 ]]; then
+    if (( $+commands[node] )); then
+        NAMES_SAID=$(cd $DIGEST_TOOL && node test/names.js 2>&1) || die "the render layer names the app's kinds, attributes or channels: ${NAMES_SAID}"
+    elif [[ -x $JSC ]]; then
+        NAMES_SAID=$(cd $DIGEST_TOOL && $JSC --module-file test/names.js 2>&1) || die "the render layer names the app's kinds, attributes or channels: ${NAMES_SAID}"
+    fi
+fi
+
 # --- 6. Read-only modes ---------------------------------------------------------------------------
 MODE=${1:-app}
 case $MODE in
-audit) print "audit passed: ${#NAMES} modules, acyclic, layers respected, SwiftPM agrees, imports and ids match Package.swift, ${#SHIPPED_PLUGINS} plugins ship${PARTED:+ (the parts of ${(j:, :)PARTED} are checked by a build, not here)}"; exit 0 ;;
+audit) print "audit passed: ${#NAMES} modules, acyclic, layers respected, SwiftPM agrees, imports and ids match Package.swift, the render layer names no kind, ${#SHIPPED_PLUGINS} plugins ship${PARTED:+ (the parts of ${(j:, :)PARTED} are checked by a build, not here)}"; exit 0 ;;
 graph)
     # A line's own dependencies; what + shipped links is the product's membership, not a design
     # dependency, so it's said once, as the list, after the modules.

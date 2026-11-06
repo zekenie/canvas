@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([parsingTests, canonicalTests, refusalTests, limitsTests, wordsTests, fuzzTests])
+runTests([parsingTests, canonicalTests, refusalTests, limitsTests, wordsTests, textArgumentTests, fuzzTests])

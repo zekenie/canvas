@@ -1,0 +1,244 @@
+{
+ "drawing": "repo",
+ "nodes": [
+  {
+   "key": "band:Level 2",
+   "kind": "frame",
+   "props": {
+    "title": "Level 2"
+   },
+   "layout": {
+    "rank": 0
+   }
+  },
+  {
+   "key": "module:app",
+   "in": "band:Level 2",
+   "kind": "subboard",
+   "props": {
+    "title": "app",
+    "description": "app: level 2\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
+   }
+  },
+  {
+   "key": "band:Level 1",
+   "kind": "frame",
+   "props": {
+    "title": "Level 1"
+   },
+   "layout": {
+    "rank": 1
+   }
+  },
+  {
+   "key": "module:[locale]",
+   "in": "band:Level 1",
+   "kind": "subboard",
+   "props": {
+    "title": "[locale]",
+    "description": "[locale]: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
+   }
+  },
+  {
+   "key": "module:Level 1",
+   "in": "band:Level 1",
+   "kind": "subboard",
+   "props": {
+    "title": "Level 1",
+    "description": "Level 1: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
+   }
+  },
+  {
+   "key": "module:@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x",
+   "in": "band:Level 1",
+   "kind": "subboard",
+   "props": {
+    "title": "@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x",
+    "description": "@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
+   }
+  },
+  {
+   "key": "module:C",
+   "in": "band:Level 1",
+   "kind": "subboard",
+   "props": {
+    "title": "C",
+    "description": "C: level 1\nAbout \\@[nothing] here.\n\n4 files, 40 lines"
+   }
+  },
+  {
+   "key": "module:back\\slash",
+   "in": "band:Level 1",
+   "kind": "subboard",
+   "props": {
+    "title": "back\\slash",
+    "description": "back\\slash: level 1\nAbout \\@[nothing] here.\n\n1 files, 10 lines"
+   }
+  },
+  {
+   "key": "dir:src/@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x/src",
+   "in": "module:@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x",
+   "kind": "frame",
+   "props": {
+    "title": "src"
+   }
+  },
+  {
+   "key": "dir:src/@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x/src/components",
+   "in": "dir:src/@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x/src",
+   "kind": "frame",
+   "props": {
+    "title": "components"
+   }
+  },
+  {
+   "key": "dir:src/C",
+   "in": "module:C",
+   "kind": "frame",
+   "props": {
+    "title": "C"
+   }
+  },
+  {
+   "key": "dir:src/C/a",
+   "in": "module:C",
+   "kind": "frame",
+   "props": {
+    "title": "a"
+   }
+  },
+  {
+   "key": "dir:src/C/a/c",
+   "in": "dir:src/C/a",
+   "kind": "frame",
+   "props": {
+    "title": "c"
+   }
+  },
+  {
+   "key": "dir:src/C/b",
+   "in": "module:C",
+   "kind": "frame",
+   "props": {
+    "title": "b"
+   }
+  },
+  {
+   "key": "file:src/@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x/src/components/Select/index.ts",
+   "in": "dir:src/@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x/src/components",
+   "kind": "sticky-note",
+   "props": {
+    "title": "index.ts",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/C/a/c/main.swift",
+   "in": "dir:src/C/a/c",
+   "kind": "sticky-note",
+   "props": {
+    "title": "main.swift",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/C/b/main.swift",
+   "in": "dir:src/C/b",
+   "kind": "sticky-note",
+   "props": {
+    "title": "main.swift",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/C/half\ufffd.swift",
+   "in": "dir:src/C",
+   "kind": "sticky-note",
+   "props": {
+    "title": "half\ufffd.swift",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/C/main.swift",
+   "in": "dir:src/C",
+   "kind": "sticky-note",
+   "props": {
+    "title": "main.swift",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/Level 1/one.ts",
+   "in": "module:Level 1",
+   "kind": "sticky-note",
+   "props": {
+    "title": "one.ts",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/[locale]/page.ts",
+   "in": "module:[locale]",
+   "kind": "sticky-note",
+   "props": {
+    "title": "page.ts",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/app/index.ts",
+   "in": "module:app",
+   "kind": "sticky-note",
+   "props": {
+    "title": "index.ts",
+    "text": "10 lines"
+   }
+  },
+  {
+   "key": "file:src/back\\slash/b.ts",
+   "in": "module:back\\slash",
+   "kind": "sticky-note",
+   "props": {
+    "title": "b.ts",
+    "text": "10 lines"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "module:app",
+   "to": "module:[locale]"
+  },
+  {
+   "from": "module:app",
+   "to": "module:Level 1"
+  },
+  {
+   "from": "module:app",
+   "to": "module:@my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x"
+  },
+  {
+   "from": "module:app",
+   "to": "module:C"
+  },
+  {
+   "from": "module:app",
+   "to": "module:back\\slash"
+  },
+  {
+   "from": "file:src/app/index.ts",
+   "to": "file:src/[locale]/page.ts",
+   "layout": {
+    "weight": 1
+   }
+  },
+  {
+   "from": "file:src/app/index.ts",
+   "to": "file:src/C/a/c/main.swift",
+   "layout": {
+    "weight": 2
+   }
+  }
+ ]
+}

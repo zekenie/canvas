@@ -230,6 +230,8 @@ extension Drawing {
             row.fromID = edge.fromName.id?.description
             row.toID = edge.toName.id?.description
             row.via = connected.via?.rawValue
+            row.arrow = record.id
+            row.standIn = [connected.ends.from, connected.ends.to].first { $0 != edge.from && $0 != edge.to }
             if connected.shared { row.shared = true }
             row.sharedWith = connected.sharedWith
             let properties = record.propertiesJSON ?? [:]
@@ -276,7 +278,7 @@ extension Drawing {
         for (line, name, record) in changed {
             // What the shape still needs is no warning of a shape the run wrote: its row's `problems` say it.
             for issue in issues(of: record, in: shapes) where !issue.isIncomplete {
-                warnings.append(DrawWarning(line: line, name, issue: issue))
+                warnings.append(DrawWarning(line: line, name, issue: issue, about: record.id))
             }
         }
         // And every issue the run brought to a shape it did not write (DrawBrought.swift).

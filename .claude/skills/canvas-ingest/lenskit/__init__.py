@@ -1,11 +1,11 @@
-"""lenskit: what a repository's lens (`.canvas/lens.py`) imports to turn a scan of the code into a digest.
+"""lenskit: what a repository's lens (`.canvas/lens.py`) imports to turn a scan of the code into a graph document.
 
-A lens is a function `digest(scan, repo)` that returns the digest as a dict; `ingest` runs it (reference/lens.md). The
-parts, none with state of its own:
+A lens is a function `digest(scan, repo)` that returns the document as a dict, keyed by the code; `ingest` runs it (reference/lens.md).
+The parts, none with state of its own:
 
     lenskit.Scan          the scan, with the lookups a lens makes (scan.py)
     lenskit.Repo          the code at one commit, read through git, never the working tree (repo.py)
-    lenskit.Digest        a digest builder: frames, subboards, notes, edges, titles given out once in a container, ids, warnings (builder.py)
+    lenskit.Graph         the builder: nodes and edges keyed by the code, every attribute passed through, warnings (builder.py)
     lenskit.text          what a note says: as_text, mention, file_text, words (text.py)
     lenskit.default       the default lens, with overrides: default.digest(scan, repo, bands=[...]) (default.py)
     lenskit.yaml          a small YAML reader for config files (yaml.py)
@@ -13,8 +13,8 @@ parts, none with state of its own:
 
 Python is /usr/bin/python3 (3.9): no `match`, no `X | Y` types, no tomllib."""
 from . import default, sql, text, yaml
-from .builder import Digest, Titles
+from .builder import Graph
 from .repo import Repo
 from .scan import Scan
 
-__all__ = ['Digest', 'Repo', 'Scan', 'Titles', 'default', 'sql', 'text', 'yaml']
+__all__ = ['Graph', 'Repo', 'Scan', 'default', 'sql', 'text', 'yaml']

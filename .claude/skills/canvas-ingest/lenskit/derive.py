@@ -9,12 +9,12 @@
                      than BIG files gives one to each of its top folders, when it has two or more.
     folder_purposes  a folder board's purpose: what the reader found for the folder.
     groups           {board: [(title, [file], [subgroup])]}, frames: a board's files by their folders, two deep,
-                     each titled by the shortest end of its folder's path that no other frame of its container,
-                     module or board takes (the board's own files in one titled "<board>/"): a frame's title need only
-                     be its container's alone, so two boards may each have a `utils`.
+                     each titled by its folder's name (the board's own files in one titled by the board's folder, or
+                     its module): a title is what the code calls the folder, so two boards may each have a `utils`.
+                     A group is (title, files, subgroups) or, with a key of its own, (title, files, subgroups, key);
+                     those worked out from folders are keyed `dir:<path>`.
     by_module        files whose pills stand for modules, not files: none.
-    title            what the whole is called: the name its reader found (the package's own, a
-                     repository's folder), else the repository folder's name.
+    drawing          what the drawing is called: the name its reader found (the package's own), else the repository's.
 
 These are overrides, never a list the code must match: a module `bands` leaves out goes in the band of its layer
 tag, else a band of its own at the bottom; one it names that the code lacks is passed over. Each is said through
@@ -34,7 +34,7 @@ def complete(given, scan, repo_name, warn):
     prod, mods, files = scan.production, scan.modules, scan.files
     s = Spec()
     have = lambda name: name in given
-    s.TITLE = given['title'] if have('title') else scan.name or repo_name or 'Codebase'
+    s.DRAWING = given['drawing'] if have('drawing') else None
     s.LAYER_NAMES = given['layer_names'] if have('layer_names') else {}
     s.FOLDER_BOARDS = given['folder_boards'] if have('folder_boards') else folder_boards(prod, files)
     unknown = [m for m in s.FOLDER_BOARDS if m not in prod]
@@ -56,7 +56,7 @@ def complete(given, scan, repo_name, warn):
         warn(f"purposes name a module the code lacks, passed over: {folder_key}")
     s.FOLDER_PURPOSES = given['folder_purposes'] if have('folder_purposes') else {
         f"{m}/{folder}": (mods[m].get('folders') or {}).get(folder) or '' for m, fs in s.FOLDER_BOARDS.items() for folder in fs}
-    s.GROUPS = given['groups'] if have('groups') else groups(prod, files, s.FOLDER_BOARDS)
+    s.GROUPS = given['groups'] if have('groups') else groups(prod, mods, files, s.FOLDER_BOARDS)
     s.BY_MODULE = {tuple(k) for k in given['by_module']} if have('by_module') else set()
     band_of = {m: t for t, ms in s.BANDS for m in ms}
     s.LAYER_PHRASE = {m: f"{s.LAYER_NAMES.get(mods[m]['layer'], mods[m]['layer'])} layer" if mods[m].get('layer')
@@ -170,34 +170,42 @@ def bands(prod, mods, names):
     return [(f"Level {top - i + 1}" if top else "Modules", [m for m in prod if lv[m] == top - i]) for i in range(top + 1)]
 
 
-def groups(prod, files, folder_boards):
-    """Frames from folders, for every board with files in folders below it, each titled by the shortest end of its
-    folder's path that no other frame of its container, and no module or board, could take. A title is unique only in its
-    container (a board's, or a frame's), so two boards may each have a frame `utils`."""
-    out = full_groups(prod, files, folder_boards)
-    reserved = set(prod) | {f"{m}/{f}" for m, fs in folder_boards.items() for f in fs}
-    def candidates(path):
-        parts = path.rstrip('/').split('/')
-        if path.endswith('/'):
-            return [path]       # a board's own files: "<board>/"
-        return ['/'.join(parts[-i:]) for i in range(1, len(parts))] + [path]
-    def titled(paths):
-        """The title of each of these frames' paths, all in one container."""
-        taken = set(paths) | reserved
-        cands = {p: [c for c in candidates(p)[:-1] if c not in taken] + [p] for p in paths}
-        claimed = collections.Counter(c for p in paths for c in set(cands[p]))
-        return {p: next(c for c in cands[p] if claimed[c] == 1) for p in paths}
-    result = {}
-    for board, gs in out.items():
-        top = titled([g[0] for g in gs])
-        result[board] = []
+def base(mod, name):
+    """A module's folder as a path in the repository ('' for the root), else its name where the scan has no path."""
+    path = mod.get('path')
+    if path is None:
+        return name
+    path = path.strip('/')
+    path = path[2:] if path.startswith('./') else path
+    return '' if path == '.' else path
+
+
+def dir_key(*parts):
+    """The key of a folder: `dir:` and its path in the repository."""
+    return 'dir:' + ('/'.join(p.strip('/') for p in parts if p.strip('/')) or '.')
+
+
+def groups(prod, mods, files, folder_boards):
+    """Frames from folders, for every board with files in folders below it: a frame for each top folder (its subfolders
+    in it), titled by its folder's name and keyed by its path, and the board's own files in one titled by the board's folder
+    (the module's name for the module's own)."""
+    out = {}
+    for board, (m, folder, gs) in full_groups(prod, files, folder_boards).items():
+        root = base(mods[m], m)
+        prefix = f"{root}/{folder}" if folder else root
+        result = []
         for t, fs, subs in gs:
-            inner = titled([s for s, _, _ in subs])
-            result[board].append((top[t], fs, [(inner[s], sfs, ss) for s, sfs, ss in subs]))
-    return result
+            if t is None:
+                result.append((prefix.rpartition('/')[2] or m, fs, [], dir_key(prefix)))
+            else:
+                result.append((t, fs, [(u, sfs, ss, dir_key(prefix, t, u)) for u, sfs, ss in subs], dir_key(prefix, t)))
+        out[board] = result
+    return out
 
 
 def full_groups(prod, files, folder_boards):
+    """{board: (module, folder or None, [(top folder or None for the board's own files, [files], [(subfolder, [files], [])])])}: the folders a board's
+    files are in, two deep, files by their path in the board's folder."""
     out = {}
     of_module = collections.defaultdict(list)
     for (mm, rel) in sorted(files):
@@ -214,15 +222,13 @@ def full_groups(prod, files, folder_boards):
         for folder, rels in by_board.items():
             if not any('/' in r for r in rels):
                 continue
-            prefix = f"{m}/{folder}" if folder else m
             loose = [r for r in rels if '/' not in r]
             tops = sorted(set(r.split('/')[0] for r in rels if '/' in r))
-            gs = [(f"{prefix}/", loose, [])] if loose else []
+            gs = [(None, loose, [])] if loose else []
             for t in tops:
                 inside = [r[len(t) + 1:] for r in rels if r.startswith(t + '/')]
                 direct = [t + '/' + r for r in inside if '/' not in r]
                 subs = sorted(set(r.split('/')[0] for r in inside if '/' in r))
-                gs.append((f"{prefix}/{t}", direct,
-                           [(f"{prefix}/{t}/{u}", [t + '/' + r for r in inside if r.startswith(u + '/')], []) for u in subs]))
-            out[boards[folder]] = gs
+                gs.append((t, direct, [(u, [t + '/' + r for r in inside if r.startswith(u + '/')], []) for u in subs]))
+            out[boards[folder]] = (m, folder, gs)
     return out

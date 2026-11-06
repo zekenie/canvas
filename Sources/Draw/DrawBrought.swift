@@ -105,13 +105,15 @@ extension Drawing {
             let by = reaching[shape.id] ?? []
             let line = by.count == 1 ? by.first : nil
             for issue in shape.issues {
-                warnings.append(DrawWarning(line: line, shape.name, issue: issue))
+                warnings.append(DrawWarning(line: line, shape.name, issue: issue, about: shape.id))
             }
         }
         let more = broken.count - said.count
         if more > 0 {
             let ask = check.rest.map { ": ask \($0)" } ?? ""
-            warnings.append(DrawWarning(line: nil, "and \(more) more \(more == 1 ? "shape now has" : "shapes now have") issues\(ask)"))
+            var count = DrawWarning(line: nil, "and \(more) more \(more == 1 ? "shape now has" : "shapes now have") issues\(ask)")
+            count.countsMore = true
+            warnings.append(count)
         }
         return warnings
     }

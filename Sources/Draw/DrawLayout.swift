@@ -20,7 +20,15 @@ extension Drawing {
     /// builds each shape as it will be.
     mutating func place() throws(DrawError) {
         let target = target, context = target.shapes, document = target.document, registry = registry
-        for index in items.indices where !items[index].moves {
+        for index in items.indices where !items[index].moves || items[index].exact != nil {
+            // Where a program's run puts it, exactly: its room there, never solved; where it already is, but for what arithmetic
+            // in another order leaves over (a frame's origin and a place from it, added), as the solver's are.
+            if let exact = items[index].exact {
+                var rect = CGRect(origin: exact, size: items[index].room)
+                if let current = items[index].existing.flatMap({ context.frame(of: $0.id) }), Self.isNearly(rect, current) { rect = current }
+                items[index].placed = rect
+                continue
+            }
             guard let box = items[index].existing?.box else { throw broken(items[index], "it has no frame") }
             items[index].placed = CGRect(origin: CGPoint(x: box.minX + items[index].roomOffset.x, y: box.minY + items[index].roomOffset.y), size: items[index].room)
         }
@@ -42,7 +50,7 @@ extension Drawing {
         let kinds = registry.containingKinds
         var free: [LayoutProblem.Free] = []
         var carried: Set<Int> = []
-        for index in items.indices where items[index].moves {
+        for index in items.indices where items[index].moves && items[index].exact == nil {
             let item = items[index]
             items[index].free = free.count
             let carries = item.existing.map { existing in
@@ -60,7 +68,7 @@ extension Drawing {
         var fixedShapes: [ShapeID: Int] = [:]
         var fixedWords: [PlaceWord: Int] = [:]
         let needsBoard = items.contains { item in item.targets.joined().contains { if case .board = $0 { true } else { false } } }
-            || items.contains { $0.existing == nil && $0.shape.clauses.isEmpty }
+            || items.contains { $0.existing == nil && $0.shape.clauses.isEmpty && $0.exact == nil }
         // The board's shapes as they stay: what a container the script moves takes along isn't
         // where it is now, any more than the container is.
         let boardBounds = needsBoard ? filed.bounds(excluding: carried) : nil
@@ -266,8 +274,13 @@ extension Drawing {
         for index in items.indices {
             let item = items[index]
             var record = item.record
-            // Written at the size it is stored at; the room it takes is the layout's (`ShapeItem.room`).
+            // Written at the size it is stored at; the room it takes is the layout's (`ShapeItem.room`). A shape left where it is
+            // keeps the box it has, bit for bit: the frame less the offset its kind lays it out at can come back a hair off.
             record.box = item.placed.map { CGRect(origin: CGPoint(x: $0.minX - item.roomOffset.x, y: $0.minY - item.roomOffset.y), size: item.size) }
+            if let existing = item.existing, let box = existing.box, box.size == item.size, let placed = item.placed,
+               placed == context.frame(of: existing.id) {
+                record.box = box
+            }
             guard record.box?.isFinite == true else { throw broken(item, "its frame isn't finite") }
             if let title = item.title, item.existing != nil, item.rename == nil { try keepsName(record, title, item) }
             if let existing = item.existing, record != existing, target.isReadOnly(existing), target.isReadOnly(record) {

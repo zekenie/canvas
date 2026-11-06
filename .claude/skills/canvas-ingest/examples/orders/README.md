@@ -8,13 +8,13 @@ A small TypeScript monorepo, set up for `ingest` as a team sets theirs up: its s
 - `services/billing`: two Lambdas, declared in `serverless.yml`, their handlers in `src/handlers/`.
 - `db/migrations/`: the tables, `customers`, `orders`, `payments` and `refunds`, and a column added to `orders` later.
 
-The lens draws the root with the services as cards, a frame of the tables (Database) and a frame of the types. Each service's board has a frame of its workflows, then its activities, then its Lambdas, then its files. The types are Workflow, Activity, Lambda, Table and File, and the relationship types `runs` (a workflow runs an activity), `reads` and `writes` (an activity or a Lambda reads or writes a table) and `declared in` (a workflow, an activity or a Lambda's handler is in a file). Each decision is a named rule at the top of the lens, with its reason. A name two services share (a `syncWorkflow` in each, or the frame `Workflows`) is the bare name in both: a title need be unique only in the container that holds it, and the digest tells the two apart by an id.
+The lens draws the root with the services as cards, a frame of the tables (Database) and a frame of the types. Each service's board has a frame of its workflows, then its activities, then its Lambdas, then its files, and each of those frames is of the type Collection, with a field `holds` that says what it holds (a frame can be of a type, as a note is). The types are Workflow, Activity, Lambda, Table, File and Collection, and the relationship types `runs` (a workflow runs an activity), `reads` and `writes` (an activity or a Lambda reads or writes a table) and `declared in` (a workflow, an activity or a Lambda's handler is in a file). Each decision is a named rule at the top of the lens, with its reason. Every node is keyed by the code (`workflow:services/orders/src/workflows/checkout.ts#checkoutWorkflow`, `table:orders`, `lambda:services/billing/serverless.yml#paymentWebhook`, `file:<path>`) and titled by its bare name: a name two services share (a `syncWorkflow` in each, or the frame `Workflows`) is the bare name in both, and the keys tell the two apart. The app keeps the drawing by its key, so drawing the next commit moves nothing that is still in the code.
 
 For a repository whose picture is its modules and files, without things of its own like these, start from [the bookshelf example](../bookshelf/README.md) instead.
 
 `scan.json` is the scan, written by hand for this example in the scan format (`reference/scan.md`): what scip-typescript and `scanners/scip_read.py` would make of the code. On a real repository `ingest` makes the scan itself, with the `scip` command in the settings. The example has no `package-lock.json`, so its `prepare` (`npm ci`) would fail as it is; a real repository has one.
 
-To draw it, copy it into a git repository of its own and commit it, then draw it from its scan, with an empty board in front (`$SKILL` is the skill's folder):
+To draw it, copy it into a git repository of its own and commit it, then draw it from its scan, with the file to draw in in front (`$SKILL` is the skill's folder; drawing again updates the same drawing, named `shop`, in place):
 
 ```bash
 cp -R "$SKILL/examples/orders" ~/shop && cd ~/shop && rm scan.json
@@ -25,6 +25,20 @@ git init -q && git add -A && git commit -qm "the orders example"
 ## What it answers
 
 Each block is a `canvas query`, and its first line says what it answers on the drawn board.
+
+The typed frames, the Collections (a frame of the type, found as a note of one is):
+
+```query
+/* count: 5 */
+:is-a("Collection")
+```
+
+The frames that hold Lambdas:
+
+```query
+/* matches: "Lambdas" */
+:is-a("Collection")[fieldValues.holds="Lambda"]
+```
 
 The workflows:
 

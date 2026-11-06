@@ -109,7 +109,7 @@ func rowIDs(_ output: String) throws -> [String] {
             "count": 1,
             "rows": [[
                 "id": "00000000-0000-4000-8000-000000000011", "kind": "sticky-note", "title": "Checkout",
-                "board": "00000000-0000-4000-8000-000000000001", "inside": ["Payments"],
+                "board": "00000000-0000-4000-8000-000000000001", "inside": ["Payments"], "at": [[80, 80], [260, 200]],
                 "properties": ["text": "Calls @API gateway for tokens"],
             ]],
             "board": ["id": .number(Double(board.number)), "name": .string(board.displayName), "shows": "root", "showsPath": ["root"]],
@@ -197,8 +197,8 @@ func rowIDs(_ output: String) throws -> [String] {
         let rows = try require(lines.firstIndex(of: "rows:"), text.output)
         expectEqual(Array(lines[rows...].prefix(5)), [
             "rows:",
-            "  id                                    kind         title     board                                 inside",
-            "  00000000-0000-4000-8000-000000000011  sticky-note  Checkout  00000000-0000-4000-8000-000000000001  Payments",
+            "  id                                    kind         title     at                    board                                 inside",
+            "  00000000-0000-4000-8000-000000000011  sticky-note  Checkout  [80, 80], [260, 200]  00000000-0000-4000-8000-000000000001  Payments",
             "    properties:",
             "      text: Calls @API gateway for tokens",
         ])
@@ -553,8 +553,9 @@ func rowIDs(_ output: String) throws -> [String] {
         expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["type"] }, ["stands-for", "mention", "is-a", "arrow", "note-link", "subboard-link", "frame-link"])
         expectEqual(vocabulary["edgeTypes"]?.arrayValue?.map { $0["under"] ?? .null }, [.null, .null, .null, .null, "arrow", "arrow", "arrow"])
         let words = vocabulary["words"]?.arrayValue ?? []
-        expectEqual(words.filter { $0["from"] != "queries" }.map { $0["word"] }, ["mentions", "mentioned-by", "invalid", "warned", "incomplete", "is-a", "misfit", "grouped-with", "selected"])
+        expectEqual(words.filter { $0["from"] != "queries" }.map { $0["word"] }, ["mentions", "mentioned-by", "invalid", "warned", "incomplete", "is-a", "misfit", "grouped-with", "selected", "drawn-by", "changed"])
         expectEqual(words.first { $0["word"] == "mentions" }?["takes"], "shapes")
+        expectEqual(words.first { $0["word"] == "drawn-by" }?["takes"], "name")
 
         let onBoard = try canvas(server, ["query-vocabulary", "--board", "1"])
         expectEqual(onBoard.status, 2, "it's about the app, not a board")

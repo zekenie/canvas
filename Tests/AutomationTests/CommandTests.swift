@@ -7,6 +7,7 @@ import Draw
 import Foundation
 import Geometry
 import TestKit
+import Topology
 
 // The command line's own commands, run as the app's command server runs them, on an editor with
 // the fixtures' kinds (a box, a disc and a tag, which no tool places; links, which no tool places
@@ -182,6 +183,21 @@ let extras = Contributor(id: "extras") { registrar in
         let tile = try require(run(["kinds", "tile"], on: nil, registry: editor.registry).get().arrayValue?.first)
         expectEqual(tile["attributes"]?["partner"], "text (≤ 36)")
     },
+    test("a kind says which pills can stand for its shapes, and what each needs first, when the pill's plugin can make a shape so") {
+        let opening = try makeEditor(drawPlugins() + [TopologyPlugin(), relaysPlugin(fulfils: true)])
+        let all = try run(["kinds"], on: nil, registry: opening.registry).get()
+        let tile = try require(all.arrayValue?.first { $0["kind"] == "tile" })
+        expectEqual(tile["via"], [["kind": "relay", "needs": "open"]])
+        let relay = try require(all.arrayValue?.first { $0["kind"] == "relay" })
+        expectEqual(relay["via"], nil, "a pill stands for no pill")
+        let box = try require(all.arrayValue?.first { $0["kind"] == "box" })
+        expectEqual(box["via"], nil, "no tool places one, so there's no new one to ask about")
+        let closed = try makeEditor(drawPlugins() + [TopologyPlugin(), relaysPlugin()])
+        let shut = try require(run(["kinds", "tile"], on: nil, registry: closed.registry).get().arrayValue?.first)
+        expectEqual(shut["via"], nil, "a relay stands only for an open tile, and nothing here can open one")
+        let none = try require(run(["kinds", "tile"], on: nil, registry: try makeEditor(drawPlugins()).registry).get().arrayValue?.first)
+        expectEqual(none["via"], nil, "with no pill, there's nothing to go via")
+    },
 ])
 
 /// A shape's partner, by id (the core's shape id, a definition referred to), with a bound beside it.
@@ -208,18 +224,22 @@ extension SizeWord: ShapeProperty {
         expectEqual(draw.scope, .board)
         expectEqual(draw.positionals, ["script"])
         expectEqual(draw.params["required"], ["script"])
-        expectEqual(draw.params["properties"]?.objectValue.map { $0.keys.sorted() }, ["dryRun", "reveal", "script"])
-        expectEqual(draw.usage(), "canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]")
+        expectEqual(draw.params["properties"]?.objectValue.map { $0.keys.sorted() }, ["drawing", "dryRun", "reveal", "script"])
+        expectEqual(draw.usage(), "canvas draw <script>|- [--drawing <name>] [--dry-run] [--reveal] [--board <board>]")
         expect(draw.arguments.first { $0.name == "script" }?.readsStandardInput == true)
         expectEqual(registry.automationCommands.first { $0.name == "kinds" }?.scope, .app)
-        expect(registry.report.contains("automation    command line draw · command line show · command line capture · command line kinds · command line measure · host commands"), registry.report)
+        expect(registry.report.contains("automation    command line draw · command line apply · command line rehearse · command line show · command line capture · command line kinds · command line measure · host commands"), registry.report)
+        let rehearse = try require(registry.automationCommands.first { $0.name == "rehearse" })
+        expectEqual(rehearse.scope, .board)
+        expectEqual(rehearse.positionals, ["scripts"])
+        expectEqual(rehearse.usage(), "canvas rehearse <scripts>|- [--board <board>]")
     },
     test("the app's command server is handed every command, the plugin's own and another's, and runs each by name") {
         let more = Contributor(id: "more") { $0.automationCommand("ping", "Answers pong.", scope: .app, params: NoParams.self) { _, _ throws(AutomationError) in "pong" } }
         let registry = try Registry(plugins: [AutomationPlugin(), more])
         let commands = registry.hostCommands
         expectEqual(commands.specs, registry.automationCommands)
-        expectEqual(commands.specs.map(\.name), ["draw", "show", "capture", "kinds", "measure", "ping"])
+        expectEqual(commands.specs.map(\.name), ["draw", "apply", "rehearse", "show", "capture", "kinds", "measure", "ping"])
         expectEqual(try awaitResult { try await commands.run("ping", [:], nil) }, "pong")
         do {
             _ = try awaitResult { try await commands.run("pang", [:], nil) }

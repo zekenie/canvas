@@ -183,6 +183,16 @@ depends = ["guard"]
 dir = "scripts/schema-prompts"
 run = "python3 gen_cases.py"
 
+[tasks."skill:kinds"]
+description = "Write the canvas skill's reference/kinds.md and the digest tool's tool/test/fixtures/kinds.json and kinds.answer.json from `canvas kinds` (the shipped plugins' answer); commit them"
+depends = ["guard"]
+run = 'CANVAS_WRITE_KIND_PAGES=1 TEST_FILTER="page of kinds and the digest tool" ./test.sh CompositionTests'
+
+[tasks."skill:lens-fixtures"]
+description = "Write canvas-ingest's lens fixtures (Tests/CompositionTests/Fixtures/ingest-lens: the default lens's graph documents and what it said) from the fixture scans, the test that holds them byte for byte; commit them"
+depends = ["guard"]
+run = 'CANVAS_WRITE_INGEST_LENS=1 TEST_FILTER="graph documents its fixtures hold" ./test.sh SkillToolsTests'
+
 [tasks."query-prompt:copy"]
 description = "Copy --ask's prompt (Shipped/ask-prompt.txt) into the canvas skill's query-prompt.md; commit both"
 depends = ["guard"]

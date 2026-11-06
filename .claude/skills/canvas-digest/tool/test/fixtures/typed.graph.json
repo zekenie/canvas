@@ -1,0 +1,360 @@
+{
+ "drawing": "platform-map",
+ "nodes": [
+  {
+   "key": "Model",
+   "kind": "frame",
+   "props": {
+    "title": "Model"
+   }
+  },
+  {
+   "key": "Workflow",
+   "in": "Model",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Workflow",
+    "text": "A Temporal workflow: what it is called, the queue it runs on and how often it retries.",
+    "schema": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "queue": {
+       "type": "string"
+      },
+      "retries": {
+       "type": "integer"
+      },
+      "owner": {
+       "type": "string"
+      },
+      "schedule": {
+       "type": "string"
+      },
+      "url": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "key": "Table",
+   "in": "Model",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Table",
+    "text": "A Postgres or Dynamo table: its name, engine and size.",
+    "schema": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "engine": {
+       "type": "string",
+       "enum": [
+        "postgres",
+        "dynamo"
+       ]
+      },
+      "rows": {
+       "type": "integer"
+      },
+      "pii": {
+       "type": "boolean"
+      },
+      "tags": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "owner": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   }
+  },
+  {
+   "key": "writes",
+   "in": "Model",
+   "kind": "sticky-note",
+   "props": {
+    "title": "writes",
+    "text": "A workflow writes a table, and how: insert or upsert.",
+    "relationship": true,
+    "schema": {
+     "type": "object",
+     "properties": {
+      "mode": {
+       "type": "string",
+       "enum": [
+        "insert",
+        "upsert"
+       ]
+      }
+     }
+    }
+   }
+  },
+  {
+   "key": "reads",
+   "in": "Model",
+   "kind": "sticky-note",
+   "props": {
+    "title": "reads",
+    "text": "A workflow reads a table, and which columns.",
+    "relationship": true,
+    "schema": {
+     "type": "object",
+     "properties": {
+      "columns": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "key": "Checkout",
+   "kind": "subboard",
+   "props": {
+    "title": "Checkout",
+    "description": "Checkout service: order and refund workflows and their tables."
+   }
+  },
+  {
+   "key": "Reporting",
+   "kind": "subboard",
+   "props": {
+    "title": "Reporting",
+    "description": "Reporting service: nightly rollups."
+   }
+  },
+  {
+   "key": "OrderWorkflow",
+   "in": "Checkout",
+   "kind": "sticky-note",
+   "props": {
+    "title": "OrderWorkflow",
+    "is": "Workflow",
+    "fieldValues": {
+     "name": "OrderWorkflow",
+     "queue": "checkout",
+     "retries": 3,
+     "url": "https://temporal.example/ns//order"
+    }
+   }
+  },
+  {
+   "key": "RefundWorkflow",
+   "in": "Checkout",
+   "kind": "sticky-note",
+   "props": {
+    "title": "RefundWorkflow",
+    "is": "Workflow",
+    "fieldValues": {
+     "name": "RefundWorkflow",
+     "queue": "checkout",
+     "retries": 5,
+     "owner": "Team \"Refunds\"\nsecond line \\ backslash"
+    }
+   }
+  },
+  {
+   "key": "orders",
+   "in": "Checkout",
+   "kind": "sticky-note",
+   "props": {
+    "title": "orders",
+    "is": "Table",
+    "fieldValues": {
+     "name": "orders",
+     "engine": "postgres",
+     "rows": 120000,
+     "pii": true,
+     "tags": [
+      "core",
+      "billing"
+     ]
+    }
+   }
+  },
+  {
+   "key": "refunds",
+   "in": "Checkout",
+   "kind": "sticky-note",
+   "props": {
+    "title": "refunds",
+    "is": "Table",
+    "fieldValues": {
+     "name": "refunds",
+     "engine": "postgres"
+    }
+   }
+  },
+  {
+   "key": "NightlyRollup",
+   "in": "Reporting",
+   "kind": "sticky-note",
+   "props": {
+    "title": "NightlyRollup",
+    "is": "Workflow",
+    "fieldValues": {
+     "name": "NightlyRollup",
+     "queue": "reporting",
+     "schedule": "0 3 * * *"
+    }
+   }
+  },
+  {
+   "key": "AuditSweep",
+   "in": "Reporting",
+   "kind": "sticky-note",
+   "props": {
+    "title": "AuditSweep",
+    "is": "Workflow",
+    "fieldValues": {
+     "name": "AuditSweep",
+     "queue": "reporting"
+    }
+   }
+  },
+  {
+   "key": "rollup",
+   "in": "Reporting",
+   "kind": "sticky-note",
+   "props": {
+    "title": "rollup",
+    "is": "Table",
+    "fieldValues": {
+     "name": "rollup",
+     "engine": "dynamo"
+    }
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "Workflow",
+   "to": "writes",
+   "props": {
+    "text": "tables",
+    "endRule": {
+     "needed": true
+    }
+   }
+  },
+  {
+   "from": "writes",
+   "to": "Table",
+   "props": {
+    "text": "writers"
+   }
+  },
+  {
+   "from": "Workflow",
+   "to": "reads",
+   "props": {
+    "text": "inputs"
+   }
+  },
+  {
+   "from": "reads",
+   "to": "Table",
+   "props": {
+    "text": "readers"
+   }
+  },
+  {
+   "from": "OrderWorkflow",
+   "to": "orders",
+   "props": {
+    "is": "writes",
+    "fieldValues": {
+     "mode": "insert"
+    }
+   }
+  },
+  {
+   "from": "RefundWorkflow",
+   "to": "refunds",
+   "props": {
+    "is": "writes",
+    "fieldValues": {
+     "mode": "insert"
+    }
+   }
+  },
+  {
+   "from": "RefundWorkflow",
+   "to": "orders",
+   "props": {
+    "is": "writes",
+    "fieldValues": {
+     "mode": "upsert"
+    }
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "rollup",
+   "props": {
+    "is": "writes",
+    "fieldValues": {
+     "mode": "upsert"
+    }
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "orders",
+   "props": {
+    "is": "reads",
+    "fieldValues": {
+     "columns": [
+      "id",
+      "total"
+     ]
+    }
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "orders",
+   "props": {
+    "is": "writes",
+    "fieldValues": {
+     "mode": "upsert"
+    }
+   }
+  },
+  {
+   "from": "NightlyRollup",
+   "to": "refunds",
+   "props": {
+    "is": "reads"
+   }
+  },
+  {
+   "from": "AuditSweep",
+   "to": "NightlyRollup",
+   "props": {
+    "is": "reads"
+   }
+  }
+ ]
+}

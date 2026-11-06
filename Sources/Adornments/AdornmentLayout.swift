@@ -260,6 +260,37 @@ public enum AdornmentLayout {
         return reach
     }
 
+    /// The narrowest a shape can be, in view points, for every item to show whole: each in the row and the corner placed in
+    /// full (none cut short, folded, given its compact face or left out) and a tab on the top edge flat and as long as its text.
+    /// What a layout that sizes a shape by what it holds (a frame) also sizes it by, so its title is never cut. 0 for no items.
+    public static func leastWidth(of items: [Item]) -> CGFloat {
+        let row = items.filter { $0.placement != .onTopEdge && $0.placement != .inLabelLead }
+        let tab = items.first { $0.placement == .onTopEdge }
+        guard !row.isEmpty || tab != nil else { return 0 }
+        func whole(_ width: CGFloat) -> Bool {
+            let placed = slots(of: items, width: width)
+            for (item, slot) in zip(items, placed) where item.placement != .onTopEdge && item.placement != .inLabelLead {
+                guard let slot, !slot.isOverflow, !slot.isCompact, slot.frame.width >= item.width - 0.5 else { return false }
+            }
+            if let tab {
+                let request = TabRequest(shape: CGRect(x: 0, y: 0, width: width, height: max(tabLeastDepth * 4, 64)), item: tab)
+                guard let placed = Self.tab(of: request, clearOf: []), !placed.isTurned, placed.length >= tab.width - 0.5 else { return false }
+            }
+            return true
+        }
+        var high: CGFloat = 32
+        while !whole(high) {
+            high *= 2
+            if high > 100_000 { return high }
+        }
+        var low: CGFloat = 0
+        while high - low > 0.5 {
+            let middle = (low + high) / 2
+            if whole(middle) { high = middle } else { low = middle }
+        }
+        return high.rounded(.up)
+    }
+
     /// Each item's frame, in the order given (the order they're claimed), for a shape `width`
     /// points wide; nil for one left out. `slant` is an open shape's: without it the row is laid out as a closed shape's.
     public static func frames(of items: [Item], width: CGFloat, slant: Slant? = nil) -> [CGRect?] {

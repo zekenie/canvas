@@ -1,12 +1,13 @@
 #!/bin/sh
 # ingest: a commit of a repository drawn as boards, in one command. Its code is scanned into a scan, the repository's lens (its
-# .canvas/lens.py, else the default lens in lenskit/) turns the scan into a digest, and the canvas-digest skill (`digest all`, the
-# driver beside this skill) measures it in the app, lays it out, draws it script by script and verifies it. Nothing is written by
-# hand for a codebase: the board is what its code says, and it is made again from a commit, never kept up to date: the same commit,
-# lens, app and macOS draw the same boards.
+# .canvas/lens.py, else the default lens in lenskit/) turns the scan into a graph document keyed by the code, and the canvas-digest
+# skill (`digest all`, the driver beside this skill) measures it in the app, lays it out and draws it with `canvas apply`. Nothing is
+# written by hand for a codebase: the board is what its code says, and it is made again from a commit, never kept up to date: the same
+# commit, lens, app and macOS draw the same boards. The app keeps the drawing's record by its name, so drawing again with the same
+# name updates the drawing in place, shape by shape, and takes off what the code no longer has.
 #
-#   ingest [REPO] [--commit REF] [--new-file PATH | --board ID] [--scip INDEX] [--mess 0..1] [--ranks rows|columns] [--window WxH]
-#                 [--scan FILE | --rescan]
+#   ingest [REPO] [--commit REF] [--board ID] [--on NAME] [--drawing NAME] [--scip INDEX] [--mess 0..1] [--ranks rows|columns]
+#                 [--window WxH] [--scan FILE | --rescan]
 #   ingest [REPO] --where
 #
 #   REPO          the git repository (default: the one you are in). Its settings are REPO/.canvas/ingest.json, and what ingest keeps
@@ -16,11 +17,14 @@
 #                 there. The settings and the lens are read from the folder you run in, as they are, committed or not. A scan is kept by
 #                 the commit's code (its top-level tree, .canvas left out), so commits that differ only in .canvas/ share one and
 #                 a run that finds it scans nothing
-#   the board     the board in front (default): drawn as that board when it's empty, or in place of the last ingestion when it holds
-#                 that and nothing else (taken back first, one undo step); --board ID names another open board; --new-file PATH
-#                 makes a new board file and draws it there
+#   --board ID    the file it draws in: its id, file or name as canvas boards lists them (default: the one in front, which is whichever
+#                 window the person clicked last, so an agent names it)
+#   --on NAME     the board it draws on: a subboard's title, path or #id (its board), else the root of the file. A drawing
+#                 the file already has is drawn where it was
+#   --drawing NAME  the drawing's name (the settings' "drawing", else the lens's, else the repository's). A second name is a second
+#                 drawing in the same file, as a proposal beside the code's own
 #   --scip INDEX  scan a SCIP index made by hand instead of running the repository's scanner
-#   --mess N      the digest's dial, 0 tidy to 1 loose (default 0.1)
+#   --mess N      the dial, 0 tidy to 1 loose (default 0.1)
 #   --ranks WAY   the root's bands as rows (the top layer on top) or as columns (it at the left); left out, whichever the window
 #                 shows larger: every board is laid out for the window it is drawn in, as large as that is when the run starts
 #   --window WxH  the room every board is laid out for, in place of the window's size
@@ -31,10 +35,11 @@
 # The settings: scanner ("swift" or "scip"; a repository with a Package.swift is swift's without them), scip (the command that writes
 # the index, run at the checkout's root, {index} standing for the path to write, written bare: it is replaced by a shell-quoted
 # path), prepare (a command run in the checkout when a lockfile, or the command, has changed), window ([width, height]), mess,
-# ranks. An option given here wins over the settings (reference/scan.md).
+# ranks, drawing. An option given here wins over the settings (reference/scan.md).
 #
 # The lens is REPO/.canvas/lens.py in the folder you run in (never the commit's): a function digest(scan, repo) that returns the
-# digest as a dict, run twice in isolation (runner/run.py), and refused if the two digests differ. Without one, the default lens.
+# graph document as a dict, run twice in isolation (runner/run.py), and refused if the two documents differ. Without one, the
+# default lens.
 #
 # One ingest runs per repository at a time. canvas is found by the driver: $CANVAS_CLI, else the one beside the skills (the app's, or
 # this repository's own build in its checkout), else the PATH.
@@ -57,19 +62,20 @@ now() { date +%s; }
 T0=$(now)
 step() { echo "ingest: $1 ($(($(now) - T0)) s)"; }
 
-REPO=; SCIP=; COMMIT=; SCANFILE=; RESCAN=0; NEWFILE=; BOARD=; MESS=; RANKS=; WINDOW=; WHERE=0
+REPO=; SCIP=; COMMIT=; SCANFILE=; RESCAN=0; BOARD=; ON=; DRAWING=; MESS=; RANKS=; WINDOW=; WHERE=0
 while [ $# -gt 0 ]; do
   case $1 in
     --rescan) RESCAN=1; shift; continue ;;
     --where) WHERE=1; shift; continue ;;
-    --new-file|--board|--scip|--mess|--ranks|--window|--commit|--scan) [ $# -ge 2 ] || usage ;;
+    --board|--on|--drawing|--scip|--mess|--ranks|--window|--commit|--scan) [ $# -ge 2 ] || usage ;;
     -h|--help) usage ;;
     -*) echo "ingest: unknown option $1" >&2; usage ;;
     *) [ -z "$REPO" ] || usage; REPO=$1; shift; continue ;;
   esac
   case $1 in
-    --new-file) NEWFILE=$2 ;;
     --board) BOARD=$2 ;;
+    --on) ON=$2 ;;
+    --drawing) DRAWING=$2 ;;
     --scip) SCIP=$2 ;;
     --mess) MESS=$2 ;;
     --ranks) RANKS=$2 ;;
@@ -81,7 +87,6 @@ while [ $# -gt 0 ]; do
 done
 case $RANKS in ''|rows|columns) ;; *) die "--ranks is rows or columns, not $RANKS" ;; esac
 case $WINDOW in ''|[0-9]*x[0-9]*) ;; *) die "--window is WIDTHxHEIGHT, as 1440x900, not $WINDOW" ;; esac
-[ -z "$NEWFILE" ] || [ -z "$BOARD" ] || die "name a board (--board) or a new file (--new-file), not both"
 if [ -n "$SCANFILE" ]; then
   [ -z "$SCIP" ] && [ "$RESCAN" = 0 ] || die "--scan draws from a scan given by hand and scans nothing, so --scip and --rescan have nothing to do with it"
   [ -s "$SCANFILE" ] || die "--scan: there is no scan at $SCANFILE"
@@ -101,7 +106,7 @@ HASH=$(printf '%s' "$COMMON" | shasum -a 256 | cut -c1-12)
 CACHE=${CANVAS_INGEST_CACHE:-$HOME/Library/Caches/InfiniteCanvas/ingest}/$NAME-$HASH
 if [ "$WHERE" = 1 ]; then echo "$CACHE"; exit 0; fi
 # a spec.py is the lens of the past: its names are arguments of lenskit.default.digest now
-[ ! -e "$REPO/.canvas/spec.py" ] || die "$REPO/.canvas/spec.py is no longer read. Move its names into $REPO/.canvas/lens.py as arguments of lenskit.default.digest (BANDS as bands=, GROUPS as groups=, PURPOSES as purposes=, and so on, each name in lower case), as in def digest(scan, repo): return default.digest(scan, repo, bands=BANDS); reference/lens.md and lenskit/default.py have the arguments"
+[ ! -e "$REPO/.canvas/spec.py" ] || die "$REPO/.canvas/spec.py is no longer read. Move its names into $REPO/.canvas/lens.py as arguments of lenskit.default.digest (BANDS as bands=, GROUPS as groups=, PURPOSES as purposes=, and so on, each name in lower case; TITLE as drawing=), as in def digest(scan, repo): return default.digest(scan, repo, bands=BANDS); reference/lens.md and lenskit/default.py have the arguments"
 LENS=$REPO/.canvas/lens.py
 [ -f "$LENS" ] || LENS=
 
@@ -115,6 +120,7 @@ eval "$_settings"
 [ -n "$MESS" ] || MESS=$S_MESS
 [ -n "$RANKS" ] || RANKS=$S_RANKS
 [ -n "$WINDOW" ] || WINDOW=$S_WINDOW
+[ -n "$DRAWING" ] || DRAWING=$S_DRAWING
 SCANNER=$S_SCANNER
 if [ -z "$SCANNER" ] && [ -f "$REPO/Package.swift" ]; then SCANNER=swift; fi
 
@@ -214,26 +220,13 @@ fi
 # ---- the run -----------------------------------------------------------------------------------------------------
 
 RUN=$CACHE/runs/$(date +%Y%m%d-%H%M%S)-$$
-mkdir -p "$RUN" "$CACHE/drawn"
+mkdir -p "$RUN"
 
-# where it draws: the board in front (or the one named), in place of the last ingestion if that's what it holds; or a new file.
-# Asked of the app before anything slow: that it is running, and that the board can take the drawing
-if [ -n "$NEWFILE" ]; then set -- --new-file "$NEWFILE"; else set -- --board "${BOARD:-front}" --replace; fi
-set -- "$@" --records "$CACHE/drawn"
-if ! run "$DIGEST" ready "$RUN/digest.json" "$@" --out "$RUN/out"; then
-  rm -rf "$RUN"
-  # the driver's words are for its own options: what they come to here
-  echo "ingest: nothing was read or drawn. If it is the board that can't take the drawing: bring an empty board to the front (File > New) and run this again, or name a new board's file (ingest --new-file PATH). ingest draws in place of its own last drawing without being asked, and has no --into or --replace." >&2
-  exit 1
-fi
 # the last five runs are kept
 _runs=$(ls -1 "$CACHE/runs" | sort | wc -l | tr -d ' ')
 if [ "$_runs" -gt 5 ]; then
   for _old in $(ls -1 "$CACHE/runs" | sort | sed -n "1,$((_runs - 5))p"); do rm -rf "$CACHE/runs/$_old"; done
 fi
-if [ -n "$MESS" ]; then set -- "$@" --mess "$MESS"; fi
-if [ -n "$RANKS" ]; then set -- "$@" --ranks "$RANKS"; fi
-if [ -n "$WINDOW" ]; then set -- "$@" --view "$WINDOW"; fi
 
 # ---- what a partial clone hasn't fetched -------------------------------------------------------------------------
 
@@ -402,9 +395,18 @@ fi
 
 # a lens of the repository's own reads the commit's files through repo
 if [ -n "$LENS" ]; then fetch_missing; fi
-step "making the digest"
-run "$PY" "$HERE/runner/run.py" "$REPO" "$SCAN" "$RUN/digest.json" --commit "$SHA" ${LENS:+--lens "$LENS"} || die "no digest was made, so nothing was drawn (the run's folder: $RUN)"
+step "making the graph"
+# the drawing's name is the settings' (or --drawing's), else the lens's, else the repository's (NAME: the folder that holds its git directory)
+set --
+[ -z "$DRAWING" ] || set -- "$@" --drawing "$DRAWING"
+[ -z "$MESS" ] || set -- "$@" --mess "$MESS"
+[ -z "$RANKS" ] || set -- "$@" --ranks "$RANKS"
+run "$PY" "$HERE/runner/run.py" "$REPO" "$SCAN" "$RUN/graph.json" --commit "$SHA" --drawing-default "$NAME" ${LENS:+--lens "$LENS"} "$@" || die "no graph was made, so nothing was drawn (the run's folder: $RUN)"
 
 step "measuring, laying out and drawing it (canvas-digest)"
-run "$DIGEST" all "$RUN/digest.json" "$@" --out "$RUN/out"
+set --
+[ -z "$BOARD" ] || set -- "$@" --board "$BOARD"
+[ -z "$ON" ] || set -- "$@" --on "$ON"
+[ -z "$WINDOW" ] || set -- "$@" --view "$WINDOW"
+run "$DIGEST" all "$RUN/graph.json" --out "$RUN/out" "$@"
 step "done"

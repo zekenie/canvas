@@ -1,7 +1,7 @@
 """What a note says: a file's note, and the escapes a note's text needs.
 
 A note's `@[` is a mention to `canvas draw`, so text that is not one is written with `as_text`; a mention of a shape by its
-title is `mention`. `file_text` says what a file declares, in its language's words (`words`)."""
+key is `mention`. `file_text` says what a file declares, in its language's words (`words`)."""
 import re
 
 # How a note says what its file declares, in its language's words: its types by visibility, its public functions.
@@ -23,10 +23,16 @@ def as_text(s):
     return re.sub(r'(\\*)@\[', lambda m: m.group(1) * 2 + '\\@[', s)
 
 
-def mention(title):
-    """A mention of the shape with that title, as draw reads one: its spaces folded as a title's are (a label ends at
-    a line break), and in it a backslash and a ] each behind a backslash, so a title like [locale] names its shape."""
-    return '@[' + ' '.join(title.split()).replace('\\', '\\\\').replace(']', '\\]') + ']'
+def mention(key):
+    """A mention of the node with that key, as the app reads one in a text: in it a backslash and a ] each behind a
+    backslash, so a key like `file:src/[id].ts` names its node."""
+    return '@[' + key.replace('\\', '\\\\').replace(']', '\\]') + ']'
+
+
+def whole(text):
+    """A name as a title or a key can hold it: half a character (a file's name that isn't UTF-8 is read with those) reads as
+    U+FFFD, which is what writing it to a script would make of it."""
+    return ''.join('\ufffd' if 0xD800 <= ord(ch) <= 0xDFFF else ch for ch in text)
 
 
 def names(xs, cap=10):

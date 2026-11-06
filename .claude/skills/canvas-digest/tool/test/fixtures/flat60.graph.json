@@ -1,308 +1,488 @@
 {
- "title": "Flat modules",
- "policy": {
+ "drawing": "flat-modules",
+ "layout": {
   "mess": 0.1
  },
  "nodes": [
   {
-   "title": "Parse cursor",
+   "key": "Parse cursor",
    "kind": "sticky-note",
-   "text": "The parse cursor."
+   "props": {
+    "title": "Parse cursor",
+    "text": "The parse cursor."
+   }
   },
   {
-   "title": "Parse hook",
+   "key": "Parse hook",
    "kind": "sticky-note",
-   "text": "The parse hook."
+   "props": {
+    "title": "Parse hook",
+    "text": "The parse hook."
+   }
   },
   {
-   "title": "Parse view",
+   "key": "Parse view",
    "kind": "sticky-note",
-   "text": "The parse view."
+   "props": {
+    "title": "Parse view",
+    "text": "The parse view."
+   }
   },
   {
-   "title": "Parse stream",
+   "key": "Parse stream",
    "kind": "sticky-note",
-   "text": "The parse stream."
+   "props": {
+    "title": "Parse stream",
+    "text": "The parse stream."
+   }
   },
   {
-   "title": "Parse core",
+   "key": "Parse core",
    "kind": "sticky-note",
-   "text": "The parse core."
+   "props": {
+    "title": "Parse core",
+    "text": "The parse core."
+   }
   },
   {
-   "title": "Parse scan",
+   "key": "Parse scan",
    "kind": "sticky-note",
-   "text": "The parse scan."
+   "props": {
+    "title": "Parse scan",
+    "text": "The parse scan."
+   }
   },
   {
-   "title": "Lex merge",
+   "key": "Lex merge",
    "kind": "sticky-note",
-   "text": "The lex merge."
+   "props": {
+    "title": "Lex merge",
+    "text": "The lex merge."
+   }
   },
   {
-   "title": "Lex plan",
+   "key": "Lex plan",
    "kind": "sticky-note",
-   "text": "The lex plan."
+   "props": {
+    "title": "Lex plan",
+    "text": "The lex plan."
+   }
   },
   {
-   "title": "Lex core",
+   "key": "Lex core",
    "kind": "sticky-note",
-   "text": "The lex core."
+   "props": {
+    "title": "Lex core",
+    "text": "The lex core."
+   }
   },
   {
-   "title": "Lex gate",
+   "key": "Lex gate",
    "kind": "sticky-note",
-   "text": "The lex gate."
+   "props": {
+    "title": "Lex gate",
+    "text": "The lex gate."
+   }
   },
   {
-   "title": "Lex pool",
+   "key": "Lex pool",
    "kind": "sticky-note",
-   "text": "The lex pool."
+   "props": {
+    "title": "Lex pool",
+    "text": "The lex pool."
+   }
   },
   {
-   "title": "Lex stream",
+   "key": "Lex stream",
    "kind": "sticky-note",
-   "text": "The lex stream."
+   "props": {
+    "title": "Lex stream",
+    "text": "The lex stream."
+   }
   },
   {
-   "title": "Render merge",
+   "key": "Render merge",
    "kind": "sticky-note",
-   "text": "The render merge."
+   "props": {
+    "title": "Render merge",
+    "text": "The render merge."
+   }
   },
   {
-   "title": "Render plan",
+   "key": "Render plan",
    "kind": "sticky-note",
-   "text": "The render plan."
+   "props": {
+    "title": "Render plan",
+    "text": "The render plan."
+   }
   },
   {
-   "title": "Render scan",
+   "key": "Render scan",
    "kind": "sticky-note",
-   "text": "The render scan."
+   "props": {
+    "title": "Render scan",
+    "text": "The render scan."
+   }
   },
   {
-   "title": "Render stream",
+   "key": "Render stream",
    "kind": "sticky-note",
-   "text": "The render stream."
+   "props": {
+    "title": "Render stream",
+    "text": "The render stream."
+   }
   },
   {
-   "title": "Render pool",
+   "key": "Render pool",
    "kind": "sticky-note",
-   "text": "The render pool."
+   "props": {
+    "title": "Render pool",
+    "text": "The render pool."
+   }
   },
   {
-   "title": "Render hook",
+   "key": "Render hook",
    "kind": "sticky-note",
-   "text": "The render hook."
+   "props": {
+    "title": "Render hook",
+    "text": "The render hook."
+   }
   },
   {
-   "title": "Index plan",
+   "key": "Index plan",
    "kind": "sticky-note",
-   "text": "The index plan."
+   "props": {
+    "title": "Index plan",
+    "text": "The index plan."
+   }
   },
   {
-   "title": "Index core",
+   "key": "Index core",
    "kind": "sticky-note",
-   "text": "The index core."
+   "props": {
+    "title": "Index core",
+    "text": "The index core."
+   }
   },
   {
-   "title": "Index guard",
+   "key": "Index guard",
    "kind": "sticky-note",
-   "text": "The index guard."
+   "props": {
+    "title": "Index guard",
+    "text": "The index guard."
+   }
   },
   {
-   "title": "Index scan",
+   "key": "Index scan",
    "kind": "sticky-note",
-   "text": "The index scan."
+   "props": {
+    "title": "Index scan",
+    "text": "The index scan."
+   }
   },
   {
-   "title": "Index hook",
+   "key": "Index hook",
    "kind": "sticky-note",
-   "text": "The index hook."
+   "props": {
+    "title": "Index hook",
+    "text": "The index hook."
+   }
   },
   {
-   "title": "Index pool",
+   "key": "Index pool",
    "kind": "sticky-note",
-   "text": "The index pool."
+   "props": {
+    "title": "Index pool",
+    "text": "The index pool."
+   }
   },
   {
-   "title": "Route scan",
+   "key": "Route scan",
    "kind": "sticky-note",
-   "text": "The route scan."
+   "props": {
+    "title": "Route scan",
+    "text": "The route scan."
+   }
   },
   {
-   "title": "Route gate",
+   "key": "Route gate",
    "kind": "sticky-note",
-   "text": "The route gate."
+   "props": {
+    "title": "Route gate",
+    "text": "The route gate."
+   }
   },
   {
-   "title": "Route pool",
+   "key": "Route pool",
    "kind": "sticky-note",
-   "text": "The route pool."
+   "props": {
+    "title": "Route pool",
+    "text": "The route pool."
+   }
   },
   {
-   "title": "Route batch",
+   "key": "Route batch",
    "kind": "sticky-note",
-   "text": "The route batch."
+   "props": {
+    "title": "Route batch",
+    "text": "The route batch."
+   }
   },
   {
-   "title": "Route merge",
+   "key": "Route merge",
    "kind": "sticky-note",
-   "text": "The route merge."
+   "props": {
+    "title": "Route merge",
+    "text": "The route merge."
+   }
   },
   {
-   "title": "Route cursor",
+   "key": "Route cursor",
    "kind": "sticky-note",
-   "text": "The route cursor."
+   "props": {
+    "title": "Route cursor",
+    "text": "The route cursor."
+   }
   },
   {
-   "title": "Cache gate",
+   "key": "Cache gate",
    "kind": "sticky-note",
-   "text": "The cache gate."
+   "props": {
+    "title": "Cache gate",
+    "text": "The cache gate."
+   }
   },
   {
-   "title": "Cache core",
+   "key": "Cache core",
    "kind": "sticky-note",
-   "text": "The cache core."
+   "props": {
+    "title": "Cache core",
+    "text": "The cache core."
+   }
   },
   {
-   "title": "Cache batch",
+   "key": "Cache batch",
    "kind": "sticky-note",
-   "text": "The cache batch."
+   "props": {
+    "title": "Cache batch",
+    "text": "The cache batch."
+   }
   },
   {
-   "title": "Cache plan",
+   "key": "Cache plan",
    "kind": "sticky-note",
-   "text": "The cache plan."
+   "props": {
+    "title": "Cache plan",
+    "text": "The cache plan."
+   }
   },
   {
-   "title": "Cache stream",
+   "key": "Cache stream",
    "kind": "sticky-note",
-   "text": "The cache stream."
+   "props": {
+    "title": "Cache stream",
+    "text": "The cache stream."
+   }
   },
   {
-   "title": "Cache pool",
+   "key": "Cache pool",
    "kind": "sticky-note",
-   "text": "The cache pool."
+   "props": {
+    "title": "Cache pool",
+    "text": "The cache pool."
+   }
   },
   {
-   "title": "Queue gate",
+   "key": "Queue gate",
    "kind": "sticky-note",
-   "text": "The queue gate."
+   "props": {
+    "title": "Queue gate",
+    "text": "The queue gate."
+   }
   },
   {
-   "title": "Queue hook",
+   "key": "Queue hook",
    "kind": "sticky-note",
-   "text": "The queue hook."
+   "props": {
+    "title": "Queue hook",
+    "text": "The queue hook."
+   }
   },
   {
-   "title": "Queue view",
+   "key": "Queue view",
    "kind": "sticky-note",
-   "text": "The queue view."
+   "props": {
+    "title": "Queue view",
+    "text": "The queue view."
+   }
   },
   {
-   "title": "Queue plan",
+   "key": "Queue plan",
    "kind": "sticky-note",
-   "text": "The queue plan."
+   "props": {
+    "title": "Queue plan",
+    "text": "The queue plan."
+   }
   },
   {
-   "title": "Queue stream",
+   "key": "Queue stream",
    "kind": "sticky-note",
-   "text": "The queue stream."
+   "props": {
+    "title": "Queue stream",
+    "text": "The queue stream."
+   }
   },
   {
-   "title": "Queue pool",
+   "key": "Queue pool",
    "kind": "sticky-note",
-   "text": "The queue pool."
+   "props": {
+    "title": "Queue pool",
+    "text": "The queue pool."
+   }
   },
   {
-   "title": "Sync guard",
+   "key": "Sync guard",
    "kind": "sticky-note",
-   "text": "The sync guard."
+   "props": {
+    "title": "Sync guard",
+    "text": "The sync guard."
+   }
   },
   {
-   "title": "Sync plan",
+   "key": "Sync plan",
    "kind": "sticky-note",
-   "text": "The sync plan."
+   "props": {
+    "title": "Sync plan",
+    "text": "The sync plan."
+   }
   },
   {
-   "title": "Sync scan",
+   "key": "Sync scan",
    "kind": "sticky-note",
-   "text": "The sync scan."
+   "props": {
+    "title": "Sync scan",
+    "text": "The sync scan."
+   }
   },
   {
-   "title": "Sync hook",
+   "key": "Sync hook",
    "kind": "sticky-note",
-   "text": "The sync hook."
+   "props": {
+    "title": "Sync hook",
+    "text": "The sync hook."
+   }
   },
   {
-   "title": "Sync core",
+   "key": "Sync core",
    "kind": "sticky-note",
-   "text": "The sync core."
+   "props": {
+    "title": "Sync core",
+    "text": "The sync core."
+   }
   },
   {
-   "title": "Sync gate",
+   "key": "Sync gate",
    "kind": "sticky-note",
-   "text": "The sync gate."
+   "props": {
+    "title": "Sync gate",
+    "text": "The sync gate."
+   }
   },
   {
-   "title": "Auth scan",
+   "key": "Auth scan",
    "kind": "sticky-note",
-   "text": "The auth scan."
+   "props": {
+    "title": "Auth scan",
+    "text": "The auth scan."
+   }
   },
   {
-   "title": "Auth gate",
+   "key": "Auth gate",
    "kind": "sticky-note",
-   "text": "The auth gate."
+   "props": {
+    "title": "Auth gate",
+    "text": "The auth gate."
+   }
   },
   {
-   "title": "Auth batch",
+   "key": "Auth batch",
    "kind": "sticky-note",
-   "text": "The auth batch."
+   "props": {
+    "title": "Auth batch",
+    "text": "The auth batch."
+   }
   },
   {
-   "title": "Auth hook",
+   "key": "Auth hook",
    "kind": "sticky-note",
-   "text": "The auth hook."
+   "props": {
+    "title": "Auth hook",
+    "text": "The auth hook."
+   }
   },
   {
-   "title": "Auth pool",
+   "key": "Auth pool",
    "kind": "sticky-note",
-   "text": "The auth pool."
+   "props": {
+    "title": "Auth pool",
+    "text": "The auth pool."
+   }
   },
   {
-   "title": "Auth cursor",
+   "key": "Auth cursor",
    "kind": "sticky-note",
-   "text": "The auth cursor."
+   "props": {
+    "title": "Auth cursor",
+    "text": "The auth cursor."
+   }
   },
   {
-   "title": "Store hook",
+   "key": "Store hook",
    "kind": "sticky-note",
-   "text": "The store hook."
+   "props": {
+    "title": "Store hook",
+    "text": "The store hook."
+   }
   },
   {
-   "title": "Store cursor",
+   "key": "Store cursor",
    "kind": "sticky-note",
-   "text": "The store cursor."
+   "props": {
+    "title": "Store cursor",
+    "text": "The store cursor."
+   }
   },
   {
-   "title": "Store batch",
+   "key": "Store batch",
    "kind": "sticky-note",
-   "text": "The store batch."
+   "props": {
+    "title": "Store batch",
+    "text": "The store batch."
+   }
   },
   {
-   "title": "Store core",
+   "key": "Store core",
    "kind": "sticky-note",
-   "text": "The store core."
+   "props": {
+    "title": "Store core",
+    "text": "The store core."
+   }
   },
   {
-   "title": "Store view",
+   "key": "Store view",
    "kind": "sticky-note",
-   "text": "The store view."
+   "props": {
+    "title": "Store view",
+    "text": "The store view."
+   }
   },
   {
-   "title": "Store stream",
+   "key": "Store stream",
    "kind": "sticky-note",
-   "text": "The store stream."
+   "props": {
+    "title": "Store stream",
+    "text": "The store stream."
+   }
   }
  ],
  "edges": [

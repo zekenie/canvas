@@ -7,11 +7,12 @@
 // board fills the view when it is fit to it, and a frame at the same, so that a look into it fills the view too. What a container's
 // layout costs counts how far off that shape it is (cost.mjs's shapeCost), which is what chooses between arrows running down and across.
 import { byTitle } from './util.mjs';
+import { holdsShapes } from './model.mjs';
 import { layoutFlat, removeOverlaps, pushApart, normalize, pack, stretched, offShapeOf, DEFAULT_VIEW } from './elk.mjs';
 import { warmStress } from './stress.mjs';
 import { arrowBetween, segLength } from './geom.mjs';
 import { ownCost, ownCostParts, shapeCost, FILL_WEIGHT } from './cost.mjs';
-import { DEFAULT_CONSTANTS, TITLE_PILL, pillKey } from './sizes.mjs';
+import { DEFAULT_CONSTANTS, pillKey } from './sizes.mjs';
 import { fansOut } from './moves.mjs';
 
 // draw's numbers (a pill's height, step and gap, how far `in` puts a shape from a frame's edge, a frame's least size) come from `canvas measure`: sizes.constants
@@ -69,11 +70,12 @@ export class Layouter {
     this.anchors = new Map();   // container id -> {algo, dir, k, pos: Map(id -> {x, y}), at, sig, ranked}: where the accepted layout has the container's children (setAnchors)
     this.stats = { layouts: 0, elkCalls: 0, hits: 0, elkMs: 0, warm: 0 };
     this.rootCid = 'b:' + board;
+    this.current = null;        // where the drawing's shapes are now (plan.mjs's currentFor), once the pills are decided: a container whose members are unchanged keeps them there
+    this.kept = null;           // the containers that kept their members (a set, while current is set)
     this.out = model.edges.filter((e) => model.node(e.from).board === board);
     this.sameBoard = this.out.filter((e) => !e.cross);
-    this.arcs = arcsOf(model, this.out);   // a relationship type drawn as one arc through its pill: its two types (straighten)
-    this.leaves = [...model.nodes.values()].filter((n) => n.board === board && n.kind !== 'frame');
-    this.frameTitles = [...model.nodes.values()].filter((n) => n.board === board && n.kind === 'frame').map((n) => n.key);   // keys (a title, unless more than one node has it)
+    this.leaves = [...model.nodes.values()].filter((n) => n.board === board && !holdsShapes(n));
+    this.frameTitles = [...model.nodes.values()].filter((n) => n.board === board && holdsShapes(n)).map((n) => n.key);   // keys (a title, unless more than one node has it)
     this.findSpines(this.opts.spines !== false);
   }
 
@@ -92,7 +94,7 @@ export class Layouter {
     if (!on) return;
     for (const cid of [this.rootCid].concat(this.frameTitles.map((f) => 'f:' + f))) {
       const kids = m.kids.get(cid) || [];
-      if (kids.length < 2 || kids.length > 2 * SPINE_ROWS || kids.some((t) => m.node(t).kind === 'frame' || m.node(t).rank != null)) continue;
+      if (kids.length < 2 || kids.length > 2 * SPINE_ROWS || kids.some((t) => holdsShapes(m.node(t)) || m.node(t).rank != null)) continue;
       const set = new Set(kids), uses = new Map(kids.map((t) => [t, new Set()]));
       let inner = false;
       for (const e of this.out) {
@@ -138,7 +140,7 @@ export class Layouter {
 
   isFree(id) { return !!this.free && this.free.has(id); }
 
-  isFrame(id) { return !this.isFree(id) && this.m.node(id).kind === 'frame'; }
+  isFrame(id) { return !this.isFree(id) && holdsShapes(this.m.node(id)); }
 
   /**
    * Which edges are pills and which arrows, and which pills are shared. state: {promoted, fanned, apart, hosts, splits}: an edge into a
@@ -309,7 +311,7 @@ export class Layouter {
           pills.push({ start: fp.host, target: fp.target, users: fp.users, shared: true, free: true, x, y, w: fp.w, h: this.k.pillHeight });
           continue;
         }
-        if (this.m.node(t).kind === 'frame') { const r = res.get('f:' + t); frames.set(t, { x, y, w: r.w, h: r.h }); walk('f:' + t, x, y); continue; }
+        if (holdsShapes(this.m.node(t))) { const r = res.get('f:' + t); frames.set(t, { x, y, w: r.w, h: r.h }); walk('f:' + t, x, y); continue; }
         const u = units.get(t);
         boxes.set(t, { x: x + (u.nx || 0), y: y + u.ny, w: u.noteW, h: u.noteH });
         (plan.byStart.get(t) || []).forEach((en, i) => {
@@ -389,8 +391,54 @@ export class Layouter {
     return u.k ? { id: t, w: u.w, h: u.h, nw: u.noteW, nh: u.noteH, ny: u.ny, nx: u.nx } : { id: t, w: u.w, h: u.h };
   }
 
+  /**
+   * A container whose members are exactly those the drawing holds in it now keeps them where they are (drawing again in place): each leaf's note at
+   * its current place, each frame at its current top-left and at least its current size, the pills it needs laid beside the notes. Not kept (false)
+   * when a member was added, removed or moved to or from another container, when a shared pill lives in it (a spine), or when what is kept now
+   * overlaps (a pill column that no longer fits, a frame that grew): the container is then laid out afresh.
+   */
+  async keepCurrent(cid, units, lifted, algos, res, info, target, slot) {
+    const cur = this.current, own = this.m.kids.get(cid) || [];
+    if (!cur || !own.length || this.spines.get(cid) || (this.freeIn && this.freeIn.get(cid))) return false;
+    // ranked children are rows or columns by their ranks, as the document and --ranks say, wherever they are now: what each holds is kept
+    if (own.some((t) => !this.isFree(t) && this.m.node(t).rank != null)) return false;
+    const holder = cid.slice(2);
+    const held = cur.members.get(cid) || new Set();
+    if (held.size !== own.length || own.some((t) => !held.has(t) || !cur.at.has(t))) return false;
+    const isFrame = cid[0] === 'f', pad = isFrame ? this.k.frameInset : 0;
+    const origin = isFrame ? cur.at.get(holder) : { x: 0, y: 0 };
+    if (!origin) return false;
+    const items = [], pos = [], sizes = new Map();
+    for (const t of own) {
+      const c = cur.at.get(t), rel = { x: c.x - origin.x, y: c.y - origin.y };
+      if (holdsShapes(this.m.node(t))) {
+        await this.separate('f:' + t, units, lifted, algos, res, info, this.aspect);
+        const r = res.get('f:' + t);
+        r.w = Math.max(r.w, c.w); r.h = Math.max(r.h, c.h);
+        items.push({ id: t, w: r.w, h: r.h }); pos.push(rel);
+      } else {
+        const it = this.leafItem(t, units), u = units.get(t);
+        items.push(it); pos.push({ x: rel.x - (u.nx || 0), y: rel.y - (u.ny || 0) });
+      }
+    }
+    if (overlapping(items, pos)) return false;
+    let maxX = 0, maxY = 0;
+    items.forEach((it, i) => { maxX = Math.max(maxX, pos[i].x + it.w); maxY = Math.max(maxY, pos[i].y + it.h); });
+    const shape = this.shapeOf(cid, target, slot);
+    const index = new Map(items.map((it, i) => [it.id, i]));
+    const edges = (lifted.get(cid) || []).map((e) => ({ a: index.get(e.a), b: index.get(e.b), w: e.w, n: e.n, np: e.np }));
+    const cw = isFrame ? cur.at.get(holder).w : 0, ch = isFrame ? cur.at.get(holder).h : 0;
+    const r = { pos: pos.map((p) => ({ x: p.x - pad, y: p.y - pad })), w: Math.max(cw, maxX + pad) - 2 * pad, h: Math.max(ch, maxY + pad) - 2 * pad, algo: 'kept' };
+    if (!isFrame) { r.w = maxX; r.h = maxY; }
+    r.parts = ownCostParts(items, r.pos, edges, FILL_WEIGHT, shape);
+    this.settle(cid, items, r, edges, res, info);
+    if (this.kept) this.kept.add(cid);
+    return true;
+  }
+
   /** `target` is the shape the container aims at; the frames in it aim at the view's (a ranked container's children at their slots': separateRanked). */
   async separate(cid, units, lifted, algos, res, info, target, slot) {
+    if (await this.keepCurrent(cid, units, lifted, algos, res, info, target, slot)) return;
     const kids = this.kidsOf(cid);
     const isFrame = cid[0] === 'f';
     const ranks = kids.map((t) => (this.isFree(t) ? null : this.m.node(t).rank));
@@ -398,7 +446,7 @@ export class Layouter {
     const items = [];
     for (const t of kids) {
       if (this.isFree(t)) items.push(this.freeItem(t));
-      else if (this.m.node(t).kind === 'frame') { await this.separate('f:' + t, units, lifted, algos, res, info, this.aspect); const r = res.get('f:' + t); items.push({ id: t, w: r.w, h: r.h }); }
+      else if (holdsShapes(this.m.node(t))) { await this.separate('f:' + t, units, lifted, algos, res, info, this.aspect); const r = res.get('f:' + t); items.push({ id: t, w: r.w, h: r.h }); }
       else items.push(this.leafItem(t, units));
     }
     const shape = this.shapeOf(cid, target, slot);
@@ -498,39 +546,7 @@ export class Layouter {
         this.cache.set(key, r);
       }
     }
-    this.settle(cid, items, this.straighten(items, r, edges, shape, isFrame), edges, res, info);
-  }
-
-  /**
-   * A container's layout with each relationship type the app draws as one arc (`arcs`) put where the app's Straighten puts one: its pill's middle
-   * at the middle of the line between its two types' middles, and whatever it then overlaps pushed off it (pushApart: what is pushed pushes in
-   * turn), so the arc through the three runs straight, or nearly. Laid out as any note, the pill can land beside one of its types and not between
-   * them, and the circle through the three is then a loop as big as the board. One whose types aren't both children of the container is left.
-   */
-  straighten(items, r, edges, shape, isFrame) {
-    const at = new Map(items.map((it, i) => [it.id, i]));
-    const moves = [];
-    for (const it of items) {
-      const pair = this.arcs.get(it.id);
-      if (pair && at.has(pair[0]) && at.has(pair[1])) moves.push([at.get(it.id), at.get(pair[0]), at.get(pair[1])]);
-    }
-    if (!moves.length) return r;
-    const pos = r.pos.map((p) => ({ x: p.x, y: p.y }));
-    const middle = (i) => {
-      const it = items[i];
-      return { x: pos[i].x + (it.nx || 0) + (it.nw != null ? it.nw : it.w) / 2, y: pos[i].y + (it.ny || 0) + (it.nh != null ? it.nh : it.h) / 2 };
-    };
-    const active = items.map(() => false);
-    for (const [p, a, b] of moves) {
-      const A = middle(a), B = middle(b);
-      pos[p] = { x: (A.x + B.x) / 2 - items[p].w / 2, y: (A.y + B.y) / 2 - items[p].h / 2 };
-      active[p] = true;
-    }
-    const gx = isFrame ? this.k.tightGap : PACK_GAP, gy = isFrame ? 64 : PACK_GAP;
-    let placed = pushApart(items, pos, gx, gy, active).map((q) => ({ x: Math.round(q.x), y: Math.round(q.y) }));
-    if (overlapping(items, placed)) placed = removeOverlaps(items, placed, gx, gy);
-    const n = normalize(items, placed);
-    return Object.assign({}, r, { pos: n.pos, w: n.w, h: n.h, parts: ownCostParts(items, n.pos, edges, FILL_WEIGHT, shape) });
+    this.settle(cid, items, r, edges, res, info);
   }
 
   /**
@@ -542,9 +558,10 @@ export class Layouter {
     const how = r.ranked ? r.ranked.orient : r.dir === 'RIGHT' ? 'across' : r.algo === 'stress' && r.k && r.k !== 1 ? 'stretched' : null;   // what the report says of it, beside its algorithm
     info.set(cid, { algorithm: r.algo, how, warm: !!r.warm, children: items.length, arrows: edges.reduce((s, e) => s + e.n, 0), costs: r.costs || null });
     const pad = isFrame ? this.k.frameInset : 0;
-    const title = isFrame ? this.m.node(cid.slice(2)).title : '';   // the pill above a frame says its title, not its key
-    const w = isFrame ? Math.max(r.w + 2 * pad, this.k.frameMin.w, Math.ceil(TITLE_PILL(title))) : r.w;
-    const h = isFrame ? Math.max(r.h + 2 * pad, this.k.frameMin.h) : r.h;
+    const fs = isFrame ? (this.sizes.frames && this.sizes.frames[cid.slice(2)]) || {} : {};   // the app's smallest for this frame, and the width of the title over it
+    const min = fs.min || this.k.frameMin;
+    const w = isFrame ? Math.max(r.w + 2 * pad, min.w, Math.ceil(fs.titleWidth || 0)) : r.w;
+    const h = isFrame ? Math.max(r.h + 2 * pad, min.h) : r.h;
     const pos = new Map(items.map((it, i) => [it.id, { x: r.pos[i].x + pad, y: r.pos[i].y + pad }]));
     const sub = { arrows: r.parts ? r.parts.arrows : 0, n: r.parts ? r.parts.n : 0, area: 0 };
     for (const it of items) {
@@ -557,7 +574,7 @@ export class Layouter {
   /** Roughly the room a child takes, before it is laid out: a leaf's box and the gaps kept about it, and a frame's leaves' with a fifth more. */
   roomOf(t, units) {
     if (this.isFree(t)) return (this.free.get(t).w + this.k.tightGap) * (this.k.pillHeight + 64);
-    if (this.m.node(t).kind !== 'frame') { const u = units.get(t); return (u.w + this.k.tightGap) * (u.h + 64); }
+    if (!holdsShapes(this.m.node(t))) { const u = units.get(t); return (u.w + this.k.tightGap) * (u.h + 64); }
     return 1.2 * this.kidsOf('f:' + t).reduce((s, c) => s + this.roomOf(c, units), 0) + 1;
   }
 
@@ -585,7 +602,7 @@ export class Layouter {
       for (let i = 0; i < kids.length; i++) {
         const t = kids[i];
         if (this.isFree(t)) { items.push(this.freeItem(t)); continue; }
-        if (this.m.node(t).kind !== 'frame') { items.push(this.leafItem(t, units)); continue; }
+        if (!holdsShapes(this.m.node(t))) { items.push(this.leafItem(t, units)); continue; }
         // the shape of the child's slot: its share of a row of a board `target` wide for its height, or of a column of one, but never more than
         // SLOT_MOST times wider (or taller) than `target`: a band with little in it would be a strip, and its children a line
         const s = slotRoom[slotOf[i]];
@@ -622,7 +639,7 @@ export class Layouter {
     }
     for (const [k, v] of best.sub) res.set(k, v);
     for (const [k, v] of best.subInfo) info.set(k, v);
-    this.settle(cid, best.items, this.straighten(best.items, best.r, edges, shape, cid[0] === 'f'), edges, res, info);
+    this.settle(cid, best.items, best.r, edges, res, info);
   }
 
   /**
@@ -712,27 +729,6 @@ export class Layouter {
     this.stats.elkMs += dt; { const k = 'phase_' + (this.phase || '-'); this.stats[k] = (this.stats[k] || 0) + dt; const c = 'n' + k; this.stats[c] = (this.stats[c] || 0) + 1; } { const sz = 'size_' + algo + '_' + Math.min(40, 5 * Math.ceil(items.length / 5)); this.stats[sz] = (this.stats[sz] || 0) + dt; const sc = 'n' + sz; this.stats[sc] = (this.stats[sc] || 0) + 1; } this.stats['elkMs_' + algo] = (this.stats['elkMs_' + algo] || 0) + dt;
     return Object.assign({}, r);
   }
-}
-
-/**
- * The relationship types the app draws as one arc through their pill: those with one end on each side, at two different types (the app draws
- * the halves of any other on the bends they store). Returns relationship type key -> [its from type, its to type].
- */
-export function arcsOf(model, edges) {
-  const from = new Map(), to = new Map();
-  for (const e of edges) {
-    if (!e.end) continue;
-    const toEnd = !!model.node(e.from).relationship, rel = toEnd ? e.from : e.to;
-    const side = toEnd ? to : from;
-    if (!side.has(rel)) side.set(rel, []);
-    side.get(rel).push(toEnd ? e.to : e.from);
-  }
-  const out = new Map();
-  for (const [rel, f] of from) {
-    const t = to.get(rel) || [];
-    if (f.length === 1 && t.length === 1 && f[0] !== t[0]) out.set(rel, [f[0], t[0]]);
-  }
-  return out;
 }
 
 /** Whether any two boxes at these places overlap. */

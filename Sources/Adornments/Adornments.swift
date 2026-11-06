@@ -686,6 +686,14 @@ extension CanvasEditor {
         return AdornmentLayout.extent(of: laidOut.items, in: box.width, height: box.height)
     }
 
+    /// How wide a shape must be, in world units at 100% zoom, for every adornment it would show to show whole (its title's pill
+    /// or tab never cut: `AdornmentLayout.leastWidth(of:)`); 0 for one with none, or where no plugin places adornments. Asked of any
+    /// record, on a board or not, keeping nothing for it: what `canvas measure` says a node's title needs.
+    public func adornmentLeastWidth(of record: AnyShapeRecord) -> CGFloat {
+        guard let state = adornmentState, record.box != nil, let laidOut = state.laidOut(record, keeping: false) else { return 0 }
+        return AdornmentLayout.leastWidth(of: laidOut.items)
+    }
+
     /// What these shapes' adornments show changed other than through the document (an open lock
     /// fading): they're made again, the canvas redraws, and the select tool looks for a button
     /// under a still pointer (`canvasButtonsDidChange`).

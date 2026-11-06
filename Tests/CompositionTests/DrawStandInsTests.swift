@@ -129,6 +129,24 @@ extension CanvasEditor {
         expectEqual(connection["via"]?["to"]?["id"], .string(pill.id.description), "through the pill")
     },
 
+    test("canvas kinds says a reference can stand for a note, a subboard or a frame once it's public, and for no pill or arrow") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        try configureBoards(pasteboard: pasteboard)
+        let board = Wharf().board()
+        defer { board.close() }
+        let server = try startCommandServer(boards: [board], frontmost: board)
+        defer { server.stop() }
+        let result = try canvas(server, ["kinds"])
+        expectEqual(result.status, 0, result.error)
+        let kinds = try JSON(text: result.output)
+        func via(_ kind: String) -> JSON? { kinds.arrayValue?.first { $0["kind"]?.stringValue == kind }?["via"] }
+        for kind in ["sticky-note", "subboard", "frame"] {
+            expectEqual(via(kind), [["kind": "reference", "needs": "public"]], kind)
+        }
+        expectEqual(via("reference"), nil, "a pill stands for no pill")
+        expectEqual(via("arrow"), nil, "an arrow is never public")
+    },
     test("a public note whose title another note has, or has not: its reference says where it is over the name and is as wide as that, which measure says too") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

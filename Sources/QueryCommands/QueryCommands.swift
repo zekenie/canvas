@@ -84,17 +84,31 @@ func query(_ params: QueryParams, in context: AutomationContext) async throws(Au
     try params.checkFields(against: queries.vocabulary)
     switch asked {
     case .query(let text):
-        let result = try await answer(text, with: queries, params)
+        var result = try await answer(text, with: queries, params)
+        laidOut(&result, in: editor)
         return await QueryOutput.json(consume result, countOnly: params.count)
     case .question(let question):
         guard let translator = editor.queryTranslator else { throw AutomationError(QueryTranslationError.noModel) }
-        let outcome: AskOutcome
+        var outcome: AskOutcome
         do throws(QueryTranslationError) {
             outcome = try await translator.ask(question, limit: params.limit, countOnly: params.count, properties: params.listing)
         } catch {
             throw AutomationError(error)
         }
+        laidOut(&outcome.result, in: editor)
         return await QueryOutput.json(consume outcome, countOnly: params.count)
+    }
+}
+
+/// Each row's `at` as the frame its shape is laid out in, as a draw's and an apply's rows say it, read on the main actor once the
+/// engine has answered: the engine reads the file off it and says the stored box, which a kind laid out at another size than it
+/// stores (a note with rows, a relationship type's pill about the middle of its box) is not drawn in. A row whose shape the file
+/// no longer has keeps the box the engine read.
+@MainActor
+private func laidOut(_ result: inout QueryResult, in editor: CanvasEditor) {
+    let registry = editor.registry
+    for index in result.rows.indices where result.rows[index].at != nil && registry.isLaidOutBox(result.rows[index].kind) {
+        if let frame = editor.frame(inFile: result.rows[index].id) { result.rows[index].at = frame }
     }
 }
 

@@ -1,0 +1,7 @@
+[
+ {"kind":"arrow","drawable":false,"why":"it joins two shapes: write edge \"A\" -> \"B\""},
+ {"kind":"frame","drawable":true,"holds":"shapes","via":[{"kind":"reference"}]},
+ {"kind":"reference","drawable":true},
+ {"kind":"sticky-note","drawable":true,"via":[{"kind":"reference"}]},
+ {"kind":"subboard","drawable":true,"holds":"board","via":[{"kind":"reference"}]}
+]

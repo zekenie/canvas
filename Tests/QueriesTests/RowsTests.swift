@@ -235,7 +235,7 @@ private func problemsPlugin() -> Contributor {
         let rows = try answer("#\(uuid(4)), #\(uuid(21))", on: h, properties: .none).rows
         let texts = try rows.map { String(decoding: try encoder.encode($0), as: UTF8.self) }
         expectEqual(texts, [
-            #"{"board":"\#(uuid(12))","id":"\#(uuid(21))","inside":["Pantry","Untitled Pocket"],"kind":"chore"}"#,
+            #"{"at":[[0,0],[100,60]],"board":"\#(uuid(12))","id":"\#(uuid(21))","inside":["Pantry","Untitled Pocket"],"kind":"chore"}"#,
             #"{"board":"root","connection":{"from":{"id":"\#(uuid(2))","title":"Pantry"},"to":{"id":"\#(uuid(1))","title":"Alpha"},"type":"tether"},"#
                 + #""id":"\#(uuid(4))","kind":"link"}"#,
         ])
@@ -272,8 +272,8 @@ private func problemsPlugin() -> Contributor {
         encoder.outputFormatting = [.sortedKeys]
         let rows = try answer("chore:is(:ailing, :sick)", on: h, properties: .none).rows
         let texts = try rows.prefix(3).map { String(decoding: try encoder.encode($0), as: UTF8.self) }
-        expectEqual(texts[0], #"{"board":"root","id":"\#(uuid(1))","kind":"chore","problems":[{"class":"needed","field":"estimate","message":"estimate is needed","path":"\/estimate"}],"title":"Alpha"}"#)
-        expectEqual(texts[1], #"{"board":"root","id":"\#(uuid(2))","kind":"chore","problems":[{"class":"wrong","field":"status","message":"status is done"}]}"#)
-        expectEqual(texts[2], #"{"board":"root","id":"\#(uuid(3))","kind":"chore","title":"Gamma"}"#)
+        expectEqual(texts[0], #"{"at":[[0,0],[100,60]],"board":"root","id":"\#(uuid(1))","kind":"chore","problems":[{"class":"needed","field":"estimate","message":"estimate is needed","path":"\/estimate"}],"title":"Alpha"}"#)
+        expectEqual(texts[1], #"{"at":[[0,0],[100,60]],"board":"root","id":"\#(uuid(2))","kind":"chore","problems":[{"class":"wrong","field":"status","message":"status is done"}]}"#)
+        expectEqual(texts[2], #"{"at":[[0,0],[100,60]],"board":"root","id":"\#(uuid(3))","kind":"chore","title":"Gamma"}"#)
     },
 ])

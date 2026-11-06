@@ -251,7 +251,8 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             let server = try startCommandServer(boards: [board], frontmost: board)
             defer { server.stop() }
             let examples = try skillExamples(in: file)
-            expect(!examples.isEmpty, "\(file) has examples")
+            // reference/kinds.md is written from canvas kinds, and has no examples to run.
+            expect(!examples.isEmpty || file.hasSuffix("/reference/kinds.md"), "\(file) has examples")
             for written in examples {
                 ran += 1
                 // A page's sample ids stand for the shapes its last query found, wherever the blocks write them.
@@ -442,84 +443,32 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
         }
         expectEqual(written, declared, "the reference's edge types")
     },
-    test("the skill's tables of kinds are what canvas kinds says: every drawable kind, its size, its attributes, its channels by side, and its smallest") {
+    test("the skill's pages leave a kind's size, attributes, channels and smallest to reference/kinds.md, which the kind-pages test holds to canvas kinds, and link to it") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let commands = registry.hostCommands
         let listed = try awaitResult { try await commands.run("kinds", [:], nil) }.arrayValue ?? []
-        var kinds: [String: JSON] = [:]
-        for kind in listed where kind["drawable"] == true { kinds[kind["kind"]?.stringValue ?? "?"] = kind }
-        expect(kinds.count >= 3, "the shipped kinds: \(kinds.keys.sorted())")
-        /// A kind's channels, each with the sides an edge may leave it by on it.
-        @MainActor func channels(_ kind: String) -> [String: Set<String>] {
-            var sides: [String: Set<String>] = [:]
-            for (side, on) in kinds[kind]?["edges"]?.objectValue ?? [:] {
-                for channel in on.arrayValue?.compactMap(\.stringValue) ?? [] { sides[channel, default: []].insert(side) }
+        let kinds = listed.filter { $0["drawable"] == true }
+        expect(kinds.count >= 3, "the shipped kinds")
+        let page = try String(contentsOfFile: "\(skillFolder)/reference/kinds.md", encoding: .utf8)
+        for kind in kinds {
+            let name = kind["kind"]?.stringValue ?? "?"
+            expect(page.contains("## `\(name)`"), "reference/kinds.md has a section for \(name)")
+        }
+        expect(kinds.contains { $0["smallest"] != nil }, "a shipped kind has a smallest size (a frame)")
+        for file in ["SKILL.md", "reference/language.md"] {
+            let text = try String(contentsOfFile: "\(skillFolder)/\(file)", encoding: .utf8)
+            expect(text.contains("kinds.md"), "\(file) links to reference/kinds.md")
+            expect(!markdownTables(in: text).contains { $0.first?.first == "kind" && ($0.first ?? []).contains("size") }, "\(file) has a table of kinds, which kinds.md is")
+            for kind in kinds {
+                if let smallest = kind["smallest"]?.stringValue {
+                    expect(!text.contains("is at least \(smallest)"), "\(file) says a \(kind["kind"]?.stringValue ?? "?")'s smallest size, which kinds.md does")
+                }
             }
-            return sides
-        }
-        /// What a cell says of a kind's channels: `none…`, or each channel in backticks, on the sides it names.
-        @MainActor func said(_ cell: String) -> [String: Set<String>] {
-            guard !cell.hasPrefix("none") else { return [:] }
-            return Dictionary(backticked(cell).map { ($0, sideWords(cell)) }) { first, _ in first }
-        }
-        @MainActor func attributes(_ kind: String) -> Set<String> { Set(kinds[kind]?["attributes"]?.objectValue?.keys.map { $0 } ?? []) }
-
-        let skill = try String(contentsOfFile: "\(skillFolder)/SKILL.md", encoding: .utf8)
-        let tour = try require(markdownTables(in: skill).first { $0.first?.first == "kind" }, "SKILL.md's table of kinds")
-        expectEqual(Set(tour.dropFirst().compactMap { backticked($0[0]).first }), Set(kinds.keys), "SKILL.md lists every drawable kind")
-        for row in tour.dropFirst() where row.count == 4 {
-            let kind = backticked(row[0]).first ?? "?"
-            expectEqual(row[1], kinds[kind]?["size"]?.stringValue, "SKILL.md: \(kind)'s size")
-            let written = attributeList(row[2])
-            expectEqual(Set(written.map(\.name)), attributes(kind), "SKILL.md: \(kind)'s attributes")
-            for (name, choices) in written {
-                guard let choices, let takes = kinds[kind]?["attributes"]?[name]?.stringValue, takes.contains("|") else { continue }
-                expectEqual(choices, takes.components(separatedBy: "|"), "SKILL.md: \(kind)'s \(name)")
-            }
-            expectEqual(said(row[3]), channels(kind), "SKILL.md: \(kind)'s edges")
-        }
-
-        let reference = try String(contentsOfFile: "\(skillFolder)/reference/language.md", encoding: .utf8)
-        let tables = markdownTables(in: reference).filter { $0.first?.first == "kind" }
-        let shapes = try require(tables.first { $0.first?.count == 5 }, "the reference's table of kinds")
-        expectEqual(Set(shapes.dropFirst().compactMap { backticked($0[0]).first }), Set(kinds.keys), "the reference lists every drawable kind")
-        for row in shapes.dropFirst() where row.count == 5 {
-            let kind = backticked(row[0]).first ?? "?"
-            expectEqual(row[1], kinds[kind]?["size"]?.stringValue, "the reference: \(kind)'s size")
-            expectEqual(said(row[4]), channels(kind), "the reference: \(kind)'s edges")
-        }
-        let ports = try require(tables.first { $0.first == ["kind", "channels", "sides"] }, "the reference's table of channels")
-        var inPorts: Set<String> = []
-        for row in ports.dropFirst() where row.count == 3 {
-            for kind in backticked(row[0]) {
-                inPorts.insert(kind)
-                expectEqual(row[1] == "none" ? [:] : Dictionary(backticked(row[1]).map { ($0, sideWords(row[2])) }) { first, _ in first }, channels(kind),
-                            "the reference: \(kind)'s channels")
-            }
-        }
-        expectEqual(inPorts, Set(kinds.keys), "the reference's channels, for every drawable kind")
-        var inBullets: Set<String> = []
-        for line in reference.components(separatedBy: "\n") where line.hasPrefix("- **") {
-            guard let colon = line.range(of: ": ") else { continue }
-            let named = boldWords(String(line[..<colon.lowerBound])).filter { kinds[$0] != nil }
-            for kind in named {
-                inBullets.insert(kind)
-                expectEqual(Set(attributeList(String(line[colon.upperBound...])).map(\.name)), attributes(kind), "the reference: \(kind)'s attributes")
-            }
-        }
-        expectEqual(inBullets, Set(kinds.keys), "the reference's attributes, for every drawable kind")
-
-        // The smallest a kind is drawn, where it has one, as both pages say it.
-        let smallest = kinds.compactMapValues { $0["smallest"]?.stringValue }
-        expect(!smallest.isEmpty, "a shipped kind has a smallest size (a frame)")
-        for (kind, size) in smallest {
-            expect(skill.contains("\(kind) is at least \(size)"), "SKILL.md: a \(kind) is at least \(size)")
-            expect(reference.contains("\(kind) is at least \(size)"), "the reference: a \(kind) is at least \(size)")
         }
     },
     test("canvas-ingest's pages name only options `ingest --help` lists, wherever they run ingest, and name every option it lists") {
         let listed = try ingestHelpOptions()
-        expect(listed.isSuperset(of: ["--commit", "--new-file", "--board", "--scan", "--where"]), "ingest --help lists its options: \(listed.sorted())")
+        expect(listed.isSuperset(of: ["--commit", "--board", "--on", "--drawing", "--scan", "--where"]), "ingest --help lists its options: \(listed.sorted())")
         let pages = try ingestSkillPages()
         expect(pages.count >= 5, "SKILL.md, the references and the examples' READMEs: \(pages)")
         var named = Set<String>()

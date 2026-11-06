@@ -1,0 +1,140 @@
+{
+ "drawing": "shop-folders",
+ "layout": {
+  "mess": 0.1
+ },
+ "nodes": [
+  {
+   "key": "web",
+   "kind": "frame",
+   "props": {
+    "title": "web"
+   }
+  },
+  {
+   "key": "Home",
+   "in": "web",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Home",
+    "text": "The landing page."
+   }
+  },
+  {
+   "key": "Login",
+   "in": "web",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Login",
+    "text": "Signs a person in."
+   }
+  },
+  {
+   "key": "api",
+   "kind": "frame",
+   "props": {
+    "title": "api"
+   }
+  },
+  {
+   "key": "Routes",
+   "in": "api",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Routes",
+    "text": "Maps each path to its handler."
+   }
+  },
+  {
+   "key": "Auth",
+   "in": "api",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Auth",
+    "text": "Checks a session."
+   }
+  },
+  {
+   "key": "store",
+   "kind": "frame",
+   "props": {
+    "title": "store"
+   }
+  },
+  {
+   "key": "Orders",
+   "in": "store",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Orders",
+    "text": "Holds what was bought."
+   }
+  },
+  {
+   "key": "Billing",
+   "kind": "subboard",
+   "props": {
+    "title": "Billing"
+   }
+  },
+  {
+   "key": "Invoice",
+   "in": "Billing",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Invoice",
+    "text": "Bills an order."
+   }
+  },
+  {
+   "key": "Gateway",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Gateway",
+    "text": "Takes every request in."
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "web",
+   "to": "api"
+  },
+  {
+   "from": "api",
+   "to": "store"
+  },
+  {
+   "from": "api",
+   "to": "Billing"
+  },
+  {
+   "from": "Billing",
+   "to": "store"
+  },
+  {
+   "from": "Home",
+   "to": "Login"
+  },
+  {
+   "from": "Login",
+   "to": "Auth"
+  },
+  {
+   "from": "Routes",
+   "to": "Auth"
+  },
+  {
+   "from": "Gateway",
+   "to": "Routes"
+  },
+  {
+   "from": "Invoice",
+   "to": "Orders"
+  },
+  {
+   "from": "Gateway",
+   "to": "web"
+  }
+ ]
+}

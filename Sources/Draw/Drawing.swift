@@ -77,6 +77,9 @@ struct ShapeItem {
     /// The id its statement wrote (`#7C1E…`, as written), when it names the shape by one: what a message calls a shape
     /// that has no title.
     var idWritten: String?
+    /// Where its room's top-left goes exactly, when a program's run says (`DrawOptions.places`): placed there, never solved,
+    /// pushed or pushing, and put down in or out of the containers it lands on as any shape is.
+    var exact: CGPoint?
 
     /// A box a placement names, found.
     enum Found {
@@ -89,8 +92,8 @@ struct ShapeItem {
         case origin
     }
 
-    /// Whether the layout places it: it's new, or restated with placements.
-    var moves: Bool { existing == nil || !shape.clauses.isEmpty }
+    /// Whether the layout places it: it's new, restated with placements, or put exactly where a program's run says.
+    var moves: Bool { existing == nil || !shape.clauses.isEmpty || exact != nil }
 }
 
 /// An edge statement, resolved.
@@ -251,13 +254,16 @@ struct Drawing {
     let namesBeyond: CanvasEditor?
     /// Whether this run only measures: a name it can't find is a warning and the shape is measured without it.
     let measuring: Bool
+    /// What a program's run asks besides its script (`DrawOptions`): none for a script an agent types.
+    let options: DrawOptions
     /// What measuring found to say (`MeasureResult.warnings`): each a line and a message.
     private(set) var measureWarnings: [(line: Int, message: String)] = []
 
     init(_ script: Script, editor: CanvasEditor, on target: BoardReading, fileNames: FileNames? = nil, namesBeyond: CanvasEditor? = nil,
-         measuring: Bool = false, program: String) throws(DrawError) {
+         measuring: Bool = false, options: DrawOptions = DrawOptions(), program: String) throws(DrawError) {
         let registry = editor.registry
         self.editor = editor
+        self.options = options
         self.program = program
         self.namesBeyond = namesBeyond
         self.measuring = measuring
@@ -306,7 +312,7 @@ struct Drawing {
         let formats = registry.drawTextFormats
         if !formats.isEmpty || !registry.drawValueWriters.isEmpty {
             let lookup = DrawTextLookup(editor: namesBeyond ?? editor, target: target, naming: naming, items: items, itemsByTitle: itemsByTitle,
-                                        unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames)
+                                        unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames, keys: options.keys)
             textWriter = DrawTextWriter(registry: registry, formats: formats, lookup: lookup)
         }
         // A `delete edge` that says which arrow (`is: "T"`) names a type by its title, which only a text
@@ -758,6 +764,8 @@ struct Drawing {
         // Its name: a title (the shape the board has with it, or a new one), a path (the shape there, or a new one made there), or
         // an id (the shape the file has, never a new one).
         var title: String?, idWritten: String?, byID: AnyShapeRecord?, pathKey: ShapePath?, byPath: Placing?, pathSaid: String?
+        // A shape a program's run makes, with the id the program picked for it (`DrawOptions.reserved`).
+        var madeAs: ShapeID?
         switch shape.name {
         case .title(let written)?:
             title = try folded(written, statement)
@@ -777,6 +785,15 @@ struct Drawing {
             }
         case .id(let text)?:
             let id = try shapeID(text, statement), mark = ShapeName.id(text).written
+            if options.reserved.contains(id), editor.file.record(id) == nil, namesBeyond?.shape(inFile: id) == nil {
+                if let earlier = itemByID[id] {
+                    throw DrawError(statement, .duplicate, "\(mark) is written twice, here and on line \(items[earlier].statement.line)",
+                                    hint: "say everything about one shape in one statement")
+                }
+                madeAs = id
+                idWritten = mark
+                break
+            }
             let found = try fileShape(withID: id, written: mark, statement)
             if isDeleted(id, on: found.board) { throw deletedID(mark, statement, for: "\(shape.word) restates") }
             guard found.board == target.board else {
@@ -839,7 +856,7 @@ struct Drawing {
             }
         }
         let placement = registry.placement(for: kind)!
-        let base = existing ?? placement.shape(at: .zero)
+        let base = existing ?? madeAs.map { placement.shape(at: .zero).copy(as: $0) } ?? placement.shape(at: .zero)
         // A width alone keeps the height, until the kind works out its own at that width (`complete`).
         let had = existing?.box?.size ?? placement.size
         let size = shape.size?.size(height: had.height) ?? had
@@ -855,8 +872,10 @@ struct Drawing {
         // A shape named by its id answers to its title only where that title is its alone: two called the same stay `ambiguous_title`.
         if let title, byID == nil || boardShapes(called: title).count < 2 { itemsByTitle[title, default: []].append(items.count) }
         if let existing { itemByID[existing.id] = items.count }
+        if let madeAs { itemByID[madeAs] = items.count }
         var item = ShapeItem(statement: statement, shape: shape, kind: kind, title: title, existing: existing, record: base, size: size,
                              room: size, nearMiss: nearMiss, idWritten: idWritten)
+        item.exact = options.places[statement.line]
         item.holderID = holderID
         item.pathKey = pathKey
         items.append(item)
@@ -935,8 +954,19 @@ struct Drawing {
                             hint: "leave it out of the script, or ask the user to unlock what holds the board")
         }
 
-        // Its title, on a new shape; a new one, on a shape restated.
-        if let written = shape.newTitle {
+        // Its title, on a new shape; a new one, on a shape restated. A program's run names its shapes by id, and a title is
+        // only what it calls a shape: `title:` gives one a shape it makes, and any shape one another beside it has.
+        if options.program, let written = shape.newTitle {
+            let new = try folded(written, statement)
+            guard let property = vocabulary.namingProperty else {
+                throw DrawError(statement, .untitlable, "\(indefinite(item.kind)) can't be given a title, so \(subject) can't be called \(quoted(new))",
+                                hint: "leave \(LanguageKey.title.rawValue): out")
+            }
+            if new != item.title {
+                if item.existing != nil { items[index].rename = new }
+                settings[property] = .string(new)
+            }
+        } else if let written = shape.newTitle {
             guard let existing = item.existing else {
                 throw DrawError(statement, .unsupported, "\(subject) is new, and \(LanguageKey.title.rawValue): renames a shape",
                                 hint: "the title goes after the kind, in quotes: \(shape.word) \(quoted(written))")
@@ -1019,10 +1049,11 @@ struct Drawing {
         // What a restated shape already has isn't a change, though it's written without what reading
         // it makes afresh (the id of an item in a list): a script run again changes nothing.
         if let existing = item.existing {
+            let held = existing.propertiesJSON
             settings = settings.filter { key, value in
                 // A joined value that comes to nothing, over a shape that holds nothing, changes nothing.
-                if value == .null, registry.drawValueWriters[key] != nil, existing.propertiesJSON?[key] == nil { return false }
-                return !Self.alreadyHas(existing, key, value, in: registry)
+                if value == .null, registry.drawValueWriters[key] != nil, held?[key] == nil { return false }
+                return !Self.alreadyHas(existing, key, value, now: held?[key], in: registry)
             }
         }
         // Every shape a script makes is built by the registry, as the kind's schema reads it. Given a
@@ -1262,8 +1293,16 @@ struct Drawing {
     /// what the shape has, but for what reading it makes afresh each time (the id an item in a list
     /// written without one gets), found by reading it twice.
     static func alreadyHas(_ record: AnyShapeRecord, _ key: String, _ value: JSONValue, in registry: Registry) -> Bool {
-        guard let now = record.propertiesJSON?[key],
-              let once = try? registry.shape(record, setting: [key: value]).propertiesJSON?[key],
+        alreadyHas(record, key, value, now: record.propertiesJSON?[key], in: registry)
+    }
+
+    /// `alreadyHas`, given what the shape holds of `key` now (`now`, nil for nothing). A value written as the shape holds it is had
+    /// at once: a value read from a record is in the form the kind writes it, so reading it again gives it back, and the shape
+    /// need not be built twice to see so (a note's built, its height worked out from its text, each time).
+    static func alreadyHas(_ record: AnyShapeRecord, _ key: String, _ value: JSONValue, now: JSONValue?, in registry: Registry) -> Bool {
+        guard let now else { return false }
+        if now == value { return true }
+        guard let once = try? registry.shape(record, setting: [key: value]).propertiesJSON?[key],
               let twice = try? registry.shape(record, setting: [key: value]).propertiesJSON?[key] else { return false }
         return matches(once, now, fresh: twice)
     }

@@ -1,0 +1,146 @@
+{
+ "drawing": "spine",
+ "nodes": [
+  {
+   "key": "Band",
+   "kind": "frame",
+   "props": {
+    "title": "Band"
+   }
+  },
+  {
+   "key": "Base",
+   "kind": "frame",
+   "props": {
+    "title": "Base"
+   }
+  },
+  {
+   "key": "A",
+   "in": "Band",
+   "kind": "sticky-note",
+   "props": {
+    "title": "A",
+    "text": "Points at X, Y, V and W"
+   }
+  },
+  {
+   "key": "B",
+   "in": "Band",
+   "kind": "sticky-note",
+   "props": {
+    "title": "B",
+    "text": "Points at X and Y"
+   }
+  },
+  {
+   "key": "C",
+   "in": "Band",
+   "kind": "sticky-note",
+   "props": {
+    "title": "C",
+    "text": "Points at X, Z and V"
+   }
+  },
+  {
+   "key": "D",
+   "in": "Band",
+   "kind": "sticky-note",
+   "props": {
+    "title": "D",
+    "text": "Points at X and Z"
+   }
+  },
+  {
+   "key": "V",
+   "in": "Base",
+   "kind": "sticky-note",
+   "props": {
+    "title": "V",
+    "text": "A and C, in two rows"
+   }
+  },
+  {
+   "key": "W",
+   "in": "Base",
+   "kind": "sticky-note",
+   "props": {
+    "title": "W",
+    "text": "A alone"
+   }
+  },
+  {
+   "key": "X",
+   "in": "Base",
+   "kind": "sticky-note",
+   "props": {
+    "title": "X",
+    "text": "Every card"
+   }
+  },
+  {
+   "key": "Y",
+   "in": "Base",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Y",
+    "text": "A and B, a row"
+   }
+  },
+  {
+   "key": "Z",
+   "in": "Base",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Z",
+    "text": "C and D, a row"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "A",
+   "to": "X"
+  },
+  {
+   "from": "A",
+   "to": "Y"
+  },
+  {
+   "from": "A",
+   "to": "V"
+  },
+  {
+   "from": "A",
+   "to": "W"
+  },
+  {
+   "from": "B",
+   "to": "X"
+  },
+  {
+   "from": "B",
+   "to": "Y"
+  },
+  {
+   "from": "C",
+   "to": "X"
+  },
+  {
+   "from": "C",
+   "to": "Z"
+  },
+  {
+   "from": "C",
+   "to": "V"
+  },
+  {
+   "from": "D",
+   "to": "X"
+  },
+  {
+   "from": "D",
+   "to": "Z"
+  }
+ ]
+}

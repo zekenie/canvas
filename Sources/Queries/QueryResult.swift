@@ -1,5 +1,6 @@
 import Canvas
 import CanvasRPC
+import CoreGraphics
 import QueryLanguage
 import Topology
 
@@ -135,9 +136,14 @@ public struct QueryResult: Sendable {
     public var shownPath: [BoardID]
     /// What it cost, on the main actor and off it.
     public var timings: QueryTimings
+    /// What the words the query names say the file no longer holds (`QueryAbsent`, the words' `absent`), each
+    /// id once, in the order the words say them (the words in the order of their names); empty for none.
+    /// Kept when only counting.
+    public var absent: [QueryAbsent]
 
     public init(query: String, count: Int, rows: [QueryRow], warnings: [QueryWarning], shown: BoardID = .root, shownPath: [BoardID] = [.root],
-                timings: QueryTimings = QueryTimings()) {
+                timings: QueryTimings = QueryTimings(), absent: [QueryAbsent] = []) {
+        self.absent = absent
         self.query = query
         self.count = count
         self.rows = rows
@@ -152,8 +158,8 @@ public struct QueryResult: Sendable {
 /// ("root" or its owner's id) and the names of the shapes it's inside, outermost first (the owners
 /// of the boards above it, as the path names them, and the containers it's in, by their names, else
 /// their kinds' labels); its attributes as they read (own properties as encoded, added ones when
-/// set, text through its format; none that says where it is, and not its name); which of them were
-/// cut; where it runs, if it's a connection; and whether it's being typed into.
+/// set, text through its format; none that says where it is, which `at` does, and not its name); which of them were
+/// cut; where it is (`at`); where it runs, if it's a connection; and whether it's being typed into.
 public struct QueryRow: Sendable, Equatable {
     public var id: ShapeID
     public var kind: ShapeKind
@@ -162,6 +168,10 @@ public struct QueryRow: Sendable, Equatable {
     public var board: BoardID
     /// Empty for a shape inside nothing (on the top board, in no container).
     public var inside: [String]
+    /// Where the shape is: its stored box, `[[x, y], [width, height]]` in world units, as the engine reads the file (off the
+    /// main actor); `canvas query` says the frame it is laid out in instead, as a draw's row says it (QueryCommands, on the main
+    /// actor). Nil for a shape with no box (an arrow). On every row, whatever properties are listed.
+    public var at: CGRect?
     /// Nil when the request lists none.
     public var properties: JSONObject?
     /// The attributes cut at `QueryBudget.cut` characters, by name; nil for none.
@@ -172,10 +182,18 @@ public struct QueryRow: Sendable, Equatable {
     /// In a query that names a word that says why a shape matched (`:incomplete`, `:invalid`), what the
     /// app says of this one: a field and what's the matter with it. Nil for a row with none.
     public var problems: [ShapeProblem]?
+    /// What the words the query names add to the rows they matched (`registrar.queryPseudoClass(rowMembers:)`), by
+    /// member, written flat beside the row's own members. Nil for none.
+    public var members: [String: JSON]?
 
-    public init(id: ShapeID, kind: ShapeKind, title: String? = nil, board: BoardID = .root, inside: [String] = [],
+    /// The keys a row writes of its own, which a word's members can't be.
+    public static let ownKeys: Set<String> = Set(Key.allCases.map(\.rawValue))
+
+    public init(id: ShapeID, kind: ShapeKind, title: String? = nil, board: BoardID = .root, inside: [String] = [], at: CGRect? = nil,
                 properties: JSONObject? = nil, cut: [String]? = nil, connection: QueryConnection? = nil, editing: Bool? = nil,
-                problems: [ShapeProblem]? = nil) {
+                problems: [ShapeProblem]? = nil, members: [String: JSON]? = nil) {
+        self.at = at
+        self.members = members
         self.id = id
         self.kind = kind
         self.title = title
@@ -213,8 +231,15 @@ public struct ShapeProblem: Sendable, Hashable, Encodable {
 /// Written as the command line shows it: what's absent (no title, inside nothing, no properties,
 /// nothing cut, not a connection, not being typed into) is left out.
 extension QueryRow: Encodable {
-    private enum Key: String, CodingKey {
-        case id, kind, title, board, inside, properties, cut, connection, editing, problems
+    fileprivate enum Key: String, CodingKey, CaseIterable {
+        case id, kind, title, board, inside, at, properties, cut, connection, editing, problems
+    }
+
+    private struct MemberKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue _: Int) { nil }
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -224,11 +249,16 @@ extension QueryRow: Encodable {
         try container.encodeIfPresent(title, forKey: .title)
         try container.encode(board, forKey: .board)
         if !inside.isEmpty { try container.encode(inside, forKey: .inside) }
+        try container.encodeIfPresent(at, forKey: .at)
         try container.encodeIfPresent(properties, forKey: .properties)
         try container.encodeIfPresent(cut, forKey: .cut)
         try container.encodeIfPresent(connection, forKey: .connection)
         try container.encodeIfPresent(editing, forKey: .editing)
         try container.encodeIfPresent(problems, forKey: .problems)
+        if let members, !members.isEmpty {
+            var more = encoder.container(keyedBy: MemberKey.self)
+            for (key, value) in members.sorted(by: { $0.key < $1.key }) { try more.encode(value, forKey: MemberKey(stringValue: key)) }
+        }
     }
 }
 

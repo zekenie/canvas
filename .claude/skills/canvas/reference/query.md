@@ -92,6 +92,7 @@ The result goes to standard output: JSON when standard output isn't a terminal (
  "count": 1,
  "rows": [{"id": "00000000-0000-4000-8000-000000000011", "kind": "sticky-note", "title": "Checkout",
            "board": "00000000-0000-4000-8000-000000000001", "inside": ["Payments"],
+           "at": [[340, 120], [220, 140]],
            "properties": {"text": "Calls @API gateway for tokens"}}]}
 ```
 
@@ -103,11 +104,14 @@ The result goes to standard output: JSON when standard output isn't a terminal (
   - `kind`, and `title`, unless it has none.
   - `board`: the board it's on, `"root"` for the top board, else the id of the shape that owns it.
   - `inside`: the names of the subboards and frames it's inside, outermost first, as the path over the canvas names a board (an untitled subboard's is "Untitled Subboard"), and a frame by its title (an untitled one's is "Frame"). Left out for a shape inside nothing.
+  - `at`: where the shape is, `[[x, y], [width, height]]` in the board's world units, the frame it takes as it is drawn (a note with rows is as tall as its rows make it), the spelling a `draw` row's `at` uses. On every row, whatever `--brief` or `--fields` say. Left out for a shape with no box, an arrow. It is only reported: no query asks for a position.
   - `properties`: its attributes as they read (`locked`, `public` and `channel` only when they're set): text as a person reads it (a mention as `@` and the name of what it mentions), numbers, `true` and `false`. Its title and where it is aren't among them.
   - `cut`: the attributes cut at 500 characters (their text ends with `…`). `--fields` lists them whole.
   - `connection`, for a connection (an arrow bound at both ends): its edge `type`, and the shapes it runs `from` and `to`, each by `id` and `title`. An end on a shape that stands for other shapes is read at what it stands for: `from` and `to` are then the first such pair in file order, `via` says which stand-in each end went through (`{"to": {"id": …}}`, by `id`: a stand-in has no title, and only an end that was one is there), and `more` lists the other pairs (`{"from": …, "to": …}`, in file order) when it stands for several. A connection as it was drawn has neither.
   - `editing: true` while the person is typing into it.
+  - Members a word adds, in a query that names the word, flat beside the row's own (`--brief` and `--fields` keep them): the word says what they are.
   - `problems`, in a query that names `:invalid` or `:incomplete`: for that row alone, each thing it still needs or has wrong: `field` (the key in `fieldValues`, or a relationship row's name on a note), `path` (where in it, as `/teams/0/name`), `class` (`needed` or `wrong`) and `message`, as the app says it. A field's problem names it; an error that is about the whole shape (a type's JSON, a title too long) has a `field` when validation gives one and no `path`. Left out of a row with none, and of a query that counts. As the app has the shape when asked.
+- **`absent`**, only when a word the query names says something it names is no longer in the file (a shape that was drawn and has been deleted): each an `id` and the members the word gives it. The word says what it lists. `--count` keeps it.
 - **`warnings`**, when there are any, each a `reason` and a `message`:
   - `limited`: more shapes match than are listed (`2 of 7 listed. …`);
   - `editing`: a shape listed, or one whose text the query read, is being typed into: it's read as typed so far, and may still change;
@@ -262,7 +266,7 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 - **A color is found as it's written on the shape.** `[color="blue"]` matches the shapes whose own color is `blue`, `[color="#4465E9"]` a hex value, and `[color]` any shape with a color of its own (one drawn in its kind's color, a plain yellow note, has none, so `sticky-note:not([color])` is the plain notes). The app keeps a name as its list spells it and a hex as `#RRGGBB` in capitals, so write them so, or add `i` to ignore case: `[color="BLUE" i]`.
 - **In a part with a kind**, the attribute must be that kind's (`unknown_attribute`, with its attributes listed). **In a part without one**, it must be some kind's, and the test applies to the kinds that have it: `[text*="x"]` is about notes.
 - **Text that mentions shapes is compared as it reads.** A note's or an arrow's `text` holds its mentions as ids, which never reach you: a query reads each as `@` and the name of the shape it mentions now, so a rename changes what matches. To follow a mention, use `:mentions(…)`.
-- **Where a shape is isn't an attribute** (`frame`, a line's `points`, an arrow's `start` and `end` are `not_built`).
+- **Where a shape is isn't an attribute** (`frame`, a line's `points`, an arrow's `start` and `end` are `not_built`). A row's `at` says where a shape is; no test reads it.
 - **`[a.b.c]` tests what is inside an attribute that holds an object**, at the members it names (a letter or `_`, then letters, digits, `-` and `_`; no quotes). A list on the way, or at the end, is searched: the test holds when it holds for any item (`[fieldValues.teams.name="search"]`), and `[a.b=""]` when no item has a value; `~=` on a list at the end is still an item. Each test is read by the value found there, shape by shape: on a string, the text operators, `=` and `i`; on a number, `=`, `<`, `<=`, `>` and `>=` when the value after the operator is a number (`[a.b>=3]`; `"3"` reads the same); on a date, the orderings with a date in quotes, `[fieldValues.started<"2025-01-01"]`, a day as a date attribute's is; on `true` or `false`, `[a.b=true]`. A value of another sort doesn't match (`[a.b^=3]` on a number matches nothing). `[a.b]` says something is there, and `[a.b=""]` that nothing is: a member that is missing, null, empty, or inside something that isn't an object or a list. An attribute that isn't an object has no members (`unknown_attribute`). In `fieldValues`, a member no type in the file has is warned about (`unknown_field`), and the query still answers.
 
 ```query
@@ -622,6 +626,8 @@ Words the app's plugins add, as this app has them. Without a plugin, its words a
 | `:misfit` | `type-queries` | it is an arrow whose ends do not fit its relationship type |
 | `:grouped-with(S)` | `group-queries` | it is in a group with a shape S matches: a click on either selects both |
 | `:selected` | `selection-queries` | the person has it selected |
+| `:drawn-by("…")` | `drawing-queries` | a drawing of that name made it (canvas apply, or canvas draw --drawing) |
+| `:changed("…")` | `drawing-queries` | the drawing of that name made it, and it differs from what that drawing last wrote: moved, resized, in another frame, or its attributes |
 
 - `:mentions` and `:mentioned-by` follow mention edges: `:mentions(S)` is `:edge-to(S, only mention)`. A shape that mentions itself counts.
 - `:invalid` and `:warned` are what validation finds, on every board of the file, not only the one shown: an error outlines a shape in red, warnings alone in orange. `:invalid`'s rows say each error, in `problems`, a field's with where in it; `:warned`'s each warning (`class` `warning`), a type's rule in English that flags the shape by its sentence. A note with more than one relationship in a row an end marks Only one is `:invalid` for it, the row's name in `field`.

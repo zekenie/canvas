@@ -109,6 +109,9 @@ enum Sockets {
 /// Bytes read from a socket, cut into lines: one message a line.
 struct LineBuffer {
     private var data = Data()
+    /// How much of the buffer, from its start, is known to hold no newline: a long line that comes in many reads (a document of
+    /// megabytes) is looked through once, not again from its start at each read.
+    private var searched = 0
     /// Past this, with no line in sight, the peer isn't sending messages: 16 MB.
     static let limit = 16 << 20
 
@@ -118,11 +121,13 @@ struct LineBuffer {
 
     /// The next whole line, without its newline; blank lines are skipped. Nil until one has come.
     mutating func nextLine() -> Data? {
-        while let newline = data.firstIndex(of: UInt8(ascii: "\n")) {
+        while let newline = data[(data.startIndex + searched)...].firstIndex(of: UInt8(ascii: "\n")) {
             let line = data[data.startIndex..<newline]
             data.removeSubrange(data.startIndex...newline)
+            searched = 0
             if line.contains(where: { !Self.isSpace($0) }) { return Data(line) }
         }
+        searched = data.count
         return nil
     }
 

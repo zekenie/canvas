@@ -102,7 +102,7 @@ import Validation
     },
     test("and what the app takes besides is the plugins' too: every plugin's command for its server") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
-        expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "show", "capture", "kinds", "measure", "query", "query-vocabulary", "decide"])
+        expectEqual(registry.hostCommands.specs.map(\.name), ["draw", "apply", "rehearse", "show", "capture", "kinds", "measure", "query", "query-vocabulary", "decide"])
     },
     test("a plugin that can't ask for want of a sign-in asks for Settings with the action the app's menu item sends") {
         expectEqual(AnthropicSettingsView.showSettingsAction, BoardMenus.showSettings)
@@ -190,7 +190,7 @@ import Validation
         rule-details         service RuleLights · outlines · ShapeDetails in Rules after Schema → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
         prose-maps           service ProseMapService · overlay ProseMapFrames
         draw-engine          draw engine · insertion spot
-        automation           command line draw · command line show · command line capture · command line kinds · command line measure · host commands
+        automation           command line draw · command line apply · command line rehearse · command line show · command line capture · command line kinds · command line measure · host commands
         title-names          draw names
         port-edges           draw edges
         validation-checks    draw checks
@@ -199,6 +199,7 @@ import Validation
         draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
         color-names          draw text text/x-canvas-color
         group-draw           draw groups
+        drawings             file property drawings · draw records
         queries              service QueryState · query engine
         query-translation    service QueryTranslator · service Interpretations
         title-queries        query names
@@ -209,6 +210,7 @@ import Validation
         color-queries        query text text/x-canvas-color
         group-queries        query word :grouped-with
         selection-queries    query word :selected
+        drawing-queries      query word :drawn-by("…") members key, in · query word :changed("…") members key, in, changed
         query-commands       command line query · command line query-vocabulary
         decision-commands    command line decide
         query-slash          /query → the command bar's target

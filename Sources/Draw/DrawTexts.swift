@@ -48,10 +48,24 @@ final class DrawTextLookup {
     private var fileNames: FileNames?
     /// The boards the deletes take, with the boards under them: read once, when a name is on one.
     private var taken: Set<BoardID>?
+    /// The keys a program's run names shapes by (`DrawOptions.keys`), each the id of the shape it names: found before a title.
+    private let keys: [String: ShapeID]
+    /// Every shape the script draws or restates, by id, for a key that names one.
+    private let ownByID: [ShapeID: Own]
 
     init(editor: CanvasEditor, target: BoardReading, naming: DrawNaming?, items: [ShapeItem], itemsByTitle: [String: [Int]],
-         unresolved: Set<String>, deleted: Set<ShapeID>, fileNames: FileNames?) {
+         unresolved: Set<String>, deleted: Set<ShapeID>, fileNames: FileNames?, keys: [String: ShapeID] = [:]) {
         self.editor = editor
+        self.keys = keys
+        var byID: [ShapeID: Own] = [:]
+        if !keys.isEmpty {
+            // What a shape a program's run writes is called: the title its statement gives it (`title:`), else the one it has.
+            for item in items {
+                let title = item.shape.newTitle.flatMap { naming?.fold($0) } ?? item.title ?? ""
+                byID[item.record.id] = Own(id: item.record.id, record: item.record, title: title, writes: Set(item.shape.attributes.map(\.key)))
+            }
+        }
+        ownByID = byID
         self.target = target
         self.naming = naming
         self.unresolved = unresolved
@@ -99,11 +113,14 @@ final class DrawTextLookup {
                   error.reason != Drawing.skipped else { throw error }
             var named = error
             named.fromNameLookup = true
+            named.lookedForName = written
             throw named
         }
     }
 
     private func find(called written: String, admitting admits: @MainActor (AnyShapeRecord, Set<String>) -> String?) throws(DrawError) -> DrawTextShape {
+        // A key of a program's run names the shape it's given for, before any title.
+        if let id = keys[written] { return try keyed(id, written, admitting: admits) }
         guard let naming else {
             throw DrawError("titles name shapes, and nothing here gives shapes names", reason: ScriptError.Reason.noNames.rawValue,
                             hint: "leave titles out: without a plugin that names shapes, no shape can be named or found by name")
@@ -164,6 +181,28 @@ final class DrawTextLookup {
         throw DrawError("there's no shape called \(quoted(title))", reason: ScriptError.Reason.unknownTitle.rawValue,
                         hint: guesses.isEmpty ? "a title is one the file has as the script starts, or one the script draws"
                                   : "did you mean \(listed(guesses.map(quoted), or: true))?")
+    }
+
+    /// The shape a key names: one the script draws or restates, else the file's, held to what `admits` takes; what it's called is
+    /// its title, else the key.
+    private func keyed(_ id: ShapeID, _ key: String, admitting admits: @MainActor (AnyShapeRecord, Set<String>) -> String?) throws(DrawError) -> DrawTextShape {
+        let called = { (record: AnyShapeRecord) -> String in
+            self.naming.flatMap { naming in naming.name(record, self.editor.registry).flatMap(naming.fold) } ?? key
+        }
+        if let own = ownByID[id] {
+            if let why = admits(own.record, own.writes) {
+                throw DrawError("\(quoted(key)) is \(indefinite(own.record.kind)), \(why)", reason: ScriptError.Reason.invalidValue.rawValue)
+            }
+            return DrawTextShape(id: id, title: own.title.isEmpty ? called(own.record) : own.title)
+        }
+        guard let record = editor.file.record(id), !deleted.contains(id) else {
+            throw DrawError("there's no shape for the key \(quoted(key))", reason: ScriptError.Reason.unknownTitle.rawValue,
+                            hint: "a key names a node of the document")
+        }
+        if let why = admits(record, []) {
+            throw DrawError("\(quoted(key)) is \(indefinite(record.kind)), \(why)", reason: ScriptError.Reason.invalidValue.rawValue)
+        }
+        return DrawTextShape(id: id, title: called(record))
     }
 
     /// Several shapes on one board are called one title: each with its kind and where it is.
@@ -234,6 +273,7 @@ extension DrawError {
     func said(_ message: String, on statement: Statement) -> DrawError {
         var said = DrawError(message, reason: reason, hint: hint, line: statement.line, statement: statement.text)
         said.fromNameLookup = fromNameLookup
+        said.lookedForName = lookedForName
         return said
     }
 }

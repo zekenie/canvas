@@ -26,9 +26,9 @@ import TestKit
 
 /// A script of Python kept in Scripts/ beside these tests, run as the tests ran them when they were written out for each run: without the
 /// user's site packages or a byte-code cache (-s, -B), and given the canvas-ingest skill's folder, where lenskit is.
-@MainActor func pythonScript(_ name: String, environment: [String: String] = [:]) throws -> ProcessOutput {
+@MainActor func pythonScript(_ name: String, arguments: [String] = [], environment: [String: String] = [:], timeout: TimeInterval = 60) throws -> ProcessOutput {
     let script = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/SkillToolsTests/Scripts/\(name)")
-    return try run(URL(fileURLWithPath: python), ["-s", "-B", script.path, ingestSkill().path], environment: environment, timeout: 60)
+    return try run(URL(fileURLWithPath: python), ["-s", "-B", script.path, ingestSkill().path] + arguments, environment: environment, timeout: timeout)
 }
 
 /// The lines the stub driver logged.
@@ -36,11 +36,9 @@ func driverCalls(_ log: URL) -> [String] {
     ((try? String(contentsOf: log, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
 }
 
-/// What the default lens makes of a scan: the digest it writes, and what it says on standard error (its `lens:` lines).
-/// `ingest-lens/<name>.digest.json` and `.said`, first the old `to_digest.py`'s, recorded when lenskit replaced it, and recorded again
-/// from the default lens when the first board's About note went (its summary of the whole, and the 74 characters a card's title kept
-/// for `About <card>`), then with a module card's `Imports` and `Imported by` lines taken out by a script when the lens stopped writing them.
-/// Never edited by hand: the lens has since given titles out per container, and the test below holds the digest to differing from them only by that.
+/// What the default lens makes of a scan: the graph document the runner writes, and what it says on standard error (its `lens:` lines).
+/// `ingest-lens/<name>.graph.json` and `.said`, written by the lens test itself (CANVAS_WRITE_INGEST_LENS=1) from the scans in
+/// SkillTesting (`tinyModel`, `awkwardModel`) and the overrides a spec.py once gave, never by hand.
 func lensFixture(_ name: String, _ kind: String) -> URL {
     URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Tests/CompositionTests/Fixtures/ingest-lens/\(name).\(kind)")
 }

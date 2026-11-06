@@ -1,4 +1,4 @@
 lens: bands name modules the code lacks, passed over: Ghost
 lens: purposes name a module the code lacks, passed over: Nowhere
 lens: folder_boards give Core/Hidden a board, and it has no files
-lens: groups for App leave out Main.swift: they go in the frame "App/"
+lens: groups for App leave out Main.swift: they go in the frame "App"

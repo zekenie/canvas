@@ -9670,7 +9670,7 @@ a query does without:
 |---|---|---|---|---|
 | `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueriesPlugin |
 | `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueriesPlugin |
-| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:problems:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, TypeQueriesPlugin, SelectionQueriesPlugin |
+| `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:problems:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`, and `members:`, `rowMembers:`, `absent:`; with `argument:` too, a word that takes one quoted text), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, TypeQueriesPlugin, SelectionQueriesPlugin |
 | `QueryPathChecks` | `registrar.queryPathCheck(attribute:_:)` | What the members of an object attribute can be: the first member of a path a query tests that no shape of the file can hold (`[fieldValues.stauts]`), asked on the main actor, once a path | No warning | TypeQueriesPlugin |
 | `QueryAskFacts` | `registrar.queryAskFact(tag:_:)` | A block `--ask` sends about the file after the titles, under its tag: made on the main actor from the editor and the question, bounded by its plugin; a tag is a word and none of the request's own (`AskFacts.reservedTags`) | No block | TypeQueriesPlugin (`fields`) |
 | `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` (and with `reads: .file`) | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueriesPlugin |
@@ -9758,6 +9758,18 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
   while a query runs changes nothing it answers), seeds and matches them, and is what `--ask` tells
   the model is selected (`whereThePersonIs`), in that order. At most one plugin says what's
   selected (`QueryWords.check`).
+- **A word with a text, members and absent ids** (`queryPseudoClass(…, argument: "name", reads: .file,
+  prepare: { file, text in … }, seeds:, matches:, members: ["tag"], rowMembers:, absent:)`): written
+  `:drawn-by("Plans")`, exactly one quoted string (`bad_argument` for none, another sort of thing or
+  two; a word declared without an argument still refuses `:x("…")`). `prepare` is given the text,
+  and `seeds`, `matches`, `rowMembers` and `absent` see what it made; a query using the word with two
+  texts prepares each on its own. `rowMembers(shape, prepared)` adds the members `members` declares
+  (never a row's own key: `QueryWords.check` refuses it and the registry report names them) to each
+  row the query returns, off the main actor, flat beside the row's own and kept by `--brief` and
+  `--fields`; where words give one, the first by their names keeps it. `absent(prepared)` lists
+  what the argument names that the file no longer holds (`QueryAbsent(id:, members:)`):
+  `QueryResult.absent`, and `"absent": [{"id": …}]` in `canvas query`'s answer only when not empty,
+  `--count` too. Every row says where its shape is, `at`: `[[x, y], [width, height]]`, none for an arrow.
 - **A relation** (`:mentions(S)`) is `:edge-to(S, only t)` under a word of its own: `.outgoing`, the
   result has an edge of exactly one of `types` (none under them) to a shape S matches; `.incoming`,
   a shape S matches has one to the result. Its types must be ones an installed plugin declares.
@@ -11662,12 +11674,16 @@ app's to change.
 canvas status                           whether the app is running: its version, protocol and boards
 canvas boards                           the open boards: each one's id, name, file, which is in front, and what it shows
 canvas new <file>                       a new board's file, made and opened
-canvas draw <script>|- [--dry-run] [--reveal] [--board <board>]
+canvas draw <script>|- [--drawing <name>] [--dry-run] [--reveal] [--board <board>]
                                         shapes, and the edges between them, made, changed or deleted by a script, all at once
+canvas apply <document>|- [--dry-run] [--on <name>] [--board <board>]
+                                        a program's document drawn by key, on every board it reaches, in one step: its drawing brought up to date
+canvas rehearse <scripts>|- [--board <board>]
+                                        several scripts drawn in turn on a copy of the file: what each would do, changing nothing
 canvas capture <file> [--shape <name>]… [--zoom <number>] [--in <name> | --root] [--size <width,height>] [--scale <number>] [--dark] [--board <board>]
                                         a picture of a board, or of part of it, as the app draws it, in a PNG file
-canvas kinds [<kind>] [--schema]        what a script can draw, and with what
-canvas measure <script>|-               how big a script's shapes would be, and what the placement is done with, drawing nothing
+canvas kinds [<kind>] [--schema]        what a script can draw, and with what (and which pills can stand for each kind)
+canvas measure <script>|-               how big a script's (or a document's) shapes would be, and what the placement is done with, drawing nothing
 canvas query <query>|- [--limit <number>] [--count] [--brief] [--fields <attribute>]… [--board <board>]
                                         the shapes of a file a query matches, on every board, in file order
 canvas query --ask <question>|- […]     the same, the query written by the app's language model
@@ -11682,9 +11698,10 @@ The modules, one job each:
 | CanvasRPC | core (the wire) | What the app and `canvas` say to each other: JSON-RPC 2.0, a message a line, over a Unix-domain socket (`~/Library/Application Support/InfiniteCanvas/canvas.sock`, or `CANVAS_SOCKET`) only this user can reach; what a command is (`CommandSpec`, its params a JSON Schema) and how its params are spelled as arguments; the client, and the listener, which answers each request as a main-actor task of its own (one that waits holds up neither the main actor nor another connection), each connection's answers in the order its requests came, and cancels the requests still running (not notifications) once its client hangs up. Knows no canvas, plugin or AppKit. |
 | CanvasCLI | app | `canvas`: reads its own options, asks the app what it runs (`describe`), reads the rest as one of those commands, runs it, and prints what comes back. Knows only the wire. |
 | CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
-| Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own five, `draw`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` as the wire's `AutomationError`), `show` and `capture`, which borrow Draw's naming (`capture` draws with the core's `BoardPicture`). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
+| Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own seven, `draw`, `apply`, `rehearse`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` or `DocumentError` as the wire's `AutomationError`; `apply` draws a program's document by key on every board in one step, drawn on a rehearsal of the editor and taken in with `editor.adopt`; `rehearse` draws several scripts in turn on a copy of the file, Draw's `Rehearsal`, a turn of the main actor each; `measure` takes a script or a document), `show` and `capture`, which borrow Draw's naming (`capture` draws with the core's `BoardPicture`). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
-| Draw | platform | The engine of `canvas draw`, `measure` and `kinds` ([draw](#draw)), and the nine points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| Drawings | platform | What a program drew, kept by name in the file (`DrawingsProperty`, Draw's `DrawingRecord`: the board its top went on and each shape it made by id, with the program's key and what it last wrote), through Draw's `DrawRecords`, which `canvas apply` and `canvas draw --drawing` write in the step that draws; nothing on the shapes. |
 | DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | platform | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
@@ -15671,7 +15688,7 @@ rule-validation      ValidationRules → every shape holding ignoredRules · Iss
 rule-details         service RuleLights · outlines · ShapeDetails in Rules after Schema → every shape holding schema · ShapeDetails in Issues after Style → every shape holding ignoredRules · command retryRuleChecks · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup, ShapeMenuGroup first → every shape holding ignoredRules · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding schema · adornment RulesChip after TypeChips → every shape holding schema
 prose-maps           service ProseMapService · overlay ProseMapFrames
 draw-engine          draw engine · insertion spot
-automation           command line draw · command line show · command line capture · command line kinds · command line measure · host commands
+automation           command line draw · command line apply · command line rehearse · command line show · command line capture · command line kinds · command line measure · host commands
 title-names          draw names
 port-edges           draw edges
 validation-checks    draw checks
@@ -15680,6 +15697,7 @@ type-names           draw text text/x-canvas-type · draw edge identity is · dr
 draw-field-values    draw value fieldValues · draw value endRule · draw reports members is, endOf, fits, relates
 color-names          draw text text/x-canvas-color
 group-draw           draw groups
+drawings             file property drawings · draw records
 queries              service QueryState · query engine
 query-translation    service QueryTranslator · service Interpretations
 title-queries        query names
@@ -15690,6 +15708,7 @@ type-queries         query word :is-a · query text text/x-canvas-type · query 
 color-queries        query text text/x-canvas-color
 group-queries        query word :grouped-with
 selection-queries    query word :selected
+drawing-queries      query word :drawn-by("…") members key, in · query word :changed("…") members key, in, changed
 query-commands       command line query · command line query-vocabulary
 decision-commands    command line decide
 query-slash          /query → the command bar's target

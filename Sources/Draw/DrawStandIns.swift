@@ -592,11 +592,14 @@ extension Drawing {
         guard let route, var record = route.standIns.make(kind, standingFor: target.id, label: label), record.box != nil else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(said)")
         }
-        if !placed.clauses.isEmpty || placed.container != nil {
+        // A program's run puts it exactly where it says, as a shape statement's shape (`DrawOptions.places`, by the edge's line).
+        let exact = options.places[statement.line]
+        if !placed.clauses.isEmpty || placed.container != nil || exact != nil {
             let size = record.box!.size
             var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: placed.clauses, container: placed.container),
                                     kind: kind, title: nil, existing: nil, record: record, size: size, room: size)
             standIn.standsFor = said
+            standIn.exact = exact
             items.append(standIn)
             let index = items.count - 1
             try contain(index)

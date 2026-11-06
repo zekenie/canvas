@@ -1,4 +1,5 @@
 import Canvas
+import CanvasRPC
 import QueryLanguage
 import Topology
 
@@ -161,6 +162,39 @@ public protocol QueryFileFact: Sendable {
     @MainActor static func current(in editor: CanvasEditor) -> Self
 }
 
+/// A thing a word's argument names that the file no longer holds (a shape a drawing made and
+/// someone deleted): its id as the word keeps it, and the members the word says of it. A query's
+/// answer lists it (`QueryResult.absent`), beside the shapes that matched.
+public struct QueryAbsent: Sendable, Equatable {
+    public var id: String
+    public var members: [String: JSON]
+
+    public init(id: String, members: [String: JSON] = [:]) {
+        self.id = id
+        self.members = members
+    }
+}
+
+/// How a word with a text is kept by the plan and the capture, one entry for each text a query
+/// gives it (`:drawn-by("A")` and `:drawn-by("B")` are two): the word and the text joined by a
+/// character no word holds. Never shown; `word(of:)` and `text(of:)` split it.
+enum WordKey {
+    private static let separator: Character = "\u{0}"
+
+    static func make(_ word: String, text: String?) -> String {
+        text.map { word + String(separator) + $0 } ?? word
+    }
+
+    static func word(of key: String) -> String {
+        guard let index = key.firstIndex(of: separator) else { return key }
+        return String(key[..<index])
+    }
+
+    static func text(of key: String) -> String? {
+        key.firstIndex(of: separator).map { String(key[key.index(after: $0)...]) }
+    }
+}
+
 /// What a word's `onMain` gets beside the shape: the registry, the editor, the editor's revision as
 /// the query started, and the file as the app has it now. `onMain` is asked about the shape as the
 /// app has it when it's asked, not as the query took it up: what only the main actor can answer (a
@@ -217,13 +251,20 @@ final class KeptContexts {
 /// handed back as it was to `seeds`, `matches` and `onMain`.
 struct ContributedPseudoClass: Sendable {
     let reads: QueryReads
-    let prepare: @MainActor (QueryPreparation) -> any Sendable
+    /// Given the word's text, if it takes one (`QueryWordDeclaration.argument`).
+    let prepare: @MainActor (QueryPreparation, String?) -> any Sendable
     let seeds: (@Sendable (any Sendable) -> Set<ShapeID>)?
     let matches: @Sendable (QueryShape, any Sendable) -> QueryVerdict
     let onMain: (@MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> Bool)?
     /// What a row it matched says of why (`ShapeProblem`), on the main actor, for the rows a query
     /// returns alone.
     let problems: (@MainActor (AnyShapeRecord, BoardID, any Sendable, QueryMainContext) -> [ShapeProblem])?
+    /// The members it adds to the rows it matched (`memberNames` declares which), worked out off the
+    /// main actor as rows are built.
+    var rowMembers: (@Sendable (QueryShape, any Sendable) -> [String: JSON])?
+    var memberNames: [String] = []
+    /// What its argument names that the file no longer holds, off the main actor.
+    var absent: (@Sendable (any Sendable) -> [QueryAbsent])?
     /// Whether a query that holds it waits for answers still arriving (`TopologyIndex.isSettling`), as one that
     /// reads edges does: a word whose verdicts a plugin works out later (Validation's, which a rule's model
     /// answers feed).
@@ -264,6 +305,9 @@ public struct QueryWordDeclaration: Sendable {
     let summary: String
     let example: String
     let meaning: Meaning
+    /// The name of the one quoted text the word takes (`:drawn-by("name")`); nil for a word that takes none.
+    /// Only a pseudo-class takes one.
+    var argument: String?
     /// What its verdict reads.
     var reads: QueryReads {
         switch meaning {
@@ -295,7 +339,14 @@ extension QueryWords: KeyedExtensionPoint {
     public static func uniqueKeys(of declaration: QueryWordDeclaration, for _: ShapeTarget) -> [AnyHashable] {
         [QueryWordKey(word: declaration.word)]
     }
-    public static func summary(of declaration: QueryWordDeclaration, for _: ShapeTarget) -> String { "query word :\(declaration.word)" }
+    public static func summary(of declaration: QueryWordDeclaration, for _: ShapeTarget) -> String {
+        var line = "query word :\(declaration.word)"
+        if declaration.argument != nil { line += "(\"…\")" }
+        if case .pseudoClass(let behavior) = declaration.meaning, !behavior.memberNames.isEmpty {
+            line += " members " + behavior.memberNames.joined(separator: ", ")
+        }
+        return line
+    }
 
     public static func check(_ registry: Registry) throws(RegistryError) {
         for declared in registry.contributions(to: QueryWords.self) {
@@ -318,6 +369,22 @@ extension QueryWords: KeyedExtensionPoint {
                    if case .fileRelation(let theirs) = other.value.meaning { theirs.namesTypes && other.value.word != word } else { false }
                }) {
                 throw refuse("a relation that names types, which :\(other.value.word) (\(other.pluginID)) is already")
+            }
+            if let argument = declared.value.argument, argument.isEmpty || argument.contains(where: { $0.isWhitespace || $0 == "\"" }) {
+                throw refuse("which takes a text named \"\(argument)\", a name without spaces or quotes")
+            }
+            if case .pseudoClass(let behavior) = declared.value.meaning {
+                guard (behavior.rowMembers != nil) == !behavior.memberNames.isEmpty else {
+                    throw refuse("which declares row members without saying their names, or names without a row members function")
+                }
+                var seen: Set<String> = []
+                for member in behavior.memberNames {
+                    guard !member.isEmpty, !member.contains(where: { $0.isWhitespace || $0 == ":" || $0 == "\"" }) else {
+                        throw refuse("with the row member \"\(member)\", which isn't a word a row can carry")
+                    }
+                    guard !QueryRow.ownKeys.contains(member) else { throw refuse("with the row member \(member), which a row has of its own") }
+                    guard seen.insert(member).inserted else { throw refuse("with the row member \(member) declared twice") }
+                }
             }
             guard case .relation(let types, _) = declared.value.meaning else { continue }
             guard !types.isEmpty else { throw refuse("a relation over no edge type") }
@@ -527,34 +594,83 @@ extension PluginRegistrar {
         problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])? = nil,
         settles: Bool = false
     ) {
-        contributePseudoClass(word, summary, example: example, reads: .editor, prepare: { prepare($0) }, seeds: seeds, matches: matches,
-                              onMain: onMain, problems: problems, settles: settles)
+        contributePseudoClass(word, summary, example: example, argument: nil, reads: .editor, prepare: { preparation, _ in prepare(preparation) },
+                              seeds: seeds, matches: matches, onMain: onMain, problems: problems, settles: settles)
+    }
+
+    /// As above, for a word that takes one quoted text, `:word("…")` (`argument` is its name, "name", as the
+    /// vocabulary says it): `prepare` is given the text too, and `seeds` and `matches` see what it made (keep the
+    /// text in it if they need it). A query may use the word with several texts, each prepared on its own.
+    public mutating func queryPseudoClass<Prepared: Sendable>(
+        _ word: String, _ summary: String, example: String, argument: String,
+        prepare: @escaping @MainActor (QueryPreparation, String) -> Prepared,
+        seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
+        matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
+        onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)? = nil,
+        problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])? = nil,
+        settles: Bool = false
+    ) {
+        contributePseudoClass(word, summary, example: example, argument: argument, reads: .editor,
+                              prepare: { preparation, text in prepare(preparation, text ?? "") },
+                              seeds: seeds, matches: matches, onMain: onMain, problems: problems, settles: settles)
     }
 
     /// As above, for a word whose verdict reads only the file (`reads: .file`): `prepare` is given
     /// the file as the query takes it up and the registry, and no editor, so it can't read anything
     /// else; and it has no `onMain`, whose context lends the editor. What a plan with such words
     /// alone says of itself (`QueryPlan.readsOnlyTheFile`) is true because of it.
+    ///
+    /// `rowMembers` adds members, the keys `members` declares (a key a row has of its own is a registry
+    /// error), to each row the word matched, worked out off the main actor as the rows are built, flat
+    /// beside the row's own and kept by `--brief` and `--fields`; where several words give one, the first
+    /// (in the order of the words' names) keeps it. `absent` lists what its argument names that the file no
+    /// longer holds, for an answer to say (`QueryResult.absent`), whatever the rows.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String, reads _: QueryFileReads,
         prepare: @escaping @MainActor (QueryFilePreparation) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
-        matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict
+        matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
+        members: [String] = [],
+        rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
     ) {
-        contributePseudoClass(word, summary, example: example, reads: .file, prepare: { prepare($0.file) }, seeds: seeds, matches: matches,
-                              onMain: nil, problems: nil, settles: false)
+        contributePseudoClass(word, summary, example: example, argument: nil, reads: .file, prepare: { preparation, _ in prepare(preparation.file) },
+                              seeds: seeds, matches: matches, onMain: nil, problems: nil, settles: false,
+                              members: members, rowMembers: rowMembers, absent: absent)
+    }
+
+    /// As the file form above, for a word that takes one quoted text, `:word("…")`: `argument` is its name,
+    /// "name", `prepare` is given the text, and `seeds`, `matches`, `rowMembers` and `absent` see what it made.
+    /// Written `:drawn-by("Plans")`: exactly one string (`bad_argument` for none, another sort of thing or
+    /// two). A query may use it with several texts, each prepared, seeded and answered on its own.
+    public mutating func queryPseudoClass<Prepared: Sendable>(
+        _ word: String, _ summary: String, example: String, argument: String, reads _: QueryFileReads,
+        prepare: @escaping @MainActor (QueryFilePreparation, String) -> Prepared,
+        seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
+        matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
+        members: [String] = [],
+        rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
+    ) {
+        contributePseudoClass(word, summary, example: example, argument: argument, reads: .file,
+                              prepare: { preparation, text in prepare(preparation.file, text ?? "") },
+                              seeds: seeds, matches: matches, onMain: nil, problems: nil, settles: false,
+                              members: members, rowMembers: rowMembers, absent: absent)
     }
 
     private mutating func contributePseudoClass<Prepared: Sendable>(
-        _ word: String, _ summary: String, example: String, reads: QueryReads,
-        prepare: @escaping @MainActor (QueryPreparation) -> Prepared,
+        _ word: String, _ summary: String, example: String, argument: String?, reads: QueryReads,
+        prepare: @escaping @MainActor (QueryPreparation, String?) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)?,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
         onMain: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> Bool)?,
         problems: (@MainActor (AnyShapeRecord, BoardID, Prepared, QueryMainContext) -> [ShapeProblem])?,
-        settles: Bool
+        settles: Bool,
+        members: [String] = [],
+        rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
     ) {
-        let erasedPrepare: @MainActor (QueryPreparation) -> any Sendable = { prepare($0) }
+        let erasedPrepare: @MainActor (QueryPreparation, String?) -> any Sendable = { prepare($0, $1) }
         let erasedMatches: @Sendable (QueryShape, any Sendable) -> QueryVerdict = { shape, prepared in matches(shape, prepared as! Prepared) }
         var erasedSeeds: (@Sendable (any Sendable) -> Set<ShapeID>)?
         if let seeds { erasedSeeds = { prepared in seeds(prepared as! Prepared) } }
@@ -566,10 +682,14 @@ extension PluginRegistrar {
         if let problems {
             erasedProblems = { record, board, prepared, context in problems(record, board, prepared as! Prepared, context) }
         }
-        let pseudoClass = ContributedPseudoClass(reads: reads, prepare: erasedPrepare, seeds: erasedSeeds, matches: erasedMatches,
+        var pseudoClass = ContributedPseudoClass(reads: reads, prepare: erasedPrepare, seeds: erasedSeeds, matches: erasedMatches,
                                                  onMain: erasedOnMain, problems: erasedProblems, settles: settles)
-        contribute(QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass)),
-                   to: QueryWords.self)
+        if let rowMembers { pseudoClass.rowMembers = { shape, prepared in rowMembers(shape, prepared as! Prepared) } }
+        pseudoClass.memberNames = members
+        if let absent { pseudoClass.absent = { prepared in absent(prepared as! Prepared) } }
+        var declaration = QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass))
+        declaration.argument = argument
+        contribute(declaration, to: QueryWords.self)
     }
 
     /// `:word`, the person's selection, meaning `summary` ("the person has it selected"), as
@@ -580,7 +700,7 @@ extension PluginRegistrar {
                                         selected: @escaping @MainActor (CanvasEditor) -> [ShapeID]) {
         let pseudoClass = ContributedPseudoClass(
             reads: .editor,
-            prepare: { preparation in
+            prepare: { preparation, _ in
                 let ids = selected(preparation.editor)
                 return SelectedShapes(ids: ids, set: Set(ids))
             },

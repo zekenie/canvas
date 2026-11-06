@@ -104,6 +104,9 @@ public struct QueryVocabulary: Sendable {
     let contributedWords: [String: QueryWordDeclaration]
     /// The edge types installed plugins declare, as a tree.
     let edgeTree: EdgeTypeTree
+
+    /// The declaration of the word a plan keeps under `key` (the word, or, for one that takes a text, the word with it).
+    func declaration(forKey key: String) -> QueryWordDeclaration? { contributedWords[WordKey.word(of: key)] }
     /// The kinds whose shapes can have shapes inside them: a board of them, or shapes on theirs.
     let containerKinds: Set<ShapeKind>
     private let kindIndex: [ShapeKind: Int]
@@ -242,7 +245,7 @@ extension QueryWordDeclaration {
     /// `:word` for a pseudo-class, `:word(S)` for a relation.
     var form: String {
         switch meaning {
-        case .pseudoClass: ":\(word)"
+        case .pseudoClass: argument == nil ? ":\(word)" : ":\(word)(\"…\")"
         case .relation, .fileRelation: ":\(word)(S)"
         }
     }
@@ -250,7 +253,7 @@ extension QueryWordDeclaration {
     /// What its parentheses take, as the language says it of its own words of the same signature.
     var takes: String {
         switch meaning {
-        case .pseudoClass: Word.Signature.none.takes
+        case .pseudoClass: argument ?? Word.Signature.none.takes
         case .relation, .fileRelation: Word.Signature.selectors.takes
         }
     }

@@ -2,6 +2,8 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasUI
+import Draw
+import Drawings
 import Foundation
 import Mentions
 import ShippedTesting
@@ -40,7 +42,7 @@ import Titles
     let drawn = try run(ingest, [repo.path, "--scan", example("scan.json", in: name).path], environment: environment, timeout: 280)
     expectEqual(drawn.status, 0, drawn.output + drawn.error)
     expect(drawn.output.contains("drawing from the scan given by hand") && !drawn.output.contains("making the SCIP index"), drawn.output)
-    expect(drawn.output.contains("verify ok"), drawn.output)
+    expect(drawn.output.contains("applied ") && drawn.output.contains(": shapes "), drawn.output)
     expect(!drawn.error.contains("lens: "), "the lens warns of nothing in its own example: \(drawn.error)")
     let where_ = try run(ingest, [repo.path, "--where"], environment: environment)
     let kept = URL(fileURLWithPath: where_.output.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -48,35 +50,33 @@ import Titles
     return (drawn, kept.appendingPathComponent("runs/\(try require(runs.last, "a run was kept"))"))
 }
 
-/// A run's digest checks with nothing wrong and no frame or board over what reads well, and its drawing warned only of what a
-/// typed drawing gives by design and pushed nothing past anything. Returns what the drawing said.
+/// A run's graph document checks with nothing wrong, and `canvas apply` of it warned only of what a typed drawing gives by design (a
+/// Needed row still empty, a relationship that doesn't fit its ends). Returns what the drawing said.
 @MainActor private func expectDrawnByDesign(_ runFolder: URL) throws -> [String] {
-    let checked = try run(URL(fileURLWithPath: jsc), [URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest/tool/main.js").path, "--", "check", runFolder.appendingPathComponent("digest.json").path], timeout: 120)
+    let checked = try digestCheck(runFolder.appendingPathComponent("graph.json"), timeout: 120)
     expectEqual(checked.status, 0, checked.output + checked.error)
     let verdict = try JSON(text: checked.output)
     expectEqual(verdict["errors"], .array([]), checked.output)
     expectEqual(verdict["warnings"], .array([]), checked.output)
-    let plan = try json(runFolder.appendingPathComponent("out/plan.json"))
+    let result = try json(runFolder.appendingPathComponent("out/results/apply.json"))
     var said: [String] = []
-    for name in plan["runs"]?.arrayValue?.compactMap(\.stringValue) ?? [] {
-        let result = try json(runFolder.appendingPathComponent("out/results/\(name.replacingOccurrences(of: ".draw", with: "")).json"))
-        for message in (result["warnings"]?.arrayValue ?? []).compactMap({ $0["message"]?.stringValue }) where !message.contains("landed outside the view") {
-            expect(isByDesign(message), "\(name) warned of more than a typed drawing does: \(message)")
-            said.append(message)
-        }
-        for change in result["changes"]?.arrayValue ?? [] {
-            expect(change["pushedPast"] == nil, "\(name) pushed a shape past another: \(change)")
-            for problem in change["problems"]?.arrayValue ?? [] {
-                let message = problem["message"]?.stringValue ?? ""
-                expect(isByDesign(message), "\(name): \(change["title"] ?? .null) has a problem not by design: \(message)")
-                said.append("\(change["title"]?.stringValue ?? "?"): \(message)")
-            }
+    for message in (result["warnings"]?.arrayValue ?? []).compactMap({ $0["message"]?.stringValue }) {
+        expect(isByDesign(message), "apply warned of more than a typed drawing does: \(message)")
+        said.append(message)
+    }
+    for node in result["nodes"]?.arrayValue ?? [] {
+        for problem in node["problems"]?.arrayValue ?? [] {
+            let message = problem["message"]?.stringValue ?? problem.stringValue ?? ""
+            expect(isByDesign(message), "\(node["key"] ?? .null) has a problem not by design: \(message)")
+            said.append("\(node["key"]?.stringValue ?? "?"): \(message)")
         }
     }
     return said
 }
 
-/// What a typed drawing says by design: a Needed row still empty, a relationship that doesn't fit its ends, a row past Only one.
+/// What a typed drawing says by design: a Needed row still empty, a relationship that doesn't fit its ends, a row past Only one. (Two
+/// files of one name in a service's Files frame are titled by the ends of their paths that tell them apart, files-are-typed, so no
+/// path is two shapes'.)
 private func isByDesign(_ message: String) -> Bool {
     message.hasSuffix(" is needed") || message.contains("should have at most") || message.contains(" runs from ") || message.contains(" runs to ")
 }
@@ -129,12 +129,13 @@ private struct ReadmeQuery {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let (_, runFolder) = try drawExample("orders", in: folder, server: server)
-        let digest = try json(runFolder.appendingPathComponent("digest.json"))
+        let graph = try json(runFolder.appendingPathComponent("graph.json"))
+        expectEqual(graph["drawing"], "orders", "the drawing is named for the repository's folder")
 
         // the drawing's warnings are only those its types give by design: an activity's Needed "run by" row, empty while its notes are
         // drawn and before the arrows that fill it are (in the end only one is left empty: the query for :incomplete, below)
         let said = try expectDrawnByDesign(runFolder)
-        expect(said.contains("sendReceipt: run by is needed"), "what the drawing says of its types: \(said)")
+        expect(said.contains { $0.hasSuffix("sendReceipt\": run by is needed") || $0.hasSuffix("#sendReceipt: run by is needed") }, "what the drawing says of its types: \(said)")
 
         // the root holds the services, the tables and the types, and no note of what the whole is
         let editor = board.editor
@@ -147,41 +148,61 @@ private struct ReadmeQuery {
             return ((result["rows"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }, Int(result["count"]?.numberValue ?? -1))
         }
 
-        // the notes of each type, and the arrows of each relationship type, as the digest says them
-        let nodes = digest["nodes"]?.arrayValue ?? [], edges = digest["edges"]?.arrayValue ?? []
-        for type in ["Workflow", "Activity", "Lambda", "Table", "File"] {
-            let typed = nodes.filter { $0["is"] == .string(type) }.compactMap { $0["title"]?.stringValue }
+        // the notes of each type, and the arrows of each relationship type, as the graph document says them (a type by its key, `type:Workflow`)
+        let nodes = graph["nodes"]?.arrayValue ?? [], edges = graph["edges"]?.arrayValue ?? []
+        func title(_ node: JSON) -> String { node["props"]?["title"]?.stringValue ?? "?" }
+        func isA(_ node: JSON) -> [String] { (node["props"]?["is"]?.arrayValue ?? []).compactMap(\.stringValue) }
+        func relation(_ edge: JSON) -> String? { (edge["props"]?["is"]?.arrayValue ?? []).compactMap(\.stringValue).first.map { String($0.dropFirst("type:".count)) } }
+        let titleOf = Dictionary(uniqueKeysWithValues: nodes.compactMap { n in n["key"]?.stringValue.map { ($0, title(n)) } })
+        for type in ["Workflow", "Activity", "Lambda", "Table", "File", "Collection"] {
+            let typed = nodes.filter { isA($0) == ["type:\(type)"] }.map(title)
+            expect(!typed.isEmpty, "\(type) has notes")
             expectEqual(try ask(#":is-a("\#(type)")"#).titles.sorted(), typed.sorted(), "the notes of \(type)")
         }
+        // the frames of the type Collection: a frame can be of a type, as a note is
+        let collections = nodes.filter { isA($0) == ["type:Collection"] }
+        expectEqual(collections.count, 5, "each service's frames of workflows, activities, Lambdas and files")
+        expect(collections.allSatisfy { $0["kind"] == "frame" && $0["props"]?["fieldValues"]?["holds"]?.stringValue?.isEmpty == false }, "typed frames, each with a `holds`")
+        expectEqual(try ask(#":is-a("Collection")"#).count, 5)
+        expectEqual(try ask(#":is-a("Collection")[fieldValues.holds="Lambda"]"#).titles, ["Lambdas"], "the frame that holds Lambdas, found by its value")
         expectEqual(try ask("sticky-note[relationship]").titles.sorted(), ["declared in", "reads", "runs", "writes"])
-        for relation in ["runs", "reads", "writes", "declared in"] {
-            expectEqual(try ask(#"arrow:is-a("\#(relation)")"#).count, edges.filter { $0["is"] == .string(relation) }.count, "the arrows of \(relation)")
+        for kind in ["runs", "reads", "writes", "declared in"] {
+            expectEqual(try ask(#"arrow:is-a("\#(kind)")"#).count, edges.filter { relation($0) == kind }.count, "the arrows of \(kind)")
         }
         // who reads or writes each table, in one hop (an activity or a Lambda), and which workflows write it, in two
-        func starts(_ relation: String, at ends: Set<String>) -> Set<String> {
-            Set(edges.filter { $0["is"] == .string(relation) && ends.contains($0["to"]?.stringValue ?? "") }.compactMap { $0["from"]?.stringValue })
+        func starts(_ kind: String, at ends: Set<String>) -> Set<String> {
+            Set(edges.filter { relation($0) == kind && ends.contains(titleOf[$0["to"]?.stringValue ?? ""] ?? "") }.compactMap { titleOf[$0["from"]?.stringValue ?? ""] })
         }
         for table in ["customers", "orders", "payments", "refunds"] {
-            for relation in ["reads", "writes"] {
-                let oneHop = #":start-of(arrow:is-a("\#(relation)"):ends-at("\#(table)"))"#
-                expectEqual(Set(try ask(oneHop).titles), starts(relation, at: [table]), "who \(relation) \(table)")
+            for kind in ["reads", "writes"] {
+                let oneHop = #":start-of(arrow:is-a("\#(kind)"):ends-at("\#(table)"))"#
+                expectEqual(Set(try ask(oneHop).titles), starts(kind, at: [table]), "who \(kind) \(table)")
                 let twoHops = #":start-of(arrow:is-a("runs"):ends-at(\#(oneHop)))"#
-                expectEqual(Set(try ask(twoHops).titles), starts("runs", at: starts(relation, at: [table])), "the workflows that \(relation) \(table), through their activities")
+                expectEqual(Set(try ask(twoHops).titles), starts("runs", at: starts(kind, at: [table])), "the workflows that \(kind) \(table), through their activities")
             }
         }
-        // every file of a service is a File, and each workflow, activity and Lambda is declared in the one its source is
-        let files = nodes.filter { $0["is"] == "File" }
+        // every file of a service is a File, and each workflow, activity and Lambda is declared in the one its key says
+        let files = nodes.filter { isA($0) == ["type:File"] }
         expectEqual(files.count, 11, "the services' files")
-        let fileOf = Dictionary(uniqueKeysWithValues: files.compactMap { file in file["source"]?.stringValue.map { ($0, file["id"]?.stringValue ?? file["title"]?.stringValue ?? "?") } })
-        let things = nodes.filter { ["Workflow", "Activity", "Lambda"].contains($0["is"]?.stringValue ?? "") }
+        expect(files.allSatisfy { $0["key"]?.stringValue?.hasPrefix("file:") == true && $0["props"]?["fieldValues"]?["path"]?.stringValue == String($0["key"]?.stringValue?.dropFirst("file:".count) ?? "") }, "keyed by the code, with the path as a value")
+        // files-are-typed: titled by its name, else by the end of its path that tells it from another in its Files frame
+        expectEqual(titleOf["file:services/orders/src/activities/index.ts"], "activities/index.ts")
+        expectEqual(titleOf["file:services/orders/src/workflows/index.ts"], "workflows/index.ts")
+        expectEqual(titleOf["file:services/orders/src/worker.ts"], "worker.ts", "a name no other file of the frame has stays bare")
+        let things = nodes.filter { ["type:Workflow", "type:Activity", "type:Lambda"].contains(isA($0).first ?? "") }
         expectEqual(things.count, 12, "two workflows, eight activities and two Lambdas")
         for thing in things {
-            let name = thing["id"]?.stringValue ?? thing["title"]?.stringValue ?? "?"
-            let declared = edges.filter { $0["is"] == "declared in" && $0["from"] == .string(name) }.compactMap { $0["to"]?.stringValue }
-            expectEqual(declared, [fileOf[thing["source"]?["path"]?.stringValue ?? ""] ?? "no file"], "the file \(name) is declared in")
+            let key = thing["key"]?.stringValue ?? "?"
+            let declared = edges.filter { relation($0) == "declared in" && $0["from"] == .string(key) }.compactMap { $0["to"]?.stringValue }
+            // workflow:<path>#<name>, activity:<path>#<name>, lambda:<config>#<name>: the file is the one the key names (a Lambda's is its handler's)
+            expectEqual(declared.count, 1, "\(key) is declared in one file: \(declared)")
+            if !key.hasPrefix("lambda:") { expectEqual(declared.first, "file:" + (key.split(separator: ":", maxSplits: 1).last?.split(separator: "#").first.map(String.init) ?? ""), "the file \(key) is declared in") }
         }
         expectEqual(try ask(":incomplete").titles, ["sendReceipt"], "the activity no workflow runs")
         expectEqual(try ask("arrow:misfit").count, 0)
+        // the app holds the drawing by key, so drawing it again moves nothing: every node is a shape of the file's record
+        let ids = board.editor.file[DrawingsProperty.self].drawings["orders"]?.idsByKey ?? [:]
+        expect(Set(ids.keys).isSuperset(of: Set(nodes.compactMap { $0["key"]?.stringValue })), "a shape for every key")
 
         // and the README's questions answer as it says
         let questions = try readmeQueries(of: "orders")
@@ -207,23 +228,26 @@ private struct ReadmeQuery {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let (_, runFolder) = try drawExample("bookshelf", in: folder, server: server)
-        let digest = try json(runFolder.appendingPathComponent("digest.json"))
+        let graph = try json(runFolder.appendingPathComponent("graph.json"))
+        expectEqual(graph["drawing"], "bookshelf")
         expectEqual(try expectDrawnByDesign(runFolder), [], "a File has no row that is needed, so the drawing says nothing")
 
-        // every file the scan has is a note of the one type, File, its path and length its values, and the length said once
-        let nodes = digest["nodes"]?.arrayValue ?? []
+        // every file the scan has is a note of the one type, File, keyed by its path, its path and length its values, and the length said once
+        let nodes = graph["nodes"]?.arrayValue ?? []
         let scanned = try json(example("scan.json", in: "bookshelf"))["files"]?.arrayValue ?? []
         let lines = Dictionary(uniqueKeysWithValues: scanned.compactMap { f in f["path"]?.stringValue.map { ($0, f["lines"]?.numberValue ?? -1) } })
-        let files = nodes.filter { $0["is"] == "File" }
+        let files = nodes.filter { $0["props"]?["is"] == ["type:File"] }
         expectEqual(files.count, 20)
-        expectEqual(Set(files.compactMap { $0["source"]?.stringValue }), Set(lines.keys), "a File for each file of the scan")
+        expectEqual(Set(files.compactMap { $0["key"]?.stringValue }), Set(lines.keys.map { "file:" + $0 }), "a File for each file of the scan, keyed by its path")
         for file in files {
-            let path = file["source"]?.stringValue ?? "?"
-            expectEqual(file["fieldValues"]?["path"]?.stringValue, path)
-            expectEqual(file["fieldValues"]?["lines"]?.numberValue, lines[path], "\(path)'s length")
-            expect(!(file["text"]?.stringValue ?? "").hasSuffix(" lines"), "\(path)'s note says its length as a value alone: \(file["text"] ?? .null)")
+            let path = String((file["key"]?.stringValue ?? "?").dropFirst("file:".count))
+            expectEqual(file["props"]?["fieldValues"]?["path"]?.stringValue, path)
+            expectEqual(file["props"]?["fieldValues"]?["lines"]?.numberValue, lines[path], "\(path)'s length")
+            expect(!(file["props"]?["text"]?.stringValue ?? "").hasSuffix(" lines"), "\(path)'s note says its length as a value alone: \(file["props"]?["text"] ?? .null)")
         }
-        expectEqual(nodes.filter { $0["schema"] != nil }.compactMap { $0["title"]?.stringValue }, ["File"])
+        expectEqual(nodes.filter { $0["props"]?["schema"] != nil }.compactMap { $0["props"]?["title"]?.stringValue }, ["File"])
+        expectEqual(Set(nodes.compactMap { $0["key"]?.stringValue }).count, nodes.count, "three index.ts are three notes of one title, told apart by their keys")
+        expectEqual(files.filter { $0["props"]?["title"] == "index.ts" }.count, 3)
 
         @MainActor func ask(_ query: String) throws -> (titles: [String], count: Int) {
             let answer = try canvas(server, ["query", "--board", "\(board.number)", "--brief", "--limit", "10000", query])
@@ -231,7 +255,7 @@ private struct ReadmeQuery {
             let result = try JSON(text: answer.output)
             return ((result["rows"]?.arrayValue ?? []).compactMap { $0["title"]?.stringValue }, Int(result["count"]?.numberValue ?? -1))
         }
-        expectEqual(try ask(#":is-a("File")"#).titles.sorted(), files.compactMap { $0["title"]?.stringValue }.sorted(), "the File notes, as the digest says them")
+        expectEqual(try ask(#":is-a("File")"#).titles.sorted(), files.compactMap { $0["props"]?["title"]?.stringValue }.sorted(), "the File notes, as the graph says them")
         expectEqual(try ask(":incomplete, :invalid, :warned").count, 0)
 
         // and the README's questions answer as it says
@@ -243,7 +267,7 @@ private struct ReadmeQuery {
             if let count = question.count { expectEqual(answer.count, count, question.query) }
         }
     },
-    test("the orders lens gives each thing the name its container knows it by: two services with a workflow and an activity of one name are drawn, told apart by id, and asked for by where they are") {
+    test("the orders lens gives each thing the name the code does: two services with a workflow and an activity of one name are drawn under that name, told apart by key, and asked for by where they are") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         try configureBoards(pasteboard: pasteboard)
@@ -305,32 +329,30 @@ private struct ReadmeQuery {
         let ingest = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-ingest/ingest")
         let drawn = try run(ingest, [repo.path, "--scan", scanFile.path], environment: environment, timeout: 280)
         expectEqual(drawn.status, 0, drawn.output + drawn.error)
-        expect(drawn.output.contains("verify ok"), drawn.output)
+        expect(drawn.output.contains("applied shop: shapes"), drawn.output)
         expect(!drawn.error.contains("lens: "), "no name is reworded for another service's: \(drawn.error)")
         let where_ = try run(ingest, [repo.path, "--where"], environment: environment)
         let kept = URL(fileURLWithPath: where_.output.trimmingCharacters(in: .whitespacesAndNewlines))
         let runFolder = kept.appendingPathComponent("runs/\(try require(try FileManager.default.contentsOfDirectory(atPath: kept.appendingPathComponent("runs").path).sorted().last))")
-        let digest = try json(runFolder.appendingPathComponent("digest.json"))
-        let nodes = digest["nodes"]?.arrayValue ?? [], edges = digest["edges"]?.arrayValue ?? []
-        // each service's board has the frames and notes every service's has, under the same names; each gets an id, where its title repeats
-        func ids(_ title: String) -> [String] { nodes.filter { $0["title"] == .string(title) }.compactMap { $0["id"]?.stringValue }.sorted() }
-        expectEqual(ids("syncWorkflow"), ["syncWorkflow  in Services > @shop/billing > Workflows", "syncWorkflow  in Services > @shop/orders > Workflows"])
-        expectEqual(ids("notify"), ["notify  in Services > @shop/billing > Activities", "notify  in Services > @shop/orders > Activities"])
-        expectEqual(ids("Workflows"), ["Workflows  in Services > @shop/billing", "Workflows  in Services > @shop/orders"])
-        expectEqual(ids("Activities"), ["Activities  in Services > @shop/billing", "Activities  in Services > @shop/orders"])
-        expectEqual(ids("sync.ts"), ["sync.ts  in Services > @shop/billing > Files", "sync.ts  in Services > @shop/orders > Files"])
-        expectEqual(ids("Files"), ["Files  in Services > @shop/billing", "Files  in Services > @shop/orders"])
-        expect(nodes.filter { $0["id"] != nil }.count == 14 && ids("outbox").isEmpty && ids("Types").isEmpty,
-               "an id where a title repeats, and nowhere else: two workflows, two activities, four files, and the two frames of each")
+        let graph = try json(runFolder.appendingPathComponent("graph.json"))
+        let nodes = graph["nodes"]?.arrayValue ?? [], edges = graph["edges"]?.arrayValue ?? []
+        // each service's board has the frames and notes every service's has, under the same names, and each is a node of its own key
+        func keys(_ title: String) -> [String] { nodes.filter { $0["props"]?["title"] == .string(title) }.compactMap { $0["key"]?.stringValue }.sorted() }
+        expectEqual(keys("syncWorkflow"), ["workflow:services/billing/src/workflows/sync.ts#syncWorkflow", "workflow:services/orders/src/workflows/sync.ts#syncWorkflow"])
+        expectEqual(keys("notify"), ["activity:services/billing/src/activities/notify.ts#notify", "activity:services/orders/src/activities/notify.ts#notify"])
+        expectEqual(keys("Workflows"), ["frame:@shop/billing/Workflows", "frame:@shop/orders/Workflows"])
+        expectEqual(keys("sync.ts").count, 2)
+        expectEqual(keys("outbox"), ["table:outbox"])
+        expect(nodes.allSatisfy { $0["id"] == nil && $0["props"]?["id"] == nil }, "no node is named by an id: a key is its name")
         // a workflow is declared in its own service's file
-        expectEqual(edges.filter { $0["is"] == "declared in" && $0["from"] == "syncWorkflow  in Services > @shop/orders > Workflows" }.compactMap { $0["to"]?.stringValue },
-                    ["sync.ts  in Services > @shop/orders > Files"])
-        // a typed arrow runs between the notes it names by id
-        let runs = edges.filter { $0["is"] == "runs" }
+        expectEqual(edges.filter { $0["props"]?["is"] == ["type:declared in"] && $0["from"] == "workflow:services/orders/src/workflows/sync.ts#syncWorkflow" }.compactMap { $0["to"]?.stringValue },
+                    ["file:services/orders/src/workflows/sync.ts"])
+        // a typed arrow runs between the notes it names by key
+        let runs = edges.filter { $0["props"]?["is"] == ["type:runs"] }
         expectEqual(runs.compactMap { "\($0["from"]?.stringValue ?? "?") > \($0["to"]?.stringValue ?? "?")" }.sorted(),
-                    ["syncWorkflow  in Services > @shop/billing > Workflows > notify  in Services > @shop/billing > Activities",
-                     "syncWorkflow  in Services > @shop/orders > Workflows > notify  in Services > @shop/orders > Activities"])
-        let checked = try run(URL(fileURLWithPath: jsc), [URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(".claude/skills/canvas-digest/tool/main.js").path, "--", "check", runFolder.appendingPathComponent("digest.json").path], timeout: 120)
+                    ["workflow:services/billing/src/workflows/sync.ts#syncWorkflow > activity:services/billing/src/activities/notify.ts#notify",
+                     "workflow:services/orders/src/workflows/sync.ts#syncWorkflow > activity:services/orders/src/activities/notify.ts#notify"])
+        let checked = try digestCheck(runFolder.appendingPathComponent("graph.json"), timeout: 120)
         expectEqual(checked.status, 0, checked.output + checked.error)
         expectEqual(try JSON(text: checked.output), ["errors": [], "warnings": []])
         // and the app answers for each by where it is

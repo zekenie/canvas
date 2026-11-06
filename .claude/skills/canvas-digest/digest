@@ -2,42 +2,30 @@
 # digest: lay out a large body of connected information as boards in Infinite Canvas.
 # The only file here that runs `canvas`; tool/ (JavaScript, run by the system jsc, else node) reads and writes files and never runs it.
 #
-#   digest check   GRAPH [TARGET] [--into TITLE]     the digest against the rules, the app's kinds and the titles already in the file
-#   digest measure GRAPH                              how big the app makes each shape and pill (canvas measure)
-#   digest plan    GRAPH [TARGET] [PLAN FLAGS]        lay out every board, decide the promotions, write the draw scripts; draws nothing
-#                                                     (measures first when there is no measurement, the digest is newer than it, or
-#                                                     the titles beside the drawing changed what it would measure)
-#   digest draw    GRAPH TARGET [--into TITLE]        each script a dry run first and held to the plan, then drawn for real
-#   digest verify  GRAPH TARGET                       what was drawn, against the plan and the file's titles
-#   digest all     GRAPH TARGET [PLAN FLAGS]          check, measure, plan, draw, verify; stops at the first that fails
-#   digest ready   GRAPH TARGET                       whether a draw could start: canvas found, the app answering (and both new enough
-#                                                     to measure), the target fit to draw
-#                                                     on (and, with --replace, the last drawing one the app will take back: a window
-#                                                     inside a drawing that is the board is shown its root, as the draw would). GRAPH
-#                                                     needn't exist yet: for a caller with slow work to do before it has one
+#   digest check   GRAPH                      the graph document against its structure and the app's kinds (canvas kinds)
+#   digest measure GRAPH                      how big the app makes each shape and pill (canvas measure) -> OUT/measure.json
+#   digest plan    GRAPH [PLAN FLAGS]         lay out every board and decide the pills -> OUT/drawing.json, OUT/report.json; draws nothing
+#                                             (measures first when there is no measurement, or the graph is newer than it)
+#   digest apply   [--dry-run]                canvas apply of OUT/drawing.json: the whole drawing in one step -> OUT/results/apply.json
+#   digest all     GRAPH                      check, measure, plan (from where the drawing is now, when the file holds it), apply --dry-run, apply
+#   digest ready   [--on NAME]                whether a draw could start: canvas found, the app answering with a board open, canvas apply known
 #
-#   TARGET      --board ID        a board that is open (`canvas boards`: its id, file or name), or `front` for the one in front. With --into TITLE the digest
-#                                 goes in a new subboard of it; without, it is the board itself, which must be empty (or --replace)
-#               --new-file PATH   a new board's file, made and opened (`canvas new`); the digest is its board
-#   PLAN FLAGS  --mess 0..1  --promote off  --prefer N  --cap 0..1  --margin PILLS  --popular ARROWS  --into TITLE
-#               --view WxH        the room the window has for a board fit to it, which every board is laid out for. Left out, it is
-#                                 the target board's window's (`canvas boards` says it, as view), or, for a new file, the window in
-#                                 front's; with no window to ask, one of 1440x960 is assumed, and the plan says so
-#               --ranks rows|columns   which way a digest's ranked shapes run (left out: the digest's policy.ranks, else whichever
-#                                 the view shows larger)
-#   --replace   draw in place of this digest's last drawing (OUT/drawn.json), when it is in the target board's file: it is
-#               taken back first (one undo step), and nothing else on the board is touched
-#   --out DIR   where the files go (default: GRAPH without .json, plus .out)
-#   --records DIR   where the drawing records live, one for each file drawn in (default: OUT/drawn.json, the one record of this out).
-#               A run with --replace reads the record of its target's file, found by the path or, for a board with no file yet, by its id and
-#               the drawing's shapes (of two digests drawn into one such board, the one with this run's name: its --into, else its title), and writes to that one (a new file gets a
-#               new record), so runs that share DIR but not OUT each know their own boards. A file in DIR that is no record is said and skipped
-#   --timeout S seconds canvas may take to answer one script (default 120)
+#   GRAPH       the graph document (canvas-digest's reference/graph.md): nodes by key, edges, props the app reads, layout hints
+#   --out DIR   where the files go (default: GRAPH without .json, plus .out; apply and ready take it when GRAPH is left out)
+#   --on NAME   draw on the board that NAME names (a subboard's title, path or #id), else the front board's root; a drawing the file
+#               already holds is updated where it is
+#   --board ID  draw on an open board by its id (canvas boards)
+#   --dry-run   apply: answer what would be done, changing nothing
+#   PLAN FLAGS  --mess 0..1  --promote off  --prefer N  --cap 0..1  --margin PILLS  --popular ARROWS
+#               --view WxH        the room the window has for a board fit to it, which every board is laid out for (with no view, one of
+#                                 1440x960 is assumed, and the plan says so)
+#               --ranks rows|columns   which way a document's ranked shapes run (left out: its layout.ranks, else whichever the view shows larger)
+#               --current FILE    plan from where the drawing's shapes are now (canvas query ':drawn-by("NAME")' --brief); all asks for it
+#   --timeout S seconds canvas may take to answer one command (default 120)
 #
 # canvas is $CANVAS_CLI, else the one beside this driver (the app's, when it is in the app's Contents/Resources/agents; build/canvas, when it is in a
-# checkout of the repository), else the one on PATH (`canvas install` puts it there). Exit status: 0 done; 1 refused or failed;
-# 2 the command line is wrong; 4 a dry run or the board is not the plan (nothing past that run is drawn). Every refusal and failure is
-# said on standard error, with the draws made so far and how to take them back.
+# checkout of the repository), else the one on PATH (`canvas install` puts it there). Exit status: 0 done; 1 refused or failed (the app's words, naming
+# the keys, on standard error: nothing is drawn); 2 the command line is wrong.
 set -eu
 
 # fd 3 is the driver's own standard error: whatever a command's output is redirected to, a failure is said there.
@@ -113,7 +101,7 @@ find_canvas() {
   warn_if_stale
 }
 
-# canvas, with the time one answer may take (a long script, or a measure of a big digest, is more than its 10 s).
+# canvas, with the time one answer may take (a measure or an apply of a big document is more than its 10 s).
 run_canvas() {
   [ -n "${CANVAS:-}" ] || find_canvas
   _cmd=$1; shift
@@ -126,483 +114,164 @@ canvas_try() {
   run_canvas "$@" > "$_out" 2> "$_out.err"
 }
 
+# What canvas complained of ($1.err), in the app's words: each refusal of a document by its key, else what it said as it said it. $2, a drawing.json,
+# names an edge by its ends (the app counts edges by that file's list, not the graph document's).
+say_refusal() {
+  if grep -q '"refusals"' "$1.err" 2>/dev/null && tool refusals "$1.err" ${2:+"$2"} >"$1.said" 2>/dev/null; then cat "$1.said" >&2; else cat "$1.err" >&2; fi
+}
+
 # Run canvas, keeping its answer in $1 and its complaint in $1.err; on a failure, say what it said and stop.
 canvas_to() {
   _out=$1; shift
   if ! canvas_try "$_out" "$@"; then
     echo "digest: canvas $1 failed:" >&2
-    cat "$_out.err" >&2
+    say_refusal "$_out"
     exit 1
   fi
 }
 
 # ---- arguments -----------------------------------------------------------------------------------------------
 
-[ $# -ge 2 ] || usage
-CMD=$1; GRAPH=$2; shift 2
-case $CMD in check|measure|plan|draw|verify|all|ready) ;; *) usage ;; esac
-[ "$CMD" = ready ] || [ -f "$GRAPH" ] || die "no digest at $GRAPH"
-GRAPH=$(abspath "$GRAPH")
-BOARD=; NEWFILE=; INTO=; OUT=; RECORDS=; RECNAME=; MESS=; PROMOTE=; PREFER=; CAP=; MARGIN=; POPULAR=; VIEW=; RANKS=; TIMEOUT=120; REPLACE=0
+[ $# -ge 1 ] || usage
+CMD=$1; shift
+GRAPH=
+case $CMD in check|measure|plan|all) [ $# -ge 1 ] || usage ;; apply|ready) ;; *) usage ;; esac
+case ${1:-} in --*|'') ;; *) GRAPH=$1; shift ;; esac
+case $CMD in check|measure|plan|all) [ -n "$GRAPH" ] || usage; [ -f "$GRAPH" ] || die "no graph document at $GRAPH" ;; esac
+[ -z "$GRAPH" ] || GRAPH=$(abspath "$GRAPH")   # every path handed to the tool is absolute (apply and ready take the graph only to name the folder)
+ON=; BOARD=; OUT=; DRYRUN=0; TIMEOUT=120; CURRENT=; PLANFLAGS=
 while [ $# -gt 0 ]; do
-  if [ "$1" = --replace ]; then REPLACE=1; shift; continue; fi
+  if [ "$1" = --dry-run ]; then DRYRUN=1; shift; continue; fi
   [ $# -ge 2 ] || { echo "digest: $1 takes a value" >&2; usage; }
   case $1 in
-    --board) BOARD=$2 ;;
-    --new-file) NEWFILE=$(abspath "$2") ;;
-    --into) INTO=$2 ;;
     --out) OUT=$(abspath "$2") ;;
-    --records) RECORDS=$(abspath "$2") ;;
+    --on) ON=$2 ;;
+    --board) BOARD=$2 ;;
     --timeout) TIMEOUT=$2 ;;
-    --mess) MESS=$2 ;;
-    --promote) PROMOTE=$2 ;;
-    --prefer) PREFER=$2 ;;
-    --cap) CAP=$2 ;;
-    --margin) MARGIN=$2 ;;
-    --popular) POPULAR=$2 ;;
-    --view) VIEW=$2 ;;
-    --ranks) RANKS=$2 ;;
+    --current) CURRENT=$(abspath "$2") ;;
+    --mess|--promote|--prefer|--cap|--margin|--popular|--view|--ranks) PLANFLAGS="$PLANFLAGS $1 $2" ;;
     *) echo "digest: unknown option $1" >&2; usage ;;
   esac
   shift 2
 done
-[ -n "$OUT" ] || OUT=${GRAPH%.json}.out
-[ -z "$BOARD" ] || [ -z "$NEWFILE" ] || die "name a board (--board) or a new file (--new-file), not both"
-if [ -n "$NEWFILE" ] && [ -n "$INTO" ]; then die "--new-file makes the digest the file's board: leave out --into"; fi
-if [ -n "$NEWFILE" ] && [ "$REPLACE" = 1 ]; then die "--new-file draws a file of its own: there is nothing in it to replace (--replace works with --board)"; fi
-mkdir -p "$OUT/runs" "$OUT/results"
-# canvas is found now, and said if it is not. The one command that may need none is a plan from a measure already made, with no board to read.
-if [ "$CMD" != plan ] || [ -n "$BOARD" ] || [ ! -s "$OUT/measure.json" ]; then find_canvas; fi
-# --board is resolved to an open board's id once (front, an id, a file or a name): every later call names it by its id
-if [ -n "$BOARD" ]; then
-  # one named by its file: by the path as given, and by the file's whole path with its links resolved (the app lists the path a board
-  # was saved by, which may be either)
-  _also=
-  case $BOARD in */*|*.canvasboard) if [ -f "$BOARD" ]; then _also=$(cd "$(dirname "$BOARD")" && pwd -P)/$(basename "$BOARD"); fi ;; esac
-  canvas_to "$OUT/boards.json" boards
-  BOARD=$(tool board "$OUT/boards.json" "$BOARD" id ${_also:+"$_also"}) || exit 1
+if [ -z "$OUT" ]; then
+  if [ -n "$GRAPH" ]; then OUT=${GRAPH%.json}.out
+  elif [ "$CMD" = ready ]; then OUT=${TMPDIR:-/tmp}/digest-ready.$$
+  else die "$CMD needs where the files are: --out DIR (or the graph, whose folder is GRAPH without .json, plus .out)"
+  fi
 fi
+[ "$CMD" = apply ] || mkdir -p "$OUT/results"   # apply makes its folder once there is a drawing to apply
+find_canvas
 
 # ---- the steps -----------------------------------------------------------------------------------------------
 
-# The board a step works on: the one named, else the one `draw` made in a new file.
-target_id() {
-  if [ -n "$BOARD" ]; then printf '%s\n' "$BOARD"
-  elif [ -s "$OUT/target.id" ]; then cat "$OUT/target.id"
-  else return 1
-  fi
-}
-
-# The titles the file holds (every board's), as a JSON array in $OUT/titles.all.json; $OUT/titles.json is what a drawing has to keep
-# clear of: all of them, less the last drawing's when it is replaced (no name a script writes is able to mean a shape outside the drawing,
-# by those titles). A file with more titles than one query lists is refused.
-file_titles() {
-  all_titles "$1"
-  if replacing "$1"; then tool_to "$OUT/titles.json" minus "$OUT/places.all.json" "$OUT/drawn.json"
-  else cp "$OUT/titles.all.json" "$OUT/titles.json"
-  fi
-}
-
-# Every title the file of board $1 holds, as a JSON array in $OUT/titles.all.json; those on its root board, in $OUT/titles.root.json; and
-# where each shape is (its title, the containers it is in, its board), in $OUT/places.all.json, those on the root board in
-# $OUT/places.root.json: a title may be a shape's among several, a place is its own.
-all_titles() {
-  canvas_to "$OUT/titles.raw.json" query --board "$1" --brief --limit 10000 - <<'EOF'
-[title]
-EOF
-  tool_to "$OUT/titles.all.json" extract titles "$OUT/titles.raw.json"
-  tool_to "$OUT/titles.root.json" extract root-titles "$OUT/titles.raw.json"
-  tool_to "$OUT/places.all.json" extract places "$OUT/titles.raw.json"
-  tool_to "$OUT/places.root.json" extract root-places "$OUT/titles.raw.json"
-}
-
-# One field (id, path, fileShapes or shows) of an open board, from `canvas boards`.
-board_field() {
-  canvas_to "$OUT/boards.json" boards
-  tool board "$OUT/boards.json" "$1" "$2" || exit 1
-}
-
-# Whether this run replaces the last drawing: --replace, and drawn.json says it is in the file of board $1 (by its path; one drawn on
-# a board with no file yet by the board's id and the drawing's shapes, which needs the file's titles). Leaves the file's titles in
-# $OUT/titles.all.json (and the places, $OUT/places.all.json).
-replacing() {
-  [ "$REPLACE" = 1 ] && [ -s "$OUT/drawn.json" ] || return 1
-  all_titles "$1"
-  [ "$(tool same-file "$OUT/drawn.json" "$(board_field "$1" path)" "$1" "$OUT/places.all.json")" = yes ]
-}
-
-# What this drawing makes, kept in drawn.json for a later --replace; with $1, how many shapes the file holds (once it is drawn, or as
-# the draw stops). Until it is whole, a drawing made in place of the last one (_over) is recorded with it (drawn.prev.json is the last
-# one's record) and with how many shapes the file held before the take-back (_was): an undo or two in the app may bring the last one
-# back, and the next run must know either for its own. Written whole or not at all (beside it, then moved).
-record_drawn() {
-  if [ "${_over:-0}" = 1 ]; then set -- "${1:-}" --over "$OUT/drawn.prev.json" --was "$_was"; fi
-  tool_to "$OUT/drawn.json.new" drawn "$OUT/plan.json" "$_path" "$id" "$@"
-  mv "$OUT/drawn.json.new" "$OUT/drawn.json"
-  keep_record
-}
-
-# With --records, OUT/drawn.json is the working copy of the record of the target's file (select_record); this keeps it there, whole or
-# not at all. A file with no record yet is named for its path, else for its board's id and the drawing's name. The last drawing's
-# record (drawn.prev.json) only matters while a run is drawing over it, so it stays in OUT.
-keep_record() {
-  if [ -z "$RECORDS" ]; then return 0; fi
-  if [ -z "$RECNAME" ]; then RECNAME=$(tool record-name "${_path:-}" "$id" "$OUT/plan.json") || exit 1; fi
-  mkdir -p "$RECORDS"
-  cp "$OUT/drawn.json" "$RECORDS/.$RECNAME.new"
-  mv "$RECORDS/.$RECNAME.new" "$RECORDS/$RECNAME"
-}
-
-# The name of the drawing this run makes: the subboard it goes into, else the digest's title (the plan's, when it is drawing one, else
-# the digest's and --into). How the last drawings of one unsaved board are told apart (the tool says nothing when it can't tell).
-record_name() {
-  if [ "$CMD" = draw ] && [ -s "$OUT/plan.json" ]; then tool name "$OUT/plan.json"
-  elif [ -f "$GRAPH" ]; then tool name "$GRAPH" ${INTO:+--into "$INTO"}
-  fi
-}
-
-# With --records and --replace: the record of the target board's file becomes OUT/drawn.json, or there is none (a new file has none yet, and a
-# run with a new out has no record but these). Without --replace nothing reads a record, and a drawing writes to the record its file or
-# board and the drawing's name (keep_record), so none is picked. Of the records there are, the tool picks the one that is this board's file's: by
-# its path, which needs no query; only when that fails, and a record could be told by the board's id and its shapes, the file's titles are asked
-# for. Of several told that way (two digests drawn into one unsaved board) it takes the one with this run's name, then the newest. A file in
-# the folder that isn't a record is said once and skipped.
-select_record() {
-  mkdir -p "$RECORDS"
-  rm -f "$OUT/drawn.json"
-  if [ -z "$BOARD" ] || [ "$REPLACE" != 1 ] || [ "$CMD" = verify ]; then return 0; fi
-  set --
-  for _r in "$RECORDS"/*.json; do if [ -f "$_r" ]; then set -- "$@" "$_r"; fi; done
-  if [ $# -eq 0 ]; then return 0; fi
-  _bpath=$(board_field "$BOARD" path)
-  _name=$(record_name) || exit 1
-  _pick=$(tool record-pick "$_bpath" "$BOARD" "" --name "$_name" "$@") || exit 1
-  if [ -z "$_pick" ]; then
-    _need=$(tool record-needs-titles "$_bpath" "$BOARD" "$@" --quiet true) || exit 1
-    if [ -n "$_need" ]; then
-      all_titles "$BOARD"
-      _pick=$(tool record-pick "$_bpath" "$BOARD" "$OUT/places.all.json" --name "$_name" --quiet true "$@") || exit 1
-    fi
-  fi
-  if [ -z "$_pick" ]; then return 0; fi
-  RECNAME=$(basename "$_pick")
-  cp "$_pick" "$OUT/drawn.json"
-}
-
-# The app deletes no shape that holds the board the window shows. A take-back ($OUT/replace.draw) whose shapes are all on the file's
-# root board is made from the root: the window is shown it first, and $1 says so (a drawing's own boards are about to go anyway). One
-# that deletes a subboard on a board inside the file is left to the app, which says to show a board above it.
-from_root() {
-  [ -s "$OUT/replace.draw" ] && [ "$(board_field "$BOARD" shows)" != root ] || return 0
-  tool_to "$OUT/replace.root.draw" replace-script "$OUT/drawn.json" "$OUT/places.root.json" "$OUT/places.root.json"
-  if cmp -s "$OUT/replace.draw" "$OUT/replace.root.draw"; then
-    canvas_to "$OUT/show.json" show --board "$BOARD" --root
-    echo "$1: the window shows the board's root now (it showed a board of the drawing that is to be replaced)"
-  fi
-}
-
-# A digest drawn as the board itself (--board without --into) goes only on an empty board, or on one that holds nothing but the drawing
-# --replace takes back: never among shapes it didn't make. Says why and stops otherwise.
-root_ok() {
-  if replacing "$1"; then
-    all_titles "$1"
-    _foreign=$(tool foreign "$OUT/places.all.json" "$OUT/drawn.json") || exit 1
-    [ -z "$_foreign" ] || die "board $1 holds shapes this digest's last drawing didn't make ($(echo "$_foreign" | head -5 | tr '\n' ',' | sed 's/,$//')), and a digest drawn as the board goes only on an empty one. Draw into a subboard (--into TITLE) or a new file (--new-file PATH)"
-    _beyond=$(tool beyond "$OUT/drawn.json" "$(board_field "$1" fileShapes)") || exit 1
-    [ "$_beyond" = 0 ] || die "board $1 holds $_beyond shape(s) more than this digest's last drawing made (an arrow or a note added since, say), and a digest drawn as the board goes only on an empty one. Take them off, or draw into a subboard (--into TITLE) or a new file (--new-file PATH)"
-    return 0
-  fi
-  [ "$(board_field "$1" fileShapes)" = 0 ] || die "board $1 isn't empty, and a digest drawn as the board goes only on an empty one (or in place of its own last drawing, --replace). Draw into a subboard of it (--into TITLE), open an empty board, or draw into a new file (--new-file PATH)"
-}
-
-# The digest against the rules and, with a board, the titles the file holds; the tool's answer is $OUT/check.json, which is what says whether
-# there are errors. Prints what it found (all of it, or with $1 = quiet only when something is wrong); returns 1 if there are errors.
-do_check() {
-  set -- "$1" check "$GRAPH"
-  _quiet=$1; shift
-  if [ -s "$OUT/kinds.json" ]; then set -- "$@" --kinds "$OUT/kinds.json"; fi
-  if [ -n "$BOARD" ]; then
-    file_titles "$BOARD"
-    set -- "$@" --existing "$OUT/titles.json"
-  fi
-  if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
-  tool_to "$OUT/check.json" "$@"
-  _errors=$(tool extract errors "$OUT/check.json") || exit 1
-  _text=$(tool check-text "$OUT/check.json") || exit 1
-  if [ "$_errors" != 0 ] || [ "$_quiet" != quiet ]; then echo "$_text"; fi
-  [ "$_errors" = 0 ]
+# What the app says of its kinds (canvas kinds), which the tool reads every node by: what each holds and the pills that can stand for it,
+# kept in $OUT/kinds.json. Asked once a run; a plan from a measurement, with no canvas to ask, reads the answer an earlier run kept.
+need_kinds() {
+  [ "${_kinds_asked:-0}" = 0 ] || return 0
+  _kinds_asked=1
+  canvas_to "$OUT/kinds.json" kinds
 }
 
 step_check() {
-  if [ -n "$BOARD" ] && [ -z "$INTO" ]; then root_ok "$BOARD"; fi
-  canvas_to "$OUT/kinds.raw.json" kinds
-  tool_to "$OUT/kinds.json" extract kinds "$OUT/kinds.raw.json"
-  do_check loud || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
+  need_kinds
+  tool_to "$OUT/check.json" check "$GRAPH" --kinds "$OUT/kinds.json"
+  _errors=$(tool extract errors "$OUT/check.json") || exit 1
+  tool check-text "$OUT/check.json"
+  [ "$_errors" = 0 ] || { echo "digest: check found errors; fix the graph document and run it again" >&2; exit 1; }
 }
 
-# The script canvas measure is given, written to $1: the digest's shapes and a pill for each end, and a pill from each place the end is
-# pointed at from, since every pill says where its shape is. It is the digest's alone (no title the file holds changes it), and starts at the
-# --into card's board when there is one, which a place leads with where the shape is on another board than its pill.
-measure_script() {
-  set -- "$1" measure-script "$GRAPH"
-  if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
-  tool_to "$@"
-}
-
+# The graph as given, measured by the app (canvas measure): sizes by key, the width of each title over a frame, the pills, and the edges the
+# app would refuse. A document it can't read is refused there, by key.
 step_measure() {
-  measure_script "$OUT/measure.draw"
-  canvas_to "$OUT/measure.json" measure - < "$OUT/measure.draw"
-  echo "measure: $(wc -l < "$OUT/measure.draw" | tr -d ' ') statements measured by canvas measure"
-}
-
-# The view the boards are laid out for, as the tool's plan takes it (WxH; nothing: it assumes one): the one asked for, else the room the
-# target board's window has for a board fit to it, else (a new file, or no target) the window in front's. Asked of the app as the plan
-# is made, never kept: a window is the size it is now. With no canvas found (a plan from a measurement, with no board named), none is asked.
-view_for() {
-  if [ -n "$VIEW" ]; then printf '%s\n' "$VIEW"; return; fi
-  [ -n "${CANVAS:-}" ] || return 0
-  canvas_try "$OUT/boards.json" boards || return 0
-  tool view "$OUT/boards.json" "${BOARD:-front}"
+  need_kinds
+  # measured from the board apply will draw on (--on), so a pill says where its shape is from there, as drawn
+  canvas_to "$OUT/measure.json" measure - ${BOARD:+--board "$BOARD"} ${ON:+--on "$ON"} < "$GRAPH"
+  echo "measure: $(tool count nodes "$OUT/measure.json") nodes measured by canvas measure"
 }
 
 step_plan() {
-  # the file's titles as they are now, and a board the digest is to be drawn as (`all` has just checked them)
-  if [ -n "$BOARD" ] && [ "$CMD" != all ]; then
-    if [ -z "$INTO" ]; then root_ok "$BOARD"; fi
-    do_check quiet || { echo "digest: check found errors; fix the digest and run it again" >&2; exit 1; }
-  fi
-  # measured when there is no measurement, and again when the digest has changed since (a title or a text the old one never saw) or the
-  # script it would measure now isn't the one it measured (another --into card)
-  if [ ! -s "$OUT/measure.json" ] || [ "$GRAPH" -nt "$OUT/measure.json" ]; then step_measure
-  else
-    measure_script "$OUT/measure.now.draw"
-    cmp -s "$OUT/measure.now.draw" "$OUT/measure.draw" || step_measure
-  fi
-  rm -f "$OUT"/runs/*.draw "$OUT"/results/*.json "$OUT"/results/*.err "$OUT/target.id"
-  set -- plan "$GRAPH" "$OUT/measure.json" "$OUT"
-  if [ -n "$MESS" ]; then set -- "$@" --mess "$MESS"; fi
-  if [ -n "$PROMOTE" ]; then set -- "$@" --promote "$PROMOTE"; fi
-  if [ -n "$PREFER" ]; then set -- "$@" --prefer "$PREFER"; fi
-  if [ -n "$CAP" ]; then set -- "$@" --cap "$CAP"; fi
-  if [ -n "$MARGIN" ]; then set -- "$@" --margin "$MARGIN"; fi
-  if [ -n "$POPULAR" ]; then set -- "$@" --popular "$POPULAR"; fi
-  if [ -n "$INTO" ]; then set -- "$@" --into "$INTO"; fi
-  # the file's titles (do_check has just read them): no name a script writes may be able to mean a shape of the file beside the drawing
-  if [ -n "$BOARD" ] && [ -s "$OUT/titles.json" ]; then set -- "$@" --existing "$OUT/titles.json"; fi
-  if [ -n "$RANKS" ]; then set -- "$@" --ranks "$RANKS"; fi
-  _view=$(view_for) || exit 1
-  if [ -n "$_view" ]; then set -- "$@" --view "$_view"; fi
+  need_kinds
+  if [ ! -s "$OUT/measure.json" ] || [ "$GRAPH" -nt "$OUT/measure.json" ]; then step_measure; fi
+  rm -f "$OUT/drawing.json" "$OUT/report.json"
+  set -- plan "$GRAPH" "$OUT/measure.json" "$OUT" --kinds "$OUT/kinds.json"
+  # shellcheck disable=SC2086
+  set -- "$@" $PLANFLAGS
+  # Laid out for the window it will be seen in: the room its board's window has (canvas boards' view), unless --view says, and no window, none.
+  case " $PLANFLAGS " in
+    *" --view "*) ;;
+    *) if canvas_try "$OUT/boards.json" boards; then _view=$(tool view "$OUT/boards.json" $BOARD) && [ -n "$_view" ] && set -- "$@" --view "$_view"; fi ;;
+  esac
+  if [ -n "$CURRENT" ]; then set -- "$@" --current "$CURRENT"; fi
   _res=$(tool "$@") || exit 1
   echo "$_res"
-  echo "files: $OUT/plan.json, $OUT/report.json, $(tool runs "$OUT/plan.json" | wc -l | tr -d ' ') scripts in $OUT/runs"
 }
 
-# How to take back a draw, for where it went.
-undo_advice() {
-  _into=$(tool into "$OUT/plan.json") || _into=
-  _back=; if [ "${_replaced:-0}" = 1 ]; then _back="; once more after them, Undo Draw brings back the drawing this one replaced"; fi
-  if [ -n "$NEWFILE" ]; then
-    echo "close the new file's window without saving and delete $NEWFILE"
-  elif [ -n "$_into" ]; then
-    echo "Edit > Undo Draw in the app takes back one script a time$_back, or delete the subboard \"$_into\" (and what is in it)"
+# Where the drawing's shapes are now, when the file holds the drawing: written to $OUT/current.json (the rows with their boxes and the containers
+# they are in), and CURRENT set to it. A file without the drawing has none, and the plan starts afresh.
+step_current() {
+  _q=$(tool drawn-by "$GRAPH") || exit 1
+  CURRENT=
+  rm -f "$OUT/current.json"
+  # a file without the drawing answers no rows; any other failure (too slow, timed out) is not that, and drawing from scratch would move a person's shapes back
+  if ! canvas_try "$OUT/current.json" query "$_q" --brief --limit 100000 ${BOARD:+--board "$BOARD"}; then
+    echo "digest: canvas query could not say where the drawing's shapes are, so the layout would not start from where they are; nothing is drawn. What canvas said:" >&2
+    say_refusal "$OUT/current.json"
+    rm -f "$OUT/current.json"
+    exit 1
+  fi
+  if [ "$(tool count rows "$OUT/current.json")" != 0 ]; then
+    CURRENT=$OUT/current.json
+    echo "current: $(tool count rows "$CURRENT") shapes of the drawing are in the file; the layout starts from where they are"
   else
-    echo "Edit > Undo Draw in the app takes back one script a time$_back"
+    rm -f "$OUT/current.json"
   fi
 }
 
-# Said when a draw stops: what is on the board, and how to take it back.
-leave_note() {
-  # nothing new is on the board: the last drawing's record stands, whether or not it is undone back
-  if [ -z "$_drawn" ] && [ "${_over:-0}" = 1 ]; then cp "$OUT/drawn.prev.json" "$OUT/drawn.json"; keep_record; fi
-  if [ "${_replaced:-0}" = 1 ] && [ -z "$_drawn" ]; then
-    echo "digest: the last drawing was taken back and nothing new was drawn: Edit > Undo Draw in the app brings the last drawing back." >&2
-    return
+step_apply() {
+  [ -s "$OUT/drawing.json" ] || die "no drawing at $OUT/drawing.json: run plan first"
+  mkdir -p "$OUT/results"
+  set -- apply -
+  if [ -n "$ON" ]; then set -- "$@" --on "$ON"; fi
+  if [ -n "$BOARD" ]; then set -- "$@" --board "$BOARD"; fi
+  _name=apply
+  if [ "$DRYRUN" = 1 ]; then set -- "$@" --dry-run; _name=apply.dry; fi
+  if ! canvas_try "$OUT/results/$_name.json" "$@" < "$OUT/drawing.json"; then
+    # only a refusal is known to have changed nothing; a hang-up on a slow apply leaves the app to finish it
+    if grep -q '"reason" *: *"timed_out"' "$OUT/results/$_name.json.err" 2>/dev/null; then
+      echo "digest: canvas gave up waiting for apply, and the app may still be applying the drawing: look at the board before running it again (--timeout S waits longer). What canvas said:" >&2
+    elif grep -q '"refusals"\|"reason" *: *"refused"' "$OUT/results/$_name.json.err" 2>/dev/null; then
+      echo "digest: canvas apply refused the drawing; nothing was changed:" >&2
+    else
+      echo "digest: canvas apply failed:" >&2
+    fi
+    say_refusal "$OUT/results/$_name.json" "$OUT/drawing.json"
+    exit 1
   fi
-  if [ -n "$_drawn" ]; then
-    # part of a drawing: recorded with how many shapes the file holds now (and, in place of the last one, with that one)
-    record_drawn "$(board_field "$id" fileShapes)"
-    echo "digest: drawn already, $_n script(s):$_drawn. To take them back: $(undo_advice)." >&2
-  elif [ -n "$NEWFILE" ] && [ -s "$OUT/target.id" ]; then
-    echo "digest: nothing was drawn, but the new file $NEWFILE was made and is open: $(undo_advice)." >&2
-  else
-    echo "digest: nothing was drawn." >&2
-  fi
+  tool applied "$OUT/results/$_name.json" "$OUT/drawing.json"
 }
 
-step_draw() {
-  [ -s "$OUT/plan.json" ] || die "no plan at $OUT/plan.json: run plan first"
-  # D10: a digest makes a new file's board, a new subboard, or an empty board's (or the board of its own last drawing, --replace), never
-  # shapes among the ones already on a board
-  _rootplan=0; if grep -q '"into": null' "$OUT/plan.json"; then _rootplan=1; fi
-  if [ -n "$BOARD" ] && [ "$_rootplan" = 1 ]; then root_ok "$BOARD"; fi
-  if [ -n "$NEWFILE" ] && [ "$_rootplan" = 0 ]; then
-    die "this plan draws into a subboard (--into). Plan again without it, for a new file"
-  fi
-  _names=$(tool runs "$OUT/plan.json") || exit 1
-  [ -n "$_names" ] || die "the plan has no scripts"
-  # a plan is drawn once: a result saved for any of its scripts means it was (or was begun)
-  for _name in $_names; do
-    if [ -e "$OUT/results/${_name%.draw}.json" ]; then
-      die "already drawn: $OUT/results/${_name%.draw}.json is what drawing this plan before got. Take that drawing back, then plan again (which starts the results afresh) to draw it once more"
-    fi
-  done
-  if [ -n "$NEWFILE" ]; then
-    [ ! -s "$OUT/target.id" ] || die "$OUT/target.id says this plan was drawn already; plan again for a new file"
-  fi
-  # the scripts name shapes so that nothing outside the drawing can be meant, on the file's titles as the plan was made: the subboard's title,
-  # and those a name relies on the file not having, are still not in the file (a title of a node otherwise may be)
-  if [ -n "$BOARD" ]; then
-    file_titles "$BOARD"
-    _clash=$(tool clashes "$OUT/plan.json" "$OUT/titles.json" "$OUT/statements.json") || exit 1
-    if [ -n "$_clash" ]; then
-      echo "$_clash" >&2
-      die "nothing was drawn: the file has titles this plan cannot be drawn beside. Plan again from a digest checked against the file (digest check GRAPH --board ID --into TITLE)"
-    fi
-  fi
-  _n=0; _drawn=; _replaced=0; _over=0
-  if [ -n "$NEWFILE" ]; then
-    new_file_free
-    canvas_to "$OUT/new.json" new "$NEWFILE"
-    tool_to "$OUT/target.id" extract id "$OUT/new.json"
-    echo "draw: made $NEWFILE as board $(cat "$OUT/target.id")"
-  fi
-  id=$(target_id) || die "name the board: --board ID (with --into TITLE) or --new-file PATH"
-  # a digest drawn as the board goes on its root: its first script's shapes go on the board the window shows
-  if [ -n "$BOARD" ] && [ "$_rootplan" = 1 ] && [ "$(board_field "$id" shows)" != root ]; then
-    canvas_to "$OUT/show.json" show --board "$id" --root
-    echo "draw: the window shows the board's root now (it showed a board inside it)"
-  fi
-  # --replace: the last drawing goes first, in one script (one undo step), dry-run first
-  if [ -n "$BOARD" ] && replacing "$BOARD"; then
-    tool_to "$OUT/replace.draw" replace-script "$OUT/drawn.json" "$OUT/places.all.json" "$OUT/places.root.json"
-    from_root replace
-    _was=$(board_field "$BOARD" fileShapes)   # what an undo of the take-back brings the file back to
-    if [ -s "$OUT/replace.draw" ]; then
-      if ! canvas_try "$OUT/results/replace.dry.json" draw --board "$id" --dry-run - < "$OUT/replace.draw" ||
-         ! canvas_try "$OUT/results/replace.json" draw --board "$id" - < "$OUT/replace.draw"; then
-        echo "digest: canvas refused to take back the last drawing, so nothing was deleted or drawn:" >&2
-        cat "$OUT"/results/replace*.err >&2; exit 1
-      fi
-      _replaced=1
-      echo "replace: took back the last drawing ($(wc -l < "$OUT/replace.draw" | tr -d ' ') shapes and what they held; one Undo Draw brings it back)"
-    fi
-    if [ "$_rootplan" = 1 ] && [ "$(board_field "$BOARD" fileShapes)" != 0 ]; then
-      die "the last drawing was taken back (Edit > Undo Draw brings it back), but board $BOARD still holds shapes it didn't make (one moved out of the drawing's boards, say), and a digest drawn as the board goes only on an empty one"
-    fi
-    # from here until this drawing is whole, the record is of both: the last drawing's is kept beside it
-    cp "$OUT/drawn.json" "$OUT/drawn.prev.json"; _over=1
-  fi
-  # what this drawing makes, kept so that a later --replace takes it back (one that stops part way is taken back as far as it got);
-  # the file as the app has it (canvas new adds .canvasboard to a path without it)
-  _path=$(board_field "$id" path)
-  record_drawn
-  _total=$(echo "$_names" | wc -l | tr -d ' ')
-  # stopped by hand (Ctrl-C): what is on the board is recorded and said, as for any other stop
-  trap 'trap - INT TERM; echo "digest: stopped." >&2; leave_note; exit 130' INT TERM
-  for _name in $_names; do
-    _base=${_name%.draw}
-    _file=$OUT/runs/$_name
-    if [ ! -s "$_file" ]; then echo "digest: the plan names $_name, and it is not in $OUT/runs" >&2; leave_note; exit 1; fi
-    if ! canvas_try "$OUT/results/$_base.dry.json" draw --board "$id" --dry-run - < "$_file"; then
-      echo "digest: canvas refused the dry run of $_name:" >&2
-      cat "$OUT/results/$_base.dry.json.err" >&2
-      leave_note; exit 1
-    fi
-    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.dry.json" --name "$_base (dry run)" --text true --statements "$OUT/statements.json") || { leave_note; exit 1; }
-    case $_res in
-      ok*) ;;
-      *) echo "$_res" >&2
-         echo "digest: stopped before drawing $_name: its dry run is not the plan." >&2
-         leave_note; exit 4 ;;
-    esac
-    # a board is drawn at its origin, wherever the window is: the first script of a digest drawn as the board brings what it drew into view
-    set --
-    if [ "$_n" -eq 0 ] && [ "$_rootplan" = 1 ]; then case $_name in [0-9][0-9]-root-top.draw) set -- --reveal ;; esac; fi
-    if ! canvas_try "$OUT/results/$_base.json" draw --board "$id" "$@" - < "$_file"; then
-      rm -f "$OUT/results/$_base.json"
-      echo "digest: canvas refused $_name, and none of it was drawn:" >&2
-      cat "$OUT/results/$_base.json.err" >&2
-      leave_note; exit 1
-    fi
-    _n=$((_n + 1)); _drawn="$_drawn $_name"
-    _res=$(tool compare "$OUT/plan.json" "$OUT/results/$_base.json" --name "$_base" --text true --statements "$OUT/statements.json") || { leave_note; exit 1; }
-    case $_res in
-      ok*) echo "[$_n/$_total] $_res" ;;
-      *) echo "$_res" >&2
-         echo "digest: stopped after drawing $_name: the board is not the plan." >&2
-         leave_note; exit 4 ;;
-    esac
-  done
-  trap - INT TERM
-  _over=0   # whole: its record is its own
-  record_drawn "$(board_field "$id" fileShapes)"
-  rm -f "$OUT/drawn.prev.json"
-  echo "draw: $_n scripts drawn on board $id"
-}
-
-step_verify() {
-  [ -s "$OUT/plan.json" ] || die "no plan at $OUT/plan.json: run plan first"
-  set -- replay "$OUT/plan.json" "$OUT/results" --statements "$OUT/statements.json"
-  if id=$(target_id); then
-    all_titles "$id"
-    set -- "$@" --places "$OUT/places.all.json"
-  fi
-  _res=$(tool "$@") || exit 1
-  echo "$_res"
-  case $_res in "verify ok"*) ;; *) exit 4 ;; esac
-}
-
-# Whether a draw could start: said before a caller spends minutes making the digest.
+# Whether a draw could start: said before a caller spends minutes making the document.
 step_ready() {
   canvas_to "$OUT/boards.json" boards   # the app answers (canvas says how to start it when it doesn't)
-  # ... and it and canvas are new enough: measure is the newest thing the skill asks of them (one note, measured; nothing is drawn)
-  if ! echo 'sticky-note "Ready"' | canvas_try "$OUT/ready.measure.json" measure -; then
-    echo "digest: canvas measure doesn't answer, so the canvas found ($CANVAS) or the app that is running is older than this skill needs. Open the app this canvas came with, or run canvas install from the app you mean to use (in the Infinite Canvas repository: ./build.sh, then open its build). What canvas said:" >&2
-    cat "$OUT/ready.measure.json.err" >&2; exit 1
+  grep -q '"id"' "$OUT/boards.json" || die "no board is open in the app: open one (or make one with canvas new), then draw"
+  # ... and it and canvas are new enough: apply is the newest thing the skill asks of them
+  if ! canvas_try "$OUT/ready.apply.txt" help apply; then
+    echo "digest: canvas apply doesn't answer, so the canvas found ($CANVAS) or the app that is running is older than this skill needs. Open the app this canvas came with, or run canvas install from the app you mean to use (in the Infinite Canvas repository: ./build.sh, then open its build). What canvas said:" >&2
+    cat "$OUT/ready.apply.txt.err" >&2; exit 1
   fi
-  if [ -n "$NEWFILE" ]; then
-    new_file_free
-    echo "ready: the app is running, and $NEWFILE is free for a new board"
-  elif [ -n "$BOARD" ]; then
-    if [ -z "$INTO" ]; then root_ok "$BOARD"
-    else
-      file_titles "$BOARD"
-      [ "$(tool has-title "$OUT/titles.json" "$INTO")" = no ] || die "the file of board $BOARD has a shape titled \"$INTO\" already, and titles are file-wide: give the subboard another (--into TITLE)"
-    fi
-    if replacing "$BOARD"; then
-      # the take-back as a dry run: a shape of the last drawing the app won't delete (a locked one, a title two shapes have) is said now,
-      # from the root when the window shows a board of the drawing, as the draw will
-      tool_to "$OUT/replace.draw" replace-script "$OUT/drawn.json" "$OUT/places.all.json" "$OUT/places.root.json"
-      from_root ready
-      if [ -s "$OUT/replace.draw" ] && ! canvas_try "$OUT/results/replace.ready.json" draw --board "$BOARD" --dry-run - < "$OUT/replace.draw"; then
-        echo "digest: canvas would refuse to take back the last drawing, so nothing could be drawn in its place:" >&2
-        cat "$OUT/results/replace.ready.json.err" >&2; exit 1
-      fi
-      echo "ready: board $BOARD holds this digest's last drawing, which the new one replaces"
-    else echo "ready: board $BOARD can take the drawing"
-    fi
-  else die "name where to draw: --board ID (or front) or --new-file PATH"
-  fi
+  echo "ready: the app is running with a board open, and canvas apply is there"
 }
-
-# A new board's file must not be there already, and its folder must be: canvas new makes the file (adding .canvasboard to a path
-# without it), never a folder.
-new_file_free() {
-  _dir=$(dirname "$NEWFILE")
-  [ -d "$_dir" ] || die "there's no folder $_dir for the new board's file: make it first (mkdir -p \"$_dir\")"
-  for _f in "$NEWFILE" "$NEWFILE.canvasboard"; do
-    [ ! -e "$_f" ] || die "there is a file at $_f already: name another path, or open that board and draw in its place (--board front --replace)"
-  done
-}
-
-if [ -n "$RECORDS" ] && [ "$CMD" != measure ]; then select_record; fi
 
 case $CMD in
   ready)   step_ready ;;
   check)   step_check ;;
   measure) step_measure ;;
   plan)    step_plan ;;
-  draw)    step_draw ;;
-  verify)  step_verify ;;
-  all)     step_check; step_measure; step_plan; step_draw; step_verify ;;
+  apply)   step_apply ;;
+  all)
+    step_check; step_measure
+    [ -n "$CURRENT" ] || step_current
+    step_plan
+    DRYRUN=1; step_apply; DRYRUN=0; step_apply ;;
 esac

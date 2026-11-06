@@ -1,6 +1,8 @@
 # Writing a lens
 
-A lens is the repository's own picture of its code: `.canvas/lens.py`, a function `digest(scan, repo)` that returns the digest canvas-digest draws ([its format](../../canvas-digest/reference/graph.md)). `ingest` reads it from the folder you run in, never from the commit drawn, so an edit counts at once, committed or not. It runs it twice, isolated, and refuses it when the two digests differ ([Determinism](#determinism-and-the-runner)). Without a lens, `ingest` draws with the default lens.
+A lens is the repository's own picture of its code: `.canvas/lens.py`, a function `digest(scan, repo)` that returns a graph document ([its format](../../canvas-digest/reference/graph.md)) keyed by the code. `ingest` reads it from the folder you run in, never from the commit drawn, so an edit counts at once, committed or not. It runs it twice, isolated, and refuses it when the two documents differ ([Determinism](#determinism-and-the-runner)). Without a lens, `ingest` draws with the default lens.
+
+A lens finds the things (by the repository's conventions, through `scan` and `repo`), names each by a key from the code and a title the code gives it, and says how they connect. It never places a shape (its say in layout is `layout` hints), never reads anything but `scan` and `repo`, and never decides what the app allows: it writes what it wants, and the app says no. What a kind takes is `canvas kinds`, and the canvas skill's [reference/kinds.md](../../canvas/reference/kinds.md) (generated from the app).
 
 A lens imports `lenskit`, which is in the skill's folder (`ingest` puts it on the path), and anything in the folder beside `lens.py`. [The bookshelf example](../examples/bookshelf/.canvas/lens.py) and [the orders example](../examples/orders/.canvas/lens.py) are whole lenses built on it.
 
@@ -9,12 +11,12 @@ A lens imports `lenskit`, which is in the skill's folder (`ingest` puts it on th
 - [Two ways to start](#two-ways-to-start)
 - [The scan](#the-scan)
 - [repo, the code at the commit](#repo-the-code-at-the-commit)
-- [The digest builder](#the-digest-builder)
+- [The graph builder](#the-graph-builder)
 - [The texts](#the-texts)
 - [The default lens and its arguments](#the-default-lens-and-its-arguments)
 - [Reading YAML](#reading-yaml)
 - [Reading SQL migrations](#reading-sql-migrations)
-- [Types in a digest](#types-in-a-digest)
+- [Types in a document](#types-in-a-document)
 - [Files as a type](#files-as-a-type)
 - [Named rules](#named-rules)
 - [What a lens's conventions miss](#what-a-lenss-conventions-miss)
@@ -33,9 +35,9 @@ A lens imports `lenskit`, which is in the skill's folder (`ingest` puts it on th
       return default.digest(scan, repo, bands=[("Apps", ["web", "api"]), ("Libraries", ["core"])])
   ```
 
-  Its files are plain notes. Usually they are notes of the type File: `default.build` with the same arguments, and its file notes typed before it is finished ([Files as a type](#files-as-a-type)). The bookshelf example is one.
+  Its files are plain notes. Usually they are notes of the type File: `default.build` with the same arguments, and its file notes (`file:<path>`) typed before it is finished ([Files as a type](#files-as-a-type)). The bookshelf example is one.
 
-- **A lens of its own**, built with `lenskit.Digest`. For a repository whose picture is its things: services, workflows, Lambdas, tables, and usually the files they are declared in. Find each by the repository's convention through `repo` and the scan, make the kinds types, and connect them with relationships. The orders example is one.
+- **A lens of its own**, built with `lenskit.Graph`. For a repository whose picture is its things: services, workflows, Lambdas, tables, and usually the files they are declared in. Find each by the repository's convention through `repo` and the scan, make the kinds types, and connect them with relationships. The orders example is one.
 
 ## The scan
 
@@ -69,78 +71,84 @@ A declaration's `line` is where it starts, so a function's body is the lines fro
 
 A submodule is no file: its folder is empty. Never `open()` a file of the repository: that reads the working tree, not the commit, and makes a board that changes with uncommitted edits.
 
-## The digest builder
+## The graph builder
 
-`lenskit.Digest` builds the digest from nodes, and gives every title out once in the container that holds the shape.
+`lenskit.Graph` builds the document. It passes every field through as given and holds no rule about kinds, attributes or titles: it gives no title out, builds no id and renames nothing. The same thing keeps its key from commit to commit, and that key is how the app knows the shape again when the drawing is drawn again.
 
 ```python
-from lenskit import Digest
+from lenskit import Graph
+from lenskit.text import mention
 
-d = Digest("shop")
-services = d.frame("Services", rank=0)
-database = d.frame("Database", rank=1)
-orders = d.subboard("@shop/orders", services, "What the service runs.", source="services/orders/src")
-table = d.note(d.claim("the orders table", "orders", within=database), database, "The orders table.", source="db/migrations/002_orders.sql")
-create = d.note(d.claim("createOrder", "createOrder", within=orders), orders, "Makes an order.", source="services/orders/src/create.ts")
-d.edge(create, table, weight=2)
-return d.finish()
+g = Graph()                                       # the drawing's name is the runner's: the settings', else the repository's
+services = g.node("frame:Services", "frame", {"title": "Services"}, layout={"rank": 0})
+database = g.node("frame:Database", "frame", {"title": "Database"}, layout={"rank": 1})
+orders = g.node("module:@shop/orders", "subboard", {"title": "@shop/orders", "description": "What the service runs."}, in_=services)
+table = g.node("table:orders", "sticky-note", {"title": "orders", "text": "The orders table."}, in_=database)
+create = g.node("workflow:src/create.ts#createOrder", "sticky-note", {"title": "createOrder", "text": f"Writes {mention('table:orders')}."}, in_=orders)
+g.edge(create, table, {"text": "writes"}, layout={"weight": 2})
+return g.finish()
 ```
-
-A shape is named by the node `add`, `frame`, `subboard` or `note` returned for it: `parent` and an edge's ends take a node (or a title, where one node has it). Titles are unique **in a container** (the nodes with the same `in`; the top of the first board is one), not in the whole digest: a folder's `index.ts` and another's are two notes of one name, as the app tells shapes apart by their containers.
 
 | member | what it does |
 |---|---|
-| `Digest(title)` | the digest's title, what the whole is called; it can be set later: `d.title`. No board has a note of what it is: a subboard's `text` is its card's description |
-| `d.claim(what, wanted, *others, within=None, most=80, alone=False, type=False)` | a title no other shape in the container has: `wanted`, else each of `others`, else the last with a number after it, cut to `most` characters (keeping its end behind an ellipsis). Two titles that differ only in case or spaces are one title. A title that gives way is said as a warning naming `what`. Claim the shapes that matter most first (the titles queries name: tables, types), then the rest, container by container. A name many shapes of one container share (an `example` workflow in every sample, all in one frame) goes bare to whichever claims it first: claim such names qualified from the start (`f"{name} ({sample})"`), so none of them is the bare name by the order of a loop; names in different containers need no qualifying. `within` is the node that will hold the shape (what `add` returned; or its title, where one node has it, else a `ValueError`) and `None` the top of the first board: a lens that passes none claims everything in one scope, so every title in it is given out once in the whole digest. `alone=True` makes the title the digest's alone, whichever container a shape is in, for a shape a text mentions (`@[Title]` names a shape by its title alone). `type=True` makes it unique among the types (notes with a `schema`) of the digest: `is` names a type by its title |
-| `d.add(title, kind, parent=None, text=None, **extra)` | a node: `kind` `sticky-note`, `frame`, `subboard` or `auto`; `parent` the frame or subboard it is in, as the node `add` returned for it, or its title; `extra` goes into the node as it is. Returns the node (a dict you may still change: its title, its `in`) |
-| `d.frame(title, parent=None, **extra)`, `d.subboard(...)`, `d.note(...)` | `add` for each kind; `subboard` and `note` take `text` third (a note's words; a subboard's is its description, which may mention shapes as `@[Title]` and is shown in the card's panel, never on the canvas) |
-| `d.edge(source, target, weight=None, **extra)` | an edge between two nodes, each a node or a title: notes and subboards, or a frame and another frame or a subboard on its board (never a note and a frame, or a frame and what it holds) |
-| `d.warn(message)` | a warning, said by `ingest` as `lens: <message>`; never stops the run |
-| `d.finish()` | the digest: `{title, nodes, edges, warnings}`, with the ids and references below settled |
+| `Graph(drawing=None, **layout)` | an empty document. `drawing` is the drawing's name (the app keeps a record by it); leave it out and the runner gives it: `--drawing`, the settings' `drawing`, else the repository's folder name. `layout` (and `g.layout`) are the render layer's options for the whole: `mess`, `ranks` (the settings give these too, and win) |
+| `g.node(key, kind, props=None, *, in_=None, layout=None, **more)` | a node. `key`: a non-empty string no other node has. `kind`: any kind `canvas kinds` lists, as a string. `in_`: the node (or key) of the frame or subboard that holds it. `props`: a dict of the app's attributes for the kind, with `more` (keywords) added to it. `layout`: hints for the layout. Returns the node, a plain dict you may still change (`node["props"]["text"] = ...`) before `finish()` |
+| `g.edge(source, target, props=None, *, key=None, layout=None, **more)` | an edge from one node to another (each the node or its key). `props`: the arrow's attributes (`text`, `is`, `fieldValues`, `endRule`, ...). `key`: optional, an edge is told apart by its ends and its `is`. `layout`: `weight`, `direct` |
+| `g.get(key)` | the node with that key, or None |
+| `g.warn(message)` | a warning, said by `ingest` as `lens: <message>`; never stops the run |
+| `g.nodes`, `g.edges`, `g.layout` | the lists and the dict, in the order they were made |
+| `g.finish()` | the document: `{drawing?, layout?, nodes, edges, warnings}`. It refuses, naming the key, a duplicate key (at `node`), an `in` or an end that names no node, and an `in` in a circle: the document's structure, which the app can't be asked about |
 
-**A string names a node by its title, or by an id** the lens gave: `d.edge("createOrder", "orders")`. A title that several nodes have names none of them (`check` would refuse it), so `finish()` raises a `ValueError` for it, naming the edge or node: pass the node itself.
+**Keys** are the code's names for things, with a prefix that says which sort: `file:<path>`, `dir:<path>`, `module:<name>`, `table:<name>`, `type:<Title>`, `workflow:<path>#<name>`. They are the same from run to run (no counter, no hash of the run), unique in the document, and never a title reworded to be unique. A thing that moves or is renamed in the code is a new key, and its old shape goes with the old key.
 
-**Ids.** `finish()` gives every node whose title another node has (spaces folded, case kept, as the digest matches a title; or whose title is another node's `id`, which a string names first) an `id`, unless the lens gave it one, and writes every `in`, `from` and `to` that names such a node as its id. Every other reference stays the title, so a digest whose titles are all unique comes out as it was written, with no ids. An id is the title, two spaces, `in`, then the titles of the containers the node is in, outermost first, joined by ` > `: `index.ts  in Web layer > web > src`, or `index.ts  in the first board` for a node at the top. That is the digest's own way of telling such nodes apart (the key it makes of a node that has no id), so ids sort as titles do and a row the digest orders by key stays in title order; it is the same at every run, whatever the hash seed, since it is made of titles alone. A number follows an id that another has already (two nodes of one title in one container, which `check` refuses). An id says where the node was when `finish()` ran: a lens that moves nodes should change them, then call `finish()` (below, `default.build`). Two types of one title are refused by `finish()` too: claim a type's title with `type=True`.
+**Titles** are what the code calls things: two `index.ts` in two folders are both `index.ts`, two services each have a `syncWorkflow`. Nothing renames one. A title is `props["title"]`.
 
-The fields a node or an edge can carry are in [graph.md](../../canvas-digest/reference/graph.md): on a node `rank` (rows or columns in its container), `public`, `source`, `schema`, `relationship`, `is`, `fieldValues`; on an edge `text`, `weight`, `direct` (never a pill), `via: "reference"` (always a pill), `is`, `fieldValues`, `endRule`. `is` is a word Python keeps, so pass it in a dict: `d.note("orders", "Database", **{"is": "Table"})`.
+**`props`** is for the app: any attribute `canvas kinds` lists for the kind, as JSON, with the value `canvas draw` takes (a string, number, boolean, null, list or object: `"is": ["type:File"]`, `"fieldValues": {...}`, `"color": "green"`, `"public": true`, `"schema": {...}`; a text attribute given an object or list takes its JSON text). A new attribute a plugin adds works the day the app has it, with no change to lenskit. A value that names another shape names it **by key**: `"is": ["type:File"]`, a mention `@[table:orders]` in a text (`lenskit.text.mention`). A note's words are `text`, a subboard's `description`; a frame has neither.
 
-Give every node a `source`: the path it was made from, or `{"path": ..., "line": ...}`. The drawing ignores it, and it is how a shape the user points at is mapped back to the code: where several nodes have the title the user's selection names, the row's `inside` (the shape's containers) and the node's `id` tell them apart.
+**`layout`** is for the render layer, never the app: on a node `rank` (a number: rows with the lowest on top, or columns), `public` (`true` pins a pill target, `false` rules one out), `direct` (`true`: never a pill); on an edge `weight` and `direct`. Place nothing: no coordinates, no sizes.
 
-A digest's limits are canvas-digest's: titles at most 80 characters and unique in their container (a type's in the whole digest), about 15 shapes a frame, about 150 a board. `ingest` runs `digest check`, which warns past them. One `canvas query` lists at most 10,000 titles, so keep a digest well under that.
+A document's limits are canvas-digest's: about 15 shapes a frame, about 150 a board (`digest check` warns past them). One `canvas query` lists at most 10,000 titles, so keep a document well under that.
 
 ## The texts
 
 `lenskit.text`, for what a note says:
 
-- `as_text(s)`: text shown as written. `@[` starts a mention in `canvas draw`, so wrap every text the code gave you (a doc, a name) in it.
-- `mention(title)`: a mention of the shape with that title, `@[title]`, escaped as draw reads one.
+- `as_text(s)`: text shown as written. `@[` starts a mention, so wrap every text the code gave you (a doc, a name) in it.
+- `mention(key)`: a mention of the node with that key, `@[key]`, escaped as the app reads one.
+- `whole(s)`: a name with half characters (a file name that isn't UTF-8) read as U+FFFD, which is what writing it would make of it. Apply it to a title or key made from a path.
 - `file_text(file, language, length=True)`: a file's note as the default lens writes it: its doc, what it declares, its length (`length=False` leaves the length out, for a File that holds it as a value: [Files as a type](#files-as-a-type)). `declares(file, most=60)`: what it declares, in a few words. `words(language)`: the words those use (TypeScript says `exports`, Swift `public`). `names(xs, cap=10)`: a list cut to `cap`, with `+N`.
 
 ## The default lens and its arguments
 
-`lenskit.default.digest(scan, repo=None, **arguments)` draws modules as cards in bands on the root, a module's board with its files as notes in frames by folder, a module's imports and a file's uses as arrows (weighted by the names used, up to 4), and a use of a file on another board as a pill. Each argument replaces what it would work out; what it leaves out is still worked out, and what it names that the code lacks is passed over and warned.
+`lenskit.default.digest(scan, repo=None, **arguments)` draws modules as cards in bands on the root, a module's board with its files as notes in frames by folder, a module's imports and a file's uses as arrows (`layout.weight` the names used, up to 4), and a use of a file on another board as a pill. Each argument replaces what it would work out; what it leaves out is still worked out, and what it names that the code lacks is passed over and warned.
 
 | argument | value | without it |
 |---|---|---|
-| `title` | `str` | `scan.name`, else the repository's folder |
+| `drawing` | `str`, the drawing's name | the runner's: the settings', else the repository's |
 | `bands` | `[(title, [module])]`, top to bottom | by the modules' `layer` tags when every module has one, else by how deep each module's imports go. A module left out goes in its layer's band, else "Other modules" |
 | `purposes` | `{module: text}` | what the scanner found: a README's first sentence, a module's doc |
 | `folder_purposes` | `{"<module>/<folder>": text}` | the same, for a folder's board |
 | `folder_boards` | `{module: [folder]}`: folders with boards of their own | each top folder of a module of over 50 files, when it has two or more |
-| `groups` | `{board: [(title, [file], [subgroup])]}`: a board's frames, files by their path in the board's folder | frames by folder, two deep. A file left out goes in a frame `<board>/` |
+| `groups` | `{board: [(title, [file], [subgroup])]}`: a board's frames, files by their path in the board's folder. A group may add a key as its fourth member (else `group:<board>/<titles>`) | frames by folder, two deep, keyed `dir:<path>`. A file left out goes in a frame of the board's own folder |
 | `by_module` | `[(module, file)]`: files whose arrows point at modules, not files | none |
 | `layer_names` | `{tag: name}` | the tags as written |
 
 Any other keyword is a `TypeError` listing these. Past 4,000 file notes it draws a folder's files as one note, the deepest folders first, and warns how many.
 
-**What it titles things.** A title is given out once in the container that holds the shape ([the digest builder](#the-digest-builder)), so the boards of a codebase repeat names the way its folders do:
+**What it keys and titles.** Every node is keyed by the code and titled by what the code calls it, so the boards of a codebase repeat names the way its folders do:
 
-- A file's note is titled by its file name. Where another note of the same frame (or of the board's card) has that name, it takes the shortest end of its path that tells it apart there (`Select/index.ts`), then its module's name and its own (`web/index.ts`), then its whole path. A name two frames or boards share is the bare name in each, and the digest tells the notes apart by their ids.
-- A frame is titled by its folder's name (the board's own files, in `<board>/`); a frame whose name a note of its container has is `src (Core)`, after its board.
-- A band is titled as it is given; a module's card is titled by its module's name, and a folder's card `<module>/<folder>`. A card's title is **the digest's alone**: a folder's card mentions its module's card and the folders it uses as `@[Title]`, which names a shape by its title alone, so nothing else is titled so (a band called what a module is gives way, `Level 1 (layer)`, and so does a frame or a note).
-- A collapsed folder's note is titled for the folder, `Module/folder/`.
+| node | key | title |
+|---|---|---|
+| a band | `band:<title>` | as given |
+| a module's card | `module:<name>` | the module's name |
+| a folder's card (`folder_boards`) | `module:<module>/<folder>` | the folder's name |
+| a frame | `dir:<path>` (a group of your own: `group:...`) | the folder's name; the board's own files in a frame titled by the board's folder, or the module's name |
+| a file's note | `file:<path>` | the file name |
+| a collapsed folder's note | `files:<path>` | the folder's name and `/` |
 
-The default lens's digest is a dict like any other, but its references are names already, and an id says where a node was when the digest was finished. To change the digest (move a card into a frame of the lens's own, say) use `lenskit.default.build(scan, repo, **arguments)`, which returns the `Digest` before `finish()`: its nodes name each other by node, so a lens sets `card['in'] = frame`, adds the frame to `d.nodes`, and calls `d.finish()` itself.
+A key two things come to gets `#2` after it. A card's description mentions other cards by key (`@[module:Core]`).
+
+To change the picture (move a card into a frame of the lens's own, type the files) use `lenskit.default.build(scan, repo, **arguments)`, which returns the `Graph` before `finish()`: find a node with `g.get(key)`, change its `props` or its `in`, add nodes, and call `g.finish()` yourself.
 
 ## Reading YAML
 
@@ -192,31 +200,34 @@ A `Table` has `name`, `schema` (`app` in `app.users`; `public.` is no schema), `
 
 **It does not read:** `[x]` identifiers (T-SQL), nested block comments, and a type it has never heard of after such a word (that reads as a constraint). For a schema kept in an ORM (Prisma's `schema.prisma`, TypeORM's `@Entity`), read the files with `repo` and a regular expression of your own. Migrations written in code (MikroORM's `this.addSql(...)`, TypeORM's `queryRunner.query(...)`, Knex's `raw`) give `tables` nothing as they are: pull the SQL out of their strings first, which misses a statement built from pieces, or read what the ORM keeps of the schema itself, exact and whole (MikroORM's `migrations/.snapshot-*.json`, a table each with its columns: Medusa's 26 modules, 136 tables).
 
-## Types in a digest
+## Types in a document
 
-A digest can say what its things are, so a question about them is a `canvas query`. The format, what `check` refuses and the order things are drawn in are canvas-digest's: [graph.md, Types](../../canvas-digest/reference/graph.md#types). What a lens writes:
+A document can say what its things are, so a question about them is a `canvas query`. The attributes are the app's (`canvas kinds`: `schema`, `relationship`, `is`, `fieldValues`, `endRule`); the render layer draws the types first, then what is of them. What a lens writes:
 
 ```python
 TABLE = {"type": "object", "properties": {"name": {"type": "string"}, "columns": {"type": "array", "items": {"type": "string"}}}, "required": ["name"]}
 WRITES = {"type": "object", "properties": {"via": {"type": "array", "items": {"type": "string"}}}}
 
-d.frame("Types", rank=2)
-d.note("Table", "Types", "A Postgres table: its name and its columns.", schema=TABLE)              # a type
-d.note("Activity", "Types", "A Temporal activity: its name.", schema=ACTIVITY)
-d.note("Local activity", "Types", "An activity run in the workflow's worker: its timeout.", schema=LOCAL, **{"is": "Activity"})   # a type built on another
-d.note("writes", "Types", "An activity writes a table.", schema=WRITES, relationship=True)        # a relationship type
-d.edge("Activity", "writes", text="writes")                                                     # its from end: the row an Activity gets
-d.edge("writes", "Table", text="written by", endRule={"needed": True})                          # its to end: every Table needs a writer
-d.note("orders", "Database", "The orders table.", **{"is": "Table", "fieldValues": {"name": "orders", "columns": ["id text primary key"]}})
-d.edge("createOrder", "orders", **{"is": "writes", "fieldValues": {"via": ["insertOrder"]}})     # a relationship
+g.node("frame:Types", "frame", {"title": "Types"}, layout={"rank": 2})
+g.node("type:Table", "sticky-note", {"title": "Table", "text": "A Postgres table: its name and its columns.", "schema": TABLE}, in_="frame:Types")   # a type
+g.node("type:Activity", "sticky-note", {"title": "Activity", "text": "A Temporal activity: its name.", "schema": ACTIVITY}, in_="frame:Types")
+g.node("type:Local activity", "sticky-note", {"title": "Local activity", "text": "An activity run in the workflow's worker: its timeout.", "schema": LOCAL,
+       "is": ["type:Activity"]}, in_="frame:Types")                                                    # a type built on another
+g.node("type:writes", "sticky-note", {"title": "writes", "text": "An activity writes a table.", "schema": WRITES, "relationship": True}, in_="frame:Types")   # a relationship type
+g.edge("type:Activity", "type:writes", text="writes")                                                 # its from end: the row an Activity gets
+g.edge("type:writes", "type:Table", text="written by", endRule={"needed": True})                      # its to end: every Table needs a writer
+g.node("table:orders", "sticky-note", {"title": "orders", "text": "The orders table.", "is": ["type:Table"],
+       "fieldValues": {"name": "orders", "columns": ["id text primary key"]}}, in_="frame:Database")
+g.edge("activity:src/a.ts#createOrder", "table:orders", {"is": ["type:writes"], "fieldValues": {"via": ["insertOrder"]}})   # a relationship
 ```
 
-- A type's `text` and its `schema` say the same thing, in words and as JSON Schema. Its title is its name: no `"title"` in the schema.
+- `is` is a list of type keys. A type's `text` and its `schema` say the same thing, in words and as JSON Schema. Its title is its name: no `"title"` in the schema.
 - A type with `is` builds on those types (a relationship type on relationship types): its notes have their fields too, with its own, and its schema holds only what it adds or restates. A note of Local activity is an Activity, so `:is-a("Activity")` finds it, an end at Activity gives it its row, and a relationship whose end is an Activity fits it. What a type builds on may be on any board.
+- A frame or a subboard can be of a type too (`"is": ["type:Collection"]` and `"fieldValues"` on the frame's node): its type's chips are on the canvas, its values in its panel's Types tab, and `canvas query ':is-a("Collection")'` finds it. A note is the only kind that can be a type.
 - A relationship type and the types at its ends are on one board (a frame on the root is the usual place). Notes of a type can be on any board; a relationship to a note on another board is drawn into a pill, and the note is made public.
-- Values are held to the schema's `type`, `properties`, `required`, `enum` and `items`. Leave an empty value out (None counts as none). Lists of strings read well in a note's row.
+- Values are held to the schema's `type`, `properties`, `required`, `enum` and `items`, and the app says when one isn't. Leave an empty value out (None counts as none). Lists of strings read well in a note's row.
 - `endRule` `{"needed": true}` makes every note at that end need such a relationship, and one without is `:incomplete`, said by the drawing as a warning by design. Use it for what the team wants found (an activity no workflow runs).
-- Title the types as people say them, and keep the titles of the things queries name (tables, workflows) as the code says them: claim those first. Claim a type's title with `type=True`: it is given out once among the digest's types, in whichever frame each is, and a note that is no type may have it too (a table called `Table`). `finish()` refuses two types of one title, since `is` names a type by its title.
+- Title the types as people say them, and the things queries name (tables, workflows) as the code says them. A type is named by its key in `is`, so two types may share a title, though a query by title finds both.
 
 Then: `canvas query ':is-a("Table")'` lists the tables, `arrow:is-a("writes")` the writes, `:start-of(arrow:is-a("writes"):ends-at("orders"))` who writes orders, and `:start-of(arrow:is-a("runs"):ends-at(:start-of(arrow:is-a("writes"):ends-at("orders"))))` the workflows that run them ([the canvas skill's query reference](../../canvas/reference/query.md)).
 
@@ -226,7 +237,7 @@ Most repositories draw their files as notes of a type File, and setup recommends
 
 **Few fields.** Each is a row on every file's note, so each makes every note taller. `path` and `lines` are the usual two, and the note's words are its doc and what it declares, `file_text(f, language, length=False)`, which leaves out the length the note now holds as a value. Leave File no color of its own (no `$color`), so files stay the notes' yellow and the types that have one stand out.
 
-**On the default lens**, type its file notes before it is finished. A file's note has its path as its `source`; a folder the default lens draws as one note (past 4,000 files) has the folder's, which is no file's, and stays plain. The whole of it, as [the bookshelf example](../examples/bookshelf/.canvas/lens.py) has it:
+**On the default lens**, type its file notes before it is finished. A file's note is keyed `file:<path>`; a folder the default lens draws as one note (past 4,000 files) has another key (`files:<path>`), which is no file's, and stays plain. The whole of it, as [the bookshelf example](../examples/bookshelf/.canvas/lens.py) has it:
 
 ```python
 from lenskit import default
@@ -236,23 +247,19 @@ FILE = {"type": "object", "properties": {"path": {"type": "string"}, "lines": {"
 BANDS = [("Apps", ["web", "api"]), ("Libraries", ["core"])]
 
 def digest(scan, repo):
-    d = default.build(scan, repo, bands=BANDS)
-    below = 1 + max(n.get("rank", -1) for n in d.nodes if n.get("kind") == "frame" and "in" not in n)   # under every band, an "Other modules" too
-    types = d.frame(d.claim("the frame of the types", "Types"), rank=below)
-    file_type = d.note(d.claim("the type File", "File", within=types, type=True), types,
-                       "A file of the code: its path and how many lines it has.", schema=FILE)
-    by_path = {f["path"]: f for f in scan.files.values()}
-    for node in d.nodes:
-        source = node.get("source")
-        f = by_path.get(source) if node.get("kind") == "sticky-note" and isinstance(source, str) else None
-        if f is not None:
-            node["text"] = as_text(file_text(f, scan.language, length=False)) or None
-            node["is"] = file_type["title"]
-            node["fieldValues"] = {"path": f["path"], "lines": f["lines"]}
-    return d.finish()
+    g = default.build(scan, repo, bands=BANDS)
+    below = 1 + max(n.get("layout", {}).get("rank", -1) for n in g.nodes if n["kind"] == "frame" and "in" not in n)   # under every band, an "Other modules" too
+    types = g.node("frame:Types", "frame", {"title": "Types"}, layout={"rank": below})
+    g.node("type:File", "sticky-note", {"title": "File", "text": "A file of the code: its path and how many lines it has.", "schema": FILE}, in_=types)
+    for f in scan.files.values():
+        note = g.get(f"file:{f['path']}")
+        if note is not None:
+            note["props"].update({"text": as_text(file_text(f, scan.language, length=False)), "is": ["type:File"],
+                                  "fieldValues": {"path": f["path"], "lines": f["lines"]}})
+    return g.finish()
 ```
 
-**In a lens of its own**, make a File note for each file it draws, in a frame of their own on the thing's board, titled as the default lens titles them (`default.file_titles` of the frame's files: a file's name, else the shortest end of its path that tells it apart there), and join each thing to the file it is declared in with a relationship type, `declared in`, its end at each kind of thing Only one. Without that line a board holds two pictures, the things and the files, that nothing joins. [The orders example](../examples/orders/.canvas/lens.py) does it (its rules "files-are-typed" and "things-in-their-files").
+**In a lens of its own**, make a File note (`file:<path>`) for each file it draws, in a frame of their own on the thing's board, titled by its file name, and join each thing to the file it is declared in with a relationship type, `declared in`, its end at each kind of thing Only one. Without that line a board holds two pictures, the things and the files, that nothing joins. [The orders example](../examples/orders/.canvas/lens.py) does it (its rules "files-are-typed" and "things-in-their-files").
 
 **Which file uses which** stays the default lens's plain arrows: a relationship type for it would give every file's note two rows more, and say nothing the arrow doesn't. Ask for them as arrows (`:start-of(arrow:ends-at("client.ts"))`).
 
@@ -281,7 +288,7 @@ RUNS_DIRECT = True
 - **The code names the rule's constant**, so a reader goes from the rule to the code and back. Keep the rules together at the top of the lens, in the order they apply.
 - **Make it general.** A user who points at one shape is showing a case of something: write the rule for the case ("activities with no workflow go last"), never for the shape.
 - **Read the rules before changing the lens.** A request that goes against a rule: name the rule and its reason to the user, and ask which wins. Then change that rule's text and code, and its round. Never add a rule that undoes another.
-- **Art direction is often a field.** Order is `rank` on frames or nodes; a part to open is a `subboard`, a group to see at a glance a `frame`; a line that must stay a line is `direct: True`, one that must be a pill `via: "reference"`; a hub kept off pills is `public: False`. Tidiness as a whole is the `mess` setting, and which way the root's bands run the `ranks` setting, not rules.
+- **Art direction is often a field.** Order is `rank` on frames or nodes; a part to open is a `subboard`, a group to see at a glance a `frame`; a line that must stay a line is `layout={"direct": True}`; a hub that must be a pill target is `layout={"public": True}`, one kept off pills `False`. Tidiness as a whole is the `mess` setting, and which way the root's bands run the `ranks` setting, not rules.
 
 ## What a lens's conventions miss
 
@@ -297,7 +304,7 @@ Turn what a lens can see into a warning (`d.warn`), and what it cannot into a li
 
 ## Determinism and the runner
 
-The same commit, lens, app and macOS must draw the same boards, so `ingest` runs the lens twice, at once, each isolated (`runner/run.py`): `env -i` with only `PATH=/usr/bin:/bin`, a `HOME` that is an empty folder (a different one each run), `TZ=UTC`, `LC_ALL=C`, `PYTHONHASHSEED` 1 in one run and 2 in the other, a fresh empty folder as the current folder, and a clock that reads 2001 in one run and 2020 in the other. It writes each digest as JSON in the lens's own order and compares them byte for byte. A difference is refused, naming the first node or edge that differs and its usual causes; nothing is drawn. A lens that raises stops the run with its traceback. One over 900 seconds is stopped.
+The same commit, lens, app and macOS must draw the same boards, so `ingest` runs the lens twice, at once, each isolated (`runner/run.py`): `env -i` with only `PATH=/usr/bin:/bin`, a `HOME` that is an empty folder (a different one each run), `TZ=UTC`, `LC_ALL=C`, `PYTHONHASHSEED` 1 in one run and 2 in the other, a fresh empty folder as the current folder, and a clock that reads 2001 in one run and 2020 in the other. It writes each document as JSON in the lens's own order and compares them byte for byte. A difference is refused, naming the first node or edge that differs and its usual causes; nothing is drawn. A lens that raises stops the run with its traceback. One over 900 seconds is stopped.
 
 What keeps a lens deterministic:
 
@@ -319,7 +326,7 @@ A repository whose services are in `docker-compose.yml`: each service a note of 
 
 ```python
 """The services docker-compose.yml runs, and which needs which."""
-from lenskit import Digest, yaml
+from lenskit import Graph, yaml
 from lenskit.text import as_text
 
 # Rule "services-from-compose": a service is one docker-compose.yml runs. Why: compose is what runs locally (round 1).
@@ -330,22 +337,21 @@ NEEDS = {"type": "object", "properties": {}}
 
 
 def digest(scan, repo):
-    d = Digest(scan.name or "Services")
+    g = Graph()
     services = (yaml.load(repo.read(COMPOSE)) or {}).get("services") or {}
-    types = d.frame("Types", rank=1)
-    d.note("Service", types, "A service compose runs: its name and image.", schema=SERVICE)
-    d.note("needs", types, "A service needs another to start.", schema=NEEDS, relationship=True)
-    d.edge("Service", "needs", text="needs")
-    d.edge("needs", "Service", text="needed by")
-    running = d.frame("Running", rank=0)
-    note = {}
+    types = g.node("frame:Types", "frame", {"title": "Types"}, layout={"rank": 1})
+    g.node("type:Service", "sticky-note", {"title": "Service", "text": "A service compose runs: its name and image.", "schema": SERVICE}, in_=types)
+    g.node("type:needs", "sticky-note", {"title": "needs", "text": "A service needs another to start.", "schema": NEEDS, "relationship": True}, in_=types)
+    g.edge("type:Service", "type:needs", text="needs")
+    g.edge("type:needs", "type:Service", text="needed by")
+    running = g.node("frame:Running", "frame", {"title": "Running"}, layout={"rank": 0})
     for name in sorted(services):
         values = {"name": name, "image": (services[name] or {}).get("image")}
-        note[name] = d.note(d.claim(f"the service {name}", name, within=running), running, as_text(f"{name}"), source=COMPOSE,
-                            **{"is": "Service", "fieldValues": {k: v for k, v in values.items() if v}})
+        g.node(f"service:{name}", "sticky-note", {"title": name, "text": as_text(name), "is": ["type:Service"],
+                                                   "fieldValues": {k: v for k, v in values.items() if v}}, in_=running)
     for name in sorted(services):
         for other in sorted((services[name] or {}).get("depends_on") or []):
-            if other in note:
-                d.edge(note[name], note[other], **{"is": "needs"})
-    return d.finish()
+            if f"service:{other}" in g.by_key:
+                g.edge(f"service:{name}", f"service:{other}", {"is": ["type:needs"]})
+    return g.finish()
 ```

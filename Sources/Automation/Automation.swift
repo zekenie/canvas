@@ -189,6 +189,22 @@ extension AutomationError {
         self.init(error.message, reason: error.reason, hint: error.hint, line: error.line, statement: error.statement,
                   errors: error.errors.map { AutomationError($0) })
     }
+
+    /// What a document refused (`apply`, a document's `measure`): the first problem, with the key or edge it is about, and every
+    /// one in `refusals`, each with its key or edge, reason, message and hint.
+    init(_ error: DocumentError) {
+        var details: JSONObject = [:]
+        if let key = error.first.key { details["key"] = .string(key) }
+        if let edge = error.first.edge { details["edge"] = .number(Double(edge)) }
+        details["refusals"] = (try? JSONValue(encoding: error.refusals)) ?? .array([])
+        self.init(error.message, reason: error.reason, hint: error.hint, details: details)
+    }
+
+    /// What a rehearsal's script refused, as `draw` says it, and which script it is (`script`, from 0), in its data.
+    init(_ error: DrawError, script: Int) {
+        self.init(error.message, reason: error.reason, hint: error.hint, line: error.line, statement: error.statement,
+                  errors: error.errors.map { AutomationError($0) }, details: ["script": .number(Double(script))])
+    }
 }
 
 // MARK: Sugar (what plugins write)

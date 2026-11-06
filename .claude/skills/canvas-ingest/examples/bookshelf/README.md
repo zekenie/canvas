@@ -6,11 +6,11 @@ An ordinary TypeScript repository, set up for `ingest` the usual way: its settin
 - `apps/api`: the HTTP API: a small router, the routes (`routes/`) and each table's functions (`db/`).
 - `apps/web`: the web app: its pages (`pages/`), its calls to the API, and the pieces a page is drawn with.
 
-The lens draws the root with the apps over the library they share, as two bands of cards, and the types at the bottom. A package's board is the default lens's: its files as notes in frames by folder, and which file uses which as arrows, a use of a file on another board as a pill. Every file's note is a File, with its path and how many lines it has as values, and its words are its doc and what it declares. Its two decisions are named rules at the top of the lens, with their reasons.
+The lens draws the root with the apps over the library they share, as two bands of cards, and the types at the bottom. A package's board is the default lens's: its files as notes in frames by folder, and which file uses which as arrows, a use of a file on another board as a pill. Every node is keyed by the code (`module:@bookshelf/api`, `dir:apps/api/src/routes`, `file:apps/api/src/routes/books.ts`) and titled by its name, so the three `index.ts` are three notes of one title. Every file's note is a File, with its path and how many lines it has as values, and its words are its doc and what it declares. Its two decisions are named rules at the top of the lens, with their reasons.
 
 `scan.json` is the scan, written for this example in the scan format (`reference/scan.md`): what scip-typescript and `scanners/scip_read.py` would make of the code. On a real repository `ingest` makes the scan itself, with the `scip` command in the settings. The example has no `package-lock.json`, so its `prepare` (`npm ci`) would fail as it is; a real repository has one.
 
-To draw it, copy it into a git repository of its own and commit it, then draw it from its scan, with an empty board in front (`$SKILL` is the skill's folder):
+To draw it, copy it into a git repository of its own and commit it, then draw it from its scan, with the file to draw in in front (`$SKILL` is the skill's folder; drawing again updates the same drawing, named `bookshelf`, in place):
 
 ```bash
 cp -R "$SKILL/examples/bookshelf" ~/bookshelf && cd ~/bookshelf && rm scan.json
@@ -68,4 +68,4 @@ Who uses a loan, on any board (a use of a file on another board is a pill, and a
 
 - **A folder drawn as one note is no file.** Past 4,000 files the default lens draws a folder's files as one note; that note stays plain, and `:is-a("File")` doesn't list it or its files.
 - **Which file uses which is the default lens's arrows, untyped.** A relationship type for them would give every file's note two rows more and say nothing the arrow doesn't; ask for them as arrows (`:start-of(arrow:ends-at("client.ts"))`).
-- **A package is a card, never a note of a type**: a subboard can't be one.
+- **A package is a card of no type.** A subboard can be of a type (a frame can too: the orders example types its service frames), but the lens gives packages none.

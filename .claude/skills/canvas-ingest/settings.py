@@ -3,7 +3,7 @@
 
     settings.py <repo> <scip index path>
 
-Prints the settings as shell assignments for `eval` (S_SCANNER, S_SCIP, S_PREPARE, S_WINDOW as WxH, S_MESS, S_RANKS; each
+Prints the settings as shell assignments for `eval` (S_SCANNER, S_SCIP, S_PREPARE, S_WINDOW as WxH, S_MESS, S_RANKS, S_DRAWING; each
 empty when unset; S_FILE says whether there was a file). An unknown key is a warning on standard error, a bad value is an
 error naming the key (status 1). With no file, S_SCANNER is empty: ingest decides from what the repository holds.
 
@@ -14,10 +14,12 @@ error naming the key (status 1). With no file, S_SCANNER is empty: ingest decide
     window    [width, height], each from 1 to 1,000,000: the room every board is laid out for; absent, the window's size when the run starts
     mess      0 to 1, the digest's dial
     ranks     "rows" or "columns"
+    drawing   the drawing's name, which the app keeps a record by: drawing again with a name updates that drawing in place;
+              absent, the lens's, else the repository's name
 """
 import json, math, os, shlex, sys
 
-KEYS = ('scanner', 'scip', 'prepare', 'window', 'mess', 'ranks')
+KEYS = ('scanner', 'scip', 'prepare', 'window', 'mess', 'ranks', 'drawing')
 WINDOW_MOST = 1_000_000
 
 
@@ -34,7 +36,7 @@ def number(value):
 def main():
     repo, index = sys.argv[1], sys.argv[2]
     path = os.path.join(repo, '.canvas', 'ingest.json')
-    out = {'S_FILE': '', 'S_SCANNER': '', 'S_SCIP': '', 'S_PREPARE': '', 'S_WINDOW': '', 'S_MESS': '', 'S_RANKS': ''}
+    out = {'S_FILE': '', 'S_SCANNER': '', 'S_SCIP': '', 'S_PREPARE': '', 'S_WINDOW': '', 'S_MESS': '', 'S_RANKS': '', 'S_DRAWING': ''}
     if os.path.isfile(path):
         out['S_FILE'] = '1'
         try:
@@ -77,6 +79,11 @@ def main():
             if ranks not in ('rows', 'columns'):
                 fail('"ranks" is "rows" or "columns"')
             out['S_RANKS'] = ranks
+        drawing = settings.get('drawing')
+        if drawing is not None:
+            if not isinstance(drawing, str) or not drawing.strip():
+                fail('"drawing" is a name')
+            out['S_DRAWING'] = drawing
     for key, value in out.items():
         print(f"{key}={shlex.quote(value)}")
 

@@ -1,8 +1,1 @@
 lens: Big/x: a module has that name, so the folder gets no board of its own and its files stay on Big's
-lens: the module @my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x is titled "…age-name-very-long-package-name-very-long-package-name-very-long-package-name-x": its name is over 80 characters
-lens: the folder Big/utils is titled "Big/utils (2)": "Big/utils" is another shape's title too
-lens: the band Level 1 is titled "Level 1 (layer)": "Level 1" is another shape's title too
-lens: @my-company/very-long-package-name-very-long-package-name-very-long-package-name-very-long-package-name-x/src/components/Select/index.ts is titled "…very-long-package-name-very-long-package-name-very-long-package-name-x/index.ts": its name is over 80 characters
-lens: C/half�.swift is titled "half�.swift": its name isn't whole text
-lens: C/main.swift is titled "C/main.swift (2)": "C/main.swift" is another shape's title too
-lens: the frame c on C is titled "c (C)": "c" is another shape's title too

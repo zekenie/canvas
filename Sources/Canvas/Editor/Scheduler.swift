@@ -29,3 +29,13 @@ public final class TaskScheduler: Scheduler {
         return ScheduledTask { task.cancel() }
     }
 }
+
+/// A clock that stands still and fires nothing: what an editor runs on when nothing it would do later may ever
+/// happen (a copy a change is rehearsed on, `rehearsal()`, whose services would otherwise ask a model once its file
+/// is quiet).
+@MainActor
+public final class StoppedScheduler: Scheduler {
+    public init() {}
+    public var now: Duration { .zero }
+    public func schedule(after delay: Duration, _ action: @escaping @MainActor () -> Void) -> ScheduledTask { ScheduledTask {} }
+}

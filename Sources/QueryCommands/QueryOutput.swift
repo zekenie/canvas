@@ -13,11 +13,13 @@ import QueryTranslation
 // and `query-vocabulary`'s answer.
 
 /// A query's answer as the command line gets it:
-/// `{board, query, count, rows, warnings?}`, with `asked` for a question (`--ask`), and without
+/// `{board, query, count, rows, warnings?, absent?}`, with `asked` for a question (`--ask`), and without
 /// `rows` for `--count`. `board` is where the query ran, `{shows, showsPath}`, the board shown as it
 /// took up the file, which the command server completes with the file's id and name. Each row is
 /// an object of its members, as `QueryRow` writes itself (what's absent left out), its `properties`
-/// the shape's own JSON mapped member for member; a connection that went through a stand-in also
+/// the shape's own JSON mapped member for member, its `at` where it is (`[[x, y], [width, height]]`, absent for a shape
+/// with no box) and the members the query's words add; `absent` lists what its words name that the file no longer holds
+/// (`{id, …members}` each), only when something is; a connection that went through a stand-in also
 /// says `via` (the stand-in at each end that was one) and, for one that stands for several shapes,
 /// `more` (its other pairs).
 public enum QueryOutput {
@@ -50,6 +52,14 @@ public enum QueryOutput {
         if !result.warnings.isEmpty {
             answer["warnings"] = .array(result.warnings.map { .object(["reason": .string($0.reason.rawValue), "message": .string($0.message)]) })
         }
+        // What the query's words name that the file no longer holds: an id and the word's members, as `--count` keeps it.
+        if !result.absent.isEmpty {
+            answer["absent"] = .array(result.absent.map { item in
+                var object = item.members
+                object["id"] = .string(item.id)
+                return .object(object)
+            })
+        }
         return .object(answer)
     }
 
@@ -59,6 +69,11 @@ public enum QueryOutput {
         var object: [String: JSON] = ["id": .string(row.id.description), "kind": .string(row.kind.rawValue), "board": .string(row.board.description)]
         if let title = row.title { object["title"] = .string(title) }
         if !row.inside.isEmpty { object["inside"] = .array(row.inside.map(JSON.string)) }
+        // Where the shape is, as a draw's `at` says it: [[x, y], [width, height]], world units.
+        if let at = row.at {
+            object["at"] = .array([.array([.number(Double(at.origin.x)), .number(Double(at.origin.y))]),
+                                   .array([.number(Double(at.size.width)), .number(Double(at.size.height))])])
+        }
         if let properties = row.properties { object["properties"] = .object(properties) }
         if let cut = row.cut { object["cut"] = .array(cut.map(JSON.string)) }
         if let connection = row.connection {
@@ -76,6 +91,8 @@ public enum QueryOutput {
         }
         if let editing = row.editing { object["editing"] = .bool(editing) }
         if let problems = row.problems { object["problems"] = .array(problems.map(problem)) }
+        // A word's members, flat beside the row's own (the registry keeps their names from being one of those).
+        if let members = row.members { for (key, value) in members where object[key] == nil { object[key] = value } }
         return .object(object)
     }
 

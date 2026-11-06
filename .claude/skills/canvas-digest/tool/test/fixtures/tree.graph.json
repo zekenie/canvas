@@ -1,0 +1,554 @@
+{
+ "drawing": "shop-platform",
+ "layout": {
+  "mess": 0.1
+ },
+ "nodes": [
+  {
+   "key": "Backend",
+   "kind": "subboard",
+   "props": {
+    "title": "Backend",
+    "description": "The services and the stores behind them: @[Gateway] calls in, and @[Login] starts a session."
+   }
+  },
+  {
+   "key": "Services",
+   "in": "Backend",
+   "kind": "frame",
+   "props": {
+    "title": "Services"
+   }
+  },
+  {
+   "key": "Auth",
+   "in": "Services",
+   "kind": "frame",
+   "props": {
+    "title": "Auth"
+   }
+  },
+  {
+   "key": "Stores",
+   "in": "Backend",
+   "kind": "frame",
+   "props": {
+    "title": "Stores"
+   }
+  },
+  {
+   "key": "Login",
+   "in": "Auth",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Login",
+    "text": "Checks a password and starts a session."
+   }
+  },
+  {
+   "key": "Sessions",
+   "in": "Auth",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Sessions",
+    "text": "Holds who is signed in."
+   }
+  },
+  {
+   "key": "Tokens",
+   "in": "Auth",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Tokens",
+    "text": "Signs and verifies access tokens."
+   }
+  },
+  {
+   "key": "Passwords",
+   "in": "Auth",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Passwords",
+    "text": "Hashes and checks passwords."
+   }
+  },
+  {
+   "key": "Orders",
+   "in": "Services",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Orders",
+    "text": "The orders service."
+   }
+  },
+  {
+   "key": "Billing",
+   "in": "Services",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Billing",
+    "text": "The billing service."
+   }
+  },
+  {
+   "key": "Catalog",
+   "in": "Services",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Catalog",
+    "text": "The catalog service."
+   }
+  },
+  {
+   "key": "Search",
+   "in": "Services",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Search",
+    "text": "The search service."
+   }
+  },
+  {
+   "key": "Notifications",
+   "in": "Services",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Notifications",
+    "text": "The notifications service."
+   }
+  },
+  {
+   "key": "Orders DB",
+   "in": "Stores",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Orders DB",
+    "text": "Where orders db keeps its data."
+   }
+  },
+  {
+   "key": "Catalog DB",
+   "in": "Stores",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Catalog DB",
+    "text": "Where catalog db keeps its data."
+   }
+  },
+  {
+   "key": "Search index",
+   "in": "Stores",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Search index",
+    "text": "Where search index keeps its data."
+   }
+  },
+  {
+   "key": "Cache",
+   "in": "Stores",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Cache",
+    "text": "Where cache keeps its data."
+   }
+  },
+  {
+   "key": "Clients",
+   "kind": "frame",
+   "props": {
+    "title": "Clients"
+   }
+  },
+  {
+   "key": "Web app",
+   "in": "Clients",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Web app",
+    "text": "A client of the API."
+   }
+  },
+  {
+   "key": "Mobile app",
+   "in": "Clients",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Mobile app",
+    "text": "A client of the API."
+   }
+  },
+  {
+   "key": "Admin console",
+   "in": "Clients",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Admin console",
+    "text": "A client of the API."
+   }
+  },
+  {
+   "key": "Gateway",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Gateway",
+    "text": "Every client call comes through here."
+   }
+  },
+  {
+   "key": "Monitoring",
+   "kind": "frame",
+   "props": {
+    "title": "Monitoring"
+   }
+  },
+  {
+   "key": "Metrics",
+   "in": "Monitoring",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Metrics",
+    "text": "The metrics side."
+   }
+  },
+  {
+   "key": "Alerts",
+   "in": "Monitoring",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Alerts",
+    "text": "The alerts side."
+   }
+  },
+  {
+   "key": "Dashboards",
+   "in": "Monitoring",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Dashboards",
+    "text": "The dashboards side."
+   }
+  },
+  {
+   "key": "Logs",
+   "in": "Monitoring",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Logs",
+    "text": "The logs side."
+   }
+  },
+  {
+   "key": "Runbook",
+   "kind": "sticky-note",
+   "props": {
+    "title": "Runbook",
+    "text": "What to do when an alert fires."
+   }
+  }
+ ],
+ "edges": [
+  {
+   "from": "Web app",
+   "to": "Gateway",
+   "props": {
+    "text": "calls"
+   }
+  },
+  {
+   "from": "Mobile app",
+   "to": "Gateway",
+   "props": {
+    "text": "calls"
+   }
+  },
+  {
+   "from": "Admin console",
+   "to": "Gateway",
+   "props": {
+    "text": "calls"
+   }
+  },
+  {
+   "from": "Gateway",
+   "to": "Orders",
+   "props": {
+    "text": "routes to"
+   }
+  },
+  {
+   "from": "Gateway",
+   "to": "Billing",
+   "props": {
+    "text": "routes to"
+   }
+  },
+  {
+   "from": "Gateway",
+   "to": "Catalog",
+   "props": {
+    "text": "routes to"
+   }
+  },
+  {
+   "from": "Gateway",
+   "to": "Search",
+   "props": {
+    "text": "routes to"
+   }
+  },
+  {
+   "from": "Gateway",
+   "to": "Notifications",
+   "props": {
+    "text": "routes to"
+   }
+  },
+  {
+   "from": "Orders",
+   "to": "Login",
+   "props": {
+    "text": "needs a session"
+   }
+  },
+  {
+   "from": "Billing",
+   "to": "Login",
+   "props": {
+    "text": "needs a session"
+   }
+  },
+  {
+   "from": "Catalog",
+   "to": "Login",
+   "props": {
+    "text": "needs a session"
+   }
+  },
+  {
+   "from": "Search",
+   "to": "Login",
+   "props": {
+    "text": "needs a session"
+   }
+  },
+  {
+   "from": "Notifications",
+   "to": "Login",
+   "props": {
+    "text": "needs a session"
+   }
+  },
+  {
+   "from": "Gateway",
+   "to": "Login",
+   "props": {
+    "text": "needs a session"
+   }
+  },
+  {
+   "from": "Login",
+   "to": "Sessions"
+  },
+  {
+   "from": "Login",
+   "to": "Passwords"
+  },
+  {
+   "from": "Login",
+   "to": "Tokens"
+  },
+  {
+   "from": "Sessions",
+   "to": "Tokens"
+  },
+  {
+   "from": "Orders",
+   "to": "Orders DB"
+  },
+  {
+   "from": "Catalog",
+   "to": "Catalog DB"
+  },
+  {
+   "from": "Search",
+   "to": "Search index"
+  },
+  {
+   "from": "Search",
+   "to": "Catalog DB"
+  },
+  {
+   "from": "Orders",
+   "to": "Cache"
+  },
+  {
+   "from": "Catalog",
+   "to": "Cache"
+  },
+  {
+   "from": "Billing",
+   "to": "Orders"
+  },
+  {
+   "from": "Orders",
+   "to": "Metrics"
+  },
+  {
+   "from": "Billing",
+   "to": "Metrics"
+  },
+  {
+   "from": "Catalog",
+   "to": "Metrics"
+  },
+  {
+   "from": "Search",
+   "to": "Metrics"
+  },
+  {
+   "from": "Notifications",
+   "to": "Metrics"
+  },
+  {
+   "from": "Gateway",
+   "to": "Metrics"
+  },
+  {
+   "from": "Login",
+   "to": "Metrics"
+  },
+  {
+   "from": "Metrics",
+   "to": "Alerts"
+  },
+  {
+   "from": "Alerts",
+   "to": "Dashboards"
+  },
+  {
+   "from": "Alerts",
+   "to": "Runbook"
+  },
+  {
+   "from": "Logs",
+   "to": "Dashboards"
+  },
+  {
+   "from": "Gateway",
+   "to": "Logs"
+  },
+  {
+   "from": "Billing",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Search",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Notifications",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Login",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Sessions",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Tokens",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Orders DB",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Catalog DB",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Search index",
+   "to": "Cache",
+   "props": {
+    "text": "caches in"
+   }
+  },
+  {
+   "from": "Orders",
+   "to": "Tokens",
+   "props": {
+    "text": "signs with"
+   }
+  },
+  {
+   "from": "Billing",
+   "to": "Tokens",
+   "props": {
+    "text": "signs with"
+   }
+  },
+  {
+   "from": "Catalog",
+   "to": "Tokens",
+   "props": {
+    "text": "signs with"
+   }
+  },
+  {
+   "from": "Notifications",
+   "to": "Tokens",
+   "props": {
+    "text": "signs with"
+   }
+  },
+  {
+   "from": "Passwords",
+   "to": "Tokens",
+   "props": {
+    "text": "signs with"
+   }
+  },
+  {
+   "from": "Search index",
+   "to": "Tokens",
+   "props": {
+    "text": "signs with"
+   }
+  },
+  {
+   "from": "Cache",
+   "to": "Tokens",
+   "props": {
+    "text": "signs with"
+   }
+  }
+ ]
+}
