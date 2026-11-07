@@ -310,6 +310,15 @@ public protocol ShapeReferencing: ShapeDefinition {
     func remappingReferences(of shape: ShapeRecord<Props>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Props?
 }
 
+/// Each shape of this kind takes the shapes bound to it (`ShapeReferencing`: an arrow's ends) along: deleting it
+/// deletes them, but a read-only one, which lets go where it's drawn as it does for any kind; and copying it
+/// copies those bound only to shapes copied with it (`ShapeContext.takenAlong(by:)`). Nothing to implement: a
+/// kind adopts it in an extension, and the core's deletion and Clipboard's copy do the rest. A kind that
+/// doesn't keeps tldraw's rule (an arrow bound to a deleted shape stays, free at that end), so a concern that
+/// wants its shapes' arrows to go with them opts in, and no other kind's delete changes. What a delete took
+/// along is the transaction's to say (`Transaction.deletedAlong`), so its step is named for it.
+public protocol TakesBoundShapes: ShapeDefinition {}
+
 /// Each shape of this kind owns a board, one under the board it's on: kept in the file under its id
 /// (`BoardID(owner:)`, `CanvasFile.children`), not in its props. The core keeps a board with the
 /// shape whose id keys it, whatever that shape's kind; this says which kinds' shapes own theirs, so

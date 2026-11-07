@@ -130,8 +130,8 @@ import TestKit
             }
         }
         let registry = try Registry(plugins: [placed, keys])
-        let bar = registry.menuBarCommands.filter { $0.menu.titles[0] != "View" }
-        expectEqual(bar.map(\.command), ["tidy", "seek"], "the core's zooms aside; a command with no section has no item")
+        let bar = registry.menuBarCommands.filter { $0.menu.titles[0] != "View" && $0.command != .insertBeside }
+        expectEqual(bar.map(\.command), ["tidy", "seek"], "the core's zooms and New Shape Beside aside; a command with no section has no item")
         expectEqual(bar.map(\.title), ["Tidy", "Seek…"])
         expectEqual(bar.map(\.menu.titles), [["Arrange"], ["Edit", "Find"]], "a section's menu, a submenu's under the menu it's in")
         expectEqual(bar.map(\.placement), [.first, .natural])
@@ -141,7 +141,7 @@ import TestKit
                     "every key that runs it, the one its item shows first")
         expectEqual(try Registry(plugins: [placed]).menuKey(of: "seek"), nil, "no slot, no key")
         expectEqual(try Registry(plugins: [placed]).menuKeys(of: "seek"), [])
-        expectEqual(try Registry(plugins: []).menuBarCommands.map(\.title), ["Zoom In", "Zoom Out", "Actual Size", "Zoom to Fit"], "the core's own, in View")
+        expectEqual(try Registry(plugins: []).menuBarCommands.map(\.title), ["New Shape Beside", "Zoom In", "Zoom Out", "Actual Size", "Zoom to Fit"], "the core's own, in Insert and View")
         expectThrows(RegistryError.conflict(point: "MenuKeys", key: "menu keys", plugins: ["keys", "more"])) {
             _ = try Registry(plugins: [keys, Contributor(id: "more") { $0.menuKeys { _, _ in [] } }])
         }

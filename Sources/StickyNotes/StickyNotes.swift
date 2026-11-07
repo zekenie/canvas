@@ -84,9 +84,11 @@ public struct StickyNotesPlugin: ListedPlugin {
         registrar.keyHint("⇧↩ in a Note", "New Note Beside It", while: .text)
         registrar.keyHint("⇥ or ⇧⇥ in a Note", "Next or Previous Note", while: .text)
         registrar.service { NoteHops(editor: $0) }
-        // ⇧↩ on the canvas is Insert › Note: a new note beside the selection (any shape's side, the right first), or with
-        // none somewhere clear in the middle of the view, edited, as ⇧↩ in a note's words puts one beside that note.
-        registrar.shortcut(KeyChord(KeyChord.return.key, .shift), forCommand: .insert(ToolID(placing: StickyNote.kind)))
+        // ⇧↩ on the canvas (the core's Insert › New (kind) Beside, Keyboard's key) makes a shape of the selection's kind
+        // beside it; for a selection that is no one kind a tool places (nothing, an arrow, several kinds) it makes a
+        // note, beside the selection (any shape's side, the right first), or with none somewhere clear in the middle of
+        // the view, edited, as ⇧↩ in a note's words puts one beside that note.
+        registrar.insertsBesideByDefault(ToolID(placing: StickyNote.kind))
         registrar.shape(StickyNoteDefinition()) { note in
             let place = note.editingPlacement(size: NoteStyle.size) { StickyNote() }
             note.tool(label: "Note", systemImage: "note.text", shortcut: "n", placing: place)

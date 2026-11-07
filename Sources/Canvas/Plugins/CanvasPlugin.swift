@@ -79,6 +79,13 @@ public struct PluginRegistrar {
         contribute(id, to: CorePoints.DefaultTool.self)
     }
 
+    /// The tool ⇧↩ puts a shape down with when the selection is no one kind a tool places (nothing selected, an
+    /// arrow, shapes of several kinds): StickyNotes' Note. A selection that is one kind a tool places gets that
+    /// kind's tool (`editor.toolBeside`). At most one plugin may claim it; otherwise ⇧↩ does nothing for those.
+    public mutating func insertsBesideByDefault(_ id: ToolID) {
+        contribute(id, to: CorePoints.InsertBesideByDefault.self)
+    }
+
     /// The menu a secondary click (a right-click, or a Control-click) opens at the pointer, made
     /// as the click happens; nil, and the click does nothing. At most one plugin may claim it;
     /// otherwise secondary clicks do nothing. It isn't asked while a press is under way.

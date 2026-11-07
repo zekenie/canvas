@@ -89,6 +89,17 @@ public struct Transaction {
     /// (`delete`): none is on a board any more (`board(containing:)`), and `transact(on:)` commits nothing
     /// that deleted an owner on the way to the board shown.
     private(set) var deleted: Set<ShapeID> = []
+    /// The kinds, and how many of each, this transaction deleted beyond what it was asked to: what a `willDelete`
+    /// handler deleted (a relationship type's end arrows) and what a taking kind's deletion took (`TakesBoundShapes`),
+    /// on whichever board, in the order each kind was first met. A shape counts once, as the deletion took it, and
+    /// not for what a board's owner takes with it (the shapes on a board under a deleted subboard); empty when
+    /// nothing went along. What a step's name is made from ("Delete Note and 2 Arrows": Selection's `DeleteSteps`).
+    public private(set) var deletedAlong: [KindCount] = []
+    /// The name of the step this transaction commits, once the body sees what it did ("Delete Table and 3 Arrows",
+    /// which a delete knows only when it has deleted): `transact` names the step by it in place of its own `name`.
+    /// A group the transaction is in still names the step before either (`undoHistory.group`). Nil leaves the name
+    /// `transact` was given.
+    public var stepName: String?
     /// The owner of the board of the transaction that made this one over another board, and of each board
     /// above it (`delete(_:on:)`): this one deletes none of them, whoever asks, a handler included, as it
     /// passes over one it's asked for.
@@ -1030,10 +1041,13 @@ public struct Transaction {
         precondition(movedOnto.allSatisfy { climb($0).ownerHere.map { !ids.contains($0) } ?? true },
                      "a shape can't be deleted in the transaction that moved shapes onto its board, or onto a board under it")
         let isOutermost = deleting.isEmpty
+        // Called from a handler or the cascade, it deletes what nobody asked for.
+        if isCascading { noteAlong(ids) }
         deleting.formUnion(ids)
         let wasCascading = isCascading
         isCascading = true
         for handler in registry.willDeleteHandlers { handler(ids, &self) }
+        takeBound(by: ids)
         letGo(of: ids)
         isCascading = wasCascading
         guard isOutermost else { return }
@@ -1151,6 +1165,7 @@ public struct Transaction {
         refused.formUnion(there.refused)
         takeInWrites(of: there)
         deleted.formUnion(there.deleted)
+        for count in there.deletedAlong { noteAlong(count.kind, count.count) }
         rode.formUnion(there.rode)
         for id in there.deleted { stagedIDs[id] = nil }
         changes.boardsRemoved.formUnion(there.changes.boardsRemoved)
@@ -1249,10 +1264,46 @@ public struct Transaction {
     /// Deletes these shapes as `delete` does, refusing none: what discarding shapes the app keeps
     /// aside does, on each board they're on.
     mutating func discard(_ ids: Set<ShapeID>) {
-        let wasCascading = isCascading
+        let wasCascading = isCascading, along = deletedAlong
         isCascading = true
         delete(ids)
         isCascading = wasCascading
+        deletedAlong = along                        // shapes put aside were asked for
+    }
+
+    /// Adds `count` shapes of `kind` to what this transaction deleted along.
+    private mutating func noteAlong(_ kind: ShapeKind, _ count: Int) {
+        if let at = deletedAlong.firstIndex(where: { $0.kind == kind }) {
+            deletedAlong[at].count += count
+        } else {
+            deletedAlong.append(KindCount(kind: kind, count: count))
+        }
+    }
+
+    /// Counts these shapes, still in the document, as deleted along.
+    private mutating func noteAlong(_ ids: Set<ShapeID>) {
+        for id in ids { if let kind = document[id]?.kind { noteAlong(kind, 1) } }
+    }
+
+    /// Every shape bound to a shape of `ids` whose kind takes bound shapes along (`TakesBoundShapes`) is deleted
+    /// with it, but a read-only one (a lock on it, on a container it is in, or on the board), which lets go where
+    /// it is drawn below, as a read-only shape does for any kind. Nested in this deletion, so its handlers run, what is
+    /// bound to it goes or lets go, and everything is removed together, read-only or not as a cascade has it. The
+    /// cheapest test first: a deletion of no such kind costs a set lookup an id. Bindings are on their shape's board,
+    /// so only this one's shapes are looked at.
+    private mutating func takeBound(by ids: Set<ShapeID>) {
+        let taking = registry.takingBoundKinds, kinds = registry.referencingKinds
+        guard !taking.isEmpty, !kinds.isEmpty else { return }
+        let takers = ids.filter { id in document[id].map { taking.contains($0.kind) } ?? false }
+        guard !takers.isEmpty else { return }
+        let context = shapes
+        var taken: Set<ShapeID> = []
+        document.shapes.forEach { record in
+            guard kinds.contains(record.kind), !deleting.contains(record.id), !isReadOnly(record),
+                  record.boundShapes(in: context).contains(where: takers.contains) else { return }
+            taken.insert(record.id)
+        }
+        delete(taken)
     }
 
     /// Every shape bound to one of `ids`, and isn't being deleted too, lets go of it, read-only or
@@ -1740,5 +1791,15 @@ struct FileAccess {
         self.contents = contents
         self.canShow = canShow
         self.values = values
+    }
+}
+
+/// How many shapes of a kind: one entry of `Transaction.deletedAlong`.
+public struct KindCount: Equatable, Sendable {
+    public let kind: ShapeKind
+    public var count: Int
+    public init(kind: ShapeKind, count: Int) {
+        self.kind = kind
+        self.count = count
     }
 }

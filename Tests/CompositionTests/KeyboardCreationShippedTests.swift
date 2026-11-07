@@ -10,11 +10,12 @@ import Mentions
 import Selection
 import ShippedTesting
 import StickyNotes
+import Subboards
 import TestKit
 
 // Making things with the keys alone, as the app ships it, on a new board: a placing tool's letter then
-// Return puts its shape down at the pointer or the view's middle and edits it, ⇧Return (Insert › Note) puts
-// a note beside the selection or, with none, in the view's middle, and the first minute (a note, its words, a
+// Return puts its shape down at the pointer or the view's middle and edits it, ⇧Return (Insert › New Shape Beside) puts
+// a shape of the selection's kind beside it or, with none, a note in the view's middle, and the first minute (a note, its words, a
 // second, the two connected, a frame around them) takes no more presses than clicks (keyboard navigation's
 // principle 12).
 
@@ -111,7 +112,7 @@ final class EmptyBoardWindow {
         expectEqual(w.editor.editingShapeID, note, "the select tool: Return edits the note, as ever")
         expectEqual(w.editor.document.shapes.count, 2, "nothing placed")
     },
-    test("⇧Return on the canvas is Insert › Note: with nothing selected a note in the middle of the view, edited; with one shape selected, beside it in its color; with several, beside them") {
+    test("⇧Return on the canvas is Insert › New Note Beside: with nothing selected a note in the middle of the view, edited; with one shape selected, beside it in its color; with several, beside them") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         let walk = w.walk()
@@ -141,20 +142,43 @@ final class EmptyBoardWindow {
         expect(!third.intersects(firstBox) && !third.intersects(box), "clear of both: \(third) beside \(both)")
         expectEqual(w.notes.last?[ColorProperty.self], nil, "beside two, none of their colors")
     },
-    test("keys through the menu bar, as the app routes them: ⇧Return runs Insert › Note, and Return alone, which AppKit's own matching would hand that item, edits the selected note") {
+    test("keys through the menu bar, as the app routes them: ⇧Return runs Insert › New Shape Beside, and Return alone, which AppKit's own matching would hand that item, edits the selected note") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
         w.window.makeFirstResponder(w.canvas)
         let walk = KeyWalk(w.window, editor: w.editor, menu: menus.main, readers: [.canvas(w.canvas, editor: w.editor, names: [:]), .panel(of: w.canvas)])
         walk.press(Chord(Key.return, .shift))
-        let note = try require(w.notes.first, "Insert › Note ran: \(walk.traceText)")
+        let note = try require(w.notes.first, "Insert › New Shape Beside ran: \(walk.traceText)")
         expectEqual(w.editor.editingShapeID, note.id)
         walk.press(.escape)
         expectEqual(w.editor.selectedShapeIDs, [note.id])
         walk.press(.return)
         expectEqual(w.notes.count, 1, "Return made no note: \(walk.traceText)")
         expectEqual(w.editor.editingShapeID, note.id, "Return edits the selected note")
+    },
+    test("⇧Return with a subboard selected puts a subboard beside it, through the menu bar as the app routes it; the Insert item is titled for what it makes") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry, editor: { w.editor })
+        let controller = try require(w.board.windowControllers.first as? BoardWindowController)
+        let item = try require(menus.main.item(withTitle: "Insert")?.submenu?.items.first)
+        expectEqual(BoardMenus.command(of: item), .insertBeside)
+        expect(controller.validateMenuItem(item))
+        expectEqual(item.title, "New Note", "nothing selected: a note")
+        let subboard = ShapeRecord(Subboard(frame: CGRect(x: 100, y: 100, width: 240, height: 160)))
+        w.editor.transact { $0.insert(subboard) }
+        w.editor.selectedShapeIDs = [subboard.id]
+        expect(controller.validateMenuItem(item))
+        expectEqual(item.title, "New Subboard Beside")
+        w.window.makeFirstResponder(w.canvas)
+        let walk = KeyWalk(w.window, editor: w.editor, menu: menus.main, readers: [.canvas(w.canvas, editor: w.editor, names: [:]), .panel(of: w.canvas)])
+        walk.press(Chord(Key.return, .shift))
+        let subboards = w.editor.document.shapes.filter { $0.kind == Subboard.kind }
+        expectEqual(subboards.count, 2, "a subboard beside the subboard: \(walk.traceText)")
+        expect(w.notes.isEmpty)
+        expectEqual(w.editor.undoHistory.undoName, "Add Subboard")
+        expectEqual(w.editor.selectedShapeIDs, [try require(subboards.last).id])
     },
     test("Insert › Frame puts an empty frame in the middle of the view, in one step") {
         let w = try EmptyBoardWindow()

@@ -430,6 +430,9 @@ public struct KeyboardPlugin: ListedPlugin {
         registrar.shortcut(KeyChord("z", .command), forCommand: .undo, repeats: true)
         registrar.shortcut(KeyChord("z", [.command, .shift]), forCommand: .redo, repeats: true)
         registrar.shortcut("q", "Tool Lock") { $0.isToolLocked.toggle() }
+        // ⇧↩ puts a shape of the selection's kind down beside it (the core's Insert › New (kind) Beside), whichever
+        // kind that is; a plugin claims the tool for a selection that is no one kind (StickyNotes' Note).
+        registrar.shortcut(KeyChord(KeyChord.return.key, .shift), forCommand: .insertBeside)
         registrar.shortcut(KeyChord("=", .command), forCommand: .zoomIn, repeats: true)
         registrar.shortcut(KeyChord("-", .command), forCommand: .zoomOut, repeats: true)
         registrar.shortcut("=", forCommand: .zoomIn, repeats: true)

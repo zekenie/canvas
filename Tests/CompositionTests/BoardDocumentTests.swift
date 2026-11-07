@@ -426,10 +426,11 @@ let boardType = "com.example.InfiniteCanvas.board"
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
         expectEqual(edit.items.map(\.title), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Paste at Pointer", "Duplicate", "Delete",
                                               "Select All", "Remove Mention", "", "Find", "Spelling and Grammar"], "the window's own items and Clipboard's and Find's, each at its order")
-        // Insert: an item for each tool that places a shape, in the toolbar's order, Note with ⇧Return.
-        try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)), "\r", .shift)
+        // Insert: New Shape Beside first, with ⇧Return, then an item for each tool that places a shape, in the toolbar's order.
+        try command("Insert", "New Shape Beside", .insertBeside, "\r", .shift)
+        try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)))
         let insert = try require(menus.main.item(withTitle: "Insert")?.submenu)
-        expectEqual(insert.items.map(\.title), ["Note", "Subboard", "Frame", "Reference", "Stickers"], "and the example kit's tools in a submenu named for it")
+        expectEqual(insert.items.map(\.title), ["New Shape Beside", "Note", "Subboard", "Frame", "Reference", "Stickers"], "and the example kit's tools in a submenu named for it")
         expectEqual(try require(insert.item(withTitle: "Stickers")?.submenu).items.map(\.title), ["Thumbs Up", "Heart", "Star", "Party"])
         let find = try require(edit.item(withTitle: "Find")?.submenu)
         expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])

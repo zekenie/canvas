@@ -135,11 +135,11 @@ extension PeekSection: MenuBarSection {
     },
     test("the menus come in the Mac's order: Arrange after Shape, Go after View, one the window doesn't know before Window; a menu with nothing in it isn't there") {
         let menus = BoardMenus.make(appName: "Canvas", registry: try Registry(plugins: [declared]))
-        expectEqual(menus.main.items.map(\.title), ["Canvas", "File", "Edit", "Shape", "Arrange", "View", "Go", "Kitchen", "Window", "Help"])
+        expectEqual(menus.main.items.map(\.title), ["Canvas", "File", "Edit", "Insert", "Shape", "Arrange", "View", "Go", "Kitchen", "Window", "Help"])
         expectEqual(try titles(menus, "Help"), ["Keyboard Shortcuts", "", "Guide"], "one placed in the window's own Help, after its line")
         expect(menus.help === menus.main.item(withTitle: "Help")?.submenu && menus.windows === menus.main.item(withTitle: "Window")?.submenu)
         let none = BoardMenus.make(appName: "Canvas", registry: try Registry(plugins: []))
-        expectEqual(none.main.items.map(\.title), ["Canvas", "File", "Edit", "Shape", "View", "Window", "Help"], "no Arrange, no Go")
+        expectEqual(none.main.items.map(\.title), ["Canvas", "File", "Edit", "Insert", "Shape", "View", "Window", "Help"], "the core's Insert, no Arrange, no Go")
         expectEqual(try titles(none, "Edit"), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Delete", "Select All", "", "Spelling and Grammar"])
     },
     test("AppKit's own items of Edit keep their actions, which text answers first, and carry the command that answers each on the board, if one does") {
@@ -220,7 +220,7 @@ extension PeekSection: MenuBarSection {
         let menus = BoardMenus.make(appName: "Canvas", registry: registry, editor: { editor })
         let shape = try require(menus.main.item(withTitle: "Shape")?.submenu)
         shape.delegate?.menuNeedsUpdate?(shape)
-        expectEqual(omitted.asked, [["stack", "tidy", "spin", "shine", "seek", "seek-next", "wander", "brew", "guide", "wipe", .undo, .redo,
+        expectEqual(omitted.asked, [["stack", "tidy", "spin", "shine", "seek", "seek-next", "wander", "brew", "guide", "wipe", .undo, .redo, .insertBeside,
                                      .zoomIn, .zoomOut, .zoomToActualSize, .zoomToFit]])
     },
 ])

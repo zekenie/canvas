@@ -95,6 +95,10 @@ enum CorePoints {
     /// plugin may claim it; otherwise it's the Hand.
     enum DefaultTool {}
 
+    /// The tool ⇧↩ puts a shape down with when the selection is no one kind a tool places
+    /// (`registrar.insertsBesideByDefault`). One plugin may claim it; otherwise ⇧↩ does nothing then.
+    enum InsertBesideByDefault {}
+
     /// What a secondary click opens. One plugin may claim it; otherwise there's no menu.
     enum SecondaryClickMenu: KeyedExtensionPoint {
         typealias Contribution = @MainActor (CanvasEditor, Pointer) -> NSMenu?
@@ -196,6 +200,19 @@ extension CorePoints.DefaultTool: KeyedExtensionPoint {
     }
 }
 
+extension CorePoints.InsertBesideByDefault: KeyedExtensionPoint {
+    typealias Contribution = ToolID
+    static var owner: PluginID { .core }
+    static func uniqueKeys(of _: ToolID, for _: ShapeTarget) -> [AnyHashable] { ["the tool that inserts beside by default"] }
+    /// The claimed tool must exist and place a shape.
+    static func check(_ registry: Registry) throws(RegistryError) {
+        guard let id = registry.insertsBesideByDefault else { return }
+        guard registry.placement(forTool: id) != nil else {
+            throw .invalid(point: "InsertBesideByDefault", reason: "no plugin registers a tool \(id) that places a shape")
+        }
+    }
+}
+
 struct ToolKey: Hashable, CustomStringConvertible {
     let id: ToolID
     var description: String { "tool \(id)" }
@@ -274,7 +291,8 @@ struct ServiceRegistration {
 }
 
 /// Installed ahead of every plugin list: the Hand, undo and redo (Edit › Undo and Redo, AppKit's own
-/// items, which text answers first), and zooming, in View (their keys Keyboard gives). Zoom In and
+/// items, which text answers first), Insert's first item, a shape of the selection's kind beside it (`.insertBeside`), and
+/// zooming, in View (their keys Keyboard gives). Zoom In and
 /// Zoom Out are dimmed at the last stop, Actual Size at 100%, and Zoom to Fit with nothing to fit.
 /// Paging, the commands of Page Up, Page Down, Home and End (Keyboard's keys too), have no menu
 /// item: a key a menu names that no ⌘ is held with would take it from text, where those keys move
@@ -285,6 +303,12 @@ struct CorePlugin: CanvasPlugin {
         registrar.tool(ToolDescriptor(id: .hand, label: "Hand", systemImage: "hand.raised")) { _ in HandTool() }
         registrar.command(.undo, title: "Undo", answering: .undo, isEnabled: { $0.editor.canUndo }) { $0.editor.undo() }
         registrar.command(.redo, title: "Redo", answering: .redo, isEnabled: { $0.editor.canRedo }) { $0.editor.redo() }
+        // Insert's first item: a shape of the selection's kind beside it (⇧↩, Keyboard's), named for what it will make.
+        registrar.command(.insertBeside, title: "New Shape Beside", in: InsertMenu.Shapes.self, placed: .first, runs: .whenIdle,
+                          menuTitle: { editor in editor.insertBesideTitle(editor.commandSubject.shapes) },
+                          isEnabled: { $0.editor.canInsertBeside($0.shapes) }) { subject in
+            if let tool = subject.editor.toolBeside(subject.shapes) { subject.editor.insert(tool, beside: subject.shapes) }
+        }
         registrar.command(.zoomIn, title: "Zoom In", in: ViewMenu.Zoom.self, isEnabled: { $0.editor.zoomInStop != nil }) { subject in
             if let stop = subject.editor.zoomInStop { subject.editor.zoom(toPercent: stop) }
         }

@@ -171,3 +171,28 @@ extension AnyShapeRecord {
         return !bound.isEmpty && bound.allSatisfy(shapes.contains)
     }
 }
+
+extension ShapeContext {
+    /// The shapes a copy of `shapes` takes along: each one bound only to shapes among them, when at least one of
+    /// those is of a kind that takes bound shapes (`TakesBoundShapes`), so two copied shapes of such a kind keep what
+    /// is bound between them (an arrow from one to the other) whether it was selected or not. It is the rule a move
+    /// across boards has for what rides along (`isBound(onlyTo:)`), offered to whoever copies; in document order,
+    /// none already among `shapes`, and none for a list with no such kind, which costs a set lookup a shape. A copy
+    /// departs from tldraw here, whose copy keeps a binding only for a shape among those given; it is scoped to
+    /// taking kinds, so every other kind copies as it did.
+    @MainActor
+    public func takenAlong(by shapes: Set<ShapeID>) -> [ShapeID] {
+        let taking = registry.takingBoundKinds, kinds = registry.referencingKinds
+        guard !taking.isEmpty, !kinds.isEmpty, shapes.contains(where: { id in document[id].map { taking.contains($0.kind) } ?? false })
+        else { return [] }
+        var along: [ShapeID] = []
+        document.shapes.forEach { record in
+            guard kinds.contains(record.kind), !shapes.contains(record.id), !record.isOpaque else { return }
+            let bound = record.boundShapes(in: self)
+            guard !bound.isEmpty, bound.allSatisfy(shapes.contains), bound.contains(where: { id in document[id].map { taking.contains($0.kind) } ?? false })
+            else { return }
+            along.append(record.id)
+        }
+        return along
+    }
+}

@@ -29,6 +29,9 @@ public struct Registry {
     /// let go, and what a plugin that follows bindings asks (`record.boundShapes(in:)`), so only
     /// these are walked. Not the kinds that only name shapes (`namingKinds`).
     public let referencingKinds: Set<ShapeKind>
+    /// Kinds whose shapes take the shapes bound to them along when they are deleted or copied
+    /// (`TakesBoundShapes`).
+    public let takingBoundKinds: Set<ShapeKind>
     /// Kinds whose shapes can hold names of shapes (`ShapeNaming`): in their own props, or in an
     /// added property they opt into. A copy renames the names of these kinds' shapes, and a plugin
     /// that follows names walks only these (`record.forEachNamingValue`); no other shape holds one.
@@ -112,6 +115,7 @@ public struct Registry {
             return (shape.kind, shape.definition)
         }, uniquingKeysWith: { first, _ in first })
         referencingKinds = Set(definitions.filter { $0.value is any ShapeReferencing }.keys)
+        takingBoundKinds = Set(definitions.filter { $0.value is any TakesBoundShapes }.keys)
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
         containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
         laidOutBoxes = definitions.compactMapValues { $0 as? any LaidOutBox }
@@ -486,6 +490,15 @@ public struct Registry {
     /// plugin claimed (`registrar.defaultTool`), else the Hand.
     public var defaultTool: ToolID { contributions(to: CorePoints.DefaultTool.self).first?.value ?? .hand }
 
+    /// The tool ⇧↩ falls back on when the selection is no one kind a tool places (`registrar.insertsBesideByDefault`);
+    /// nil when no plugin claimed one.
+    public var insertsBesideByDefault: ToolID? { contributions(to: CorePoints.InsertBesideByDefault.self).first?.value }
+
+    /// The tool that places a kind's shapes (the first, if several do); nil for a kind no tool places.
+    public func placingTool(for kind: ShapeKind) -> ToolID? {
+        contributions(to: CorePoints.Tools.self).lazy.first { $0.value.placement?.kind == kind }?.value.descriptor.id
+    }
+
     /// What the kind's tool places (the first tool's, if several place it): its size and its
     /// props. Nil for a kind no tool places (an arrow), or one a tool draws instead (a line).
     public func placement(for kind: ShapeKind) -> Placement? {
@@ -637,6 +650,7 @@ struct RawContribution {
             case is CorePoints.ShapeTints.Type: "shape tints"
             case is CorePoints.OutlineSources.Type: "outlines"
             case is CorePoints.DefaultTool.Type: "default tool \(value)"
+            case is CorePoints.InsertBesideByDefault.Type: "insert beside by default \(value)"
             case is CorePoints.SecondaryClickMenu.Type: "secondary-click menu"
             case is CorePoints.SelectionMenu.Type: "selection menu"
             case is CorePoints.CommandShapes.Type: "command shapes"

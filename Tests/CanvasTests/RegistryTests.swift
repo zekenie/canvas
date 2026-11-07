@@ -313,7 +313,7 @@ extension ShapeRegistrar {
                                                   r.contribute("x", to: Described.self)
                                               }])
         expectEqual(registry.report, """
-        core          tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        core          tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         fixtures      shape box · shape disc · shape tag
         cards         shape card · tool card · command insert:card in InsertMenu.Shapes
         stamps        \("")

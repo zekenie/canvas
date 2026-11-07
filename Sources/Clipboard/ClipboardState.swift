@@ -156,8 +156,17 @@ final class ClipboardState {
     /// The copyable shapes of `ids` as a small file, with what those that own boards hold and what the
     /// containers among them hold, and those of them copied whole (with everything under them: a
     /// container is whole without what it holds, which a deletion leaves); nil with none.
-    private func gather(_ ids: [ShapeID]) -> (file: CanvasFile, copied: [ShapeID], whole: Set<ShapeID>)? {
-        let copied = keepingContainers(carry(copyable(ids), renaming: { $0 }, in: editor.shapeContext), of: editor.document)
+    /// The shapes of a kind that takes bound shapes (`TakesBoundShapes`) among them take along what is bound only to
+    /// shapes copied (`ShapeContext.takenAlong(by:)`: an arrow from one copied table to another, selected or not),
+    /// which is `along`, those that can be copied; a cut deletes them with the rest.
+    private func gather(_ ids: [ShapeID]) -> (file: CanvasFile, copied: [ShapeID], whole: Set<ShapeID>, along: Set<ShapeID>)? {
+        var records = copyable(ids)
+        let document = editor.document
+        let along = Set(editor.shapeContext.takenAlong(by: Set(records.map(\.id))).compactMap { id in document[id].flatMap { isCopyable($0) ? id : nil } })
+        if !along.isEmpty {
+            records = (records + along.compactMap { document[$0] }).sorted { (document.index(of: $0.id) ?? 0) < (document.index(of: $1.id) ?? 0) }
+        }
+        let copied = keepingContainers(carry(records, renaming: { $0 }, in: editor.shapeContext), of: editor.document)
         guard !copied.isEmpty else { return nil }
         var children: [ShapeID: CanvasDocument] = [:], whole: Set<ShapeID> = []
         for record in copied {
@@ -165,28 +174,28 @@ final class ClipboardState {
             children.merge(under.boards) { old, _ in old }
             if under.isWhole { whole.insert(record.id) }
         }
-        return (CanvasFile(root: CanvasDocument(shapes: copied), children: children), copied.map(\.id), whole)
+        return (CanvasFile(root: CanvasDocument(shapes: copied), children: children), copied.map(\.id), whole, along)
     }
 
     /// Puts copies of the copyable shapes of `ids` on the pasteboard, in place of what was there,
     /// with what those that own boards hold, and what the containers among them hold, marked as a
     /// cut's if `cut`. Returns the shapes copied, back to front, and those of them copied whole; with
     /// none, the pasteboard is left as it was.
-    private func copyReportingWhole(_ ids: [ShapeID], cut: Bool) -> (copied: [ShapeID], whole: Set<ShapeID>) {
-        guard let gathered = gather(ids) else { return ([], []) }
+    private func copyReportingWhole(_ ids: [ShapeID], cut: Bool) -> (copied: [ShapeID], whole: Set<ShapeID>, along: Set<ShapeID>) {
+        guard let gathered = gather(ids) else { return ([], [], []) }
         let file = gathered.file
         let data: Data
         do {
             data = try codec.encode(file)
         } catch {
             assertionFailure("copied shapes don't encode: \(error)")
-            return ([], [])
+            return ([], [], [])
         }
         pasteboard.clearContents()
         pasteboard.setData(data, forType: Self.shapesType)
         if cut { pasteboard.setString(UUID().uuidString, forType: Self.cutType) }
         content = (pasteboard.changeCount, editor.kits, file, cut ? .cut : .copied)
-        return (gathered.copied, gathered.whole)
+        return (gathered.copied, gathered.whole, gathered.along)
     }
 
     /// Puts copies of the copyable shapes of `ids` on the board as a paste puts them, without the
@@ -213,9 +222,21 @@ final class ClipboardState {
     /// are in use, so a paste copies them). A container goes with what it holds that was copied;
     /// what it holds that couldn't be stays, let go of (the core's deletion).
     func cut(_ ids: [ShapeID]) {
-        let whole = copyReportingWhole(ids, cut: true).whole
+        let copied = copyReportingWhole(ids, cut: true), whole = copied.whole
         guard !whole.isEmpty else { return }
-        editor.transact("Cut") { $0.delete(whole) }
+        // What went with what was cut: the shapes the copy took along (an arrow between cut tables) and what the
+        // delete took besides (an arrow to a table not cut), so the step says it ("Cut Table and 3 Arrows").
+        let document = editor.document
+        let asked = Set(ids).intersection(whole)
+        let along = copied.along.intersection(whole).subtracting(ids)
+        editor.transact("Cut") { tx in
+            tx.delete(whole)
+            var counts = tx.deletedAlong
+            for kind in along.compactMap({ document[$0]?.kind }) {
+                if let at = counts.firstIndex(where: { $0.kind == kind }) { counts[at].count += 1 } else { counts.append(KindCount(kind: kind, count: 1)) }
+            }
+            tx.stepName = DeleteSteps.name("Cut", asked: asked.compactMap { document[$0]?.kind }, along: counts, in: editor.registry)
+        }
         editor.hovered = nil
     }
 

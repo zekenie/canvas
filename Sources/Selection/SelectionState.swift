@@ -751,11 +751,19 @@ extension CanvasEditor {
     public func deleteSelection() { deleteShapes(selectedShapeIDs) }
 
     /// Removes these shapes in one transaction ("Delete"): what `.delete` does to its shapes.
-    /// willDelete handlers see them all, so arrows bound to them let go where they are; a read-only
-    /// one is refused, and shakes.
+    /// willDelete handlers see them all, so arrows bound to them let go where they are, or, for a kind that takes
+    /// the shapes bound to it (`TakesBoundShapes`) or whose handler deletes more, go with them; a read-only
+    /// one is refused, and shakes. The step says what went along ("Delete Note and 2 Arrows", `DeleteSteps`), and
+    /// is "Delete" when nothing did.
     public func deleteShapes(_ ids: [ShapeID]) {
         guard !ids.isEmpty else { return }
-        transact("Delete") { $0.delete(Set(ids)) }   // the commit drops them from the selection
+        transact("Delete") { tx in
+            let kinds = ids.compactMap { id in tx.document[id].map { (id, $0.kind) } }
+            tx.delete(Set(ids))
+            guard !tx.deletedAlong.isEmpty else { return }       // nothing went along: plain "Delete"
+            // The ones that went: a read-only shape asked for stays, and isn't part of the name.
+            tx.stepName = DeleteSteps.name(asked: kinds.filter { tx.document[$0.0] == nil }.map(\.1), along: tx.deletedAlong, in: registry)
+        }                                                // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays
     }
 

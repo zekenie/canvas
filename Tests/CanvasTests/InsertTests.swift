@@ -69,11 +69,11 @@ private let discTool = ToolID(placing: Disc.kind)
 private let cardTool = ToolID(placing: Card.kind)
 
 @MainActor let insertTests = Suite("Insert", [
-    test("every tool that places a shape has an item in Insert, titled as the tool, in plugin order; a tool that places nothing has none") {
+    test("every tool that places a shape has an item in Insert, titled as the tool, in plugin order, after the core's New Shape Beside; a tool that places nothing has none") {
         let h = try harness()
         let items = h.editor.registry.menuBarCommands.filter { $0.menu == "Insert" }
-        expectEqual(items.map(\.command), [.insert(cardTool), .insert(discTool)])
-        expectEqual(items.map(\.title), ["Card", "Disc"])
+        expectEqual(items.map(\.command), [.insertBeside, .insert(cardTool), .insert(discTool)])
+        expectEqual(items.map(\.title), ["New Shape Beside", "Card", "Disc"])
         expect(!h.editor.registry.claims(.insert(.hand)), "the Hand places nothing")
         expect(h.editor.registry.report.contains("command insert:disc in InsertMenu.Shapes"), h.editor.registry.report)
         expect(h.editor.registry.report.contains("made beside → disc"), h.editor.registry.report)
@@ -161,5 +161,145 @@ private let cardTool = ToolID(placing: Card.kind)
         expect(!h.editor.insert(discTool, beside: []))
         expect(h.editor.document.shapes.isEmpty)
         expect(!h.editor.undoHistory.canUndo, "no step")
+    },
+])
+
+// ⇧↩ (`CanvasCommand.insertBeside`, `editor.toolBeside`): a shape of the selection's kind beside it, else the tool a plugin
+// claimed (`registrar.insertsBesideByDefault`), and the public insert of a placement it and a tool's Insert go through.
+
+private let ledgerTool = ToolID(placing: Ledger.kind)
+
+/// A plugin that claims the disc's tool for ⇧↩ when the selection is no one kind a tool places.
+@MainActor private func claimingDiscs() -> Contributor {
+    Contributor(id: "claim") { r in r.insertsBesideByDefault(discTool) }
+}
+
+@MainActor private func linkRecord(_ id: ShapeID, _ from: ShapeID?, _ to: ShapeID?) -> AnyShapeRecord {
+    AnyShapeRecord(ShapeRecord(id: id, Link(from: from, to: to)))
+}
+
+@MainActor private func ledger(_ id: ShapeID, x: CGFloat = 0) -> AnyShapeRecord {
+    AnyShapeRecord(ShapeRecord(id: id, Ledger(CGRect(x: x, y: 0, width: 100, height: 60))))
+}
+
+@MainActor let insertBesideTests = Suite("Insert beside", [
+    test("beside shapes of one kind a tool places, a shape of that kind, named for it; made as its kind says one beside a shape is; the tool's step") {
+        let a = ShapeID(), picked = Picked()
+        let h = try harness([LedgersPlugin(), claimingDiscs(), picking(picked)], ledger(a))
+        picked.shapes = [a]
+        expectEqual(h.editor.toolBeside([a]), ledgerTool)
+        expectEqual(h.editor.menuTitle(of: .insertBeside), "New Ledger Beside")
+        expect(h.editor.canPerform(.insertBeside))
+        expect(h.editor.perform(.insertBeside))
+        expectEqual(h.editor.document.shapes.map(\.kind), [Ledger.kind, Ledger.kind], "a ledger beside the ledger, not the claim's disc")
+        expectEqual(h.editor.undoHistory.undoName, "Add Ledger")
+        let discA = ShapeID()
+        let more = try harness([claimingDiscs(), picking(picked)], disc(discA, hue: "red"))
+        picked.shapes = [discA]
+        expect(more.editor.perform(.insertBeside))
+        expectEqual(more.editor.document.shapes.last?[Hue.self], "red", "a disc beside a red disc is red: madeBeside")
+        // Two ledgers selected are still one kind.
+        let b = ShapeID(), c = ShapeID()
+        let two = try harness([LedgersPlugin(), claimingDiscs(), picking(picked)], ledger(b), ledger(c, x: 200))
+        picked.shapes = [b, c]
+        expectEqual(two.editor.toolBeside([b, c]), ledgerTool)
+    },
+    test("with nothing selected, an arrow-like shape no tool places, or shapes of several kinds, the claimed tool's shape; the item says what it makes") {
+        let a = ShapeID(), b = ShapeID(), k = ShapeID(), picked = Picked()
+        let h = try harness([LedgersPlugin(), LinksPlugin(), claimingDiscs(), picking(picked)], ledger(a), disc(b, x: 300), linkRecord(k, a, b))
+        picked.shapes = []
+        expectEqual(h.editor.toolBeside([]), discTool)
+        expectEqual(h.editor.menuTitle(of: .insertBeside), "New Disc", "nothing to be beside")
+        expect(h.editor.perform(.insertBeside))
+        expectEqual(h.editor.document.shapes.last?.box, CGRect(x: 380, y: 280, width: 40, height: 40), "in the middle of the view")
+        picked.shapes = [k]
+        expectEqual(h.editor.toolBeside([k]), discTool, "a link, which no tool places")
+        expectEqual(h.editor.menuTitle(of: .insertBeside), "New Disc Beside")
+        picked.shapes = [a, b]
+        expectEqual(h.editor.toolBeside([a, b]), discTool, "a ledger and a disc")
+        expect(h.editor.perform(.insertBeside))
+        expectEqual(h.editor.undoHistory.undoName, "Add Disc")
+        expectEqual(h.editor.document.shapes.count, 5)
+        h.editor.undo()
+        expectEqual(h.editor.document.shapes.count, 4, "one step")
+    },
+    test("with no claim, a selection that is no one kind a tool places makes nothing: the command is dimmed and passes") {
+        let a = ShapeID(), b = ShapeID(), picked = Picked()
+        let h = try harness([LedgersPlugin(), picking(picked)], ledger(a), disc(b, x: 300))
+        picked.shapes = []
+        expectEqual(h.editor.toolBeside([]), nil)
+        expect(!h.editor.canPerform(.insertBeside), "dimmed")
+        expect(!h.editor.perform(.insertBeside))
+        expectEqual(h.editor.menuTitle(of: .insertBeside), "New Shape Beside")
+        picked.shapes = [a, b]
+        expect(!h.editor.perform(.insertBeside))
+        picked.shapes = [a]
+        expect(h.editor.perform(.insertBeside), "one kind still has its own tool")
+        expectEqual(h.editor.document.shapes.count, 3)
+    },
+    test("a tool of a kit that's off in the file isn't picked, so its kind gets the claim's; on, it is") {
+        let plank = ShapeID(), picked = Picked()
+        let record = AnyShapeRecord(ShapeRecord(id: plank, Plank(CGRect(x: 0, y: 0, width: 120, height: 30))))
+        let h = try harness([WorkshopPlugin(), claimingDiscs(), picking(picked)], record)
+        picked.shapes = [plank]
+        expectEqual(h.editor.toolBeside([plank]), discTool, "the kit is off here")
+        expectEqual(h.editor.menuTitle(of: .insertBeside), "New Disc Beside")
+        h.editor.turn(Workshop.self, on: true)
+        expectEqual(h.editor.toolBeside([plank]), ToolID(placing: Plank.kind))
+        expectEqual(h.editor.menuTitle(of: .insertBeside), "New Plank Beside")
+        expect(h.editor.perform(.insertBeside))
+        expectEqual(h.editor.document.shapes.map(\.kind), [Plank.kind, Plank.kind])
+        h.editor.turn(Workshop.self, on: false)
+        expectEqual(h.editor.toolBeside([plank]), discTool, "off again")
+    },
+    test("it waits for idle: dimmed while a shape is edited, and while shapes wait to be placed") {
+        let picked = Picked()
+        let h = try harness([claimingDiscs(), picking(picked)])
+        expect(h.editor.perform(.insert(cardTool)))
+        expect(h.editor.editingShapeID != nil)
+        expect(!h.editor.canPerform(.insertBeside), "a shape is edited")
+        h.editor.endEditing(discarding: false)
+        expect(h.editor.canPerform(.insertBeside))
+        let waiting = AnyShapeRecord(ShapeRecord(Disc(CGRect(x: 0, y: 0, width: 40, height: 40))))
+        expect(h.editor.placeLater(PendingPlacement([waiting], stepName: "Add Discs") { _ in [CGPoint(x: -20, y: -20)] }))
+        expect(!h.editor.canPerform(.insertBeside), "shapes wait")
+    },
+    test("insert(_:named:beside:) puts a placement down in one step of the name it's given, and gives the shape's id; nil for nothing put down") {
+        let a = ShapeID()
+        let h = try harness([claimingDiscs()], disc(a, hue: "blue"))
+        let placement = try require(h.editor.registry.placement(for: Disc.kind))
+        let id = try require(h.editor.insert(placement, named: "Add Thing", beside: [a]))
+        expectEqual(h.editor.document.shapes.last?.id, id)
+        expectEqual(h.editor.document.shapes.last?[Hue.self], "blue", "made beside the blue disc")
+        expectEqual(h.editor.undoHistory.undoName, "Add Thing")
+        expectEqual(h.editor.insert(placement, named: "Add Thing", beside: [])?.description.isEmpty, false)
+        // Shapes waiting to be placed: nothing.
+        let waiting = AnyShapeRecord(ShapeRecord(Disc(CGRect(x: 0, y: 0, width: 40, height: 40))))
+        expect(h.editor.placeLater(PendingPlacement([waiting], stepName: "Add Discs") { _ in [CGPoint(x: -20, y: -20)] }))
+        let count = h.editor.document.shapes.count
+        expectEqual(h.editor.insert(placement, named: "Add Thing", beside: []), nil)
+        expectEqual(h.editor.document.shapes.count, count)
+        // A board that takes nothing.
+        let p = ShapeID()
+        var pocket = AnyShapeRecord(ShapeRecord(id: p, Pocket(CGRect(x: 0, y: 0, width: 100, height: 100))))
+        pocket[Frozen.self] = true
+        let frozen = try EditorHarness(plugins: [PocketsPlugin(), FreezingPlugin(), huedDiscs()], file: CanvasFile(root: CanvasDocument(shapes: [pocket])))
+        frozen.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        expect(frozen.enter(p))
+        let discPlacement = try require(frozen.editor.registry.placement(for: Disc.kind))
+        expectEqual(frozen.editor.insert(discPlacement, named: "Add Thing", beside: []), nil)
+        expect(frozen.editor.document.shapes.isEmpty)
+    },
+    test("the claim is one, and the tool must place a shape; the report says it") {
+        let both = Contributor(id: "both") { r in r.insertsBesideByDefault(discTool) }
+        let h = try harness([claimingDiscs()])
+        expect(h.editor.registry.report.contains("insert beside by default disc"), h.editor.registry.report)
+        expectEqual(h.editor.registry.insertsBesideByDefault, discTool)
+        expectThrows(RegistryError.conflict(point: "InsertBesideByDefault", key: "the tool that inserts beside by default", plugins: ["claim", "both"])) {
+            _ = try Registry(plugins: [huedDiscs(), claimingDiscs(), both])
+        }
+        expectThrows(RegistryError.invalid(point: "InsertBesideByDefault", reason: "no plugin registers a tool hand that places a shape")) {
+            _ = try Registry(plugins: [Contributor(id: "hand") { $0.insertsBesideByDefault(.hand) }])
+        }
     },
 ])

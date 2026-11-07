@@ -686,7 +686,7 @@ public final class CanvasEditor {
         if transaction.hasChanges, isReplacingFile {
             commit(transaction)
         } else if transaction.hasChanges {
-            undoHistory.willCommit(transaction.changes, from: storedFile, name: name, coalescing: key, origin: origin)
+            undoHistory.willCommit(transaction.changes, from: storedFile, name: transaction.stepName ?? name, coalescing: key, origin: origin)
             commit(transaction)
             undoHistory.didCommit()
         }
@@ -736,7 +736,7 @@ public final class CanvasEditor {
         if isReplacingFile {
             commit(transaction, onHidden: target)
         } else {
-            undoHistory.recordStep(on: target, name: name, changes: transaction.changes, from: storedFile) {
+            undoHistory.recordStep(on: target, name: transaction.stepName ?? name, changes: transaction.changes, from: storedFile) {
                 commit(transaction, onHidden: target)
             }
         }
@@ -1375,8 +1375,14 @@ public final class CanvasEditor {
     /// placed, and the container, or the board's owner, is heard refused); the default tool comes back
     /// (unless the tool is locked), services hear `didPlace`, and an editing placement's shape is edited.
     /// It never follows the pointer.
-    public func place(_ placement: Placement, in frame: CGRect) {
-        put(placement.make(frame), placing: placement, from: nil)
+    ///
+    /// Returns the new shape's id; nil when nothing was put down (a read-only board, or a read-only container
+    /// that wouldn't take it).
+    @discardableResult
+    public func place(_ placement: Placement, in frame: CGRect) -> ShapeID? {
+        let record = placement.make(frame)
+        put(record, placing: placement, from: nil)
+        return document[record.id] != nil ? record.id : nil
     }
 
     /// Puts a new container down around shapes on the board shown, holding them (Frames' Create

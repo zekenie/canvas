@@ -101,7 +101,7 @@ extension EditorHarness {
         let report = registry.report.split(separator: "\n").filter { !$0.hasPrefix("keyboard") }
             .map { $0.hasPrefix("detail-panel") ? String($0.prefix { $0 != "·" }) + "· host inspector" : String($0) }.joined(separator: "\n")
         expectEqual(report, """
-        core                tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+        core                tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
         validation          service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
         detail-panel        service DetailPanelState · host inspector
         validation-details  DetailStatuses in Issues after Style → every shape
