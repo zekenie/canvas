@@ -33,7 +33,7 @@ extension Strand: EdgeType {
         expectEqual(registry.contributions(to: Channels.self).map(\.value.id), [Wire.id, Pipe.id])
         expectEqual(reportLine(registry, "channels"), "channel wire · edge type wire · channel pipe · edge type pipe · ports wire → box · ports pipe → disc")
         expectEqual(reportLine(registry, "tag-connector"), "property channel → tag · edge type hookup · connector → tag")
-        expectEqual(reportLine(registry, .ports), "property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape")
+        expectEqual(reportLine(registry, .ports), "property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · parts arrows → every shape")
     },
     test("a kind's ports given through its own registrar are its plugin's, in the report too") {
         let registry = try portsHarness(more: [dialsPlugin()]).editor.registry
