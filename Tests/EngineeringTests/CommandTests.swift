@@ -57,6 +57,15 @@ import Titles
         expect(h.shapes(Database.kind).isEmpty)
         expectEqual(h.editor.document[a]?.container, nil)
     },
+    test("/database goes round a table as it's laid out, whatever height it stores: its rows' bottom and 32 past it") {
+        let h = try kitHarness()
+        let table = h.add(orders(CGRect(x: 100, y: 100, width: 260, height: 10)), titled: "orders")
+        h.editor.selectedShapeIDs = [table]
+        expect(h.slash("database", "shop"))
+        let database = try require(h.shapes(Database.kind).first)
+        expectEqual(database.box, CGRect(x: 68, y: 68, width: 324, height: 180), "100 + 116 + 32 = 248 down")
+        expectEqual(h.editor.document[table]?.container, database.id)
+    },
     test("/database with nothing selected goes round every shape on the board; on an empty board it's an empty one in view") {
         let h = try kitHarness()
         let a = h.add(tableOrders(), titled: "orders")

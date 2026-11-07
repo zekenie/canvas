@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import Engineering
 import Geometry
+import Palette
 import TestKit
 import Titles
 
@@ -48,6 +49,20 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
             expect(!some(drawn, in: CGRect(x: 336, y: 112, width: 10, height: 16), ink), "no ? after a type that isn't null, \(mode)")
             expect(some(drawn, in: CGRect(x: 435, y: 112, width: 40, height: 16), ink), "an enum's value in ink, \(mode)")
         }
+    },
+    test("the inks and marks pass Palette's floors on the paper and the canvas: the grey types and the key at theirs, the enum's pill text on its wash, its title pill's text on its purple (decided 25)") {
+        let paper = KitStyle.paper
+        expect(KitStyle.secondaryInk.contrast(with: paper) >= Swatch.textContrast, "the types' grey on the paper: \(KitStyle.secondaryInk.contrast(with: paper))")
+        expect(KitStyle.ink.contrast(with: paper) >= Swatch.textContrast)
+        expect(KitStyle.keyGold.contrast(with: paper) < Swatch.lineContrast, "the frames' gold alone doesn't pass, which is why the mark is Palette's")
+        let onPaper = KitStyle.onPaper(KitStyle.enumPurple)
+        expect(onPaper.solid.light.contrast(with: paper) >= Swatch.lineContrast, "the key's gold made a line color")
+        expect(KitStyle.onPaper(KitStyle.keyGold).solid.light.contrast(with: paper) >= Swatch.lineContrast)
+        let wash = onPaper.solid.light.over(paper, alpha: Swatch.washStrength)
+        expect(onPaper.ink.light.contrast(with: wash) >= Swatch.textContrast, "the enum pill's text on its wash")
+        let title = Swatch(KitStyle.enumPurple)
+        expect(title.onSolid.light.contrast(with: title.solid.light) >= Swatch.textContrast, "the enum's title pill, light canvas")
+        expect(title.onSolid.dark.contrast(with: title.solid.dark) >= Swatch.textContrast, "the enum's title pill, dark canvas")
     },
     test("a database: a surface in a hairline border, white on the light canvas and a raised grey on the dark, its name in a tab on its top edge") {
         let h = try kitHarness()

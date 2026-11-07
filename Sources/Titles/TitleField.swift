@@ -118,7 +118,7 @@ public final class TitleField: NSView, NSTextViewDelegate {
     public override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         guard local.x <= chipWidth * scale, bounds.contains(local) else { return nil }
-        return field.hitTest(point) ?? field
+        return field.hitTest(local) ?? field
     }
 
     public func textDidChange(_ notification: Notification) {

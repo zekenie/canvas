@@ -40,6 +40,12 @@ import Titles
         expectEqual(h.editor.undoHistory.undoName, "Add Table", "placed and named, one step")
         h.editor.undo()
         expect(h.shapes(DatabaseTable.kind).isEmpty)
+        h.editor.redo()
+        let back = try require(h.shapes(DatabaseTable.kind).first)
+        expectEqual(back.id, table.id)
+        expectEqual(back[TitleProperty.self], "orders", "redone, placed and named as one step")
+        expectEqual(back.typed(as: DatabaseTable.self)?.props.columns.map(ColumnGrammar.print), ["id uuid pk"])
+        expectEqual(h.editor.editingShapeID, nil, "redo doesn't open the field again")
     },
     test("Return on a selected table types its name again: a step of its own, Rename Table; Escape ends it, keeping what was typed; a blank name is none") {
         let h = try kitHarness()

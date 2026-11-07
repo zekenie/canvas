@@ -70,8 +70,10 @@ public enum KitStyle {
     /// hundreds of rows costs the rows in view.
     public static func rows(_ count: Int, in frame: CGRect, reaching visible: CGRect) -> Range<Int> {
         guard count > 0 else { return 0..<0 }
+        // Clamped as doubles first: a clip with no bounds (an infinite rect) is every row, never an Int out of range.
         let top = visible.minY - frame.minY - topInset, bottom = visible.maxY - frame.minY - topInset
-        let first = max(0, Int((top / rowHeight).rounded(.down))), last = min(count, Int((bottom / rowHeight).rounded(.up)))
+        let first = Int(max(0, min(Double(count), Double((top / rowHeight).rounded(.down)))))
+        let last = Int(max(0, min(Double(count), Double((bottom / rowHeight).rounded(.up)))))
         return first < last ? first..<last : 0..<0
     }
 }

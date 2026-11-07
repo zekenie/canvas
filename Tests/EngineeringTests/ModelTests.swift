@@ -103,6 +103,14 @@ import Titles
         expectEqual(h.editor.registry.parts(of: try require(h.editor.document[enumType]))?.map { "\($0.kindWord) \($0.name)" }, ["Value pending", "Value paid"])
         expectEqual(h.editor.shapeContext.geometry(of: enumType)?.parts.map(\.rect.minY), [8, 32])
     },
+    test("the rows a clip reaches: those it touches, none above or below the table, and all of them for a clip with no bounds") {
+        let frame = CGRect(x: 0, y: 0, width: 260, height: 116)
+        expectEqual(KitStyle.rows(4, in: frame, reaching: CGRect(x: 0, y: 30, width: 260, height: 30)), 0..<3, "rows 8–32, 32–56, 56–80 touch 30–60")
+        expectEqual(KitStyle.rows(4, in: frame, reaching: CGRect(x: 0, y: 500, width: 260, height: 30)), 0..<0)
+        expectEqual(KitStyle.rows(4, in: frame, reaching: CGRect(x: 0, y: -500, width: 260, height: 30)), 0..<0)
+        expectEqual(KitStyle.rows(4, in: frame, reaching: .infinite), 0..<4)
+        expectEqual(KitStyle.rows(0, in: frame, reaching: .infinite), 0..<0)
+    },
     test("VoiceOver: “orders, Table, 4 columns”, “order_status, Enum, 2 values”, “shop, Database, 2 shapes”; untitled, its kind") {
         let h = try kitHarness()
         let table = h.add(orders(), titled: "orders")

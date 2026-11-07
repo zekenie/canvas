@@ -88,6 +88,14 @@ import Titles
                     "its box grew a row, as a note's does with its text")
         expectEqual(editor.document[status.id]?.typed(as: DatabaseEnum.self)?.props.values.map(\.text), ["pending", "paid", "refunded", "void"])
     },
+    test("a table drawn with no columns: has the starter's one, id uuid pk, as the tool puts one down") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"table "plain""#, on: editor)
+        let made = try require(tables(editor).first)
+        expectEqual(made.props.columns.map(ColumnGrammar.print), ["id uuid pk"])
+        expectEqual(editor.shapeContext.geometry(of: made.id)?.bounds.height, 44)
+    },
     test("a database drawn with room holds the tables drawn in it, and the query that names it finds them") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
