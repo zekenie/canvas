@@ -1,5 +1,7 @@
 import Adornments
+import AppKit
 import Canvas
+import Clipboard
 import Colors
 import Connections
 import ContextMenus
@@ -19,7 +21,7 @@ import Types
 /// arrows (`noteRelationRowsTests`, `noteRelationFreshTests`, `notePillTests`), which add Arrows' plugins: they
 /// are here and not in StickyNotesTests, since a test of a note may not import Arrows.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName()), AdornmentsPlugin(), DetailPanelPlugin(),
      ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin(),
      LanguageRulesPlugin()]
 }

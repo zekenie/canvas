@@ -1,0 +1,160 @@
+@_spi(Host) import Canvas
+import CanvasTesting
+import CoreGraphics
+import Draw
+import Foundation
+import Geometry
+import TestKit
+
+// `put`: a program's shapes put down by a person (Clipboard's paste readers give one): names found nearest first and never refused
+// (a shape of the statement's kind with its title, anywhere in the file; another kind is no match), the new shapes laid out in
+// rows at draw's normal gap and landed beside the selection or on a point, one step named as the caller says, not an agent's, and a
+// run that reaches two boards drawn on a rehearsal and taken in whole. Scripts keep refusing: the options are `put`'s alone.
+
+private func tiles(_ rows: [[(title: String?, finish: String?)]]) -> DrawPut {
+    DrawPut(rows: rows.map { row in
+        row.map { DrawPut.Shape(kind: "tile", title: $0.title, values: $0.finish.map { [(key: "finish", text: $0)] } ?? []) }
+    })
+}
+
+private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[(title, finish)]]) }
+
+@MainActor private func finish(of id: ShapeID, in editor: CanvasEditor) -> Tile.Finish? {
+    editor.file.record(id)?.typed(as: Tile.self)?.props.finish
+}
+
+@MainActor private func tileCount(_ editor: CanvasEditor) -> Int {
+    editor.file.everyBoard.reduce(0) { $0 + editor.file[$1].shapes.filter { $0.kind == Tile.kind }.count }
+}
+
+@MainActor let drawPutTests = Suite("put: a program's shapes put down by a person", [
+    test("a title finds the shape of that kind the board shown has, not the one on another board; the board shown's first, then the file's order") {
+        let n = Nest(), editor = try n.editor()
+        let landed = try put(one("Hub", "glossy"), at: .beside([]), in: editor, step: "Paste Hubs")
+        expectEqual(landed, [n.hub], "restated, made nothing")
+        expectEqual(finish(of: n.hub, in: editor), .glossy)
+        expectEqual(finish(of: n.pHub, in: editor), .matte, "P's Hub is another shape")
+        expectEqual(tileCount(editor), 5)
+        expect(editor.showBoard(BoardID(owner: n.p)))
+        let there = try put(one("Hub", "glossy"), at: .beside([]), in: editor)
+        expectEqual(there, [n.pHub], "now P's, the board shown's")
+        expectEqual(finish(of: n.pHub, in: editor), .glossy)
+        expect(editor.showBoard(.root))
+        // "Twin" is on both P's and Q's board; the file's order is the root, then P (the board shown's first, then Topology's).
+        let twin = try put(one("Twin", "glossy"), at: .beside([]), in: editor)
+        expectEqual(twin, [], "on another board: restated there, and not a shape of the board shown")
+        expectEqual(finish(of: n.pTwin, in: editor), .glossy, "the first in the file's order")
+        expectEqual(finish(of: n.twin, in: editor), .matte)
+    },
+    test("a shape of another kind with the title is no match: a new shape is made, never a refusal") {
+        let n = Nest(), editor = try n.editor()
+        let landed = try put(one("P"), at: .beside([]), in: editor)
+        expectEqual(landed.count, 1)
+        let made = try require(editor.document[landed[0]])
+        expectEqual(made.kind, Tile.kind)
+        expectEqual(editor.document.shapes.filter { $0.kind == Tile.kind && $0.typed(as: Tile.self)?.props.label == "P" }.count, 1, "a tile called P beside the pocket called P")
+        expectEqual(editor.document.shapes.count, 4)
+        let again = try put(one("P"), at: .beside([]), in: editor)
+        expectEqual(again, landed, "the tile is the match now")
+        expectEqual(editor.document.shapes.count, 4)
+    },
+    test("a title of the file twice is the nearest: the same container as the block's, then the board shown") {
+        let n = Nest(), editor = try n.editor()
+        // The root's Hub is on the board shown; P's Hub is not: with P shown, P's wins, whatever the order.
+        expect(editor.showBoard(BoardID(owner: n.p)))
+        let landed = try put(one("Hub", "glossy"), at: .beside([n.deep]), in: editor)
+        expectEqual(landed, [n.pHub])
+        expectEqual(finish(of: n.hub, in: editor), .matte)
+    },
+    test("new shapes land beside one selected shape at draw's normal gap, centered on it, in the rows the block says") {
+        let editor = try drawEditor()
+        let anchor = tile("Anchor", CGRect(x: 100, y: 100, width: 120, height: 80), in: editor)
+        let landed = try put(tiles([[("A", nil), ("B", nil)], [("C", nil)]]), at: .beside([anchor.id]), in: editor)
+        expectEqual(landed.count, 3)
+        let frames = try landed.map { try require(editor.document[$0]?.box) }
+        expectEqual(frames[0].minX, 220 + 80, "draw's normal gap from the anchor")
+        expectEqual(frames[1].minX, frames[0].maxX + 80, "a row's shapes 80 apart")
+        expectEqual(frames[1].minY, frames[0].minY)
+        expectEqual(frames[2].minX, frames[0].minX)
+        expectEqual(frames[2].minY, frames[0].maxY + 80, "the next row 80 below")
+        let block = frames.reduce(CGRect.null) { $0.union($1) }
+        expectEqual(block.midY, 140, "the block centered on the anchor")
+        expectEqual(landed.map { editor.document[$0]?.typed(as: Tile.self)?.props.label }, ["A", "B", "C"])
+    },
+    test("beside several lands beside the box around them; with none, in the middle of the view; centered on a point, on it") {
+        let editor = try drawEditor()
+        let a = tile("A1", CGRect(x: 100, y: 100, width: 120, height: 80), in: editor)
+        let b = tile("B1", CGRect(x: 100, y: 400, width: 120, height: 80), in: editor)
+        let beside = try put(one("Z"), at: .beside([a.id, b.id]), in: editor)
+        let frame = try require(editor.document[beside[0]]?.box)
+        expectEqual(frame.minX, 220 + 80, "beside the box around both")
+        expectEqual(frame.midY, 290)
+        let middle = try put(one("M"), at: .beside([]), in: editor)
+        let view = editor.camera.toWorld(CGRect(origin: .zero, size: editor.viewportSize))
+        let spot = try require(editor.document[middle[0]]?.box)
+        expect(view.contains(spot), "in view")
+        let on = try put(one("On"), at: .centered(CGPoint(x: 2000, y: 2000)), in: editor)
+        expectEqual(editor.document[on[0]]?.box?.center, CGPoint(x: 2000, y: 2000))
+    },
+    test("one step, named as the caller says, not an agent's change; undo takes it all, redo puts it back") {
+        let log = AgentLog()
+        let editor = try drawEditor([Contributor(id: "agents") { $0.service { _ in log } }])
+        let before = editor.document
+        let landed = try put(tiles([[("A", nil), ("B", nil)]]), at: .beside([]), in: editor, step: "Paste Tiles")
+        expectEqual(landed.count, 2)
+        expectEqual(editor.undoHistory.undoName, "Paste Tiles")
+        expectEqual(log.commits, [false], "a person's")
+        let after = editor.document
+        editor.undo()
+        expectEqual(editor.document, before)
+        expect(!editor.canUndo, "one step")
+        editor.redo()
+        expectEqual(editor.document, after)
+        let other = try drawEditor()
+        _ = try put(one("A"), at: .beside([]), in: other)
+        expectEqual(other.undoHistory.undoName, "Put", "the default")
+        let scripted = try drawEditor([Contributor(id: "agents") { $0.service { _ in log } }])
+        _ = try drawn(#"tile "A""#, on: scripted)
+        expectEqual(log.commits.last, true, "a script is still an agent's")
+        expectEqual(scripted.undoHistory.undoName, "Draw")
+    },
+    test("a run that reaches two boards is drawn on a rehearsal and taken in whole: one step, one undo, the board shown stays") {
+        let n = Nest(), log = AgentLog(), editor = try n.editor([Contributor(id: "agents") { $0.service { _ in log } }])
+        let heard = log.commits.count
+        let landed = try put(tiles([[("Fresh", nil), ("Deep", "glossy")]]), at: .beside([n.hub]), in: editor, step: "Paste Both")
+        expectEqual(editor.board, .root)
+        expectEqual(landed.count, 1, "Fresh, the one shape of the board shown")
+        expectEqual(finish(of: n.deep, in: editor), .glossy, "P's Deep restated on its own board")
+        expectEqual(editor.document.shapes.filter { $0.typed(as: Tile.self)?.props.label == "Fresh" }.count, 1, "Fresh made on the board shown")
+        expectEqual(editor.undoHistory.undoName, "Paste Both")
+        expect(!log.commits.dropFirst(heard).contains(true), "a person's, on the rehearsal and when taken in")
+        editor.undo()
+        expectEqual(finish(of: n.deep, in: editor), .matte)
+        expect(editor.document.shapes.allSatisfy { $0.typed(as: Tile.self)?.props.label != "Fresh" })
+        expect(editor.undoHistory.undoName != "Paste Both")
+    },
+    test("a board that takes no shapes refuses with no step and nothing changed; a script's own rules still refuse") {
+        let editor = try drawEditor([PocketsPlugin(), namedPockets, FreezingPlugin()])
+        let pocket = AnyShapeRecord(ShapeRecord(Pocket(CGRect(x: 0, y: 300, width: 100, height: 100))))
+        editor.transact { $0.insert(pocket) }
+        editor.freeze([pocket.id], true)
+        expect(editor.showBoard(BoardID(owner: pocket.id)))
+        let before = editor.file, step = editor.undoHistory.undoName
+        do {
+            _ = try put(one("A"), at: .beside([]), in: editor)
+            expect(false, "a read-only board takes no shapes")
+        } catch {
+            expectEqual((error as? DrawError)?.reason, "read_only")
+        }
+        expectEqual(editor.file, before)
+        expectEqual(editor.undoHistory.undoName, step)
+        // Two tiles called Same: a script is refused as ambiguous; a put restates the nearest.
+        let twins = try drawEditor()
+        let first = tile("Same", CGRect(x: 0, y: 0, width: 100, height: 60), in: twins)
+        _ = tile("Same", CGRect(x: 300, y: 0, width: 100, height: 60), in: twins)
+        _ = try refused(#"tile "Same" finish: glossy"#, on: twins)
+        let landed = try put(one("Same", "glossy"), at: .beside([]), in: twins)
+        expectEqual(landed, [first.id], "the first on the board")
+        expectEqual(twins.document.shapes.count, 2)
+    },
+])

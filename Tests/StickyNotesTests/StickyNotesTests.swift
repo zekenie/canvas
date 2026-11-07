@@ -3,6 +3,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
+import Clipboard
 import Colors
 import Connections
 import ContextMenus
@@ -24,7 +25,7 @@ import Types
 /// The note, every plugin it opts into (Types among them), Adornments, which lays out what Titles
 /// shows on it, and Draw, whose insertion spot puts the note ⇧↩ makes beside another.
 @MainActor var notePlugins: [any CanvasPlugin] {
-    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), AdornmentsPlugin(), DetailPanelPlugin(),
+    [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), StickyNotesPlugin(), ClipboardPlugin(pasteboard: NSPasteboard.withUniqueName()), AdornmentsPlugin(), DetailPanelPlugin(),
      ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TypesPlugin(), DrawPlugin(),
      LanguageRulesPlugin()]
 }
