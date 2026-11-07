@@ -334,6 +334,7 @@ Once one plugin works, the question is which piece the next feature needs.
 | Connect shapes with arrows: dots beside a kind's sides, dragged to another shape | `x.ports(C.self, sides:role:)`, on a channel; `ArrowPortsPlugin` draws the arrow | [Ports](#a-kinds-ports), [`ArrowPortsPlugin`](#the-connector-arrows) |
 | Declare a channel: a kind of connection, and which kinds take it | A `Channel` type, `registrar.channel(C.self)`; `ports` on each kind that takes it | [Channels](#channels) |
 | Say what an arrow's end may bind to (tldraw's canBind) | Arrows' `registrar.arrowBindingRule { query in ... }` | [`ArrowPortsPlugin`](#the-connector-arrows) |
+| Say what a pick in ⌘L's picker means for a kind (the step, the ends, what is written first) | `x.connectPicks(admitting:_:)` → a `ConnectPlan`; `editor.connect(_:to:plan:fulfil:)` is the writer | [Connecting without a drag](#connecting-without-a-drag) |
 | Connect two shapes without a drag, as a connector would from a port | `make` and `ends` on `registrar.connects`; `registry.connection(_:existing:in:)`, `registry.connectionEnds(of:)` | [Connecting without a drag](#connecting-without-a-drag) |
 | Let agents (or scripts) do something to a board from outside the app | `registrar.automationCommand("name", "…", params: P.self) { params, context in … }`: a `canvas` command | [The command line](#the-command-line) |
 | Have a command answer later (it waits on a model, or runs off the main actor), its output written off the main actor | `registrar.automationCommand(…, runAsync: { params, context async throws(AutomationError) in … })` | [A command may be async](#a-command-may-be-async) |
@@ -3573,7 +3574,7 @@ project (it knows no canvas, registry or plugin, and not TextEditing), pure and 
 thread runs it and its values are `Sendable`. FuzzyMatchingTests hold it on TestKit alone.
 
 - **`FuzzyMatcher`** ranks a query against labels, as every list that ranks typed text does
-  (Mentions' `@` picker, slash commands' list, a code editor's completions, and Jump To), so they
+  (Mentions' `@` picker, slash commands' list, a code editor's completions, Jump To, and ⌘L's picker), so they
   agree. A `Query` is the typed text folded once (lowercased, without diacritics, each run of
   whitespace one space) and a `Label` a label folded once (each scalar marked where it starts a
   word, with the `Character` it came from); a label takes its best tier (`FuzzyRanking`): exact 1000,
@@ -7111,20 +7112,50 @@ would draw nothing, so one moves off it by 0.05, as a dragged end moves off the 
 the shapes its two bindings name. An arrow made this way is an arrow like any other: re-aimed,
 moved and kept to its channel as the rest are.
 
-**Connect** (⌘L, `.connect`, `PortsPlugin`'s; [Connect.swift](../Sources/Connections/Connect.swift)) is a
-connection by name from the keyboard: with two shapes selected and nothing under way or edited,
+**Connect** (⌘L, `.connect`, `PortsPlugin`'s, in Insert's `ConnectSection` so the menu bar carries the key to a note being
+edited; [Connect.swift](../Sources/Connections/Connect.swift)) is a
+connection by name from the keyboard, between presses: with two shapes selected,
 `editor.connect(_:)` connects the one selected first to the other, through
 `registry.drawConnection(from:to:in:)`, the maker `canvas draw` makes an edge with, on the channel it
 picks, one step, Connect, the selection kept (a second between a pair is bent apart from the first,
-as a script's is); with one, it connects the shape to itself, the drag back onto it by keys (arrows:
-a loop on its right side). A reference pill is an end as what it stands for, as a drag reads its dots, and
+as a script's is); with one, it opens the picker below (a list without `ConnectPickerPlugin` connects the shape
+to itself at once, the drag back onto it by keys: arrows, a loop on its right side). Both are
+`editor.connect(_:to:plan:fulfil:)`, the one writer, whose step is the plan's name ("Connect") and which runs
+the `ConnectionMade` hooks inside it. A reference pill is an end as what it stands for, as a drag reads its dots, and
 one that stands for nothing now is none. Where the maker refuses the pair (no channel joins them, a
 note and a frame; one holds the other, a frame and a note in it) or the board takes nothing, nothing
-is put down and both shake. `ConnectMenuPlugin` adds the item
-that runs it to a right-click on two shapes (`MenuItem(command: .connect, when:)`), so the menu bar's Shape
-menu has it too, and leaves it off one shape's menu, which every right-click would carry for the rare
-loop; a list without ContextMenus leaves it out and keeps the key. PortEdgesTests'
+is put down and the shapes shake. `ConnectMenuPlugin` adds the item
+that runs it to a right-click on two shapes (`MenuItem(command: .connect, when:)`), and "Connect To…" on one while the
+picker is installed; a list without ContextMenus leaves them out and keeps the key. PortEdgesTests'
 `connectTests` hold it over fixtures, CompositionTests' `connectShippedTests` over the shipped kinds.
+
+**⌘L's picker** (`ConnectPickerPlugin`, id `connect-picker`, after `PortsPlugin` and `MentionsPlugin`;
+[ConnectPicker.swift](../Sources/Connections/ConnectPicker.swift)) is a line under the selected shape (a card
+about no shape's content, `showsZoomedOut`) holding a one-line field with a faint `→` and a caret list under it
+(`CaretListWindow`, as Jump To and References show theirs). It ranks Mentions' catalog, so the lines, their places
+(two shapes called alike say where each is) and the recent picks are the `@` picker's, over the kinds the port
+table can join the source to (`registry.connectionChannel`), on every board of the file, and **Itself** is last: the loop.
+Return and Tab pick, ↑ ↓ ⌃P ⌃N and the page keys move, Escape and ⌘. give the keyboard back to the canvas with the
+selection as it was. A pick on another board is reached through a reference pill on the board shown, reused
+or made and landed as `canvas draw` lands one (`StandInRoute.placePill`), with the arrow, in one step; a private far
+shape is listed `will be made public` and made so in the step, since it is a person's pick.
+
+A kind that means more by a pick says so, once, in `ConnectPicks` (a keyed extension point, owner `.ports`, one
+contribution per source kind):
+
+```swift
+registrar.connectPicks(Table.self, admitting: { pick, editor in editor.document[pick.to.shape]?.kind != Enum.kind }) { pick, editor in
+    ConnectPlan(step: "Add Key Column", from: pick.from, to: pick.to) { transaction in
+        let key = AnyShapeRecord(ShapeRecord(Column(…)))       // written first, in the same step
+        transaction.insert(key)
+        return (ConnectEnd(key.id), pick.to)                    // the ends the arrow then joins
+    }
+}
+```
+
+`admitting` leaves picks out of the list; a plan that is nil refuses the pick (the source shakes, no step). With no
+contribution a pick is a plain `Connect`. No shipped kind contributes one yet; CompositionTests'
+`connectPickerShippedTests` hold the point with a fixture.
 
 Ports are the part of data-canvas's that notes and subboards need to prove the API; the rest is in
 [Not built yet](#not-built-yet).
@@ -12279,13 +12310,17 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   one transaction. `StandInRoute` (public, over a registry; `kind(for:fulfilling:)`,
   `existing(for:kind:sharing:near:in:)`, `spot(beside:edgeIs:side:in:excluding:staying:)` and
   `landing(of:at:in:avoiding:)`) is that making, for a writer that is not a script: it lands a pill
-  of its size at a spot against `Surroundings`, in the rect a run gives the same pill.
+  of its size at a spot against `Surroundings`, in the rect a run gives the same pill. Whole, for a
+  writer that picks a shape on another board: `FarVerdicts` (what a pick takes: `here`, `reads`,
+  `fulfils(needs:)`, `cannot`; made once for many shapes) and `placePill(standingFor:label:beside:edgeIs:sharing:avoiding:verdicts:in:)`,
+  which finds the board's pill or makes and lands one and answers a `PlacedPill` whose `claim` and `put`
+  write it in the caller's transaction (Types' relation rows and new relationship types, Connections' ⌘L picks).
 - **What it says.** Every stand-in is told where it sits before it's placed (`StandIns.seat`,
   `.file`: the frame that holds it, the top of the board an `in` names, else the frame of the end
   beside it, else the board), whether another shape has its shape's title or not, so a reference says
   where its shape is over the name and is as wide as that; one whose shape is right where it sits is
   as wide as its name. A writer that is not a script asks the route the same before it lands its
-  pill, `StandInRoute.seat(_:beside:in:)`: Types' row pick and a far relationship type do, so a pick
+  pill, `StandInRoute.seat(_:beside:in:)` (`placePill` does): Types' row pick, a far relationship type and a ⌘L pick do, so a pick
   and a script leave the same pill. The stand-ins beside one shape are put down together, so a
   column over a frame's edge goes in or out as one.
 - **An edge may place it** (`EdgeStatement.clauses` and `container`: placements and `in`, written on
