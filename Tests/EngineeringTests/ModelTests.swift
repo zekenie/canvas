@@ -50,6 +50,22 @@ import Titles
         expect(json.contains(#""shape" : "\#(enumID)""#), json)
         expect(json.contains(#""primaryKey" : true"#) && json.contains(#""onDelete" : "cascade""#), json)
     },
+    test("a column's enum is a name: a copy with the enum renames it to the enum's copy, one without keeps it, and a delete never looks") {
+        let h = try kitHarness()
+        let enumID = h.add(DatabaseEnum(frame: CGRect(x: 400, y: 100, width: 220, height: 44)), titled: "order_status")
+        let table = h.add(orders(status: enumID), titled: "orders")
+        let record = try require(h.editor.document[table])
+        let copy = ShapeID()
+        let renamed = try require(record.remappingReferences({ $0 == enumID ? copy : nil }, in: h.editor.shapeContext))
+        expectEqual(renamed.typed(as: DatabaseTable.self)?.props.columns[2].type, TypeRef("order_status", shape: copy))
+        expectEqual(record.remappingReferences({ _ in nil }, in: h.editor.shapeContext), record, "copied alone, it still names the enum")
+        h.editor.transact("Delete") { $0.delete([enumID]) }
+        expectEqual(h.editor.document[table]?.typed(as: DatabaseTable.self)?.props.columns[2].type, TypeRef("order_status", shape: enumID),
+                    "the enum gone, the column keeps its words and its name")
+        let drawn = render(h.editor)
+        expect(!some(drawn, in: CGRect(x: 240, y: 158, width: 106, height: 20)) { $0[0] > $0[1] + 20 && $0[2] > $0[1] + 20 },
+               "no pill for an enum that's gone: its words, plain")
+    },
     test("a table's width is its own and its height its rows': 8 above, 24 a row, 12 below; a new one is one row, id uuid pk") {
         let h = try kitHarness()
         let id = h.add(DatabaseTable(frame: CGRect(x: 0, y: 0, width: 300, height: 10), columns: DatabaseTable.starter().columns))
