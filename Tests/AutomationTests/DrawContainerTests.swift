@@ -198,6 +198,17 @@ private func at(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat)
         expectEqual(f.minY, 40)
         expect(messages(fits).contains(#""F" was slid down to stay inside "Pen""#), "\(messages(fits))")
     },
+    test("in a pen, a slid shape that lands on a sibling is kept clear of it as any shape is: it ends inside the pen and off the sibling") {
+        let editor = try penEditor()
+        _ = pen("Pen", CGRect(x: 0, y: 0, width: 800, height: 700), in: editor)
+        _ = try drawn(#"tile "A" in "Pen""#, on: editor)
+        _ = try drawn(#"tile "S" in "Pen" right of "A" size: 120x80"#, on: editor)
+        let result = try drawn(#"tile "R" in "Pen" right of "A" size: 120x300"#, on: editor)
+        let s = try require(shape("S", in: editor)).box ?? .zero, r = try require(shape("R", in: editor)).box ?? .zero
+        expect(r.minY >= 40 && r.maxY <= 660, "inside the pen: \(r)")
+        expect(!r.intersects(s), "off S: \(r) \(s)")
+        expect(messages(result).contains { $0.contains("\"R\"") }, "\(messages(result))")
+    },
     test("a shape in the pen restated stays where it is; one elsewhere restated in it moves in, against its top-left") {
         let editor = try penEditor()
         let board = PenBoard(editor, size: CGSize(width: 600, height: 500))
