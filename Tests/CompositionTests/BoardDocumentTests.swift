@@ -429,7 +429,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         // Insert: an item for each tool that places a shape, in the toolbar's order, Note with ⇧Return.
         try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)), "\r", .shift)
         let insert = try require(menus.main.item(withTitle: "Insert")?.submenu)
-        expectEqual(insert.items.map(\.title), ["Note", "Subboard", "Frame", "Reference", "Stickers"], "and the example kit's tools in a submenu named for it")
+        expectEqual(insert.items.map(\.title), ["Note", "Subboard", "Frame", "Reference", "Stickers", "", "Connect"], "and the example kit's tools in a submenu named for it, then Connect (⌘L) in a section of its own")
         expectEqual(try require(insert.item(withTitle: "Stickers")?.submenu).items.map(\.title), ["Thumbs Up", "Heart", "Star", "Party"])
         let find = try require(edit.item(withTitle: "Find")?.submenu)
         expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])

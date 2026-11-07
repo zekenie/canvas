@@ -3,6 +3,7 @@ import Canvas
 import ContextMenus
 import Draw
 import Keyboard
+import Mentions
 
 extension CanvasCommand {
     /// Connect (⌘L): the first of two selected shapes connected to the second, or one connected to itself, as a
@@ -10,13 +11,34 @@ extension CanvasCommand {
     public static let connect: CanvasCommand = "connect"
 }
 
+/// Insert's section of Connect: ⌘L in the menu bar, which is how the key reaches a note being edited (text has the keyboard there,
+/// and the canvas's shortcuts wait; the menu bar's keys do not).
+public enum ConnectSection {}
+
+extension ConnectSection: MenuBarSection {
+    public static var menu: MenuBarMenu { "Insert" }
+}
+
 extension PluginRegistrar {
-    /// ⌘L, Connect: for two shapes, a connection from the one selected first to the other, and for one, from it to
-    /// itself (the drag from its dot back onto it, by keys), while something makes connections; never mid-press or
-    /// while a shape is edited.
+    /// ⌘L, Connect: for two shapes, a connection from the one selected first to the other; for one, the picker of the shapes it
+    /// can be connected to, Itself last (`ConnectPickerPlugin`), and, in a list without it, the loop (the drag from its dot back
+    /// onto it, by keys), while something makes connections. Between presses: in a note's words it ends editing, its words
+    /// kept, and opens the picker; a list without the picker keeps the key out of a shape being edited and mid-press.
     mutating func connectCommand() {
-        command(.connect, title: ConnectionsStyle.connect, shortcut: KeyChord("l", .command), runs: .whenIdle,
-                isEnabled: { (1...2).contains($0.shapes.count) && $0.editor.registry.drawsConnections }) { $0.editor.connect($0.shapes) }
+        command(.connect, title: ConnectionsStyle.connect, in: ConnectSection.self, shortcut: KeyChord("l", .command), runs: .betweenPresses,
+                isEnabled: { subject in
+                    let editor = subject.editor
+                    guard (1...2).contains(subject.shapes.count), editor.registry.drawsConnections else { return false }
+                    return editor.editingShapeID == nil || (subject.shapes.count == 1 && editor.connectPicker != nil)
+                }) { subject in
+            let editor = subject.editor
+            if subject.shapes.count == 1, let picker = editor.connectPicker {
+                editor.endEditing()
+                picker.open(on: subject.shapes[0])
+            } else {
+                editor.connect(subject.shapes)
+            }
+        }
     }
 }
 
@@ -44,7 +66,8 @@ extension PluginID {
 }
 
 /// Connect in a right-click on two shapes, and so in the menu bar's Shape menu: the item that runs
-/// Ports' ⌘L. Not on one shape, whose every menu would carry it for the rare loop: the key does that.
+/// Ports' ⌘L. On one shape, with the picker (`ConnectPickerPlugin`) installed, "Connect To…", the picker's item, which is
+/// also how ⌘L reaches a note being edited (the menu bar has its key there); without it the loop stays the key's alone.
 /// A plugin value of its own after `ContextMenusPlugin` and `PortsPlugin`, so a list with ports and no
 /// context menus has the key and no item.
 public struct ConnectMenuPlugin: ListedPlugin {
@@ -54,6 +77,7 @@ public struct ConnectMenuPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.contextMenuForCanvas {
             MenuItem(command: .connect, when: { $0.shapes.count == 2 })
+            MenuItem(command: .connect, title: ConnectionsStyle.connectTo, when: { $0.shapes.count == 1 && $0.editor.connectPicker?.canOpen(on: $0.shapes[0]) == true })
         }
     }
 }
@@ -70,27 +94,80 @@ extension CanvasEditor {
     /// nothing, nothing changes and both shake. Nothing for any other number of shapes.
     public func connect(_ ids: [ShapeID]) {
         guard let first = ids.first, ids.count <= 2 else { return }
-        let ends = [first, ids.last ?? first]
+        connect(ConnectEnd(first), to: ConnectEnd(ids.last ?? first))
+    }
+
+    /// Connects `source`, a shape of the board shown, to `target`: the one writer under ⌘L (two shapes, one, and the picker's
+    /// picks), as `canvas draw` makes `edge "A" -> "B"` (`registry.drawConnection`), in one step named for the plan (`plan.step`,
+    /// "Connect" for none) that holds the arrow, what the plan wrote first (`plan.prepare`) and what the `ConnectionMade` hooks do
+    /// to the arrow. A stand-in end (a reference pill) is an end as what it stands for. A `target` on another board is reached
+    /// through a pill on the board shown that stands for it, as a script's edge is (`StandInRoute.placePill`): the board's pill
+    /// for it if there is one, else a new one landed beside `source`, in the same step. A target that must be made what the pill
+    /// may stand for first (made public) is connected only with `fulfil`, which a person's pick passes and a script never does.
+    ///
+    /// Returns the arrow. Nil, with nothing changed and no step, when nothing makes connections, `source` is not on the board
+    /// shown, the target cannot be reached, the connector refuses the pair or the board takes nothing, or `plan.prepare`
+    /// throws: the shapes shake.
+    @discardableResult
+    public func connect(_ source: ConnectEnd, to target: ConnectEnd, plan: ConnectPlan? = nil, fulfil: Bool = false) -> ShapeID? {
+        let ids: Set<ShapeID> = [source.shape, target.shape]
         let ports = service(PortState.self)
-        let standing = ends.map { id in document[id].flatMap { record in ports.map { $0.standingKinds(of: record) } ?? [] } }
-        guard let from = standing[0], let to = standing[1] else {
-            refuseChanges(to: Set(ids))
-            return
+        func standing(_ id: ShapeID) -> [ShapeKind]? { document[id].flatMap { record in ports.map { $0.standingKinds(of: record) } ?? [] } }
+        guard let from = standing(source.shape) else {
+            refuseChanges(to: ids)
+            return nil
         }
+        // The far end: a pill on this board that stands for it.
+        var to: [ShapeKind] = []
+        var pill: PlacedPill?
+        if document[target.shape] != nil {
+            guard let found = standing(target.shape) else {
+                refuseChanges(to: ids)
+                return nil
+            }
+            to = found
+        } else {
+            let verdicts = FarVerdicts(self)
+            switch verdicts.verdict(of: target.shape) {
+            case .cannot, .here:
+                refuseChanges(to: ids)
+                return nil
+            case .fulfils where !fulfil:
+                refuseChanges(to: ids)
+                return nil
+            case .reads, .fulfils:
+                guard let route = verdicts.route, let far = shape(inFile: target.shape),
+                      let placed = route.placePill(standingFor: target.shape, label: registry.mentionAppearance(of: far)?.label ?? "",
+                                                   beside: source.shape, edgeIs: .from, sharing: .any, verdicts: verdicts, in: self) else {
+                    refuseChanges(to: ids)
+                    return nil
+                }
+                pill = placed
+                to = placed.standingFor(whenNearIs: .from).to
+            }
+        }
+        let step = plan?.step ?? ConnectionsStyle.connect
         // Whole or not at all (`transactWhole`): a pair the connector refuses, or a board that takes nothing, commits
-        // nothing and shakes both.
+        // nothing and shakes the shapes.
         // The step is a group around the commit and the hooks (`ConnectionMade`), as a drag's press is: what a hook
         // changes (a relationship type given to the arrow) is the step's, and a menu it pops needs the arrow committed.
-        undoHistory.group(ConnectionsStyle.connect) {
-            let made: ShapeID? = transactWhole(ConnectionsStyle.connect, shaking: Set(ids)) { transaction in
-                guard let made = registry.drawConnection(from: ends[0], to: ends[1], in: transaction.shapes, standingFor: (from, to))
+        return undoHistory.group(step) {
+            let made: ShapeID? = transactWhole(step, shaking: ids) { transaction in
+                var ends = (from: source, to: target)
+                if let prepare = plan?.prepare { ends = try prepare(&transaction) }
+                if let pill {
+                    try pill.claim(in: &transaction, registry: registry)
+                    ends.to = ConnectEnd(try pill.put(in: &transaction))
+                }
+                guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: (from, to))
                 else { throw Transaction.Refused() }
                 transaction.insert(made)
                 guard transaction.document[made.id] != nil else { throw Transaction.Refused() }
                 return made.id
             }
-            guard let made else { return }
+            guard let made else { return nil }
             for hook in registry.contributions(to: ConnectionMade.self) { hook.value(made, self) }
+            return made
         }
     }
 }
@@ -98,6 +175,8 @@ extension CanvasEditor {
 @MainActor
 enum ConnectionsStyle {
     static let connect = "Connect"
+    /// The picker's item in the Shape menu, on one shape.
+    static let connectTo = "Connect To…"
     /// A shape's arrows as its parts: "Arrow to Payment".
     static let arrowTo = "Arrow to "
     static let arrowFrom = "Arrow from "

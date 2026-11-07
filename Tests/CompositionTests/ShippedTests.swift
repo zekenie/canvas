@@ -183,8 +183,9 @@ import Validation
         color-details        ShapeDetails in Style last → every shape holding color
         type-colors          inherited color → every shape holding is
         snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
-        ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect · shortcut ⌘L → command connect · parts arrows → every shape
+        ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · parts arrows → every shape
         connect-menu         CanvasContextMenu in ShapeMenuGroup first
+        connect-picker       service ConnectPickerHost · SelectionObservers
         arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
         language-models      service LanguageModelState
         decision-models      service Decisions
