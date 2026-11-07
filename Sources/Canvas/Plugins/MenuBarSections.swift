@@ -30,7 +30,7 @@ extension MenuBarSection {
 
     /// As the registry's report names it: the type, in what it's declared in (`EditMenu.CutCopyPaste`), its
     /// module left out, and the private context a file's own type is in; a generic one's arguments named the
-    /// same way (`KitShapes<StickersKit>`).
+    /// same way (`KitShapes<EngineeringKit>`).
     static var reportedName: String {
         let reflected = String(reflecting: Self.self)
         guard let open = reflected.firstIndex(of: "<"), reflected.hasSuffix(">") else { return named(reflected) ?? "\(Self.self)" }

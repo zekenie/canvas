@@ -1,0 +1,51 @@
+{
+  "columns" : [
+    {
+      "id" : "0B5E7A10-0000-4000-8000-000000000001",
+      "name" : "id",
+      "nullable" : false,
+      "primaryKey" : true,
+      "type" : {
+        "words" : "uuid"
+      },
+      "unique" : false,
+      "unread" : ""
+    },
+    {
+      "default" : "gen_random_uuid()",
+      "id" : "0B5E7A10-0000-4000-8000-000000000002",
+      "name" : "customer_id",
+      "nullable" : true,
+      "onDelete" : "cascade",
+      "onUpdate" : "restrict",
+      "primaryKey" : false,
+      "type" : {
+        "words" : "uuid"
+      },
+      "unique" : true,
+      "unread" : "→ customers.id"
+    },
+    {
+      "id" : "0B5E7A10-0000-4000-8000-000000000003",
+      "name" : "status",
+      "nullable" : false,
+      "primaryKey" : false,
+      "type" : {
+        "shape" : "0B5E7A10-0000-4000-8000-0000000000E1",
+        "words" : "order_status"
+      },
+      "unique" : false,
+      "unread" : ""
+    }
+  ],
+  "frame" : [
+    [
+      0,
+      0
+    ],
+    [
+      260,
+      92
+    ]
+  ]
+}

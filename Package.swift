@@ -230,9 +230,10 @@ let ships = [
     "Moving.MovingPlugin",
     // The example (Examples/): one line here; delete it to leave it out.
     "Reordering.ReorderingPlugin",
-    // The example kit (Examples/), off in a file until File ▸ Kits ▸ Stickers turns it on: the first kit, kept until
-    // the first real one lands. One line here; delete it to leave it out.
-    "Stickers.StickersPlugin",
+    // The engineering kit, off in a file until File ▸ Kits ▸ Engineering turns it on: database tables, their enums and the
+    // databases that hold them. After Draw, whose writers it gives, Titles, whose field names a new table, and every
+    // plugin whose every-shape commands its kinds list before its own.
+    "Engineering.EngineeringPlugin",
 ]
 // The modules those plugins are in, once each, in the list's order: what `+ shipped` links.
 let shipped = ships.reduce(into: [String]()) { modules, plugin in
@@ -269,6 +270,11 @@ let parts: KeyValuePairs<String, [String]> = [
     "Types/Form": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA"],
     "Types/Rows": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form"],
     "Types/Engines": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form", "Rows"],
+    // Engineering: the kinds' props and looks' constants; the line grammars a column and an enum's values are
+    // written in, read and printed (pure); the table, the enum and the database, drawn, placed and written.
+    "Engineering/Model": [],
+    "Engineering/Grammar": ["Model"],
+    "Engineering/Tables": ["Model", "Grammar"],
 ]
 
 let package = Package(
@@ -304,7 +310,7 @@ let package = Package(
         // Horizontals, shape traits: the interfaces verticals plug into that a shape has.
         .target(name: "Topology", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Validation", dependencies: ["Canvas", "DetailPanel", "Draw", "Keyboard", "Palette", "Queries", "Selection", "TableOfContents", "Titles", "Topology"]), // layer: platform
-        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents"]),  // layer: platform
+        .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Palette", "Queries", "SlashCommands", "TableOfContents", "TextEditing"]),  // layer: platform
         .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "SlashCommands", "TableOfContents"]), // layer: platform
         .target(name: "Grouping", dependencies: ["Canvas", "ContextMenus", "Draw", "Keyboard", "Queries", "Selection"]), // layer: platform
         .target(name: "Connections", dependencies: ["Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Mentions", "Selection", "TextEditing", "Topology"]), // layer: platform
@@ -360,7 +366,7 @@ let package = Package(
         .target(name: "StickyNotes", dependencies: ["Canvas", "Clipboard", "Colors", "Connections", "DetailPanel", "Draw", "Keyboard", "LanguageRules", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
         .target(name: "Frames", dependencies: ["Canvas", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
-        .target(name: "Stickers", dependencies: ["Canvas", "CanvasRPC", "Clipboard", "ContextMenus", "Publishing", "Selection", "SlashCommands"], path: "Examples/Stickers"), // layer: product
+        .target(name: "Engineering", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Geometry", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "Titles"]), // layer: product
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "CanvasRPC", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport
@@ -399,7 +405,7 @@ let package = Package(
         .executableTarget(name: "DecisionModelsTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "DecisionModels", "LanguageModels", "TestKit"], path: "Tests/DecisionModelsTests"), // layer: test
         .executableTarget(name: "LanguageRulesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "ContextMenus", "DecisionModels", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "LanguageRules", "Mentions", "ProseMaps", "Queries", "QueryTranslation", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Types", "Validation"], path: "Tests/LanguageRulesTests"), // layer: test
         .executableTarget(name: "ProseMapsTests", dependencies: ["Canvas", "CanvasTesting", "LanguageModels", "ProseMaps", "TestKit"], path: "Tests/ProseMapsTests"), // layer: test
-        .executableTarget(name: "TitlesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "DetailPanel", "Find", "Geometry", "Keyboard", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles"], path: "Tests/TitlesTests"), // layer: test
+        .executableTarget(name: "TitlesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "DetailPanel", "Find", "Geometry", "Keyboard", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles"], path: "Tests/TitlesTests"), // layer: test
         .executableTarget(name: "PortsTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Connections", "Geometry", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortsTests"), // layer: test of Connections
         .executableTarget(name: "ArrowPortsTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "DetailPanel", "Draw", "Geometry", "Keyboard", "LanguageRules", "Mentions", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ArrowPortsTests"), // layer: test of Arrows
         .executableTarget(name: "MentionsTests", dependencies: ["Adornments", "Boards", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Chrome", "ContextMenus", "DetailPanel", "Find", "Geometry", "Keyboard", "Mentions", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Validation"], path: "Tests/MentionsTests"), // layer: test
@@ -430,7 +436,7 @@ let package = Package(
         .executableTarget(name: "PortEdgesTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Connections", "Draw", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortEdgesTests"), // layer: test of Connections
         .executableTarget(name: "MentionTextsTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionTextsTests"), // layer: test of Mentions
         .executableTarget(name: "ValidationChecksTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Draw", "TestKit", "Validation"], path: "Tests/ValidationChecksTests"), // layer: test of Validation
-        .executableTarget(name: "StickersTests", dependencies: ["Canvas", "CanvasTesting", "Clipboard", "ContextMenus", "Keyboard", "Selection", "SlashCommands", "Stickers", "TestKit"], path: "Tests/StickersTests"), // layer: test
+        .executableTarget(name: "EngineeringTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "ContextMenus", "DetailPanel", "Draw", "Engineering", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology"], path: "Tests/EngineeringTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "ContextMenus", "Keyboard", "LanguageRules", "Mentions", "Reordering", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ExamplesTests"), // layer: test
         // The skills' tools where no app is needed: the canvas-digest tool's unit tests under jsc and the canvas-ingest tests that start no app.
         .executableTarget(name: "SkillToolsTests", dependencies: ["CanvasRPC", "SkillTesting", "TestKit"], path: "Tests/SkillToolsTests"), // layer: test

@@ -17,7 +17,7 @@ extension CanvasEditor {
     /// Whether a tool's plugin is on in the file (`isOn(plugin:)`): what the toolbar and `isToolEnabled` ask.
     func isOn(tool id: ToolID) -> Bool { registry.toolPlugins[id].map(isOn(plugin:)) ?? true }
 
-    /// Turns a kit on in the file, or off, in one step named for it ("Turn On Stickers", "Turn Off Stickers"),
+    /// Turns a kit on in the file, or off, in one step named for it ("Turn On Engineering", "Turn Off Engineering"),
     /// as File ▸ Kits does: the file's value (`KitsOn`) gains or loses its id, and every other id it holds,
     /// a kit this app has or not, stays. Nothing for a kit no plugin joins, or one already so.
     public func turn(kit id: KitID, on: Bool) {

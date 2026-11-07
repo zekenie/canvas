@@ -163,7 +163,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
         expectEqual(constants["verticalClearance"]?.numberValue, Double(LayoutProblem.verticalClearance))
         expectEqual(constants["frameInset"]?.numberValue, Double(LayoutProblem.insideGap))
         expectEqual(size(constants["smallest"]?["frame"]), [96, 64].map(Double.init))
-        expectEqual(constants["smallest"]?.objectValue?.keys.sorted(), ["frame"], "the kinds that have a least")
+        expectEqual(constants["smallest"]?.objectValue?.keys.sorted(), ["database", "frame"], "the kinds that have a least")
         // And a draw does what they say: references 16 apart and 80 right of the start, content 40 in from a frame's top-left.
         let editor = shippedEditor()
         _ = try drawnInProcess("""
@@ -262,7 +262,7 @@ private func drawnSize(_ row: JSON) -> [Double]? { size(row["at"]?.arrayValue?.l
             "constants": [
                 "gaps": ["none": 0, "tight": 40, "normal": 80, "wide": 160],
                 "defaultGap": 80, "listStep": 64, "referenceStep": 16, "horizontalClearance": 40, "verticalClearance": 64,
-                "frameInset": 40, "smallest": ["frame": [96, 64]],
+                "frameInset": 40, "smallest": ["database": [96, 64], "frame": [96, 64]],
             ],
             "board": ["id": .number(Double(board.number)), "name": .string(board.displayName), "shows": "root", "showsPath": ["root"]],
         ])

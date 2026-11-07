@@ -1,0 +1,3 @@
+import TestKit
+
+runTests([grammarTests, modelTests, lookTests, commandTests, titleFieldTests, kitTests])

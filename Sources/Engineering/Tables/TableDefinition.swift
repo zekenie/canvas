@@ -1,0 +1,147 @@
+import Adornments
+import AppKit
+import Canvas
+import Geometry
+import Palette
+import Titles
+
+/// A table, at rest: its paper, and a row a column, `KitStyle.rowHeight` apart: in the gutter a primary key's key, else a
+/// unique column's "1"; its name; and at the right its type in grey monospace, an enum-typed column's in a pill that says
+/// the enum's name now, and a nullable column's `?` after it. Its width is its own; its height its rows' (`LaidOutBox`),
+/// so nothing is written when rows come and go. Its rows are its parts (`PartedShape`), each where its row is in its
+/// geometry. Edited, its title is typed in its pill (`TitleField`); rows come with the line field.
+@MainActor
+struct TableDefinition {}
+
+extension TableDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<DatabaseTable>, in context: RenderContext) {
+        let frame = context.shapes.frame(of: shape)
+        KitPaper.draw(frame, in: context)
+        let columns = shape.props.columns
+        for index in KitPaper.rowsInView(columns.count, in: frame, context) {
+            drawColumn(columns[index], in: KitStyle.rowRect(index, in: frame), context)
+        }
+    }
+
+    /// One column's row: its mark, its name, and its type at the right (the type wins the room: a name too long is cut).
+    private func drawColumn(_ column: Column, in row: CGRect, _ context: RenderContext) {
+        let cg = context.cg, middle = row.midY
+        if column.primaryKey {
+            RowMarks.draw(TableStyle.keySymbol, color: TableStyle.keyColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
+        } else if column.unique {
+            RowMarks.draw(TableStyle.uniqueSymbol, color: TableStyle.uniqueColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
+        }
+        var end = row.maxX - KitStyle.trailingInset
+        if column.nullable {
+            let null = RowText.line(TableStyle.nullMark, .null)
+            end -= null.width
+            RowText.draw(null, at: end, middle: middle, in: cg)
+        }
+        let start = row.minX + KitStyle.nameInset
+        if let pill = enumPill(of: column, in: context) {
+            let size = pill.contentSize
+            end = max(start, end - size.width)
+            pill.draw(at: CGPoint(x: end, y: middle - size.height / 2), in: cg)
+        } else if !column.type.words.isEmpty {
+            let type = RowText.line(column.type.words, .type)
+            let room = max(0, end - start - KitStyle.nameGap - RowText.line(column.name, .name).width)
+            let width = min(type.width, max(room, (end - start) / 2))
+            end -= width
+            RowText.draw(type, at: end, middle: middle, room: width, in: cg)
+        }
+        RowText.draw(RowText.line(column.name, .name), at: start, middle: middle, room: end - KitStyle.nameGap - start, in: cg)
+    }
+
+    /// An enum-typed column's pill: the enum its type names, while it's in the file, by its name now.
+    private func enumPill(of column: Column, in context: RenderContext) -> AdornmentLabel? {
+        guard let id = column.type.shape, let record = context.shape(inFile: id), record.kind == DatabaseEnum.kind else { return nil }
+        let name = context.shapes.registry.title(of: record) ?? column.type.words
+        return AdornmentLabel(name).tinted(TableStyle.enumPill)
+    }
+
+    /// Its laid-out frame, and a part a row.
+    func geometry(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> ShapeGeometry {
+        let frame = context.frame(of: shape)
+        let parts = shape.props.columns.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect($0, in: frame)) }
+        return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
+    }
+
+    func indicatorPath(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGPath {
+        KitStyle.paperPath(context.frame(of: shape))
+    }
+}
+
+/// As wide as it stores, as tall as its rows.
+extension TableDefinition: LaidOutBox {
+    func laidOutSize(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGSize {
+        CGSize(width: shape.frame.width, height: KitStyle.height(rows: shape.props.columns.count))
+    }
+}
+
+/// Its stored height is kept in step with its rows wherever it's made from properties (`canvas draw`), so the box it
+/// stores is the table as it's laid out.
+extension TableDefinition: DerivedProps {
+    func derive(_ table: inout DatabaseTable) {
+        table.frame.size.height = KitStyle.height(rows: table.columns.count)
+    }
+}
+
+/// Given a frame (a resize, `size:`), it takes its place and its width; its height stays its rows'.
+extension TableDefinition: CustomSizing {
+    func size(_ shape: inout ShapeRecord<DatabaseTable>, to frame: CGRect, giving axes: SizeAxes, in context: ShapeContext) {
+        shape.props.frame.origin = frame.origin
+        if axes.contains(.width) { shape.props.frame.size.width = frame.width }
+        derive(&shape.props)
+    }
+}
+
+/// Its rows are its parts: a column each, by its name.
+extension TableDefinition: PartedShape {
+    func parts(of shape: ShapeRecord<DatabaseTable>) -> [PartName] {
+        shape.props.columns.map { column in
+            PartName(id: column.id, name: column.name, kindWord: "Column",
+                     lead: column.primaryKey ? .symbol(TableStyle.keySymbol) : column.unique ? .symbol(TableStyle.uniqueSymbol) : .none)
+        }
+    }
+}
+
+/// Zoomed out: its paper, a bar a name and a bar a type in one fill, and its enums' pills in another.
+extension TableDefinition: CustomSkeleton {
+    func renderSkeleton(_ shape: ShapeRecord<DatabaseTable>, in context: RenderContext) {
+        let frame = context.shapes.frame(of: shape)
+        KitPaper.drawSkeleton(frame, in: context)
+        let columns = shape.props.columns
+        var text: [CGRect] = [], pills: [CGRect] = []
+        for index in KitPaper.rowsInView(columns.count, in: frame, context) {
+            let column = columns[index], row = KitStyle.rowRect(index, in: frame)
+            let start = row.minX + KitStyle.nameInset, end = row.maxX - KitStyle.trailingInset
+            let type = KitPaper.bar(columns: SkeletonText.columns(of: column.type.words, upTo: TableStyle.skeletonMostColumns),
+                                    column: TableStyle.skeletonTypeColumn, at: end, trailing: true, in: row, room: (end - start) / 2)
+            if let type {
+                if column.type.shape != nil { pills.append(type) } else { text.append(type) }
+            }
+            if let name = KitPaper.bar(columns: SkeletonText.columns(of: column.name, upTo: TableStyle.skeletonMostColumns), column: TableStyle.skeletonNameColumn,
+                                       at: start, in: row, room: max(0, (type?.minX ?? end) - KitStyle.nameGap - start)) {
+                text.append(name)
+            }
+        }
+        context.fillSkeletonText(text)
+        guard !pills.isEmpty else { return }
+        for pill in pills { context.cg.addPath(CGPath(roundedRect: pill, cornerWidth: pill.height / 2, cornerHeight: pill.height / 2, transform: nil)) }
+        context.cg.setFillColor(TableStyle.enumPill.color.cgColor)
+        context.cg.fillPath()
+    }
+}
+
+/// Edited, its name is typed in its pill: the field over the pill's row, above its paper.
+extension TableDefinition: Editable {
+    func editingFrame(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGRect? {
+        TitleField.editingFrame(around: context.frame(of: shape), zoom: context.zoom)
+    }
+
+    func makeEditingView(for shape: ShapeRecord<DatabaseTable>, context: EditContext<DatabaseTable>) -> EditingView {
+        TitleField.editingView(for: shape, context: context, systemImage: TableStyle.symbol, tint: nil, placeholder: TableStyle.label, name: TableStyle.titleFieldName)
+    }
+
+    var editingStepName: String? { TableStyle.renameStep }
+}

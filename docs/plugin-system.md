@@ -2267,20 +2267,21 @@ command line doesn't read or write one.
 ## Kits
 
 A kit is a named set of the plugins the app ships, which a file turns on or off as one: File ▸ Kits ▸
-Stickers. Off in a file, a kit's ways in are gone from it (its tools, their Insert items, its keys, its
+Engineering. Off in a file, a kit's ways in are gone from it (its tools, their Insert items, its keys, its
 slash commands, its menu items, its paste readers); its shapes stay drawn, editable and checked, since the
 registry is still built once with every plugin. Every kit is off until someone turns it on, so a file
 without a kit shows nothing extra. The core knows what a kit is and never which kits exist
-([`Kits.swift`](../Sources/Canvas/Plugins/Kits.swift)), and the example kit, Stickers
-([`Examples/Stickers`](../Examples/Stickers)), stays only until the first real kit lands.
+([`Kits.swift`](../Sources/Canvas/Plugins/Kits.swift)). The kit that ships is Engineering
+([`Sources/Engineering`](../Sources/Engineering), [The engineering kit](#the-engineering-kit)), which
+took the place of the example kit, Stickers.
 
 **A kit is a type**, the key, as a file property is:
 
 ```swift
-public enum StickersKit {}
-extension StickersKit: Kit {
-    public static let id: KitID = "stickers"       // what a file keeps; never changed once shipped
-    public static var title: String { "Stickers" }  // File ▸ Kits ▸ Stickers, Insert ▸ Stickers, Turn On Stickers
+public enum EngineeringKit {}
+extension EngineeringKit: Kit {
+    public static let id: KitID = "engineering"       // what a file keeps; never changed once shipped
+    public static var title: String { "Engineering" }  // File ▸ Kits ▸ Engineering, Insert ▸ Engineering, Turn On Engineering
 }
 ```
 
@@ -2288,16 +2289,16 @@ extension StickersKit: Kit {
 then the kit's; nothing else it gives is:
 
 ```swift
-registrar.join(StickersKit.self)
+registrar.join(EngineeringKit.self)
 ```
 
 There is no list of a kit's plugins anywhere: the kit is the plugins that join it. A module whose ways
 in are partly always on puts those in a plugin value of their own, which joins nothing. The registry
 refuses a plugin in two kits (or one twice), two kit types of one id and two kits of one title; its
-report says `kit stickers` first on each member's line. Once a plugin joins a kit, the core declares
+report says `kit engineering` first on each member's line. Once a plugin joins a kit, the core declares
 its file value (`kits`), gives each kit an item in File ▸ Kits (`CanvasCommand.kit(_:)`, checked while
 the kit is on, never switched itself) and puts the Insert items of a kit's tools in a submenu named for
-the kit (`KitShapes<StickersKit>`); a list where no plugin joins one has none of it.
+the kit (`KitShapes<EngineeringKit>`); a list where no plugin joins one has none of it.
 
 **What a kit switches** is a point that says so, `KitSwitched`, a marker its owner adds in an extension:
 
@@ -2323,9 +2324,9 @@ kind and set of kits on, so a per-shape ask costs what it did. A reader that gat
 contributions once gathers them again when `editor.kits` changes. `registry.contributions(to:)` still
 holds every contribution, which a point's `check` reads.
 
-**Turning one on or off** is one step, "Turn On Stickers" or "Turn Off Stickers":
-`editor.turn(StickersKit.self, on: true)`, which File ▸ Kits runs. The file keeps the ids of the kits
-on, sorted, `[ "stickers" ]` in its `values` (format 6 only while one is on); an id this app has no
+**Turning one on or off** is one step, "Turn On Engineering" or "Turn Off Engineering":
+`editor.turn(EngineeringKit.self, on: true)`, which File ▸ Kits runs. The file keeps the ids of the kits
+on, sorted, `[ "engineering" ]` in its `values` (format 6 only while one is on); an id this app has no
 kit for stays and is written back. A tool in use whose kit goes off gives way to the default tool.
 
 **In the window** the menu bar follows the key window's file: `BoardMenus.showCommands(of:in:registry:)`
@@ -2337,7 +2338,48 @@ submenu.
 **Testing.** CanvasTesting's `Workshop` and `Studio` are the tests' kits, and `WorkshopPlugin` a plugin
 in one (planks, a tool and Edit ▸ Carve): each module's tests join a kit with fixture plugins of their
 own. [`KitTests`](../Tests/CanvasTests/KitTests.swift) hold the core; each horizontal's tests hold its
-switched point; StickersTests and CompositionTests' `kitsShippedTests` hold the example.
+switched point; EngineeringTests' `kitTests` and CompositionTests' `kitsShippedTests` hold the kit that ships.
+
+## The engineering kit
+
+The first real kit ([`Sources/Engineering`](../Sources/Engineering), product): database tables, their
+enums and the databases that hold them. One module in parts, `Model` (the kinds' props, `TypeRef`,
+`KitStyle`), `Grammar` (the line grammars, pure) and `Tables` (the kinds drawn, placed and written), since
+the APIs that come later name tables and two products could not see each other. Its plugin joins the kit
+and gives:
+
+```swift
+registrar.join(EngineeringKit.self)
+registrar.shape(TableDefinition()) { table in
+    table.tool(label: "Table", systemImage: "tablecells", placing: table.editingPlacement(size: …) { DatabaseTable.starter() })
+    table.title(symbolInPill: true, placeholderInPill: "Table", bars: true)   // named in its pill; a bar zoomed out
+    …
+}
+registrar.tableCommands(placing: plainTable)                             // /table, /database, Create Database
+registrar.rowsDraw()                                                     // canvas draw's columns: and values:
+```
+
+A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
+unique, pk, default, on delete, on update and the words no grammar placed); it stores its width and lays
+its height out from its rows (`LaidOutBox`), so a row costs no write of the box. Its rows are its parts
+(`PartedShape`, below). A column is written as a line, `name type [null] [unique] [default …] [pk]`,
+by `ColumnGrammar`, whose printer gives back what it read. [engineering](../.claude/rules/engineering.md)
+is the whole of it.
+
+**Parts.** A kind whose shapes are made of rows says them from the record, the core's one source of rows:
+
+```swift
+extension TableDefinition: PartedShape {
+    func parts(of shape: ShapeRecord<DatabaseTable>) -> [PartName] {
+        shape.props.columns.map { PartName(id: $0.id, name: $0.name, kindWord: "Column") }
+    }
+}
+```
+
+and where each is in its geometry (`ShapeGeometry(outline:…, parts: PartFrames(…))`, each a `PartFrame`: its
+id, its rect as wide as the shape at the row, and whether it's shown), worked out with the rest of it.
+`registry.parts(of:)` reads them; a `PartAddress` is a shape and maybe one of its parts. Nothing binds a
+part yet.
 
 ## Selection
 
@@ -15777,7 +15819,7 @@ and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:stickers in FileMenu.KitList
+core                 tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:engineering in FileMenu.KitList
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⇧↩ → command insertBeside · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
@@ -15867,7 +15909,7 @@ type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Ty
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-stickers             kit stickers · shape emoji-sticker · label Sticker → emoji-sticker · tool emoji-sticker · command insert:emoji-sticker in KitShapes<StickersKit> · tool emoji-sticker-heart · command insert:emoji-sticker-heart in KitShapes<StickersKit> · tool emoji-sticker-star · command insert:emoji-sticker-star in KitShapes<StickersKit> · tool emoji-sticker-party · command insert:emoji-sticker-party in KitShapes<StickersKit> · ShapeResizing → emoji-sticker · parts resize handles → emoji-sticker · accessibility → emoji-sticker · /sticker → emoji-sticker · ShapeContextMenus in ShapeMenuGroup first → emoji-sticker · paste reader emoji
+engineering          kit engineering · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as

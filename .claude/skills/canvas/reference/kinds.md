@@ -6,19 +6,40 @@ Don't edit it: `mise run skill:kinds` writes it again. -->
 Generated from `canvas kinds`, the app's own answer, so it is what the installed plugins say today; `mise run skill:kinds` writes it again. [language.md](language.md)
 says what the words in it do; `canvas kinds <kind> --schema` adds a kind's JSON Schema.
 
-## `emoji-sticker`
+## `database`
 
-Called Sticker, placed by the Thumbs Up tool
+Called Database, placed by the Database tool
 
-- **size**: `96x96`
-- **named**: `none`
+- **size**: `640x400`
+- **smallest**: `96x64`; a `size:` under it is refused
+- **holds**: `shapes`; `in "X"` names it
+- **named**: `named`
 
 | attribute | takes |
 |---|---|
-| `emoji` | text |
 | `locked` | true\|false |
+| `private` | true\|false |
 
 **edges**: none
+
+**via**: `reference` (needs `public`) can stand for it
+
+## `enum-type`
+
+Called Enum, placed by the Enum tool
+
+- **size**: `220x44`
+- **named**: `named`
+
+| attribute | takes |
+|---|---|
+| `locked` | true\|false |
+| `private` | true\|false |
+| `values` | lines (a value each) or JSON [{id, text}] |
+
+**edges**: none
+
+**via**: `reference` (needs `public`) can stand for it
 
 ## `frame`
 
@@ -112,6 +133,23 @@ Called Subboard, placed by the Subboard tool
 | right | `subboard-link`, `note-link`, `frame-link` |
 | bottom | `subboard-link`, `note-link`, `frame-link` |
 | left | `subboard-link`, `note-link`, `frame-link` |
+
+**via**: `reference` (needs `public`) can stand for it
+
+## `table`
+
+Called Table, placed by the Table tool
+
+- **size**: `260x44`
+- **named**: `named`
+
+| attribute | takes |
+|---|---|
+| `columns` | lines (name type [null] [unique] [default …] [pk]) or JSON [{default, id, name, nullable, onDelete, onUpdate, primaryKey, type, unique, unread}] |
+| `locked` | true\|false |
+| `private` | true\|false |
+
+**edges**: none
 
 **via**: `reference` (needs `public`) can stand for it
 

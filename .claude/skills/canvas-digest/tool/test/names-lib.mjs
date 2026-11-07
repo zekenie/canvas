@@ -6,7 +6,12 @@ import { TOOL_DIR } from '../lib/util.mjs';
 // jsc cannot list a folder: the modules are named here, and run.js (under node) fails if lib/ has one that isn't
 export const LIB_MODULES = ['check', 'cli', 'cost', 'dial', 'elk', 'emit', 'geom', 'layout', 'model', 'moves', 'noise', 'plan', 'promote', 'sizes', 'stress', 'util'];
 
-/** The names of the app a kinds answer holds, each with what it is: kinds, attributes (and what a pill needs of its shape), channels. */
+/** The tool's own words, which a name of the app may be spelled as and still be the tool's: how a board's ranks run (`--ranks`, `layout.ranks`),
+ *  rows or columns, as a table's `columns` attribute is spelled. Said here so the check passes them by name, and no other. */
+export const OWN_WORDS = ['rows', 'columns'];
+
+/** The names of the app a kinds answer holds, each with what it is: kinds, attributes (and what a pill needs of its shape), channels; the tool's own
+ *  words (`OWN_WORDS`) left out. */
 export function namesIn(kinds) {
   const names = Object.create(null);
   for (const k of kinds || []) {
@@ -15,6 +20,7 @@ export function namesIn(kinds) {
     for (const v of k.via || []) { if (v.kind) names[v.kind] = 'kind'; if (v.needs) names[v.needs] = 'attribute'; }
     for (const side of Object.keys(k.edges || {})) for (const c of k.edges[side] || []) names[c] = 'channel';
   }
+  for (const word of OWN_WORDS) delete names[word];
   return names;
 }
 

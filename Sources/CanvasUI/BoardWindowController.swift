@@ -60,7 +60,7 @@ public final class BoardWindowController: NSWindowController {
     }
 
     /// The menu bar's items for the file's kits: while this window is key, an item of a kit the file turns off
-    /// goes and one it turns on comes back, as its kits change (an undo of Turn On Stickers too), read again
+    /// goes and one it turns on comes back, as its kits change (an undo of Turn On Engineering too), read again
     /// the next turn each time they do.
     private func followKits() {
         _ = withObservationTracking { editor.kits } onChange: { [weak self] in
@@ -426,7 +426,7 @@ extension BoardWindowController: NSMenuItemValidation {
             if editor.registry.moment(of: command) == .whenIdle, window?.firstResponder is NSText { return false }
             // A command named for the step it would take (Enclosing Group, Enclosing Frame): its item follows.
             if let title = board?.editor.menuTitle(of: command), item.title != title { item.title = title }
-            // A command that turns something on and off (File ▸ Kits ▸ Stickers): its item is checked while it's on.
+            // A command that turns something on and off (File ▸ Kits ▸ Engineering): its item is checked while it's on.
             if let checked = board?.editor.isChecked(command) { item.state = checked ? .on : .off }
             return board?.editor.canPerform(command) == true
         }

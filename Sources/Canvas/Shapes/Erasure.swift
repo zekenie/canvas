@@ -49,6 +49,12 @@ extension Editable {
     }
 }
 
+extension PartedShape {
+    func erasedParts(of record: AnyShapeRecord) -> [PartName]? {
+        record.typed(as: Props.self).map { parts(of: $0) }
+    }
+}
+
 extension LaidOutBox {
     func erasedLaidOut(of record: AnyShapeRecord, in context: ShapeContext) -> LaidOutSize? {
         record.typed(as: Props.self).map { LaidOutSize(size: laidOutSize(of: $0, in: context), anchor: laidOutAnchor(of: $0, in: context)) }

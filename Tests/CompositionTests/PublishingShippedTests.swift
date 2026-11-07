@@ -10,7 +10,6 @@ import Mentions
 import Publishing
 import Selection
 import ShippedTesting
-import Stickers
 import StickyNotes
 import TestKit
 
@@ -22,11 +21,11 @@ import TestKit
 }
 
 @MainActor let publishingShippedTests = Suite("Publishing, as shipped", [
-    test("every kind can be public but the arrow, the reference and the example's sticker, whose definitions adopt NeverPublic; every other holds `private`, and is mentionable, so it can be picked") {
+    test("every kind can be public but the arrow and the reference, whose definitions adopt NeverPublic; every other holds `private`, and is mentionable, so it can be picked") {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         for kind in registry.kinds {
-            if kind == "arrow" || kind == "reference" || kind == Sticker.kind {
-                expect(!registry.canBePublic(kind), "nothing binds to an arrow, a reference stands for what's public, and nothing names a sticker")
+            if kind == "arrow" || kind == "reference" {
+                expect(!registry.canBePublic(kind), "nothing binds to an arrow, and a reference stands for what's public")
                 expect(!registry.properties(for: kind).contains("private"))
             } else {
                 expect(registry.canBePublic(kind), "\(kind) can be public")

@@ -319,6 +319,16 @@ public protocol ShapeReferencing: ShapeDefinition {
 /// along is the transaction's to say (`Transaction.deletedAlong`), so its step is named for it.
 public protocol TakesBoundShapes: ShapeDefinition {}
 
+/// Each shape of this kind has parts other shapes may one day address: its rows (a table's columns). The one source
+/// of what they are: a picker, a pill, Find and VoiceOver read them here, so they say a row alike. Pure, from the
+/// record, so it's read for a shape on any board. Where each is drawn is the kind's geometry's
+/// (`ShapeGeometry.parts`), worked out with the rest. Conform in an extension.
+public protocol PartedShape: ShapeDefinition {
+    /// Its parts, in reading order: each one's id (the shape's own, kept by a copy), name, kind word, lead and
+    /// whether it stands alone.
+    func parts(of shape: ShapeRecord<Props>) -> [PartName]
+}
+
 /// Each shape of this kind owns a board, one under the board it's on: kept in the file under its id
 /// (`BoardID(owner:)`, `CanvasFile.children`), not in its props. The core keeps a board with the
 /// shape whose id keys it, whatever that shape's kind; this says which kinds' shapes own theirs, so

@@ -5,6 +5,7 @@ import CanvasTesting
 import CanvasUI
 import Clipboard
 import DetailPanel
+import Engineering
 import Find
 import Foundation
 import Geometry
@@ -15,7 +16,6 @@ import Mentions
 import Reordering
 import Selection
 import ShippedTesting
-import Stickers
 import StickyNotes
 import SwiftUI
 import TestKit
@@ -407,11 +407,11 @@ let boardType = "com.example.InfiniteCanvas.board"
         expectEqual(recent.items.map { $0.action.map(NSStringFromSelector) }, ["clearRecentDocuments:"])
         let file = try require(menus.main.item(withTitle: "File")?.submenu)
         expectEqual(file.items.map(\.title), ["New", "Open…", "Open Recent", "", "Close", "Save…", "Save As…", "Revert to Saved", "", "Kits"])
-        // File ▸ Kits: the core's item for each kit, the example's Stickers, which turns it on or off.
+        // File ▸ Kits: the core's item for each kit, Engineering, which turns it on or off.
         let kits = try require(file.item(withTitle: "Kits")?.submenu)
-        expectEqual(kits.items.map(\.title), ["Stickers"])
+        expectEqual(kits.items.map(\.title), ["Engineering"])
         expectEqual(kits.items.map { $0.action.map(NSStringFromSelector) }, ["runCommand:"])
-        expectEqual(kits.items.compactMap(BoardMenus.command(of:)), [.kit(StickersKit.id)])
+        expectEqual(kits.items.compactMap(BoardMenus.command(of:)), [.kit(EngineeringKit.id)])
         // AppKit's own items, which text answers first, carrying the command that answers each on the board.
         try check("Edit", "Undo", "undo:", "z", runs: .undo)
         try check("Edit", "Redo", "redo:", "z", [.command, .shift], runs: .redo)
@@ -431,8 +431,8 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("Insert", "New Shape Beside", .insertBeside, "\r", .shift)
         try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)))
         let insert = try require(menus.main.item(withTitle: "Insert")?.submenu)
-        expectEqual(insert.items.map(\.title), ["New Shape Beside", "Note", "Subboard", "Frame", "Reference", "Stickers", "", "Connect"], "and the example kit's tools in a submenu named for it, then Connect (⌘L) in a section of its own")
-        expectEqual(try require(insert.item(withTitle: "Stickers")?.submenu).items.map(\.title), ["Thumbs Up", "Heart", "Star", "Party"])
+        expectEqual(insert.items.map(\.title), ["New Shape Beside", "Note", "Subboard", "Frame", "Reference", "Engineering", "", "Connect"], "and the engineering kit's tools in a submenu named for it, then Connect (⌘L) in a section of its own")
+        expectEqual(try require(insert.item(withTitle: "Engineering")?.submenu).items.map(\.title), ["Table", "Enum", "Database"])
         let find = try require(edit.item(withTitle: "Find")?.submenu)
         expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])
         expectEqual(find.items.compactMap(BoardMenus.command(of:)), [.find, .findNext, .findPrevious], "never an AppKit find action, which a text view answers")

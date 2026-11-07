@@ -1,8 +1,10 @@
 [
  {"kind":"arrow","drawable":false,"why":"it joins two shapes: write edge \"A\" -> \"B\""},
- {"kind":"emoji-sticker","drawable":true},
+ {"kind":"database","drawable":true,"holds":"shapes","via":[{"kind":"reference"}]},
+ {"kind":"enum-type","drawable":true,"via":[{"kind":"reference"}]},
  {"kind":"frame","drawable":true,"holds":"shapes","via":[{"kind":"reference"}]},
  {"kind":"reference","drawable":true},
  {"kind":"sticky-note","drawable":true,"via":[{"kind":"reference"}]},
- {"kind":"subboard","drawable":true,"holds":"board","via":[{"kind":"reference"}]}
+ {"kind":"subboard","drawable":true,"holds":"board","via":[{"kind":"reference"}]},
+ {"kind":"table","drawable":true,"via":[{"kind":"reference"}]}
 ]

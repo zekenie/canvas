@@ -1,5 +1,7 @@
+import Adornments
 import AppKit
 import Canvas
+import Palette
 
 /// A title on its shape, zoomed out: a shape the canvas draws as a skeleton (`editor.drawsSkeleton(of:)`,
 /// below the editor's `skeletonZoom`, 35%) shows no adornments, and so no pill, so its title is said
@@ -238,12 +240,18 @@ struct TitleCoverOverlay: CanvasOverlay {
     func draw(in context: OverlayContext) {
         guard context.drawsSkeletons else { return }
         let editor = context.editor
-        let reach = context.worldDrawingReach
+        let reach = context.worldDrawingReach + TitleBar.reach / context.zoom
         let visible = context.visibleRect.insetBy(dx: -reach, dy: -reach)
+        var bars = TitleBars()
         for record in editor.paintOrder(in: visible) where context.drawsSkeleton(of: record.id) {
+            if let bar = TitleBar.bar(of: record, in: context.shapes, offset: context.worldDrawingOffset(of: record.id)) {
+                bars.add(bar)
+                continue
+            }
             guard let found = TitleCoverStyle.cover(of: record, in: context.shapes, editor: editor) else { continue }
             draw(found, offset: context.worldDrawingOffset(of: record.id), in: context)
         }
+        bars.fill(in: context.cg)
         guard !context.pendingShapes.isEmpty else { return }
         context.drawingPending {
             for record in context.pendingShapes {
@@ -263,5 +271,61 @@ struct TitleCoverOverlay: CanvasOverlay {
         found.layout.halo.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
         found.layout.string.draw(with: found.layout.drawRect, options: TitleCoverStyle.options)
         cg.restoreGState()
+    }
+}
+
+/// A title zoomed out, for a kind that asks (`title(bars: true)`): a bar where its pill is, above the shape's top-left
+/// corner, as long as its title reads, in its pill's color, so a board of tables far out reads as cards under their
+/// names' bars (E8's 30%) rather than names printed over their rows. No text, no symbol; the shapes' bars are filled a
+/// color at a time (`TitleBars`).
+@MainActor
+enum TitleBar {
+    /// The bar's height, as much of the pill's.
+    static let heightFraction: CGFloat = 0.4
+    /// A column of its title, view points: the pill's 11-point text, as `SkeletonText` counts a column.
+    static let column: CGFloat = SkeletonTextMetrics.systemFontColumn * 11
+    /// What the bar keeps besides its title's columns, view points: the pill's padding at both ends and its symbol.
+    static let lead: CGFloat = 26
+    /// The farthest a bar reaches above its shape, view points: what the overlay looks past the view's edge for.
+    static let reach: CGFloat = AdornmentLayout.rowReach
+    /// The pill's gray, which a bar is drawn in where no look tints it: as the pill is in the light appearance, lighter
+    /// in the dark, where the pill's dark gray would be lost on the canvas.
+    static let fill = NSColor(name: nil) { $0.isDark ? NSColor(white: 0.5, alpha: 0.9) : NSColor(white: 0.25, alpha: 0.9) }
+
+    /// A titled shape's bar, world units, where its shape is drawn (moved by `offset`); nil for a kind that draws a
+    /// cover, an untitled shape, and one too small on screen to say anything (`TitleCoverStyle.smallestShape`).
+    static func bar(of record: AnyShapeRecord, in shapes: ShapeContext, offset: CGPoint) -> (rect: CGRect, color: NSColor?)? {
+        guard !record.isOpaque, let found = shapes.registry.titleBar(of: record), let geometry = shapes.geometry(of: record.id),
+              !geometry.bounds.isNull else { return nil }
+        let bounds = geometry.bounds.offsetBy(dx: offset.x, dy: offset.y), zoom = shapes.zoom
+        guard bounds.width * zoom >= TitleCoverStyle.smallestShape.width else { return nil }
+        let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction
+        let points = lead + column * CGFloat(SkeletonText.columns(of: found.title, upTo: 80))
+        let width = min(bounds.width, points * row.height / AdornmentLayout.rowHeight)
+        return (CGRect(x: row.minX, y: row.midY - height / 2, width: width, height: height), found.color)
+    }
+}
+
+/// The bars of the shapes in view, by color: each color's filled at once, so a board of hundreds costs a fill a color.
+struct TitleBars {
+    private var plain: [CGRect] = []
+    private var tinted: [NSColor: [CGRect]] = [:]
+
+    mutating func add(_ bar: (rect: CGRect, color: NSColor?)) {
+        if let color = bar.color { tinted[color, default: []].append(bar.rect) } else { plain.append(bar.rect) }
+    }
+
+    @MainActor func fill(in cg: CGContext) {
+        func fill(_ rects: [CGRect], _ color: NSColor) {
+            guard !rects.isEmpty else { return }
+            for rect in rects {
+                let radius = rect.height / 2
+                cg.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            }
+            cg.setFillColor(color.cgColor)
+            cg.fillPath()
+        }
+        fill(plain, TitleBar.fill)
+        for (color, rects) in tinted { fill(rects, color) }
     }
 }
