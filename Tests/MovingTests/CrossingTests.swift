@@ -229,6 +229,19 @@ private struct Shoal {
         expectEqual(viaMenu.ends(of: s.l).to, chosen.id)
         expectEqual(viaMenu.editor.undoHistory.undoName, "Move")
     },
+    test("a closed shape on the destination is not stood for, and the arrow goes straight to it: no relay is left") {
+        let s = Shoal(), far = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), box(s.a, 400, 0), link(s.l, s.a, far)]),
+                              children: [s.p: CanvasDocument(shapes: [closed(box(far, 100, 100))])])
+        let h = try crossingHarness(file)
+        let before = h.file
+        expect(h.run("move-to", on: s.a, with: s.p))
+        expectEqual(h.ends(of: s.l).to, far)
+        expectEqual(h.relays(on: s.pBoard).count + h.relays(on: .root).count, 0)
+        expectEqual(h.file.record(far)?.meta[Closed.self], true)
+        h.editor.undo()
+        try expectFile(h, before, "as it was")
+    },
     test("a move that crosses no arrow makes nothing: a shape with no arrow moved, another pair's link stays as it was, and there is no relay") {
         let s = Shoal(), x = ShapeID()
         let h = try crossingHarness(s.file(root: [box(x, 700, 0)]))

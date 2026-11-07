@@ -24,8 +24,8 @@ extension Budget {
     /// `/move-to` for 100 notes with 100 crossing arrows kept through reference pills, over a board of 10,000 shapes: the commit and
     /// the going there, the thread's CPU time. Never measured before the pills: set to what a release build did, 2026-11-07, 37 ms
     /// at 10,000 shapes (23 at 1,000) against 9 (5) for the same move with no arrow among them: some 0.3 ms a pill, which is
-    /// its landing among the board's solids (see the report line).
-    static let moveCrossingArrows = 50.0
+    /// its landing among the board's solids (see the report line). The budget is some twice that: on a machine with its cores busy the same move took 46 to 56 ms.
+    static let moveCrossingArrows = 80.0
 }
 
 /// A board of `size` generated shapes, and, far from them: an "Archive" subboard, 100 notes to move, 100 notes that stay and the 100

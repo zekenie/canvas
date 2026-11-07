@@ -164,7 +164,8 @@ public struct CrossingArrows {
         private var new: [ShapeID: ShapeID] = [:], away: [ShapeID: ShapeID] = [:], carriers: [ShapeID: ShapeID] = [:]
         /// The last pill planned beside each start: the next goes past it.
         private var last: [ShapeID: CGRect] = [:]
-        private var planned: [CGRect] = []
+        /// The boxes of the pills planned on each board: what the next on that board keeps clear of.
+        private var planned: [BoardID: [CGRect]] = [:]
         private var sourceIndex: StandInRoute.Index?
         private var destPills: [ShapeID: [ShapeID]]?
         private var sourceSide: Surroundings?
@@ -303,14 +304,14 @@ public struct CrossingArrows {
                 spot = route.spot(beside: start, edgeIs: .from, side: nil, in: surroundings.reading, staying: { !movers.contains($0) }, index: index())
                 against = nil
             }
-            var avoiding = planned
+            var avoiding = planned[board] ?? []
             if startMoves { avoiding += movedFrames() }
             let landing = against.map { route.landing(of: size, at: spot, against: $0, in: surroundings, avoiding: avoiding) }
                 ?? route.landing(of: size, at: spot, in: surroundings, avoiding: avoiding)
             // A pill that would sit in a frame nobody may change goes unmade, rather than stopping the move.
             guard let landing, !landing.above.contains(where: { isReadOnly($0, in: startMoves ? destDoc : sourceDoc) }) else { return nil }
             made.box = landing.rect
-            planned.append(landing.rect)
+            planned[board, default: []].append(landing.rect)
             last[start] = landing.rect
             pills.append((made, startMoves, true))
             return made.id
