@@ -109,7 +109,8 @@ public struct CanvasCommand: Hashable, Sendable, ExpressibleByStringLiteral, Cus
     public static let undo: CanvasCommand = "undo"
     public static let redo: CanvasCommand = "redo"
     /// View › Zoom In, Zoom Out and Actual Size: the core's own, the camera to the next of the zoom
-    /// stops (`Camera.zoomStops`) in or out, or to 100%, around the view's center.
+    /// stops (`Camera.zoomStops`) in or out, or to 100%, around the middle of what shows of the board
+    /// (`unobscuredViewport`).
     public static let zoomIn: CanvasCommand = "zoomIn"
     public static let zoomOut: CanvasCommand = "zoomOut"
     public static let zoomToActualSize: CanvasCommand = "zoomToActualSize"

@@ -14338,11 +14338,15 @@ nothing, and the view chooses, as it always has. A note too short for its text a
 - **Zooming** is the core's commands, which View's items run (through
   the board's window controller, dimmed while they can't run) and Keyboard gives keys: `.zoomIn`
   and `.zoomOut` (⌘= and ⌘-) go to the next of the stops (`Camera.zoomStops`: 10, 25, 50, 100,
-  200, 400 and 800%) past the zoom where the camera's headed, around the view's center, dimmed at
+  200, 400 and 800%) past the zoom where the camera's headed, around the middle of what shows of
+  the board (`unobscuredViewport`, clear of the title bar and the panes over the canvas), dimmed at
   the last; `.zoomToActualSize` (⌘0, ⇧0) goes to 100%, dimmed there; `.zoomToFit` (⇧1, tldraw's)
   fits every shape of the board shown into view with a first visit's margin, as close as the zoom
   goes, dimmed on an empty board. Each eases the camera over 320 ms (tldraw's animationMediumMs),
-  from where it's headed, so pressing again before it lands goes on from there. Zoom to Fit again,
+  from where it's headed, so pressing again before it lands goes on from there. Every eased camera
+  move (`animateCamera`) moves each edge of the world rect the view shows in a straight line
+  (tldraw's `_animateViewport`), so the point a zoom is around stays put on every frame, where
+  easing the origin and the zoom each on its own would swing it out and back. Zoom to Fit again,
   while the camera is still where the fit left it (at it, or headed for it), goes back to the camera
   from before the fit (Terminal Graph's), and once more fits; any other camera change (a pan, a
   zoom, a stop on the way) forgets it, and so does showing another board. `editor.zoomPercentage`

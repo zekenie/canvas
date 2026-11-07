@@ -48,6 +48,33 @@ import TestKit
         expectEqual(h.editor.camera.zoom, 1)
         expectEqual(h.editor.undoHistory.undoName, nil, "zooming is no step")
     },
+    test("on every frame of a zoom the middle of what shows of the board stays where it is, the title bar and the panes lying over the canvas's edges; pressed again on the way, too") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+        h.editor.coveredEdges = CoveredEdges(top: 52, left: 240, right: 300)
+        let clear = h.editor.unobscuredViewport
+        let middle = CGPoint(x: clear.midX, y: clear.midY)
+        expectEqual(middle, CGPoint(x: 570, y: 426), "not the view's center, (600, 400)")
+        h.editor.camera = Camera(origin: CGPoint(x: -40, y: 75), zoom: 0.5)
+        let shown = h.editor.camera.toWorld(middle)
+        @MainActor func frames(_ count: Int) {
+            for _ in 0..<count {
+                h.wait(16)
+                expectClose(h.editor.camera.toWorld(middle), shown, within: 1e-9)
+            }
+        }
+        for command in [CanvasCommand.zoomIn, .zoomIn, .zoomOut, .zoomOut, .zoomOut, .zoomToActualSize] {
+            expect(h.editor.perform(command))
+            frames(20)
+        }
+        expectEqual(h.editor.camera.zoom, 1)
+        expect(h.editor.perform(.zoomOut))
+        frames(6)
+        expect(h.editor.perform(.zoomOut))
+        frames(20)
+        expectEqual(h.editor.camera.zoom, 0.25, "on from where it was headed")
+        expectEqual(h.scheduler.pendingCount, 0)
+    },
     test("the zoom percentage changes only as the rounded zoom does: a pan, or an animation's frames, leave it") {
         let h = try EditorHarness(plugins: [])
         h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))

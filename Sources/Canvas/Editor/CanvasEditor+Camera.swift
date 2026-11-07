@@ -16,9 +16,11 @@ extension CanvasEditor {
     }
 
     /// Moves the camera to `target` over `duration`, easing in and out (tldraw's default, a cubic),
-    /// a frame every 16 ms, replacing any motion running. Its origin and zoom each follow the
-    /// easing, and the last frame, at `duration`, lands exactly on `target`. Any other camera
-    /// change (a scroll, a pinch, a hand drag, a press) stops it where it is, as it stops a slide.
+    /// a frame every 16 ms, replacing any motion running. Each edge of the world rect the view shows
+    /// follows the easing in a straight line (`camera(between:and:at:)`), so a zoom around a point
+    /// keeps that point where it is on every frame, and the last frame, at `duration`, lands exactly
+    /// on `target`. Any other camera change (a scroll, a pinch, a hand drag, a press) stops it where
+    /// it is, as it stops a slide.
     public func animateCamera(to target: Camera, duration: Duration) {
         animateCamera(to: target, duration: duration, easing: Self.easeInOutCubic)
     }
@@ -180,14 +182,24 @@ extension CanvasEditor {
             }
             let t = easing(CGFloat(now / total))
             isAnimationFrame = true
-            camera = Camera(origin: CGPoint(x: start.origin.x + (target.origin.x - start.origin.x) * t,
-                                            y: start.origin.y + (target.origin.y - start.origin.y) * t),
-                            zoom: start.zoom + (target.zoom - start.zoom) * t)     // stops the animation…
+            camera = Self.camera(between: start, and: target, at: t)     // stops the animation…
             isAnimationFrame = false
             scheduleAnimationFrame(from: start, to: target, elapsed: now, total: total, easing: easing)     // …so it carries on
         }
         cameraAnimationTarget = target
         updateZoomPercentage()
+    }
+
+    /// The camera `t` of the way from `start` to `target` (tldraw's `_animateViewport`): the world rect
+    /// the view shows with each edge `t` of the way along a straight line, so the origin goes `t` of the
+    /// way and so do the world units a view point covers, one over the zoom. A point both cameras show at
+    /// the same place in the view (the one a zoom is around) stays there all the way. Easing the origin
+    /// and the zoom each on its own swings that point out toward the view's bottom right and back.
+    static func camera(between start: Camera, and target: Camera, at t: CGFloat) -> Camera {
+        let span = (1 - t) / start.zoom + t / target.zoom
+        return Camera(origin: CGPoint(x: start.origin.x + (target.origin.x - start.origin.x) * t,
+                                      y: start.origin.y + (target.origin.y - start.origin.y) * t),
+                      zoom: 1 / span)
     }
 
     /// tldraw's EASINGS.easeInOutCubic.
@@ -301,10 +313,13 @@ extension CanvasEditor {
     /// Whether Zoom to Fit has something to fit: the board shown has shapes, and the view a size.
     var canZoomToFit: Bool { !unobscuredViewport.isEmpty && !shapeBounds.isNull }
 
-    /// Zooms to `percent` around the view's center.
+    /// Zooms to `percent` around the middle of what shows of the board: the part of the view the host
+    /// leaves clear (`unobscuredViewport`), between the title bar, the sidebar and the inspector, which
+    /// lie over the canvas's edges.
     func zoom(toPercent percent: Int) {
+        let clear = unobscuredViewport
         var target = cameraTarget
-        target.setZoom(CGFloat(percent) / 100, around: CGPoint(x: viewportSize.width / 2, y: viewportSize.height / 2))
+        target.setZoom(CGFloat(percent) / 100, around: CGPoint(x: clear.midX, y: clear.midY))
         animateCamera(to: target, duration: Style.zoomDuration)
     }
 

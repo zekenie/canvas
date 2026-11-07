@@ -29,19 +29,28 @@ import TestKit
 }
 
 @MainActor let cameraTests = Suite("Camera motion", [
-    test("animateCamera eases the origin and zoom to the target a frame every 16 ms, landing on it at the duration") {
+    test("animateCamera eases each edge of the world rect the view shows to the target's in a straight line, a frame every 16 ms, so a point both cameras show at one place stays there; it lands on the target at the duration") {
         let h = try EditorHarness(plugins: [])
         let target = Camera(origin: CGPoint(x: 300, y: -200), zoom: 2)
+        // The view point where both show one world point: (600, -400) at 100% from the origin, and
+        // at 200% from (300, -200).
+        let fixed = CGPoint(x: 600, y: -400)
+        expectEqual(target.toWorld(fixed), fixed)
         h.editor.animateCamera(to: target, duration: .milliseconds(200))
         expectEqual(h.editor.camera, Camera(), "nothing moves before the first frame")
         var zooms: [CGFloat] = []
         for _ in 0..<12 {
             h.wait(16)
-            zooms.append(h.editor.camera.zoom)
+            let camera = h.editor.camera, along = camera.origin.x / 300
+            zooms.append(camera.zoom)
+            expectClose(camera.toWorld(fixed), fixed, within: 1e-9)
+            // The rect's edges share the easing: its top left goes as far along as the world units a view point covers do.
+            expectClose(camera.origin.y / -200, along, within: 1e-9)
+            expectClose(1 / camera.zoom, 1 + (1.0 / 2 - 1) * along, within: 1e-9)
         }
         expect(zip(zooms, zooms.dropFirst()).allSatisfy { $0 < $1 }, "zooms in every frame: \(zooms)")
-        expectClose(zooms[0], 1 + 4 * pow(16.0 / 200, 3), within: 1e-9)      // eases in: 0.2% of the way, not 8%
-        expectClose(h.editor.camera.origin.x / 300, h.editor.camera.zoom - 1, within: 1e-9)     // origin and zoom share the easing
+        let first = 4 * pow(16.0 / 200, 3)      // eases in: 0.2% of the way, not 8%
+        expectClose(zooms[0], 1 / (1 - first / 2), within: 1e-9)
         h.wait(7)
         expect(h.editor.camera != target, "192 ms: one short frame to go")
         h.wait(1)
