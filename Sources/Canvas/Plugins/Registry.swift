@@ -551,6 +551,9 @@ public struct Registry {
     var willDeleteHandlers: [@MainActor (Set<ShapeID>, inout Transaction) -> Void] {
         contributions(to: CorePoints.WillDelete.self).map(\.value)
     }
+    var partsMovedHandlers: [@MainActor ([PartAddress: PartAddress], inout Transaction) -> Void] {
+        contributions(to: CorePoints.PartsMoved.self).map(\.value)
+    }
     /// A kind's rules for what its shapes hold (`keepsInStep`), found once a kind: every write of an
     /// added value asks.
     func stepRules(for kind: ShapeKind) -> [StepRule] {
@@ -657,6 +660,7 @@ struct RawContribution {
         default:
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
+            case is CorePoints.PartsMoved.Type: "parts moved"
             case is CorePoints.KeepsInStep.Type: "keeps in step → \(target)"
             case is CorePoints.ReadOnlyRules.Type: "read-only shapes"
             case is CorePoints.ShapeTints.Type: "shape tints"

@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 import Canvas
 import Geometry
+import LineRows
 import Palette
 import Titles
 
@@ -9,7 +10,8 @@ import Titles
 /// unique column's "1"; its name; and at the right its type in grey monospace, an enum-typed column's in a pill that says
 /// the enum's name now, and a nullable column's `?` after it. Its width is its own; its height its rows' (`LaidOutBox`),
 /// so nothing is written when rows come and go. Its rows are its parts (`PartedShape`), each where its row is in its
-/// geometry. Edited, its title is typed in its pill (`TitleField`); rows come with the line field.
+/// geometry. Edited, its title is typed in its pill (`TitleField`) and its columns a line each (LineRows): it draws no row
+/// the field has and leaves the waiting line's room (`KitRows`).
 @MainActor
 struct TableDefinition {}
 
@@ -17,9 +19,10 @@ extension TableDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<DatabaseTable>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
         KitPaper.draw(frame, in: context)
-        let columns = shape.props.columns
-        for index in KitPaper.rowsInView(columns.count, in: frame, context) {
-            drawColumn(columns[index], in: KitStyle.rowRect(index, in: frame), context)
+        let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
+        for line in KitPaper.rowsInView(rows.lines(columns.count), in: frame, context) {
+            guard let index = rows.row(atLine: line), columns[index].id != rows.focused else { continue }
+            drawColumn(columns[index], in: KitStyle.rowRect(line, in: frame), context)
         }
     }
 
@@ -61,8 +64,8 @@ extension TableDefinition: ShapeDefinition {
 
     /// Its laid-out frame, and a part a row.
     func geometry(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> ShapeGeometry {
-        let frame = context.frame(of: shape)
-        let parts = shape.props.columns.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect($0, in: frame)) }
+        let frame = context.frame(of: shape), rows = KitRows(shape, in: context)
+        let parts = shape.props.columns.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame)) }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
 
@@ -74,7 +77,7 @@ extension TableDefinition: ShapeDefinition {
 /// As wide as it stores, as tall as its rows.
 extension TableDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGSize {
-        CGSize(width: shape.frame.width, height: KitStyle.height(rows: shape.props.columns.count))
+        CGSize(width: shape.frame.width, height: KitStyle.height(rows: KitRows(shape, in: context).lines(shape.props.columns.count)))
     }
 }
 
@@ -110,10 +113,11 @@ extension TableDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<DatabaseTable>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
         KitPaper.drawSkeleton(frame, in: context)
-        let columns = shape.props.columns
+        let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
         var text: [CGRect] = [], pills: [CGRect] = []
-        for index in KitPaper.rowsInView(columns.count, in: frame, context) {
-            let column = columns[index], row = KitStyle.rowRect(index, in: frame)
+        for line in KitPaper.rowsInView(rows.lines(columns.count), in: frame, context) {
+            guard let index = rows.row(atLine: line) else { continue }
+            let column = columns[index], row = KitStyle.rowRect(line, in: frame)
             let start = row.minX + KitStyle.nameInset, end = row.maxX - KitStyle.trailingInset
             let type = KitPaper.bar(columns: SkeletonText.columns(of: column.type.words, upTo: TableStyle.skeletonMostColumns),
                                     column: TableStyle.skeletonTypeColumn, at: end, trailing: true, in: row, room: (end - start) / 2)
@@ -133,14 +137,16 @@ extension TableDefinition: CustomSkeleton {
     }
 }
 
-/// Edited, its name is typed in its pill: the field over the pill's row, above its paper.
+/// Edited, its name is typed in its pill (the field over the pill's row, above its paper) and its columns a line each.
 extension TableDefinition: Editable {
     func editingFrame(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGRect? {
         TitleField.editingFrame(around: context.frame(of: shape), zoom: context.zoom)
     }
 
     func makeEditingView(for shape: ShapeRecord<DatabaseTable>, context: EditContext<DatabaseTable>) -> EditingView {
-        TitleField.editingView(for: shape, context: context, systemImage: TableStyle.symbol, tint: nil, placeholder: TableStyle.label, name: TableStyle.titleFieldName)
+        LineRowsView.make(shape, context: context, model: TableLines(), title: LineTitle { title in
+            TitleField(title: title, systemImage: TableStyle.symbol, tint: nil, placeholder: TableStyle.label, name: TableStyle.titleFieldName)
+        })
     }
 
     var editingStepName: String? { TableStyle.renameStep }

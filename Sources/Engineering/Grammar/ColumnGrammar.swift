@@ -20,42 +20,85 @@ public enum ColumnGrammar {
     /// (`primary key` too), `default` and the word after it, in any order and any case; everything else, a key's `→`
     /// and its target among it, is kept as written, in order.
     public static func read(_ line: String, id: PartID = PartID()) -> Column? {
-        let words = Self.words(of: line)
-        guard let name = words.first else { return nil }
-        var column = Column(id: id, name: name, type: TypeRef(""))
+        scan(line, id: id).column
+    }
+
+    /// What each word of a column's line is: what the line's spans are drawn by.
+    public enum WordRole: Hashable, Sendable {
+        /// Its name.
+        case name
+        /// Its type (a `?` after it included).
+        case type
+        /// A word of the grammar's own: `null`, `not`, `unique`, `pk`, `primary`, `key`, `default`.
+        case keyword
+        /// What follows `default`.
+        case defaultValue
+        /// A key's arrow.
+        case arrow
+        /// Words nothing reads, kept as written (a key's target among them).
+        case unread
+    }
+
+    /// A line read: the column it says (nil for a line with nothing on it), and each word's role and place in it (UTF-16).
+    public struct Scan: Sendable {
+        public var column: Column?
+        public var words: [(role: WordRole, range: NSRange, text: String)]
+    }
+
+    /// Reads a line as `read` does, saying too what each word is and where.
+    public static func scan(_ line: String, id: PartID = PartID()) -> Scan {
+        let words = Self.placedWords(of: line)
+        guard let name = words.first else { return Scan(column: nil, words: []) }
+        var roles: [(role: WordRole, range: NSRange, text: String)] = [(.name, name.range, name.text)]
+        var column = Column(id: id, name: name.text, type: TypeRef(""))
         var rest = words.dropFirst()
-        if let type = rest.first, !isFlag(type) {
+        if let type = rest.first, !isFlag(type.text) {
             rest = rest.dropFirst()
-            if type.count > 1, type.hasSuffix("?") {
-                column.type = TypeRef(String(type.dropLast()))
+            roles.append((.type, type.range, type.text))
+            if type.text.count > 1, type.text.hasSuffix("?") {
+                column.type = TypeRef(String(type.text.dropLast()))
                 column.nullable = true
             } else {
-                column.type = TypeRef(type)
+                column.type = TypeRef(type.text)
             }
         }
         var unread: [String] = []
         while let word = rest.first {
             rest = rest.dropFirst()
-            switch word.lowercased() {
-            case null: column.nullable = true
-            case not where rest.first?.lowercased() == null:
+            switch word.text.lowercased() {
+            case null:
+                column.nullable = true
+                roles.append((.keyword, word.range, word.text))
+            case not where rest.first?.text.lowercased() == null:
+                roles.append((.keyword, word.range, word.text))
+                roles.append((.keyword, rest.first!.range, rest.first!.text))
                 rest = rest.dropFirst()
                 column.nullable = false
-            case unique: column.unique = true
-            case primaryKey: column.primaryKey = true
-            case primary where rest.first?.lowercased() == key:
+            case unique:
+                column.unique = true
+                roles.append((.keyword, word.range, word.text))
+            case primaryKey:
+                column.primaryKey = true
+                roles.append((.keyword, word.range, word.text))
+            case primary where rest.first?.text.lowercased() == key:
+                roles.append((.keyword, word.range, word.text))
+                roles.append((.keyword, rest.first!.range, rest.first!.text))
                 rest = rest.dropFirst()
                 column.primaryKey = true
             case Self.default where rest.first != nil:
-                column.default = rest.first
+                roles.append((.keyword, word.range, word.text))
+                roles.append((.defaultValue, rest.first!.range, rest.first!.text))
+                column.default = rest.first!.text
                 rest = rest.dropFirst()
             default:
                 // A key's arrow, typed either way, and what follows it are kept whole: `→ customers.id`.
-                unread.append(word == typedArrow ? arrow : word)
+                let isArrow = word.text == arrow || word.text == typedArrow
+                roles.append((isArrow ? .arrow : .unread, word.range, word.text))
+                unread.append(word.text == typedArrow ? arrow : word.text)
             }
         }
         column.unread = unread.joined(separator: " ")
-        return column
+        return Scan(column: column, words: roles)
     }
 
     /// The line a column is written as: its name, its type, then `null`, `unique`, `default …` and `pk` as it is,
@@ -113,15 +156,25 @@ public enum ColumnGrammar {
 
     /// A line's words: what whitespace separates, but a quoted run (`'a b'`, `"a b"`) and a parenthesized one
     /// (`numeric(10, 2)`) are one word with what's in them, as SQL writes a type and a default.
-    static func words(of line: String) -> [String] {
-        var words: [String] = [], word = ""
+    static func words(of line: String) -> [String] { placedWords(of: line).map(\.text) }
+
+    /// The words of a line and where each is in it (UTF-16, as `NSRange` counts).
+    public static func placedWords(of line: String) -> [(text: String, range: NSRange)] {
+        var words: [(text: String, range: NSRange)] = [], word = "", start = 0, offset = 0
         var quote: Character?, depth = 0
+        func flush() {
+            if !word.isEmpty { words.append((word, NSRange(location: start, length: offset - start))) }
+            word = ""
+        }
         for character in line {
+            let width = character.utf16.count
+            defer { offset += width }
             if let open = quote {
                 word.append(character)
                 if character == open { quote = nil }
                 continue
             }
+            if word.isEmpty { start = offset }
             switch character {
             case "'", "\"":
                 quote = character
@@ -133,13 +186,12 @@ public enum ColumnGrammar {
                 depth = max(0, depth - 1)
                 word.append(character)
             case _ where character.isWhitespace && depth == 0:
-                if !word.isEmpty { words.append(word) }
-                word = ""
+                flush()
             default:
                 word.append(character)
             }
         }
-        if !word.isEmpty { words.append(word) }
+        flush()
         return words
     }
 }

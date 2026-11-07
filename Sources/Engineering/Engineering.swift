@@ -1,5 +1,6 @@
 import Canvas
 import DetailPanel
+import LineRows
 import Mentions
 import Palette
 import Selection
@@ -37,12 +38,14 @@ public struct EngineeringPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.join(EngineeringKit.self)
-        var plainTable: Placement?
+        registrar.service { KitNames(editor: $0) }
+        var editedTable: Placement?
         registrar.shape(TableDefinition()) { table in
             table.label(TableStyle.label, systemImage: TableStyle.symbol)
             let size = CGSize(width: TableStyle.width, height: KitStyle.height(rows: 1))
-            plainTable = table.placement(size: size) { DatabaseTable.starter() }
-            table.tool(label: TableStyle.label, systemImage: TableStyle.symbol, placing: table.editingPlacement(size: size) { DatabaseTable.starter() })
+            let placing = table.editingPlacement(size: size) { DatabaseTable.starter() }
+            editedTable = placing
+            table.tool(label: TableStyle.label, systemImage: TableStyle.symbol, placing: placing)
             table.tint(NSColor(KitStyle.secondaryInk))
             table.title(symbolInPill: true, placeholderInPill: TableStyle.label, bars: true)
             table.mentionable()
@@ -50,6 +53,7 @@ public struct EngineeringPlugin: ListedPlugin {
             table.contentsRow { _, _ in ContentsLabel("", placeholder: TableStyle.placeholder, systemImage: TableStyle.symbol) }
             table.details(header: { $table in TitleHeader($table, placeholder: TableStyle.placeholder, systemImage: TableStyle.symbol) }) {}
             table.accessibility { table, _ in AccessibleTraits(value: TableStyle.accessibleRows(table.props.columns.count)) }
+            table.lineRows(TableLines())
         }
         registrar.shape(EnumDefinition()) { type in
             type.label(EnumStyle.label, systemImage: EnumStyle.symbol)
@@ -63,6 +67,7 @@ public struct EngineeringPlugin: ListedPlugin {
             type.contentsRow { _, _ in ContentsLabel("", placeholder: EnumStyle.placeholder, systemImage: EnumStyle.symbol) }
             type.details(header: { $type in TitleHeader($type, placeholder: EnumStyle.placeholder, systemImage: EnumStyle.symbol) }) {}
             type.accessibility { type, _ in AccessibleTraits(value: EnumStyle.accessibleRows(type.props.values.count)) }
+            type.lineRows(EnumLines())
         }
         registrar.shape(DatabaseDefinition()) { database in
             database.label(DatabaseStyle.label, systemImage: DatabaseStyle.symbol)
@@ -80,7 +85,7 @@ public struct EngineeringPlugin: ListedPlugin {
                     : AccessibleTraits(value: DatabaseStyle.accessibleContents(editor.shapeContext.contents(of: database.id).count))
             }
         }
-        if let plainTable { registrar.tableCommands(placing: plainTable) }
+        if let editedTable { registrar.tableCommands(placing: editedTable) }
         registrar.rowsDraw()
     }
 }

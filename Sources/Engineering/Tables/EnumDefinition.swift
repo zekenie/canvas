@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import Geometry
+import LineRows
 import Titles
 
 /// An enum, at rest: its paper, and its values a row each in monospace at the names' inset. Its width is its own, its
@@ -13,16 +14,17 @@ extension EnumDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<DatabaseEnum>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
         KitPaper.draw(frame, in: context)
-        let values = shape.props.values
-        for index in KitPaper.rowsInView(values.count, in: frame, context) {
-            let row = KitStyle.rowRect(index, in: frame), start = row.minX + KitStyle.nameInset
+        let values = shape.props.values, rows = KitRows(shape, in: context.shapes)
+        for line in KitPaper.rowsInView(rows.lines(values.count), in: frame, context) {
+            guard let index = rows.row(atLine: line), values[index].id != rows.focused else { continue }
+            let row = KitStyle.rowRect(line, in: frame), start = row.minX + KitStyle.nameInset
             RowText.draw(RowText.line(values[index].text, .value), at: start, middle: row.midY, room: row.maxX - KitStyle.trailingInset - start, in: context.cg)
         }
     }
 
     func geometry(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> ShapeGeometry {
-        let frame = context.frame(of: shape)
-        let parts = shape.props.values.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect($0, in: frame)) }
+        let frame = context.frame(of: shape), rows = KitRows(shape, in: context)
+        let parts = shape.props.values.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame)) }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
 
@@ -33,7 +35,7 @@ extension EnumDefinition: ShapeDefinition {
 
 extension EnumDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> CGSize {
-        CGSize(width: shape.frame.width, height: KitStyle.height(rows: shape.props.values.count))
+        CGSize(width: shape.frame.width, height: KitStyle.height(rows: KitRows(shape, in: context).lines(shape.props.values.count)))
     }
 }
 
@@ -62,9 +64,10 @@ extension EnumDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<DatabaseEnum>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
         KitPaper.drawSkeleton(frame, in: context)
-        let values = shape.props.values
-        context.fillSkeletonText(KitPaper.rowsInView(values.count, in: frame, context).compactMap { index in
-            let row = KitStyle.rowRect(index, in: frame), start = row.minX + KitStyle.nameInset
+        let values = shape.props.values, rows = KitRows(shape, in: context.shapes)
+        context.fillSkeletonText(KitPaper.rowsInView(rows.lines(values.count), in: frame, context).compactMap { line in
+            guard let index = rows.row(atLine: line) else { return nil }
+            let row = KitStyle.rowRect(line, in: frame), start = row.minX + KitStyle.nameInset
             return KitPaper.bar(columns: SkeletonText.columns(of: values[index].text, upTo: TableStyle.skeletonMostColumns), column: EnumStyle.skeletonColumn,
                                 at: start, in: row, room: row.maxX - KitStyle.trailingInset - start)
         })
@@ -77,7 +80,9 @@ extension EnumDefinition: Editable {
     }
 
     func makeEditingView(for shape: ShapeRecord<DatabaseEnum>, context: EditContext<DatabaseEnum>) -> EditingView {
-        TitleField.editingView(for: shape, context: context, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, placeholder: EnumStyle.label, name: EnumStyle.titleFieldName)
+        LineRowsView.make(shape, context: context, model: EnumLines(), title: LineTitle { title in
+            TitleField(title: title, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, placeholder: EnumStyle.label, name: EnumStyle.titleFieldName)
+        })
     }
 
     var editingStepName: String? { EnumStyle.renameStep }

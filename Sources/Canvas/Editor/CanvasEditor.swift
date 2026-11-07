@@ -663,8 +663,8 @@ public final class CanvasEditor {
     }
 
     /// Whether a transaction may begin now: none is under way, no change is being delivered, and no step
-    /// is being put back.
-    var canTransact: Bool { !isApplying && delivery == nil && !isTransacting }
+    /// is being put back. What a view that commits as it's torn down asks first (a row's draft, as editing ends).
+    public var canTransact: Bool { !isApplying && delivery == nil && !isTransacting }
 
     /// `origin` says whether an editing view commits (`EditContext`), whose commits are its session's step.
     func transact<T>(_ name: String?, coalescing key: AnyHashable?, origin: UndoHistory.Origin,

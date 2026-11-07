@@ -13,11 +13,17 @@ public struct TextHighlight: Equatable {
     /// A symbol drawn at its start, in room the text makes for it before the range (a kern on the
     /// character before it, an indent of its line where it starts one), so the characters stay as they are.
     public var symbol: String?
+    /// A line round it, in this color (a pill's edge), nil for none.
+    public var stroke: NSColor?
+    /// Whether that line is dashed: what's named but matches nothing yet (a body's type before its note exists).
+    public var isDashed: Bool
 
-    public init(range: NSRange, fill: NSColor, symbol: String? = nil) {
+    public init(range: NSRange, fill: NSColor, symbol: String? = nil, stroke: NSColor? = nil, isDashed: Bool = false) {
         self.range = range
         self.fill = fill
         self.symbol = symbol
+        self.stroke = stroke
+        self.isDashed = isDashed
     }
 }
 
@@ -80,6 +86,18 @@ extension EditingTextView {
             highlight.fill.setFill()
             for frame in frames where frame.intersects(dirtyRect) {
                 NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).fill()
+            }
+            if let stroke = highlight.stroke {
+                // Inside the fill's edge, so a line one wide stays in the rect the fill is.
+                let width = TextEditingStyle.highlightStrokeWidth
+                stroke.setStroke()
+                for frame in frames where frame.intersects(dirtyRect) {
+                    let line = frame.insetBy(dx: width / 2, dy: width / 2)
+                    let path = NSBezierPath(roundedRect: line, xRadius: max(0, radius - width / 2), yRadius: max(0, radius - width / 2))
+                    path.lineWidth = width
+                    if highlight.isDashed { path.setLineDash(TextEditingStyle.highlightDash, count: TextEditingStyle.highlightDash.count, phase: 0) }
+                    path.stroke()
+                }
             }
             if let image, let symbolCenter, let first = frames.first, first.intersects(dirtyRect) {
                 let size = image.size

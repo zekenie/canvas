@@ -87,7 +87,9 @@ extension SampleBoardWindow {
         }
         for exception in KeyMeanings.exceptions {
             expect(!exception.reason.isEmpty, "\(exception.id) gives no reason")
-            expect(exception.keys.allSatisfy { withExceptions.contains($0) }, "the exception \(exception.id) is for keys whose rows name no exception in the principle")
+            // A key held with a modifier (⌥↑) is its key's row's: the row says the exceptions of its key, whatever is held.
+            expect(exception.keys.allSatisfy { key in withExceptions.contains { $0.key == key.key } },
+                   "the exception \(exception.id) is for keys whose rows name no exception in the principle")
         }
         for row in KeyMeanings.canonical where row.meaning != .filter { expect(!row.chords.isEmpty, "\(row.keys) has no chord to press") }
     },
