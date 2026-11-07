@@ -231,11 +231,13 @@ final class ClipboardState {
         let along = copied.along.intersection(whole).subtracting(ids)
         editor.transact("Cut") { tx in
             tx.delete(whole)
+            // Only what left: a read-only shape asked for, or taken along by the copy, stays and isn't named.
             var counts = tx.deletedAlong
-            for kind in along.compactMap({ document[$0]?.kind }) {
+            for id in along where tx.document[id] == nil {
+                guard let kind = document[id]?.kind else { continue }
                 if let at = counts.firstIndex(where: { $0.kind == kind }) { counts[at].count += 1 } else { counts.append(KindCount(kind: kind, count: 1)) }
             }
-            tx.stepName = DeleteSteps.name("Cut", asked: asked.compactMap { document[$0]?.kind }, along: counts, in: editor.registry)
+            tx.stepName = DeleteSteps.name("Cut", asked: asked.filter { tx.document[$0] == nil }.compactMap { document[$0]?.kind }, along: counts, in: editor.registry)
         }
         editor.hovered = nil
     }

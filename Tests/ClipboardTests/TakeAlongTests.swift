@@ -102,6 +102,18 @@ import TestKit
         expectEqual(linkProps(h.editor, between), Link(from: a, to: b), "the link between them is back, bound, under its id")
         expect(h.editor.document[toBox] == nil)
     },
+    test("a locked link cut with its ledgers stays, letting go, and the step doesn't name it") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [LedgersPlugin(), FreezingPlugin()])
+        let a = h.add(Ledger(slot(0))), b = h.add(Ledger(slot(1)))
+        let between = h.add(Link(from: a, to: b))
+        h.editor.freeze([between])
+        h.editor.cut([a, b])
+        expect(h.editor.document[a] == nil && h.editor.document[b] == nil, "the ledgers went")
+        expectEqual(linkProps(h.editor, between), Link(from: nil, to: nil), "the locked link stayed, let go of both")
+        expectEqual(h.editor.undoHistory.undoName, "Cut", "nothing went along")
+    },
     test("a cut that took nothing along is just Cut: a box whose links let go, a ledger with none") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
