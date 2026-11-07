@@ -469,9 +469,9 @@ edge "API" -> "Cache" channel: none
         // Another language's word for a shape is told the kind like it; its word for a connection, the edge.
         let word = try refusedInProcess(#"note "Idea" text: "Try a cache""#, on: editor)
         expectEqual(word.reason, "unknown_kind")
-        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: emoji-sticker, frame, reference, sticky-note, subboard; a statement starts with its kind, as in sticky-note "A""#)
+        expectEqual(word.hint, #"did you mean sticky-note? the kinds drawn here: database, enum-type, frame, reference, sticky-note, subboard, table; a statement starts with its kind, as in sticky-note "A""#)
         expectEqual(try refusedInProcess(#"link "A""#, on: editor).hint,
-                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: emoji-sticker, frame, reference, sticky-note, subboard"#)
+                    #"to join two shapes, write edge "A" -> "B"; the kinds drawn here: database, enum-type, frame, reference, sticky-note, subboard, table"#)
         // A kind no tool places: an arrow is an edge.
         let placing = try refusedInProcess(#"arrow "A""#, on: editor)
         expectEqual(placing.reason, "not_placeable")

@@ -52,6 +52,8 @@ public struct Registry {
     let strokedShapes: [ShapeKind: any StrokedShape]
     /// Kinds laid out at another size than their box (`LaidOutBox`), found once: every shape's frame asks.
     let laidOutBoxes: [ShapeKind: any LaidOutBox]
+    /// The kinds whose shapes have parts (`PartedShape`), with their definitions.
+    let partedDefinitions: [ShapeKind: any PartedShape]
     /// Kinds whose shapes take a frame they're given their own way (`CustomSizing`), found once.
     let customSizings: [ShapeKind: any CustomSizing]
     /// What provides each layout input (`registrar.layoutInput`), by the key's name, found once: a
@@ -119,6 +121,7 @@ public struct Registry {
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
         containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
         laidOutBoxes = definitions.compactMapValues { $0 as? any LaidOutBox }
+        partedDefinitions = definitions.compactMapValues { $0 as? any PartedShape }
         // A container's edge is its box: what it holds is judged by it, and a resize edits it.
         if let kind = laidOutBoxes.keys.filter(containingKinds.contains).min(by: { $0.rawValue < $1.rawValue }) {
             throw .invalid(point: "Shapes", reason: "\(kind) holds shapes, so it can't be laid out past its box")
@@ -355,6 +358,15 @@ public struct Registry {
 
     /// Whether a kind's shapes may be laid out at another size than their box (`LaidOutBox`).
     public func isLaidOutBox(_ kind: ShapeKind) -> Bool { laidOutBoxes[kind] != nil }
+
+    /// The kinds whose shapes have parts (`PartedShape`): their rows.
+    public var partedKinds: Set<ShapeKind> { Set(partedDefinitions.keys) }
+
+    /// A shape's parts, in reading order, as its kind says them (`PartedShape.parts(of:)`): each one's id, name,
+    /// kind word, lead and whether it stands alone. Nil for a shape of a kind with no parts (or none installed).
+    public func parts(of shape: AnyShapeRecord) -> [PartName]? {
+        partedDefinitions[shape.kind]?.erasedParts(of: shape)
+    }
 
     /// Whether a kind's shapes take a frame they're given their own way (`CustomSizing`).
     public func takesFramesItsOwnWay(_ kind: ShapeKind) -> Bool { customSizings[kind] != nil }

@@ -21,15 +21,20 @@ public struct ShapeGeometry: Sendable {
     /// don't work it out again (an arrow's, how it is drawn when a plugin says it is part of a line through a pill). The
     /// core reads nothing of it.
     public var detail: (any Sendable)?
+    /// Where each of its parts is (a `PartedShape`'s rows), in world units, in reading order: kept with the rest,
+    /// so a row moving, the shape moving or a row folding away (a layout input) works it out again, as an outline
+    /// is. Empty for a shape with no parts.
+    public var parts: PartFrames
 
     public init(outline: [CGPoint], bounds: CGRect? = nil, isClosed: Bool = true, label: CGRect? = nil, labelLead: CGRect? = nil,
-                detail: (any Sendable)? = nil) {
+                detail: (any Sendable)? = nil, parts: PartFrames = PartFrames()) {
         self.outline = outline
         self.bounds = bounds ?? CGRect(enclosing: outline)
         self.isClosed = isClosed
         self.label = label
         self.labelLead = labelLead
         self.detail = detail
+        self.parts = parts
     }
 }
 

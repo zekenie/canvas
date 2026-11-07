@@ -14,7 +14,7 @@ import Publishing
 import References
 import Selection
 import ShippedTesting
-import Stickers
+import Engineering
 import StickyNotes
 import Subboards
 import TestKit
@@ -134,18 +134,20 @@ extension ConnectionGroup {
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 0, y: 300)), end: .free(CGPoint(x: 200, y: 400))))
         let reference = editor.add(Reference(frame: CGRect(x: 300, y: 300, width: Reference.defaultSize.width, height: Reference.defaultSize.height)))
         let type = editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 600, y: 300, width: 200, height: 200))
-        let sticker = editor.add(Sticker(frame: CGRect(x: 900, y: 300, width: 96, height: 96), emoji: "🎉"))
+        let table = editor.add(DatabaseTable(frame: CGRect(x: 900, y: 300, width: 260, height: 44), columns: DatabaseTable.starter().columns))
+        let enumType = editor.add(DatabaseEnum(frame: CGRect(x: 900, y: 400, width: 220, height: 44)))
+        let database = editor.add(Database(frame: CGRect(x: 1200, y: 300, width: 400, height: 300)))
         let panel = try require(editor.detailPanel)
         var kinds: Set<ShapeKind> = []
         var tabs: [[String]] = []
-        for id in [note, subboard, frame, arrow, reference, type, sticker] {
+        for id in [note, subboard, frame, arrow, reference, type, table, enumType, database] {
             let record = try require(editor.document[id])
             kinds.insert(record.kind)
             tabs.append(panel.layout(for: record).tabs.map(\.title))
         }
         expectEqual(kinds, Set(editor.registry.kinds), "every kind there is")
         expectEqual(tabs, [["Connections", "Style"], ["Description", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"],
-                           ["Connections", "Schema", "Rules", "Style"], ["Connections"]])
+                           ["Connections", "Schema", "Rules", "Style"], ["Connections"], ["Connections"], ["Connections"]])
     },
 
     test("a note with an arrow out and an arrow in lists the notes at the other ends under Points To and Pointed To By, and no arrow, with a count each") {

@@ -1,0 +1,97 @@
+import AppKit
+@_spi(Host) import Canvas
+import CanvasTesting
+import Engineering
+import Geometry
+import Keyboard
+import Selection
+import TestKit
+import TextEditing
+import Titles
+
+// A new table's or enum's name typed in its pill (Titles' title field): put down by its tool, the caret is in its name and
+// typing joins the step that placed it ("Add Table"); later, Return on it types its name again, a step of its own ("Rename
+// Table"); Return and Escape end it; VoiceOver calls the field by what it names.
+
+@MainActor private func field(_ h: EditorHarness) throws -> TitleField {
+    try require(h.editor.makeEditingView()?.view as? TitleFieldHost).titleField
+}
+
+@MainActor private func type(_ text: String, into field: TitleField) {
+    field.field.insertText(text, replacementRange: NSRange(location: field.field.string.utf16.count, length: 0))
+}
+
+@MainActor let titleFieldTests = Suite("A table's name typed in its pill", [
+    test("the Table tool and a click: a table, id uuid pk, the caret in its name; typed, its title, one step Add Table; Return ends it") {
+        let h = try kitHarness()
+        h.editor.setTool(ToolID(placing: DatabaseTable.kind))
+        h.click(at: CGPoint(x: 400, y: 300))
+        let table = try require(h.shapes(DatabaseTable.kind).first)
+        expectEqual(h.editor.editingShapeID, table.id, "edited as it lands")
+        let editing = try require(h.editor.makeEditingView())
+        let typed = try require((editing.view as? TitleFieldHost)?.titleField)
+        expect(editing.firstResponder === typed.field, "the caret in the name")
+        expectEqual(typed.field.accessibilityLabel(), "Table name")
+        type("ord", into: typed)
+        type("ers", into: typed)
+        expectEqual(h.editor.document[table.id]?[TitleProperty.self], "orders")
+        typed.field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        expectEqual(h.editor.editingShapeID, nil, "Return ends it")
+        expectEqual(h.editor.undoHistory.undoName, "Add Table", "placed and named, one step")
+        h.editor.undo()
+        expect(h.shapes(DatabaseTable.kind).isEmpty)
+    },
+    test("Return on a selected table types its name again: a step of its own, Rename Table; Escape ends it, keeping what was typed; a blank name is none") {
+        let h = try kitHarness()
+        let table = h.add(orders(), titled: "orders")
+        h.editor.selectedShapeIDs = [table]
+        h.editor.undoHistory.seal()
+        expect(h.key("\r"), "Return edits the selected shape")
+        let typed = try field(h)
+        expectEqual(typed.field.string, "orders", "its name, the caret after it")
+        type("_v2", into: typed)
+        typed.field.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.document[table]?[TitleProperty.self], "orders_v2")
+        expectEqual(h.editor.undoHistory.undoName, "Rename Table")
+        h.editor.undo()
+        expectEqual(h.editor.document[table]?[TitleProperty.self], "orders")
+        h.editor.beginEditing(table)
+        let again = try field(h)
+        again.field.insertText("  ", replacementRange: NSRange(location: 0, length: again.field.string.utf16.count))
+        again.field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        expectEqual(h.editor.document[table]?[TitleProperty.self], nil, "a blank name is none")
+    },
+    test("an enum put down by its tool is named the same way; its field in its pill's purple, Add Enum") {
+        let h = try kitHarness()
+        h.editor.setTool(ToolID(placing: DatabaseEnum.kind))
+        h.click(at: CGPoint(x: 400, y: 300))
+        let made = try require(h.shapes(DatabaseEnum.kind).first)
+        let typed = try field(h)
+        expectEqual(typed.field.accessibilityLabel(), "Enum name")
+        type("order_status", into: typed)
+        typed.field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        expectEqual(h.editor.document[made.id]?[TitleProperty.self], "order_status")
+        expectEqual(h.editor.undoHistory.undoName, "Add Enum")
+    },
+    test("the field lies on the pill's row, from the paper's left end, the pill's height at 100% and zoomed in; the rest of its view takes no press") {
+        let h = try kitHarness()
+        let table = h.add(orders(), titled: "orders")
+        for zoom in [1.0, 2.0] as [CGFloat] {
+            h.editor.camera = Camera(origin: .zero, zoom: zoom)
+            let pill = try require(h.editor.titlePillRect(of: table))
+            h.editor.beginEditing(table)
+            let frame = try require(h.editor.editingFrame)
+            expectEqual(frame.minX, pill.minX, "from the pill's left end at \(zoom)")
+            expectEqual(frame.minY, pill.minY, "its top is the pill's at \(zoom)")
+            let editing = try require(h.editor.makeEditingView())
+            let host = try require(editing.view as? TitleFieldHost)
+            host.frame = CGRect(x: 0, y: 0, width: frame.width * zoom, height: frame.height * zoom)
+            host.bounds = CGRect(origin: .zero, size: frame.size)
+            host.layoutSubtreeIfNeeded()
+            expectEqual(host.titleField.frame.height, pill.height, "as tall as the pill at \(zoom)")
+            expect(host.hitTest(CGPoint(x: frame.width * zoom / 2, y: frame.height * zoom - 2)) == nil, "the paper under it isn't the field's")
+            h.editor.endEditing()
+        }
+    },
+])

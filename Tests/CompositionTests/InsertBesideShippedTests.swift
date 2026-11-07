@@ -8,7 +8,7 @@ import LanguageModels
 import Mentions
 import Selection
 import ShippedTesting
-import Stickers
+import Engineering
 import StickyNotes
 import Subboards
 import TestKit
@@ -48,7 +48,7 @@ import TestKit
         expectEqual(kinds(editor), [Subboard.kind, Frame.kind, Frame.kind])
         expectEqual(editor.undoHistory.undoName, "Add Frame")
     },
-    test("nothing selected, mixed kinds, or a kind no tool places: a note; an off kit's kind too, a sticker's own with the kit on") {
+    test("nothing selected, mixed kinds, or a kind no tool places: a note; an off kit's kind too, a table beside a table with the kit on") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let h = harness(pasteboard)
@@ -59,20 +59,21 @@ import TestKit
         editor.endEditing(discarding: false)
         let note = try require(editor.document.shapes.first).id
         let subboard = ShapeRecord(Subboard(frame: CGRect(x: 100, y: 500, width: 240, height: 160)))
-        let sticker = ShapeRecord(Sticker(frame: CGRect(x: 500, y: 500, width: 96, height: 96), emoji: "🎉"))
-        editor.transact { $0.insert(subboard); $0.insert(sticker) }
+        let table = ShapeRecord(DatabaseTable(frame: CGRect(x: 500, y: 500, width: 260, height: 44), columns: DatabaseTable.starter().columns))
+        editor.transact { $0.insert(subboard); $0.insert(table) }
         editor.selectedShapeIDs = [note, subboard.id]
         expectEqual(editor.menuTitle(of: .insertBeside), "New Note Beside", "mixed kinds")
-        editor.selectedShapeIDs = [sticker.id]
-        expectEqual(editor.menuTitle(of: .insertBeside), "New Note Beside", "Stickers is off in this file")
+        editor.selectedShapeIDs = [table.id]
+        expectEqual(editor.menuTitle(of: .insertBeside), "New Note Beside", "Engineering is off in this file")
         expect(h.key(Chord(.return, .shift)))
         expectEqual(editor.document.shapes.last?.kind, StickyNote.kind)
         editor.endEditing(discarding: false)
-        editor.turn(StickersKit.self, on: true)
-        editor.selectedShapeIDs = [sticker.id]
-        expectEqual(editor.menuTitle(of: .insertBeside), "New Thumbs Up Beside")
+        editor.turn(EngineeringKit.self, on: true)
+        editor.selectedShapeIDs = [table.id]
+        expectEqual(editor.menuTitle(of: .insertBeside), "New Table Beside")
         expect(h.key(Chord(.return, .shift)))
-        expectEqual(editor.document.shapes.last?.kind, Sticker.kind)
+        expectEqual(editor.document.shapes.last?.kind, DatabaseTable.kind)
+        expectEqual(editor.editingShapeID, editor.document.shapes.last?.id, "its name typed at once")
     },
     test("inside a note's words ⇧↩ still puts a note beside it, edited, as before") {
         let pasteboard = NSPasteboard.withUniqueName()

@@ -420,10 +420,16 @@ extension DrawReports: KeyedExtensionPoint {
 /// How a property's value a script writes is made what the shape keeps, for a property whose owner
 /// says so: `write` turns the value as written into what it stores (names into ids: it may ask
 /// `context.shape(called:)`, as a text format does), and `merge` joins it with what the shape holds
-/// now (nil for a new shape, or one without it). Only the sugar makes one (`registrar.drawValueWriter`).
+/// now (nil for a new shape, or one without it). A writer may take text too (`describes`, what the text says, which
+/// `canvas kinds` shows before the property's own type): a quoted value is then handed to `write` as a string, where
+/// it would be refused as JSON written as text, and `write` reads it (a table's columns, a line each). Only the sugar
+/// makes one (`registrar.drawValueWriter`).
 @MainActor
 public struct DrawValueWriting {
     let key: String
+    /// What a quoted value says, for a writer that takes text (`lines (name type …)`); nil for one that takes the
+    /// property's JSON alone.
+    let describes: String?
     let write: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue
     let merge: @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue
 }
@@ -441,8 +447,11 @@ extension DrawValueWriters: KeyedExtensionPoint {
 
     /// A key a script can write: not blank.
     public static func check(_ registry: Registry) throws(RegistryError) {
-        for writer in registry.contributions(to: DrawValueWriters.self).map(\.value) where writer.key.isEmpty {
-            throw .invalid(point: "DrawValueWriters", reason: "a property key can't be blank")
+        for writer in registry.contributions(to: DrawValueWriters.self).map(\.value) {
+            if writer.key.isEmpty { throw .invalid(point: "DrawValueWriters", reason: "a property key can't be blank") }
+            if writer.describes?.isEmpty == true {
+                throw .invalid(point: "DrawValueWriters", reason: "\(writer.key) takes text and says nothing of it, which canvas kinds shows")
+            }
         }
     }
 }
@@ -505,18 +514,21 @@ extension PluginRegistrar {
     /// shape holds now (`held`: nil for a new shape, or one without a value), and its result is what
     /// the shape is set to, so a script run again changes nothing. Without a writer a value replaces
     /// what the shape holds. At most one plugin writes each property.
-    public mutating func drawValueWriter(for key: PropertyKey,
+    /// `describes`, for a writer that takes text as well as the property's JSON: what the text says, which `canvas
+    /// kinds` shows as what the attribute takes (`lines (name type [null] …)`, then `or` and the property's own type),
+    /// and a quoted value reaches `write` as a string for it to read.
+    public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
-        drawValueWriter(for: key, write: write) { written, held, _ in merge(written, held) }
+        drawValueWriter(for: key, describes: describes, write: write) { written, held, _ in merge(written, held) }
     }
 
     /// The same, `merge` handed the registry too, for a join that goes by what other plugins say (Types keeps every
     /// directive plugins hold in a schema, `registry.heldDirectives`).
-    public mutating func drawValueWriter(for key: PropertyKey,
+    public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue) {
-        contribute(DrawValueWriting(key: key.rawValue, write: write, merge: merge), to: DrawValueWriters.self)
+        contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: merge), to: DrawValueWriters.self)
     }
 
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a

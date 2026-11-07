@@ -26,6 +26,43 @@ extension AdornmentLabel {
     }
 }
 
+// A label typed in: a field laid over a title's pill (Titles' title field) draws the pill's chip, its capsule and its
+// symbol, as wide as what is typed needs, and sets its text where the pill's text goes, in its font and ink, so
+// nothing moves as typing starts and ends.
+
+extension AdornmentLabel {
+    /// The font a label's text is set in, in the row above a shape, view points.
+    @MainActor public static var rowFont: NSFont { AdornmentStyle.rowText[.font] as? NSFont ?? .systemFont(ofSize: 11, weight: .medium) }
+
+    /// Where the label's text starts in its chip, from the chip's left edge, view points: the padding, and its symbol's
+    /// place and the gap after it where it has one.
+    @MainActor public var textStart: CGFloat { AdornmentStyle.rowPadding + AdornmentStyle.lead(of: self, in: .aboveTopLeft) }
+
+    /// Between the text's end and the chip's right edge, view points.
+    @MainActor public static var textEnd: CGFloat { AdornmentStyle.rowPadding }
+
+    /// The ink the label's text is drawn in, as its chip sets it (a tint's ink, or the pill's white).
+    @MainActor public var textInk: NSColor { attributes[.foregroundColor] as? NSColor ?? .white }
+
+    /// The attributes its text is set in, in the row.
+    @MainActor private var attributes: [NSAttributedString.Key: Any] {
+        guard case .text(let string, _, _, _, _) = AdornmentStyle.face(of: self, in: .aboveTopLeft), string.length > 0 else { return AdornmentStyle.rowText }
+        return string.attributes(at: 0, effectiveRange: nil)
+    }
+
+    /// Draws the label's chip `width` wide with no text, its top-left at `origin`, in `cg`'s units at `scale` of them a
+    /// point: its capsule and its symbol, where a field sets the text over it. Drawn in the appearance being drawn, as
+    /// the row above a shape is.
+    @MainActor public func drawChip(width: CGFloat, at origin: CGPoint, scale: CGFloat, in cg: CGContext) {
+        let blank = AdornmentLabel(" ", systemImage: systemImage)
+        let label = tint.map { blank.tinted($0) } ?? blank
+        guard case .text(_, let size, let symbol, _, _) = AdornmentStyle.face(of: label, in: .aboveTopLeft) else { return }
+        let face = AdornmentStyle.Face.text(NSAttributedString(), size: size, symbol: symbol, count: nil, width: width)
+        let frame = CGRect(x: 0, y: 0, width: width, height: AdornmentLayout.rowHeight)
+        AdornmentStyle.draw(label, in: .aboveTopLeft, face: face, in: frame, from: origin, scale: scale, look: .normal, in: cg)
+    }
+}
+
 /// The faces of the labels drawn in content, kept by label: a row of fields draws the same few every frame.
 @MainActor
 private enum ContentFaces {
