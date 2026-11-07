@@ -83,7 +83,7 @@ public enum ColumnGrammar {
 
     /// `written` joined onto `held` by name: a column of a name `held` has takes what its line says (its type, null,
     /// unique, pk, default and unread words) and keeps its id and what no line says (on delete, on update, and the shape
-    /// its type's words named, while they still say the same); a new name is added at the end, in the order written;
+    /// its type's words named, while they still say the same and the line binds none of its own); a new name is added at the end, in the order written;
     /// a column `written` leaves out stays, where it was. A statement names only what it changes.
     public static func merge(_ written: [Column], onto held: [Column]) -> [Column] {
         var merged = held
@@ -100,7 +100,7 @@ public enum ColumnGrammar {
             joined.id = old.id
             joined.onDelete = old.onDelete
             joined.onUpdate = old.onUpdate
-            if joined.type.words == old.type.words { joined.type.shape = old.type.shape }
+            if joined.type.shape == nil, joined.type.words == old.type.words { joined.type.shape = old.type.shape }
             merged[at] = joined
         }
         return merged

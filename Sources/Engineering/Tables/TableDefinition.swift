@@ -140,7 +140,7 @@ extension TableDefinition: Editable {
     }
 
     func makeEditingView(for shape: ShapeRecord<DatabaseTable>, context: EditContext<DatabaseTable>) -> EditingView {
-        TitleField.editingView(for: shape, context: context, systemImage: TableStyle.symbol, tint: nil, name: TableStyle.titleFieldName)
+        TitleField.editingView(for: shape, context: context, systemImage: TableStyle.symbol, tint: nil, placeholder: TableStyle.label, name: TableStyle.titleFieldName)
     }
 
     var editingStepName: String? { TableStyle.renameStep }

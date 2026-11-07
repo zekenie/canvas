@@ -50,6 +50,15 @@ extension AdornmentLabel {
         return string.attributes(at: 0, effectiveRange: nil)
     }
 
+    /// Draws the label whole, its top-left at `origin`, in `cg`'s units at `scale` of them a point, in the appearance being
+    /// drawn, as the row above a shape draws it: what a field typed over a pill shows while nothing is typed (its
+    /// placeholder, dimmed).
+    @MainActor public func draw(at origin: CGPoint, scale: CGFloat, in cg: CGContext) {
+        let face = AdornmentStyle.face(of: self, in: .aboveTopLeft)
+        let frame = CGRect(x: 0, y: 0, width: face.width, height: AdornmentLayout.rowHeight)
+        AdornmentStyle.draw(self, in: .aboveTopLeft, face: face, in: frame, from: origin, scale: scale, look: .normal, in: cg)
+    }
+
     /// Draws the label's chip `width` wide with no text, its top-left at `origin`, in `cg`'s units at `scale` of them a
     /// point: its capsule and its symbol, where a field sets the text over it. Drawn in the appearance being drawn, as
     /// the row above a shape is.

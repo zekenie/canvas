@@ -3,6 +3,7 @@ import Arrows
 @_spi(Host) import Canvas
 import CanvasRPC
 import CanvasTesting
+import Engineering
 import Foundation
 import Frames
 import Geometry
@@ -854,8 +855,8 @@ let rowsListed = 10_000
     test("containers cost a query what they hold: a board whose shapes are all held two deep within the scan's, the walks' and the rows' budgets, and one without them what it did beside a kind that holds shapes") {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
-        // The shipped list without frames, so with no kind that holds shapes, and as it ships.
-        let bare = try Registry(plugins: shippedPlugins(pasteboard).filter { $0.id != .framing })
+        // The shipped list without frames and the engineering kit (its databases), so with no kind that holds shapes, and as it ships.
+        let bare = try Registry(plugins: shippedPlugins(pasteboard).filter { $0.id != .framing && $0.id != .engineering })
         let shipped = try Registry(plugins: shippedPlugins(pasteboard))
         let holding = try Registry(plugins: shippedPlugins(pasteboard) + [CorralsPlugin()])
         let scan = #"\#(StickyNote.kind.rawValue)[text*="note" i]:not(:inside(*))"#

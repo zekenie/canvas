@@ -27,12 +27,19 @@ public final class TitleField: NSView, NSTextViewDelegate {
     public var finished: ((Ending) -> Void)?
     /// The pill as it's drawn with no text: its symbol and tint.
     private let chip: AdornmentLabel
+    /// The pill as it's drawn while nothing is typed: its placeholder, dimmed, where the kind gives one.
+    private let empty: AdornmentLabel?
 
     /// A field holding `title`, its caret at the end, over a pill with `systemImage` first and in `tint` (nil: the
-    /// pill's gray). `name` is what VoiceOver calls it.
-    public init(title: String?, systemImage: String?, tint: AdornmentTint?, name: String) {
+    /// pill's gray); while it holds nothing, the pill's `placeholder` shows dimmed after the caret, as the pill under it
+    /// says it, so nothing moves as typing starts. `name` is what VoiceOver calls it.
+    public init(title: String?, systemImage: String?, tint: AdornmentTint?, placeholder: String? = nil, name: String) {
         let blank = AdornmentLabel(" ", systemImage: systemImage)
         chip = tint.map { blank.tinted($0) } ?? blank
+        empty = placeholder.map { placeholder in
+            let label = AdornmentLabel(placeholder: placeholder, systemImage: systemImage)
+            return tint.map { label.tinted($0) } ?? label
+        }
         field = TitleTextView()
         super.init(frame: .zero)
         let ink = chip.textInk
@@ -55,6 +62,7 @@ public final class TitleField: NSView, NSTextViewDelegate {
 
     /// How wide the chip is, view points: its text as typed (a caret's room when empty), its symbol, its padding.
     public var chipWidth: CGFloat {
+        if field.string.isEmpty, let empty { return empty.contentSize.width }
         let text = NSAttributedString(string: field.string, attributes: [.font: AdornmentLabel.rowFont]).size().width
         return (chip.textStart + max(text, TitleFieldStyle.caretRoom) + AdornmentLabel.textEnd).rounded(.up)
     }
@@ -92,12 +100,16 @@ public final class TitleField: NSView, NSTextViewDelegate {
     public override func draw(_ dirtyRect: NSRect) {
         guard let cg = NSGraphicsContext.current?.cgContext else { return }
         let scale = scale, width = min(chipWidth, bounds.width / scale)
-        chip.drawChip(width: width, at: .zero, scale: scale, in: cg)
+        if field.string.isEmpty, let empty {
+            empty.draw(at: .zero, scale: scale, in: cg)
+        } else {
+            chip.drawChip(width: width, at: .zero, scale: scale, in: cg)
+        }
         // The ring a field that has the keys shows, round the chip.
         let reach = TitleFieldStyle.ringWidth * scale / 2
         let ring = CGRect(x: 0, y: 0, width: width * scale, height: bounds.height).insetBy(dx: -reach, dy: -reach)
         cg.addPath(CGPath(roundedRect: ring, cornerWidth: ring.height / 2, cornerHeight: ring.height / 2, transform: nil))
-        cg.setStrokeColor(NSColor.keyboardFocusIndicatorColor.cgColor)
+        cg.setStrokeColor(TitleFieldStyle.ring.cgColor)
         cg.setLineWidth(TitleFieldStyle.ringWidth * scale)
         cg.strokePath()
     }
@@ -221,19 +233,28 @@ public final class TitleFieldHost: NSView {
         if titleField.frame != row { titleField.frame = row }
     }
 
-    /// Only the field takes presses.
+    /// Only the field takes presses. `point` is in the superview's coordinates (its frame's, with none).
     public override func hitTest(_ point: NSPoint) -> NSView? {
-        titleField.hitTest(convert(point, from: superview))
+        let local: CGPoint
+        if let superview {
+            local = convert(point, from: superview)
+        } else {
+            guard frame.width > 0, frame.height > 0 else { return nil }
+            local = CGPoint(x: bounds.minX + (point.x - frame.minX) * bounds.width / frame.width,
+                            y: bounds.minY + (point.y - frame.minY) * bounds.height / frame.height)
+        }
+        return titleField.hitTest(local)
     }
 }
 
 extension TitleField {
     /// The editing view of a shape whose title is typed in its pill, and nothing else (`Editable.makeEditingView`): the
-    /// field holding its title, over a pill with `systemImage` in `tint`, VoiceOver's `name` for it; each change written as
+    /// field holding its title, over a pill with `systemImage` in `tint` (its `placeholder` dimmed while it holds nothing),
+    /// VoiceOver's `name` for it; each change written as
     /// its title (`TitleProperty`, a blank one none) in the editing session's step, Return, Escape, Tab and ⇧Tab ending it.
     public static func editingView<P: ShapeProps>(for shape: ShapeRecord<P>, context: EditContext<P>, systemImage: String?, tint: AdornmentTint?,
-                                                  name: String) -> EditingView {
-        let field = TitleField(title: shape[TitleProperty.self], systemImage: systemImage, tint: tint, name: name)
+                                                  placeholder: String? = nil, name: String) -> EditingView {
+        let field = TitleField(title: shape[TitleProperty.self], systemImage: systemImage, tint: tint, placeholder: placeholder, name: name)
         let id = shape.id
         field.typed = { text in
             let title = TitleProperty.folded(text)
@@ -252,8 +273,9 @@ extension TitleField {
 enum TitleFieldStyle {
     /// What an empty field's chip keeps for the caret.
     static let caretRoom: CGFloat = 4
-    /// The ring round the chip while it has the keys.
+    /// The ring round the chip while it has the keys: the system's focus ring.
     static let ringWidth: CGFloat = 2
+    static var ring: NSColor { .keyboardFocusIndicatorColor }
     /// How far past the shape's right edge the row a title is typed in reaches.
     static let reach: CGFloat = 200
 }

@@ -1,6 +1,6 @@
 ---
 name: canvas
-description: Put, draw or lay out things on a live board in Infinite Canvas (sticky notes, types, relationships, frames, subboards, references and the arrows between them, for plans, flows, architectures, roadmaps, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English, and look at it with `canvas capture`, a picture of a board or part of one. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the running app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put or lay out things on a live board in Infinite Canvas (sticky notes, types, relationships, frames, subboards, references, database tables and the arrows between them, for plans, flows, architectures, schemas, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English, and look at it with `canvas capture`, a picture of a board or part of one. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
 # Drawing on and reading a board with canvas
@@ -140,6 +140,12 @@ frame "Sprint 3" right of "DB" size: 900x600
 sticky-note "Fix the login" in "Sprint 3" text: "Sessions expire too soon"
 sticky-note "Move billing" in "Sprint 3" text: "Invoices go to the new API"
 sticky-note "Index search" in "Sprint 3" right of "Fix the login" text: "Search the archive too"
+```
+
+A database's tables are the engineering kit's kinds: a `table` takes its `columns:` as lines in quotes, a column a line (`name type [null] [unique] [default …] [pk]`, `\n` between them), an `enum-type` its `values:` a value a line, and a `database` holds them as a frame does. A statement joins its lines onto what the shape holds by name, so it names only what it changes. [reference/engineering.md](reference/engineering.md) has the rest.
+
+```draw
+table "accounts" below "Sprint 3" columns: "id uuid pk\nemail text unique\ncreated_at timestamptz?"
 ```
 
 ### Placements
@@ -453,6 +459,8 @@ sticky-note "Ship 1.0" text: "Blocked on @[Auth servce]"
 For a large body of connected information (a codebase, an org, research notes, a plan: dozens to hundreds of shapes and the links between them), don't write the script by hand: [canvas-digest](../canvas-digest/SKILL.md) takes a graph document (the things by keys of its own, what holds what and what points at what), measures it with `canvas measure`, decides where everything goes and which hubs get reference pills, and draws it with `canvas apply`: the whole document by key, on every board, in one step, as a drawing a later pass updates in place. `canvas help apply` says what a document is.
 
 [reference/query.md](reference/query.md) is the whole query language, on a story file: naming shapes, attributes, inside, edges and their direction, the plugins' words, yes-or-no questions, `--ask`, and every refusal with its fix. [query-prompt.md](query-prompt.md) is what the app tells Claude for `--ask`, word for word, with how to give yourself what it's given. `canvas help query` is the command's own help, and `canvas query-vocabulary` what this app's queries can name: its kinds and their attributes, its edge types and its words.
+
+[reference/engineering.md](reference/engineering.md) is how a database's tables, their enums and the databases that hold them are written: a column a line, values a line each, joined by name.
 
 [reference/relationships.md](reference/relationships.md) is how a relationship is written and read: a relationship type and its ends, two notes related with values, what a row says of an arrow (`is`, `endOf`, `fits`, `relates`), a misfit, drawing one again and the queries that say what a note is related to. [reference/references.md](reference/references.md) is what a reference does to what you read: a pill that stands for a public shape, so an arrow into it is an arrow into the shape, and how a row says it (`via`, `more`), what it stands for (`stands-for`), and what a script can make of one (an edge to a shape on another board, or a pill drawn by its query and named by its id).
 

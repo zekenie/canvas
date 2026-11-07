@@ -77,7 +77,7 @@ extension EnumDefinition: Editable {
     }
 
     func makeEditingView(for shape: ShapeRecord<DatabaseEnum>, context: EditContext<DatabaseEnum>) -> EditingView {
-        TitleField.editingView(for: shape, context: context, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, name: EnumStyle.titleFieldName)
+        TitleField.editingView(for: shape, context: context, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, placeholder: EnumStyle.label, name: EnumStyle.titleFieldName)
     }
 
     var editingStepName: String? { EnumStyle.renameStep }

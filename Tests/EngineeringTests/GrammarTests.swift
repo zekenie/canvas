@@ -68,6 +68,9 @@ private func ownWords(_ line: String) -> [String] {
         expectEqual(ColumnGrammar.merge(ColumnGrammar.read(lines: ColumnGrammar.print(lines: held)), onto: held), held, "the same lines again: nothing changes")
         let retyped = ColumnGrammar.merge(ColumnGrammar.read(lines: "status text"), onto: held)
         expectEqual(retyped[1].type, TypeRef("text"), "other words name no enum")
+        let later = ShapeID()
+        let bound = ColumnGrammar.merge([Column(name: "note", type: TypeRef("text", shape: later))], onto: held)
+        expectEqual(bound[2].type.shape, later, "words that name an enum now are bound, though they named none before")
     },
     test("an enum's values are a line each, trimmed, blank lines passed over; joined by text, a value it has keeping its id") {
         let values = EnumGrammar.read(lines: " pending \npaid\n\nrefunded")
