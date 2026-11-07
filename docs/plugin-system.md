@@ -11108,7 +11108,16 @@ Draw's placement for plugins (`Sources/Draw/Surroundings.swift`) is the solver m
 that puts a shape down, not only Moving, places it the same way: `Surroundings(on:moving:in:)`, with
 `near(_:within:)` beside a shape, `inside(_:)` in a frame, `between(_:_:growing:)` between two shapes
 and `anywhere()`, each answering a `Landing` (the board, the box, the shapes to raise it above);
-Moving keeps the glue for its `Block` and the commit. `between` is for a shape two arrows will join
+Moving keeps the glue for its `Block` and the commit. Moving keeps the arrows that would cross the edge it moves shapes over:
+an arrow bound to a shape that moves to another board and one that stays goes where its start goes, with
+the start (ending at a reference pill for the shape that stays, landed beside the start where it lands)
+or staying (ending at a pill for the shape that moved, beside its start); a pill for the same shape the board
+has already is reused, and so is the shape itself where it is there. That is Draw's `CrossingArrows`
+(`init?(moving:from:to:by:label:in:)` plans from the editor, `rebind(in:)` writes before `Transaction.move` and
+`Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly), which asks
+the registry only for the connector kind (`drawEdges`) and the pill kind (`standsIn`): a read-only arrow and an end no
+kind stands for as it is (a private shape: a move never makes a shape public) let go as before. tldraw leaves such an
+arrow unbound; this is a departure ([arrows](../.claude/rules/arrows.md)). `between` is for a shape two arrows will join
 to the two: in the gap the pair leaves along the axis they are further apart on, centered in it and
 on their middle across, with `room` (default `PlacingStyle.arrowRoom`, 80; a caller whose arrows carry
 names asks for more) kept clear on each side so each arrow shows a body, the two read `growing`
@@ -12326,7 +12335,8 @@ and `needs`](#stand-ins-forwarding)), and References' `reference` is what answer
   than centered on the shape and pushed past the column. It's inserted before the arrow, in the run's
   one transaction. `StandInRoute` (public, over a registry; `kind(for:fulfilling:)`,
   `existing(for:kind:sharing:near:in:)`, `spot(beside:edgeIs:side:in:excluding:staying:)` and
-  `landing(of:at:in:avoiding:)`) is that making, for a writer that is not a script: it lands a pill
+  `landing(of:at:in:avoiding:)`, and `landing(of:at:against:in:avoiding:)` against a box planned and not on the board yet, as a
+  move brings a shape's pill beside it) is that making, for a writer that is not a script: it lands a pill
   of its size at a spot against `Surroundings`, in the rect a run gives the same pill. Whole, for a
   writer that picks a shape on another board: `FarVerdicts` (what a pick takes: `here`, `reads`,
   `fulfils(needs:)`, `cannot`; made once for many shapes) and `placePill(standingFor:label:beside:edgeIs:sharing:avoiding:verdicts:in:)`,

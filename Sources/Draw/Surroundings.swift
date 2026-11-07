@@ -228,15 +228,26 @@ public struct Surroundings {
     /// against the shape it is beside, or, in a column of pills there, past the last (`StandInRoute`
     /// says where; its placements are the ones a script's statement gets). The box is a made-up one
     /// (`Free.implied`), like draw's. Nil for a spot with nothing drawn to be placed against.
-    func landing(of size: CGSize, at spot: StandInSpot, avoiding: [CGRect] = []) -> Landing? {
+    ///
+    /// `planned`, for a pill beside a shape or a pill that is not on the board yet (one a move is bringing here), is the box
+    /// the pill is placed against, as the spot's `after` or `near` would be if it were drawn: no obstacle of the board's, so it
+    /// is held clear by the caller's `avoiding` if at all.
+    func landing(of size: CGSize, at spot: StandInSpot, planned: CGRect? = nil, avoiding: [CGRect] = []) -> Landing? {
         guard size.width.isFinite, size.height.isFinite else { return nil }
         let against = spot.after ?? spot.near
-        guard let bounds = reading.shapes.geometry(of: against)?.bounds, !bounds.isNull, bounds.isFinite else { return nil }
+        let bounds: CGRect, solid: Int?
+        if let planned {
+            (bounds, solid) = (planned, nil)
+        } else {
+            guard let found = reading.shapes.geometry(of: against)?.bounds else { return nil }
+            (bounds, solid) = (found, obstacle(against))
+        }
+        guard !bounds.isNull, bounds.isFinite else { return nil }
         let clauses = spot.clauses(near: Self.target, after: spot.after == nil ? nil : Self.column).map {
             LayoutProblem.ResolvedClause($0, refs: [.fixed(0)])
         }
         let free = LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: clauses, implied: true)
-        guard let placed = place(free, fixed: [LayoutProblem.Fixed(rect: bounds, obstacle: obstacle(against))], avoiding: avoiding) else { return nil }
+        guard let placed = place(free, fixed: [LayoutProblem.Fixed(rect: bounds, obstacle: solid)], avoiding: avoiding) else { return nil }
         return Landing(board: reading.board, rect: placed.rect, above: placed.zones)
     }
 

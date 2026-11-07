@@ -241,6 +241,13 @@ extension StandInRoute {
         surroundings.landing(of: size, at: spot, avoiding: avoiding)
     }
 
+    /// The same against a box instead of a shape of the board: where a pill goes beside a shape that is not on the board yet (one
+    /// a move is bringing here, `planned` the box it will have) or past a pill that is planned and not put down. The spot's `near`
+    /// and `after` only say how it is placed (a column past a pill, or beside the shape); `planned` is what it is placed against.
+    public func landing(of size: CGSize, at spot: StandInSpot, against planned: CGRect, in surroundings: Surroundings, avoiding: [CGRect] = []) -> Landing? {
+        surroundings.landing(of: size, at: spot, planned: planned, avoiding: avoiding)
+    }
+
     private func columnEnd(beside near: ShapeID, _ direction: Direction, in reading: BoardReading, excluding: Set<ShapeID>,
                            staying: (ShapeID) -> Bool, index: Index) -> ShapeID? {
         guard staying(near), let nearBox = reading.shapes.geometry(of: near)?.bounds, nearBox.isFinite else { return nil }
