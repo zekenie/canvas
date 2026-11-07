@@ -1,7 +1,9 @@
 import AppKit
 import Canvas
+import Clipboard
 import Colors
 import Connections
+import Draw
 import Keyboard
 import LanguageRules
 import Mentions
@@ -123,6 +125,14 @@ public struct StickyNotesPlugin: ListedPlugin {
             note.noteAccessibility()                           // VoiceOver reads its words as its value
         }
         registrar.channel(NoteLink.self)                       // which this plugin declares
+        // Paste as Note (⌥⇧⌘V, Clipboard's): any text on the pasteboard, or a small text file's, one note with those words and
+        // no title, put down beside the selection by Draw. `@[` is escaped, so nothing in it turns into a mention. ⌘V of plain
+        // text is no note: this reader is a plain one, which only Paste as Note asks.
+        registrar.pasteReader(NoteStyle.pastedNote, role: .plain, sniff: { $0.plainText != nil }) { content, _ in
+            content.plainText.map { text in
+                DrawPut(rows: [[DrawPut.Shape(kind: StickyNote.kind.rawValue, values: [(key: "text", text: MentionText(plain: text).stored)])]])
+            }
+        }
         // `/bulk-create A, B, C` in the command bar with nothing selected: a note titled with each, waiting on the
         // pointer to be put down together, in a column, or in a row while ⌥ is held (a click, or Selection's ⌥↩).
         registrar.selectionSlashCommand(BulkCreate.command)
@@ -226,6 +236,8 @@ extension StickyNoteDefinition: Editable {
 @MainActor
 enum NoteStyle {
     static let size = StickyNote.defaultSize
+    /// What the plain reader is called, and so its report line.
+    static let pastedNote = "Note"
     static let cornerRadius: CGFloat = 4
     static let padding: CGFloat = 16
     /// Between a note's words and the rows under them, when it has words.

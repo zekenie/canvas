@@ -293,6 +293,20 @@ struct DrawOptions {
     var program = false
     /// The drawing a real run joins (`draw --drawing`): what it names is kept in the drawing's record, in its step.
     var drawing: String?
+    /// How a title finds its shape: a script's `.refusing` (none or several is an error), a put's `.nearest` (`put`).
+    var naming = Naming.refusing
+    /// Whether the run is an agent's change (what acts on a person's edits leaves it be): a script's, not a put's.
+    var byAgent = true
+    /// The undo step the run makes (`DrawStyle.stepName`, "Draw"), as its caller names it.
+    var step = "Draw"
+
+    enum Naming {
+        /// A title that names none, or several, is refused (`ambiguous_title`): a script, which an agent types.
+        case refusing
+        /// A title that names several finds the first of them, in the order the board lists them; `put` finds the nearest
+        /// itself (`NearestNames`) and names it by its id, so this is only the fallback for a name it left a title.
+        case nearest
+    }
 }
 
 @MainActor
@@ -304,6 +318,13 @@ func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, program:
     } catch {
         throw collected(error.errors.map { DrawError($0) })
     }
+    return try draw(parsed: script, dryRun: dryRun, reveal: shouldReveal, program: program, options: options, in: editor)
+}
+
+/// As `draw`, of a script already read: a program's values, never text (`put`).
+@MainActor
+func draw(parsed script: Script, dryRun: Bool, reveal shouldReveal: Bool, program: String, options: DrawOptions,
+          in editor: CanvasEditor) throws(DrawError) -> DrawResult {
     var (board, names) = try Drawing.board(for: script, in: editor, pinned: options.board)
     let shown = board == editor.board
     if shown {
@@ -360,9 +381,9 @@ func draw(script text: String, dryRun: Bool, reveal shouldReveal: Bool, program:
 @MainActor
 private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, dryRun: Bool, joining name: String? = nil) throws(DrawError) -> DrawResult {
     do {
-        let result = try editor.transact(on: drawing.target.board, DrawStyle.stepName) { transaction in
+        let result = try editor.transact(on: drawing.target.board, drawing.options.step) { transaction in
             // An agent's change, not the person's: what acts on a person's edits leaves it be.
-            transaction.byAgent = true
+            transaction.byAgent = drawing.options.byAgent
             let result = try drawing.apply(to: &transaction, reveals: reveals)
             if !dryRun, let name, let records = editor.registry.drawRecording {
                 join(name, result, on: drawing.target.board, records: records, file: editor.file, registry: editor.registry, in: &transaction)

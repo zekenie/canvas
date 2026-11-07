@@ -501,7 +501,7 @@ struct Drawing {
     /// The board shape called this, if one is, or why not: none, or several (each listed with its kind and its path).
     func boardShape(called title: String, _ statement: Statement) throws(DrawError) -> AnyShapeRecord? {
         let found = boardShapes(called: title)
-        guard found.count < 2 else {
+        guard found.count < 2 || options.naming == .nearest else {
             throw ambiguous(quoted(title), found.compactMap { target.document[$0] }.map(ShapeItem.Found.shape), statement)
         }
         return found.first.flatMap { target.document[$0] }

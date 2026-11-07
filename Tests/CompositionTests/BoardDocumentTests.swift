@@ -422,9 +422,10 @@ let boardType = "com.example.InfiniteCanvas.board"
         try check("Edit", "Select All", "selectAll:", "a", runs: .selectAll)
         try check("Edit", "Copy as Image", "copyAsImage:", "c", [.command, .shift])
         try command("Edit", "Paste at Pointer", .pasteAtPointer, "v", [.command, .shift])
+        try command("Edit", "Paste as Note", .pasteAsNote, "v", [.command, .option, .shift])
         try command("Edit", "Duplicate", .duplicate, "d")
         let edit = try require(menus.main.item(withTitle: "Edit")?.submenu)
-        expectEqual(edit.items.map(\.title), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Paste at Pointer", "Duplicate", "Delete",
+        expectEqual(edit.items.map(\.title), ["Undo", "Redo", "", "Cut", "Copy", "Copy as Image", "Paste", "Paste at Pointer", "Paste as Note", "Duplicate", "Delete",
                                               "Select All", "Remove Mention", "", "Find", "Spelling and Grammar"], "the window's own items and Clipboard's and Find's, each at its order")
         // Insert: an item for each tool that places a shape, in the toolbar's order, Note with ⇧Return.
         try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)), "\r", .shift)
