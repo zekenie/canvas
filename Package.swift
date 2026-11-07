@@ -185,7 +185,7 @@ let ships = [
     "Snapping.SnappingPlugin",
     // Ports, whose arrows `ArrowPortsPlugin` draws. After Adornments: a shape's dots draw
     // above its adornments (the lock chip among them), and are found before them.
-    "Connections.PortsPlugin", "Connections.ConnectMenuPlugin", "Arrows.ArrowPortsPlugin",
+    "Connections.PortsPlugin", "Connections.ConnectMenuPlugin", "Connections.ConnectPickerPlugin", "Arrows.ArrowPortsPlugin",
     "LanguageModels.LanguageModelsPlugin",
     // Yes-or-no questions asked of a decision model (TypeSafe's Jev): its key's pane goes under the language model's.
     "DecisionModels.DecisionModelsPlugin",
@@ -307,7 +307,7 @@ let package = Package(
         .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Queries", "SlashCommands", "TableOfContents"]),  // layer: platform
         .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "SlashCommands", "TableOfContents"]), // layer: platform
         .target(name: "Grouping", dependencies: ["Canvas", "ContextMenus", "Draw", "Keyboard", "Queries", "Selection"]), // layer: platform
-        .target(name: "Connections", dependencies: ["Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Selection", "Topology"]), // layer: platform
+        .target(name: "Connections", dependencies: ["Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Mentions", "Selection", "TextEditing", "Topology"]), // layer: platform
         .target(name: "Mentions", dependencies: ["Boards", "Canvas", "CanvasRPC", "Chrome", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Keyboard", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Topology"]), // layer: platform
         .target(name: "Boards", dependencies: ["Canvas", "Chrome", "ContextMenus", "DetailPanel", "FuzzyMatching", "Keyboard", "Queries", "Selection", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform

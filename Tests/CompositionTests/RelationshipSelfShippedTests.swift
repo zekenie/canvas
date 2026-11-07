@@ -282,14 +282,14 @@ extension Minute {
         let editor = m.editor
         editor.selection = m.feature
         expect(editor.canPerform(.connect))
-        editor.perform(.connect)
+        connectToItself(editor)
         let type = try require(editor.relationships?.graph.relationshipTypes(joining: m.feature, and: m.feature).first)
         let out = try require(m.arrows(from: m.feature, to: type).first).id, back = try require(m.arrows(from: type, to: m.feature).first).id
         try m.expectTwoArrows((out, back), type: type, "by keys")
         expect(m.arrows(from: m.feature, to: m.feature).isEmpty, "no arrow from Feature to itself")
         editor.endEditing()
         editor.selection = m.featureNote
-        editor.perform(.connect)
+        connectToItself(editor)
         let loop = try require(m.arrows(from: m.featureNote, to: m.featureNote).first)
         expectEqual(loop[IsAProperty.self]?.map(\.shape), [type])
         expectEqual(editor.selectedShapeIDs, [m.featureNote], "the selection stays")
