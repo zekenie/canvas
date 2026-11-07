@@ -6,29 +6,35 @@ import SwiftUI
 /// The Keyboard Shortcuts window: one for the app (Help › Keyboard Shortcuts, ⌥⌘/, which the app's
 /// delegate answers with `show()`), listing every key the app answers, nothing of it written by
 /// hand: the menu bar's keys, read off the menus as they are when it opens, and the rows the plugins
-/// give (`registry.keyboardHelp`: the keys Keyboard registers, under what they do, and the hints
-/// said beside the code that reads a key). Made afresh each time it opens, as Settings is.
+/// give (`registry.keyboardHelp(kitsOn:)`: the keys Keyboard registers, under what they do, and the hints
+/// said beside the code that reads a key), those of the kits the key window's file has on, as the menu
+/// bar shows that file's items. Made afresh each time it opens, as Settings is.
 @MainActor
 public final class KeyboardShortcutsWindow {
     private let registry: Registry
     private let menu: @MainActor () -> NSMenu?
+    private let kits: @MainActor () -> Set<KitID>
     private let autosaveName: String?
     private var window: NSWindow?
     /// How many times the window has been opened: each opening's view is a new one, with nothing typed.
     private var openings = 0
 
     /// The window for `registry`'s plugins and the menu bar `menu` gives when it opens (the app's,
-    /// by default). AppKit keeps where it was left under `autosaveName` (nil: nowhere, as in tests).
+    /// by default), with the keys of the kits `kits` gives as on (the key window's file's, by default:
+    /// none with no board's window). AppKit keeps where it was left under `autosaveName` (nil: nowhere,
+    /// as in tests).
     public init(registry: Registry, menu: @escaping @MainActor () -> NSMenu? = { NSApp.mainMenu },
+                kits: @escaping @MainActor () -> Set<KitID> = { BoardMenus.keyBoardEditor()?.kits ?? [] },
                 autosaveName: String? = "Keyboard Shortcuts") {
         self.registry = registry
         self.menu = menu
+        self.kits = kits
         self.autosaveName = autosaveName
     }
 
     /// What the window lists now.
     public var sections: [KeyboardShortcutSection] {
-        KeyboardShortcutSection.sections(menu: menu(), rows: registry.keyboardHelp)
+        KeyboardShortcutSection.sections(menu: menu(), rows: registry.keyboardHelp(kitsOn: kits()))
     }
 
     /// Brings the window forward, `prepare`d.

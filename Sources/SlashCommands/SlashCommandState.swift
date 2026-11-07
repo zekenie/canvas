@@ -236,16 +236,18 @@ public struct SlashShapeRule {
 }
 
 /// What slash commands know of an editor: which commands a target offers, and running one. Per editor
-/// (so per window). Each kind's commands are gathered once (the registry is frozen), and what a shape
-/// offers is asked of its record each time, so a command offered `when` a property holds follows it
-/// with no upkeep; what the shapes selected offer is kept while the file and its layout stand, since the
-/// bar asks at every keystroke (`commands(for:)`).
+/// (so per window). Each kind's commands are gathered once for the kits the file has on (the registry is
+/// frozen; an off kit's plugins offer none), and what a shape offers is asked of its record each time, so a
+/// command offered `when` a property holds follows it with no upkeep; what the shapes selected offer is kept
+/// while the file and its layout stand, since the bar asks at every keystroke (`commands(for:)`).
 @MainActor
 public final class SlashCommandState {
     private unowned let editor: CanvasEditor
     private var candidates: [ShapeKind: [ErasedSlashCommand]] = [:]
-    /// The commands about the command bar's target as a whole, in plugin order, gathered once.
-    private lazy var aboutTargets: [ErasedSlashCommand] = editor.registry.contributions(to: SelectionSlashCommands.self).map(\.value.command)
+    /// The kits on in the file when `candidates` were gathered: gathered again when those change.
+    private var candidatesKits: Set<KitID> = []
+    /// The commands about the command bar's target as a whole, in plugin order, of the plugins on in the file.
+    private var aboutTargets: [ErasedSlashCommand] { editor.contributions(to: SelectionSlashCommands.self).map(\.value.command) }
     /// What the command bar's target listed last, and the revisions it was found at.
     private var kept: Kept?
 
@@ -358,7 +360,7 @@ public final class SlashCommandState {
     /// (its rule), unless it's offered by its `when` alone (a try). Any other, yes.
     private func offersCommand(_ command: ErasedSlashCommand, on ids: [ShapeID]) -> Bool {
         guard let declared = command.command else { return true }
-        return command.tries ? editor.registry.claims(declared) : editor.canPerform(declared, on: ids)
+        return command.tries ? editor.claims(declared) : editor.canPerform(declared, on: ids)
     }
 
     /// The command of a name (folded to lowercase) that a target offers now.
@@ -475,9 +477,13 @@ public final class SlashCommandState {
     /// The kind's own commands, then those of the scopes that reach it, one of each name, each in
     /// plugin and builder order.
     private func candidates(for kind: ShapeKind) -> [ErasedSlashCommand] {
+        if candidatesKits != editor.kits {
+            candidates = [:]
+            candidatesKits = editor.kits
+        }
         if let known = candidates[kind] { return known }
         var names = Set<String>()
-        let found = editor.registry.contributions(to: ShapeSlashCommands.self, for: kind)
+        let found = editor.contributions(to: ShapeSlashCommands.self, for: kind)
             .flatMap(\.commands).filter { names.insert($0.name).inserted }
         candidates[kind] = found
         return found

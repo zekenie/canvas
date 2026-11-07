@@ -220,10 +220,11 @@ public struct ShapeRegistrar<Definition: ShapeDefinition> {
                                              to: CorePoints.Tools.self, for: .any, from: pluginID))
         // Every tool that places a shape has its item in Insert, so a new kind is put down from the menu bar with no code of its own.
         let tool = descriptor.id
+        // A kit's tools' items go in its submenu (`KitShapes`), once the registry knows the kit.
         contributions.append(RawContribution(CommandRegistration(command: .insert(tool), title: label, section: InsertMenu.Shapes.self,
                                                                  placement: .natural, answering: nil, moment: .whenIdle, menuTitle: nil,
-                                                                 isEnabled: { $0.editor.canInsert(tool) },
-                                                                 run: { $0.editor.insert(tool, beside: $0.shapes) }),
+                                                                 isChecked: nil, isEnabled: { $0.editor.canInsert(tool) },
+                                                                 run: { $0.editor.insert(tool, beside: $0.shapes) }, inserts: tool),
                                              to: CorePoints.Commands.self, for: .any, from: pluginID))
     }
 

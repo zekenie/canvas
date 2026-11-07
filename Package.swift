@@ -230,6 +230,9 @@ let ships = [
     "Moving.MovingPlugin",
     // The example (Examples/): one line here; delete it to leave it out.
     "Reordering.ReorderingPlugin",
+    // The example kit (Examples/), off in a file until File ▸ Kits ▸ Stickers turns it on: the first kit, kept until
+    // the first real one lands. One line here; delete it to leave it out.
+    "Stickers.StickersPlugin",
 ]
 // The modules those plugins are in, once each, in the list's order: what `+ shipped` links.
 let shipped = ships.reduce(into: [String]()) { modules, plugin in
@@ -356,6 +359,7 @@ let package = Package(
         .target(name: "StickyNotes", dependencies: ["Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "LanguageRules", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
         .target(name: "Frames", dependencies: ["Canvas", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
+        .target(name: "Stickers", dependencies: ["Canvas", "CanvasRPC", "Clipboard", "ContextMenus", "Publishing", "Selection", "SlashCommands"], path: "Examples/Stickers"), // layer: product
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "CanvasRPC", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport
@@ -425,6 +429,7 @@ let package = Package(
         .executableTarget(name: "PortEdgesTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Connections", "Draw", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortEdgesTests"), // layer: test of Connections
         .executableTarget(name: "MentionTextsTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionTextsTests"), // layer: test of Mentions
         .executableTarget(name: "ValidationChecksTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Draw", "TestKit", "Validation"], path: "Tests/ValidationChecksTests"), // layer: test of Validation
+        .executableTarget(name: "StickersTests", dependencies: ["Canvas", "CanvasTesting", "Clipboard", "ContextMenus", "Keyboard", "Selection", "SlashCommands", "Stickers", "TestKit"], path: "Tests/StickersTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "ContextMenus", "Keyboard", "LanguageRules", "Mentions", "Reordering", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ExamplesTests"), // layer: test
         // The skills' tools where no app is needed: the canvas-digest tool's unit tests under jsc and the canvas-ingest tests that start no app.
         .executableTarget(name: "SkillToolsTests", dependencies: ["CanvasRPC", "SkillTesting", "TestKit"], path: "Tests/SkillToolsTests"), // layer: test

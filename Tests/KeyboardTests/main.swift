@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([shortcutTests, registrationTests])
+runTests([shortcutTests, registrationTests, kitKeyTests])

@@ -14,6 +14,7 @@ import Publishing
 import References
 import Selection
 import ShippedTesting
+import Stickers
 import StickyNotes
 import Subboards
 import TestKit
@@ -34,7 +35,8 @@ private let censusFields = #"{"type": "object", "properties": {"role": {"type": 
 
 /// A board with a shape of every shipped kind in a window, the first minute's types and notes among them (`Minute`):
 /// two types with typed notes, a relationship type with fields, a relating arrow, a locked note, a private note that
-/// mentions it, an arrow between those two, a reference standing for the locked note, a frame and a subboard.
+/// mentions it, an arrow between those two, a reference standing for the locked note, a frame, a subboard and a sticker,
+/// the example kit's, with the kit on so its ways in are swept too.
 @MainActor
 final class CensusBoard {
     let m: Minute
@@ -72,6 +74,8 @@ final class CensusBoard {
         frame[TitleProperty.self] = "Plans"
         var subboard = ShapeRecord(Subboard(frame: CGRect(x: 1600, y: 900, width: 240, height: 160)))
         subboard[TitleProperty.self] = "Ship"
+        let sticker = ShapeRecord(Sticker(frame: CGRect(x: 2200, y: 900, width: 96, height: 96), emoji: "🎉"))
+        editor.turn(StickersKit.self, on: true)
         // A note of more types than its chips have room for: a "+N" chip.
         let account = editor.addTypeNote(#"{"type": "object", "properties": {}}"#, title: "Customer Account",
                                          frame: CGRect(x: 1900, y: 40, width: 200, height: 200))
@@ -88,6 +92,7 @@ final class CensusBoard {
             t.insert(pill)
             t.insert(frame)
             t.insert(subboard)
+            t.insert(sticker)
             t.insert(arrow)
             t.insert(gig)
         }
@@ -95,7 +100,7 @@ final class CensusBoard {
         editor.lock([budget.id])
         var names = [m.feature: "Feature", m.layer: "Layer", m.featureNote: "the Feature note", m.layerNote: "the Layer note", made: "in",
                  budget.id: "Budget", ask.id: "Ask", pill.id: "the reference", frame.id: "Plans", subboard.id: "Ship",
-                     account: "Customer Account", gig.id: "Gig"]
+                     account: "Customer Account", gig.id: "Gig", sticker.id: "the sticker"]
         for arrow in m.arrows {
             let from = arrow.props.start.binding.flatMap { names[$0.shapeID] } ?? "?", to = arrow.props.end.binding.flatMap { names[$0.shapeID] } ?? "?"
             names[arrow.id] = "the arrow from \(from) to \(to)"

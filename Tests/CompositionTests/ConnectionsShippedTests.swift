@@ -14,6 +14,7 @@ import Publishing
 import References
 import Selection
 import ShippedTesting
+import Stickers
 import StickyNotes
 import Subboards
 import TestKit
@@ -133,16 +134,18 @@ extension ConnectionGroup {
         let arrow = editor.add(Arrow(start: .free(CGPoint(x: 0, y: 300)), end: .free(CGPoint(x: 200, y: 400))))
         let reference = editor.add(Reference(frame: CGRect(x: 300, y: 300, width: Reference.defaultSize.width, height: Reference.defaultSize.height)))
         let type = editor.addTypeNote(TypeSchemaProperty.starter, frame: CGRect(x: 600, y: 300, width: 200, height: 200))
+        let sticker = editor.add(Sticker(frame: CGRect(x: 900, y: 300, width: 96, height: 96), emoji: "🎉"))
         let panel = try require(editor.detailPanel)
         var kinds: Set<ShapeKind> = []
         var tabs: [[String]] = []
-        for id in [note, subboard, frame, arrow, reference, type] {
+        for id in [note, subboard, frame, arrow, reference, type, sticker] {
             let record = try require(editor.document[id])
             kinds.insert(record.kind)
             tabs.append(panel.layout(for: record).tabs.map(\.title))
         }
         expectEqual(kinds, Set(editor.registry.kinds), "every kind there is")
-        expectEqual(tabs, [["Connections", "Style"], ["Description", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"], ["Connections", "Schema", "Rules", "Style"]])
+        expectEqual(tabs, [["Connections", "Style"], ["Description", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"],
+                           ["Connections", "Schema", "Rules", "Style"], ["Connections"]])
     },
 
     test("a note with an arrow out and an arrow in lists the notes at the other ends under Points To and Pointed To By, and no arrow, with a count each") {

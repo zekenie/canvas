@@ -34,6 +34,25 @@ public final class BoardWindow: NSWindow {
 
     public override var undoManager: UndoManager? { textUndo }
 
+    /// Becoming key, the menu bar shows the commands this window's file has: an off kit's items go, an on
+    /// kit's come back (`BoardMenus.showCommands`).
+    public override func becomeKey() {
+        super.becomeKey()
+        if let editor, let menu = NSApp.mainMenu { BoardMenus.showCommands(of: editor, in: menu, registry: editor.registry) }
+    }
+
+    /// Closing, once no board's window is left with the keyboard, the menu bar shows what it shows with none:
+    /// every kit off, as in a new file (`BoardMenus.showCommands`). Another board's window becoming key shows its own.
+    public override func close() {
+        let registry = editor?.registry
+        super.close()
+        // No app (a test's process) has no menu bar.
+        guard let registry, let app = NSApp, app.mainMenu != nil else { return }
+        Task { @MainActor in
+            if let menu = app.mainMenu, BoardMenus.keyBoardEditor() == nil { BoardMenus.showCommands(of: nil, in: menu, registry: registry) }
+        }
+    }
+
     /// Watches for clicks in windows that aren't boards' (the color panel), which no board's window
     /// sees: each begins something new, so it ends every board's run of panel writes. Once per app.
     /// Not one in a board's child window (a list text shows beside itself to pick from), whose

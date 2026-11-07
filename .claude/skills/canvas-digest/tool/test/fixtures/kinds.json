@@ -1,5 +1,6 @@
 [
  {"kind":"arrow","drawable":false,"why":"it joins two shapes: write edge \"A\" -> \"B\""},
+ {"kind":"emoji-sticker","drawable":true},
  {"kind":"frame","drawable":true,"holds":"shapes","via":[{"kind":"reference"}]},
  {"kind":"reference","drawable":true},
  {"kind":"sticky-note","drawable":true,"via":[{"kind":"reference"}]},

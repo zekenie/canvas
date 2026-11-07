@@ -29,12 +29,21 @@ extension MenuBarSection {
     public static var orderRule: OrderRule { order.rule }
 
     /// As the registry's report names it: the type, in what it's declared in (`EditMenu.CutCopyPaste`), its
-    /// module left out, and the private context a file's own type is in.
+    /// module left out, and the private context a file's own type is in; a generic one's arguments named the
+    /// same way (`KitShapes<StickersKit>`).
     static var reportedName: String {
         let reflected = String(reflecting: Self.self)
+        guard let open = reflected.firstIndex(of: "<"), reflected.hasSuffix(">") else { return named(reflected) ?? "\(Self.self)" }
+        let arguments = reflected[reflected.index(after: open)..<reflected.index(before: reflected.endIndex)]
+            .split(separator: ",").map { argument in named(String(argument.drop { $0 == " " })) ?? String(argument) }
+        return (named(String(reflected[..<open])) ?? "\(Self.self)") + "<" + arguments.joined(separator: ", ") + ">"
+    }
+
+    /// A type's reflected name, its module and any private context it's in left out; nil for none left.
+    private static func named(_ reflected: String) -> String? {
         let start = reflected.lastIndex(of: ")").map { reflected.index(after: $0) } ?? reflected.firstIndex(of: ".") ?? reflected.startIndex
         let name = reflected[start...].drop { $0 == "." }
-        return name.isEmpty ? "\(Self.self)" : String(name)
+        return name.isEmpty ? nil : String(name)
     }
 }
 

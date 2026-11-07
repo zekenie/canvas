@@ -46,6 +46,11 @@ public struct CanvasRepresentable: NSViewRepresentable {
 /// tool is locked (`editor.isToolLocked`) the selected segment's symbol carries a small lock, and its
 /// tooltip adds ", locked".
 ///
+/// A tool is a segment, but a kit's tools (`registrar.join`) are one segment for the kit while it's on in
+/// the file (`editor.kits`) and none while it's off: the segment shows the last of the kit's tools used (its
+/// first, until one is), a click takes that tool, and its menu (its arrow, or a long press) lists every tool
+/// of the kit, as Insert's submenu for the kit does.
+///
 /// An AppKit segmented control, since SwiftUI's segmented `Picker` dims none of its segments:
 /// `.disabled` on a segment's content changes nothing there.
 public struct ToolPicker: View {
@@ -56,22 +61,47 @@ public struct ToolPicker: View {
     }
 
     public var body: some View {
-        let registry = editor.registry, tools = registry.tools
-        ToolSegments(editor: editor, tools: tools, tooltips: tools.map { registry.toolTip(for: $0) }, current: editor.currentToolID,
-                     enabled: tools.map { editor.isToolEnabled($0.id) }, isLocked: editor.isToolLocked)
+        let registry = editor.registry, groups = ToolGroup.groups(in: registry, kitsOn: editor.kits)
+        let tools = groups.flatMap(\.tools)
+        ToolSegments(editor: editor, groups: groups, tooltips: Dictionary(tools.map { ($0.id, registry.toolTip(for: $0)) }, uniquingKeysWith: { first, _ in first }),
+                     current: editor.currentToolID,
+                     enabled: Dictionary(tools.map { ($0.id, editor.isToolEnabled($0.id)) }, uniquingKeysWith: { first, _ in first }),
+                     isLocked: editor.isToolLocked)
             .fixedSize()
     }
 }
 
-/// `ToolPicker`'s control: a segment a tool, its symbol and tooltip, dimmed where `enabled` says, the
-/// current tool's selected, with a lock on its symbol while `isLocked`; a click on one picks that tool
-/// (`editor.setTool`, which may refuse it, and then the selection goes back to the tool that's current).
+/// A segment of the toolbar: one tool, or the tools of a kit that's on (`kit`), which one segment shows.
+struct ToolGroup {
+    let kit: KitDescriptor?
+    let tools: [ToolDescriptor]
+
+    /// The toolbar's segments: each tool in no kit, in the registry's order (`registry.tools`), then a segment
+    /// for each kit on in the file, in the order kits are joined, holding its tools in that order.
+    @MainActor static func groups(in registry: Registry, kitsOn: Set<KitID>) -> [ToolGroup] {
+        let tools = registry.tools
+        var groups = tools.filter { registry.kit(ofTool: $0.id) == nil }.map { ToolGroup(kit: nil, tools: [$0]) }
+        for kit in registry.kits where kitsOn.contains(kit.id) {
+            let held = tools.filter { registry.kit(ofTool: $0.id) == kit.id }
+            if !held.isEmpty { groups.append(ToolGroup(kit: kit, tools: held)) }
+        }
+        return groups
+    }
+
+    /// What tells two segments apart: the kit, and the tools.
+    var key: [String] { [kit?.id.rawValue ?? ""] + tools.map(\.id.rawValue) }
+}
+
+/// `ToolPicker`'s control: a segment a group, the symbol and tooltip of the tool it shows, dimmed where
+/// `enabled` says, the current tool's selected, with a lock on its symbol while `isLocked`; a click on one
+/// picks the tool it shows (`editor.setTool`, which may refuse it, and then the selection goes back to the
+/// tool that's current), and a kit's segment's menu picks any of its tools.
 struct ToolSegments: NSViewRepresentable {
     let editor: CanvasEditor
-    let tools: [ToolDescriptor]
-    let tooltips: [String]
+    let groups: [ToolGroup]
+    let tooltips: [ToolID: String]
     let current: ToolID
-    let enabled: [Bool]
+    let enabled: [ToolID: Bool]
     let isLocked: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator(editor: editor) }
@@ -83,29 +113,40 @@ struct ToolSegments: NSViewRepresentable {
         control.target = context.coordinator
         control.action = #selector(Coordinator.pick(_:))
         control.setAccessibilityLabel("Tool")
-        control.segmentCount = tools.count
-        for index in tools.indices { control.setImageScaling(.scaleNone, forSegment: index) }
         return control
     }
 
     func updateNSView(_ control: NSSegmentedControl, context: Context) {
-        context.coordinator.tools = tools.map(\.id)
+        let coordinator = context.coordinator
+        coordinator.lay(groups, in: control)
         control.isEnabled = context.environment.isEnabled
-        let selected = tools.firstIndex { $0.id == current }
+        let showing = groups.map { coordinator.tool(showing: $0, current: current) }
+        coordinator.showing = showing.map(\.id)
+        let selected = groups.firstIndex { $0.tools.contains { $0.id == current } }
         let locked = isLocked ? selected : nil
-        for index in tools.indices {
-            let tip = index == locked ? ToolLockStyle.tip(tooltips[index]) : tooltips[index]
+        for (index, tool) in showing.enumerated() {
+            let tooltip = tooltips[tool.id] ?? tool.label
+            let tip = index == locked ? ToolLockStyle.tip(tooltip) : tooltip
             if control.toolTip(forSegment: index) != tip { control.setToolTip(tip, forSegment: index) }
-            if control.isEnabled(forSegment: index) != enabled[index] { control.setEnabled(enabled[index], forSegment: index) }
+            let isEnabled = enabled[tool.id] ?? true
+            if control.isEnabled(forSegment: index) != isEnabled { control.setEnabled(isEnabled, forSegment: index) }
+            for item in control.menu(forSegment: index)?.items ?? [] {
+                item.state = (item.representedObject as? String) == current.rawValue ? .on : .off
+            }
         }
-        context.coordinator.show(symbolsOf: tools, lockedAt: locked, in: control)
+        coordinator.show(symbolsOf: showing, kits: groups.map(\.kit), lockedAt: locked, in: control)
         control.selectedSegment = selected ?? -1
     }
 
     @MainActor
     final class Coordinator: NSObject {
         let editor: CanvasEditor
-        var tools: [ToolID] = []
+        /// The segments as laid out, by what tells them apart.
+        private var laid: [[String]] = []
+        /// The tool each segment shows, as last shown: what a click on it picks.
+        var showing: [ToolID] = []
+        /// The tool of each kit last used, which its segment shows while none of the kit's is current.
+        private var lastUsed: [KitID: ToolID] = [:]
 
         init(editor: CanvasEditor) { self.editor = editor }
 
@@ -113,23 +154,70 @@ struct ToolSegments: NSViewRepresentable {
         /// plain, or with the lock.
         private var shown: [Int: ToolLockStyle.Look] = [:]
 
-        /// Each segment's symbol, plain, the one at `lockedIndex` with a lock on it.
-        func show(symbolsOf tools: [ToolDescriptor], lockedAt lockedIndex: Int?, in control: NSSegmentedControl) {
+        /// Gives the control a segment a group, if they aren't as they were: a kit's with its menu, a tool's with
+        /// none.
+        func lay(_ groups: [ToolGroup], in control: NSSegmentedControl) {
+            let keys = groups.map(\.key)
+            guard keys != laid else { return }
+            laid = keys
+            shown = [:]
+            control.segmentCount = groups.count
+            for (index, group) in groups.enumerated() {
+                control.setImageScaling(.scaleNone, forSegment: index)
+                guard let kit = group.kit else {
+                    control.setMenu(nil, forSegment: index)
+                    control.setShowsMenuIndicator(false, forSegment: index)
+                    continue
+                }
+                let menu = NSMenu(title: kit.title)
+                for tool in group.tools {
+                    let item = NSMenuItem(title: tool.label, action: #selector(pickFromMenu(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = tool.id.rawValue
+                    item.image = NSImage(systemSymbolName: tool.systemImage, accessibilityDescription: nil)
+                    menu.addItem(item)
+                }
+                control.setMenu(menu, forSegment: index)
+                control.setShowsMenuIndicator(true, forSegment: index)
+            }
+        }
+
+        /// The tool a segment shows: a tool's own; of a kit's, the current tool if it's one of them (which it
+        /// remembers), else the one used last, else the first.
+        func tool(showing group: ToolGroup, current: ToolID) -> ToolDescriptor {
+            guard let kit = group.kit else { return group.tools[0] }
+            if let tool = group.tools.first(where: { $0.id == current }) {
+                lastUsed[kit.id] = tool.id
+                return tool
+            }
+            return group.tools.first { $0.id == lastUsed[kit.id] } ?? group.tools[0]
+        }
+
+        /// Each segment's symbol, plain, the one at `lockedIndex` with a lock on it; a kit's named for the kit
+        /// and its tool.
+        func show(symbolsOf tools: [ToolDescriptor], kits: [KitDescriptor?], lockedAt lockedIndex: Int?, in control: NSSegmentedControl) {
             var widest: CGFloat?
             for (index, tool) in tools.enumerated() {
-                let look = ToolLockStyle.Look(symbol: tool.systemImage, isLocked: index == lockedIndex)
+                let label = kits[index].map { "\($0.title), \(tool.label)" } ?? tool.label
+                let look = ToolLockStyle.Look(symbol: tool.systemImage, label: label, isLocked: index == lockedIndex)
                 guard shown[index] != look else { continue }
                 shown[index] = look
                 // The segments are equally wide, as wide as the widest symbol needs: a lock is given that
                 // room, so it sits beside a narrow symbol (Select's arrow) rather than over it.
                 if look.isLocked, widest == nil { widest = ToolLockStyle.widestSymbol(of: tools.map(\.systemImage)) }
-                control.setImage(ToolLockStyle.image(for: look, label: tool.label, width: widest), forSegment: index)
+                control.setImage(ToolLockStyle.image(for: look, label: label, width: widest), forSegment: index)
             }
         }
 
         @objc func pick(_ control: NSSegmentedControl) {
-            if tools.indices.contains(control.selectedSegment) { editor.setTool(tools[control.selectedSegment]) }
-            control.selectedSegment = tools.firstIndex(of: editor.currentToolID) ?? -1
+            if showing.indices.contains(control.selectedSegment) { editor.setTool(showing[control.selectedSegment]) }
+            control.selectedSegment = laid.firstIndex { $0.dropFirst().contains(editor.currentToolID.rawValue) } ?? -1
+        }
+
+        /// A tool picked from a kit's segment's menu.
+        @objc func pickFromMenu(_ item: NSMenuItem) {
+            guard let id = item.representedObject as? String else { return }
+            editor.setTool(ToolID(id))
         }
     }
 }
@@ -137,9 +225,10 @@ struct ToolSegments: NSViewRepresentable {
 /// The tool lock on the toolbar's selected tool.
 @MainActor
 enum ToolLockStyle {
-    /// A segment's image: a tool's symbol, with the lock or without.
+    /// A segment's image: a tool's symbol, with the lock or without, and what VoiceOver calls it.
     struct Look: Equatable {
         let symbol: String
+        var label = ""
         let isLocked: Bool
     }
 

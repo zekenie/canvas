@@ -2,20 +2,23 @@ import AppKit
 import Canvas
 import Selection
 
-/// Per editor (so per window): each kind's items, gathered once (the registry is frozen), and what
-/// a secondary click opens.
+/// Per editor (so per window): each kind's items, gathered once for the kits the file has on (the registry
+/// is frozen; an off kit's plugins give none), and what a secondary click opens.
 @MainActor
 final class ContextMenuState {
     private unowned let editor: CanvasEditor
     private var candidates: [ShapeKind: [ErasedEntry]] = [:]
-    /// The items for the canvas (`CanvasContextMenu`), in plugin order, each with the shapes it's for:
-    /// every menu (`.any`), or a scope's.
-    private let canvasItems: [Contributed<CanvasMenuContribution>]
+    /// The kits on in the file when `candidates` were gathered: gathered again when those change.
+    private var candidatesKits: Set<KitID> = []
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        canvasItems = editor.registry.contributions(to: CanvasContextMenu.self)
+        candidatesKits = editor.kits
     }
+
+    /// The items for the canvas (`CanvasContextMenu`), in plugin order, each with the shapes it's for:
+    /// every menu (`.any`), or a scope's; none of a plugin whose kit is off in the file.
+    private var canvasItems: [Contributed<CanvasMenuContribution>] { editor.contributions(to: CanvasContextMenu.self) }
 
     /// A secondary click: the context menu for what it's on, as the select tool sees it. That's the
     /// selection, on a selected shape or on empty space inside a multi-selection's box; otherwise
@@ -88,8 +91,12 @@ final class ContextMenuState {
 
     /// The kind's own entries, then those of the scopes that reach it, each in plugin and builder order.
     private func candidates(for kind: ShapeKind) -> [ErasedEntry] {
+        if candidatesKits != editor.kits {
+            candidates = [:]
+            candidatesKits = editor.kits
+        }
         if let known = candidates[kind] { return known }
-        let found = editor.registry.contributions(to: ShapeContextMenus.self, for: kind).flatMap(\.entries)
+        let found = editor.contributions(to: ShapeContextMenus.self, for: kind).flatMap(\.entries)
         candidates[kind] = found
         return found
     }
@@ -213,7 +220,7 @@ enum ContextMenuItems {
     static func resolve(_ entries: [MenuEntry<MenuSubject>], for subject: MenuSubject, omitting: Set<CanvasCommand> = []) -> [ResolvedEntry] {
         let editor = subject.editor
         return expanded(entries, for: subject).compactMap { entry in
-            guard entry.isShown(subject), entry.command.map(editor.registry.claims) ?? true else { return nil }
+            guard entry.isShown(subject), entry.command.map(editor.claims) ?? true else { return nil }
             let key = EntryKey(group: entry.group, id: entry.id)
             let title = Self.title(entry.title, command: entry.command, id: entry.id, in: editor)
             switch entry.content {

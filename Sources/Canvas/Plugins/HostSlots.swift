@@ -218,7 +218,8 @@ extension ToolTips: KeyedExtensionPoint {
 public enum KeyboardHelp {}
 
 extension KeyboardHelp: KeyedExtensionPoint {
-    public typealias Contribution = @MainActor (Registry) -> [KeyboardHelpRow]
+    /// The rows for a file with these kits on (`editor.kits`): an off kit's keys are left out.
+    public typealias Contribution = @MainActor (Registry, Set<KitID>) -> [KeyboardHelpRow]
     public static var owner: PluginID { .core }
     public static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["keyboard help"] }
     public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "keyboard help" }
@@ -228,6 +229,9 @@ extension KeyboardHelp: KeyedExtensionPoint {
 /// lists them too: a key held through a click or a drag (⌥ drags a copy), or a key text being
 /// edited answers (⌘↩ finishes). Any number, in plugin order; the same row twice is listed once.
 public enum KeyHints {}
+
+/// A kit switches its plugins' hints: the window leaves out an off kit's (`keyboardHelp(kitsOn:)`).
+extension KeyHints: KitSwitched {}
 
 extension KeyHints: ExtensionPoint {
     public typealias Contribution = KeyboardHelpRow
@@ -445,8 +449,11 @@ extension PluginRegistrar {
     /// The rows the Keyboard Shortcuts window lists from what's registered, read off the frozen
     /// registry when the window opens:
     ///
-    ///     registrar.keyboardHelp { registry in registry.keyboardHelpRows }
-    public mutating func keyboardHelp(_ rows: @escaping @MainActor (Registry) -> [KeyboardHelpRow]) {
+    ///     registrar.keyboardHelp { registry, kits in registry.keyboardHelpRows(kitsOn: kits) }
+    ///
+    /// `kits` are those on in the file the window lists the keys of: a key of a plugin in a kit that isn't
+    /// among them is left out (`registry.kit(of:)`).
+    public mutating func keyboardHelp(_ rows: @escaping @MainActor (Registry, Set<KitID>) -> [KeyboardHelpRow]) {
         contribute(rows, to: KeyboardHelp.self)
     }
 
@@ -525,12 +532,17 @@ extension Registry {
         contributions(to: ToolTips.self).first?.value(tool, self) ?? tool.label
     }
 
-    /// Every row of the Keyboard Shortcuts window that comes from the plugins: what the plugin that
-    /// keeps the keys lists, then the hints, each row once.
-    public var keyboardHelp: [KeyboardHelpRow] {
-        let registered = contributions(to: KeyboardHelp.self).first?.value(self) ?? []
+    /// Every row of the Keyboard Shortcuts window that comes from the plugins, every kit's too: what the
+    /// plugin that keeps the keys lists, then the hints, each row once.
+    public var keyboardHelp: [KeyboardHelpRow] { keyboardHelp(kitsOn: Set(kits.map(\.id))) }
+
+    /// The same for a file with these kits on (`editor.kits`): a key or a hint of a plugin in a kit that isn't
+    /// among them is left out, as the menu bar leaves out the kit's items.
+    public func keyboardHelp(kitsOn on: Set<KitID>) -> [KeyboardHelpRow] {
+        let registered = contributions(to: KeyboardHelp.self).first?.value(self, on) ?? []
+        let hints = contributions(to: KeyHints.self).filter { kit(of: $0.pluginID).map(on.contains) ?? true }.map(\.value)
         var seen = Set<KeyboardHelpRow>()
-        return (registered + contributions(to: KeyHints.self).map(\.value)).filter { seen.insert($0).inserted }
+        return (registered + hints).filter { seen.insert($0).inserted }
     }
 
     /// The key a menu item shows for a command, if the plugin that keeps the keys gives it one: the first

@@ -40,6 +40,7 @@ public final class BoardWindowController: NSWindowController {
         super.init(window: window)
         shouldCascadeWindows = true
         showSubtitle()
+        followKits()
         window.escapeToCanvas = { [weak self] in self?.escapeToCanvas() ?? false }
     }
 
@@ -56,6 +57,16 @@ public final class BoardWindowController: NSWindowController {
             Task { @MainActor in self?.showSubtitle() }
         }
         if window?.subtitle != subtitle { window?.subtitle = subtitle }
+    }
+
+    /// The menu bar's items for the file's kits: while this window is key, an item of a kit the file turns off
+    /// goes and one it turns on comes back, as its kits change (an undo of Turn On Stickers too), read again
+    /// the next turn each time they do.
+    private func followKits() {
+        _ = withObservationTracking { editor.kits } onChange: { [weak self] in
+            Task { @MainActor in self?.followKits() }
+        }
+        if window?.isKeyWindow == true, let menu = NSApp.mainMenu { BoardMenus.showCommands(of: editor, in: menu, registry: editor.registry) }
     }
 
     /// The title: shown only while no sidebar shows, whose header names the board shown (the root, as
@@ -415,6 +426,8 @@ extension BoardWindowController: NSMenuItemValidation {
             if editor.registry.moment(of: command) == .whenIdle, window?.firstResponder is NSText { return false }
             // A command named for the step it would take (Enclosing Group, Enclosing Frame): its item follows.
             if let title = board?.editor.menuTitle(of: command), item.title != title { item.title = title }
+            // A command that turns something on and off (File ▸ Kits ▸ Stickers): its item is checked while it's on.
+            if let checked = board?.editor.isChecked(command) { item.state = checked ? .on : .off }
             return board?.editor.canPerform(command) == true
         }
         return board != nil

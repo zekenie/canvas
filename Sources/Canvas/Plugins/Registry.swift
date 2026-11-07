@@ -63,6 +63,10 @@ public struct Registry {
     /// The tools that place a kind's shapes (`ShapeRegistrar.tool`): none is enabled on a board that
     /// can't change (`editor.isToolEnabled`).
     let placingTools: Set<ToolID>
+    /// The plugin that gives each tool: an off kit's tool isn't enabled in a file (`editor.isToolEnabled`).
+    let toolPlugins: [ToolID: PluginID]
+    /// The kits plugins join (`registrar.join`): which they are, and which plugin is in which.
+    let kitTable: KitTable
     /// Added properties: who declares each, and which kinds opt in.
     let propertyTable: PropertyTable
     /// File properties (`FileProperty`), by key: how each declared one's value is read and written.
@@ -86,6 +90,10 @@ public struct Registry {
             plugin.register(into: &registrar)
             contributions += registrar.contributions
         }
+        // What the core gives once plugins join kits: its file value, each kit's item in File ▸ Kits, and each
+        // kit's tools' Insert items in its submenu.
+        let kitted = Self.kitContributions(contributions)
+        contributions = kitted.contributions
         try Self.check(contributions, installed: ids)
         pluginIDs = ids
         // Stable: contributions keep plugin order within each point.
@@ -125,6 +133,9 @@ public struct Registry {
             let tool = $0.value as! ToolRegistration
             return tool.placement == nil ? nil : tool.descriptor.id
         })
+        toolPlugins = Dictionary((byPoint[ObjectIdentifier(CorePoints.Tools.self)] ?? []).map { (($0.value as! ToolRegistration).descriptor.id, $0.pluginID) },
+                                 uniquingKeysWith: { first, _ in first })
+        kitTable = kitted.table
         let declarations = byPoint[ObjectIdentifier(CorePoints.PropertyDeclarations.self)] ?? []
         let table = try PropertyTable(declarations: declarations,
                                       optIns: byPoint[ObjectIdentifier(CorePoints.PropertyOptIns.self)] ?? [],

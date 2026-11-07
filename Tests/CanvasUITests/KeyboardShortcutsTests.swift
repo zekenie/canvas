@@ -76,7 +76,7 @@ import TestKit
     test("opened again after it was closed, the window is the one it was, at the size it was left, its rows read again") {
         let given = GivenRows()
         given.rows = [KeyboardHelpRow(keys: ["V"], title: "Select", place: .tool)]
-        let help = Contributor(id: "help") { $0.keyboardHelp { _ in given.rows } }
+        let help = Contributor(id: "help") { $0.keyboardHelp { _, _ in given.rows } }
         let shortcuts = KeyboardShortcutsWindow(registry: try Registry(plugins: [help]), menu: { nil }, autosaveName: nil)
         let window = shortcuts.prepare()
         window.setContentSize(NSSize(width: 700, height: 500))
@@ -104,7 +104,7 @@ import TestKit
     test("the window opens with the search field focused and named, takes typing, and Escape closes it") {
         let given = GivenRows()
         given.rows = [KeyboardHelpRow(keys: ["⌘+"], title: "Zoom In", place: .canvas), KeyboardHelpRow(keys: ["⌘Z"], title: "Undo", place: .canvas)]
-        let help = Contributor(id: "help") { $0.keyboardHelp { _ in given.rows } }
+        let help = Contributor(id: "help") { $0.keyboardHelp { _, _ in given.rows } }
         let shortcuts = KeyboardShortcutsWindow(registry: try Registry(plugins: [help]), menu: { nil }, autosaveName: nil)
         let window = shortcuts.prepare()
         window.orderFront(nil)

@@ -55,8 +55,9 @@ public enum ShapeSelectability: KeyedExtensionPoint {
     public static func uniqueKeys(of _: Contribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
 }
 
-/// What a double-click on empty canvas with the select tool places. At most one kind may claim it.
-public enum DoubleClickPlacement: KeyedExtensionPoint {
+/// What a double-click on empty canvas with the select tool places. At most one kind may claim it; a kit
+/// switches it, so while the claimant's kit is off in a file a double-click there places nothing.
+public enum DoubleClickPlacement: KeyedExtensionPoint, KitSwitched {
     public typealias Contribution = Placement
     public static var owner: PluginID { .selection }
     public static func uniqueKeys(of _: Placement, for _: ShapeTarget) -> [AnyHashable] { ["double-click on empty canvas"] }

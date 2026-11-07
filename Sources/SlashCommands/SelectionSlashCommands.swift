@@ -89,6 +89,9 @@ public struct SelectionSlashCommand {
 /// (`ShapeSlashCommands`), or that can't be typed as one, refuses the plugin list.
 public enum SelectionSlashCommands {}
 
+/// A kit switches its plugins' commands about the bar's target, as it does their commands for shapes.
+extension SelectionSlashCommands: KitSwitched {}
+
 extension SelectionSlashCommands: KeyedExtensionPoint {
     public typealias Contribution = SelectionSlashCommandContribution
     public static var owner: PluginID { .slashCommands }

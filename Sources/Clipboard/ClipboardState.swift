@@ -40,9 +40,19 @@ final class ClipboardState {
     /// Each kind's rule (`ShapeCopyability`), found once.
     private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
     private let codec: BoardCodec
-    /// What would paste, and whether a cut put it there, as of the pasteboard's change count when
-    /// it was last read.
-    private var content: (changeCount: Int, file: CanvasFile, isCut: Bool)?
+    /// What would paste, and where it came from, as of the pasteboard's change count and the kits the
+    /// file had on (whose readers read text) when it was last read.
+    private var content: (changeCount: Int, kits: Set<KitID>, file: CanvasFile, source: PasteSource)?
+
+    /// Where what a paste puts down came from.
+    enum PasteSource {
+        /// This app's shapes, copied: pasted as copies, each naming its original (`CopiedFrom`).
+        case copied
+        /// This app's shapes, cut: pasted as the shapes themselves, under the ids nothing in the file goes by.
+        case cut
+        /// Text another app put there, read by a plugin's reader (`PasteReaders`): new shapes, no copies.
+        case read
+    }
 
     init(editor: CanvasEditor, pasteboard: NSPasteboard) {
         self.editor = editor
@@ -175,7 +185,7 @@ final class ClipboardState {
         pasteboard.clearContents()
         pasteboard.setData(data, forType: Self.shapesType)
         if cut { pasteboard.setString(UUID().uuidString, forType: Self.cutType) }
-        content = (pasteboard.changeCount, file, cut)
+        content = (pasteboard.changeCount, editor.kits, file, cut ? .cut : .copied)
         return (gathered.copied, gathered.whole)
     }
 
@@ -186,7 +196,7 @@ final class ClipboardState {
     @discardableResult
     func duplicate(_ ids: [ShapeID], offset: CGPoint) -> [ShapeID] {
         guard let gathered = gather(ids) else { return [] }
-        return place(gathered.file, isCut: false, named: "Duplicate", at: nil, offsetBy: offset)
+        return place(gathered.file, source: .copied, named: "Duplicate", at: nil, offsetBy: offset)
     }
 
     /// Puts copies of the copyable shapes of `ids` on the pasteboard, in place of what was there.
@@ -209,16 +219,18 @@ final class ClipboardState {
         editor.hovered = nil
     }
 
-    /// What a paste would put down, as it's on the pasteboard: this app's shapes (anything else there
-    /// is left alone), less those this app can't read (a kind it doesn't install, a newer version of
-    /// one, a board format it doesn't know) and those that can't do without them; and under each
-    /// that owns a board here, what it holds, read the same way; and whether a cut put it there.
-    /// Read again only when the pasteboard has changed.
-    private func pasteable() -> (file: CanvasFile, isCut: Bool) {
+    /// What a paste would put down, as it's on the pasteboard: this app's shapes, less those this app
+    /// can't read (a kind it doesn't install, a newer version of one, a board format it doesn't know) and
+    /// those that can't do without them; and under each that owns a board here, what it holds, read the
+    /// same way; and whether a cut put it there. With none of this app's shapes there, text another app put
+    /// there, as the first reader on in the file reads it (`PasteReaders`); anything else is left alone.
+    /// Read again only when the pasteboard, or the kits the file has on, have changed.
+    private func pasteable() -> (file: CanvasFile, source: PasteSource) {
         let changeCount = pasteboard.changeCount
-        if let content, content.changeCount == changeCount { return (content.file, content.isCut) }
-        var file = CanvasFile()
-        if let data = pasteboard.data(forType: Self.shapesType), let board = try? codec.decode(data) {
+        if let content, content.changeCount == changeCount, content.kits == editor.kits { return (content.file, content.source) }
+        var file = CanvasFile(), source = PasteSource.copied
+        let data = pasteboard.data(forType: Self.shapesType)
+        if let data, let board = try? codec.decode(data) {
             let readable = { (record: AnyShapeRecord) in !record.isOpaque }
             let root = carry(board.file.root.shapes.filter(readable), renaming: { $0 },
                              in: ShapeContext(document: board.file.root, registry: editor.registry))
@@ -227,10 +239,24 @@ final class ClipboardState {
                 children.merge(boards(under: record, reading: { board.file[BoardID(owner: $0)] }, keeping: readable).boards) { old, _ in old }
             }
             file = CanvasFile(root: CanvasDocument(shapes: root), children: children)
+            source = pasteboard.string(forType: Self.cutType) != nil ? .cut : .copied
+        } else if data == nil, let read = read() {
+            file = read
+            source = .read
         }
-        let isCut = pasteboard.string(forType: Self.cutType) != nil
-        content = (changeCount, file, isCut)
-        return (file, isCut)
+        content = (changeCount, editor.kits, file, source)
+        return (file, source)
+    }
+
+    /// The text another app put on the pasteboard, as the first reader on in the file reads it into shapes
+    /// (`PasteReaders`, in plugin order, a reader whose plugin's kit is off never asked); nil for no text, or
+    /// text no reader reads.
+    private func read() -> CanvasFile? {
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return nil }
+        for reader in editor.contributions(to: PasteReaders.self) {
+            if let file = reader.value.read(text, editor), !file.root.shapes.isEmpty { return file }
+        }
+        return nil
     }
 
     /// Whether a paste would put anything down.
@@ -255,9 +281,19 @@ final class ClipboardState {
     /// out of those it reaches into, gliding there; what's selected is what isn't in another shape
     /// pasted with it. A read-only container (a locked frame) takes nothing: a paste it would take
     /// puts nothing down, and services hear the container refused (it shakes).
+    ///
+    /// What a reader read from text lands centered on `point`, else in the middle of the view: it was
+    /// copied from nowhere on the board.
     func paste(centeredAt point: CGPoint? = nil) {
-        let (file, isCut) = pasteable()
-        place(file, isCut: isCut, named: "Paste", at: point, offsetBy: nil)
+        let (file, source) = pasteable()
+        place(file, source: source, named: "Paste", at: point ?? (source == .read ? viewMiddle : nil), offsetBy: nil)
+    }
+
+    /// The middle of what the view shows of the board, clear of what the window covers, in world units; nil
+    /// before the view has a size.
+    private var viewMiddle: CGPoint? {
+        let view = editor.unobscuredViewport
+        return view.isEmpty ? nil : editor.camera.toWorld(view).center
     }
 
     /// Puts `file`'s shapes down, as `paste` describes: centered on `point`, else where they were copied from
@@ -265,14 +301,14 @@ final class ClipboardState {
     /// moved by it.
     /// Returns the selected copies.
     @discardableResult
-    private func place(_ file: CanvasFile, isCut: Bool, named name: String, at point: CGPoint?, offsetBy fixed: CGPoint?) -> [ShapeID] {
+    private func place(_ file: CanvasFile, source: PasteSource, named name: String, at point: CGPoint?, offsetBy fixed: CGPoint?) -> [ShapeID] {
         let shapes = Array(file.root.shapes)
         guard !shapes.isEmpty else { return [] }
         editor.endEditing()
         let target = editor.file, kinds = editor.registry.containingKinds
         var ids: [ShapeID: ShapeID] = [:]
         for board in file.everyBoard {
-            for record in file[board].shapes { ids[record.id] = isCut && target.isUnused(record.id) ? record.id : ShapeID() }
+            for record in file[board].shapes { ids[record.id] = source == .cut && target.isUnused(record.id) ? record.id : ShapeID() }
         }
         // A read-only container a paste would go in refuses it whole (`transactWhole`): nothing is put
         // down, no step is left, and the container shakes.
@@ -280,8 +316,8 @@ final class ClipboardState {
             let carried = carry(shapes, renaming: { ids[$0]! }, naming: { ids[$0] }, in: transaction.shapes)
             let groups = copiedGroups(of: carried, renaming: ids)
             for record in carried {
-                transaction.insert(pasted(record, as: ids[record.id]!, renaming: ids, groups: groups),
-                                   contents: pastedBoards(under: record.id, in: file, renaming: ids))
+                transaction.insert(pasted(record, as: ids[record.id]!, renaming: ids, groups: groups, copy: source != .read),
+                                   contents: pastedBoards(under: record.id, in: file, renaming: ids, copies: source != .read))
             }
             let placed = shapes.compactMap { ids[$0.id] }.filter { transaction.document[$0] != nil }
             let centered = point.flatMap { point in transaction.shapes.bounds(of: placed).map { point - $0.center } }
@@ -304,13 +340,13 @@ final class ClipboardState {
     }
 
     /// `record` under `id`: under its own, the shape itself, moved; under a new one, a copy, naming
-    /// the shape it's a copy of, in the groups `groups` gives it (`copiedGroups`). In the container it
-    /// came in, as pasted (`ids`), if one.
+    /// the shape it's a copy of (with `copy`: not a shape a reader read, which is a copy of nothing), in the
+    /// groups `groups` gives it (`copiedGroups`). In the container it came in, as pasted (`ids`), if one.
     private func pasted(_ record: AnyShapeRecord, as id: ShapeID, renaming ids: [ShapeID: ShapeID],
-                        groups: [ShapeID: [String]]) -> AnyShapeRecord {
+                        groups: [ShapeID: [String]], copy: Bool) -> AnyShapeRecord {
         var shape = record.copy(as: id, container: record.container.flatMap { ids[$0] })
         if id != record.id {
-            shape.meta[CopiedFrom.self] = CopySource(shape: record.id)
+            if copy { shape.meta[CopiedFrom.self] = CopySource(shape: record.id) }
             if let path = groups[record.id] { shape[GroupsProperty.self] = path }
         }
         return shape
@@ -330,7 +366,7 @@ final class ClipboardState {
 
     /// The boards under `owner` in `file` as pasted, each under its owner's id as pasted (`ids`),
     /// their shapes naming each other as pasted.
-    private func pastedBoards(under owner: ShapeID, in file: CanvasFile, renaming ids: [ShapeID: ShapeID]) -> [ShapeID: CanvasDocument] {
+    private func pastedBoards(under owner: ShapeID, in file: CanvasFile, renaming ids: [ShapeID: ShapeID], copies: Bool) -> [ShapeID: CanvasDocument] {
         var boards: [ShapeID: CanvasDocument] = [:]
         var owners = [owner], next = 0
         while next < owners.count {
@@ -340,7 +376,7 @@ final class ClipboardState {
             let carried = carry(Array(board.shapes), renaming: { ids[$0]! }, naming: { ids[$0] },
                                 in: ShapeContext(document: board, registry: editor.registry))
             let groups = copiedGroups(of: carried, renaming: ids)
-            boards[ids[owner]!] = CanvasDocument(shapes: carried.map { pasted($0, as: ids[$0.id]!, renaming: ids, groups: groups) })
+            boards[ids[owner]!] = CanvasDocument(shapes: carried.map { pasted($0, as: ids[$0.id]!, renaming: ids, groups: groups, copy: copies) })
             owners += carried.map(\.id)
         }
         return boards
@@ -374,8 +410,8 @@ extension CanvasEditor {
     public func canCopy(_ ids: [ShapeID]) -> Bool { clipboard?.canCopy(ids) ?? false }
 
     /// Whether ⌘V would paste anything: the pasteboard holds this app's shapes, some of which it
-    /// can read, nothing is under way, and the board shown takes shapes (not a locked subboard's,
-    /// `isBoardReadOnly`).
+    /// can read, or text a reader on in the file reads (`PasteReaders`), nothing is under way, and the
+    /// board shown takes shapes (not a locked subboard's, `isBoardReadOnly`).
     public var canPaste: Bool { session == nil && !isBoardReadOnly && clipboard?.hasShapes == true }
 
     /// Puts copies of the selected shapes that can be copied beside them, as ⌘D does (`duplicateBeside`).

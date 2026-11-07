@@ -38,6 +38,10 @@ extension KeyboardShortcuts: KeyedExtensionPoint {
     }
 }
 
+/// A kit switches its plugins' keys: while a plugin's kit is off in a file, its keys pass there (`KeyboardState`
+/// reads them through the editor). A key's chord stays claimed either way, so no other plugin may take it.
+extension KeyboardShortcuts: KitSwitched {}
+
 /// A chord, as the key a shortcut claims: "shortcut ⌘A" in a conflict.
 struct ChordKey: Hashable, CustomStringConvertible {
     let chord: KeyChord
@@ -276,8 +280,12 @@ extension Registry {
     /// filed with the command if one of them runs it, but a tool's keys never share a row with what
     /// isn't a tool (the Note tool's N, Insert › Note's ⇧↩), and the four arrows held with the same
     /// modifiers are written as one ("←↑→↓", "⇧←↑→↓").
-    public var keyboardHelpRows: [KeyboardHelpRow] {
+    public var keyboardHelpRows: [KeyboardHelpRow] { keyboardHelpRows(kitsOn: Set(kits.map(\.id))) }
+
+    /// The same for a file with these kits on: a key of a plugin in a kit that isn't among them is left out.
+    public func keyboardHelpRows(kitsOn on: Set<KitID>) -> [KeyboardHelpRow] {
         var rows: [(title: String, place: KeyboardHelpRow.Place, chords: [KeyChord])] = []
+        let shortcuts = contributions(to: KeyboardShortcuts.self).filter { kit(of: $0.pluginID).map(on.contains) ?? true }.map(\.value)
         for shortcut in shortcuts {
             let title: String, place: KeyboardHelpRow.Place
             switch shortcut.effect {
@@ -318,12 +326,14 @@ extension KeyChord {
     }
 }
 
-/// Per editor: the shortcuts by chord, gathered once (the registry is frozen), and what a key pressed
-/// on the canvas does.
+/// Per editor: the shortcuts by chord, gathered once for the kits the file has on (the registry is frozen;
+/// a plugin's keys pass while its kit is off), and what a key pressed on the canvas does.
 @MainActor
 final class KeyboardState {
     private unowned let editor: CanvasEditor
-    private let shortcuts: [KeyChord: Shortcut]
+    /// The shortcuts by chord of the plugins on in the file, and the kits they were gathered for: gathered
+    /// again when those change.
+    private var gathered: (kits: Set<KitID>, shortcuts: [KeyChord: Shortcut])
     /// The keys held down whose shortcuts do something while they're held, by key.
     private var held: [Character: Shortcut] = [:]
     /// The key the canvas last saw go down, until it's let go: a key's repeats run a shortcut again
@@ -333,7 +343,18 @@ final class KeyboardState {
 
     init(editor: CanvasEditor) {
         self.editor = editor
-        shortcuts = Dictionary(editor.registry.shortcuts.map { ($0.chord, $0) }, uniquingKeysWith: { first, _ in first })
+        gathered = (editor.kits, Self.shortcuts(of: editor))
+    }
+
+    /// The shortcuts by chord of the plugins on in the editor's file.
+    private static func shortcuts(of editor: CanvasEditor) -> [KeyChord: Shortcut] {
+        Dictionary(editor.contributions(to: KeyboardShortcuts.self).map { ($0.value.chord, $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The shortcuts by chord of the plugins on in the file now.
+    private var shortcuts: [KeyChord: Shortcut] {
+        if gathered.kits != editor.kits { gathered = (editor.kits, Self.shortcuts(of: editor)) }
+        return gathered.shortcuts
     }
 
     /// A key pressed on the canvas: of the chords it answers to (`KeyChord.answers(to:)`), the first
@@ -344,6 +365,7 @@ final class KeyboardState {
         let key = KeyChord(stroke)?.key
         if !stroke.isRepeat { down = key }
         let wentDownHere = !stroke.isRepeat || (key != nil && key == down)
+        let shortcuts = self.shortcuts
         for candidate in KeyChord.answers(to: stroke) {
             guard let shortcut = shortcuts[candidate], shortcut.applies(in: editor) else { continue }
             if case .held = shortcut.effect {
@@ -393,7 +415,7 @@ public struct KeyboardPlugin: ListedPlugin {
         // they show, and the menu bar answers the others too.
         registrar.menuKeys { command, registry in registry.menuKeys[command] ?? [] }
         // The Keyboard Shortcuts window's rows: every key registered here, under what it does.
-        registrar.keyboardHelp { $0.keyboardHelpRows }
+        registrar.keyboardHelp { registry, kits in registry.keyboardHelpRows(kitsOn: kits) }
         registrar.keyStrokes { editor, stroke in editor.service(KeyboardState.self)?.handle(stroke) ?? false }
         registrar.keyReleases { editor, stroke in editor.service(KeyboardState.self)?.release(stroke) }
         registrar.shortcut("h", forTool: .hand)

@@ -179,7 +179,7 @@ import TestKit
     test("the Keyboard Shortcuts window's rows: the plugin that keeps the keys gives its own off the built registry, then come the hints, in plugin order, each row once; none without either; a second list is a conflict") {
         let core = try Registry(plugins: [TilesPlugin()])
         expectEqual(core.keyboardHelp, [], "no list, and no hints")
-        let rows = Contributor(id: "rows") { $0.keyboardHelp { registry in [KeyboardHelpRow(keys: ["⌘K"], title: "\(registry.tools.count) tools", place: .canvas)] } }
+        let rows = Contributor(id: "rows") { $0.keyboardHelp { registry, _ in [KeyboardHelpRow(keys: ["⌘K"], title: "\(registry.tools.count) tools", place: .canvas)] } }
         let hints = Contributor(id: "hints") { registrar in
             registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
             registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
@@ -190,7 +190,7 @@ import TestKit
         expectEqual(registry.keyboardHelp.map(\.place), [.canvas, .pointer, .text])
         expectEqual(report(registry, of: "rows"), "keyboard help")
         expect(report(registry, of: "hints")?.contains("key hint ⌥ Drag Drag a Copy") == true, report(registry, of: "hints") ?? "no report")
-        let again = Contributor(id: "again") { $0.keyboardHelp { _ in [] } }
+        let again = Contributor(id: "again") { $0.keyboardHelp { _, _ in [] } }
         expectThrows(RegistryError.conflict(point: "KeyboardHelp", key: "keyboard help", plugins: ["rows", "again"])) {
             _ = try Registry(plugins: [rows, again])
         }

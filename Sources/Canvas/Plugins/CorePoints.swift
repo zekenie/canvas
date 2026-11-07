@@ -8,7 +8,8 @@ enum CorePoints {
         static func uniqueKeys(of c: ShapeRegistration, for _: ShapeTarget) -> [AnyHashable] { [c.kind] }
     }
 
-    enum Tools: KeyedExtensionPoint {
+    /// The toolbar's tools. A kit switches its plugins' (`editor.isToolEnabled`).
+    enum Tools: KeyedExtensionPoint, KitSwitched {
         typealias Contribution = ToolRegistration
         static var owner: PluginID { .core }
         static func uniqueKeys(of c: ToolRegistration, for _: ShapeTarget) -> [AnyHashable] { [ToolKey(id: c.descriptor.id)] }

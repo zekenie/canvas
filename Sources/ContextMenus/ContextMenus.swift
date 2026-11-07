@@ -23,6 +23,9 @@ extension PluginID {
 /// with the same group and id.
 public enum ShapeContextMenus {}
 
+/// A kit switches its plugins' items: while a plugin's kit is off in a file, its items are in no menu there.
+extension ShapeContextMenus: KitSwitched {}
+
 extension ShapeContextMenus: KeyedExtensionPoint {
     public typealias Contribution = ContextMenuContribution
     public static var owner: PluginID { .contextMenus }
@@ -156,8 +159,9 @@ final class ErasedEntry {
     /// What it's called in this editor's menu: its own title, else its command's.
     func title(in editor: CanvasEditor) -> String { ContextMenuItems.title(title, command: command, id: key.id, in: editor) }
 
-    /// Whether the editor can have it at all: one that names a command shows only while a plugin claims it.
-    func isClaimed(in editor: CanvasEditor) -> Bool { command.map(editor.registry.claims) ?? true }
+    /// Whether the editor can have it at all: one that names a command shows only while a plugin claims it
+    /// in the editor's file (`editor.claims`: not while the plugin's kit is off there).
+    func isClaimed(in editor: CanvasEditor) -> Bool { command.map(editor.claims) ?? true }
 }
 
 extension ContextMenuContribution {
@@ -256,6 +260,9 @@ extension ScopedRegistrar {
 /// the scope reaches. Keyed by group and id, as a shape's are: two plugins adding one item are a
 /// `conflict`, and a shape's own item with the same group and id takes its place, shown or not.
 public enum CanvasContextMenu {}
+
+/// A kit switches its plugins' items for the canvas, as it does their items for shapes.
+extension CanvasContextMenu: KitSwitched {}
 
 extension CanvasContextMenu: KeyedExtensionPoint {
     public typealias Contribution = CanvasMenuContribution

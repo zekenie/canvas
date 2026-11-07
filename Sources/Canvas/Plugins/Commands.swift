@@ -96,8 +96,20 @@ struct CommandRegistration {
     /// What its menu item is called now, for a command that is named for the step it would take
     /// (`editor.menuTitle(of:)`); `title` otherwise.
     let menuTitle: (@MainActor (CanvasEditor) -> String)?
+    /// Whether its menu item is checked now, for a command that turns something on and off
+    /// (`editor.isChecked(_:)`); nil for one whose item is never checked.
+    let isChecked: (@MainActor (CanvasEditor) -> Bool)?
     let isEnabled: @MainActor (CommandSubject) -> Bool
     let run: @MainActor (CommandSubject) -> Void
+    /// The tool it puts a shape of down, for an Insert item (`ShapeRegistrar.tool(placing:)`): a kit's go in its
+    /// submenu (`KitShapes`).
+    var inserts: ToolID? = nil
+
+    /// The same, its item in `section` (a kit's tool's Insert item, in the kit's submenu).
+    func placed(in section: any MenuBarSection.Type) -> CommandRegistration {
+        CommandRegistration(command: command, title: title, section: section, placement: placement, answering: answering, moment: moment,
+                            menuTitle: menuTitle, isChecked: isChecked, isEnabled: isEnabled, run: run, inserts: inserts)
+    }
 }
 
 extension PluginRegistrar {
@@ -125,6 +137,8 @@ extension PluginRegistrar {
     /// - `menuTitle`: what its menu bar item is called now, for a command named for the step it would
     ///   take (Go › Enclosing Group, Enclosing Frame, Enclosing Board); `title` stays its name wherever
     ///   it's listed.
+    /// - `isChecked`: whether its menu bar item is checked now, for a command that turns something on
+    ///   and off (File ▸ Kits ▸ Stickers); nil, and its item is never checked.
     /// - `isEnabled`: its rule, whether it can act on its subject (`CommandSubject`: the selection from
     ///   a key or the menu bar, a context menu's shapes and click): one rule, which dims its items and
     ///   lets its keys pass while it says no. By default, always. A command a context menu runs reads
@@ -138,10 +152,12 @@ extension PluginRegistrar {
                                  placed placement: Order<CanvasCommand> = .natural,
                                  answering: StandardAction? = nil, runs moment: CommandMoment = .anytime,
                                  menuTitle: (@MainActor (CanvasEditor) -> String)? = nil,
+                                 isChecked: (@MainActor (CanvasEditor) -> Bool)? = nil,
                                  isEnabled: @escaping @MainActor (CommandSubject) -> Bool = { _ in true },
                                  _ run: @escaping @MainActor (CommandSubject) -> Void) {
         contribute(CommandRegistration(command: command, title: title, section: section, placement: placement.rule, answering: answering,
-                                       moment: moment, menuTitle: menuTitle, isEnabled: isEnabled, run: run), to: CorePoints.Commands.self)
+                                       moment: moment, menuTitle: menuTitle, isChecked: isChecked, isEnabled: isEnabled, run: run),
+                   to: CorePoints.Commands.self)
     }
 
     /// What a command run from a key or the menu bar acts on: the selection, for the plugin that keeps
@@ -179,8 +195,10 @@ extension Registry {
     /// and menus ask on every key and every update.
     var commandTable: CommandTable {
         memo(CommandTableMemo()) {
-            let registrations = contributions(to: CorePoints.Commands.self).map(\.value)
+            let contributed = contributions(to: CorePoints.Commands.self)
+            let registrations = contributed.map(\.value)
             return CommandTable(byCommand: Dictionary(registrations.map { ($0.command, $0) }, uniquingKeysWith: { first, _ in first }),
+                                plugins: Dictionary(contributed.map { ($0.value.command, $0.pluginID) }, uniquingKeysWith: { first, _ in first }),
                                 answering: Dictionary(registrations.compactMap { r in r.answering.map { ($0, r.command) } },
                                                       uniquingKeysWith: { first, _ in first }),
                                 inOrder: registrations,
@@ -193,6 +211,9 @@ extension Registry {
 /// `Registry.commandTable`.
 struct CommandTable {
     let byCommand: [CanvasCommand: CommandRegistration]
+    /// The plugin that declares each: a command whose plugin's kit is off in a file isn't claimed there
+    /// (`editor.claims`).
+    let plugins: [CanvasCommand: PluginID]
     let answering: [StandardAction: CanvasCommand]
     /// Every registration, in plugin order.
     let inOrder: [CommandRegistration]
@@ -210,6 +231,9 @@ struct CommandShapesClaim {
 }
 
 private struct CommandTableMemo: Hashable {}
+
+/// A kit switches its plugins' commands: an off kit's isn't claimed in the file (`editor.claims`).
+extension CorePoints.Commands: KitSwitched {}
 
 extension CorePoints.Commands: KeyedExtensionPoint {
     typealias Contribution = CommandRegistration
@@ -294,12 +318,23 @@ extension CanvasEditor {
         CommandSubject(editor: self, shapes: registry.commandTable.shapes?(self) ?? [])
     }
 
+    /// The command a plugin declared, as this file has it: none for one whose plugin's kit is off here
+    /// (`registrar.join`), which nothing runs, lists or offers while it's off.
+    func registration(of command: CanvasCommand) -> CommandRegistration? {
+        guard let registration = registry.command(command) else { return nil }
+        return registry.commandTable.plugins[command].map(isOn(plugin:)) ?? true ? registration : nil
+    }
+
+    /// Whether a plugin claims the command in this file: one does (`registry.claims`), and its kit, if it
+    /// joined one, is on here. What lists a command's item (a context menu's, the menu bar's) asks this.
+    public func claims(_ command: CanvasCommand) -> Bool { registration(of: command) != nil }
+
     /// Runs the command a plugin declared, on what a key or the menu bar acts on (the selection), if it
     /// can run now: at its moment (`CommandMoment`), and its rule says so. What it commits is one undo
-    /// step. False if no plugin claims it, or it can't.
+    /// step. False if no plugin claims it in this file, or it can't.
     @discardableResult
     public func perform(_ command: CanvasCommand) -> Bool {
-        guard let registration = registry.command(command), registration.moment.allows(self) else { return false }
+        guard let registration = registration(of: command), registration.moment.allows(self) else { return false }
         let subject = commandSubject
         guard registration.isEnabled(subject) else { return false }
         undoHistory.group { registration.run(subject) }
@@ -309,33 +344,33 @@ extension CanvasEditor {
     /// Whether `perform` would run the command now: what a menu item asks to enable itself, and a key
     /// before it takes the key.
     public func canPerform(_ command: CanvasCommand) -> Bool {
-        guard let registration = registry.command(command), registration.moment.allows(self) else { return false }
+        guard let registration = registration(of: command), registration.moment.allows(self) else { return false }
         return registration.isEnabled(commandSubject)
     }
 
     /// Runs a command on shapes a surface brings (a context menu's, and where it was opened), if its
     /// rule says it can act on them: the surface brings its own moment (a menu ends editing as it opens),
-    /// so `CommandMoment` isn't asked. One undo step. False if no plugin claims it, or it can't.
+    /// so `CommandMoment` isn't asked. One undo step. False if no plugin claims it in this file, or it can't.
     @discardableResult
     public func perform(_ command: CanvasCommand, on shapes: [ShapeID], at point: CGPoint? = nil) -> Bool {
         let subject = CommandSubject(editor: self, shapes: shapes, point: point)
-        guard let registration = registry.command(command), registration.isEnabled(subject) else { return false }
+        guard let registration = registration(of: command), registration.isEnabled(subject) else { return false }
         undoHistory.group { registration.run(subject) }
         return true
     }
 
     /// Whether the command can act on shapes a surface brings: its rule alone (see `perform(_:on:at:)`).
     public func canPerform(_ command: CanvasCommand, on shapes: [ShapeID], at point: CGPoint? = nil) -> Bool {
-        registry.command(command)?.isEnabled(CommandSubject(editor: self, shapes: shapes, point: point)) ?? false
+        registration(of: command)?.isEnabled(CommandSubject(editor: self, shapes: shapes, point: point)) ?? false
     }
 
     /// Runs a command on shapes whatever its rule says: a try, as a chip's click is, or a line typed in a
     /// shape's own text, which a surface offers by what it shows. What the command can't do it refuses
     /// (the core refuses a read-only shape), and what's refused shakes. One undo step. False only if no
-    /// plugin claims it.
+    /// plugin claims it in this file.
     @discardableResult
     public func attempt(_ command: CanvasCommand, on shapes: [ShapeID], at point: CGPoint? = nil) -> Bool {
-        guard let registration = registry.command(command) else { return false }
+        guard let registration = registration(of: command) else { return false }
         let subject = CommandSubject(editor: self, shapes: shapes, point: point)
         undoHistory.group { registration.run(subject) }
         return true
@@ -355,10 +390,17 @@ extension CanvasEditor {
 
     /// What the menu item that runs the command should be called now, for a command whose title
     /// follows the editor (`registrar.command(…menuTitle:…)`: Go › Enclosing Group); nil for one
-    /// whose item keeps its own title, or that no plugin claims. The window asks as it validates the
-    /// item.
+    /// whose item keeps its own title, or that no plugin claims in this file. The window asks as it
+    /// validates the item.
     public func menuTitle(of command: CanvasCommand) -> String? {
-        registry.command(command)?.menuTitle?(self)
+        registration(of: command)?.menuTitle?(self)
+    }
+
+    /// Whether the menu item that runs the command is checked now, for a command that turns something on
+    /// and off (`registrar.command(…isChecked:…)`: File ▸ Kits ▸ Stickers); nil for one whose item is never
+    /// checked, or that no plugin claims in this file. The window asks as it validates the item.
+    public func isChecked(_ command: CanvasCommand) -> Bool? {
+        registration(of: command)?.isChecked?(self)
     }
 }
 

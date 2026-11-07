@@ -96,6 +96,13 @@ public final class CanvasEditor {
     /// it, in one climb, and set only when it changes: what marks the path where the lock is, without
     /// asking each board above (`isReadOnly(board:)` of each would cost the path's depth squared).
     public private(set) var readOnlyStart: BoardID?
+    /// The kits turned on in the file (File ▸ Kits), those a plugin joins: what the file keeps (`KitsOn`)
+    /// that the registry has. A plugin in a kit that isn't here is off in this file, and what it gives a point
+    /// a kit switches is left out (`isOn(plugin:)`, `contributions(to:)`). Worked out again as a commit, an
+    /// undo or a redo changes the value and as a file is put in place, and set only when it changes:
+    /// observed apart from `document`, so what shows a kit's tools or items redraws as it changes, never on
+    /// every commit.
+    public internal(set) var kits: Set<KitID> = []
     /// Every board of the file: what a board file saves. `document` is its board `board`; the others
     /// change only with a commit on the shown one (a deletion taking the boards under a shape, a paste
     /// bringing some, a move taking shapes onto one), one on a board that isn't shown (`transact(on:)`)
@@ -447,6 +454,7 @@ public final class CanvasEditor {
         // default tool that places shapes gives way to the Hand there.
         readOnlyStart = registry.readOnlyStart(ofPathTo: shown, in: storedFile)
         isBoardReadOnly = readOnlyStart != nil
+        kits = Self.kits(on: storedFile, registry: registry)
         if !isToolEnabled(currentToolID) { currentToolID = .hand }
         // Services first, so tools can look them up; each resolves the services it asks for.
         for registration in registry.services { _ = resolveService(registration.type) }
@@ -774,10 +782,11 @@ public final class CanvasEditor {
 
     /// Whether `setTool` takes a tool: any, but one that places shapes (a kind's tool,
     /// `ShapeRegistrar.tool`, or the core's for shapes waiting to be placed, `placeLater`) on a board that
-    /// can't change (`isBoardReadOnly`), so the toolbar dims those there, and their keys do nothing.
-    /// Observed through `isBoardReadOnly`.
+    /// can't change (`isBoardReadOnly`), so the toolbar dims those there, and their keys do nothing; and
+    /// one a plugin in a kit gives while the kit is off in the file (`kits`), which the toolbar leaves out.
+    /// Observed through `isBoardReadOnly` and `kits`.
     public func isToolEnabled(_ id: ToolID) -> Bool {
-        !isBoardReadOnly || !(registry.placingTools.contains(id) || id == .pendingPlacement)
+        (!isBoardReadOnly || !(registry.placingTools.contains(id) || id == .pendingPlacement)) && isOn(tool: id)
     }
 
     /// Works out again whether the board shown can't change, and where its path turns read-only, as a
@@ -794,8 +803,8 @@ public final class CanvasEditor {
     }
 
     /// Leaves a tool that isn't enabled on the board shown (one that places shapes, on a board that
-    /// has just become read-only) for the default tool, or for the Hand if that one isn't enabled
-    /// either.
+    /// has just become read-only, or a kit's whose kit has just gone off) for the default tool, or for
+    /// the Hand if that one isn't enabled either.
     private func leaveDisabledTool() {
         guard !isToolEnabled(currentToolID) else { return }
         setTool(isToolEnabled(registry.defaultTool) ? registry.defaultTool : .hand)
@@ -1117,8 +1126,9 @@ public final class CanvasEditor {
         revision += 1
         beginDelivery(.commit(changes))
         // Before services hear the commit, which may have locked the board's owner (a commit on the
-        // board above, `transact(on:)`) or put another file in place.
+        // board above, `transact(on:)`) or put another file in place, or turned a kit on or off.
         let becameReadOnly = noteBoardReadOnly()
+        let kitWentOff = changes.fileValues.contains(KitsOn.key) && noteKits()
         forgetLaidOutSizes(after: changes)
         shapeIndex.documentDidChange(changes, in: newDocument, registry: registry)
         for id in changes.removed where drawingOffsets[id] != nil { drawingOffsets[id] = nil }
@@ -1137,7 +1147,7 @@ public final class CanvasEditor {
            document[editing].map({ isBoardReadOnly || registry.isReadOnly($0, in: newDocument) || $0.kind != editedKind }) ?? true {
             endEditing(discarding: false)
         }
-        if becameReadOnly { leaveDisabledTool() }
+        if becameReadOnly || kitWentOff { leaveDisabledTool() }
         setNeedsDisplay()
     }
 
@@ -1229,8 +1239,9 @@ public final class CanvasEditor {
         keptView = nil
         board = target
         boardPath = storedFile.path(to: target) ?? [.root]
-        // Whether this board takes shapes, before services hear of it.
+        // Whether this board takes shapes, and which kits a file put in place has on, before services hear of it.
         _ = noteBoardReadOnly()
+        _ = noteKits()
         shapeIndex = warmIndexes.take(for: target, in: self) ?? ShapeIndex()
         hintedID = nil
         drawingOffsets = [:]

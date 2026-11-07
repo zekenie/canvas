@@ -186,8 +186,9 @@ extension SelectTool: Tool {
 }
 
 extension CanvasEditor {
-    /// What a double-click on the canvas places (`DoubleClickPlacement`), if a kind claims it.
-    fileprivate var doubleClickPlacement: Placement? { registry.contributions(to: DoubleClickPlacement.self).first?.value }
+    /// What a double-click on the canvas places (`DoubleClickPlacement`), if a kind claims it and its kit, if
+    /// any, is on in the file.
+    fileprivate var doubleClickPlacement: Placement? { contributions(to: DoubleClickPlacement.self).first?.value }
 }
 
 /// A shape was pressed (tldraw's PointingShape). Past the drag threshold the selection moves, or,

@@ -22,6 +22,10 @@ extension PluginID {
 /// name that can't be typed as one (`SlashCommandLine.isName`) refuses the plugin list.
 public enum ShapeSlashCommands {}
 
+/// A kit switches its plugins' commands: while a plugin's kit is off in a file, `/` lists none of its commands
+/// there, in a shape's text or the command bar, and none runs.
+extension ShapeSlashCommands: KitSwitched {}
+
 extension ShapeSlashCommands: KeyedExtensionPoint {
     public typealias Contribution = SlashCommandContribution
     public static var owner: PluginID { .slashCommands }

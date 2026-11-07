@@ -14,7 +14,9 @@ import AppKit
 /// AppKit fills Open Recent (it finds the menu by its Clear Menu item) and, since boards autosave in
 /// place, turns Save As into Duplicate and Revert to Saved into Revert To. Shape, after Edit, fills
 /// itself each time it opens (`ShapeMenu`). A menu no command and no item of the window's is in isn't
-/// there: a list without Grouping and Reordering has no Arrange.
+/// there: a list without Grouping and Reordering has no Arrange. An item whose command's plugin is in a
+/// kit that's off in the key window's file isn't there either (`showCommands(of:in:registry:)`), and
+/// File ▸ Kits, the core's item for each kit, turns one on or off.
 @MainActor
 public enum BoardMenus {
     public struct Menus {
@@ -45,6 +47,7 @@ public enum BoardMenus {
     /// Installs the menus as the app's, with `registry`'s commands.
     public static func install(appName: String, registry: Registry) {
         let menus = make(appName: appName, registry: registry)
+        showCommands(of: keyBoardEditor(), in: menus.main, registry: registry)
         NSApp.mainMenu = menus.main
         NSApp.servicesMenu = menus.services
         NSApp.windowsMenu = menus.windows
@@ -199,6 +202,7 @@ public enum BoardMenus {
                 other.representedObject = command
                 other.isHidden = true
                 other.allowsKeyEquivalentWhenHidden = true
+                other.tag = otherKeyTag
                 index += 1
                 menu.insertItem(other, at: index)
             }
@@ -207,6 +211,56 @@ public enum BoardMenus {
 
     /// The menus that come last, after every other, whatever names them.
     static let lastMenus = ["Window", "Help"]
+
+    /// What marks a hidden item for another key of the item before it (`addOtherKeys`), which stays hidden
+    /// and answers its key only while its command is there (`showCommands`).
+    static let otherKeyTag = 0x6b657973
+
+    /// Shows in `menu` the items of the commands the key window's file has (`editor.claims`), and only
+    /// those: an item whose command's plugin is in a kit that's off there (`registrar.join`) is hidden, not
+    /// dimmed, its other keys answer nothing, and a line or a submenu left with nothing to show between
+    /// goes too, and comes back with it. With no board's window (`editor` nil) every kit is off, as in a new
+    /// file. The menu bar is the app's, so a board's window calls this as it becomes key and as its file's
+    /// kits change (`BoardWindowController`). Nothing changes for a list whose plugins join no kit.
+    public static func showCommands(of editor: CanvasEditor?, in menu: NSMenu, registry: Registry) {
+        guard !registry.kits.isEmpty else { return }
+        showCommands(in: menu) { command in
+            editor?.claims(command) ?? (registry.claims(command) && registry.kit(ofCommand: command) == nil)
+        }
+    }
+
+    /// Shows in `menu`, and in its submenus, the items of the commands `isThere` says, then the lines and
+    /// submenus around them; returns whether it holds a command's item at any depth (a menu that holds none,
+    /// Open Recent or Services, is left as AppKit has it).
+    @discardableResult
+    private static func showCommands(in menu: NSMenu, where isThere: (CanvasCommand) -> Bool) -> Bool {
+        var holdsCommands = false
+        for item in menu.items {
+            if let submenu = item.submenu {
+                guard showCommands(in: submenu, where: isThere) else { continue }
+                holdsCommands = true
+                item.isHidden = !submenu.items.contains { !$0.isHidden && !$0.isSeparatorItem }
+                continue
+            }
+            guard item.action == #selector(BoardWindowController.runCommand(_:)), let command = command(of: item) else { continue }
+            holdsCommands = true
+            if item.tag == otherKeyTag { item.allowsKeyEquivalentWhenHidden = isThere(command) } else { item.isHidden = !isThere(command) }
+        }
+        guard holdsCommands else { return false }
+        // A line shows between two items that show, and only one.
+        var after = false, line: NSMenuItem?
+        for item in menu.items {
+            if item.isSeparatorItem {
+                item.isHidden = true
+                if after, line == nil { line = item }
+            } else if !item.isHidden {
+                line?.isHidden = false
+                line = nil
+                after = true
+            }
+        }
+        return true
+    }
 
     /// Some of the window's own items of a section, in the order they come, each placed among the
     /// section's items as `rule` says (by default where it first appears).
@@ -235,9 +289,10 @@ public enum BoardMenus {
         return made
     }
 
-    /// The editor of the window that has the keyboard, if it's a board's.
+    /// The editor of the window that has the keyboard, if it's a board's; none in a process with no app (a test's).
     public static let keyBoardEditor: @MainActor () -> CanvasEditor? = {
-        [NSApp.keyWindow, NSApp.mainWindow].lazy.compactMap { $0 as? BoardWindow }.first?.editor
+        guard let app = NSApp else { return nil }
+        return [app.keyWindow, app.mainWindow].lazy.compactMap { $0 as? BoardWindow }.first?.editor
     }
 
     /// F6, the key of View › Focus Next Pane.
@@ -347,9 +402,10 @@ struct MenuLayout {
 }
 
 // The window's own sections, which only its items are in; those its items share with commands are the
-// core's (`EditMenu`, `ViewMenu.Panels` and `.Zoom`), and come in the order the window lists its items.
+// core's (`EditMenu`, `ViewMenu.Panels` and `.Zoom`), and come in the order the window lists its items, as
+// File's own do before the core's Kits (`FileMenu.Kits`).
 
-enum FileMenu {
+extension FileMenu {
     /// New, Open… and Open Recent.
     enum Open {}
     /// Close, Save…, Save As… and Revert to Saved.

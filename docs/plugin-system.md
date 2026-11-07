@@ -24,6 +24,7 @@ maps one onto the other.
 - [A horizontal plugin](#a-horizontal-plugin)
 - [Properties](#properties)
 - [File values](#file-values)
+- [Kits](#kits)
 - [Selection](#selection)
 - [Commands](#commands)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -2262,6 +2263,81 @@ command line doesn't read or write one.
 [`FileValueTests`](../Tests/CanvasTests/FileValueTests.swift) hold the editor's side and
 [`FileValueCodecTests`](../Tests/CanvasTests/FileValueCodecTests.swift) the file's.
 
+## Kits
+
+A kit is a named set of the plugins the app ships, which a file turns on or off as one: File ▸ Kits ▸
+Stickers. Off in a file, a kit's ways in are gone from it (its tools, their Insert items, its keys, its
+slash commands, its menu items, its paste readers); its shapes stay drawn, editable and checked, since the
+registry is still built once with every plugin. Every kit is off until someone turns it on, so a file
+without a kit shows nothing extra. The core knows what a kit is and never which kits exist
+([`Kits.swift`](../Sources/Canvas/Plugins/Kits.swift)), and the example kit, Stickers
+([`Examples/Stickers`](../Examples/Stickers)), stays only until the first real kit lands.
+
+**A kit is a type**, the key, as a file property is:
+
+```swift
+public enum StickersKit {}
+extension StickersKit: Kit {
+    public static let id: KitID = "stickers"       // what a file keeps; never changed once shipped
+    public static var title: String { "Stickers" }  // File ▸ Kits ▸ Stickers, Insert ▸ Stickers, Turn On Stickers
+}
+```
+
+**A plugin joins it**, once, in its `register(into:)`, and everything it gives a point a kit switches is
+then the kit's; nothing else it gives is:
+
+```swift
+registrar.join(StickersKit.self)
+```
+
+There is no list of a kit's plugins anywhere: the kit is the plugins that join it. A module whose ways
+in are partly always on puts those in a plugin value of their own, which joins nothing. The registry
+refuses a plugin in two kits (or one twice), two kit types of one id and two kits of one title; its
+report says `kit stickers` first on each member's line. Once a plugin joins a kit, the core declares
+its file value (`kits`), gives each kit an item in File ▸ Kits (`CanvasCommand.kit(_:)`, checked while
+the kit is on, never switched itself) and puts the Insert items of a kit's tools in a submenu named for
+the kit (`KitShapes<StickersKit>`); a list where no plugin joins one has none of it.
+
+**What a kit switches** is a point that says so, `KitSwitched`, a marker its owner adds in an extension:
+
+| Point | Owner | Gone while its kit is off |
+|---|---|---|
+| `Tools` | core | its tools: not in the toolbar, not enabled (`isToolEnabled`), their keys passing |
+| `Commands` | core | its commands: not claimed in the file (`editor.claims`), so their Insert and menu bar items, keys, context-menu items and typed slash commands go |
+| `KeyHints` | core | its rows in the Keyboard Shortcuts window |
+| `KeyboardShortcuts` | Keyboard | its keys |
+| `ShapeSlashCommands`, `SelectionSlashCommands` | SlashCommands | its commands, in a `/` list and the command bar |
+| `ShapeContextMenus`, `CanvasContextMenu` | ContextMenus | its menu items, the Shape menu's too |
+| `DoubleClickPlacement` | Selection | a double-click on empty canvas placing its shape |
+| `PasteReaders` | Clipboard | its readers of text on the pasteboard |
+
+A kit's kinds, properties, services, overlays, adornments, panel tabs, rows, rules and its words for
+`canvas draw` and `canvas query` are never switched: a kit hides what a person sees, and agents' words
+show nothing.
+
+**Reading a switched point** goes through the editor, which knows which kits its file has on
+(`editor.kits`, observed apart from `document`): `editor.contributions(to:)`, `(to:for:)` and
+`(to:reaching:)` are the registry's reads less what a plugin of an off kit gave, kept once a point,
+kind and set of kits on, so a per-shape ask costs what it did. A reader that gathers a kind's
+contributions once gathers them again when `editor.kits` changes. `registry.contributions(to:)` still
+holds every contribution, which a point's `check` reads.
+
+**Turning one on or off** is one step, "Turn On Stickers" or "Turn Off Stickers":
+`editor.turn(StickersKit.self, on: true)`, which File ▸ Kits runs. The file keeps the ids of the kits
+on, sorted, `[ "stickers" ]` in its `values` (format 6 only while one is on); an id this app has no
+kit for stays and is written back. A tool in use whose kit goes off gives way to the default tool.
+
+**In the window** the menu bar follows the key window's file: `BoardMenus.showCommands(of:in:registry:)`
+hides an off kit's items (not dims them), with a line or a submenu left with nothing beside them, and
+shows them again for a file with the kit on. The toolbar has one segment for each kit on in the file,
+showing the last of its tools used, its menu every tool of the kit; Insert lists them in the kit's
+submenu.
+
+**Testing.** CanvasTesting's `Workshop` and `Studio` are the tests' kits, and `WorkshopPlugin` a plugin
+in one (planks, a tool and Edit ▸ Carve): each module's tests join a kit with fixture plugins of their
+own. [`KitTests`](../Tests/CanvasTests/KitTests.swift) hold the core; each horizontal's tests hold its
+switched point; StickersTests and CompositionTests' `kitsShippedTests` hold the example.
+
 ## Selection
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
@@ -3115,7 +3191,7 @@ registrar.shortcut(KeyChord("l", .shift), "Lock or Unlock", forCommands: [.lock,
 | `x.tool(label:systemImage:shortcut:placing:)` | A place tool, and the key that switches to it. |
 | `registrar.tool(descriptor, shortcut:) { ... }` | Any tool, and its key. |
 | `registrar.shortcut(chord, forTool:)` | A key for a tool registered elsewhere: Keyboard gives the core's Hand its H this way. |
-| `registrar.command(command, title:, in:, placed:, shortcut:, runs:, isEnabled:) { subject in ... }` | A [command](#commands), declared once with its keys (`shortcuts: [...]` for several: Delete's ⌫ and ⌦, Back's ⌘[ and ⌃-), so the key, its menu items and its other surfaces do one thing. Its menu bar item shows the first; each other held with ⌘ or ⌃, which types nothing, is a hidden item after it, so the menu bar answers it wherever the item's own key works, text being typed included (`BoardMenus.addOtherKeys`); one held with neither is the canvas's alone (`-`, which zooms out again and again while held). |
+| `registrar.command(command, title:, in:, placed:, shortcut:, runs:, isChecked:, isEnabled:) { subject in ... }` | A [command](#commands), declared once with its keys (and, for a toggle, whether its item is checked: `isChecked:`, read by `editor.isChecked(_:)` as the item is validated) (`shortcuts: [...]` for several: Delete's ⌫ and ⌦, Back's ⌘[ and ⌃-), so the key, its menu items and its other surfaces do one thing. Its menu bar item shows the first; each other held with ⌘ or ⌃, which types nothing, is a hidden item after it, so the menu bar answers it wherever the item's own key works, text being typed included (`BoardMenus.addOtherKeys`); one held with neither is the canvas's alone (`-`, which zooms out again and again while held). |
 | `registrar.shortcut(chord, forCommand:, repeats:)` | A key for a command claimed elsewhere: Keyboard gives the core's undo and redo ⌘Z and ⇧⌘Z this way. |
 | `registrar.shortcut(chord, "Title", forCommands: [...])` | One key for several commands, never both possible: it runs the first that can (Locking's ⇧L, Lock or Unlock). |
 | `registrar.shortcut(chord, "Title", when:, repeats:) { editor in ... }` | A key that does something of its own. |
@@ -3244,7 +3320,8 @@ What the shipped app's keys do:
   board when nothing nearer took it (`editor.perform(answering:)`). Every other command's item sends
   the window controller's one action (`runCommand:`), which runs `editor.perform`, and its one
   validation dims the item while `canPerform` says no, and while text has the keyboard for a command
-  that runs `.whenIdle`. CanvasUITests' `menuBarTests` hold the making over fixtures, CompositionTests'
+  that runs `.whenIdle`, and checks it by `editor.isChecked(_:)`; an item whose command's plugin is in
+  a kit off in the key window's file is hidden ([Kits](#kits)). CanvasUITests' `menuBarTests` hold the making over fixtures, CompositionTests'
   BoardDocumentTests the shipped bar, item by item.
 - **A ⌘ key a menu item also has** is the shortcut's while the canvas has the keyboard. AppKit asks
   the key window's views for a key equivalent before the menu bar, and the canvas asks the
@@ -3253,7 +3330,8 @@ What the shipped app's keys do:
   canvas passes, and the menu has it: Edit › Select All selects the field's text.
 - **The Keyboard Shortcuts window** (Help › Keyboard Shortcuts, ⌥⌘/) lists every key the app
   answers, and nothing in it is written by hand. Keyboard gives the host its keys
-  (`registrar.keyboardHelp { $0.keyboardHelpRows }`): a row for each thing they do, named as the
+  (`registrar.keyboardHelp { registry, kits in registry.keyboardHelpRows(kitsOn: kits) }`, an off
+  kit's left out: [Kits](#kits)): a row for each thing they do, named as the
   tool's label, the command's title or the shortcut's own title says, keys under one name in one
   row (⌘↓, ↩ and ⌤ open the selection), the four arrows held alike written as one ("⇧←↑→↓"). A key
   no shortcut has is said beside the code that reads it, with the core's `registrar.keyHint` (no
@@ -3650,7 +3728,7 @@ plugins ([What ships](#what-ships)).
 | Settings panes (`SettingsPanes`, in plugin order, a title once; the first takes the keyboard, `settingsPaneTakesFocus`) | `registrar.settingsPane("Claude") { … }` | `registry.settingsPanes` | the sign-in's, when the model is the signed-in one; the TypeSafe key's under it, when the decision model is Jev |
 | Tool tips (`ToolTips`, at most one) | `registrar.toolTips { tool, registry in … }` | `registry.toolTip(for:)`, the tool's label without one | Keyboard: "Note (N)" |
 | The keys that run a command, as menus take them (`MenuKeys`, at most one) | `registrar.menuKeys { command, registry in … }`: `[MenuKey]`, each a menu's key equivalent and modifiers, the one an item shows first | `registry.menuKey(of:)`, the first, read by the menu bar's items and a context menu's that run a command; `registry.menuKeys(of:)`, all, whose others held with ⌘ or ⌃ the menu bar answers too (hidden items); none without one | Keyboard: every key that runs the command, in the order registered (Delete as Backspace's character) |
-| The Keyboard Shortcuts window's rows (`KeyboardHelp`, at most one) and key hints (`KeyHints`, any number) | `registrar.keyboardHelp { registry in … }`; `registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)` | `registry.keyboardHelp`: the one list's rows, then the hints, each row once | Keyboard: every key it registers; the hints of each plugin that reads a key no shortcut has |
+| The Keyboard Shortcuts window's rows (`KeyboardHelp`, at most one) and key hints (`KeyHints`, any number) | `registrar.keyboardHelp { registry, kits in … }`; `registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)` | `registry.keyboardHelp(kitsOn:)`: the one list's rows, then the hints, each row once, an off kit's left out ([Kits](#kits)); `registry.keyboardHelp`, every kit's | Keyboard: every key it registers; the hints of each plugin that reads a key no shortcut has |
 | What Copy as Image draws (`ImageSources`, at most one) | `registrar.imageSource(isAvailable:) { editor in … }`: whether there is anything to draw, and the shapes of the board shown a picture of the selection (or the board, with nothing selected) shows | `registry.imageSource` | Clipboard: the shapes a copy would take (`editor.imageShapes()`) |
 | The commands (`HostCommands`, at most one) | `registrar.hostCommands(specs:run:)`, both handed the built registry | `registry.hostCommands`: the specs, and how to run one by name | Automation: every plugin's command |
 
@@ -6187,8 +6265,12 @@ giving a shape back the id it had.
   and with it the boards under it. With boards under the copied shapes it's a whole file,
   `CanvasFile`, at format 4, the boards under their owners' original ids; without, it's written
   as it always was, so an app that doesn't know boards pastes it, and one that doesn't know format
-  4 pastes nothing. A pasted shape whose kind owns no board in this app gets none. Anything else
-  on the pasteboard (text, an image from another app) is left alone for now. ⌘V, Edit › Paste and
+  4 pastes nothing. A pasted shape whose kind owns no board in this app gets none. With none of
+  the app's shapes there, text another app put on the pasteboard pastes when a plugin's reader reads
+  it into shapes (`registrar.pasteReader("emoji") { text, editor in CanvasFile? }`, asked in plugin
+  order, the first that reads it the paste, never while its plugin's kit is off: [Kits](#kits)): new
+  shapes, no copies, in the middle of the view (on the click or the pointer where Paste says), one
+  Paste step. Anything else on the pasteboard (an image, text no reader reads) is left alone. ⌘V, Edit › Paste and
   Paste are there only when something would paste, and the board shown takes shapes (`canPaste`),
   so otherwise ⌘V's key goes on, Edit › Paste is dimmed and the context menu has none; on a locked
   subboard's board nothing is pasted, and nothing refused, since there's nothing to try. Copy and
@@ -15629,7 +15711,7 @@ and a test checks it loads and registers.
 `registry.report` prints who contributes what: the runtime half of the graph, pinned by a test.
 
 ```
-core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd
+core                 tool hand · command undo · command redo · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:stickers in FileMenu.KitList
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
@@ -15718,6 +15800,7 @@ type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Ty
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
+stickers             kit stickers · shape emoji-sticker · label Sticker → emoji-sticker · tool emoji-sticker · command insert:emoji-sticker in KitShapes<StickersKit> · tool emoji-sticker-heart · command insert:emoji-sticker-heart in KitShapes<StickersKit> · tool emoji-sticker-star · command insert:emoji-sticker-star in KitShapes<StickersKit> · tool emoji-sticker-party · command insert:emoji-sticker-party in KitShapes<StickersKit> · ShapeResizing → emoji-sticker · parts resize handles → emoji-sticker · accessibility → emoji-sticker · /sticker → emoji-sticker · ShapeContextMenus in ShapeMenuGroup first → emoji-sticker · paste reader emoji
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as
