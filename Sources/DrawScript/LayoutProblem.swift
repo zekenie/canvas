@@ -263,12 +263,33 @@ public struct LayoutSolution: Sendable, Equatable {
     /// on them, so it paints above them, and it isn't kept within them. Each is where the boxes
     /// leave it: one a restated box takes along (`Free.carries`), moved as far as that box moves.
     public var zones: [[LayoutProblem.Obstacle]]
+    /// Each box slid along an axis its placement leaves free, to stay inside what holds it (`in "F"`,
+    /// or `inside`), in the order it happened.
+    public var slides: [Slide]
 
     /// `zones` nil: none for any box.
-    public init(rects: [CGRect], pushes: [Push], zones: [[LayoutProblem.Obstacle]]? = nil) {
+    public init(rects: [CGRect], pushes: [Push], zones: [[LayoutProblem.Obstacle]]? = nil, slides: [Slide] = []) {
         self.rects = rects
         self.pushes = pushes
         self.zones = zones ?? rects.map { _ in [] }
+        self.slides = slides
+    }
+
+    /// A free box that would have crossed its holder's edge on the axis its placement leaves free (a
+    /// lone direction centers it there), and was slid along it until it was inside.
+    public struct Slide: Sendable, Equatable {
+        /// Its place in `free`.
+        public var box: Int
+        /// Which way it went: right, left, below or above.
+        public var way: Direction
+        /// What it stays inside.
+        public var inside: LayoutProblem.Ref
+
+        public init(box: Int, way: Direction, inside: LayoutProblem.Ref) {
+            self.box = box
+            self.way = way
+            self.inside = inside
+        }
     }
 
     /// For each free box, what it was pushed past, in order, each once: what it was kept clear of

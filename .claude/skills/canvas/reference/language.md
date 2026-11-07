@@ -541,7 +541,7 @@ A frame is a region of the board that holds shapes: what's in it moves with it, 
 frame "Sprint" below board size: 900x600
 ```
 
-`in "Sprint"` puts a shape in the frame, on the board the frame is on, kept 40 in from its edges. With nothing else to say where, it goes against the frame's top-left, as `inside "Sprint" top-left` places one, and shapes written alike make a list down from there. With placements, it goes where they say, kept within the frame, or the script fails with `no_room`.
+`in "Sprint"` puts a shape in the frame, on the board the frame is on, kept 40 in from its edges. With nothing else to say where, it goes against the frame's top-left, as `inside "Sprint" top-left` places one, and shapes written alike make a list down from there. With placements, it goes where they say, kept within the frame, or the script fails with `no_room`. A shape that would cross the frame's edge only on the axis its placement leaves free (vertical for `right of` and `left of`, which center it on the target; horizontal for `above` and `below`) isn't refused: it slides along that axis, keeping its side of the target, until it is 40 in, and a warning says so (`"Search" was slid down to stay inside "Sprint"`). Tables of different heights placed side by side in a database rely on this too. `no_room` is for a shape that can't fit the frame on that axis at all, or whose placement against the target (the axis it does say) would put it outside.
 
 ```draw
 sticky-note "Login bug" in "Sprint" text: "Sessions expire too soon"

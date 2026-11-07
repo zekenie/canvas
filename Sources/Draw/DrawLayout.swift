@@ -237,6 +237,18 @@ extension Drawing {
                 said.append((index, push.way, nil, [past.quoted], push.placementsHold))
             }
         }
+        // A shape slid along the axis its placement leaves free, to stay inside what holds it, says so.
+        for slide in solution.slides {
+            guard let index = itemOf[slide.box] else { continue }
+            let how = switch slide.way {
+            case .right: "right"
+            case .left: "left"
+            case .below: "down"
+            default: "up"
+            }
+            notes.append(DrawWarning(line: items[index].statement.line,
+                                     "\(subject(of: items[index])) was slid \(how) to stay inside \(pushed(slide.inside).quoted)"))
+        }
         // What each shape went past each way: its own pushes first, then what it went along past,
         // with the shapes it went with in script order.
         struct Way: Hashable { var item: Int, way: Direction }
