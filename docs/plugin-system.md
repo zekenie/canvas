@@ -2494,6 +2494,27 @@ shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes
 line, ⇧↩ puts a shape beside. A line typed wider than the shape lays it out as wide as the line needs
 (`LineRowsLayout.width`, provided), nothing written. [line rows](../.claude/rules/line-rows.md) is the whole of it.
 
+**A row's card.** ⌘↓ in a row writes its line and shows what more the row holds than its line says, a line
+each, in a core card hung from the row (LineRows' Card part). The kind gives it, and each line reads the row and
+writes it back; the card holds no step, a line left commits the row as its line does, one step the kind names:
+
+```swift
+func card(of row: TallyRow, in context: LineContext) -> LineCard<TallyRow>? {     // LineModel; nil: none (an enum's value)
+    LineCard(header: LineCardHeader(name: row.label), lines: [
+        .field("count", grammar: CountGrammar(), get: { row, _ in row.count }, set: { row, count, _ in row.count = count }),
+        .toggle("starred", get: \.starred, set: { $0.starred = $1 }),                 // Space: "Star Entry", at once
+        .choice("color", options: ["red", "green", "blue"], get: \.color, set: { $0.color = $1 }),
+        .list("notes", grammar: NoteGrammar(), get: { row, _ in row.notes }, set: { row, notes, _ in row.notes = notes }),
+    ])
+}
+```
+
+Tab and ⇧Tab round its lines, ↑ ↓ step them, Escape and ⌘↑ give the row's line the keyboard back, ⌘↩ ends
+editing; Return is done with a field and opens a list's next line; Space toggles and opens a choice. It follows
+its row as commits move it and closes as the row goes. A kind that draws a row's "›" opens it with
+`editor.service(LineRowsService.self)?.openCard(of: PartAddress(shape, part: row))`. A table's column has one
+(type, references, null, unique, primary key, default, on delete, on update: [engineering](../.claude/rules/engineering.md)).
+
 **Folds.** ⌃⌘↑ (View › Fold Rows) folds the selection's shapes written as lines, or every one on the board with
 nothing selected, to the rows their model marks (`marked(_:in:)`; the first two where it marks none), with a
 "+N ›" line for the rest; ⌃⌘↓ unfolds. A fold is a view: `RowFolds` keeps what was asked for per shape, and the
@@ -16135,7 +16156,7 @@ neighbor-details     service NeighborList · ShapeDetails in Connections → eve
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Row Show the Row's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 

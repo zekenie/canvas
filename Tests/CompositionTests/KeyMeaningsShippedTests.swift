@@ -280,7 +280,7 @@ extension SampleBoardWindow {
             rowsBefore = w.rows
         })
     },
-    test("a table's row being typed in: every key means what the table says, but Return (line-return), on a row of a table of three") {
+    test("a table's row being typed in: every key means what the table says, but Return (line-return), on a row of a table of three; ⌘↓ into its card") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         let editor = w.editor
@@ -303,6 +303,7 @@ extension SampleBoardWindow {
         }, .canvas(w.canvas, editor: editor, names: [table.id: "customers"])], settle: .runLoop)
         walk.pending = meaningsPending
         let reset = { @MainActor in
+            editor.closeCard()
             editor.endEditing()
             while editor.file != start, editor.canUndo { editor.undo() }
             editor.selectedShapeIDs = [table.id]
@@ -316,6 +317,7 @@ extension SampleBoardWindow {
             .init(.return, [.forward, .elsewhere, .acted], exception: "line-return"),
         ])
         walk.expectMeanings(of: surface, stops: ["row/title", "row/id", "row/email", "row/name", "row/waiting"], at: 2,
-                            depth: { _ in editor.editingShapeID != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1 }, reset: reset)
+                            depth: { _ in editor.card != nil ? 3 : editor.editingShapeID != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1 },
+                            reset: reset)
     },
 ])
