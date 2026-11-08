@@ -57,19 +57,46 @@ public enum OpenAPIPaste {
     static func program(_ documents: [OpenAPIDocument], typeKind: ShapeKind?) -> DrawPut {
         var rows: [[DrawPut.Shape]] = []
         for document in documents {
-            rows.append([api(document)])
+            rows.append([api(document, typeKind: typeKind)])
             guard let typeKind else { continue }
             let types = document.types.map { type($0, kind: typeKind) }
             rows += stride(from: 0, to: types.count, by: typesARow).map { Array(types[$0..<min($0 + typesARow, types.count)]) }
         }
-        return DrawPut(rows: rows)
+        var put = DrawPut(rows: rows)
+        // What it puts down of that kind is types, not notes: so VoiceOver hears it.
+        if let typeKind { put.labels[typeKind.rawValue] = APIStyle.pastedTypeLabel }
+        return put
     }
 
     // MARK: Statements
 
     /// The API's statement: its title, server, version and rows, each endpoint by its full path.
     @MainActor
-    static func api(_ document: OpenAPIDocument) -> DrawPut.Shape {
+    static func api(_ document: OpenAPIDocument, typeKind: ShapeKind? = nil) -> DrawPut.Shape {
+        var shape = DrawPut.Shape(kind: API.kind.rawValue, title: document.title.isEmpty ? APIStyle.pastedTitle : document.title)
+        shape.json = [(key: "server", text: json(["host": document.server.host, "auth": document.server.auth])),
+                      (key: "endpoints", text: json(items(of: document, bind: { _ in nil })))]
+        if !document.version.isEmpty { shape.values = [(key: "version", text: document.version)] }
+        // Each body's and response's type bound to the type note of the put by its id, once every note is known: by its title it
+        // could be another shape's (an API titled as one of its types).
+        if let typeKind {
+            shape.late = [DrawPut.LateValue(key: "endpoints", isJSON: true) { names in
+                json(items(of: document, bind: { words in names.shape(typeKind, called: words)?.description }))
+            }]
+        }
+        // Made wide enough for its paths to show whole; one the file has keeps the width it has.
+        shape.size = DrawPut.Dimensions(width: APIDrawing.wholeWidth(of: document.rows))
+        return shape
+    }
+
+    /// The API's rows as the items its `endpoints` writer takes (every member the file says, an endpoint's path whole), each type's
+    /// words as `bind` gives its shape's id, if it does.
+    @MainActor
+    private static func items(of document: OpenAPIDocument, bind: (String) -> String?) -> [Any] {
+        func typed(_ type: TypeRef) -> Any {
+            guard let id = bind(type.words) else { return type.words }
+            return ["words": type.words, "shape": id]
+        }
         var items: [Any] = []
         for (index, row) in document.rows.enumerated() {
             switch row {
@@ -84,38 +111,44 @@ public enum OpenAPIPaste {
                     "authScope": endpoint.authScope,
                     "parameters": endpoint.parameters.map { ["name": $0.name, "type": $0.type] },
                     // No body said: none, so an endpoint pasted again without one has none.
-                    "body": endpoint.body.map { $0.words as Any } ?? NSNull(),
+                    "body": endpoint.body.map { typed($0) } ?? NSNull(),
                     "responses": endpoint.responses.map { response -> [String: Any] in
                         var item: [String: Any] = ["status": response.status]
-                        if let type = response.type { item["type"] = type.words }
+                        if let words = response.type { item["type"] = typed(words) }
                         return item
                     },
+                    // The file says every response the endpoint has: one pasted again without one drops it.
+                    APIWords.wholeResponses: true,
                     "deprecated": endpoint.deprecated,
                 ] as [String: Any])
             }
         }
-        var shape = DrawPut.Shape(kind: API.kind.rawValue, title: document.title)
-        shape.json = [(key: "server", text: json(["host": document.server.host, "auth": document.server.auth])),
-                      (key: "endpoints", text: json(items))]
-        if !document.version.isEmpty { shape.values = [(key: "version", text: document.version)] }
-        // Made wide enough for its paths to show whole; one the file has keeps the width it has.
-        shape.width = APIDrawing.wholeWidth(of: document.rows)
-        return shape
+        return items
     }
 
     /// A type's statement: a note of `kind` by its name, the types it builds on, its schema once every note of the put is known.
+    @MainActor
     static func type(_ type: OpenAPIType, kind: ShapeKind) -> DrawPut.Shape {
         var shape = DrawPut.Shape(kind: kind.rawValue, title: type.name)
-        if !type.isA.isEmpty { shape.json = [(key: IsAProperty.key.rawValue, text: json(type.isA))] }
+        if !type.isA.isEmpty {
+            shape.json = [(key: IsAProperty.key.rawValue, text: json(type.isA))]
+            // The types it builds on by their ids, which no other shape of the put's title can be.
+            shape.late = [DrawPut.LateValue(key: IsAProperty.key.rawValue, isJSON: true) { names in
+                json(type.isA.map { names.shape(kind, called: $0)?.description ?? $0 })
+            }]
+        }
         let schema = type.schema
-        shape.late = [DrawPut.LateValue(key: TypeSchemaProperty.key.rawValue) { names in
+        // As tall as its rows, as wide as a note holding a type is drawn; one the file has keeps its own size.
+        let rows = max(1, schema["properties"]?.members?.count ?? 0)
+        shape.size = DrawPut.Dimensions(width: APIStyle.pastedTypeWidth, height: CGFloat(rows) * APIStyle.pastedTypeRowHeight + 2 * APIStyle.pastedTypePad)
+        shape.late.append(DrawPut.LateValue(key: TypeSchemaProperty.key.rawValue) { names in
             var written = pointed(schema) { names.shape(kind, called: $0) }
             if names.found, let held = names.editor.shape(inFile: names.shape)?[TypeSchemaProperty.self],
                let node = try? JSONReader.read(held.text) {
                 written = joined(written, onto: SchemaValue(node))
             }
             return written.pretty
-        }]
+        })
         shape.admits = { $0[TypeSchemaProperty.self] != nil }
         return shape
     }
@@ -138,11 +171,12 @@ public enum OpenAPIPaste {
         }
     }
 
-    /// A type's schema pasted again, joined onto the one it holds: what the paste says, its properties joined by name (each held
-    /// one in its place, replaced where the paste says it, the paste's new ones after), `required` the paste's and the held
-    /// one's for a property only it has, and what else only the held one says kept.
+    /// A type's schema pasted again, joined onto the one it holds, in the order it holds: what the paste says over what it holds,
+    /// its properties joined by name (each held one in its place, replaced where the paste says it, the paste's new ones after),
+    /// `required` the paste's and the held one's for a property only it has, and what else only the held one says kept where it
+    /// is. A paste of what the note already says changes nothing, not even the order, so it is no step.
     public static func joined(_ written: SchemaValue, onto held: SchemaValue) -> SchemaValue {
-        guard case .object(var members) = written, let heldMembers = held.members else { return written }
+        guard let heldMembers = held.members, case .object(let writtenMembers) = written else { return written }
         let heldProperties = held["properties"]?.members ?? [], writtenProperties = written["properties"]?.members ?? []
         var properties = heldProperties
         for property in writtenProperties {
@@ -153,19 +187,25 @@ public enum OpenAPIPaste {
         for name in held["required"]?.elements?.compactMap(\.string) ?? [] where onlyHeld.contains(name) && !required.contains(name) {
             required.append(name)
         }
-        if !properties.isEmpty {
-            if let at = members.firstIndex(where: { $0.key == "properties" }) {
-                members[at].value = .object(properties)
-            } else {
-                members.append(SchemaMember(key: "properties", value: .object(properties)))
+        func member(_ key: String, _ value: SchemaValue?) -> SchemaMember? {
+            switch key {
+            case "properties": properties.isEmpty ? nil : SchemaMember(key: key, value: .object(properties))
+            case "required": required.isEmpty ? nil : SchemaMember(key: key, value: .array(required.map(SchemaValue.string)))
+            default: value.map { SchemaMember(key: key, value: $0) }
             }
         }
-        members.removeAll { $0.key == "required" }
-        if !required.isEmpty {
-            let at = (members.firstIndex { $0.key == "properties" }).map { $0 + 1 } ?? members.count
-            members.insert(SchemaMember(key: "required", value: .array(required.map(SchemaValue.string))), at: at)
+        var members: [SchemaMember] = []
+        // What it holds, each member where it is, the paste's value in it; then what only the paste says, in its order.
+        for kept in heldMembers {
+            if let joined = member(kept.key, written[kept.key] ?? kept.value) { members.append(joined) }
         }
-        for member in heldMembers where !members.contains(where: { $0.key == member.key }) { members.append(member) }
+        for written in writtenMembers where !members.contains(where: { $0.key == written.key }) {
+            if let joined = member(written.key, written.value) { members.append(joined) }
+        }
+        // `properties` and `required` the paste adds to a note that had neither of them.
+        for key in ["properties", "required"] where !members.contains(where: { $0.key == key }) {
+            if let joined = member(key, nil) { members.append(joined) }
+        }
         return .object(members)
     }
 

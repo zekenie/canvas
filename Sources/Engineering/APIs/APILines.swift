@@ -419,7 +419,8 @@ struct APILines: LineModel {
 
     /// A path parameter's type set (none: taken out).
     static func setParameter(_ name: String, to type: String?, in endpoint: inout Endpoint) {
-        endpoint.parameters.removeAll { $0.name == name }
+        // The first of that name only: a query parameter that shares it (a card shows the path's) stays.
+        if let at = endpoint.parameters.firstIndex(where: { $0.name == name }) { endpoint.parameters.remove(at: at) }
         guard let type, !type.isEmpty else { return }
         endpoint.parameters.append(PathParameter(name: name, type: type))
         let order = EndpointGrammar.parameterNames(in: endpoint.path)

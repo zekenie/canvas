@@ -71,15 +71,18 @@ public enum OpenAPIReader {
         if trimmed.hasPrefix("{") {
             return (try? JSONReader.read(trimmed)).map { SchemaValue($0) }
         }
-        return (try? YAMLReader.read(text)) ?? nil
+        return (try? YAMLReader.read(text, textKeys: textKeys)) ?? nil
     }
+
+    /// The keys whose plain scalar the document's words are read as written (`version: 1.0` is "1.0", `summary: 404` is "404").
+    static let textKeys: Set<String> = ["version", "title", "summary", "operationId"]
 
     /// The document a tree says; nil for one that isn't OpenAPI 3 (a root `openapi: 3.*` with `paths`).
     public static func read(_ root: SchemaValue, fileName: String? = nil) -> OpenAPIDocument? {
         guard isOpenAPI3(root), let paths = root["paths"]?.members else { return nil }
         var reading = Reading(root: root)
         let info = root["info"]
-        let title = info?["title"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = info?["title"].map(Self.scalarText)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let named = (title?.isEmpty ?? true) ? fileName.flatMap(Self.name(ofFile:)) ?? "" : title!
         let version = info?["version"].map(Self.scalarText) ?? ""
         let server = APIServer(host: Self.host(of: root), auth: reading.globalAuth)
@@ -218,8 +221,8 @@ private struct Reading {
     // MARK: Endpoints
 
     mutating func endpoint(_ method: String, _ path: String, _ operation: SchemaValue, shared: [SchemaValue]) -> Endpoint {
-        let id = operation["operationId"]?.string ?? ""
-        var endpoint = Endpoint(method: method, path: path, name: id, summary: operation["summary"]?.string ?? "",
+        let id = operation["operationId"].map(OpenAPIReader.scalarText) ?? ""
+        var endpoint = Endpoint(method: method, path: path, name: id, summary: operation["summary"].map(OpenAPIReader.scalarText) ?? "",
                                 deprecated: operation["deprecated"]?.bool ?? false)
         endpoint.authScope = scope(of: operation)
         endpoint.parameters = parameters(of: operation, shared: shared, path: path)
@@ -265,18 +268,23 @@ private struct Reading {
         }
         let order = EndpointGrammar.parameterNames(in: path)
         let inPath = found.filter { $0.place == "path" }.sorted { (order.firstIndex(of: $0.name) ?? .max) < (order.firstIndex(of: $1.name) ?? .max) }
-        return (inPath + found.filter { $0.place == "query" }).map { PathParameter(name: $0.name, type: $0.type) }
+        // A query parameter a path parameter has the name of is dropped: a parameter is kept by its name alone, and the card's
+        // field for the path's would otherwise change both.
+        let named = Set(inPath.map(\.name))
+        return (inPath + found.filter { $0.place == "query" && !named.contains($0.name) }).map { PathParameter(name: $0.name, type: $0.type) }
     }
 
     /// A parameter's type in a word: a component's name, its `format`, else its `type`; an array's its items' and `[]`.
-    func typeName(of schema: SchemaValue) -> String {
+    func typeName(of schema: SchemaValue, hops: Int = 0) -> String {
         if let ref = schema["$ref"]?.string {
             if let component = OpenAPIReader.component(of: ref), component.fragment.isEmpty { return component.name }
-            return pointed(ref).map { typeName(of: $0) } ?? ""
+            // A pointer into the document is followed as far as eight hops, as `resolved` is: pointers may lead back to themselves.
+            guard hops < 8 else { return "" }
+            return pointed(ref).map { typeName(of: $0, hops: hops + 1) } ?? ""
         }
         if let format = schema["format"]?.string, !format.isEmpty { return format }
         let type = schema["type"]?.string ?? schema["type"]?.elements?.compactMap(\.string).first { $0 != "null" } ?? ""
-        if type == "array", let items = schema["items"] { return typeName(of: items) + "[]" }
+        if type == "array", let items = schema["items"] { return typeName(of: items, hops: hops + 1) + "[]" }
         return type
     }
 
@@ -372,9 +380,41 @@ private struct Reading {
                 let kept = required.filter { names.contains($0) && seen.insert($0).inserted }
                 if !kept.isEmpty { members.append(SchemaMember(key: "required", value: .array(kept.map(SchemaValue.string)))) }
             }
+            // A 3.0 `nullable` on a root that was folded: its type, now written, allows null.
+            if schema["nullable"]?.bool == true, let at = members.firstIndex(where: { $0.key == "type" }), let type = members[at].value.string {
+                members[at].value = .array([.string(type), .string("null")])
+            }
             converted = .object(members)
         }
-        return OpenAPIType(name: name, schema: converted, isA: isA)
+        return OpenAPIType(name: name, schema: rerouted(converted), isA: isA)
+    }
+
+    /// `value` with each `$ref` into a component's `allOf` part pointing where that part's members are now: the folded type has
+    /// no `allOf` of its own parts, so a part that is a `$ref` is its target, and a part's properties are the component's own;
+    /// any other pointer into one leads nowhere (`{}`).
+    func rerouted(_ value: SchemaValue) -> SchemaValue {
+        switch value {
+        case .object(let members):
+            guard let ref = value["$ref"]?.string, let component = OpenAPIReader.component(of: ref), component.fragment.hasPrefix("/allOf/") else {
+                return .object(members.map { SchemaMember(key: $0.key, value: rerouted($0.value)) })
+            }
+            let after = component.fragment.dropFirst("/allOf/".count)
+            let index = after.prefix { $0 != "/" }
+            let rest = String(after.dropFirst(index.count))
+            let whole = String(ref.dropLast(component.fragment.count))
+            let part = Int(index).flatMap { root["components"]?["schemas"]?[component.name]?["allOf"]?.elements?[safe: $0] }
+            if let target = part?["$ref"]?.string, target.hasPrefix(OpenAPIReader.componentPrefix) {
+                return .object([SchemaMember(key: "$ref", value: .string(target + rest))])
+            }
+            if part != nil, rest.hasPrefix("/properties/") {
+                return .object([SchemaMember(key: "$ref", value: .string(whole + rest))])
+            }
+            return .object([])
+        case .array(let elements):
+            return .array(elements.map { rerouted($0) })
+        default:
+            return value
+        }
     }
 }
 
@@ -444,6 +484,9 @@ enum SchemaConversion {
                 out.append(member)
             }
         }
+        // `nullable` beside no `type` (a `$ref` or a composition) can't add null to one: the schema or null. A root that is folded
+        // into what it builds on has its type written then.
+        let wraps = nullable && !out.isEmpty && !out.contains { $0.key == "type" || $0.key == "enum" } && !(isRoot && schema["allOf"] != nil)
         // `required` names only what its object's properties do: anything else is a property Types would warn has none.
         if let at = out.firstIndex(where: { $0.key == "required" }) {
             var names = out[at].value.elements?.compactMap(\.string) ?? []
@@ -455,6 +498,13 @@ enum SchemaConversion {
             names = names.filter { seen.insert($0).inserted }
             if names.isEmpty { out.remove(at: at) } else { out[at].value = .array(names.map(SchemaValue.string)) }
         }
+        if wraps {
+            return .object([SchemaMember(key: "anyOf", value: .array([.object(out), .object([SchemaMember(key: "type", value: .string("null"))])]))])
+        }
         return .object(out)
     }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

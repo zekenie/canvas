@@ -2528,7 +2528,10 @@ type.admits = { $0[TypeSchemaProperty.self] != nil }                            
 ```
 
 The API is found by its title and its endpoints by method and full path (`endpoints:`'s writer), a body's words bind to
-the put's type notes (a pill, never an arrow), and a type pasted again keeps its id, its properties joined by name.
+the put's type notes by their ids, a late value of the API's (a pill, never an arrow; a title may be another shape's too),
+and a type pasted again keeps its id, its properties joined by name in the order it holds, so the same file pasted again
+changes nothing. A statement may also say the size its new shape is drawn at (`DrawPut.Shape.size`) and what the kind it
+makes is called when the paste is announced (`DrawPut.labels`: "Type", not "Note").
 
 ## Rows written as lines
 

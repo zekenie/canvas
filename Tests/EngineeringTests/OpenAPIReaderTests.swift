@@ -1,4 +1,5 @@
 import Canvas
+import Draw
 import Engineering
 import Foundation
 import TestKit
@@ -292,7 +293,7 @@ private func json(_ text: String) throws -> SchemaValue { SchemaValue(try JSONRe
         let held = try json(#"{"type": "object", "description": "mine", "$color": "green", "properties": {"id": {"type": "integer"}, "memo": {"type": "string"}}, "required": ["memo"]}"#)
         let written = try json(#"{"type": "object", "properties": {"id": {"type": "string"}, "period": {"type": "string"}}, "required": ["id"]}"#)
         let joined = OpenAPIPaste.joined(written, onto: held)
-        expectEqual(joined.members?.map(\.key), ["type", "properties", "required", "description", "$color"])
+        expectEqual(joined.members?.map(\.key), ["type", "description", "$color", "properties", "required"], "each held member where it is")
         expectEqual(joined["properties"]?.members?.map(\.key), ["id", "memo", "period"])
         expectEqual(joined["properties"]?["id"], try json(#"{"type": "string"}"#), "the paste's id")
         expectEqual(joined["required"], .array([.string("id"), .string("memo")]))
@@ -308,5 +309,188 @@ private func json(_ text: String) throws -> SchemaValue { SchemaValue(try JSONRe
             (0..<8).map { Endpoint(method: "GET", path: "/\(segment)/\($0)") }
         }
         expectEqual(APIGroups.byPrefix(sixty).compactMap(\.header).map(\.prefix), ["/orders", "/customers", "/products", "/payments", "/refunds", "/webhooks", "/admin"])
+    },
+    test("a type pasted again with what it already says is what it holds, in its order (a paste of the same file is no change)") {
+        let written = try json(#"{"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}, "data": {"type": "object"}}}"#)
+        expectEqual(OpenAPIPaste.joined(written, onto: written), written)
+        let colored = try json(#"{"$color": "green", "type": "object", "required": ["id"], "properties": {"id": {"type": "string"}, "data": {"type": "object"}}}"#)
+        let joined = OpenAPIPaste.joined(written, onto: colored)
+        expectEqual(joined, colored, "a color put first stays first")
+        expectEqual(joined.members?.map(\.key), ["$color", "type", "required", "properties"])
+    },
+    test("a $ref outside the components that leads back to itself reads, as a parameter's type with no name (no endless walk)") {
+        let loop = #"""
+            {"openapi": "3.0.0", "paths": {"/a": {"get": {
+              "parameters": [{"name": "p", "in": "query", "schema": {"$ref": "#/paths/~1a/get/parameters/0/schema"}},
+                             {"name": "q", "in": "query", "schema": {"$ref": "#/paths/~1a/get/parameters/2/schema"}},
+                             {"name": "r", "in": "query", "schema": {"$ref": "#/paths/~1a/get/parameters/1/schema"}}],
+              "responses": {}}}}}
+            """#
+        let document = try require(OpenAPIReader.read(loop))
+        expectEqual(endpoints(document)[0].parameters.map(\.type), ["", "", ""])
+    },
+    test("a version, title, summary or operationId written as a number or a word keeps the words it was written in (1.0, 1.10, 404)") {
+        let text = """
+            openapi: 3.0.0
+            info:
+              title: 404
+              version: 1.10
+            paths:
+              /a:
+                get:
+                  operationId: 12
+                  summary: 1.0
+                  responses: {}
+            """
+        let document = try require(OpenAPIReader.read(text))
+        expectEqual(document.title, "404")
+        expectEqual(document.version, "1.10")
+        expectEqual(endpoints(document)[0].name, "12")
+        expectEqual(endpoints(document)[0].summary, "1.0")
+        let plain = try require(OpenAPIReader.read(text.replacingOccurrences(of: "version: 1.10", with: "version: 1.0")))
+        expectEqual(plain.version, "1.0")
+        let asJSON = try require(OpenAPIReader.read(#"{"openapi": "3.0.0", "info": {"title": 7, "version": "1.0"}, "paths": {}}"#))
+        expectEqual(asJSON.title, "7", "JSON's number in a title is its text too")
+    },
+    test("a query parameter a path parameter has the name of is left out: the card's field for the path's is the only one") {
+        let text = """
+            openapi: 3.0.0
+            paths:
+              /things/{id}:
+                get:
+                  parameters:
+                    - {name: id, in: query, schema: {type: string}}
+                    - {name: id, in: path, schema: {type: string, format: uuid}}
+                    - {name: limit, in: query, schema: {type: integer}}
+                  responses: {}
+            """
+        let document = try require(OpenAPIReader.read(text))
+        expectEqual(endpoints(document)[0].parameters, [PathParameter(name: "id", type: "uuid"), PathParameter(name: "limit", type: "integer")])
+    },
+    test("a 3.0 nullable beside a $ref or an allOf with no type is that schema or null; a folded root's own type allows it") {
+        let text = """
+            openapi: 3.0.0
+            paths: {}
+            components:
+              schemas:
+                Money: {type: object, properties: {cents: {type: integer}}}
+                Owner:
+                  type: object
+                  properties:
+                    spare: {$ref: '#/components/schemas/Money', nullable: true}
+                    price: {allOf: [{$ref: '#/components/schemas/Money'}], nullable: true}
+                    note: {type: string, nullable: true}
+                Maybe:
+                  nullable: true
+                  allOf:
+                    - $ref: '#/components/schemas/Money'
+                    - properties: {extra: {type: string}}
+            """
+        let document = try require(OpenAPIReader.read(text))
+        let owner = try type("Owner", document).schema
+        let null = #"{"type": "null"}"#
+        let ref = ##"{"$ref": "#/components/schemas/Money"}"##
+        expectEqual(owner["properties"]?["spare"], try json("{\"anyOf\": [" + ref + ", " + null + "]}"))
+        expectEqual(owner["properties"]?["price"], try json("{\"anyOf\": [{\"allOf\": [" + ref + "]}, " + null + "]}"))
+        expectEqual(owner["properties"]?["note"], try json(#"{"type": ["string", "null"]}"#))
+        let maybe = try type("Maybe", document)
+        expectEqual(maybe.isA, ["Money"])
+        expectEqual(maybe.schema["type"], .array([.string("object"), .string("null")]))
+    },
+    test("a $ref into a component's allOf part follows the folded type: a part that is a $ref is its target, a part's properties the component's own, any other pointer leads nowhere") {
+        let text = """
+            openapi: 3.0.0
+            paths: {}
+            components:
+              schemas:
+                Base: {type: object, properties: {id: {type: string}}}
+                Refund:
+                  allOf:
+                    - $ref: '#/components/schemas/Base'
+                    - type: object
+                      properties: {amount: {type: integer}}
+                User:
+                  type: object
+                  properties:
+                    a: {$ref: '#/components/schemas/Refund/allOf/1/properties/amount'}
+                    b: {$ref: '#/components/schemas/Refund/allOf/0/properties/id'}
+                    c: {$ref: '#/components/schemas/Refund/allOf/1/required'}
+                    d: {$ref: '#/components/schemas/Refund/allOf/7/properties/id'}
+            """
+        let document = try require(OpenAPIReader.read(text))
+        let user = try type("User", document).schema["properties"]
+        expectEqual(user?["a"], try json(##"{"$ref": "#/components/schemas/Refund/properties/amount"}"##))
+        expectEqual(user?["b"], try json(##"{"$ref": "#/components/schemas/Base/properties/id"}"##))
+        expectEqual(user?["c"], .object([]))
+        expectEqual(user?["d"], .object([]))
+    },
+    test("components whose names differ only by case are two types, and an inline type takes a name no component has") {
+        let text = """
+            openapi: 3.0.0
+            paths:
+              /m:
+                post:
+                  operationId: money
+                  requestBody: {content: {application/json: {schema: {type: object, properties: {a: {type: string}}}}}}
+                  responses: {}
+            components:
+              schemas:
+                Money: {type: object, properties: {cents: {type: integer}}}
+                money: {type: object, properties: {units: {type: integer}}}
+            """
+        let document = try require(OpenAPIReader.read(text))
+        expectEqual(document.types.map(\.name), ["Money", "money", "MoneyRequest"])
+    },
+    test("an API is made wide enough for its widest row to show whole: never narrower than a new one (420) nor wider than the most (760); a body, a status, a type and a group's indent take room") {
+        @MainActor func width(_ paths: [(path: String, extra: String)]) throws -> CGFloat {
+            let operations = paths.map { "  \($0.path):\n    get:\n      operationId: x\n\($0.extra)      responses:\n        '200': {description: ok}\n" }.joined()
+            let program = try require(OpenAPIPaste.program(of: "openapi: 3.0.0\ninfo: {title: t, version: '1'}\npaths:\n" + operations, typeKind: nil))
+            let size = try require(program.sizes[1])
+            return size.width
+        }
+        expectEqual(try width([("/a", "")]), 420, "a new API's width at least")
+        let long = "/" + String(repeating: "abcdefghij/", count: 8) + "{id}"
+        expectEqual(try width([(long, "")]), 760, "clamped at the most a pasted API is made")
+        let mid = "/" + String(repeating: "abcdefghij/", count: 3) + "{id}"
+        let bare = try width([(mid, "")])
+        expect(bare > 420 && bare < 760, "a path of its own length: \(bare)")
+        // A body takes room, and so does a second segment's group (a header's indent and count).
+        let withBody = try width([(mid, "      requestBody:\n        content:\n          application/json:\n            schema: {\"$ref\": '#/components/schemas/Request'}\n")])
+        expect(withBody > bare, "a body: \(withBody) over \(bare)")
+        // A group's member is drawn by the path under its header, indented: wider than the same path ungrouped.
+        let grouped = try width([("/orders" + mid, ""), ("/orders/{id}", "")])
+        expect(grouped > bare, "a member's indent takes room: \(grouped) over \(bare)")
+    },
+    test("a response's status is left to its type when it is the plain success one (E1's `→ Statement`), and shown for any other, or beside none") {
+        @MainActor func width(status: String, typed: Bool) throws -> CGFloat {
+            let schema = typed ? "content: {application/json: {schema: {\"$ref\": '#/components/schemas/S'}}}" : "description: ok"
+            let text = "openapi: 3.0.0\ninfo: {title: t, version: '1'}\npaths:\n  /\(String(repeating: "abcdefghij/", count: 4))x:\n    get:\n      responses:\n        '\(status)': {\(schema)}\n"
+            let program = try require(OpenAPIPaste.program(of: text, typeKind: nil))
+            let size = try require(program.sizes[1])
+            return size.width
+        }
+        let plain = try width(status: "200", typed: true), other = try width(status: "201", typed: true), none = try width(status: "200", typed: false)
+        expect(other > plain, "a 201 is on its row, a 200 with a type is not: \(other) over \(plain)")
+        expect(none > 420, "a response with none shows its 200")
+    },
+    test("a big spec reads in a step: 500 endpoints and 300 schemas of eight properties, YAML read, converted and made a program, within 900 milliseconds of the main thread's time") {
+        var text = "openapi: 3.0.3\ninfo:\n  title: big\n  version: 2.0\nservers:\n  - url: https://big.example.com/v2\npaths:\n"
+        for n in 0..<500 {
+            text += "  /group\(n % 25)/items\(n)/{id}:\n    get:\n      operationId: getItem\(n)\n      summary: Gets item \(n)\n"
+            text += "      parameters:\n        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}\n        - {name: limit, in: query, schema: {type: integer}}\n"
+            text += "      responses:\n        '200':\n          description: ok\n          content:\n            application/json:\n              schema:\n                $ref: '#/components/schemas/Schema\(n % 300)'\n"
+            text += "        '404':\n          description: missing\n"
+        }
+        text += "components:\n  schemas:\n"
+        for n in 0..<300 {
+            text += "    Schema\(n):\n      type: object\n      required: [p0, p1]\n      properties:\n"
+            for p in 0..<8 { text += "        p\(p): {type: string, nullable: true, description: 'property \(p) of schema \(n)'}\n" }
+        }
+        let size = text.utf8.count
+        var program: DrawPut?
+        let took = threadCPUTime { program = OpenAPIPaste.program(of: text, typeKind: "note") }
+        expect(program != nil, "it reads")
+        expectEqual(program?.late.count, 301, "the API and its 300 types, each with its late values")
+        expect(took < .milliseconds(900), "\(size / 1024) KB took \(took)")
     },
 ])

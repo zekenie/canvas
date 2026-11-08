@@ -25,9 +25,12 @@ public enum YAMLReader {
     /// Mappings and sequences nest at most this deep; deeper is refused, so no text can exhaust the stack.
     public static let maxDepth = 128
 
-    /// `text`'s one document as an ordered value: nil for a text with nothing in it.
-    public static func read(_ text: String) throws(YAMLError) -> SchemaValue? {
+    /// `text`'s one document as an ordered value: nil for a text with nothing in it. `textKeys`: keys whose plain scalar value
+    /// stays the text it was written as, whatever the core schema would read it as (`version: 1.0` is "1.0", not the number 1,
+    /// which would print as "1"), for the words a file writes as text that may look like numbers or words (a version, a title).
+    public static func read(_ text: String, textKeys: Set<String> = []) throws(YAMLError) -> SchemaValue? {
         var parser = YAMLParser(text)
+        parser.textKeys = textKeys
         return try parser.document()
     }
 }
@@ -45,6 +48,8 @@ private struct YAMLParser {
     var lines: [YAMLLine]
     var at = 0
     var depth = 0
+    /// Keys whose plain scalar value is read as text (`YAMLReader.read`).
+    var textKeys: Set<String> = []
 
     init(_ text: String) {
         var lines: [YAMLLine] = [], raw: [String] = []
@@ -179,7 +184,7 @@ private struct YAMLParser {
                     value = try node(above: indent)
                 }
             } else {
-                value = try scalar(rest, line: line, parent: indent)
+                value = try scalar(rest, line: line, parent: indent, asText: textKeys.contains(key))
             }
             if let place = places[key] {
                 members[place].value = value
@@ -224,7 +229,7 @@ private struct YAMLParser {
 
     /// A value written after a key or a dash (or alone): a block scalar, a flow collection, a quoted string, or a plain scalar,
     /// each of which may go on over the lines after it that are indented past `parent`.
-    mutating func scalar(_ text: String, line: YAMLLine, parent: Int) throws(YAMLError) -> SchemaValue {
+    mutating func scalar(_ text: String, line: YAMLLine, parent: Int, asText: Bool = false) throws(YAMLError) -> SchemaValue {
         guard let first = text.first else { return .null }
         switch first {
         case "&", "*": throw fail("anchors and aliases aren't read", line.number)
@@ -233,13 +238,13 @@ private struct YAMLParser {
         case "[", "{": return try flowLine(text, line: line)
         case "\"", "'": return .string(try quotedScalar(text, line: line, parent: parent))
         case "@", "`", "%": throw fail("a plain scalar can't start with \(first)", line.number)
-        default: return plainScalar(text, parent: parent)
+        default: return plainScalar(text, parent: parent, asText: asText)
         }
     }
 
     /// A plain scalar, its comment cut off, folded with the lines after it indented past `parent`: one space between lines, a
     /// line break for each blank line between them. Read as the core schema reads it.
-    mutating func plainScalar(_ text: String, parent: Int) -> SchemaValue {
+    mutating func plainScalar(_ text: String, parent: Int, asText: Bool = false) -> SchemaValue {
         var parts = [Self.uncommented(text)]
         var blanks = 0
         var isMultiline = false
@@ -262,7 +267,7 @@ private struct YAMLParser {
         // Blank lines after the scalar are the next node's to skip: step back over them.
         if blanks > 0 { at -= blanks }
         let joined = parts.joined()
-        return isMultiline ? .string(joined) : Self.resolved(joined)
+        return isMultiline || asText ? .string(joined) : Self.resolved(joined)
     }
 
     /// Text before a comment (` #`).

@@ -211,6 +211,13 @@ enum APIDrawing {
         RowText.draw(RowText.line(prefix, .code), at: x, middle: middle, room: end - counted.width - APIStyle.gap - x, in: cg)
     }
 
+    /// Whether a response's status is on its row: any status but the plain success one beside a type, which says it (`→ Statement`
+    /// where one with none reads `→ 200`). The card and the words keep it.
+    static func showsStatus(of response: EndpointResponse) -> Bool {
+        guard !response.status.isEmpty else { return false }
+        return response.status != APIStyle.plainStatus || (response.type?.words.isEmpty ?? true)
+    }
+
     /// How wide an API is drawn for each of `rows` to show whole, as `drawEndpoint` lays one out (a header's prefix, its count
     /// besides), never narrower than a new API (`APIStyle.width`) nor wider than `APIStyle.mostWholeWidth`: what a paste of
     /// OpenAPI makes an API at, so E1's paths aren't cut short.
@@ -233,7 +240,7 @@ enum APIDrawing {
                 if let body = endpoint.body, !body.words.isEmpty { right.append(APITypes.pill(body, types: nil).contentSize.width) }
                 if let response = endpoint.responses.first {
                     right.append(RowText.line(EndpointGrammar.arrow, .faintCode).width)
-                    if !response.status.isEmpty { right.append(RowText.line(response.status, .faintCode).width) }
+                    if showsStatus(of: response) { right.append(RowText.line(response.status, .faintCode).width) }
                     if let type = response.type, !type.words.isEmpty { right.append(APITypes.pill(type, types: nil).contentSize.width) }
                 }
                 width += right.reduce(0, +) + CGFloat(right.count) * APIStyle.pillGap
@@ -275,7 +282,7 @@ enum APIDrawing {
                 let size = label.contentSize
                 place(width: size.width) { at in label.draw(at: CGPoint(x: at, y: middle - size.height / 2), in: cg) }
             }
-            if !response.status.isEmpty {
+            if showsStatus(of: response) {
                 let status = RowText.line(response.status, .faintCode)
                 place(width: status.width) { at in RowText.draw(status, at: at, middle: middle, in: cg) }
             }

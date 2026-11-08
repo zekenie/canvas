@@ -30,18 +30,32 @@ public struct DrawPut: Sendable {
     /// Which of the file's shapes a statement may find, by its `line`, besides those of its kind and title (a type's statement,
     /// only a note that is a type): one it doesn't admit is no match, and a new shape is made.
     public var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool]
-    /// The width a statement's shape is drawn at when the put makes it, by its `line` (an API wide enough for its paths): a shape
-    /// the file has keeps its own, which a person may have given it.
-    public var widths: [Int: CGFloat]
+    /// The size a statement's shape is drawn at when the put makes it, by its `line` (an API wide enough for its paths, a note as
+    /// tall as its rows): a shape the file has keeps its own, which a person may have given it.
+    public var sizes: [Int: Dimensions]
+    /// A size a statement gives its shape: a width, and a height or, left out, the kind's own at that width.
+    public struct Dimensions: Sendable, Equatable {
+        public var width: CGFloat
+        public var height: CGFloat?
+
+        public init(width: CGFloat, height: CGFloat? = nil) {
+            self.width = width
+            self.height = height
+        }
+    }
+
+    /// What a kind the put makes is called where the put is announced (a note that is a type: "Type"), by the kind's id; a kind not
+    /// here goes by its registered label.
+    public var labels: [String: String] = [:]
 
     public init(script: Script, block: [[Int]], edges: [Int: [Edge]] = [:], late: [Int: [LateValue]] = [:],
-                admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], widths: [Int: CGFloat] = [:]) {
+                admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], sizes: [Int: Dimensions] = [:]) {
         self.script = script
         self.block = block
         self.edges = edges
         self.late = late
         self.admits = admits
-        self.widths = widths
+        self.sizes = sizes
     }
 
     /// A value written once the put has found or made each of its shapes: `text` is handed what it found (`PutNames`) and gives
@@ -77,8 +91,9 @@ public struct DrawPut: Sendable {
         public var late: [LateValue]
         /// Which of the file's shapes of its kind and title it may find (`DrawPut.admits`); nil for any.
         public var admits: (@MainActor @Sendable (AnyShapeRecord) -> Bool)?
-        /// The width it is drawn at when the put makes it (`DrawPut.widths`), a script's `size:` of a width alone.
-        public var width: CGFloat?
+        /// The size it is drawn at when the put makes it (`DrawPut.sizes`): a script's `size:`, a width alone (`300x`) leaving the
+        /// height to the kind.
+        public var size: Dimensions?
 
         public init(kind: String, title: String? = nil, within: [String] = [], values: [(key: String, text: String)] = [],
                     json: [(key: String, text: String)] = [], edges: [Edge] = [], late: [LateValue] = [],
@@ -151,7 +166,7 @@ public struct DrawPut: Sendable {
     /// Shapes in layout rows, numbered in order from 1: each row left to right, the rows top to bottom.
     public init(rows: [[Shape]]) {
         var statements: [Statement] = [], block: [[Int]] = [], edges: [Int: [Edge]] = [:], late: [Int: [LateValue]] = [:]
-        var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], widths: [Int: CGFloat] = [:]
+        var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], sizes: [Int: Dimensions] = [:]
         for row in rows {
             var lines: [Int] = []
             for shape in row {
@@ -164,11 +179,11 @@ public struct DrawPut: Sendable {
                 if !shape.edges.isEmpty { edges[line] = shape.edges }
                 if !shape.late.isEmpty { late[line] = shape.late }
                 if let admit = shape.admits { admits[line] = admit }
-                if let width = shape.width { widths[line] = width }
+                if let size = shape.size { sizes[line] = size }
             }
             if !lines.isEmpty { block.append(lines) }
         }
-        self.init(script: Script(statements: statements, styles: []), block: block, edges: edges, late: late, admits: admits, widths: widths)
+        self.init(script: Script(statements: statements, styles: []), block: block, edges: edges, late: late, admits: admits, sizes: sizes)
     }
 
     /// Whether it puts nothing down.
@@ -277,6 +292,9 @@ private struct Putting {
             }
         }
         for (title, id) in bare { options.keys[title] = id }
+        // Every shape of the put by its id as well, which a value may name it by where its title is another shape's too (an API
+        // titled as one of its types), as a far shape an implied edge names is.
+        for item in planned { if let id = item.id { options.keys[id.description] = id } }
         for (title, ids) in inside where bare[title] == nil && ids.count == 1 { options.keys[title] = ids[0] }
 
         // Runs by board: the shown board's first, with every new shape and edge; a shape the file has elsewhere is restated on its
@@ -365,7 +383,10 @@ private struct Putting {
                             earlier.attributes.append(attribute)
                         }
                         planned[index].statement.body = .shape(earlier)
-                        planned[index].late += late
+                        // A late value joins as a plain one does: one a key already has, by an earlier value or a late one, is kept.
+                        planned[index].late += late.filter { value in
+                            !earlier.attributes.contains { $0.key == value.key } && !planned[index].late.contains { $0.key == value.key }
+                        }
                         continue
                     }
                     // A shape that cannot be changed is no match for a statement that gives it values: a new shape is made.
@@ -394,7 +415,7 @@ private struct Putting {
                 break
             }
             if isNew, shape.container == nil, let holder = finding.holder { shape.container = .id(holder.description) }
-            if isNew, let width = block.widths[statement.line] { shape.size = Size(width: width, height: nil) }
+            if isNew, let size = block.sizes[statement.line] { shape.size = Size(width: size.width, height: size.height) }
             var named = statement
             named.body = .shape(shape)
             planned.append(Planned(statement: named, board: board, id: id, isNew: isNew, original: statement.line, within: within, title: title, late: late))

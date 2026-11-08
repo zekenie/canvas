@@ -20,6 +20,18 @@ enum APIStyle {
     static let minimumWidth: CGFloat = 200
     /// The widest a pasted API is made for its rows to show whole (`APIDrawing.wholeWidth`): past it, paths are cut short.
     static let mostWholeWidth: CGFloat = 760
+    /// What a pasted OpenAPI file with no title (and no file name) is called.
+    static let pastedTitle = "API"
+    /// What the type notes a pasted OpenAPI file puts down are called where the paste is announced.
+    static let pastedTypeLabel = "Type"
+    /// The status a response with a type leaves out on its row: the type says it (`→ Statement`), where a response of none says
+    /// `→ 200`.
+    static let plainStatus = "200"
+    /// A type note a paste makes is this wide, and as tall as its rows are (this, and a row's height, and the room above and
+    /// below them), not the note's default size.
+    static let pastedTypeWidth: CGFloat = 240
+    static let pastedTypeRowHeight: CGFloat = 22
+    static let pastedTypePad: CGFloat = 14
     /// What its rows are, said by VoiceOver: "7 endpoints".
     static func accessibleRows(_ count: Int) -> String { count == 1 ? "1 endpoint" : "\(count.formatted()) endpoints" }
     /// What VoiceOver calls the field its name is typed in.

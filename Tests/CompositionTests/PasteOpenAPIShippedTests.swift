@@ -195,7 +195,7 @@ private let refunds = """
         expectEqual(editor.document.shapes.count, 3, "nothing else")
         expectEqual(event.kind, editor.newTypeKind(), "a note, the kind New Type makes")
         expectEqual(landed.props.server, APIServer(host: "billing.shop.dev", auth: "bearer"))
-        expect(landed.props.frame.width > 420, "wider than a new API, so /customers/{id}/statements shows whole: \(landed.props.frame.width)")
+        expect(landed.props.frame.width >= 420, "at least a new API's width, the 200 left to its type: \(landed.props.frame.width)")
         expectEqual(landed.props.version, "1.0.0")
         expectEqual(landed.props.endpoints.map(EndpointGrammar.print), [
             "POST /webhooks/stripe (StripeEvent) → 200", "GET /statements/{id} → 200 Statement", "GET /customers/{id}/statements → 200 Statement",
@@ -305,5 +305,219 @@ private let refunds = """
         expect(api(editor, "billing API") != nil)
         pasteboardHolds("Our API is described with OpenAPI.")
         expect(!editor.canPaste, "prose: no reader sniffs it")
+    },
+    test("pasted again with the same file: nothing changes, no step, and the schemas keep their order, a color put first stays first") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        pasteboardHolds(billing)
+        expect(commandV(w))
+        let event = try require(type(editor, "StripeEvent"))
+        var held = try schema(editor, "StripeEvent")
+        if case .object(let members) = held { held = .object([SchemaMember(key: "$color", value: .string("green"))] + members) }
+        editor.transact("Edit Schema") { $0.update(event.id) { $0[TypeSchemaProperty.self] = SchemaText(held.pretty) } }
+        editor.undoHistory.seal()
+        let document = editor.document, revision = editor.revision
+        pasteboardHolds(billing)
+        expect(commandV(w))
+        expectEqual(editor.document, document, "the same file says nothing new")
+        expectEqual(editor.revision, revision, "no step")
+        expectEqual(undoTitle(w.window), "Undo Edit Schema", "the last step is still the person's")
+        expectEqual(try schema(editor, "StripeEvent").members?.map(\.key), ["$color", "type", "required", "properties"])
+    },
+    test("Undo and Redo of a paste, and of a paste again, are exact: the held schema with the person's field and color, the endpoints and their ids, the width") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        let blank = editor.document
+        pasteboardHolds(billing)
+        expect(commandV(w))
+        let first = editor.document
+        editor.undo()
+        expectEqual(editor.document, blank, "Undo takes the first paste whole")
+        editor.redo()
+        expectEqual(editor.document, first, "Redo puts it back as it was, ids and all")
+        let landed = try require(api(editor, "billing API")), statement = try require(type(editor, "Statement"))
+        var held = try schema(editor, "Statement")
+        if case .object(var members) = held {
+            members.append(SchemaMember(key: "$color", value: .string("green")))
+            if let at = members.firstIndex(where: { $0.key == "properties" }), case .object(var properties) = members[at].value {
+                properties.append(SchemaMember(key: "memo", value: .object([SchemaMember(key: "type", value: .string("string"))])))
+                members[at].value = .object(properties)
+            }
+            held = .object(members)
+        }
+        editor.transact("Edit Schema") { $0.update(statement.id) { $0[TypeSchemaProperty.self] = SchemaText(held.pretty) } }
+        editor.transact("Resize") { $0.update(landed.id, as: API.self) { $0.props.frame.size.width = 500 } }
+        editor.undoHistory.seal()
+        let edited = editor.document
+        pasteboardHolds(billing.replacingOccurrences(of: "        total_cents: {type: integer}", with: "        total_cents: {type: integer}\n        currency: {type: string}"))
+        expect(commandV(w))
+        let merged = editor.document
+        expect(merged != edited, "the paste changed the Statement")
+        expectEqual(undoTitle(w.window), "Undo Paste OpenAPI")
+        editor.undo()
+        expectEqual(editor.document, edited, "Undo of the paste again restores the held schema, the width and the endpoints exactly")
+        editor.redo()
+        expectEqual(editor.document, merged, "Redo puts the merged state back")
+    },
+    test("pasted again, a response the file no longer has is gone from the endpoint") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        // Two responses first (a 200 and a 404), then one.
+        let doubled = billing.replacingOccurrences(of: "      responses:\n        '200':\n          description: received\n",
+                                                   with: "      responses:\n        '200':\n          description: received\n        '404':\n          description: missing\n")
+        pasteboardHolds(doubled)
+        expect(commandV(w))
+        expectEqual(try require(api(editor, "billing API")).props.endpoints.first?.endpoint?.responses.map(\.status), ["200", "404"])
+        pasteboardHolds(billing)
+        expect(commandV(w))
+        let again = try require(api(editor, "billing API"))
+        expectEqual(again.props.endpoints.first?.endpoint?.responses.map(\.status), ["200"], "the 404 the file dropped is dropped")
+    },
+    test("two files at once are two APIs, a type the files share one note, the first file's schema; they land together, selected, announced as APIs and Types") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("paste-openapi-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func spec(_ title: String, _ field: String) -> String {
+            """
+            openapi: 3.0.0
+            info: {title: \(title), version: '1'}
+            paths:
+              /\(title):
+                get:
+                  responses:
+                    '200':
+                      description: ok
+                      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+            components:
+              schemas:
+                Error:
+                  allOf:
+                    - $ref: '#/components/schemas/Base'
+                    - type: object
+                      properties: {\(field): {type: string}}
+                Base: {type: object, properties: {code: {type: string}}}
+            """
+        }
+        let one = folder.appendingPathComponent("one.yaml"), two = folder.appendingPathComponent("two.yml")
+        try spec("one", "alpha").write(to: one, atomically: true, encoding: .utf8)
+        try spec("two", "beta").write(to: two, atomically: true, encoding: .utf8)
+        let pasteboard = ShippedPlugins.pasteboard
+        pasteboard.clearContents()
+        pasteboard.writeObjects([one as NSURL, two as NSURL])
+        expect(commandV(w))
+        let apis = editor.document.shapes.filter { $0.kind == API.kind }
+        expectEqual(apis.compactMap { $0[TitleProperty.self] }.sorted(), ["one", "two"])
+        expectEqual(editor.document.shapes.filter { $0[TitleProperty.self] == "Error" }.count, 1, "one note for the shared name")
+        expectEqual(try schema(editor, "Error")["properties"]?.members?.map(\.key), ["alpha"], "the first file's schema")
+        let error = try require(type(editor, "Error")), base = try require(type(editor, "Base"))
+        expectEqual(error[IsAProperty.self]?.map(\.shape), [base.id])
+        for api in apis { expectEqual(api.typed(as: API.self)?.props.endpoints.first?.endpoint?.responses.first?.type?.shape, error.id, "both bound to it") }
+        expectEqual(editor.selectedShapeIDs.count, 4)
+        expectEqual(editor.announcements.last, "Pasted 2 APIs and 2 Types")
+    },
+    test("it lands beside the selection, what lands is selected and the shape it landed beside no longer is; Tab walks it by keys and Shift-Tab comes back") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        _ = try drawnInProcess(#"sticky-note "Anchor" text: "here""#, on: editor)
+        let anchor = try require(editor.document.shapes.first { $0[TitleProperty.self] == "Anchor" })
+        editor.selectedShapeIDs = [anchor.id]
+        pasteboardHolds(billing)
+        expect(commandV(w))
+        let landed = try require(api(editor, "billing API")), event = try require(type(editor, "StripeEvent"))
+        expectEqual(editor.selectedShapeIDs.count, 3)
+        expect(!editor.selectedShapeIDs.contains(anchor.id), "the anchor isn't selected")
+        let anchorBox = try require(editor.document[anchor.id]?.box)
+        for id in editor.selectedShapeIDs {
+            expect(!anchorBox.intersects(try require(editor.document[id]?.box)), "clear of the anchor")
+        }
+        expectEqual(editor.announcements.last, "Pasted API and 2 Types", "VoiceOver hears types, not notes")
+        // The keys: from the API alone, Tab goes on to the shapes after it in reading order, and Shift-Tab back.
+        editor.selectedShapeIDs = [landed.id]
+        w.window.press("\t", code: 48)
+        let next = editor.selectedShapeIDs
+        expectEqual(next.count, 1)
+        expect(next != [landed.id], "Tab moved on")
+        expect(next.first.map { [event.id, try! require(type(editor, "Statement")).id].contains($0) } ?? false, "to a type it landed")
+        w.window.press("\t", code: 48, modifiers: .shift)
+        expectEqual(editor.selectedShapeIDs, [landed.id], "Shift-Tab is the way back")
+    },
+    test("an API titled as one of its types: its bodies, responses and is still bind to the type notes, not the API") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        pasteboardHolds("""
+            openapi: 3.0.0
+            info: {title: Pet, version: '1'}
+            paths:
+              /pets:
+                post:
+                  requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/Pet'}}}}
+                  responses:
+                    '201': {description: made, content: {application/json: {schema: {$ref: '#/components/schemas/Dog'}}}}
+            components:
+              schemas:
+                Pet: {type: object, properties: {name: {type: string}}}
+                Dog:
+                  allOf:
+                    - $ref: '#/components/schemas/Pet'
+                    - type: object
+                      properties: {bark: {type: string}}
+            """)
+        expect(commandV(w))
+        let landed = try require(api(editor, "Pet")), pet = try require(type(editor, "Pet")), dog = try require(type(editor, "Dog"))
+        expect(landed.id != pet.id)
+        let endpoint = try require(landed.props.endpoints.first?.endpoint)
+        expectEqual(endpoint.body?.shape, pet.id, "the body is the type, not the API")
+        expectEqual(endpoint.responses.first?.type?.shape, dog.id)
+        expectEqual(dog[IsAProperty.self]?.map(\.shape), [pet.id], "Dog builds on the type Pet")
+    },
+    test("text with no title (and no file) pasted is an API called API; pasted again it is that API; types named only by case are two notes") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        let text = """
+            openapi: 3.0.0
+            paths:
+              /m:
+                get:
+                  responses:
+                    '200': {description: ok, content: {application/json: {schema: {$ref: '#/components/schemas/Money'}}}}
+            components:
+              schemas:
+                Money: {type: object, properties: {cents: {type: integer}}}
+                money: {type: object, properties: {units: {type: integer}}}
+            """
+        pasteboardHolds(text)
+        expect(commandV(w))
+        expectEqual(editor.document.shapes.filter { $0.kind == API.kind }.compactMap { $0[TitleProperty.self] }, ["API"])
+        expectEqual(editor.document.shapes.filter { $0[TypeSchemaProperty.self] != nil }.compactMap { $0[TitleProperty.self] }.sorted(), ["Money", "money"])
+        expectEqual(try schema(editor, "Money")["properties"]?.members?.map(\.key), ["cents"])
+        expectEqual(try schema(editor, "money")["properties"]?.members?.map(\.key), ["units"])
+        let shapes = editor.document.shapes.count
+        pasteboardHolds(text)
+        expect(commandV(w))
+        expectEqual(editor.document.shapes.count, shapes, "the API is found again by its title")
+    },
+    test("the type notes a paste makes are as tall as their rows, not the note's default; one the file has keeps its own size") {
+        let w = try kitWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        pasteboardHolds(billing)
+        expect(commandV(w))
+        let event = try require(type(editor, "StripeEvent")), statement = try require(type(editor, "Statement"))
+        let box = try require(event.box)
+        expect(box.height < 120 && box.height > 40, "three rows: \(box.height)")
+        expectEqual(try require(statement.box).height, box.height, "three rows each")
+        editor.transact("Resize") { $0.update(event.id) { $0.box = CGRect(x: box.minX, y: box.minY, width: 400, height: 300) } }
+        pasteboardHolds(billing)
+        expect(commandV(w))
+        expectEqual(editor.document[event.id]?.box?.size, CGSize(width: 400, height: 300), "the size the person gave it")
     },
 ])

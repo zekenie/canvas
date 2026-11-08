@@ -326,4 +326,20 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         expect(third != landed, "locked, and the statement writes: a new one")
         expectEqual(tileCount(editor), 3)
     },
+    test("a name written twice with late values for one key keeps the first's, as it does a plain value's; a key only the later one writes joins") {
+        let editor = try drawEditor()
+        let program = DrawPut(rows: [[
+            DrawPut.Shape(kind: "tile", title: "Twin", late: [DrawPut.LateValue(key: "finish") { _ in "glossy" }]),
+            DrawPut.Shape(kind: "tile", title: "Twin", late: [DrawPut.LateValue(key: "finish") { _ in "matte" }]),
+        ]])
+        let landed = try put(program, at: .beside([]), in: editor)
+        expectEqual(landed.count, 1, "one shape")
+        expectEqual(finish(of: landed[0], in: editor), .glossy, "the first file's, not the last's")
+        let plain = DrawPut(rows: [[
+            DrawPut.Shape(kind: "tile", title: "Pair", values: [(key: "finish", text: "glossy")]),
+            DrawPut.Shape(kind: "tile", title: "Pair", late: [DrawPut.LateValue(key: "finish") { _ in "matte" }]),
+        ]])
+        let pair = try put(plain, at: .beside([]), in: editor)
+        expectEqual(finish(of: pair[0], in: editor), .glossy, "a plain value of the earlier is kept over a later late one")
+    },
 ])
