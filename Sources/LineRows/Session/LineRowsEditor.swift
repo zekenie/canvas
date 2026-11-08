@@ -455,6 +455,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         } else {
             editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)
         }
+        // A waiting line opened between rows moves the ones below it with nothing committed: a card under one goes with it.
+        service.cards?.follow(nil)
     }
 
     /// The line was typed in: read again, its looks and mark shown, the clip slid to the caret.
@@ -849,7 +851,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
     @discardableResult
     override func openCard() -> Bool {
         commitDraft()
-        guard case .row(let row) = focus, let stored = storedRow(row), let cards = service.cards,
+        // A line the file refused (an undrawable key, a frozen shape) is still a draft: the card would write over it later.
+        guard !hasDraft, case .row(let row) = focus, let stored = storedRow(row), let cards = service.cards,
               let card = model.card(of: stored, in: lineContext(row)) else { return false }
         return cards.show(card, of: row, in: self)
     }
@@ -867,14 +870,16 @@ final class LineSession<Model: LineModel>: LineRowsView {
     func worldRect(of row: PartID) -> CGRect? { editor.shapeContext.geometry(of: id)?.parts.frame(row)?.rect }
 
     /// A line of the row's card left changed: `row` written over `held`, as a row's line is, one step the kind names by what
-    /// changed ("Change Column", "Change Key Action"), heard by VoiceOver; the row's line printed again as it's stored. False
-    /// where nothing was written: nothing changed, the row is gone, or the shape refused (and shook).
+    /// changed ("Change Column", "Change Key Action"), heard by VoiceOver; the row's line printed again as it's stored. Refused
+    /// where the row is gone, the file can't take a commit now, or the shape refused (and shook): nothing written, the card's
+    /// words kept by the caller as a row's line keeps its draft.
     @discardableResult
-    func commitCard(_ row: Row, over held: Row) -> Bool {
-        guard row != held, editor.canTransact, storedRow(model.id(of: held)) != nil else { return false }
-        guard write([.change(from: held, to: row)]) else { return false }
+    func commitCard(_ row: Row, over held: Row) -> CardCommit {
+        guard row != held else { return .unchanged }
+        guard editor.canTransact, storedRow(model.id(of: held)) != nil else { return .refused }
+        guard write([.change(from: held, to: row)]) else { return .refused }
         reprint()
-        return true
+        return .written
     }
 
     // MARK: VoiceOver

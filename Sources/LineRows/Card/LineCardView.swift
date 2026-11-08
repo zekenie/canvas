@@ -12,8 +12,10 @@ import TextEditing
 /// A row's card, as a test and VoiceOver read it, whatever its rows are.
 @MainActor
 public class LineCardView: NSView {
-    /// The row it is about.
-    public let header: LineCardHeader
+    /// The row it is about, as the row is now: the kind is asked again as the card follows the row.
+    public internal(set) var header: LineCardHeader
+    /// Told when the header changed (the row was renamed, its mark changed): what names the card is named again.
+    var headerDidChange: (@MainActor (LineCardHeader) -> Void)?
     /// Shows a choice's menu in place of popping it up (a test chooses from it, as a click would).
     public var menuPresenter: (@MainActor (NSMenu) -> Void)?
 
@@ -62,6 +64,8 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     private var focus = CardStop(line: 0, item: 0)
     /// A move of the keyboard under way: a field it leaves isn't the keyboard leaving the card.
     private var isMoving = false
+    /// A commit is waiting for the file to take one (`writeLater`).
+    private var writingLater = false
     private let style: LineStyle
 
     /// A line of words: its fields, what each was given, and a list's line opened by Return and not yet written.
@@ -106,10 +110,16 @@ final class LineCardSession<Model: LineModel>: LineCardView {
 
     /// Shows what the row holds now: every line but one with the person's words in it, unless `keepingDrafts` is false (a line
     /// just written, or refused, shows what's stored).
-    func reload(keepingDrafts: Bool = true) {
-        guard let stored = session?.storedRow(row) else { return }
+    @discardableResult
+    func reload(keepingDrafts: Bool = true) -> Bool {
+        guard let session, let stored = session.storedRow(row) else { return false }
+        let countBefore = stops.count
         held = stored
         let context = context
+        if let fresh = session.model.card(of: stored, in: context)?.header, fresh != header {
+            header = fresh
+            headerDidChange?(fresh)
+        }
         for (index, line) in texts.sorted(by: { $0.key < $1.key }) {
             var lines = line.text.lines(stored, context)
             if line.text.isList {
@@ -145,6 +155,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         nameFields()
         needsLayout = true
         needsDisplay = true
+        return stops.count != countBefore
     }
 
     /// An option as listed, for words as stored ("CASCADE" is cascade).
@@ -175,7 +186,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             }
             field.onBlur = { [weak self, weak field] in
                 guard let self, let field, !self.isMoving, let stop = self.stop(of: field) else { return }
-                self.commit(stop.line)
+                self.commit(stop.line, leaving: stop.item)
             }
             field.onFocus = { [weak self, weak field] in
                 guard let self, let field, let stop = self.stop(of: field) else { return }
@@ -268,40 +279,81 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         if let responder = responder(of: stop) { NSAccessibility.post(element: responder, notification: .focusedUIElementChanged) }
     }
 
-    /// The keyboard to `stop`, the line it leaves written first; a stop the write changed is found again by its place.
+    /// The keyboard to `stop`, the line it leaves written first; a stop the write changed is found again by its place, and by
+    /// what it was: a list's line before it written away (left empty) moves the ones after it up.
     private func move(to stop: CardStop) {
         let leaving = focus
         isMoving = true
         defer { isMoving = false }
-        if leaving.line != stop.line || texts[leaving.line]?.text.isList == true { commit(leaving.line) }
+        var target = stop
+        if leaving.line != stop.line || texts[leaving.line]?.text.isList == true {
+            let line = texts[stop.line]
+            let before = line?.fields.count ?? 1
+            let above = leaving.line == stop.line ? emptyItems(of: stop.line, before: stop.item) : 0
+            commit(leaving.line, leaving: leaving.item)
+            if above > 0 { target.item = max(0, stop.item - min(above, before - (texts[stop.line]?.fields.count ?? 1))) }
+        }
         let all = stops
-        let target = all.contains(stop) ? stop : (all.last { $0.line == stop.line } ?? all.first ?? stop)
-        focus = target
-        if let responder = responder(of: target), let window, window.firstResponder !== responder {
+        let aimed = all.contains(target) ? target : (all.last { $0.line == stop.line } ?? all.first ?? stop)
+        focus = aimed
+        if let responder = responder(of: aimed), let window, window.firstResponder !== responder {
             window.makeFirstResponder(responder)
             if let field = responder as? LineField { field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0)) }
         }
         needsDisplay = true
     }
 
+    /// How many of a list's items before `item` hold nothing its grammar reads: the ones a write takes out.
+    private func emptyItems(of index: Int, before item: Int) -> Int {
+        guard let line = texts[index], line.text.isList else { return 0 }
+        return line.fields.prefix(item).filter { line.text.isEmpty($0.line, context) }.count
+    }
+
     // MARK: Committing
 
-    /// A line of words left: the row written with what its lines say, if they changed what it was shown, one step the kind names.
+    /// A line of words left (`item` of it, the field the keyboard left): the row written with what its lines say, if they changed
+    /// what it was shown, one step the kind names. A refusal (the file can't take it, the shape refused and shook) keeps what
+    /// was typed where it is, as a row's line keeps its draft; where the file can't take a commit just now (a card closed as a
+    /// commit is delivered) it is written a turn later.
     @discardableResult
-    private func commit(_ index: Int) -> Bool {
-        guard let line = texts[index], let session else { return false }
+    private func commit(_ index: Int, leaving item: Int? = nil) -> CardCommit {
+        guard let line = texts[index], let session else { return .unchanged }
         let lines = line.fields.map(\.line)
-        guard lines != line.shown else { return false }
-        let written = line.text.write(lines, held, context)
+        // An empty line Return opened and the person left untouched goes.
+        let abandoned = item != nil && line.pending == item && line.text.isEmpty(lines[item!], context)
+        guard lines != line.shown || abandoned else { return .unchanged }
+        guard editor.canTransact else {
+            writeLater(index, leaving: item)
+            return .refused
+        }
+        var result = CardCommit.unchanged
+        if lines != line.shown {
+            let written = line.text.write(lines, held, context)
+            result = session.commitCard(written, over: held)
+            if result == .refused { return .refused }
+        }
         line.pending = nil
-        let done = session.commitCard(written, over: held)
-        // Written or not (refused, or nothing changed), the lines show what the row holds now.
+        // Written, or nothing changed: the lines show what the row holds now.
         let keep = isMoving
         isMoving = true
         reload(keepingDrafts: false)
         isMoving = keep
         editor.cardDidResize()
-        return done
+        return result
+    }
+
+    /// A commit the file couldn't take while it was delivering one: made a turn later, if the line still has words to write.
+    private func writeLater(_ index: Int, leaving item: Int?) {
+        guard !writingLater else { return }
+        writingLater = true
+        _ = editor.scheduler.schedule(after: .zero) { [weak self] in
+            guard let self else { return }
+            self.writingLater = false
+            let keep = self.isMoving
+            self.isMoving = true
+            self.commit(index, leaving: item)
+            self.isMoving = keep
+        }
     }
 
     /// Space, Return or a click on a toggle (flipped, written at once) or a choice (its options, the current checked).
@@ -313,6 +365,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             set(&row, !get(held))
             session.commitCard(row, over: held)
             reload(keepingDrafts: false)
+            spokenChange(of: index)
         case .choice(let options, let get, let set):
             let current = get(held).map { Self.option($0, in: options) } ?? options.first
             let menu = NSMenu(title: card.lines[index].label)
@@ -336,11 +389,20 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     }
 
     private func choose(_ option: String, line index: Int, set: @MainActor (inout Row, String) -> Void) {
-        guard let session else { return }
+        guard let session, case .choice(let options, let get, _) = card.lines[index].kind else { return }
+        // The option shown faint while none is held is none: picking it writes nothing.
+        if get(held) == nil, option == options.first { return }
         var row = held
         set(&row, option)
         session.commitCard(row, over: held)
         reload(keepingDrafts: false)
+        spokenChange(of: index)
+    }
+
+    /// What a toggle or a choice now says, spoken beside the step's name: "null yes", "on delete cascade".
+    private func spokenChange(of index: Int) {
+        guard let control = controls[index] else { return }
+        editor.announce(LineCardStyle.spoken(card.lines[index].label, control.value))
     }
 
     // MARK: Keys
@@ -374,14 +436,24 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     }
 
     /// Return: in a list, the line written and one opened below it, or on an empty line, done; in a field, done: the row has
-    /// the keyboard back. A toggle's and a choice's is their press (`LineCardControl`).
+    /// the keyboard back, unless the file refused the line (it stays, with its words and the shape shaking). A toggle's and a
+    /// choice's is their press (`LineCardControl`).
     private func returnPressed(at stop: CardStop) {
         guard let line = texts[stop.line] else { return press(line: stop.line) }
         let field = line.fields[stop.item]
         let blank = field.string.trimmingCharacters(in: .whitespaces).isEmpty
-        guard line.text.isList, !blank else { return backToRow() }
+        guard line.text.isList, !blank else {
+            isMoving = true
+            let result = commit(stop.line, leaving: stop.item)
+            isMoving = false
+            if result != .refused { close() }
+            return
+        }
         isMoving = true
-        commit(stop.line)
+        guard commit(stop.line, leaving: stop.item) != .refused else {
+            isMoving = false
+            return
+        }
         // The new line goes after the one Return was on, as it's stored now: the item it was, or the last.
         let stored = line.text.lines(held, context).count
         line.pending = min(stop.item + 1, stored)
@@ -399,7 +471,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             line.pending = nil
             reload()
         } else {
-            commit(stop.line)
+            commit(stop.line, leaving: stop.item)
         }
         editor.cardDidResize()
         isMoving = false
@@ -410,23 +482,29 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     /// The line with the keyboard written.
     private func leave() {
         isMoving = true
-        commit(focus.line)
+        commit(focus.line, leaving: focus.item)
         isMoving = false
     }
 
-    /// Escape, ⌘↑, ⌘., Return done with a field: the line written, the card closes and the row has the keyboard back.
+    /// Escape, ⌘↑, ⌘.: the line written, the card closes and the row has the keyboard back (as the row's own Escape, whether or
+    /// not the file took the line).
     private func backToRow() {
         leave()
+        close()
+    }
+
+    private func close() {
         isMoving = true
         editor.closeCard()
         isMoving = false
     }
 
-    /// The core took the card down, for any reason: a line with words of the person's is written, if the file can take it.
+    /// The core took the card down, for any reason: a line with words of the person's is written, if the file can take it (a
+    /// turn later where it is delivering a commit).
     func didClose() {
         guard !isMoving else { return }
         isMoving = true
-        commit(focus.line)
+        commit(focus.line, leaving: focus.item)
         isMoving = false
     }
 
@@ -490,6 +568,9 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             }
         }
     }
+
+    /// VoiceOver reads the lines in the order the keys walk them, top to bottom, whatever order the views were added in.
+    override func accessibilityChildren() -> [Any]? { stops.compactMap(responder(of:)) }
 
     /// The names VoiceOver reads for the fields: a line's label, a list's item by its place.
     private func nameFields() {
@@ -675,6 +756,9 @@ enum LineCardStyle {
 
     /// What VoiceOver calls the card: "Details of customer_id".
     static func label(_ name: String) -> String { "Details of \(name)" }
+
+    /// A toggle's or a choice's new state, as announced: "null yes".
+    static func spoken(_ label: String, _ value: String) -> String { "\(label) \(value)" }
 
     /// A list's item: "notes, 2 of 3".
     static func item(_ label: String, _ number: Int, of count: Int) -> String { "\(label), \(number) of \(count)" }

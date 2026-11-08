@@ -213,7 +213,11 @@ struct TallyLines: LineModel {
                   textInset: 24, trailingInset: 8, gutterMiddle: 12, markSize: 10)
     }
     func rows(of props: Tally) -> [TallyRow] { props.rows }
-    func setRows(_ rows: [TallyRow], in props: inout Tally) { props.rows = rows }
+    /// A tally takes no entry called "refuse" or noted "refuse" (so the write is refused and the shape shakes, as a locked one's is).
+    func setRows(_ rows: [TallyRow], in props: inout Tally) {
+        guard !rows.contains(where: { $0.label == "refuse" || $0.notes.contains("refuse") }) else { return }
+        props.rows = rows
+    }
     func id(of row: TallyRow) -> PartID { row.id }
     func role(of row: TallyRow) -> LineRole { "entry" }
     func roleOfNewRow(at index: Int, in props: Tally) -> LineRole { "entry" }

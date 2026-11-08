@@ -94,6 +94,21 @@ extension Bench {
         b.window.settle()
         expect(b.editor.card == nil, "its row gone, it closes")
     },
+    test("the card follows its row through a layout that writes nothing: a waiting line opened above it, with the keyboard back on the row's line") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "blue", "green"])
+        _ = try b.openCard(id, row: "blue")
+        let before = try require(b.editor.card?.anchor)
+        b.window.makeFirstResponder(b.field)
+        b.press(.up)
+        expectEqual(b.focus, "row red")
+        expect(b.editor.card != nil, "the card stays while the row's line has the keyboard")
+        b.press(.return)
+        expectEqual(b.focus, "waiting")
+        let after = try require(b.editor.card?.anchor)
+        expectEqual(after.minY, before.minY + Tally.rowHeight, "down a line with its row")
+        expectEqual(after, b.rect(id, row: "blue"))
+    },
     test("each line commits as the row's line does, a step the kind names; the row's line printed again; Undo takes it back") {
         let b = try Bench()
         let id = b.tally("apples", ["red 2", "blue"])
@@ -263,6 +278,130 @@ extension Bench {
         expectEqual(color.accessibilityRole(), .popUpButton)
         expectEqual(color.accessibilityValue() as? String, "red")
         expectEqual(card.field(of: "notes 1")?.accessibilityLabel(), "notes, 1 of 1")
+    },
+    test("the card shows what the row holds now: its header's mark follows a count of 0, a rename by another writer renames the card and what VoiceOver calls it") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2"])
+        let card = try b.openCard(id, row: "red")
+        let host = try require(sequence(first: card as NSView, next: { $0.superview }).first { $0.accessibilityRole() == .popover })
+        expectEqual(card.header.mark == nil, true)
+        try require(card.field(of: "count")).selectAll(nil)
+        b.type("0")
+        b.press(.escape)
+        b.press(.tab)
+        expectEqual(card.header.mark?.symbol, "circle", "the count the card wrote, in the header's mark")
+        b.editor.transact("Rename Entry") { $0.update(id, as: Tally.self) { $0.props.rows[0].label = "crimson" } }
+        b.window.settle()
+        expectEqual(card.header.name, "crimson")
+        expectEqual(host.accessibilityLabel(), "Details of crimson")
+        b.editor.transact("Count Entry") { $0.update(id, as: Tally.self) { $0.props.rows[0].count = 4 } }
+        b.window.settle()
+        expectEqual(card.header.mark == nil, true, "and back")
+        expectEqual(card.value(of: "count"), "4")
+    },
+    test("a line the file refuses keeps its words, the shape shaking: Tab and Return stay in the card, Escape is the row's and goes") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2"])
+        let card = try b.openCard(id, row: "red")
+        card.go(to: "notes 1")
+        b.type("refuse")
+        b.press(.tab)
+        expectEqual(b.refusals.refusals.last, [id], "it shakes")
+        expectEqual(b.rows(id).first?.notes, [], "nothing written")
+        expectEqual(card.field(of: "notes 1")?.string, "refuse", "what was typed stays")
+        expect(b.editor.card != nil)
+        expectEqual(card.focusedStop, "count")
+        card.go(to: "notes 1")
+        b.press(.return)
+        expect(b.editor.card != nil, "Return in a refused line is not done with it")
+        expectEqual(card.stopNames, ["count", "starred", "color", "notes 1"], "and opens no line below")
+        expectEqual(card.field(of: "notes 1")?.string, "refuse")
+        b.press(.escape)
+        expect(b.editor.card == nil, "Escape goes, as the row's own does")
+        expectEqual(b.rows(id).first?.notes, [])
+        expectEqual(b.focus, "row red")
+    },
+    test("⌘↓ on a line the file refuses opens no card: the line keeps its words, and the card never writes over it") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2", "blue"])
+        try b.edit(id, row: "blue")
+        b.field.selectAll(nil)
+        b.type("refuse 3")
+        b.press(.commandDown)
+        expectEqual(b.refusals.refusals.last, [id], "it shakes")
+        expect(b.editor.card == nil)
+        expectEqual(b.field.string, "refuse 3", "the draft stays")
+        expectEqual(b.labels(id), ["red", "blue"])
+    },
+    test("a card closed while a commit is delivered writes its words a turn later, not never") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2"])
+        let card = try b.openCard(id, row: "red")
+        try require(card.field(of: "count")).selectAll(nil)
+        b.type("9")
+        b.editor.transact("Move") { transaction in
+            transaction.update(id, as: Tally.self) { $0.props.frame.origin.x += 1 }
+            b.editor.closeCard()
+        }
+        b.window.settle()
+        expectEqual(b.rows(id).first?.count, 2, "the file could not take it while it was delivering")
+        b.h.scheduler.advance(by: .zero)
+        expectEqual(b.rows(id).first?.count, 9, "written a turn later")
+        expectEqual(b.undoName, "Change Entry")
+    },
+    test("a list's line left empty goes and the keyboard lands on the line it aimed at; an opened line left untouched goes with no step") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2"])
+        b.editor.transact("Notes") { $0.update(id, as: Tally.self) { $0.props.rows[0].notes = ["a", "b", "c"] } }
+        b.editor.undoHistory.seal()
+        let card = try b.openCard(id, row: "red")
+        card.go(to: "notes 1")
+        try require(card.field(of: "notes 1")).selectAll(nil)
+        b.press(.delete)
+        b.press(.down)
+        expectEqual(b.rows(id).first?.notes, ["b", "c"])
+        expectEqual(card.focusedStop, "notes 1", "the line after the one that went, now first")
+        expectEqual(card.value(of: "notes 1"), "b")
+        b.press(.return)
+        expectEqual(card.stopNames, ["count", "starred", "color", "notes 1", "notes 2", "notes 3"], "Return opens a line below the one it was on")
+        expectEqual(card.focusedStop, "notes 2")
+        let name = b.undoName
+        b.press(.tab)
+        expectEqual(card.stopNames, ["count", "starred", "color", "notes 1", "notes 2"], "left untouched, it goes")
+        expectEqual(card.focusedStop, "notes 2", "the keyboard on the line it was going to, now one place up")
+        expectEqual(card.value(of: "notes 2"), "c")
+        expectEqual(b.undoName, name, "no step")
+    },
+    test("a choice picked at the option shown while none is held writes nothing; the next pick is written, and so is going back to it") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2"])
+        let card = try b.openCard(id, row: "red")
+        card.go(to: "color")
+        b.press(.space)
+        let before = b.undoName
+        try require(b.menus.last).choose("red")
+        expectEqual(b.rows(id).first?.color, nil, "none held, the first shown: that is none")
+        expectEqual(b.undoName, before)
+        b.press(.space)
+        try require(b.menus.last).choose("blue")
+        expectEqual(b.rows(id).first?.color, "blue")
+        b.press(.space)
+        try require(b.menus.last).choose("red")
+        expectEqual(b.rows(id).first?.color, "red")
+    },
+    test("a toggle or a pick is spoken as well as the step: starred yes; VoiceOver reads the lines in the order the keys walk them") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2"])
+        let card = try b.openCard(id, row: "red")
+        card.go(to: "starred")
+        b.press(.space)
+        expectEqual(b.editor.announcements.suffix(2).map { $0 }, ["Star Entry", "starred yes"])
+        card.go(to: "color")
+        b.press(.space)
+        try require(b.menus.last).choose("green")
+        expectEqual(b.editor.announcements.last, "color green")
+        let children = (card.accessibilityChildren() ?? []).compactMap { ($0 as? NSView)?.accessibilityLabel() }
+        expectEqual(children, ["count", "starred", "color", "notes, 1 of 1"], "top to bottom, not the order the views were added")
     },
     test("a kind's › opens a row's card: the shape edited at the row, the card under it; a row with nothing more, none") {
         let b = try Bench()

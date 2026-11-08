@@ -95,7 +95,7 @@ public final class LineRowsService {
 extension LineRowsService: EditorService {
     /// A pick that a session's line waits for is in: the line printed again, with what it drew.
     public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
-        cards?.follow()
+        cards?.follow(changes)
         guard let session = awaitingReprint else { return }
         awaitingReprint = nil
         session.reprint()

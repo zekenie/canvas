@@ -86,6 +86,8 @@ struct LineCardText<Row> {
     let look: @MainActor (LineText, LineContext) -> (spans: [LineSpan], mark: LineMark?)
     /// What fits at the caret in a line.
     let offers: @MainActor (Int, LineText, LineContext) -> LineOffers?
+    /// Whether a line holds nothing the grammar reads as a value (a blank one): a write takes it out.
+    let isEmpty: @MainActor (LineText, LineContext) -> Bool
     /// The row holding what `lines` say: empty lines are none.
     let write: @MainActor ([LineText], Row, LineContext) -> Row
     let substitutions: [LineSubstitution]
@@ -101,6 +103,7 @@ struct LineCardText<Row> {
         offers = { caret, line, context in
             grammar.offers(at: caret, in: line, reading: grammar.read(line, id: context.row ?? PartID(), in: context), context: context)
         }
+        isEmpty = { line, context in grammar.read(line, id: context.row ?? PartID(), in: context).row == nil }
         write = { lines, row, context in
             var row = row
             set(&row, lines.compactMap { grammar.read($0, id: context.row ?? PartID(), in: context).row }, context)
@@ -115,6 +118,18 @@ struct LineCardText<Row> {
 protocol LineCardShowing: AnyObject {
     /// Shows `card` for `row` of the shape `session` edits, hung from the row; false where it can't show.
     func show<Model: LineModel>(_ card: LineCard<Model.Row>, of row: PartID, in session: LineSession<Model>) -> Bool
-    /// A commit settled: the card follows its row, shows what the row holds now, and closes where the row is gone.
-    func follow()
+    /// The card follows its row (a commit settled, `changes`: also shows what the row holds now) or, with no changes, the layout
+    /// moved it (a waiting line opened above it); closes where the row is gone.
+    func follow(_ changes: ChangeSet?)
+}
+
+/// What a card's commit came to.
+enum CardCommit {
+    /// The row was written.
+    case written
+    /// The line was as the row holds it: nothing to write.
+    case unchanged
+    /// Nothing was written though the person changed something: the file can't take a commit now, the row is gone, or the
+    /// shape refused. What they typed stays.
+    case refused
 }

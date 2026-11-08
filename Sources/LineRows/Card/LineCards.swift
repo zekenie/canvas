@@ -18,7 +18,8 @@ final class LineCards: LineCardShowing {
     private var shownID: LineCardID?
     /// The row's rect now, and what the card shows reloaded, for the card showing.
     private var anchorNow: (@MainActor () -> CGRect?)?
-    private var reload: (@MainActor () -> Void)?
+    /// Shows what the row holds now, true where its size changed.
+    private var reload: (@MainActor () -> Bool)?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -27,6 +28,7 @@ final class LineCards: LineCardShowing {
     func show<Model: LineModel>(_ card: LineCard<Model.Row>, of row: PartID, in session: LineSession<Model>) -> Bool {
         guard let anchor = session.worldRect(of: row), session.storedRow(row) != nil else { return false }
         let view = LineCardSession(card: card, row: row, session: session, editor: editor)
+        view.headerDidChange = { [weak self] header in self?.editor.setCardLabel(LineCardStyle.label(header.name)) }
         let id = LineCardID(shape: session.id, row: row)
         let made = CanvasCard(id: id, about: session.id, anchor: anchor, view: view, firstResponder: view.firstResponderStop,
                               returnsKeyboardTo: session.field, accessibilityLabel: LineCardStyle.label(card.header.name),
@@ -35,7 +37,7 @@ final class LineCards: LineCardShowing {
         shown = view
         shownID = id
         anchorNow = { [weak view] in view?.anchorNow() }
-        reload = { [weak view] in view?.reload() }
+        reload = { [weak view] in view?.reload() ?? false }
         guard editor.showCard(made) else {
             forget()
             return false
@@ -43,12 +45,13 @@ final class LineCards: LineCardShowing {
         return true
     }
 
-    func follow() {
+    func follow(_ changes: ChangeSet?) {
         guard let shownID, editor.card?.id == AnyHashable(shownID) else { return }
         guard let rect = anchorNow?() else { return editor.closeCard() }
-        reload?()
+        // Every commit, not only the card's shape's: the lines read what other shapes hold (the key an arrow is, an enum's name).
+        let resized = changes != nil ? reload?() ?? false : false
         editor.moveCard(to: rect)
-        editor.cardDidResize()
+        if resized { editor.cardDidResize() }
     }
 
     private func closed(_ view: LineCardView?) {
