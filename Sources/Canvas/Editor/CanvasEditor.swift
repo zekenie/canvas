@@ -697,6 +697,8 @@ public final class CanvasEditor {
         do {
             defer { isTransacting = false }
             result = try body(&transaction)
+            // What it grew makes room below it, in the same step (MakingRoom.swift).
+            if !isReplacingFile { transaction.makeRoom() }
         }
         // Committing can end editing, and an editing view may save as it closes: outside the
         // transaction, so it can.
@@ -744,6 +746,7 @@ public final class CanvasEditor {
         do {
             defer { isTransacting = false }
             result = try body(&transaction)
+            if !isReplacingFile { transaction.makeRoom() }
         }
         // The owners too: an empty board isn't among the boards a deletion takes. Whatever the transaction
         // deleted counts, on whichever board, brought there or not.

@@ -79,7 +79,14 @@ public struct Transaction {
     let file: FileAccess
     /// What the editor lays shapes out with, which `shapes` reads this transaction's file through;
     /// nil where there is no editor to ask (`discardKeptAside`).
-    private let layout: LayoutSource?
+    let layout: LayoutSource?
+    /// The board as it was when the transaction began: what `makeRoom()` measures a shape's growth from.
+    let startDocument: CanvasDocument
+    /// For each shape `makeRoom()` has measured, its frame at rest then and the box origin it had: what a later
+    /// `makeRoom()` in the same transaction measures growth from, so room is made once for each growth.
+    var roomBaselines: [ShapeID: (origin: CGPoint, frame: CGRect)] = [:]
+    /// What `makeRoom()` moved down so far, by how far (world units): the shapes it pushed, not what they carried.
+    public internal(set) var madeRoom: [ShapeID: CGPoint] = [:]
     /// Boards going in with the shapes inserted here that own them, and the boards under those: what
     /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
     /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
@@ -184,6 +191,7 @@ public struct Transaction {
          file: FileAccess, layout: LayoutSource?) {
         self.layout = layout
         self.document = document
+        startDocument = document
         self.board = board
         self.isBoardReadOnly = isBoardReadOnly
         self.registry = registry
@@ -1937,6 +1945,9 @@ public struct Transaction {
     /// Takes in what a transaction over another board did (`transaction(on:)`): that board as it
     /// leaves it, if it changed anything there, and what it refused.
     mutating func take(_ there: Transaction, reserving: Bool = true) {
+        // What it grew there makes room there, as a step on that board would.
+        var there = there
+        there.makeRoom()
         refused.formUnion(there.refused)
         takeInWrites(of: there)
         takeFileValues(of: there)

@@ -47,6 +47,9 @@ extension EnumDefinition: LaidOutBox {
     }
 }
 
+/// Makes room as its rows grow: an enum gaining a value pushes what is below it down, in the same step.
+extension EnumDefinition: MakesRoomAsItGrows {}
+
 extension EnumDefinition: DerivedProps {
     func derive(_ type: inout DatabaseEnum) {
         type.frame.size.height = KitStyle.height(rows: type.values.count)
