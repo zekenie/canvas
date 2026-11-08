@@ -31,6 +31,9 @@ private let namedCases: [([MentionRun], String)] = [
     ([.text("Emoji 👍🏽 and é "), .mention(idA, label: "Café ☕️")], "Emoji 👍🏽 and é @[Café ☕️](shape:\(a))"),
 ]
 
+/// A row of the shape `idA` names, for mentions of a row.
+private let rowA = PartID(UUID(uuidString: "5A1E0000-0000-4000-8000-00000000A0B1")!)
+
 /// A deterministic generator, so the fuzz is the same every run.
 struct SplitMix: RandomNumberGenerator {
     var state: UInt64
@@ -54,7 +57,9 @@ private func fuzzedRuns(_ rng: inout SplitMix) -> [MentionRun] {
             runs.append(.text(String((0..<Int.random(in: 0...8, using: &rng)).map { _ in alphabet.randomElement(using: &rng)! })))
         } else {
             let label = String((0..<Int.random(in: 0...4, using: &rng)).map { _ in labelAlphabet.randomElement(using: &rng)! })
-            runs.append(.mention(Bool.random(using: &rng) ? idA : idB, label: label))
+            // A shape's mention, or a row's (its shape's id, then the row's).
+            let target = [PartAddress(idA), PartAddress(idB), PartAddress(idA, part: rowA)].randomElement(using: &rng)!
+            runs.append(.mention(target, label: label))
         }
     }
     return runs
@@ -67,7 +72,7 @@ private func referenceParse(_ string: String) -> [MentionRun] {
     let head = Array("](shape:".unicodeScalars)
     func isLineBreak(_ c: Unicode.Scalar) -> Bool { c == "\n" || c == "\r" }
     let s = Array(string.unicodeScalars)
-    func mention(at i: Int) -> (ShapeID, String, Int)? {
+    func mention(at i: Int) -> (PartAddress, String, Int)? {
         guard i + 1 < s.count, s[i] == at, s[i + 1] == open else { return nil }
         var j = i + 2
         var label = String.UnicodeScalarView()
@@ -86,10 +91,18 @@ private func referenceParse(_ string: String) -> [MentionRun] {
         }
         guard j + head.count + 37 <= s.count, Array(s[j..<j + head.count]) == head else { return nil }
         let idStart = j + head.count
-        let idScalars = s[idStart..<idStart + 36]
-        guard s[idStart + 36] == ")", idScalars.allSatisfy(\.isASCII),
-              let uuid = UUID(uuidString: String(String.UnicodeScalarView(idScalars))) else { return nil }
-        return (ShapeID(uuid), String(label), idStart + 37)
+        func uuid(at start: Int) -> UUID? {
+            let scalars = s[start..<start + 36]
+            return scalars.allSatisfy(\.isASCII) ? UUID(uuidString: String(String.UnicodeScalarView(scalars))) : nil
+        }
+        guard let shape = uuid(at: idStart) else { return nil }
+        if s[idStart + 36] == ")" { return (PartAddress(ShapeID(shape)), String(label), idStart + 37) }
+        // A row after its shape: `/row:` and the row's UUID.
+        let rowHead = Array("/row:".unicodeScalars), rowStart = idStart + 36
+        guard rowStart + rowHead.count + 37 <= s.count, Array(s[rowStart..<rowStart + rowHead.count]) == rowHead else { return nil }
+        let partStart = rowStart + rowHead.count
+        guard s[partStart + 36] == ")", let part = uuid(at: partStart) else { return nil }
+        return (PartAddress(ShapeID(shape), part: PartID(part)), String(label), partStart + 37)
     }
     var runs: [MentionRun] = []
     var text = String.UnicodeScalarView()
@@ -308,7 +321,7 @@ private struct LinesDefinition: ShapeDefinition {
 
     test("the parser reads 20,000 fuzzed strings as the scan from every @[ does") {
         var rng = SplitMix(seed: 0x7061_7273_6520_6C69)
-        let alphabet: [String] = ["@", "[", "]", "(", ")", "\\", "a", " ", "\n", "@[", "](shape:", a, b.lowercased(), "\\]", "\\\\"]
+        let alphabet: [String] = ["@", "[", "]", "(", ")", "\\", "a", " ", "\n", "@[", "](shape:", a, b.lowercased(), "\\]", "\\\\", "/row:", "/row:" + a]
         var failures = 0
         for _ in 0..<20_000 {
             var string = ""
@@ -333,8 +346,8 @@ private struct LinesDefinition: ShapeDefinition {
         let mixed = String(a.enumerated().map { $0.offset % 2 == 0 ? Character($0.element.lowercased()) : $0.element })
         let nearIDs = [a, b.lowercased(), mixed, String(a.dropLast()) + "g", a.replacingOccurrences(of: "-", with: "x"),
                        String(a.dropLast()) + "é", String(a.dropLast()) + "\u{0}", String(a.dropFirst()), "{" + a.dropFirst(2) + "}"]
-        let alphabet = ["@", "[", "]", ")", "\\", "a", " ", "\n", "\r", "é", "@[", "](shape:", "\\]", "\\\\", "👍🏽"] + nearIDs + nearIDs.map { $0 + ")" }
-            + nearIDs.map { "@[x\\]y](shape:\($0))" }
+        let alphabet = ["@", "[", "]", ")", "\\", "a", " ", "\n", "\r", "é", "@[", "](shape:", "\\]", "\\\\", "👍🏽", "/row:"] + nearIDs + nearIDs.map { $0 + ")" }
+            + nearIDs.map { "@[x\\]y](shape:\($0))" } + nearIDs.map { "@[x](shape:\(a)/row:\($0))" }
         var rng = SplitMix(seed: 0x706C_6169_6E20_7478)
         var failures = 0, mentioning = 0
         for _ in 0..<20_000 {

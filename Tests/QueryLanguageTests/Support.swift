@@ -78,7 +78,7 @@ func stripped(_ compound: Compound) -> Compound {
     case .any: .any
     case nil: nil
     }
-    return Compound(head: head, filters: compound.filters.map(stripped), span: nowhere)
+    return Compound(head: head, filters: compound.filters.map(stripped), part: compound.part.map { PartSelector(id: $0.id, span: nowhere) }, span: nowhere)
 }
 
 func stripped(_ filter: Filter) -> Filter {

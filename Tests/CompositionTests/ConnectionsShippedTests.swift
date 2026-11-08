@@ -46,7 +46,7 @@ extension NeighborList {
 
     /// The lists the panel shows now: those with something in them, with the rows it draws.
     var panel: [ConnectionGroup] {
-        groups.indices.compactMap { index in
+        order.compactMap { index in
             let listed = shown(in: index)
             guard listed.count > 0 else { return nil }
             return ConnectionGroup(title: groups[index].title, count: listed.count, rows: listed.rows.map { row in
@@ -282,8 +282,11 @@ extension ConnectionGroup {
             link(from: x, to: b), link(from: c, to: x),
         ], pasteboard)
         let list = try require(h.editor.neighborList)
-        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes", "Inside", "Contains"])
-        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, true, true, false, false], "a light's list has its color; the two besides have none")
+        // The engineering kit's lists are a row's alone (`serves: .rows`): a shape's panel never shows them.
+        expectEqual(list.groups.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes",
+                                               "Calls It", "Writes", "Reads", "Keys To", "Keyed By", "Inside", "Contains"])
+        expectEqual(list.groups.map { $0.color != nil }, [true, true, true, true, true, true, true, true, true, true, true, false, false],
+                    "a light's list has its color; the two besides have none")
         let hub = try h.editor.connections(of: x)
         expectEqual(hub.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Inside"])
         expectEqual(hub.map(\.ids), [[b], [c], [d], [e], [o]])

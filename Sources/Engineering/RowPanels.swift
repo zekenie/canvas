@@ -71,9 +71,9 @@ extension PluginID {
 
 /// The kit's lights for Neighbors, rows' alone: a selected endpoint's Calls It (what calls it), Writes and Reads (the tables it
 /// writes and reads), and a selected column's Keys To and Keyed By, each in its relation's color (a key's, the link's blue), its query
-/// written from the channel's edge type id. A row's panel lists them, before what mentions it (E6); hovering asks none of them, and a
-/// whole table or API keeps the shipped lights. A plugin value of its own, so a list without Neighbors leaves it out; before
-/// Mentions' lights in the shipped list, so a row's lists read as E6 draws them.
+/// written from the channel's edge type id. A row's panel lists them before what mentions it (E6: a row's lights alone come before
+/// those that serve both, `NeighborList.order`); hovering asks none of them, and a whole table or API keeps the shipped lights. A plugin
+/// value of its own, so a list without Neighbors leaves it out; after the shipped lights in the list, which keep their places.
 public struct EngineeringLightsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .engineeringLights }

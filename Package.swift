@@ -226,9 +226,9 @@ let ships = [
     // from the plugins that own the edges, in the order a shape's rings go: arrows' (points to, pointed to by), then
     // mentions' (mentions, mentioned by), then types' (instances). Then the same ways as lists in a shape's panel, its Connections
     // tab, with what the shape is inside and what it holds: after the detail panel, whose tab it is.
-    // The engineering kit's lights are a row's alone (an endpoint's Calls It, Writes and Reads; a column's Keys To and Keyed By), listed
-    // in a selected row's Connections tab before what mentions it, as E6 draws them; hovering asks none of them.
-    "Neighbors.NeighborsPlugin", "Arrows.ArrowLightsPlugin", "Engineering.EngineeringLightsPlugin", "Mentions.MentionLightsPlugin", "Types.TypeLightsPlugin",
+    // Then the engineering kit's, a row's alone (an endpoint's Calls It, Writes and Reads; a column's Keys To and Keyed By), which a
+    // selected row's Connections tab lists before what mentions it, as E6 draws them; hovering asks none of them.
+    "Neighbors.NeighborsPlugin", "Arrows.ArrowLightsPlugin", "Mentions.MentionLightsPlugin", "Types.TypeLightsPlugin", "Engineering.EngineeringLightsPlugin",
     "Neighbors.NeighborDetailsPlugin",
     // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
     // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
@@ -470,7 +470,7 @@ let package = Package(
         .executableTarget(name: "PortEdgesTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Connections", "Draw", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortEdgesTests"), // layer: test of Connections
         .executableTarget(name: "MentionTextsTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionTextsTests"), // layer: test of Mentions
         .executableTarget(name: "ValidationChecksTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Draw", "TestKit", "Validation"], path: "Tests/ValidationChecksTests"), // layer: test of Validation
-        .executableTarget(name: "EngineeringTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Engineering", "Find", "Geometry", "Keyboard", "LineRows", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Transform", "Types"], path: "Tests/EngineeringTests"), // layer: test
+        .executableTarget(name: "EngineeringTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Engineering", "Find", "Geometry", "Keyboard", "LineRows", "Mentions", "Neighbors", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Transform", "Types"], path: "Tests/EngineeringTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "ContextMenus", "Keyboard", "LanguageRules", "Mentions", "Reordering", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ExamplesTests"), // layer: test
         // The skills' tools where no app is needed: the canvas-digest tool's unit tests under jsc and the canvas-ingest tests that start no app.
         .executableTarget(name: "SkillToolsTests", dependencies: ["CanvasRPC", "SkillTesting", "TestKit"], path: "Tests/SkillToolsTests"), // layer: test

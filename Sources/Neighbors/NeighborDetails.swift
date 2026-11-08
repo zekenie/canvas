@@ -83,7 +83,7 @@ struct NeighborLists: View {
 
     var body: some View {
         let searching = !list.search.isEmpty
-        let lists = list.groups.indices.map { (group: $0, shown: list.shown(in: $0)) }.filter { $0.shown.count > 0 }
+        let lists = list.order.map { (group: $0, shown: list.shown(in: $0)) }.filter { $0.shown.count > 0 }
         let stamp = list.listing?.stamp ?? 0
         VStack(alignment: .leading, spacing: NeighborStyle.spacing) {
             if searching || list.total >= NeighborStyle.searchFrom {

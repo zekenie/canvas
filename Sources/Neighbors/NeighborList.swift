@@ -208,6 +208,21 @@ public final class NeighborList {
         askIfRowsMissing()
     }
 
+    /// The lists in the order the panel shows them: `groups`' for a shape; for a row, the lights that serve rows alone first (its own
+    /// relations: what calls an endpoint, what it writes and reads), then those that serve both (what mentions it), then the rest,
+    /// which a row's lists leave empty.
+    public var order: [Int] {
+        guard subject?.part != nil else { return Array(groups.indices) }
+        let rank: (Int) -> Int = { index in
+            switch self.groups[index].serves {
+            case .rows: 0
+            case .both: 1
+            case .shapes: 2
+            }
+        }
+        return groups.indices.sorted { (rank($0), $0) < (rank($1), $1) }
+    }
+
     /// Whether a list's rows show: it's unfolded, or the lists are being searched.
     public func showsRows(of group: Int) -> Bool { !search.isEmpty || !folded.contains(group) }
 
