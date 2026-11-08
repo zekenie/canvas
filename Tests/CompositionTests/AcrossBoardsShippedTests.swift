@@ -234,6 +234,18 @@ private let shop = #"""
         expect(!keys(editor).contains("statements.customer_id -> customers.id"))
         expectEqual(arrows(editor, on: billing).count, 0)
     },
+    test("canvas draw: a columns: line's → to a table on another board draws the key through a pill for it, and a run again is unchanged") {
+        let (editor, billing) = try shopEditor()
+        func did(_ result: JSON) -> [String] { result["changes"]?.arrayValue?.compactMap { $0["did"]?.stringValue } ?? [] }
+        let script = #"table "ledger" in "billing" columns: "id uuid pk\norder_id uuid → orders.id""#
+        let first = try drawnInProcess(script, on: editor)
+        expect(did(first).contains("connected"), "\(did(first))")
+        expect(keys(editor).contains("ledger.order_id -> orders.id"), "\(keys(editor))")
+        expectEqual(pills(editor, on: billing).compactMap(\.props.target?.id), [try require(table(editor, "orders")).id])
+        let again = try drawnInProcess(script, on: editor)
+        expectEqual(Set(did(again)), ["unchanged"])
+        expectEqual(pills(editor, on: billing).count, 1, "nothing drawn twice")
+    },
 ])
 
 extension ShapeRecord<Reference> {

@@ -291,7 +291,13 @@ struct Drawing {
         // What stands in for what matters only to a script that joins shapes, or deletes them: the
         // stand-ins a delete's arrows ran into go with them.
         let hasDeletes = script.statements.contains(where: \.isDelete)
-        standIns = (hasDeletes || script.statements.contains(where: \.joinsShapes)) && edgeKind != nil ? registry.standIns : nil
+        // A shape's value may imply edges too (a column's line's `→ customers.id`), to a shape on another board as any edge.
+        let writers = registry.drawValueWriters
+        let implies = script.statements.contains { statement in
+            guard case .shape(let shape) = statement.body else { return false }
+            return shape.attributes.contains { writers[$0.key]?.impliesEdges == true }
+        }
+        standIns = (hasDeletes || implies || script.statements.contains(where: \.joinsShapes)) && edgeKind != nil ? registry.standIns : nil
         // Where the view is headed, if it's gliding (a --reveal a moment ago): the view the drawing
         // is seen in once it settles; on a board not shown, the view it would be shown with. The
         // part of it the host leaves clear (below the path's pill over a subboard), as every fit is.
