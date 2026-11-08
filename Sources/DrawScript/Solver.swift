@@ -59,7 +59,7 @@ enum Why: Equatable {
     /// A drawing with nothing to hang on, solved with its unplaced shape at the origin.
     case anchor
     /// A box slid along the axis its placement leaves free, to stay inside what holds it.
-    case slide(box: Int)
+    case slide(box: Int, inside: LayoutProblem.Ref)
 }
 
 /// Two of anything, one per axis.
@@ -933,13 +933,23 @@ struct Solver {
         // Both halves of the centering: an exact distance from what it's placed against.
         guard kept[axis].contains(where: forward), kept[axis].contains(where: reverse) else { return nil }
         let drop = early ? reverse : forward
+        let why = Why.slide(box: entry.box, inside: entry.target.ref)
         let edge = early
-            ? Bound(from: whole.node, to: me, weight: whole.start + entry.gap, why: .slide(box: entry.box))
-            : Bound(from: me, to: whole.node, weight: size + entry.gap - (whole.start + whole.length), why: .slide(box: entry.box))
+            ? Bound(from: whole.node, to: me, weight: whole.start + entry.gap, why: why)
+            : Bound(from: me, to: whole.node, weight: size + entry.gap - (whole.start + whole.length), why: why)
+        let (savedKept, savedBounds) = (kept, bounds)
         kept[axis].removeAll(where: drop)
         bounds[axis].removeAll(where: drop)
         kept[axis].append(edge)
         bounds[axis].append(edge)
+        // Only a slide the rest of the bounds can hold (something else that fixes where it sits, a list across the page it is
+        // held with, may contradict the edge): else nothing is changed, and the refusal below names what it is in.
+        do {
+            _ = try solveAll(kept)
+        } catch {
+            (kept, bounds) = (savedKept, savedBounds)
+            return nil
+        }
         let way: Direction = axis == .x ? (early ? .right : .left) : (early ? .below : .above)
         return LayoutSolution.Slide(box: entry.box, way: way, inside: entry.target.ref)
     }
@@ -1327,7 +1337,8 @@ struct Solver {
             case .keep(let box): say(box, other: "stays where it is \(axis.adverb)")
             case .list(let box, let after): say(box, other: "is listed under \(problem.free[after].name)")
             case .separation(let index): apart.append(separations[index])
-            case .anchor, .slide: break
+            case .slide(let box, let holder): say(box, other: "is in \(name(holder))")
+            case .anchor: break
             }
         }
         /// `is right of "A" and left of "B"`, `stays where it is horizontally`.
