@@ -353,7 +353,11 @@ final class ClipboardState {
     /// are restated, the nearest first, the rest made, landing beside the selection (centered on `point` for a click or the
     /// pointer), selected, in one step, "Paste" and the reader's name.
     func paste(centeredAt point: CGPoint? = nil) {
-        guard let (name, result, source) = pasteable() else { return }
+        guard let (name, result, source) = pasteable() else {
+            // Paste was lit by a reader's sniff (cheap, so it can say yes to text that reads as nothing): a key that does nothing says so.
+            if hasShapes { editor.announce("Nothing to paste", priority: .low) }
+            return
+        }
         switch result {
         case .shapes(let file):
             place(file, source: source, named: "Paste", at: point ?? (source == .read ? viewMiddle : nil), offsetBy: nil)
@@ -378,7 +382,7 @@ final class ClipboardState {
     private func putDown(_ program: DrawPut, at site: PutSite, named name: String) {
         editor.endEditing()
         let landed: [ShapeID]
-        let before = editor.revision
+        let before = editor.revision, existing = editor.document
         do {
             landed = try editor.undoHistory.group(name) { try Draw.put(program, at: site, in: editor, step: name) }
         } catch {
@@ -394,7 +398,32 @@ final class ClipboardState {
         }
         let inside = Set(landed), kinds = editor.registry.containingKinds, document = editor.document
         editor.selectedShapeIDs = landed.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
-        editor.announce(landed.count == 1 ? "Pasted 1 shape" : "Pasted \(landed.count) shapes", priority: .low)
+        // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone.
+        editor.revealIfOffscreen(landed)
+        editor.announce(pastedSummary(landed, existing: existing), priority: .low)
+    }
+
+    /// What a put did, for VoiceOver: the kinds it made and the kinds it restated, by their labels ("Pasted 2 Tables and Enum,
+    /// updated Table").
+    private func pastedSummary(_ landed: [ShapeID], existing: CanvasDocument) -> String {
+        let registry = editor.registry
+        func counts(_ ids: [ShapeID]) -> String {
+            var order: [ShapeKind] = [], counts: [ShapeKind: Int] = [:]
+            for kind in ids.compactMap({ editor.document[$0]?.kind }) {
+                if counts[kind] == nil { order.append(kind) }
+                counts[kind, default: 0] += 1
+            }
+            return DeleteSteps.list(order.map { kind in
+                let label = registry.label(of: kind).name
+                return counts[kind] == 1 ? label : "\(counts[kind]!) \(DeleteSteps.plural(label))"
+            })
+        }
+        let made = landed.filter { existing[$0] == nil }, restated = landed.filter { existing[$0] != nil }
+        switch (made.isEmpty, restated.isEmpty) {
+        case (false, true): return "Pasted \(counts(made))"
+        case (true, false): return "Updated \(counts(restated))"
+        default: return "Pasted \(counts(made)), updated \(counts(restated))"
+        }
     }
 
     /// The middle of what the view shows of the board, clear of what the window covers, in world units; nil

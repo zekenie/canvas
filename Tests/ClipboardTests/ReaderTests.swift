@@ -135,7 +135,7 @@ extension EditorHarness {
         expectEqual(second.minY, first.minY)
         expectEqual(Set(h.editor.selectedShapeIDs), Set(made.map(\.id)))
         expectEqual(h.editor.undoHistory.undoName, "Paste tiles")
-        expect(h.editor.announcements.contains("Pasted 2 shapes"), "\(h.editor.announcements)")
+        expect(h.editor.announcements.contains("Pasted 2 Tiles"), "\(h.editor.announcements)")
         h.editor.undo()
         expectEqual(h.editor.document, before, "one step takes it all")
 

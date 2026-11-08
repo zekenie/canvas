@@ -11,13 +11,15 @@ table "customers" columns: "id uuid pk\nemail text unique\nname text\ncreated_at
 table "orders" right of "customers" columns: "id uuid pk\ncustomer_id uuid\nplaced_at timestamptz?"
 ```
 
-A statement joins its lines onto the table's columns by name: a column it names takes what its line says, one it leaves out stays, and a new name is added at the end. So a script names only what it changes, and run again it changes nothing.
+A statement joins its lines onto the table's columns by name: a column it names takes what its line says, one it leaves out stays, and a new name goes after the column the statement writes before it (last, when it writes none before it). So a script names only what it changes, and run again it changes nothing.
 
 ```draw
 table "orders" columns: "placed_at timestamptz null\ntotal_cents int"
 ```
 
 The table is as wide as it's drawn (`size: 320x`) and as tall as its rows; a height in `size:` is its rows' anyway.
+
+A person can paste SQL into the app (⌘V of `CREATE TABLE …` with the kit on), and it lands as these statements would, joined by name the same way; that's the person's way in, and `canvas draw` stays yours.
 
 ## Keys
 
@@ -54,7 +56,7 @@ delete "orders".placed_at
 
 ## An enum
 
-`values:` takes the values as lines, one a value, joined onto what the enum holds by text. A column whose type is an enum's title shows it in a pill.
+`values:` takes the values as lines, one a value, joined onto what the enum holds by text, a new one after the value written before it. A column whose type is an enum's title shows it in a pill.
 
 ```draw
 enum-type "order_status" below "orders" values: "pending\npaid\nrefunded"

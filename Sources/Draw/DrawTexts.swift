@@ -52,11 +52,15 @@ final class DrawTextLookup {
     private let keys: [String: ShapeID]
     /// Every shape the script draws or restates, by id, for a key that names one.
     private let ownByID: [ShapeID: Own]
+    /// Whether a title that several shapes have names the first of them, as a put's names do (`DrawOptions.Naming.nearest`),
+    /// rather than being refused.
+    private let nearest: Bool
 
     init(editor: CanvasEditor, target: BoardReading, naming: DrawNaming?, items: [ShapeItem], itemsByTitle: [String: [Int]],
-         unresolved: Set<String>, deleted: Set<ShapeID>, fileNames: FileNames?, keys: [String: ShapeID] = [:]) {
+         unresolved: Set<String>, deleted: Set<ShapeID>, fileNames: FileNames?, keys: [String: ShapeID] = [:], nearest: Bool = false) {
         self.editor = editor
         self.keys = keys
+        self.nearest = nearest
         var byID: [ShapeID: Own] = [:]
         if !keys.isEmpty {
             // What a shape a program's run writes is called: the title its statement gives it (`title:`), else the one it has.
@@ -155,7 +159,7 @@ final class DrawTextLookup {
 
         // The board the run draws on, by itself: one is the shape, two or more are ambiguous.
         let here = admitted(live.filter { $0.board == target.board })
-        if here.count > 1 { throw several(here, title, on: "the board") }
+        if here.count > 1, !nearest { throw several(here, title, on: "the board") }
         if let found = here.first { return DrawTextShape(id: found.id, title: title) }
         // Then the rest of the file, as an edge finds a shape there: the board the window shows
         // first, else the one other board that has one.
@@ -163,7 +167,8 @@ final class DrawTextLookup {
             switch names.beyond(title, among: live.filter { $0.board != target.board }, admitting: admitted, shownAs: "the board the window shows") {
             case .shape(let found):
                 return DrawTextShape(id: found.id, title: title)
-            case .ambiguous(let message, _):
+            case .ambiguous(let message, let places):
+                if nearest, let found = places.first { return DrawTextShape(id: found.id, title: title) }
                 throw DrawError(message, reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: FileNames.textHint)
             case .none:
                 break

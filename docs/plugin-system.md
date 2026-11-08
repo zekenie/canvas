@@ -2344,8 +2344,8 @@ switched point; EngineeringTests' `kitTests` and CompositionTests' `kitsShippedT
 
 The first real kit ([`Sources/Engineering`](../Sources/Engineering), product): database tables, their
 enums and the databases that hold them. One module in parts, `Model` (the kinds' props, `TypeRef`,
-`KitStyle`), `Grammar` (the line grammars, pure) and `Tables` (the kinds drawn, placed and written), since
-the APIs that come later name tables and two products could not see each other. Its plugin joins the kit
+`KitStyle`), `Grammar` (the line grammars, pure), `Tables` (the kinds drawn, placed and written) and `Readers`
+(what's pasted: SQL), since the APIs that come later name tables and two products could not see each other. Its plugin joins the kit
 and gives:
 
 ```swift
@@ -2358,6 +2358,7 @@ registrar.shape(TableDefinition()) { table in
 }
 registrar.tableCommands(placing: editedTable)                            // /table, /database, Create Database
 registrar.rowsDraw()                                                     // canvas draw's columns: and values:
+registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
 ```
 
 A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
@@ -2453,6 +2454,25 @@ a focused line prints it from the key index by the far names now, so a rename fo
 that names nothing stays words (a key to a table with no name yet prints with the pill's placeholder, so editing the column keeps it; a locked table takes no key). `canvas draw`'s `columns:` says the same with an implied edge (`implies:` on its
 value writer, [draw](#draw)), and ⌘L's picker on a table makes a key column (`table.connectPicks(admitting:_:)`:
 `customer_id`, typed as customers' primary key, "Add Key Column").
+
+**Paste SQL.** ⌘V of `CREATE TABLE` (or `AS ENUM`, or a `.sql` file) is a paste reader of the kit's, so it's gone
+with the kit off ([the clipboard](#the-clipboard)). The reader parses SQL itself (`SQLReader`, pure: Postgres DDL into
+tables, columns, enums and keys) and writes a draw program for Draw to put down (`DrawPut`), knowing nothing of how
+shapes are found or made:
+
+```swift
+registrar.pasteReader("SQL", sniff: { SQLPaste.sniffs($0) }) { content, _ in
+    SQLPaste.read(content, keys: SQLPaste.foreignKeys)   // a table a statement, its columns as JSON,
+}                                                       // its keys the edges it implies
+```
+
+A table is found by its title, nearest first and file-wide (`billing.payments` the payments in the database
+billing first, `DrawPut.Shape.within`), and its columns are joined by name as `columns:` joins them, so their ids
+stay and so do the keys bound to them; a new column goes after the column pasted before it. A key is an edge the
+statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `→` is; one whose table or row is found
+nowhere is left out (a key the column had stays), and the paste lands anyway. The reading holds only the text: a key to a
+table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
+brought into it, and VoiceOver hears what was made and what updated; SQL that reads as nothing says "Nothing to paste".
 
 ## Rows written as lines
 
@@ -16135,7 +16155,7 @@ neighbor-details     service NeighborList · ShapeDetails in Connections → eve
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values · paste reader SQL
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 

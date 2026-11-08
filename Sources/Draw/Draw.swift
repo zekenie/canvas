@@ -299,12 +299,16 @@ struct DrawOptions {
     var byAgent = true
     /// The undo step the run makes (`DrawStyle.stepName`, "Draw"), as its caller names it.
     var step = "Draw"
+    /// Edges a put's statement implies besides what its values' writers say (`DrawPut.edges`), by the statement's line, each
+    /// to a far shape named by a key (`keys`): drawn as a writer's implied edges are.
+    var implied: [Int: [DrawImpliedEdge]] = [:]
 
     enum Naming {
         /// A title that names none, or several, is refused (`ambiguous_title`): a script, which an agent types.
         case refusing
-        /// A title that names several finds the first of them, in the order the board lists them; `put` finds the nearest
-        /// itself (`Putting.nearest`) and names it by its id, so this is only the fallback for a name it left a title.
+        /// A title that names several finds the first of them, in the order the board lists them (a text's too, as a column's
+        /// type names an enum); `put` finds the nearest itself (`PutFinding`) and names it by its id, so this is only the fallback
+        /// for a name it left a title. An edge a value implies that can't be drawn is left out, never refused.
         case nearest
     }
 }

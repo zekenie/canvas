@@ -133,16 +133,16 @@ public enum ColumnGrammar {
 
     /// `written` joined onto `held` by name: a column of a name `held` has takes what its line says (its type, null,
     /// unique, pk, default and unread words) and keeps its id and what no line says (on delete, on update, and the shape
-    /// its type's words named, while they still say the same and the line binds none of its own); a new name is added at the end, in the order written;
-    /// a column `written` leaves out stays, where it was. A statement names only what it changes.
-    public static func merge(_ written: [Column], onto held: [Column]) -> [Column] {
+    /// its type's words named, while they still say the same and the line binds none of its own); a new name goes after the
+    /// nearest column written before it, else last, in the order written; a column `written` leaves out stays, where it was. A
+    /// statement (or a paste) names only what it changes. `after`: the row a join written in pieces wrote before these.
+    public static func merge(_ written: [Column], onto held: [Column], after: String? = nil) -> [Column] {
         var merged = held
-        var index: [String: Int] = [:]
-        for (offset, column) in held.enumerated() where index[column.name] == nil { index[column.name] = offset }
+        var previous = after
         for column in written {
-            guard let at = index[column.name] else {
-                index[column.name] = merged.count
-                merged.append(column)
+            defer { previous = column.name }
+            guard let at = merged.firstIndex(where: { $0.name == column.name }) else {
+                merged.insert(column, at: Rows.after(previous, in: merged.map(\.name)))
                 continue
             }
             let old = merged[at]
@@ -281,12 +281,25 @@ public enum EnumGrammar {
         values.map(\.text).joined(separator: "\n")
     }
 
-    /// `written` joined onto `held` by text: a value `held` has keeps its id, a new one is added at the end in the order
-    /// written, and one `written` leaves out stays.
-    public static func merge(_ written: [EnumValue], onto held: [EnumValue]) -> [EnumValue] {
+    /// `written` joined onto `held` by text: a value `held` has keeps its id, a new one goes after the nearest value written
+    /// before it, else last, in the order written, and one `written` leaves out stays. `after`: the value a join written in
+    /// pieces wrote before these.
+    public static func merge(_ written: [EnumValue], onto held: [EnumValue], after: String? = nil) -> [EnumValue] {
         var merged = held
-        var known = Set(held.map(\.text))
-        for value in written where known.insert(value.text).inserted { merged.append(value) }
+        var previous = after
+        for value in written {
+            defer { previous = value.text }
+            guard !merged.contains(where: { $0.text == value.text }) else { continue }
+            merged.insert(value, at: Rows.after(previous, in: merged.map(\.text)))
+        }
         return merged
+    }
+}
+
+/// Where a row a join adds goes among the rows held: after the row the join wrote before it, else last.
+enum Rows {
+    /// The index after the row named `previous` among `names`, else the end.
+    static func after(_ previous: String?, in names: [String]) -> Int {
+        previous.flatMap { name in names.firstIndex(of: name).map { $0 + 1 } } ?? names.count
     }
 }

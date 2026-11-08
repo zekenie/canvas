@@ -232,8 +232,9 @@ extension EmptyBoardWindow {
         expectEqual(changes(try drawnInProcess(#"table "orders" columns: "id uuid pk\ncustomer_id uuid\nplaced_at timestamptz?""#, on: editor)), ["unchanged"])
         _ = try drawnInProcess(#"table "orders" columns: "customer_id uuid unique\ntotal_cents int""#, on: editor)
         let changed = try require(tables(editor).first)
-        expectEqual(changed.props.columns.map(ColumnGrammar.print), ["id uuid pk", "customer_id uuid unique", "placed_at timestamptz null", "total_cents int"])
-        expectEqual(Array(changed.props.columns.map(\.id).prefix(3)), ids, "the columns it had keep their ids")
+        expectEqual(changed.props.columns.map(ColumnGrammar.print), ["id uuid pk", "customer_id uuid unique", "total_cents int", "placed_at timestamptz null"],
+                    "total_cents after customer_id, the column written before it")
+        expectEqual(changed.props.columns.filter { $0.name != "total_cents" }.map(\.id), ids, "the columns it had keep their ids")
     },
     test("columns: as JSON items names only the members it gives: a restated column keeps the rest and its on delete unless one is given, and no two rows share an id") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -298,7 +299,8 @@ extension EmptyBoardWindow {
         expectEqual(orders.props.columns.first?.type, TypeRef("uuid"), "a type of SQL's own names nothing")
         expectEqual(changes(try drawnInProcess(#"enum-type "order_status" values: "paid\nvoid""#, on: editor)), ["moved"],
                     "its box grew a row, as a note's does with its text")
-        expectEqual(editor.document[status.id]?.typed(as: DatabaseEnum.self)?.props.values.map(\.text), ["pending", "paid", "refunded", "void"])
+        expectEqual(editor.document[status.id]?.typed(as: DatabaseEnum.self)?.props.values.map(\.text), ["pending", "paid", "void", "refunded"],
+                    "void after paid, the value written before it")
     },
     test("Create Database is beside Create Frame in a table's menu, after what turns a shape into another, before Cut") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
