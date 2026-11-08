@@ -10,6 +10,15 @@ public struct ConnectableShape: Sendable {
     public let outline: [CGPoint]
     /// The rectangle arrow anchors are measured within.
     public let bounds: CGRect
+    /// Where its parts are (`ShapeGeometry.parts`: a table's rows), which an end bound to a part meets at a side of.
+    public let parts: PartFrames
+
+    public init(id: ShapeID, outline: [CGPoint], bounds: CGRect, parts: PartFrames = PartFrames()) {
+        self.id = id
+        self.outline = outline
+        self.bounds = bounds
+        self.parts = parts
+    }
 }
 
 /// Arrow code's only way to see other shapes.
@@ -20,7 +29,7 @@ struct Connectables {
     subscript(id: ShapeID) -> ConnectableShape? {
         guard let record = shapes.shape(id), record.kind != Arrow.kind,
               let geometry = shapes.geometry(of: id), geometry.isClosed else { return nil }
-        return ConnectableShape(id: id, outline: geometry.outline, bounds: geometry.bounds)
+        return ConnectableShape(id: id, outline: geometry.outline, bounds: geometry.bounds, parts: geometry.parts)
     }
 
     /// The front-most shape under `point` that arrows can bind to (in document order, as before:

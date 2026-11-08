@@ -70,7 +70,13 @@ extension ArrowHandleDragSession: Session {
     /// the relationships are told the drag is over (`connectionReleased`): the arrow was bound and unbound at every hover
     /// and counted only now.
     private func finish(_ connecting: ArrowConnecting, in editor: CanvasEditor) {
-        guard case .terminal(let end) = handle, let target = targeting.arrow(arrowID)?[end].binding?.shapeID else {
+        let bound = { () -> ArrowBinding? in
+            guard case .terminal(let end) = self.handle else { return nil }
+            return self.targeting.arrow(self.arrowID)?[end].binding
+        }()
+        // Let go on the row it started from, it joins nothing.
+        let onItsOwnRow = connecting.start.part != nil && bound?.address == connecting.start.address
+        guard let target = bound?.shapeID, !onItsOwnRow else {
             editor.transact { $0.delete([arrowID]) }
             editor.connectionReleased(arrowID)
             return
@@ -115,7 +121,7 @@ extension ArrowHandleDragSession {
             let before = arrow[end].binding
             let reshape: ((inout Arrow) -> Void)? = connecting.map { connecting in { [self] in loopBack(&$0, connecting) } }
             targeting.bindTerminal(of: arrowID, end, to: point, isPrecise: isPrecise || modifiers.contains(.option), modifiers: modifiers,
-                                   accepting: connecting?.canBind, then: reshape)
+                                   accepting: connecting?.canBind, bindsPart: connecting?.bindsPart, then: reshape)
             let after = targeting.arrow(arrowID)?[end].binding
             // Each new shape starts over: precise only if arrived at slowly or after a pause there.
             if let after {
@@ -135,7 +141,8 @@ extension ArrowHandleDragSession {
     /// free, it starts from the shape's middle, straight, as it began.
     private func loopBack(_ arrow: inout Arrow, _ connecting: ArrowConnecting) {
         let id = connecting.start.shapeID
-        guard arrow.end.binding?.shapeID == id, let shape = targeting.connectables[id] else {
+        // From a row: back on its shape, the end is on a row of it (a key to a column of its own table), never a loop.
+        guard connecting.start.part == nil, arrow.end.binding?.shapeID == id, let shape = targeting.connectables[id] else {
             arrow.start = .bound(connecting.start)
             arrow.bend = 0
             return

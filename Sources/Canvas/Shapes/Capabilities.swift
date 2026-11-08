@@ -339,6 +339,14 @@ public protocol PartedShape: ShapeDefinition {
     /// Its parts, in reading order: each one's id (the shape's own, kept by a copy), name, kind word, lead and
     /// whether it stands alone.
     func parts(of shape: ShapeRecord<Props>) -> [PartName]
+    /// The props with these parts taken out, the rest as they were: what a writer that names rows by their ids alone takes a
+    /// row out with (`canvas draw`'s `delete "orders".legacy_note`), which then hands them to `Transaction.removeParts`. Nil
+    /// (the default) when it has none of them, or the kind's parts are taken out only by its own writer.
+    func removing(_ parts: Set<PartID>, from shape: ShapeRecord<Props>) -> Props?
+}
+
+extension PartedShape {
+    public func removing(_ parts: Set<PartID>, from shape: ShapeRecord<Props>) -> Props? { nil }
 }
 
 /// Each shape of this kind owns a board, one under the board it's on: kept in the file under its id

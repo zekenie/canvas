@@ -160,6 +160,7 @@ extension ArrowDefinition: HandleProviding {
         // Pressing a bound end outlines the shape it's bound to.
         if case .terminal(let end) = handle, let binding = shape.props[end].binding {
             editor.hintedShapeID = binding.shapeID
+            editor.hintedPart = binding.part
         }
         return .drag
     }
@@ -195,12 +196,14 @@ extension ArrowDefinition: CustomTranslation {
     ///   sliding with the pointer, while that point is on its shape; off it, the end lets go, and
     ///   it binds again if the point comes back.
     /// Deliberate, pre-existing deviation: the ends probe at the full delta (tldraw: delta × 0.5),
-    /// as the POC's transcript pins.
+    /// as the POC's transcript pins. And one of this app's: an end bound to a part (a row) stays bound to it, where it is,
+    /// however the arrow moves alone, since its side point is on the shape's edge and any move outward would free it.
     func beginTranslation(of shape: ShapeRecord<Arrow>, movingWith moving: Set<ShapeID>,
                           in transaction: inout Transaction) -> ShapeTranslation<Arrow> {
-        let ends = [ArrowEnd.start, .end]
+        // Ends bound to a part stay as they are; the rest go by tldraw's rules.
+        let ends = [ArrowEnd.start, .end].filter { shape.props[$0].binding?.part == nil }
         var arrow = shape.props
-        let movesWithItsShapes = ends.contains { end in arrow[end].binding.map { moving.contains($0.shapeID) } ?? false }
+        let movesWithItsShapes = [ArrowEnd.start, .end].contains { end in arrow[end].binding.map { moving.contains($0.shapeID) } ?? false }
         if movesWithItsShapes {
             let start = arrow
             return ShapeTranslation { delta, shape, _ in
@@ -232,7 +235,8 @@ extension ArrowDefinition: CustomTranslation {
         let filters = [ArrowEnd.start: accepts(.start), .end: accepts(.end)]
         return ShapeTranslation { delta, shape, shapes in
             let connectables = Connectables(shapes: shapes)
-            for (end, handle, binding) in [(ArrowEnd.start, startHandle, bindings[.start]), (.end, endHandle, bindings[.end])] {
+            for (end, handle, binding) in [(ArrowEnd.start, startHandle, bindings[.start]), (.end, endHandle, bindings[.end])]
+            where ends.contains(end) {
                 let point = handle + delta
                 if var binding, let target = connectables.shape(at: point, accepting: filters[end] ?? nil), target.id == binding.shapeID {
                     binding.normalizedAnchor = normalizedAnchor(point, in: target.bounds)
@@ -298,6 +302,32 @@ extension ArrowDefinition: ShapeReferencing {
             arrow[end] = .bound(binding)
         }
         return arrow
+    }
+
+    /// The parts its ends are bound to (rows), each with its shape.
+    func boundParts(of shape: ShapeRecord<Arrow>) -> [PartAddress] {
+        [shape.props.start, shape.props.end].compactMap { terminal in terminal.binding.flatMap { $0.part == nil ? nil : $0.address } }
+    }
+
+    /// Each end bound to a part `move` sends elsewhere is bound there: another part (precise and exact, as a part end is,
+    /// its stored anchor kept as where it last was), or a shape as a whole (its middle, as a port's drag binds one). Nil
+    /// when nothing moved.
+    func movingParts(of shape: ShapeRecord<Arrow>, _ move: (PartAddress) -> PartAddress) -> Arrow? {
+        var arrow = shape.props
+        for end in [ArrowEnd.start, .end] {
+            guard var binding = arrow[end].binding, binding.part != nil else { continue }
+            let moved = move(binding.address)
+            guard moved != binding.address else { continue }
+            binding.shapeID = moved.shape
+            binding.part = moved.part
+            if moved.part == nil {
+                binding.normalizedAnchor = CGPoint(x: 0.5, y: 0.5)
+                binding.isPrecise = false
+                binding.isExact = false
+            }
+            arrow[end] = .bound(binding)
+        }
+        return arrow == shape.props ? nil : arrow
     }
 }
 

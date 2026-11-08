@@ -1,4 +1,5 @@
 import Canvas
+import Connections
 import DetailPanel
 import LineRows
 import Mentions
@@ -39,6 +40,9 @@ public struct EngineeringPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.join(EngineeringKit.self)
         registrar.service { KitNames(editor: $0) }
+        // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
+        registrar.channel(ForeignKey.self)
+        registrar.service { KeyIndex(editor: $0) }
         var editedTable: Placement?
         registrar.shape(TableDefinition()) { table in
             table.label(TableStyle.label, systemImage: TableStyle.symbol)
@@ -54,6 +58,8 @@ public struct EngineeringPlugin: ListedPlugin {
             table.details(header: { $table in TitleHeader($table, placeholder: TableStyle.placeholder, systemImage: TableStyle.symbol) }) {}
             table.accessibility { table, _ in AccessibleTraits(value: TableStyle.accessibleRows(table.props.columns.count)) }
             table.lineRows(TableLines())
+            // Its columns take keys both ways: a dot at each end of the row the pointer is on, and a key's end on a row.
+            table.partPorts(ForeignKey.self)
         }
         registrar.shape(EnumDefinition()) { type in
             type.label(EnumStyle.label, systemImage: EnumStyle.symbol)

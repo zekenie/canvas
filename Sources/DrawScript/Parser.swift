@@ -254,16 +254,17 @@ struct LineParser {
     mutating func edge() throws(ScriptError) -> EdgeStatement {
         let example = "edge \"A\" -> \"B\""
         subject = Keyword.edge.rawValue
-        let first = try edgeEnd(example: example)
+        let (first, firstRow) = try edgeEnd(example: example)
         guard let arrowToken = take(), arrowToken.kind == .word else {
             throw error("an edge's two titles are joined by an arrow", hint: "write \(example)")
         }
         guard let arrow = EdgeArrow(rawValue: arrowToken.text) else {
             throw error("\(arrowToken.raw) isn't an arrow", hint: "write ->, <- or <->, as \(example)")
         }
-        let second = try edgeEnd(example: example)
+        let (second, secondRow) = try edgeEnd(example: example)
         let (from, to) = arrow == .backward ? (second, first) : (first, second)
         var statement = EdgeStatement(from: from, to: to, arrow: arrow)
+        (statement.fromRow, statement.toRow) = arrow == .backward ? (secondRow, firstRow) : (firstRow, secondRow)
         subject = "\(Keyword.edge.rawValue) \(statement.written)"
         if let next = peek(), next.kind == .word, EdgeArrow(rawValue: next.text) != nil || Lexer.looksLikeArrow(next.text) {
             throw error(.unsupported, "an edge joins two shapes, and this one goes on to a third",
@@ -346,9 +347,9 @@ struct LineParser {
         return statement
     }
 
-    mutating func edgeEnd(example: String) throws(ScriptError) -> ShapeName {
+    mutating func edgeEnd(example: String) throws(ScriptError) -> (ShapeName, String?) {
         guard let token = peek() else { throw error("an edge joins two shapes, by their titles", hint: "write \(example)") }
-        if let name = try name() { return name }
+        if let named = try nameAndRow() { return named }
         at += 1
         if token.kind == .word { throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write \(example)") }
         throw error("an edge joins two shapes, by their titles", hint: "write \(example)")
@@ -437,6 +438,37 @@ struct LineParser {
         return .path(ShapePath(head: head, rest: rest))
     }
 
+    /// A name, and a row of it after a dot outside the quotes (`"orders".customer_id`, `"orders"."POST /x"`,
+    /// `#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11.id`, `"shop" > "orders".id`), if one starts at the next token; nil otherwise.
+    mutating func nameAndRow() throws(ScriptError) -> (ShapeName, String?)? {
+        // An id and a row are one word: `#…-…​.id`.
+        if let first = peek(), Self.isIDWord(first), let dot = first.text.dropFirst().firstIndex(of: ShapeName.rowMark) {
+            let id = String(first.text[first.text.index(after: first.text.startIndex)..<dot])
+            if ShapeName.isID(id) {
+                at += 1
+                let row = String(first.text[first.text.index(after: dot)...])
+                guard !row.isEmpty else {
+                    throw error("\(first.raw) ends in a dot, and a row's name follows it", hint: "write \(ShapeName.id(id).written)\(ShapeName.writtenRow("id"))")
+                }
+                return (.id(id), row)
+            }
+        }
+        guard let name = try name() else { return nil }
+        return (name, try row(of: name))
+    }
+
+    /// The row after a name, written `.customer_id` or `."POST /orders"` right after it; nil when no dot follows.
+    mutating func row(of name: ShapeName) throws(ScriptError) -> String? {
+        guard let next = peek(), next.kind == .word, next.text.first == ShapeName.rowMark else { return nil }
+        at += 1
+        guard next.text.count == 1 else { return String(next.text.dropFirst()) }
+        guard let quoted = peek(), quoted.kind == .quoted else {
+            throw error("\(name.written)\(next.raw) ends in a dot, and a row's name follows it", hint: "write \(name.written)\(ShapeName.writtenRow("id"))")
+        }
+        at += 1
+        return try title(quoted)
+    }
+
     mutating func delete() throws(ScriptError) -> DeleteStatement {
         subject = Keyword.delete.rawValue
         let example = "write delete \"A\", or delete edge \"A\" -> \"B\""
@@ -451,11 +483,16 @@ struct LineParser {
             if let placed = edge.placementWritten {
                 throw error("deleting takes no placement (\(placed))", hint: "write delete edge \(edge.written)")
             }
+            if edge.fromRow != nil || edge.toRow != nil {
+                let whole = EdgeStatement(from: edge.from, to: edge.to, arrow: edge.arrow).written
+                throw error(.unsupported, "delete edge names the shapes an edge joins, not their rows",
+                            hint: "write delete edge \(whole), which takes every edge between them, keys too")
+            }
             subject = "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(edge.written)"
             statement = .edges(from: edge.from, to: edge.to, eitherWay: edge.arrow == .both, attributes: edge.attributes)
-        } else if let name = try name() {
-            statement = .shape(name)
-            subject = "\(Keyword.delete.rawValue) \(name.written)"
+        } else if let (name, row) = try nameAndRow() {
+            statement = row.map { .row(name, row: $0) } ?? .shape(name)
+            subject = "\(Keyword.delete.rawValue) \(name.written)\(row.map(ShapeName.writtenRow) ?? "")"
         } else if token.kind == .word {
             throw error("\(token.raw) isn't quoted, and titles are in double quotes", hint: "write delete \(quote(token.text))")
         } else {

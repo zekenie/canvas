@@ -39,7 +39,7 @@ public enum KitStyle {
     /// The hues the frames drew, each made into its roles on the paper (a mark, a pill in a row) or on the canvas (a
     /// title's pill): the key mark's gold, the link's blue, an enum's purple.
     public static let keyGold = RGB(hex: 0xAE8302)
-    public static let linkBlue = RGB(hex: 0x2C72DB)
+    nonisolated public static let linkBlue = RGB(hex: 0x2C72DB)
     public static let enumPurple = RGB(hex: 0xA23BD0)
     /// A hue's roles drawn on the paper: the paper is the ground and the raised surface both.
     public static func onPaper(_ color: RGB) -> Swatch { Swatch(color, on: Tone(paper), raised: Tone(paper)) }

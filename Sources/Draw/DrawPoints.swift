@@ -86,6 +86,9 @@ public struct EdgeRequest: Hashable, Sendable {
     public var to: ShapeID
     public var fromSide: Side?
     public var toSide: Side?
+    /// The part of `from` it starts at (a row: `"orders".customer_id`), and of `to` it ends at; nil for the shapes as wholes.
+    public var fromPart: PartID?
+    public var toPart: PartID?
     public var bothHeads: Bool
     /// Each attribute the statement gives, by key: a word or a quoted string's text, or a JSON
     /// value's text, as written.
@@ -104,11 +107,13 @@ public struct EdgeRequest: Hashable, Sendable {
     /// (`registry.drawConnection(beside:)`); nil: the maker reads them.
     public var beside: [ShapeID]?
 
-    public init(from: ShapeID, to: ShapeID, fromSide: Side? = nil, toSide: Side? = nil, bothHeads: Bool = false,
-                attributes: [String: String] = [:], fromName: String = "", toName: String = "", written: String = "",
+    public init(from: ShapeID, to: ShapeID, fromSide: Side? = nil, toSide: Side? = nil, fromPart: PartID? = nil, toPart: PartID? = nil,
+                bothHeads: Bool = false, attributes: [String: String] = [:], fromName: String = "", toName: String = "", written: String = "",
                 fromStandsFor: [ShapeKind] = [], toStandsFor: [ShapeKind] = [], beside: [ShapeID]? = nil) {
         self.from = from
         self.to = to
+        self.fromPart = fromPart
+        self.toPart = toPart
         self.fromSide = fromSide
         self.toSide = toSide
         self.bothHeads = bothHeads
@@ -643,12 +648,13 @@ extension Registry {
     /// in, either end in it. `standingFor` is what an end stands for when it is a stand-in
     /// (`EdgeRequest.fromStandsFor`, `toStandsFor`): the ends are then connected as what they stand for
     /// is. `beside` names the connections already joining the pair, for a maker that draws a second
-    /// apart from the first; nil: the maker reads them.
+    /// apart from the first; nil: the maker reads them. `parts` are the parts of the ends it joins (rows), none for whole shapes.
     @MainActor public func drawConnection(from: ShapeID, to: ShapeID, in shapes: ShapeContext,
                                           standingFor: (from: [ShapeKind], to: [ShapeKind]) = ([], []),
-                                          beside: [ShapeID]? = nil) -> AnyShapeRecord? {
+                                          beside: [ShapeID]? = nil, parts: (from: PartID?, to: PartID?) = (nil, nil)) -> AnyShapeRecord? {
         guard let edging = drawEdging, let kind = edging.kind(self) else { return nil }
-        let request = EdgeRequest(from: from, to: to, fromStandsFor: standingFor.from, toStandsFor: standingFor.to, beside: beside)
+        let request = EdgeRequest(from: from, to: to, fromPart: parts.from, toPart: parts.to, fromStandsFor: standingFor.from,
+                                  toStandsFor: standingFor.to, beside: beside)
         guard let made = try? edging.make(request, nil, shapes), made.kind == kind else { return nil }
         return made
     }

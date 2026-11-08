@@ -10,7 +10,7 @@ import Topology
 
 extension CanvasEditor {
     /// The connections bound to `id`, as parts: outgoing ones first, then incoming, each titled by the
-    /// shape at its other end ("Arrow to Payment", "Arrow from Cart"), at the segment where it leaves
+    /// shape at its other end ("Arrow to Payment", "Arrow from Cart"), or the row there ("Arrow to id in customers"), at the segment where it leaves
     /// `id`. Pressing one selects the arrow. Selection puts the whole list in reading order of the rects.
     func connectionParts(of id: ShapeID) -> [ShapePart] {
         guard registry.makesConnections, let kind = registry.connectorKind, let topology else { return [] }
@@ -25,7 +25,10 @@ extension CanvasEditor {
             guard let geometry = context.geometry(of: edge.carrier), !geometry.outline.isEmpty else { continue }
             let other = context.geometry(of: otherID)?.bounds
             let near = leavingSegment(of: geometry.outline, from: leaves, around: own)
-            let name = accessibleDescription(of: otherID)?.name ?? registry.label(of: document[otherID]?.kind ?? kind).name
+            // A row at the far end by the row's name, read with its shape's ("Arrow to id in customers").
+            let otherPart = edge.otherPart(from: id, leaves ? .outgoing : .incoming)
+            let name = accessibleName(of: PartAddress(otherID, part: otherPart)) ?? accessibleDescription(of: otherID)?.name
+                ?? registry.label(of: document[otherID]?.kind ?? kind).name
             let carrier = edge.carrier
             let part = ShapePart(id: carrier, title: (leaves ? ConnectionsStyle.arrowTo : ConnectionsStyle.arrowFrom) + name,
                                  role: .connection, rect: near.insetBy(dx: -ConnectionsStyle.partPad / camera.zoom, dy: -ConnectionsStyle.partPad / camera.zoom)) { editor in

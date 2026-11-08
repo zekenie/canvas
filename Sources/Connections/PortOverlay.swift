@@ -59,8 +59,9 @@ struct PortOverlay: CanvasOverlay {
         let cg = context.cg
         // Only the dots in view are looked at, and drawn.
         let view = context.visibleRect.insetBy(dx: -PortStyle.hitRadius / zoom, dy: -PortStyle.hitRadius / zoom)
-        let inView = Set(state.dots(of: host).filter { view.contains($0.center) }.map(\.dot.side))
-        for (dot, center) in state.liveDots(of: host, on: inView) {
+        let inView = Set(state.dots(of: host, part: state.hostPart).filter { view.contains($0.center) }.map(\.dot))
+        for placed in state.liveDots(of: host, part: state.hostPart, on: inView) {
+            let dot = placed.dot, center = placed.center
             let point = CGPoint(x: center.x + offset.x, y: center.y + offset.y)
             let isLit = dot == hovered || dot == pressed
             let color = state.color(of: dot)

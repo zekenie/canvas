@@ -55,6 +55,32 @@ extension Registry {
     }
 }
 
+/// Rules for which ends bind a part of the shape they're bound to (a row: `PartedShape`), from any plugin: an end re-aimed
+/// or drawn onto a shape some rule says this of binds the row under it (the nearest by height), and is drawn at that row's
+/// side; with none, it binds the shape as a whole, as an end always has. A list.
+public enum ArrowPartRules {}
+
+extension ArrowPartRules: ExtensionPoint {
+    public typealias Contribution = @MainActor (ArrowBindingQuery) -> Bool
+    public static var owner: PluginID { .arrows }
+}
+
+extension PluginRegistrar {
+    /// A rule for which arrow ends bind a part of their shape (`ArrowPartRules`): asked of the shape under an end, as the
+    /// pointer moves.
+    public mutating func arrowPartRule(_ rule: @escaping @MainActor (ArrowBindingQuery) -> Bool) {
+        contribute(rule, to: ArrowPartRules.self)
+    }
+}
+
+extension Registry {
+    /// Whether some plugin's rule (`ArrowPartRules`) says `end` of `arrow` binds a part of `shape`, among `shapes`.
+    public func arrowBindsPart(_ arrow: AnyShapeRecord, _ end: ArrowEnd, of shape: AnyShapeRecord, in shapes: ShapeContext) -> Bool {
+        let query = ArrowBindingQuery(arrow: arrow, end: end, shape: shape, registry: self, shapes: shapes)
+        return contributions(to: ArrowPartRules.self).contains { $0.value(query) }
+    }
+}
+
 extension ShapeContext {
     /// Whether an arrow can bind to this shape: it's there, it's closed, and it isn't an arrow. Asked
     /// of the document it's for: the editor's, or a transaction's (`transaction.shapes`), which has
@@ -67,12 +93,16 @@ extension ShapeContext {
 @MainActor
 struct ArrowConnecting {
     let canBind: @MainActor (AnyShapeRecord) -> Bool
+    /// Whether its end binds a row of a shape it may bind to (the connection's channel is on that shape's parts).
+    var bindsPart: @MainActor (AnyShapeRecord) -> Bool = { _ in false }
     let complete: @MainActor (inout AnyShapeRecord, ShapeID) -> Void
     /// Called with the arrow after the transaction that completed it and before the press ends, so what it
     /// changes is the press's step (`ArrowPortsPlugin` has Types read what the arrow is and give it a type).
     /// Nil: only the relationships are told the drag is over (`connectionReleased`).
     var finished: (@MainActor (ShapeID) -> Void)? = nil
-    /// Where the arrow starts while its end is anywhere but back on the shape it starts from: the shape's middle.
+    /// Where the arrow starts while its end is anywhere but back on the shape it starts from: the shape's middle; or, for a
+    /// drag from a row's dot, that row (and a drag back onto the shape binds another of its rows: a key from a column to a
+    /// column of its own table, never a loop).
     let start: ArrowBinding
     /// The side of that shape the drag left from (the dot's): an end back on the shape makes the arrow a loop there.
     let side: PortSide
@@ -92,15 +122,20 @@ extension CanvasEditor {
     /// selection and the tool are left alone. Returns the session that drags it, for the caller to
     /// hand the drag to; nil if an arrow can't bind to `shape`, or the board takes no shapes
     /// (`isBoardReadOnly`: its transaction would drop the arrow).
-    func beginArrow(from shape: ShapeID, side: PortSide, at origin: CGPoint, canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
+    func beginArrow(from shape: ShapeID, part: PartID? = nil, side: PortSide, at origin: CGPoint,
+                    canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
+                    bindsPart: @escaping @MainActor (AnyShapeRecord) -> Bool = { _ in false },
                     complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void,
                     finished: (@MainActor (ShapeID) -> Void)? = nil) -> (any Session)? {
         guard !isBoardReadOnly, canBindArrow(to: shape), let targeting = service(ArrowTargeting.self) else { return nil }
         targeting.cancelPreciseTimer()
-        let start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
+        var start = ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)
+        if let part, let bound = ArrowConnections.binding(to: shape, part: part, side: side == .left ? .left : .right, in: shapeContext) {
+            start = bound
+        }
         let arrow = ShapeRecord(Arrow(start: .bound(start), end: .free(origin)))
         transact("Add Arrow") { $0.insert(arrow) }
-        let connecting = ArrowConnecting(canBind: canBind, complete: complete, finished: finished, start: start, side: side)
+        let connecting = ArrowConnecting(canBind: canBind, bindsPart: bindsPart, complete: complete, finished: finished, start: start, side: side)
         return ArrowHandleDragSession(arrowID: arrow.id, handle: .terminal(.end), handleOffset: .zero, isPrecise: false,
                                       targeting: targeting, connecting: connecting)
     }

@@ -230,10 +230,25 @@ public final class CanvasEditor {
             let id = newValue.flatMap { document[$0] == nil ? nil : $0 }
             guard id != hintedID else { return }
             hintedID = id
+            hintedPartID = nil
             setNeedsDisplay()
         }
     }
     private var hintedID: ShapeID?
+
+    /// A part of the hinted shape lit as the target (a row a connection would end on: `PartedShape`), its rect from the shape's
+    /// kept geometry (`ShapeGeometry.parts`) drawn in the hint's color. Set after `hintedShapeID`, which clears it whenever it
+    /// changes; nil with no hint, and drawn only while the hinted shape's geometry lists the part.
+    public var hintedPart: PartID? {
+        get { hintedPartID }
+        set {
+            let part = hintedID == nil ? nil : newValue
+            guard part != hintedPartID else { return }
+            hintedPartID = part
+            setNeedsDisplay()
+        }
+    }
+    private var hintedPartID: PartID?
     /// Starts as the registry's default tool.
     public private(set) var currentToolID: ToolID
     /// While true (tool lock, tldraw's `toggle-tool-lock`: Keyboard's Q), putting a shape down keeps the

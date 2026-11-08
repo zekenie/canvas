@@ -580,7 +580,7 @@ extension Drawing {
             case .edge(let edge):
                 book.claimEdge(edge.from, edge.to, via: edge.via != nil, bothHeads: edge.bothHeads, statement)
                 claimPlace(edge.container, edge.clauses, statement)
-            case .delete(.shape(let name)):
+            case .delete(.shape(let name)), .delete(.row(let name, _)):
                 book.claim(name, statement)
             case .delete(.edges(let from, let to, let eitherWay, _)):
                 book.claimEdge(from, to, via: false, bothHeads: eitherWay, statement)
@@ -693,7 +693,7 @@ extension Statement {
     var joinsShapes: Bool {
         switch body {
         case .edge, .delete(.edges): true
-        case .shape, .delete(.shape), .group, .ungroup: false
+        case .shape, .delete(.shape), .delete(.row), .group, .ungroup: false
         }
     }
 }

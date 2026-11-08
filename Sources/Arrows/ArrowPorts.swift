@@ -39,9 +39,13 @@ public struct ArrowPortsPlugin: ListedPlugin {
         registrar.service { ArrowTypeRows(editor: $0) }
         registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shapes in shapes.canBindArrow(to: id) },
                            make: { request, existing, shapes in ArrowConnections.arrow(for: request, existing: existing, in: shapes) },
-                           ends: { ArrowConnections.ends(of: $0) }) { connection, editor in
-            editor.beginArrow(from: connection.shape, side: connection.side, at: connection.origin,
+                           ends: { ArrowConnections.ends(of: $0) }, parts: { ArrowConnections.parts(of: $0) }) { connection, editor in
+            editor.beginArrow(from: connection.shape, part: connection.part, side: connection.side, at: connection.origin,
                               canBind: { editor.channel(of: connection, endingAt: $0) != nil },
+                              // Onto a shape whose rows take the channel it'll be drawn on: the row under the end.
+                              bindsPart: { shape in
+                                  editor.channel(of: connection, endingAt: shape).map { editor.registry.takesOnParts(shape.kind, $0, as: .target) } ?? false
+                              },
                               complete: { arrow, end in
                                   guard let shape = editor.document[end] else { return }
                                   arrow[ChannelProperty.self] = editor.channel(of: connection, endingAt: shape)
@@ -63,6 +67,12 @@ public struct ArrowPortsPlugin: ListedPlugin {
         }
         // Connect (⌘L) gives the arrow it made the release a drag gives: the same wiring, in its step.
         registrar.connectionMade { connection, editor in editor.connectionDrawn(connection) }
+        // An end binds a row where the arrow's channel is on the rows of the shape it's at, in that end's role (a key's ends,
+        // column to column); a plain arrow, or one on a channel the shape takes whole, binds the shape.
+        registrar.arrowPartRule { query in
+            guard let channel = query.arrow[ChannelProperty.self], query.registry.declares(channel) else { return false }
+            return query.registry.takesOnParts(query.shape.kind, channel, as: query.end == .start ? .source : .target)
+        }
         registrar.arrowBindingRule { query in
             // Never a container and what it holds, either way round, whatever the arrow's channel: Connections' rule.
             if let other = query.arrow.typed(as: Arrow.self)?.props[query.end.opposite].binding?.shapeID,
@@ -107,7 +117,7 @@ enum ArrowConnections {
             (request.beside ?? shapes.service(TopologyIndex.self).map { parallels(of: request.from, request.to, except: id, in: $0) } ?? [])
                 .filter { $0 != id }
         }
-        if request.from == request.to {
+        if request.from == request.to, request.fromPart == nil, request.toPart == nil {
             // A shape joined to itself is a loop on one of its sides (`loop(on:side:beside:in:)`): the side the request
             // names (its start's, else its end's), else the right. One made already keeps its ends and its bend, unless a
             // side is named that it isn't on.
@@ -120,9 +130,21 @@ enum ArrowConnections {
                 arrow.props.bend = loop.bend
             }
         } else {
-            for (end, shape, side) in [(ArrowEnd.start, request.from, request.fromSide), (.end, request.to, request.toSide)]
-            where side != nil || arrow.props[end].binding?.shapeID != shape {
-                arrow.props[end] = .bound(binding(to: shape, side: side))
+            // A key from a row to itself joins nothing.
+            if request.from == request.to, request.fromPart != nil, request.fromPart == request.toPart { return nil }
+            let fromX = partMiddle(request.from, request.fromPart, in: shapes), toX = partMiddle(request.to, request.toPart, in: shapes)
+            for (end, shape, side, part, far) in [(ArrowEnd.start, request.from, request.fromSide, request.fromPart, toX),
+                                                  (.end, request.to, request.toSide, request.toPart, fromX)]
+            where side != nil || arrow.props[end].binding?.shapeID != shape || arrow.props[end].binding?.part != part {
+                if let part {
+                    // A row's end, aimed at its side facing the other end (where it's drawn, and kept as where it was).
+                    let rect = Connectables(shapes: shapes)[shape]?.parts.frame(part)?.rect
+                    let facing: PartSide = rect.flatMap { rect in far.map { PartSide(facing: $0, from: rect) } } ?? .right
+                    arrow.props[end] = .bound(binding(to: shape, part: part, side: facing, in: shapes)
+                                              ?? ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: part))
+                } else {
+                    arrow.props[end] = .bound(binding(to: shape, side: side))
+                }
             }
             // A new arrow aimed at the centers beside another of the pair is bent apart from it.
             if existing == nil {
@@ -150,6 +172,28 @@ enum ArrowConnections {
         case .left: CGPoint(x: 0, y: 0.5)
         }
         return ArrowBinding(shapeID: shape, normalizedAnchor: anchor, isPrecise: true, isExact: false)
+    }
+
+    /// An end bound to a row of `shape`, at `side` of it (precise and exact, its anchor that side's middle); nil for a part the
+    /// shape's geometry doesn't list.
+    static func binding(to shape: ShapeID, part: PartID, side: PartSide, in shapes: ShapeContext) -> ArrowBinding? {
+        guard let connectable = Connectables(shapes: shapes)[shape], let rect = connectable.parts.frame(part)?.rect else { return nil }
+        let bounds = connectable.bounds
+        let point = side.point(of: rect)
+        let anchor = bounds.width > 0 && bounds.height > 0 ? normalizedAnchor(point, in: bounds) : CGPoint(x: 0.5, y: 0.5)
+        return ArrowBinding(shapeID: shape, normalizedAnchor: anchor, isPrecise: true, isExact: true, part: part)
+    }
+
+    /// Across, where an end at `part` of `shape` faces from: the row's middle, else the shape's.
+    private static func partMiddle(_ shape: ShapeID, _ part: PartID?, in shapes: ShapeContext) -> CGFloat? {
+        guard let connectable = Connectables(shapes: shapes)[shape] else { return nil }
+        return part.flatMap { connectable.parts.frame($0)?.rect.midX } ?? connectable.bounds.midX
+    }
+
+    /// The parts an arrow's start and end are bound to (rows), each nil for an end bound to a whole shape or free.
+    static func parts(of record: AnyShapeRecord) -> (from: PartID?, to: PartID?) {
+        guard let arrow = record.typed(as: Arrow.self)?.props else { return (nil, nil) }
+        return (arrow.start.binding?.part, arrow.end.binding?.part)
     }
 
     /// The shapes an arrow's start and end are bound to; nil unless both are.

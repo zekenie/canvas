@@ -7,7 +7,7 @@ import Palette
 import Titles
 
 /// A table, at rest: its paper, and a row a column, `KitStyle.rowHeight` apart: in the gutter a primary key's key, else a
-/// unique column's "1"; its name; and at the right its type in grey monospace, an enum-typed column's in a pill that says
+/// key's link (a column that starts a key, read from the key index), else a unique column's "1"; its name; and at the right its type in grey monospace, an enum-typed column's in a pill that says
 /// the enum's name now, and a nullable column's `?` after it. Its width is its own; its height its rows' (`LaidOutBox`),
 /// so nothing is written when rows come and go. Its rows are its parts (`PartedShape`), each where its row is in its
 /// geometry. Edited, its title is typed in its pill (`TitleField`) and its columns a line each (LineRows): it draws no row
@@ -20,17 +20,22 @@ extension TableDefinition: ShapeDefinition {
         let frame = context.shapes.frame(of: shape)
         KitPaper.draw(frame, in: context)
         let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
-        for line in KitPaper.rowsInView(rows.lines(columns.count), in: frame, context) {
+        let lines = KitPaper.rowsInView(rows.lines(columns.count), in: frame, context)
+        // The table's keys, read once a frame and only for a table with rows in view.
+        let keys = lines.isEmpty ? [:] : context.shapes.keys?.keys(of: shape.id) ?? [:]
+        for line in lines {
             guard let index = rows.row(atLine: line), columns[index].id != rows.focused else { continue }
-            drawColumn(columns[index], in: KitStyle.rowRect(line, in: frame), context)
+            drawColumn(columns[index], isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
         }
     }
 
     /// One column's row: its mark, its name, and its type at the right (the type wins the room: a name too long is cut).
-    private func drawColumn(_ column: Column, in row: CGRect, _ context: RenderContext) {
+    private func drawColumn(_ column: Column, isKey: Bool, in row: CGRect, _ context: RenderContext) {
         let cg = context.cg, middle = row.midY
         if column.primaryKey {
             RowMarks.draw(TableStyle.keySymbol, color: TableStyle.keyColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
+        } else if isKey {
+            RowMarks.draw(TableStyle.linkSymbol, color: TableStyle.linkColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
         } else if column.unique {
             RowMarks.draw(TableStyle.uniqueSymbol, color: TableStyle.uniqueColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
         }
@@ -98,13 +103,21 @@ extension TableDefinition: CustomSizing {
     }
 }
 
-/// Its rows are its parts: a column each, by its name.
+/// Its rows are its parts: a column each, by its name; and taken out by their ids (`canvas draw`'s `delete "orders".id`).
 extension TableDefinition: PartedShape {
     func parts(of shape: ShapeRecord<DatabaseTable>) -> [PartName] {
         shape.props.columns.map { column in
             PartName(id: column.id, name: column.name, kindWord: "Column",
                      lead: column.primaryKey ? .symbol(TableStyle.keySymbol) : column.unique ? .symbol(TableStyle.uniqueSymbol) : .none)
         }
+    }
+
+    func removing(_ parts: Set<PartID>, from shape: ShapeRecord<DatabaseTable>) -> DatabaseTable? {
+        var table = shape.props
+        table.columns.removeAll { parts.contains($0.id) }
+        guard table.columns.count < shape.props.columns.count else { return nil }
+        derive(&table)
+        return table
     }
 }
 

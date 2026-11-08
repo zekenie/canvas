@@ -53,6 +53,13 @@ extension PartedShape {
     func erasedParts(of record: AnyShapeRecord) -> [PartName]? {
         record.typed(as: Props.self).map { parts(of: $0) }
     }
+    func erasedRemoving(_ parts: Set<PartID>, from record: AnyShapeRecord) -> AnyShapeRecord? {
+        guard var typed = record.typed(as: Props.self), let props = removing(parts, from: typed) else { return nil }
+        typed.props = props
+        var removed = AnyShapeRecord(typed)
+        removed.meta = record.meta
+        return removed
+    }
 }
 
 extension LaidOutBox {

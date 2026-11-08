@@ -4,15 +4,24 @@ import Geometry
 import Selection
 import Topology
 
-/// A port's dot: its shape and the side it's on. What `editor.hoveredButton` and
-/// `editor.pressedButton` are while the pointer's on one.
+/// A port's dot: its shape and the side it's on, and for a dot at an end of a row (`partPorts`), the row (its side then
+/// `.left` or `.right`). What `editor.hoveredButton` and `editor.pressedButton` are while the pointer's on one.
 public struct PortDot: Hashable, Sendable {
     public let shape: ShapeID
     public let side: PortSide
-    public init(shape: ShapeID, side: PortSide) {
+    public let part: PartID?
+    public init(shape: ShapeID, side: PortSide, part: PartID? = nil) {
         self.shape = shape
         self.side = side
+        self.part = part
     }
+}
+
+/// A dot where it is: its center, and the point on the shape's edge (a side's middle, a row's end) it stands out from.
+struct PlacedDot {
+    let dot: PortDot
+    let center: CGPoint
+    let edge: CGPoint
 }
 
 /// Per editor: every kind's ports (the port table, `KindPorts.table(in:)`) and the channels' colors,
@@ -29,6 +38,10 @@ final class PortState {
     /// still within reach of them.
     private(set) var host: ShapeID? {
         didSet { if host != oldValue { editor.setNeedsDisplay() } }
+    }
+    /// The row of the host whose dots show (`partPorts`): the one the pointer is on, kept while it is near its dots.
+    private(set) var hostPart: PartID? {
+        didSet { if hostPart != oldValue { editor.setNeedsDisplay() } }
     }
     private var connection: Connection?
     private weak var connecting: (any Session)?
@@ -106,26 +119,57 @@ final class PortState {
     /// the editor's document).
     func hasDots(_ id: ShapeID) -> Bool {
         guard let connector, let record = editor.document[id], !record.isOpaque,
-              ports(of: record)?.dots.isEmpty == false else { return false }
+              ports(of: record)?.hasDots == true else { return false }
         return connector.canConnect(id, editor.shapeContext)
     }
 
     /// A shape's dots, in the order of `PortSide.allCases`, with their centers in world units: just
-    /// outside the middle of each side of its bounds, `PortStyle.offset` view points out.
-    func dots(of id: ShapeID) -> [(dot: PortDot, center: CGPoint)] {
+    /// outside the middle of each side of its bounds, `PortStyle.offset` view points out; then, for `part` (a row shown,
+    /// with dots on its rows), one just outside each end of it, left then right.
+    func dots(of id: ShapeID, part: PartID? = nil) -> [PlacedDot] {
         guard let record = editor.document[id], let ports = ports(of: record), let bounds = bounds(of: id) else { return [] }
         let out = PortStyle.offset / editor.camera.zoom
-        return PortSide.allCases.compactMap { side in
+        var placed: [PlacedDot] = PortSide.allCases.compactMap { side in
             guard ports.dots[side] != nil else { return nil }
             let edge = middle(of: side, of: bounds)
-            let center = switch side {
-            case .top: CGPoint(x: edge.x, y: edge.y - out)
-            case .right: CGPoint(x: edge.x + out, y: edge.y)
-            case .bottom: CGPoint(x: edge.x, y: edge.y + out)
-            case .left: CGPoint(x: edge.x - out, y: edge.y)
-            }
-            return (PortDot(shape: id, side: side), center)
+            return PlacedDot(dot: PortDot(shape: id, side: side), center: Self.out(from: edge, on: side, by: out), edge: edge)
         }
+        if let part, !ports.partDots.isEmpty, let frame = editor.shapeContext.geometry(of: id)?.parts.frame(part), frame.isShown {
+            for side in [PortSide.left, .right] {
+                let edge = middle(of: side, of: frame.rect)
+                placed.append(PlacedDot(dot: PortDot(shape: id, side: side, part: part), center: Self.out(from: edge, on: side, by: out), edge: edge))
+            }
+        }
+        return placed
+    }
+
+    /// The point `out` from `edge`, away from the shape on `side`.
+    private static func out(from edge: CGPoint, on side: PortSide, by out: CGFloat) -> CGPoint {
+        switch side {
+        case .top: CGPoint(x: edge.x, y: edge.y - out)
+        case .right: CGPoint(x: edge.x + out, y: edge.y)
+        case .bottom: CGPoint(x: edge.x, y: edge.y + out)
+        case .left: CGPoint(x: edge.x - out, y: edge.y)
+        }
+    }
+
+    /// The row of `id` whose dots a view point is in reach of (`partPorts`): the shown row whose band across holds it, the
+    /// band as wide as the shape and a dot's reach on each side; nil for a shape with no dots on its rows, or none there.
+    /// Found by halving the rows (`PartFrames` are in reading order, top to bottom), so a long table costs a few looks.
+    func part(of id: ShapeID, atViewPoint point: CGPoint) -> PartID? {
+        guard let record = editor.document[id], ports(of: record)?.partDots.isEmpty == false,
+              let geometry = editor.shapeContext.geometry(of: id) else { return nil }
+        let camera = editor.camera, world = camera.toWorld(point)
+        let reach = (PortStyle.offset + PortStyle.hitRadius) / camera.zoom
+        guard world.x >= geometry.bounds.minX - reach, world.x <= geometry.bounds.maxX + reach else { return nil }
+        let frames = geometry.parts
+        var low = 0, high = frames.count
+        while low < high {
+            let middle = (low + high) / 2
+            if frames[middle].rect.maxY <= world.y { low = middle + 1 } else { high = middle }
+        }
+        guard low < frames.count, frames[low].rect.minY <= world.y, frames[low].isShown else { return nil }
+        return frames[low].id
     }
 
     private func bounds(of id: ShapeID) -> CGRect? {
@@ -147,12 +191,11 @@ final class PortState {
     /// on top), so what shows is what a press there presses. A shape lying on a bigger one shows its
     /// dots over it. Each dot looks only at what's between the middle of its side and its center,
     /// where the shape itself is sure to be found, so it costs what's near the dot.
-    func liveDots(of id: ShapeID, on sides: Set<PortSide>? = nil) -> [(dot: PortDot, center: CGPoint)] {
-        guard let bounds = bounds(of: id) else { return [] }
+    func liveDots(of id: ShapeID, part: PartID? = nil, on wanted: Set<PortDot>? = nil) -> [PlacedDot] {
         let shapes = editor.shapeContext
-        return dots(of: id).filter { dot in
-            guard sides?.contains(dot.dot.side) ?? true else { return false }
-            let near = CGRect(enclosing: [middle(of: dot.dot.side, of: bounds), dot.center]).insetBy(dx: -1, dy: -1)
+        return dots(of: id, part: part).filter { dot in
+            guard wanted?.contains(dot.dot) ?? true else { return false }
+            let near = CGRect(enclosing: [dot.edge, dot.center]).insetBy(dx: -1, dy: -1)
             let order = editor.paintOrder(in: near)                   // back to front
             guard let position = order.firstIndex(where: { $0.id == id }) else { return true }
             return !order[(position + 1)...].contains { shapes.hitTest(dot.center, shape: $0.id) && editor.isSelectable($0.id) }
@@ -175,6 +218,7 @@ final class PortState {
         // first click into the window): no dots show there, so a press there presses what's under it.
         guard isShowing, editor.pointerOverCanvas != nil else {
             host = nil
+            hostPart = nil
             return nil
         }
         let camera = editor.camera, world = camera.toWorld(point)
@@ -188,12 +232,22 @@ final class PortState {
         where !shapes.contains(record.id) && hasDots(record.id) {
             shapes.append(record.id)
         }
-        let near: [(dot: PortDot, distance: CGFloat)] = shapes.flatMap(dots(of:))
+        // Each shape's row the point is on (a shape with dots on its rows), else the host's row while the point is near it.
+        var rows: [ShapeID: PartID] = [:]
+        for id in shapes {
+            if let row = part(of: id, atViewPoint: point) {
+                rows[id] = row
+            } else if id == host, let row = hostPart,
+                      dots(of: id, part: row).contains(where: { $0.dot.part != nil && camera.toView($0.center).distance(to: point) <= PortStyle.hitRadius }) {
+                rows[id] = row
+            }
+        }
+        let near: [(dot: PortDot, distance: CGFloat)] = shapes.flatMap { dots(of: $0, part: rows[$0]) }
             .map { (dot: $0.dot, distance: camera.toView($0.center).distance(to: point)) }
             .filter { $0.distance <= PortStyle.hitRadius }
             .sorted { $0.distance < $1.distance }
         // Whether a dot shows is worked out only for the few this near.
-        let nearest = near.first { !liveDots(of: $0.dot.shape, on: [$0.dot.side]).isEmpty }
+        let nearest = near.first { !liveDots(of: $0.dot.shape, part: $0.dot.part, on: [$0.dot]).isEmpty }
         let onContainer = under.flatMap { editor.document[$0] }.map(editor.registry.isContainer) ?? false
         let hit = nearest.flatMap { $0.distance <= (onContainer ? PortStyle.litRadius : PortStyle.hitRadius) ? $0.dot : nil }
         if hit == nil, let handle = editor.handle(atViewPoint: point), !(handle.base is ResizeHandle) {
@@ -201,6 +255,7 @@ final class PortState {
             // none shows its dots. A resize handle leaves them be: its sides run their whole length,
             // and the pointer crosses one on its way out to a dot.
             host = nil
+            hostPart = nil
             return nil
         }
         if let hit {
@@ -212,6 +267,7 @@ final class PortState {
         } else if let host, !(isNear(host, point) && hasDots(host)) {
             self.host = nil
         }
+        hostPart = host.flatMap { rows[$0] }
         return hit
     }
 
@@ -229,13 +285,15 @@ final class PortState {
     /// A drag from a dot, past the drag threshold: the connector's session drawing the connection,
     /// from where the dot was pressed (world units).
     func connect(from dot: PortDot, at origin: CGPoint) -> (any Session)? {
-        guard let connector, let record = editor.document[dot.shape], let channels = ports(of: record)?.dots[dot.side] else { return nil }
-        let connection = Connection(shape: dot.shape, side: dot.side, channels: channels, origin: origin)
+        guard let connector, let record = editor.document[dot.shape], let ports = ports(of: record),
+              let channels = dot.part == nil ? ports.dots[dot.side] : ports.partDots, !channels.isEmpty else { return nil }
+        let connection = Connection(shape: dot.shape, side: dot.side, part: dot.part, channels: channels, origin: origin)
         guard let session = connector.begin(connection, editor) else { return nil }
         self.connection = connection
         connecting = session
         // Its dots go with the drag; the release (or the next move) finds whose show then.
         host = nil
+        hostPart = nil
         return session
     }
 
@@ -247,7 +305,8 @@ final class PortState {
 
     /// The color of a dot: its first channel's.
     func color(of dot: PortDot) -> NSColor {
-        guard let record = editor.document[dot.shape], let channel = ports(of: record)?.dots[dot.side]?.first else { return PortStyle.fallback }
+        guard let record = editor.document[dot.shape], let ports = ports(of: record),
+              let channel = (dot.part == nil ? ports.dots[dot.side] : ports.partDots)?.first else { return PortStyle.fallback }
         return colors[channel] ?? PortStyle.fallback
     }
 }
@@ -255,10 +314,14 @@ final class PortState {
 extension PortState: EditorService {
     func toolDidChange(from old: ToolID, to new: ToolID, in editor: CanvasEditor) {
         host = nil
+        hostPart = nil
     }
 
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
-        if let host, changes.removed.contains(host) { self.host = nil }
+        if let host, changes.removed.contains(host) {
+            self.host = nil
+            hostPart = nil
+        }
         forgetStandingPorts(changes)
     }
 
@@ -267,6 +330,7 @@ extension PortState: EditorService {
     /// put in place has none of the stand-ins kept (a shape of the same id may be one for others now).
     func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
         host = nil
+        hostPart = nil
         connection = nil
         if change.isFileReplaced { standingPorts.removeAll() }
     }

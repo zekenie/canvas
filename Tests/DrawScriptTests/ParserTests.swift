@@ -692,7 +692,7 @@ import TestKit
         let error = ScriptError(line: 3, reason: .syntax, "bad", hint: "fix it")
         expectEqual(error.description, "line 3: bad (fix it)")
         expectEqual(ScriptError.Reason.noRoom.rawValue, "no_room")
-        expectEqual(ScriptError.Reason.allCases.count, 34)
+        expectEqual(ScriptError.Reason.allCases.count, 35)
         expectEqual(ScriptError.Reason.noGroups.rawValue, "no_groups")
     },
 ])

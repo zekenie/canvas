@@ -184,6 +184,17 @@ public final class TopologyIndex {
         tables.forEachEdge(of: id, direction, types: filter, in: types, view: view, body)
     }
 
+    /// `id`'s edges at one of its parts (`part`; nil: those at the shape as a whole), as `direction` asks, of the types
+    /// `filter` admits, as `view` reads them: a row's (a key leaving a column), filtered from the shape's, in their order.
+    public func edges(of id: ShapeID, part: PartID?, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all,
+                      view: EdgeView = .resolved) -> [Edge] {
+        var found: [Edge] = []
+        tables.forEachEdge(of: id, direction, types: filter, in: types, view: view) { edge in
+            if edge.touches(id, part: part, direction) { found.append(edge) }
+        }
+        return found
+    }
+
     /// `hasEdges(of:_:types:where:)`, as `view` reads them.
     public func hasEdges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all, view: EdgeView,
                          where predicate: (Edge) -> Bool = { _ in true }) -> Bool {

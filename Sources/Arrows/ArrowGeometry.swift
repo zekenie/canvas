@@ -30,6 +30,9 @@ public struct ArrowGeometry: Sendable {
     public private(set) var bendAxis: CGPoint
     public private(set) var startArrowhead: Bool
     public private(set) var endArrowhead: Bool
+    /// The side of its part each end is at, for an end bound to a part its shape lists (a row): nil for any other end.
+    public private(set) var startSide: PartSide?
+    public private(set) var endSide: PartSide?
 
     /// Gap between a bound shape's outline and an arrowhead, on top of half the stroke width.
     public static let boundGap: CGFloat = 10
@@ -59,6 +62,24 @@ public struct ArrowGeometry: Sendable {
         )
         startArrowhead = arrow.startArrowhead
         endArrowhead = arrow.endArrowhead
+        // An end bound to a part its shape lists is at that part's side facing the other end, unclipped (a departure from
+        // tldraw's: rows are met at their side). An end with no part is left exactly as above.
+        let startPart = Self.part(of: arrow.start, in: startShape), endPart = Self.part(of: arrow.end, in: endShape)
+        if startPart != nil || endPart != nil {
+            // What each end faces: the other's part's middle (never its side, so two part ends don't hang on each other), else
+            // its handle.
+            let startX = startPart?.midX ?? startHandle.x, endX = endPart?.midX ?? endHandle.x
+            if let rect = startPart {
+                let side = PartSide(facing: endX, from: rect)
+                (startSide, startHandle) = (side, side.point(of: rect))
+                startShape?.isExact = true
+            }
+            if let rect = endPart {
+                let side = PartSide(facing: startX, from: rect)
+                (endSide, endHandle) = (side, side.point(of: rect))
+                endShape?.isExact = true
+            }
+        }
 
         let chord = endHandle - startHandle
         bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
@@ -83,6 +104,17 @@ public struct ArrowGeometry: Sendable {
             (start, end, middle) = clipping.straight(from: startHandle, to: endHandle, startShape: &startShape, endShape: &endShape)
         }
     }
+
+    /// Where the part an end is bound to is, when its shape lists it (shown or folded: a folded one's rect is what's shown
+    /// in its place); nil for an end bound to no part, or to one its shape doesn't list, which is drawn at its stored anchor.
+    private static func part(of terminal: ArrowTerminal, in shape: BoundShape?) -> CGRect? {
+        guard let part = terminal.binding?.part, let shape else { return nil }
+        return shape.parts.frame(part)?.rect
+    }
+
+    /// The side of its part an end is at (nil for an end bound to no part its shape lists): where a curve leaves it and a
+    /// mark is drawn.
+    public func partSide(at end: ArrowEnd) -> PartSide? { end == .start ? startSide : endSide }
 
     /// Where an end is aimed, with no other end to read it against: a free end's point, a bound one's anchor in its shape (the
     /// middle of its bounds unless precise); nil for one bound to a shape that isn't there.
@@ -235,6 +267,7 @@ private struct BoundShape {
     var id: ShapeID
     var bounds: CGRect
     var outline: [CGPoint]
+    var parts: PartFrames
     var isExact: Bool
     var didIntersect = false
 
@@ -242,8 +275,28 @@ private struct BoundShape {
         id = shape.id
         bounds = shape.bounds
         outline = shape.outline
+        parts = shape.parts
         self.isExact = isExact
     }
+}
+
+/// The side of a part (a row) an arrow's end is at: its left or right edge, at its middle.
+public enum PartSide: Hashable, Sendable {
+    case left, right
+
+    /// The side of `rect` facing `x`: the right at or past its middle (a tie, as a key from a row to another of its table, is
+    /// on the right, so both ends leave one side).
+    init(facing x: CGFloat, from rect: CGRect) {
+        self = x >= rect.midX ? .right : .left
+    }
+
+    /// Its point on `rect`: the middle of that edge.
+    public func point(of rect: CGRect) -> CGPoint {
+        CGPoint(x: self == .right ? rect.maxX : rect.minX, y: rect.midY)
+    }
+
+    /// The way out of the part from it, a unit vector: where a curve leaves and a mark points.
+    public var normal: CGPoint { CGPoint(x: self == .right ? 1 : -1, y: 0) }
 }
 
 private enum Relationship {

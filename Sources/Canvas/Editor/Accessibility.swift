@@ -159,6 +159,18 @@ extension CanvasEditor {
         return AccessibleDescription(name: name ?? kind, kind: kind, label: label, value: value, help: help)
     }
 
+    /// What VoiceOver and every list call a shape or a part of it, on any board of the file: the shape's name
+    /// (`accessibleDescription(of:)`) for a shape as a whole; for a part, its name (`PartedShape.parts(of:)`) read with its
+    /// shape's ("id in customers"), or alone for one that stands alone (an endpoint). Nil for a shape that isn't there, or a
+    /// part it doesn't have.
+    public func accessibleName(of address: PartAddress) -> String? {
+        guard let record = shape(inFile: address.shape) else { return nil }
+        let shape = accessibleDescription(of: record).name
+        guard let id = address.part else { return shape }
+        guard let part = registry.parts(of: record)?.first(where: { $0.id == id }) else { return nil }
+        return part.standsAlone ? part.name : Style.partInShape(part.name, shape)
+    }
+
     /// Text with something to say, trimmed; nil for none.
     private static func said(_ text: String?) -> String? {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }

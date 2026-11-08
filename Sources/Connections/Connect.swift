@@ -97,7 +97,7 @@ extension CanvasEditor {
         connect(ConnectEnd(first), to: ConnectEnd(ids.last ?? first))
     }
 
-    /// Connects `source`, a shape of the board shown, to `target`: the one writer under ⌘L (two shapes, one, and the picker's
+    /// Connects `source`, a shape of the board shown or a part of one (a row), to `target`, a shape or a part: the one writer under ⌘L (two shapes, one, and the picker's
     /// picks), as `canvas draw` makes `edge "A" -> "B"` (`registry.drawConnection`), in one step named for the plan (`plan.step`,
     /// "Connect" for none) that holds the arrow, what the plan wrote first (`plan.prepare`) and what the `ConnectionMade` hooks do
     /// to the arrow. A stand-in end (a reference pill) is an end as what it stands for. A `target` on another board is reached
@@ -159,7 +159,8 @@ extension CanvasEditor {
                     try pill.claim(in: &transaction, registry: registry)
                     ends.to = ConnectEnd(try pill.put(in: &transaction))
                 }
-                guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: (from, to))
+                guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: (from, to),
+                                                         parts: (ends.from.part, ends.to.part))
                 else { throw Transaction.Refused() }
                 transaction.insert(made)
                 guard transaction.document[made.id] != nil else { throw Transaction.Refused() }

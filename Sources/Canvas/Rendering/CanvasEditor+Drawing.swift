@@ -76,6 +76,7 @@ extension CanvasEditor {
         let (outlines, hint) = outlinesAndHint
         let tinted = outlines.tinted.isEmpty ? nil : TintedRings(outlines, hint: hint, members: outlineMembers)
         drawOutlines(outlines, hint: hint, tinted: tinted, in: context, shapes: shapes, around: drawn, skeletonPixel: skeletons ? ink.pixel : nil)
+        if let hint, let part = hintedPart { drawHintedPart(part, of: hint, in: context, shapes: shapes) }
         // The shapes waiting to be placed (`placeLater`), faint, over the board's and its outlines, under what
         // overlays draw (which decorate them too): a context over them alone, so each has its geometry, laid out
         // as shapes of the file where they'd land.
@@ -229,6 +230,27 @@ extension CanvasEditor {
             outlines.faintShapes = Self.faint(outlines.faintShapes, leavingOut: outlines.shapes, and: hint)
         }
         return (outlines, hint)
+    }
+
+    /// The hinted shape's lit part (`hintedPart`: the row a connection would end on), from its kept geometry: its rect a little
+    /// inside, rounded, filled faintly and stroked in the hint's color, as the shape's outline is (`Style.hintedPart…`), where
+    /// the shape is drawn. Nothing for a part the geometry doesn't list, or one it shows none of.
+    private func drawHintedPart(_ part: PartID, of id: ShapeID, in context: CGContext, shapes: ShapeContext) {
+        guard let frame = shapes.geometry(of: id)?.parts.frame(part), frame.isShown else { return }
+        let zoom = camera.zoom, offset = drawingOffset(of: id)
+        let inset = Style.hintedPartInset / zoom, radius = Style.hintedPartRadius / zoom
+        let rect = frame.rect.offsetBy(dx: offset.x / zoom, dy: offset.y / zoom).insetBy(dx: inset, dy: inset)
+        guard rect.width > 0, rect.height > 0 else { return }
+        let path = CGPath(roundedRect: rect, cornerWidth: min(radius, rect.width / 2), cornerHeight: min(radius, rect.height / 2), transform: nil)
+        context.saveGState()
+        context.addPath(path)
+        context.setFillColor(Style.accent.withAlphaComponent(Style.hintedPartFillOpacity).cgColor)
+        context.fillPath()
+        context.addPath(path)
+        context.setStrokeColor(Style.accent.cgColor)
+        context.setLineWidth(Style.hintedPartWidth / zoom)
+        context.strokePath()
+        context.restoreGState()
     }
 
     /// The faint outlines less those outlined in full (and the hint, which is), with no set of all of those (⌘A's is every
