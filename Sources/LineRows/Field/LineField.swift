@@ -2,7 +2,6 @@ import AppKit
 import Canvas
 import Connections
 import FuzzyMatching
-import Palette
 import TextEditing
 
 // The one line a row is typed in: an `EditingTextView` on TextKit 2 (so `placeSelection(at:)` and `caretFrame` work), moved
@@ -598,6 +597,7 @@ public enum LineFieldStyle {
     static let caretMargin: CGFloat = 1
     /// What VoiceOver hears as whole rows are selected: "3 columns selected".
     static func selected(_ counted: String) -> String { "\(counted) selected" }
-    /// Whole rows selected while a shape is edited (⇧↑ ⇧↓): the accent, light, behind them.
-    static let rowsBand = NSColor(name: nil) { NSColor.controlAccentColor.withAlphaComponent($0.isDark ? 0.28 : 0.18) }
+    /// Whole rows selected while a shape is edited (⇧↑ ⇧↓): the accent, light, behind them; the same in both appearances,
+    /// as the paper it's on is.
+    static let rowsBand = NSColor.controlAccentColor.withAlphaComponent(0.2)
 }

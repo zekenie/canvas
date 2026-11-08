@@ -2571,6 +2571,29 @@ Editing a folded shape shows every row; Find's hits show in place while Find is 
 remembered with the file's view on this Mac, a core view value (`ViewValueKey`, `editor.setViewValue`, no
 step), which `BoardDocument` saves and hands back before the canvas is made.
 
+**Rows as items and wholes.** A kind written as lines gets its rows selected on the canvas, as Selection's items of
+its shape ([Items inside a shape](#items-inside-a-shape)), and moved as wholes, with no code of its own beyond two
+members of its model:
+
+```swift
+func renaming(_ row: TallyRow, to id: PartID) -> TallyRow { var row = row; row.id = id; return row }
+// Optional: what rows taken out are (by default a new shape of the kind holding only them), and whether its name is
+// typed at once.
+func takeOut(_ rows: [ColumnLine], from shape: ShapeRecord<DatabaseTable>) -> DatabaseTable { … }   // `id uuid pk` first
+var takeOutEditsTitle: Bool { true }
+```
+
+One function moves them, `editor.moveRows(_:of:to:)`: `.into(shape, before:)` (the same shape reorders; another
+of its kind takes them), `.board(origin:)` or `.beside(shapes)` (the take-out, where Insert would put one). One
+step named from the noun ("Move Column", "Move Columns to New Table"), all or nothing, a read-only source or
+target shaking; a row keeps its id (a new one only where the target holds it), and what's bound to it follows
+through the core's `moveParts` (`PartsMoved` hears it). On the pasteboard (the editor's: Clipboard's) rows are a
+board file of the source holding only them, their lines as text beside it: `copyRows` carries the arrows they start,
+`cutRows` every arrow bound to them, counted in its step ("Cut Columns and 2 Arrows"), and `pasteRows` lands them
+as `moveRows` does, a cut's paste a move (its arrows back under their ids) while no shape on the board holds them.
+While a shape is edited, ⇧↑ ⇧↓ select rows whole (the first the caret's row), which ⌫, ⌥↑ ⌥↓, ⌘C ⌘X ⌘V act on,
+and Escape leaves selected as items. The selection's menu offers the take-out of rows selected.
+
 ## Selection
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
@@ -3256,11 +3279,12 @@ registrar.forShapes(holding: LinkProperty.self) { link in
   shape). An arrow's ends, bend and label are handles of this kind (Arrows' `ArrowParts`): an end bound
   with ⌥⌘ goes to `editor.nearestShape(to:toward:among:)`, the nearest shape that way by the rule ⌥⌘
   steps by.
-- **Order.** `editor.shapeParts(of:)` lists every plugin's in reading order of their rects' middles
-  (`StopOrder.reading`, as Tab reads shapes, a row being parts within half the shortest one's height,
-  so a note's rows read top to bottom), parts level with one another by `order`, then plugin
-  order; a part two lists give (the same id) once. None for the shape being edited, whose parts are
-  its editor's.
+- **Order.** `editor.shapeParts(of:)` lists the shape's own parts first and its arrows (`.connection`)
+  after them, each in reading order of their rects' middles (`StopOrder.reading`, as Tab reads shapes,
+  a row being parts within half the shortest one's height, so a note's rows read top to bottom), parts
+  level with one another by `order`, then plugin order; a part two lists give (the same id) once. So
+  ⌥⇧Tab from a shape is its last arrow at once. None for the shape being edited, whose parts are its
+  editor's.
 - **Listed when a key asks**, never on every frame: a list may lay out what it needs. The ring's place
   is kept from the last listing until the board, the layout or the zoom changes.
 - **The focus** is Selection's (`editor.focusedPart`, `hasFocusedPart`): it goes with any other change
@@ -3282,6 +3306,38 @@ registrar.forShapes(holding: LinkProperty.self) { link in
 - **Adornments lists every clickable adornment** by itself, in the scope it is registered in
   ([Adornments](#adornments)): the lock, private and type chips, "+N", the relationship pill and its offer
   are parts with no code of their own.
+
+### Items inside a shape
+
+What is selected inside a shape, one level in as a group's parts are: its items (a table's rows, which LineRows
+lists for every kind written as lines). A plugin lists a kind's items and says what the keys do to them; Selection
+does the rest (the click ladder, the keys, the outline, Escape, Undo, VoiceOver), and the plugin writes no key code:
+
+```swift
+registrar.forShapes(adopting: .lineRows) { kinds in
+    kinds.shapeItems(named: "rows", { editor, shape in
+        rows(of: shape).map { ShapeItem(id: $0.id, title: spoken($0), rect: rect(of: $0)) }    // title asked lazily
+    }, at: { editor, shape, point in row(at: point, of: shape)?.id },
+    actions: ShapeItemActions(
+        delete: { editor, shape, ids in … },            // ⌫ ⌦, one step the kind names
+        move: { editor, shape, ids, delta in … },       // ⌥↑ (-1) ⌥↓ (+1)
+        open: { editor, shape, id, point in … },        // Return, a click on the only selected item
+        setOpen: { editor, shape, id, open in … }))     // → ← Space on an item that hides others
+}
+```
+
+- **The ladder.** A press on an item of a shape not selected is the shape's. On the only selected shape, a click
+  on an item selects it, ⇧ the run from the anchor, ⌘ toggles one, and a click on the only selected item opens it
+  where it was clicked; a press anywhere else drops them. A `drag` and a `lead` (an item's chip pressed before
+  faces) are optional actions.
+- **The keys.** ↑ ↓ step them, ⇧↑ ⇧↓ draw the run, ⌥↑ ⌥↓ move them (the chord resizes a shape with none), ← →
+  and Space open and close an item that hides others (`ItemOutline`), ⌫ deletes them, Return opens the first, ⌘A
+  selects every item, Escape goes back to the shape. Clipboard cuts, copies and pastes them before the shape.
+- **Hidden items.** An item that stands for hidden ones (`stands`: a fold's "+N ›" line) shows selected while one
+  of those is, and gives it back as it shows again.
+- **Read it** as `editor.selectedItems` (the shape, the ids in its order, the anchor) and set it with
+  `editor.selectItems(_:of:)`. The shape stays selected; its outline gives way to the items', drawn inside it.
+  VoiceOver hears them as rows (`AccessiblePart.Role.row`), before the shape's parts, said selected.
 ## Describing a shape for VoiceOver
 
 VoiceOver sees the canvas as a layout area named for its board, whose children are its shapes, each
@@ -6585,6 +6641,12 @@ A selection's uncopyable shapes are left out of a copy, and stay when it's cut. 
 shapes selected, ⌘C and ⌘X pass the key on, and the menu has no Cut or Copy. Everything
 else treats them as usual: they're selected, moved, deleted and erased. The rule is
 `ShapeCopyability`: at most one per kind, plus one for every kind, which a kind's own overrides.
+
+**Rows.** With rows selected inside a shape (Selection's items), ⌘C and ⌘X act on the rows, and ⌘V with rows on
+the pasteboard puts them after the last row selected, or out on their own beside the selection
+([Rows written as lines](#rows-written-as-lines)). Clipboard gives the editor its pasteboard
+(`registrar.pasteboard`, a host slot), so what another plugin writes there (the line editor's rows) is on the
+same one, and a test's is its own.
 
 ### Metadata
 

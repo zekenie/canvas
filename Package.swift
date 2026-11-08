@@ -360,7 +360,7 @@ let package = Package(
         // menu, and Topology for the arrows a row starts, which a copy of it carries. Its parts: Field, the line and its
         // grammar; Folds, the lines a shape shows; Moves, rows moved as wholes and on the pasteboard; Session, the stops, keys
         // and commits; Card, a row's card.
-        .target(name: "LineRows", dependencies: ["Canvas", "Connections", "ContextMenus", "Find", "FuzzyMatching", "Keyboard", "Palette", "Selection", "TextEditing", "Titles", "Topology"]), // layer: platform
+        .target(name: "LineRows", dependencies: ["Canvas", "Connections", "ContextMenus", "Find", "FuzzyMatching", "Keyboard", "Selection", "TextEditing", "Titles", "Topology"]), // layer: platform
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard", "SlashCommands"], path: "Examples/Reordering"), // layer: platform
         // Engines: what any plugin may run or ask.
