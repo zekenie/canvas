@@ -498,7 +498,7 @@ final class AdornmentState {
         let anchor = anchored.rect, scale = AdornmentLayout.scale(atZoom: zoom)
         // Every placed tab, not only its own: its row gives way to a container's (asked only of a shape in one).
         let inContainer = editor.document.container(of: record.id, containingKinds: editor.registry.containingKinds) != nil
-        let tabs = laidOut.hasTab || (hasTabs && inContainer) ? self.tabs(in: rowRegion(around: anchor)) : nil
+        let tabs = laidOut.hasTab || (hasTabs && inContainer) ? self.tabs(in: tabRegion(around: anchor)) : nil
         var slots: [AdornmentLayout.Slot?] = []
         self.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: tabs, into: &slots)
         return laidOut.shown.indices.compactMap { index in
