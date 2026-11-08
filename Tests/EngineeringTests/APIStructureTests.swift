@@ -210,11 +210,16 @@ private let grouped = ["GET /health", "/users", "GET /{id}", "/orders", "GET /{i
         let area = view.convert(row, to: b.canvas)
         let rep = try require(b.canvas.bitmapImageRepForCachingDisplay(in: area))
         b.canvas.cacheDisplay(in: area, to: rep)
-        var colors: Set<[Int]> = []
-        for x in stride(from: CGFloat(0), to: 40, by: 1) {
-            for y in stride(from: CGFloat(0), to: area.height, by: 1) { colors.insert(pixel(rep, at: CGPoint(x: x, y: y))) }
+        // The band's flat color, out in the row where nothing is drawn; the chevron's room, left of the prefix, differs from it.
+        let band = pixel(rep, at: CGPoint(x: area.width / 2, y: area.height / 2))
+        var most = 0
+        for x in stride(from: CGFloat(12), to: 28, by: 1) {
+            for y in stride(from: CGFloat(0), to: area.height, by: 1) {
+                let found = pixel(rep, at: CGPoint(x: x, y: y))
+                most = max(most, zip(found.prefix(3), band.prefix(3)).map { abs($0 - $1) }.max() ?? 0)
+            }
         }
-        expect(colors.count > 3, "the chevron is drawn under the band: \(colors.count) colors in its room")
+        expect(most > 12, "the chevron shows through the band: its room differs from it by \(most)")
         b.press(.escape)
     },
     test("an endpoint's card is wide enough to read, and a field without the keyboard shows its text from its start: a long summary isn't clipped at its front") {

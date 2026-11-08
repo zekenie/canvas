@@ -229,8 +229,8 @@ enum APIDrawing {
         }
         // The right side, laid from the right: the response's pill, its status, the arrow, the body's pill.
         var right = end
-        var drawn: [() -> Void] = []
-        func place(width: CGFloat, _ draw: @escaping (CGFloat) -> Void) {
+        var drawn: [@MainActor () -> Void] = []
+        func place(width: CGFloat, _ draw: @escaping @MainActor (CGFloat) -> Void) {
             guard right - width >= x else { return }
             right -= width
             let at = right
