@@ -39,6 +39,15 @@ import TestKit
         expectEqual(try parse(#"delete "shop" > "orders"."legacy note""#),
                     .delete(.row(.path(ShapePath(head: .title("shop"), rest: ["orders"])), row: "legacy note")))
     },
+    test("an id's row that isn't a plain word is quoted after the dot, as a title's is; the name draw prints reads back") {
+        let id = "7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11"
+        guard case .edge(let edge) = try parse("edge #\(id).\"POST /x\" -> \"refunds\"") else { throw RequireFailed() }
+        expectEqual(edge.from, .id(id))
+        expectEqual(edge.fromRow, "POST /x")
+        expectEqual(edge.written, "#\(id).\"POST /x\" -> \"refunds\"")
+        expectEqual(try parse("delete #\(id).\"POST /x\""), .delete(.row(.id(id), row: "POST /x")))
+        expectEqual(parseError("delete #\(id).")?.reason, .syntax)
+    },
     test("a dot with no row after it is refused, saying how to write one; delete edge takes no rows") {
         let dangling = parseError(#"edge "orders". -> "customers""#)
         expectEqual(dangling?.reason, .syntax)

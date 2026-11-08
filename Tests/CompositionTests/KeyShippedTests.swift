@@ -98,6 +98,39 @@ private let shop = #"""
         expectEqual(changes.last?["kind"]?.stringValue, "arrow")
         expectEqual(editor.undoHistory.undoName != nil, true)
     },
+    test("a row two columns share is refused as ambiguous, naming where they are, never taken as the first") {
+        let editor = try shopEditor()
+        let orders = try require(table(editor, "orders"))
+        editor.transact("Rename") { $0.update(orders.id, as: DatabaseTable.self) { $0.props.columns[2].name = "customer_id" } }
+        let edge = try refusedInProcess(#"edge "orders".customer_id -> "customers".email"#, on: editor)
+        expectEqual(edge.reason, "ambiguous_title")
+        expect(edge.message.contains("2 rows called") && edge.message.contains("2 and 3"), edge.message)
+        let delete = try refusedInProcess(#"delete "orders".customer_id"#, on: editor)
+        expectEqual(delete.reason, "ambiguous_title")
+        expectEqual(table(editor, "orders")?.props.columns.count, 3, "nothing was taken")
+        expectEqual(keys(editor).count, 3)
+    },
+    test("a row delete and a delete of its table in one script is refused on the later line, either order, not as an internal error") {
+        let editor = try shopEditor()
+        let rowFirst = try refusedInProcess("delete \"orders\".total_cents\ndelete \"orders\"", on: editor)
+        expectEqual(rowFirst.reason, "duplicate")
+        expect(rowFirst.message.contains("line 1"), rowFirst.message)
+        let tableFirst = try refusedInProcess("delete \"orders\"\ndelete \"orders\".total_cents", on: editor)
+        expectEqual(tableFirst.reason, "duplicate")
+        expect(tableFirst.message.contains("is deleted, and so its rows are"), tableFirst.message)
+        let twice = try refusedInProcess("delete \"orders\".total_cents\ndelete \"orders\".total_cents", on: editor)
+        expectEqual(twice.reason, "duplicate")
+        expectEqual(table(editor, "orders")?.props.columns.count, 3, "nothing was taken")
+    },
+    test("two row deletes of one table are said on their own lines, each key on the line of the row it went with") {
+        let editor = try shopEditor()
+        _ = try drawnInProcess(#"edge "orders".total_cents -> "customers".email"#, on: editor)
+        let result = try drawnInProcess("delete \"orders\".customer_id\ndelete \"orders\".total_cents", on: editor)
+        expectEqual(table(editor, "orders")?.props.columns.map(\.name), ["id"])
+        let changes = result["changes"]?.arrayValue ?? []
+        expectEqual(changes.compactMap { $0["did"]?.stringValue }, ["updated", "deleted", "updated", "deleted"])
+        expectEqual(changes.compactMap { $0["line"]?.intValue }, [1, 1, 2, 2])
+    },
     test("T5, panel 1: in customers, ⌘⌫ then ⌫ on id: the column and its key go in one step, Undo Delete Column and 1 Arrow; orders.customer_id is plain") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

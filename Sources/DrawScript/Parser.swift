@@ -447,8 +447,13 @@ struct LineParser {
             if ShapeName.isID(id) {
                 at += 1
                 let row = String(first.text[first.text.index(after: dot)...])
-                guard !row.isEmpty else {
-                    throw error("\(first.raw) ends in a dot, and a row's name follows it", hint: "write \(ShapeName.id(id).written)\(ShapeName.writtenRow("id"))")
+                if row.isEmpty {
+                    // A name that isn't a plain word follows the dot quoted, as after a title: `#…."POST /x"`.
+                    guard let quoted = peek(), quoted.kind == .quoted else {
+                        throw error("\(first.raw) ends in a dot, and a row's name follows it", hint: "write \(ShapeName.id(id).written)\(ShapeName.writtenRow("id"))")
+                    }
+                    at += 1
+                    return (.id(id), try title(quoted))
                 }
                 return (.id(id), row)
             }

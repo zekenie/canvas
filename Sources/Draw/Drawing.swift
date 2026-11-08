@@ -194,7 +194,7 @@ struct Drawing {
     private var looseConnections: [ShapeID: [AnyShapeRecord]] = [:]
 
     private(set) var deletes: [DeleteItem] = []
-    /// The rows `delete "X".row` takes out, by shape, each with its statement, in script order: taken out after the shapes
+    /// The rows `delete "X".row` takes out, one entry for each statement, in script order: taken out after the shapes
     /// are written (a statement may restate the shape too), and what they take along with them (keys) goes in the same step.
     private(set) var rowDeletes: [(statement: Statement, shape: ShapeID, parts: Set<PartID>)] = []
     /// The line each row deleted is deleted on, for an edge that names it.
@@ -574,6 +574,9 @@ struct Drawing {
             case .title(let written):
                 let title = try folded(written, statement)
                 guard let found = try boardShape(called: title, statement) else {
+                    if deletes.contains(where: { $0.shape.flatMap(names.name(of:)) == title }) {
+                        throw DrawError(statement, .duplicate, "\(quoted(title)) is deleted, and so its rows are", hint: "leave \(Keyword.delete.rawValue) \(quoted(title))\(ShapeName.writtenRow(row)) out")
+                    }
                     let guesses = Suggestions.closest(to: title, among: names.ordered)
                     throw DrawError(statement, .unknownTitle, "there's no shape called \(quoted(title)) to delete a row of",
                                     hint: guesses.isEmpty ? nil : "did you mean \(listed(guesses.map(quoted), or: true))?")
@@ -585,6 +588,9 @@ struct Drawing {
                 let named = resolution.here.compactMap { target.document[$0.id] }
                 if named.count > 1 { throw ambiguous(path.written, named.map(ShapeItem.Found.shape), statement) }
                 guard let found = named.first else {
+                    if resolution.deleted {
+                        throw DrawError(statement, .duplicate, "\(path.written) is deleted, and so its rows are", hint: "leave \(Keyword.delete.rawValue) \(path.written)\(ShapeName.writtenRow(row)) out")
+                    }
                     throw pathNotFound(resolution, statement, for: Keyword.delete.rawValue, elsewhere: false, suffix: " to delete a row of")
                 }
                 (record, said) = (found, path.written)
@@ -599,14 +605,17 @@ struct Drawing {
             }
             let part = try self.part(named: row, of: record, said: said, statement)
             try writable(record, statement, said, so: "its rows can't be deleted")
-            rowDeleteLines[PartAddress(record.id, part: part)] = rowDeleteLines[PartAddress(record.id, part: part)] ?? statement.line
-            if let at = rowDeletes.firstIndex(where: { $0.shape == record.id }) {
-                guard rowDeletes[at].parts.insert(part).inserted else {
-                    throw DrawError(statement, .duplicate, "\(said)\(ShapeName.writtenRow(row)) is deleted twice", hint: "delete it once")
-                }
-            } else {
-                rowDeletes.append((statement, record.id, [part]))
+            // A kind that lists rows but can't take one out by id (`PartedShape.removing`) is refused here, not at the commit.
+            guard registry.removing([part], from: record) != nil else {
+                throw DrawError(statement, .unsupported, "\(said) is \(indefinite(record.kind)), whose rows draw can't delete",
+                                hint: "delete the shape, or change its rows by hand")
             }
+            if let line = rowDeleteLines[PartAddress(record.id, part: part)] {
+                throw DrawError(statement, .duplicate, "\(said)\(ShapeName.writtenRow(row)) is deleted twice, on line \(line) and here", hint: "delete it once")
+            }
+            rowDeleteLines[PartAddress(record.id, part: part)] = statement.line
+            // One entry for each statement, so a row and its keys are said on the line that took them.
+            rowDeletes.append((statement, record.id, [part]))
         case .shape(let name):
             // What the shape is called in a message, and what the statement is called in the one a stand-in's retiring says.
             let record: AnyShapeRecord, said: String, deleting: String
@@ -653,6 +662,12 @@ struct Drawing {
             if boards.contains(where: { file[$0].shapes.contains(where: registry.isReadOnly) }) {
                 throw DrawError(statement, .readOnly, "\(said) holds a read-only shape (locked, say) on its board, so it can't be deleted",
                                 hint: "leave it out of the script, or ask the user to unlock what's on its board")
+            }
+            // A row of it (or of a shape on a board it owns) deleted by an earlier line: the shape takes its rows along.
+            let taken = Set([record.id] + boards.flatMap { file[$0].shapes.map(\.id) })
+            if let rows = rowDeletes.first(where: { taken.contains($0.shape) }) {
+                throw DrawError(statement, .duplicate, "\(said) is deleted, and so are the rows of \(quoted(target.document[rows.shape].flatMap(names.name(of:)) ?? "it")) deleted on line \(rows.statement.line)",
+                                hint: "leave the row delete or this one out")
             }
             let attached = connections.filter { ($0.from == record.id || $0.to == record.id) && !deleted.contains($0.record.id) }
             let loose = (looseConnections[record.id] ?? []).filter { !deleted.contains($0.id) }
@@ -803,7 +818,13 @@ struct Drawing {
         guard let parts = registry.parts(of: record) else {
             throw DrawError(statement, .unknownRow, "\(said) is \(indefinite(record.kind)), which has no rows", hint: "name a row of a shape that has them, as \"orders\".customer_id")
         }
-        if let exact = parts.first(where: { $0.name == row }) { return exact.id }
+        let exact = parts.enumerated().filter { $0.element.name == row }
+        if exact.count == 1 { return exact[0].element.id }
+        if exact.count > 1 {
+            let places = exact.map { String($0.offset + 1) }
+            throw DrawError(statement, .ambiguousTitle, "\(said) has \(exact.count) rows called \(quoted(row)), the \(listed(places)) from the top",
+                            hint: "rename one of them first, so each row has a name of its own")
+        }
         let folded = fold(row)
         let alike = parts.filter { fold($0.name) == folded }
         if alike.count == 1 { return alike[0].id }
