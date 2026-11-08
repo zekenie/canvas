@@ -183,7 +183,7 @@ private func at(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat)
         expectEqual(y.maxY, 460, "slid up to the inset")
         expectEqual(messages(result), [#""Y" was slid up to stay inside "Pen""#])
     },
-    test("in a pen, a shape too tall for it on the free axis is still no_room, and one a slide would put on a sibling is pushed as before") {
+    test("in a pen, a shape too tall for it on the free axis is still no_room, and one that just fits slides to the inset") {
         let editor = try penEditor()
         _ = pen("Pen", CGRect(x: 0, y: 0, width: 800, height: 400), in: editor)
         _ = try drawn(#"tile "A" in "Pen""#, on: editor)
@@ -191,23 +191,45 @@ private func at(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat)
         expectEqual(tall.reason, "no_room")
         expectEqual(tall.message, #""T" is in "Pen", and there's no room left in "Pen""#)
         expectEqual(editor.document.shapes.count, 2, "nothing drawn")
-        // Fits exactly (400 - 80 = 320), so slides to the inset; a sibling already under that spot is pushed past, as without the slide.
-        _ = try drawn(#"tile "S" in "Pen" below "A" (gap: normal) size: 120x80"#, on: editor)
+        // Fits exactly (400 - 80 = 320): slides to the inset.
         let fits = try drawn(#"tile "F" in "Pen" right of "A" size: 120x320"#, on: editor)
         let f = try require(shape("F", in: editor)).box ?? .zero
         expectEqual(f.minY, 40)
-        expect(messages(fits).contains(#""F" was slid down to stay inside "Pen""#), "\(messages(fits))")
+        expectEqual(messages(fits), [#""F" was slid down to stay inside "Pen""#])
     },
-    test("in a pen, a slid shape that lands on a sibling is kept clear of it as any shape is: it ends inside the pen and off the sibling") {
+    test("in a pen, two shapes of different widths below one sibling, in one script, slide into it together: the wider one in, the other still centered under it") {
+        let editor = try penEditor()
+        _ = pen("Pen", CGRect(x: 0, y: 0, width: 800, height: 700), in: editor)
+        let script = """
+        tile "A" in "Pen"
+        tile "B1" in "Pen" below "A" size: 100x40
+        tile "B2" in "Pen" below "A" size: 200x40
+        """
+        let result = try drawn(script, on: editor)
+        let b1 = try require(shape("B1", in: editor)).box ?? .zero, b2 = try require(shape("B2", in: editor)).box ?? .zero
+        expectEqual(b2.minX, 40, "the wide one at the inset: centered on A it would start at 0")
+        expectEqual(b1.midX, b2.midX, "the list stays one column")
+        expect(b1.minY > 120 && b2.minY > b1.maxY, "below A, B2 under B1: \(b1) \(b2)")
+        expectEqual(messages(result), [#""B2" was slid right to stay inside "Pen""#])
+    },
+    test("in a pen, a slid shape that lands on a sibling is kept clear of it as any shape is: slid first, then pushed past it, both said, and the same script drawn again leaves it unchanged") {
         let editor = try penEditor()
         _ = pen("Pen", CGRect(x: 0, y: 0, width: 800, height: 700), in: editor)
         _ = try drawn(#"tile "A" in "Pen""#, on: editor)
-        _ = try drawn(#"tile "S" in "Pen" right of "A" size: 120x80"#, on: editor)
-        let result = try drawn(#"tile "R" in "Pen" right of "A" size: 120x300"#, on: editor)
-        let s = try require(shape("S", in: editor)).box ?? .zero, r = try require(shape("R", in: editor)).box ?? .zero
-        expect(r.minY >= 40 && r.maxY <= 660, "inside the pen: \(r)")
-        expect(!r.intersects(s), "off S: \(r) \(s)")
-        expect(messages(result).contains { $0.contains("\"R\"") }, "\(messages(result))")
+        _ = try drawn(#"tile "S" in "Pen" right of "A" (gap: tight) size: 120x80"#, on: editor)
+        let s = try require(shape("S", in: editor)).box ?? .zero
+        expectEqual(s, CGRect(x: 200, y: 40, width: 120, height: 80))
+        let script = #"tile "R" in "Pen" right of "A" size: 120x300"#
+        let result = try drawn(script, on: editor)
+        let r = try require(shape("R", in: editor)).box ?? .zero
+        expectEqual(r, CGRect(x: 360, y: 40, width: 120, height: 300), "slid down to the inset, then right past S")
+        expectEqual(messages(result), [#""R" was slid down to stay inside "Pen""#,
+                                      #""R" was pushed right past "S" to keep clear of it, so it no longer sits against "A" — place it on another side, or say overlap: allow"#])
+        // An agent redraws the same script: the shape is where it was.
+        let again = try drawn(script, on: editor)
+        expectEqual(rows(again).first?["did"], "unchanged")
+        expectEqual(try require(shape("R", in: editor)).box, r)
+        expectEqual(messages(again), messages(result))
     },
     test("a shape in the pen restated stays where it is; one elsewhere restated in it moves in, against its top-left") {
         let editor = try penEditor()

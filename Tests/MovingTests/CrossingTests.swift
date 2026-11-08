@@ -182,6 +182,115 @@ private struct Shoal {
         h.editor.undo()
         try expectFile(h, before, "as it was")
     },
+    test("the end moves with a corral that is where the relay would land: the relay stays on the origin, not in the corral that goes, and the arrow keeps it") {
+        let f = ShapeID(), n = ShapeID(), s = Shoal(), x = ShapeID()
+        // X stays, its link to N in the corral; the relay for N would land right of X, 80 off, where the corral is.
+        let file = CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), box(x, 0, 300), corral(f, at(180, 200, 300, 300)), box(n, 220, 300, in: f), link(s.l, x, n)]),
+                              children: [s.p: CanvasDocument()])
+        let h = try crossingHarness(file)
+        let before = h.file
+        expect(h.run("move-to", on: f, with: s.p))
+        expectEqual(h.file.board(containing: n), s.pBoard, "carried")
+        expectEqual(h.file.board(containing: s.l), .root, "the arrow stays with its start")
+        let pill = try require(h.relays(on: .root).first, "a relay on the origin")
+        expectEqual(h.relays(on: .root).count, 1)
+        expectEqual(h.relays(on: s.pBoard).count, 0, "none went with the corral")
+        expectEqual(h.stands(pill.id), [n])
+        expectEqual(h.ends(of: s.l).from, x)
+        expectEqual(h.ends(of: s.l).to, pill.id, "the end is the relay")
+        expectEqual(h.file.record(pill.id)?.container, nil, "in no corral")
+        h.editor.undo()
+        try expectFile(h, before, "as it was")
+    },
+    test("the relays made for a shape moved into a corral do not decide where it lands: it is in the corral, however many arrows need one") {
+        let q = ShapeID(), s = Shoal()
+        let stayers = (0..<6).map { _ in ShapeID() }, links = (0..<6).map { _ in ShapeID() }
+        let root = [pocket(s.p, 0, 0), box(s.a, 400, 0)] + stayers.enumerated().map { box($1, 700, CGFloat($0) * 150) }
+            + zip(links, stayers).map { link($0, s.a, $1) }
+        let h = try crossingHarness(CanvasFile(root: CanvasDocument(shapes: root), children: [s.p: CanvasDocument(shapes: [corral(q, at(100, 100, 150, 150))])]))
+        let before = h.file
+        expect(h.run("move-to", on: s.a, with: q))
+        expectEqual(h.file.record(s.a)?.container, q, "in the corral it was moved into")
+        expectEqual(h.file.board(containing: s.a), s.pBoard)
+        expectEqual(h.relays(on: s.pBoard).count, 6, "one for each shape that stays")
+        for id in links { expectEqual(h.file.board(containing: id), s.pBoard) }
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+        h.editor.undo()
+        try expectFile(h, before, "as it was")
+    },
+    test("/move-near onto a shape of another board takes the same path: the arrow goes with its start, and its end is a relay beside it") {
+        let s = Shoal(), x = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), box(s.a, 400, 0), box(s.b, 400, 300), link(s.l, s.a, s.b)]),
+                              children: [s.p: CanvasDocument(shapes: [box(x, 100, 400)])])
+        let h = try crossingHarness(file)
+        let before = h.file
+        expect(h.run("move-near", on: s.a, with: x))
+        expectEqual(h.file.board(containing: s.a), s.pBoard)
+        expectEqual(h.file.board(containing: s.l), s.pBoard, "the arrow went with its start")
+        let pill = try require(h.relays(on: s.pBoard).first)
+        expectEqual(h.stands(pill.id), [s.b])
+        expectEqual(h.ends(of: s.l).to, pill.id)
+        expectEqual(h.relays(on: .root).count, 0)
+        expectEqual(h.editor.undoHistory.undoName, "Move")
+        h.editor.undo()
+        try expectFile(h, before, "both boards as they were")
+    },
+    test("the shape that moves is closed to relays: the arrow that stays lets go of it, and nothing is made") {
+        let s = Shoal()
+        let h = try crossingHarness(CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), closed(box(s.a, 400, 0)), box(s.b, 400, 300), link(s.l, s.b, s.a)]),
+                                               children: [s.p: CanvasDocument()]))
+        let before = h.file
+        expect(h.run("move-to", on: s.a, with: s.p))
+        expectEqual(h.file.board(containing: s.a), s.pBoard)
+        expectEqual(h.file.board(containing: s.l), .root, "the arrow stays")
+        expectEqual(h.ends(of: s.l).from, s.b)
+        expectEqual(h.ends(of: s.l).to, nil, "its end is free")
+        expectEqual(h.relays(on: .root).count + h.relays(on: s.pBoard).count, 0)
+        expectEqual(h.file.record(s.a)?.meta[Closed.self], true, "still closed")
+        h.editor.undo()
+        try expectFile(h, before, "as it was")
+    },
+    test("a relay that would sit in a frame nobody may change is not made: the arrow lets go, and the move goes on") {
+        let g = ShapeID(), x = ShapeID(), s = Shoal()
+        let file = CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), corral(g, at(-40, 240, 400, 220)), box(x, 0, 300, in: g), box(s.a, 600, 0), link(s.l, x, s.a)]),
+                              children: [s.p: CanvasDocument()])
+        let h = try crossingHarness(file)
+        h.freeze([g])
+        expect(h.run("move-to", on: s.a, with: s.p))
+        expectEqual(h.file.board(containing: s.a), s.pBoard, "the move goes on")
+        expectEqual(h.relays(on: .root).count + h.relays(on: s.pBoard).count, 0, "no relay in the frozen frame")
+        expectEqual(h.ends(of: s.l).to, nil, "the end is free")
+    },
+    test("an arrow whose end moves, dropped from the outline of a board that isn't shown: the arrow stays, its end a relay on the origin, and Undo is exact") {
+        let s = Shoal(), q = ShapeID()
+        let file = CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), pocket(q, 0, 400)]),
+                              children: [s.p: CanvasDocument(shapes: [box(s.a, 400, 0), box(s.b, 400, 300), link(s.l, s.b, s.a)]), q: CanvasDocument()])
+        let h = try droppingCrossingHarness(file)
+        let before = h.file
+        expect(h.drop([s.a], on: q, .on))
+        expectEqual(h.file.board(containing: s.a), BoardID(owner: q))
+        expectEqual(h.file.board(containing: s.l), s.pBoard, "the arrow stays with its start")
+        let pill = try require(h.relays(on: s.pBoard).first)
+        expectEqual(h.relays(on: s.pBoard).count, 1)
+        expectEqual(h.stands(pill.id), [s.a])
+        expectEqual(h.ends(of: s.l).to, pill.id)
+        expectEqual(h.relays(on: .root).count + h.relays(on: BoardID(owner: q)).count, 0)
+        h.editor.undo()
+        try expectFile(h, before, "the three boards as they were")
+    },
+    test("a relay for the same shape in another corral than the one the start lands in is not reused: a new one is made there") {
+        let c = ShapeID(), r = ShapeID(), s = Shoal()
+        let file = CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), box(s.a, 400, 0), box(s.b, 400, 300), link(s.l, s.a, s.b)]),
+                              children: [s.p: CanvasDocument(shapes: [corral(c, at(500, 500, 300, 150)), relay(r, at(520, 520, 100, 40), stands: s.b, in: c)])])
+        let h = try crossingHarness(file)
+        expect(h.run("move-to", on: s.a, with: s.p))
+        expectEqual(h.relays(on: s.pBoard).count, 2, "the corral's relay stays, and the start gets its own")
+        let used = try require(h.ends(of: s.l).to)
+        expect(used != r, "not the one in the corral")
+        expectEqual(h.stands(used), [s.b])
+        expectEqual(h.file.record(used)?.container, nil)
+        expectEqual(h.file.record(r)?.container, c)
+    },
     test("an arrow from a shape on a board that isn't shown, dropped from that board's outline onto another: kept through a relay, and undone exactly") {
         let s = Shoal(), q = ShapeID()
         let file = CanvasFile(root: CanvasDocument(shapes: [pocket(s.p, 0, 0), pocket(q, 0, 400)]),

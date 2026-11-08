@@ -14,7 +14,7 @@ paths:
 
 Mentions: mentionable kinds, mention text and its stored form, scopes, mention edges, `MentionState`, pills on the canvas and in text, the `@` picker (its matching by name and by path) and its lines (a candidate and where it is), layout by names (an arrow's label), mention text in the panel, what mentions a shape (the quote and Show What Mentions), and mentions' warnings.
 
-Related: [fuzzy matching](fuzzy-matching.md), [topology](topology.md), [arrows](arrows.md), [titles](titles.md), [validation](validation.md), [text editing](text-editing.md), [slash commands](slash-commands.md), [detail panel](detail-panel.md), [table of contents](table-of-contents.md), [context menus](context-menus.md), [selection](selection.md), [jump to](jump-to.md), [neighbors](neighbors.md), [shape references](shape-references.md), [boards in a file](boards-in-a-file.md), [queries](queries.md), [command line](command-line.md), [types](types.md) ([every topic](../../CLAUDE.md#map)).
+Related: [fuzzy matching](fuzzy-matching.md), [topology](topology.md), [arrows](arrows.md), [titles](titles.md), [validation](validation.md), [text editing](text-editing.md), [slash commands](slash-commands.md), [detail panel](detail-panel.md), [table of contents](table-of-contents.md), [context menus](context-menus.md), [selection](selection.md), [jump to](jump-to.md), [neighbors](neighbors.md), [shape references](shape-references.md), [boards in a file](boards-in-a-file.md), [queries](queries.md), [command line](command-line.md), [types](types.md), [connections](connections.md) ([every topic](../../CLAUDE.md#map)).
 
 In the guide, `docs/plugin-system.md`: [Mentions](../../docs/plugin-system.md#mentions), [Mentions across boards](../../docs/plugin-system.md#mentions-across-boards).
 

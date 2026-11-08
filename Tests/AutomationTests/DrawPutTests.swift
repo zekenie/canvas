@@ -27,6 +27,14 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
     editor.file.everyBoard.reduce(0) { $0 + editor.file[$1].shapes.filter { $0.kind == Tile.kind }.count }
 }
 
+/// Puts a pen on the board, labeled, holding `held`.
+@MainActor private func pen(_ label: String, _ frame: CGRect, holding held: [ShapeID], in editor: CanvasEditor) -> ShapeID {
+    let record = AnyShapeRecord(ShapeRecord(Pen(frame, label: label)))
+    editor.transact { $0.insert(record) }
+    editor.transact { $0.setContainer(held, to: record.id) }
+    return record.id
+}
+
 @MainActor let drawPutTests = Suite("put: a program's shapes put down by a person", [
     test("a title finds the shape of that kind the board shown has, not the one on another board; the board shown's first, then the file's order") {
         let n = Nest(), editor = try n.editor()
@@ -45,6 +53,44 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         expectEqual(twin, [], "on another board: restated there, and not a shape of the board shown")
         expectEqual(finish(of: n.pTwin, in: editor), .glossy, "the first in the file's order")
         expectEqual(finish(of: n.twin, in: editor), .matte)
+    },
+    test("of two shapes called alike on the board shown, the one in the container the block lands in wins over the one outside it, either order in the file") {
+        for anchorInside in [true, false] {
+            let editor = try drawEditor([pens])
+            // The one that should lose is first in the file's order, so the order alone would pick it.
+            let outside = tile("Hub", CGRect(x: 900, y: 0, width: 100, height: 60), in: editor)
+            let inside = tile("Hub", CGRect(x: 40, y: 40, width: 100, height: 60), in: editor)
+            let anchor = tile("Anchor", CGRect(x: 40, y: 140, width: 100, height: 60), in: editor)
+            let outsideAnchor = tile("Far", CGRect(x: 900, y: 400, width: 100, height: 60), in: editor)
+            _ = pen("Pen", CGRect(x: 0, y: 0, width: 400, height: 300), holding: [inside.id, anchor.id], in: editor)
+            let landed = try put(one("Hub", "glossy"), at: .beside([anchorInside ? anchor.id : outsideAnchor.id]), in: editor)
+            expectEqual(landed, [anchorInside ? inside.id : outside.id], anchorInside ? "the one in the pen the anchor is in" : "the one outside it, the anchor being outside")
+            expectEqual(tileCount(editor), 4, "restated, nothing made")
+        }
+    },
+    test("a title written twice in one put is one shape: made once when the file has none, restated once when it has one, its values joined; never two, never a refusal") {
+        let editor = try drawEditor()
+        let landed = try put(tiles([[("Twin", nil), ("Twin", "glossy")]]), at: .beside([]), in: editor)
+        expectEqual(landed.count, 1, "one shape")
+        expectEqual(tileCount(editor), 1)
+        expectEqual(finish(of: landed[0], in: editor), .glossy, "the later statement's values joined the first's")
+        // Now the file has it: both statements name it.
+        let again = try put(tiles([[("Twin", "matte"), ("Twin", "glossy")]]), at: .beside([]), in: editor)
+        expectEqual(again, landed, "the shape the file has, restated once")
+        expectEqual(tileCount(editor), 1)
+        expectEqual(finish(of: landed[0], in: editor), .matte, "a key both write keeps the first's")
+    },
+    test("a match that cannot be changed is no match for a statement that gives it values: a new shape is made, never a refusal; with no values it is found") {
+        let editor = try drawEditor([FreezingPlugin()])
+        let locked = tile("Held", CGRect(x: 0, y: 0, width: 100, height: 60), in: editor)
+        editor.freeze([locked.id], true)
+        let landed = try put(one("Held", "glossy"), at: .beside([]), in: editor)
+        expectEqual(landed.count, 1)
+        expect(landed != [locked.id], "a new shape beside it")
+        expectEqual(tileCount(editor), 2)
+        expectEqual(finish(of: locked.id, in: editor), .matte, "the locked one as it was")
+        _ = try put(one("Held"), at: .beside([]), in: editor)
+        expectEqual(tileCount(editor), 2, "a statement with no values finds one of the two, and makes nothing")
     },
     test("a shape of another kind with the title is no match: a new shape is made, never a refusal") {
         let n = Nest(), editor = try n.editor()

@@ -81,6 +81,9 @@ public struct CrossingArrows {
         public let placed: Set<ShapeID>
         fileprivate let later: [Repoint]
         fileprivate let carriers: Set<ShapeID>
+        /// The new pills that stay on the origin (for an arrow whose end moves): put down by the in-or-out rule once the shapes
+        /// have gone, so a container that moves cannot take one with it.
+        fileprivate let staying: [ShapeID]
         fileprivate let source: BoardID
         fileprivate let destination: BoardID
         fileprivate let registry: Registry
@@ -93,6 +96,7 @@ public struct CrossingArrows {
                 CrossingArrows.repoint(each, from: each.carrier, to: after, on: destination, in: &transaction, registry: registry)
             }
             if !carriers.isEmpty { transaction.delete(carriers, on: destination) }
+            if !staying.isEmpty { _ = transaction.settle(staying, on: source) }
         }
     }
 
@@ -121,13 +125,12 @@ public struct CrossingArrows {
                 staying.append(id)
             }
         }
-        if !staying.isEmpty { _ = transaction.settle(staying, on: source) }
         var later: [Repoint] = []
         for each in repoints where !failed.contains(each.carrier) {
             Self.repoint(each, from: each.old, to: each.carrier, on: source, in: &transaction, registry: registry)
             if each.after != nil { later.append(each) }
         }
-        return Rebound(along: along, placed: placed, later: later, carriers: carriers, source: source, destination: destination, registry: registry)
+        return Rebound(along: along, placed: placed, later: later, carriers: carriers, staying: staying, source: source, destination: destination, registry: registry)
     }
 
     /// The arrow on `board` with the end bound to `old` bound to `new` instead (`remappingReferences`: the anchor stays), as the
@@ -168,6 +171,9 @@ public struct CrossingArrows {
         private var planned: [BoardID: [CGRect]] = [:]
         private var sourceIndex: StandInRoute.Index?
         private var destPills: [ShapeID: [ShapeID]]?
+        private var destContainers: [(ShapeID, CGRect)]?
+        /// The container each start lands in on the destination (nil: none), by start.
+        private var finalContainers: [ShapeID: ShapeID?] = [:]
         private var sourceSide: Surroundings?
         private var destSide: Surroundings?
         private var movedBoxes: [CGRect]?
@@ -261,16 +267,27 @@ public struct CrossingArrows {
 
         /// Where the start will be container-wise once it lands: its own container if that moves with it, else the container of the
         /// destination its middle lands in.
-        private func finalContainer(of start: ShapeID) -> ShapeID? {
+        private mutating func finalContainer(of start: ShapeID) -> ShapeID? {
             guard !kinds.isEmpty else { return nil }
             if let held = sourceDoc[start]?.container, movers.contains(held) { return held }
+            if let known = finalContainers[start] { return known }
             guard let box = finalBox(of: start) else { return nil }
             let middle = CGPoint(x: box.midX, y: box.midY)
             var found: ShapeID?
-            for record in destDoc.shapes where editor.registry.isContainer(record) {
-                if let frame = editor.frame(inFile: record.id) ?? record.box, frame.contains(middle) { found = record.id }
-            }
+            for (id, frame) in destinationContainers() where frame.contains(middle) { found = id }
+            finalContainers[start] = .some(found)
             return found
+        }
+
+        /// The destination's containers and their frames, in order, read once however many arrows ask.
+        private mutating func destinationContainers() -> [(ShapeID, CGRect)] {
+            if let destContainers { return destContainers }
+            let made = destDoc.shapes.compactMap { record -> (ShapeID, CGRect)? in
+                guard editor.registry.isContainer(record), let frame = editor.frame(inFile: record.id) ?? record.box else { return nil }
+                return (record.id, frame)
+            }
+            destContainers = made
+            return made
         }
 
         private func isReadOnly(_ id: ShapeID, in document: CanvasDocument) -> Bool {

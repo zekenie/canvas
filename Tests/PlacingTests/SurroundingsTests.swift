@@ -85,6 +85,18 @@ private let hundred = CGSize(width: 100, height: 100)
         expect(landing?.above.contains(k) ?? false, "above the corral")
     },
 
+    test("beside a shape at a corral's top inset, a taller box slides down to the inset on the side it would have crossed it, so that side is still the nearest: right of it, 80 away") {
+        let k = ShapeID(), x = ShapeID()
+        let h = try harness(corral(k, at(0, 0, 800, 600)), box(x, 40, 40, in: k))
+        let tall = CGSize(width: 100, height: 300)
+        let landing = Surroundings(on: .root, moving: tall, in: h.editor)?.near(x, within: k)
+        expectEqual(landing?.rect, at(220, 40, 100, 300), "right of it, its top at the inset (centered on it, it would start 60 above the corral)")
+        expect(landing?.above.contains(k) ?? false, "above the corral")
+        // Too tall for the corral to hold on that axis: that side is passed over, as a side the solver can't place always is.
+        let tooTall = Surroundings(on: .root, moving: CGSize(width: 100, height: 560), in: h.editor)?.near(x, within: k)
+        expect(tooTall != nil && tooTall?.rect != at(220, 40, 100, 560), "not right of it: \(String(describing: tooTall?.rect))")
+    },
+
     test("inside a corral: 40 in from its top-left, pushed clear of what it holds, and raised above it") {
         let k = ShapeID(), b = ShapeID()
         let h = try harness(corral(k, at(100, 100, 600, 400)), box(b, 140, 140, in: k))

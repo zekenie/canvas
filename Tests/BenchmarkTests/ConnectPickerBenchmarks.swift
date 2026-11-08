@@ -47,10 +47,16 @@ extension Budget {
                 let ms = median(runs: 21, prepare: { picker.setQuery(before) }, onThread: true) { picker.setQuery(query) }
                 if ms > worst.ms { worst = (query, ms) }
             }
+            // The first keystroke after a commit asks the verdicts of everything it matches again (the set is judged anew a commit).
+            var renamed = 0
+            let afterCommit = median(runs: 11, prepare: {
+                renamed += 1
+                editor.transact("Rename") { $0.update(source) { $0[TitleProperty.self] = "Renamed \(renamed)" } }
+            }, onThread: true) { picker.setQuery("a") }
             picker.setQuery("archive 4")
             expect(picker.rows.contains { if case .shape = $0 { true } else { false } }, "the notes of the other board")
-            report(String(format: "%6d shapes, 500 notes on another board, ⌘L's picker: first opened %6.3f ms, then %6.3f ms, the slowest keystroke %6.3f ms (\"%@\") (budget %.0f)",
-                          size, first, opening, worst.ms, worst.query, Budget.connectPickerKeystroke))
+            report(String(format: "%6d shapes, 500 notes on another board, ⌘L's picker: first opened %6.3f ms, then %6.3f ms, the slowest keystroke %6.3f ms (\"%@\") (budget %.0f), the first after a commit %6.3f ms",
+                          size, first, opening, worst.ms, worst.query, Budget.connectPickerKeystroke, afterCommit))
             if holdsToBudgets {
                 expect(opening < Budget.connectPickerKeystroke, "opening ⌘L's picker over \(size) shapes took \(opening) ms")
                 expect(worst.ms < Budget.connectPickerKeystroke, "a keystroke in ⌘L's picker (\(worst.query)) over \(size) shapes took \(worst.ms) ms")

@@ -59,8 +59,14 @@ public final class ConnectPickerHost {
     public func canOpen(on shape: ShapeID) -> Bool { ConnectPicker.reach(of: shape, in: editor) != nil }
 
     /// Opens it on `shape`, under it, brought into view first if it isn't (as a nudge does, so what the key acts on shows), in
-    /// place of another card, which closes `.replaced`. A shape it has nothing to pick for shakes.
+    /// place of another card, which closes `.replaced`. A shape it has nothing to pick for shakes. Opened on the shape it already
+    /// shows for, it does nothing (⌘L pressed in its field: the field keeps the keyboard and what's typed); on another it is taken
+    /// down first, so its field and its list go with it.
     public func open(on shape: ShapeID) {
+        if let shown {
+            if shown.picker.source == shape { return }
+            close()
+        }
         guard let picker = ConnectPicker(editor: editor, source: shape) else {
             editor.refuseChanges(to: [shape])
             return
@@ -68,13 +74,17 @@ public final class ConnectPickerHost {
         editor.revealIfOffscreen([shape])
         guard let anchor = anchor(of: shape) else { return }
         let field = ConnectPickerTextView(picker: picker)
-        field.onEscape = { [weak self] in self?.close() }
-        field.onLeave = { [weak self] in self?.close() }
-        field.pick = { [weak self] row in self?.pick(row: row) }
-        field.closeByList = { [weak self] in self?.close() }
+        // Each acts only while its own field is the picker's: a field being taken down is not heard as the one that replaced it.
+        field.onEscape = { [weak self, weak field] in self?.close(ifFieldIs: field) }
+        field.onLeave = { [weak self, weak field] in self?.close(ifFieldIs: field) }
+        field.pick = { [weak self, weak field] row in
+            guard let self, self.shown?.field === field else { return }
+            self.pick(row: row)
+        }
+        field.closeByList = { [weak self, weak field] in self?.close(ifFieldIs: field) }
         let name = editor.accessibleDescription(of: shape)?.name ?? ""
         let view = ConnectPickerView(field: field)
-        let card = CanvasCard(id: ConnectPickerCard(), anchor: anchor, view: view, firstResponder: field, showsZoomedOut: true,
+        let card = CanvasCard(id: ConnectPickerCard(), about: shape, anchor: anchor, view: view, firstResponder: field, showsZoomedOut: true,
                               accessibilityLabel: ConnectionsStyle.cardLabel(name),
                               size: { room in CGSize(width: min(ConnectionsStyle.pickerFieldWidth, room.width), height: ConnectionsStyle.pickerFieldHeight) },
                               didClose: { [weak self, weak field] reason in self?.didClose(field, reason) })
@@ -96,11 +106,18 @@ public final class ConnectPickerHost {
         }
     }
 
-    private func didClose(_ field: ConnectPickerTextView?, _ reason: CanvasCardClosing) {
+    private func close(ifFieldIs field: ConnectPickerTextView?) {
         guard let field, field === shown?.field else { return }
+        close()
+    }
+
+    private func didClose(_ field: ConnectPickerTextView?, _ reason: CanvasCardClosing) {
+        guard let field else { return }
+        // Its list goes with it whichever picker is the current one, and why it closed is said either way.
         field.detachList()
-        shown = nil
         lastClosing = reason
+        guard field === shown?.field else { return }
+        shown = nil
     }
 
     /// A pick of a row, as Return on it is: it closes first, so the connection is made from the canvas as from a key, then what the pick means is done
@@ -139,10 +156,11 @@ public final class ConnectPickerHost {
 }
 
 extension ConnectPickerHost: EditorService {
-    /// A commit changed what it lists or moved the shape: the list is made again for what's typed, and it follows the shape.
+    /// A commit changed what it lists or moved the shape: the list is made again for what's typed, the highlight staying on its shape,
+    /// and it follows the shape.
     public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
         guard let shown, editor.card?.id == AnyHashable(ConnectPickerCard()) else { return }
-        shown.picker.setQuery(shown.field.string)
+        shown.picker.relistAfterCommit(shown.field.string)
         if let anchor = anchor(of: shown.picker.source) { editor.moveCard(to: anchor) }
     }
 }

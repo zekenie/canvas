@@ -329,7 +329,7 @@ let package = Package(
         .target(name: "Types", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Colors", "ContextMenus", "DetailPanel", "Draw", "Find", "LanguageModels", "Mentions", "Neighbors", "Palette", "ProseMaps", "Queries", "Selection", "SlashCommands", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         // References: a pill that stands for any public shape, of a kind written after it too: what every shape gets, though it is a kind.
         .target(name: "References", dependencies: ["Boards", "Canvas", "CanvasRPC", "Chrome", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Palette", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: platform
-        // Things you do: a palette, a command, a gesture, that no kind opts into and nothing builds on.
+        // Things you do: a palette, a command, a gesture, that no kind opts into and nothing builds on (but Clipboard, whose paste readers a plugin may import it for).
         .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Draw", "Geometry", "Grouping", "Keyboard", "Selection"]), // layer: platform
         .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: platform
         // Jump To (⌘K): it lists

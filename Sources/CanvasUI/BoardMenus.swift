@@ -566,7 +566,7 @@ final class MenuBar: NSMenu {
                 menu.performActionForItem(at: index)
                 return true
             }
-            // AppKit's own matching hands Return to an item that names ⇧↩ (Insert › Note), which would put a note down
+            // AppKit's own matching hands Return to an item that names ⇧↩ (Insert › New Shape Beside), which would put a note down
             // where Return opens the selection: an item that names the key with other modifiers takes it from none.
             if let key = typed, key.count == 1, typedItem(key.first!, nil, in: self) != nil { return false }
         }

@@ -85,9 +85,12 @@ public enum KeyMeanings {
     public static let exceptions: [Exception] = [
         Exception(id: "canvas-tab", keys: [.tab, .backTab], place: "the canvas", means: "the next and previous shape",
                   reason: "shapes are the canvas's stops: from a shape's part, Tab goes on to the next shape, a level out"),
-        Exception(id: "completing-list-tab", keys: [.tab, .backTab], place: "a list that completes typed text (@, /, completions, Jump To, ⌘L's picker)",
+        Exception(id: "completing-list-tab", keys: [.tab, .backTab], place: "a list that completes typed text (@, /, completions, Jump To)",
                   means: "Tab picks the highlighted row, and with none closes the list and moves on; ⇧Tab closes and moves on",
                   reason: "the list completes what is typed, as a shell's and a code editor's do"),
+        Exception(id: "connect-picker-tab", keys: [.tab, .backTab], place: "⌘L's picker",
+                  means: "Tab picks the highlighted row, and with none moves nothing; ⇧Tab moves the highlight up",
+                  reason: "the picker is modal, as the command bar is: its list stays open whatever is pressed, and Escape leaves it"),
         Exception(id: "note-picker-tab", keys: [.tab], place: "a note picker", means: "Tab never picks",
                   reason: "a pick draws an arrow, too much for a key that moves on"),
         Exception(id: "command-bar-tab", keys: [.tab], place: "the command bar", means: "with nothing to complete, Tab moves nothing",

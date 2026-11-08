@@ -48,6 +48,7 @@ import TestKit
         expectEqual(row("Tools", "Note"), ["N"])
         expectEqual(row("Edit", "Delete"), ["⌫", "⌦"], "Delete's keys with its item, which has none of its own")
         expectEqual(row("Edit", "Undo"), ["⌘Z"])
+        expectEqual(row("Insert", "Connect"), ["⌘L"], "⌘L is filed with the Insert item that runs it, which a note's words reach it by")
         expectEqual(row("Edit", "Find Previous"), ["⇧⌘G"], "a submenu's items in its menu")
         expectEqual(row("Go", "Open Selection"), ["⌘↓", "↩", "⌤", "⌥↩"], "Return and Enter open the selection too, and Return with ⌥ (what waiting shapes are laid out by)")
         expectEqual(row("Go", "Back"), ["⌘[", "⌃-"], "the Mac's key, then VS Code's, which a hidden item of Go answers and no row lists twice")

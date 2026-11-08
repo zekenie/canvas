@@ -244,6 +244,24 @@ extension EditorHarness {
         expectEqual(h.file, frozen)
         expectEqual(h.editor.undoHistory.undoName, frozenStep, "no step")
     },
+    test("a put beside a shape in a locked frame is refused as a shape paste is: nothing changes, no step, and the shape shakes") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let reads = Reads(), log = RefusalLog()
+        let h = try putHarness(pasteboard, reads, [CorralsPlugin(), FreezingPlugin(log: log)])
+        let pen = h.add(Corral(CGRect(x: 0, y: 0, width: 400, height: 300)))
+        let tile = h.add(Tile(CGRect(x: 40, y: 40, width: 120, height: 80)))
+        h.editor.transact { $0.setContainer([tile], to: pen) }
+        h.editor.freeze([pen])
+        h.editor.selection = tile
+        pasteboard.setString("tiles 2", forType: .string)
+        let before = h.file, step = h.editor.undoHistory.undoName
+        h.editor.paste()
+        expectEqual(h.file, before, "nothing put down")
+        expectEqual(h.editor.undoHistory.undoName, step, "no step")
+        expectEqual(log.refusals, [[tile]], "the shape it was beside shakes")
+        expectEqual(h.editor.selectedShapeIDs, [tile])
+    },
     test("a reader whose plugin's kit is off is never asked, and a plain one is no exception; on, it reads") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
