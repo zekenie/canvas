@@ -61,9 +61,12 @@ public struct ConnectionLookQuery {
 
 /// How connections look, from the plugins that own what they mean: a list, asked in plugin order, the first answer winning; an
 /// answer is nil for a connection the plugin has nothing to say about (one on another channel).
-public enum ConnectionLooks: ExtensionPoint {
+public enum ConnectionLooks {}
+
+extension ConnectionLooks: ExtensionPoint {
     public typealias Contribution = @MainActor (ConnectionLookQuery) -> ConnectionLook?
     public static var owner: PluginID { .ports }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "connection look" }
 }
 
 extension PluginRegistrar {

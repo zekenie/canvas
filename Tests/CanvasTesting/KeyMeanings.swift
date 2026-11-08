@@ -110,6 +110,8 @@ public enum KeyMeanings {
                   reason: "Return after a word must commit the line, so a highlighted word can't be what it does"),
         Exception(id: "line-option-arrows", keys: [Chord(Key.up, .option), Chord(Key.down, .option)], place: "a row written as a line",
                   means: "move the row one place up or down", reason: "a one-line field has no paragraph for ⌥↑ ⌥↓ to move over"),
+        Exception(id: "marked-end", keys: [.return, .space], place: "an arrow's end its connection marks (a key's crow's foot or bars)",
+                  means: "nothing", reason: "the end is drawn as what the connection means, never a stored head, so there is no head to toggle"),
         Exception(id: "outline-arrows", keys: [.left, .right], place: "an outline (the table of contents)",
                   means: "→ opens a row, ← closes it", reason: "as macOS's outlines do"),
         Exception(id: "canvas-space", keys: [.space], place: "the canvas with nothing focused", means: "held: the Hand",
