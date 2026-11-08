@@ -125,7 +125,7 @@ private let crewPlugin = Contributor(id: "crew") { registrar in
         }]))
         expect(twice == nil, "one plugin a kind")
         let report = try Registry(plugins: queryPlugins(more: [RostersPlugin(), rosterNames()])).report
-        expect(report.contains("query part names"), report)
+        expect(report.contains("query part names of roster"), report)
     },
     test("a test inside a list attribute holds when any item does; an item, or an object, that reads as a member is compared by it") {
         let h = try crewed()

@@ -85,7 +85,7 @@ extension QueryPartNames: KeyedExtensionPoint {
     public typealias Contribution = QueryPartNaming
     public static var owner: PluginID { .queries }
     public static func uniqueKeys(of _: QueryPartNaming, for target: ShapeTarget) -> [AnyHashable] { [QueryPointKey(name: "query part names \(target)")] }
-    public static func summary(of _: QueryPartNaming, for _: ShapeTarget) -> String { "query part names" }
+    public static func summary(of _: QueryPartNaming, for target: ShapeTarget) -> String { "query part names of \(target)" }
 }
 
 // MARK: Words

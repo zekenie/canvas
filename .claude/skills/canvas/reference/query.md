@@ -258,7 +258,7 @@ The value after the operator is read as the attribute takes it, so `[bend=0]` an
 | a number | the number | refused | refused | yes | a finite number |
 | a whole number | the number (a fraction is refused) | refused | refused | yes | a finite number |
 | true or false | as set, and false when not set | refused | refused | refused | `true` or `false` |
-| a list | refused: use `~=` (a list of rows that read as one of their members: any item, as `[a.b=v]` is) | refused (the same) | an item equals | refused | what an item takes |
+| a list | refused: use `~=`; on a list of rows that read as one of their members (an enum's `values`), any row's, as `[a.b=v]` | refused; on such a list, any row's | an item equals; on such a list, a word of any row's | refused | what an item takes |
 | an object | refused (not built); `[a.b]` tests what is inside it | refused | refused | refused | — |
 
 - **Not set is false.** A true-or-false attribute a shape hasn't set is its default, else false: `[locked=false]` matches every shape that isn't locked. `[locked]` is the same as `[locked=true]`.
