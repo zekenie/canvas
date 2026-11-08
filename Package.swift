@@ -293,8 +293,9 @@ let parts: KeyValuePairs<String, [String]> = [
     "Engineering/Tables": ["Model", "Grammar"],
     "Engineering/APIs": ["Model", "Grammar"],
     // The readers of what's pasted, each put down by Draw as a draw program: SQL's tables and enums; YAML (a subset, into Types'
-    // ordered values) and OpenAPI's API and types, grouped by the Grammar part's one rule, the API as wide as its rows (APIs').
-    "Engineering/Readers": ["Model", "Grammar", "APIs"],
+    // ordered values) and OpenAPI's API and types, grouped by the Grammar part's one rule, a table as wide as its lines (Tables'),
+    // the API as wide as its rows (APIs').
+    "Engineering/Readers": ["Model", "Grammar", "Tables", "APIs"],
 ]
 
 let package = Package(

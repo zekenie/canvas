@@ -98,6 +98,8 @@ extension AnyShapeRecord {
 public enum ClipboardStyle {
     /// How far a duplicate lands from what it copies, down and right, in view points.
     public static let duplicateOffset: CGFloat = 16
+    /// What a paste that changed nothing says (a schema pasted again as it is): no step.
+    static let nothingChanged = "Nothing changed"
 }
 
 // MARK: The context menu

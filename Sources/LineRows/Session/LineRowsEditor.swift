@@ -980,8 +980,9 @@ final class LineSession<Model: LineModel>: LineRowsView {
         place()
     }
 
-    /// Return: on the title, the waiting line; on a line with words, the line committed and a waiting line under it; on an
-    /// empty line, editing ends (an emptied row going as it does).
+    /// Return: on the title, the waiting line; on a line with words, the line committed and a waiting line under it (above it,
+    /// with the caret at the line's very start, as a text editor opens one); on an empty line, editing ends (an emptied row going
+    /// as it does).
     private func returnPressed() {
         let blank = field.string.trimmingCharacters(in: .whitespaces).isEmpty
         switch focus {
@@ -996,12 +997,17 @@ final class LineSession<Model: LineModel>: LineRowsView {
             end()
         case .waiting:
             let at = min(waitingAt, rows.count)
-            guard commitDraft() != nil else { return }
-            show(.waiting, at: .end, waitingAt: at + 1)
+            guard let added = commitDraft() else { return }
+            // Under the row it became, wherever the kind put it (a header typed among rows regroups those around it).
+            let below = if case .row(let row) = added, let index = index(of: row) { index + 1 } else { at + 1 }
+            show(.waiting, at: .end, waitingAt: below)
         case .row(let row):
+            // With the caret at the very start of the line, a text editor's Return: the line opens above it.
+            let caret = field.selectedRange()
+            let above = caret.location == 0 && caret.length == 0
             // A refused commit (the shape locked meanwhile) keeps the draft where it is, the shape shaking.
             guard commitDraft() != nil else { return }
-            let at = index(of: row).map { $0 + 1 } ?? rows.count
+            let at = index(of: row).map { above ? $0 : $0 + 1 } ?? rows.count
             show(.waiting, at: .end, waitingAt: at)
         }
     }

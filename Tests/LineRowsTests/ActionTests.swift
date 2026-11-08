@@ -15,6 +15,8 @@ import TextEditing
     let field = LineField()
     var done: [(action: LineAction, range: NSRange)] = []
     let action = LineAction(step: "New Tally") { _ in PartAddress(ShapeID()) }
+    /// Whether the grammar says the action is the default (nothing else is called what's typed).
+    var isDefault = false
 
     init() {
         window.isReleasedWhenClosed = false
@@ -23,7 +25,7 @@ import TextEditing
         field.offering = { [unowned self] in
             let length = (field.string as NSString).length
             return LineOffers(range: NSRange(location: 0, length: length), query: field.string,
-                              items: [.action("New tally \(field.string)", action), LineOffer(CaretCompletion(label: "zebra", insert: "zebra"))])
+                              items: [.action("New tally \(field.string)", action, isDefault: isDefault), LineOffer(CaretCompletion(label: "zebra", insert: "zebra"))])
         }
         field.onAction = { [unowned self] action, range in done.append((action, range)) }
         window.makeFirstResponder(field)
@@ -68,5 +70,29 @@ import TextEditing
         a.press(.return)
         expectEqual(a.done.count, 1)
         expect(!a.field.string.contains("zebra"), "Return never picks a word: \(a.field.string)")
+    },
+    test("apis 16, 17: an action the grammar says is the default is highlighted though listed last, so Return does it") {
+        let a = ActionField()
+        a.isDefault = true
+        a.type("ze")
+        expectEqual(a.field.listedOffers, ["zebra", "New tally ze"], "still last")
+        expectEqual(a.field.highlightedOffer, "New tally ze", "and highlighted")
+        a.press(.return)
+        expectEqual(a.done.count, 1, "Return does it")
+    },
+    test("apis 18, 19: the caret come to the end of a dashed name (words that name nothing yet) opens its offers; elsewhere, and in an undashed name, it doesn't") {
+        let a = ActionField()
+        a.isDefault = true
+        a.field.show(LineText("Refund more"))
+        a.field.highlights = [TextHighlight(range: NSRange(location: 0, length: 6), fill: .clear, stroke: .gray, isDashed: true)]
+        a.field.setSelectedRange(NSRange(location: 3, length: 0))
+        expect(a.field.listedOffers.isEmpty, "inside it: nothing opens")
+        a.field.setSelectedRange(NSRange(location: 6, length: 0))
+        expectEqual(a.field.highlightedOffer, "New tally Refund more", "at its end: the offers, the action highlighted")
+        a.press(.escape)
+        a.field.highlights = [TextHighlight(range: NSRange(location: 0, length: 6), fill: .gray)]
+        a.field.setSelectedRange(NSRange(location: 11, length: 0))
+        a.field.setSelectedRange(NSRange(location: 6, length: 0))
+        expect(a.field.listedOffers.isEmpty, "a solid pill names something: nothing opens")
     },
 ])

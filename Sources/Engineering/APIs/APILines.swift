@@ -154,7 +154,11 @@ struct APILineGrammar: LineGrammar {
         let begin = words[first].range.location
         guard caret <= NSMaxRange(words[first].range) else { return nil }
         var query = (line.string as NSString).substring(with: NSRange(location: begin, length: caret - begin))
-        if let quote = query.first, quote == "\"" || quote == "'" { query.removeFirst() }
+        if let quote = query.first, quote == "\"" || quote == "'" {
+            query.removeFirst()
+            // Its closing quote is no letter of the name: `"Refund Request"` names Refund Request.
+            if query.last == quote { query.removeLast() }
+        }
         guard !EndpointGrammar.isStatusPrefix(query) else { return nil }
         return APITypes.offers(query, range: words[first].range, quoting: true, stems: stems, context)
     }
@@ -305,6 +309,9 @@ struct APILines: LineModel {
         switch change {
         case .add(let added, let index):
             rows.insert(contentsOf: added, at: min(max(0, index), rows.count))
+            // A header put in among rows (typed, pasted) heads those after it: each keeps the full path it had, written under it
+            // where it covers it, else put where a full path of its own goes, never adopted.
+            if added.contains(where: { $0.header != nil }) { rows = APIGroups.regrouped(rows, from: old) }
         case .change(let from, let to):
             guard let at = rows.firstIndex(where: { $0.id == from.id }) else { return false }
             rows[at] = to
@@ -317,7 +324,12 @@ struct APILines: LineModel {
             guard let at = rows.firstIndex(where: { $0.id == row.id }) else { return false }
             if row.header != nil {
                 // Its group goes with it, past the one it passes; at the first or last, nowhere (written as it was).
-                if index != at, let moved = APIGroups.movingGroup(at: at, down: index > at, in: rows) { rows = moved }
+                if index != at, let moved = APIGroups.movingGroup(at: at, down: index > at, in: rows) {
+                    rows = moved
+                } else if index < at, let adopted = APIGroups.adoptingAbove(at: at, in: rows) {
+                    // The first header, with endpoints under none above it: up past them, taking the nearest it covers.
+                    rows = adopted
+                }
                 return true
             }
             let was = APIGroups.fullPath(of: at, in: rows)

@@ -465,7 +465,15 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         // or a pick closed open at the next change; one a change of the text makes, the change asks.
         guard !isShowing, !isSubstituting, !isChangingText, !isPicking, !stillSelecting else { return }
         closedAt = nil
-        if open != nil { refreshOffers() }
+        // The caret come to the end of a name that stands for nothing yet (a dashed pill: a type not made) opens its offers, so
+        // "New type X" is a Return away again.
+        if open != nil || caretEndsDashedName { refreshOffers() }
+    }
+
+    /// Whether the caret, with nothing selected, is at the end of a dashed highlight: words that name nothing yet.
+    private var caretEndsDashedName: Bool {
+        let caret = selectedRange()
+        return caret.length == 0 && highlights.contains { $0.isDashed && $0.range.length > 0 && NSMaxRange($0.range) == caret.location }
     }
 
     // MARK: Offers
@@ -510,7 +518,7 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         current.list.setRows(listed.map { listed in
             .item(CaretListItem(listed.item.label, matched: listed.matched, font: LineFieldStyle.listFont,
                                 detail: listed.item.detail.isEmpty ? nil : listed.item.detail, chip: listed.item.chip, isAction: listed.item.isAction))
-        })
+        }, highlighting: listed.firstIndex { $0.item.isDefault })
     }
 
     /// The offers listed now, in the list's order (for tests and VoiceOver's sake): their labels.

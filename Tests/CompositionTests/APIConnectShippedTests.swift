@@ -78,6 +78,38 @@ private let stripeAPI = #"""
     return found
 }
 
+/// connect 24, wave 8: a far pill an arrow from a row reaches lands where the arrow reads clean: below the shape it leaves (the
+/// line meeting the pill's top), else level with the row (the pill's middle at the row's middle, the line meeting its near side);
+/// the straight line from the row to where it meets the pill crosses no other shape, and the pill is in the clear view.
+@MainActor private func expectClean(_ arrowID: ShapeID, from near: ShapeID, row: PartID, in editor: CanvasEditor, view: Bool = true,
+                                    _ what: String) throws {
+    let arrow = try require(editor.document[arrowID]?.typed(as: Arrow.self))
+    let pillID = try require(arrow.props.end.binding?.shapeID)
+    let pill = try require(editor.shapeContext.geometry(of: pillID)?.bounds), shape = try require(editor.shapeContext.geometry(of: near)?.bounds)
+    let line = try require(editor.shapeContext.geometry(of: near)?.parts.frame(row)?.rect)
+    let geometry = try require(editor.arrowGeometry(of: arrowID))
+    // Where the level curve leaves the row and meets the pill, before its head is trimmed off.
+    let level: Cubic? = if case .level(let cubic, _, _) = geometry.path { cubic } else { nil }
+    let cubic = try require(level, "a level arrow, from a row: \(what)")
+    let start = cubic.start, end = cubic.end
+    if pill.minY >= shape.maxY {
+        expect(abs(end.y - pill.minY) < 1.5, "\(what): below the shape, the line meets the pill's top: \(end) \(pill)")
+    } else {
+        expect(abs(pill.midY - line.midY) < 1, "\(what): level with the row: \(pill.midY) \(line.midY)")
+        expect(abs(end.x - (pill.minX > shape.maxX ? pill.minX : pill.maxX)) < 1.5, "\(what): the line meets the pill's near side: \(end) \(pill)")
+    }
+    for record in editor.document.shapes where ![near, pillID, arrowID].contains(record.id) && record.kind != Arrow.kind {
+        guard let bounds = editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.contains(shape) else { continue }
+        let inner = bounds.insetBy(dx: 1, dy: 1)
+        let crosses = (0...64).contains { step in
+            let t = CGFloat(step) / 64
+            return inner.contains(CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
+        }
+        expect(!crosses, "\(what): the line from the row crosses \(record[TitleProperty.self] ?? record.kind.rawValue)")
+    }
+    if view { expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(pill), "\(what): the pill in the clear view") }
+}
+
 @MainActor let apiConnectShippedTests = Suite("Connect an API, shipped", [
     test("E4 panels 2 and 3, by the pointer through the app's canvas view: a drag from an endpoint row's dot onto payments draws the arrow plain from the row, and the list offers writes, reads, a rule, Plain arrow; ↓ reads ↩ is Change Relation; one Undo plain, two none") {
         let w = try KeyDragWindow(e4)
@@ -93,6 +125,7 @@ private let stripeAPI = #"""
         expectEqual(editor.hintedShapeID, payments.id, "payments lit as the end")
         w.release()
         let arrow = try require(arrows(editor).last)
+        expectEqual(editor.selectedShapeIDs, [arrow.id], "a pointer drag selects the arrow it drew, the list under it")
         expectEqual(arrow.props.start.binding?.part, refundsRow, "from the row")
         expectEqual(arrow.props.end.binding?.shapeID, payments.id)
         expectEqual(arrow.props.end.binding?.part, nil, "to the table as a whole")
@@ -205,6 +238,20 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.row, farRow, "a pill for the endpoint itself")
         expectEqual(arrow.props.end.binding?.part, farRow)
         expectEqual(undoTitle(w.window), "Undo Connect")
+        try expectClean(arrow.id, from: api, row: row, in: editor, "⌘L's far pick")
+        // connect 19 to 21: the card's calls line, longer than the card, ends in "…" until its stop has the keyboard.
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.canvas.cardView as? LineCardView)
+        w.window.settle()
+        card.layoutSubtreeIfNeeded()
+        expectEqual(card.value(of: "relations 1"), "calls Stripe API.POST /v1/refunds", "its words whole")
+        expect(card.isCut("relations 1"), "cut at the card's edge, said so")
+        expect(!card.isCut("name"), "a line that fits isn't")
+        card.go(to: "relations 1")
+        w.window.settle()
+        card.layoutSubtreeIfNeeded()
+        expect(!card.isCut("relations 1"), "with the keyboard, shown whole, slid to its caret")
+        walk.press(.escape)
         walk.press(.escape)
         walk.press(.escape)
         // The pill draws the method's chip as the row does, light and dark.
@@ -324,6 +371,31 @@ private let stripeAPI = #"""
         expect(editor.connectPicker?.isOpen != true, "no picker opens on a header")
         expect(editor.service(RefusalShake.self)?.isShaking == true, "the shape shakes, as one with nothing to pick for does")
     },
+    test("wave 8 and connect 24: draw's calls edge to an endpoint on another board puts its pill where the line from the row is clean, below the API or level with the row, never with the arrow under the pill") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            database "shop" size: 1400x900
+            subboard "payments provider" right of "shop"
+            """#)
+        try w.draw(#"""
+            table "orders" in "shop" columns: "id uuid pk\ntotal_cents int"
+            table "refunds" in "shop" right of "orders" top level with "orders" columns: "id uuid pk\norder_id uuid → orders.id\namount_cents int"
+            api "orders API" in "shop" below "orders" (gap: wide) server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /orders/{id}\nPOST /orders/{id}/refunds → 201"
+            """#)
+        try w.draw(#"api "Stripe API" in "payments provider" server: "api.stripe.com bearer" endpoints: "POST /v1/refunds → 200""#)
+        try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes"#)
+        try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls"#)
+        let api = try require(shape(editor, "orders API")).id
+        let row = try require(rows(editor, "orders API").last?.id)
+        let calls = try require(arrows(editor).first { $0[ChannelProperty.self] == Calls.id })
+        try expectClean(calls.id, from: api, row: row, in: editor, view: false, "draw's edge")
+        let ids = Set(editor.document.shapes.map(\.id))
+        try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls"#)
+        expectEqual(Set(editor.document.shapes.map(\.id)), ids, "drawn again: nothing twice")
+    },
     test("E7 panels 4 to 7, by the keys: ↑ to the refunds row, ⌘L, ref, ↩ picks refunds, ↩ takes writes, Escape; one Undo the plain arrow, two none") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -360,6 +432,10 @@ private let stripeAPI = #"""
         expectEqual(arrow.props.end.binding?.shapeID, refunds)
         expectEqual(arrow[ChannelProperty.self], nil, "plain until a pick")
         w.window.settle()
+        // connect 13: the list hangs from the arrow, which isn't selected: the API, edited, stays the one selected.
+        expectEqual(editor.selectedShapeIDs, [api], "the API still selected (E7 panel 4)")
+        expectEqual(editor.editingShapeID, api)
+        expectEqual(w.lineRows?.focus, .row(last), "the caret still in the refunds row")
         let (menu, highlighted) = try require(popped.last, "the list popped at the arrow")
         expectEqual(menu.items.map { $0.isSeparatorItem ? "" : $0.title }, ["writes", "reads", "", "Plain arrow"])
         expectEqual(undoTitle(w.window), "Undo Connect")
@@ -368,8 +444,10 @@ private let stripeAPI = #"""
         menu.performActionForItem(at: menu.index(of: try require(highlighted)))
         expectEqual(editor.document[arrow.id]?[ChannelProperty.self], Writes.id)
         expectEqual(undoTitle(w.window), "Undo Change Relation")
+        expectEqual(editor.selectedShapeIDs, [api], "a pick leaves the selection on the API")
         for _ in 0..<3 where editor.editingShapeID != nil { walk.press(.escape) }
         expectEqual(editor.editingShapeID, nil, "Escape: out of the API")
+        expectEqual(editor.selectedShapeIDs, [api], "connect 15: Escape is back on the API, never the arrow (E7 panel 4)")
         expectEqual(editor.adornmentFrames(of: arrow.id).map(\.label.text), ["writes"], "the writes pill on its line (E7 panel 4)")
         editor.undo()
         expectEqual(editor.document[arrow.id]?[ChannelProperty.self], nil, "one Undo: the plain arrow")

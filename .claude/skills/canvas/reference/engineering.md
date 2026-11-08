@@ -106,7 +106,7 @@ api "Stripe API" below "orders API" (gap: wide) endpoints: "POST /v1/refunds"
 edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
 ```
 
-Only endpoints start writes and reads, and only tables take them (an enum, a database, a note or a subboard takes none); anything with arrows of its own (a note, a frame, a subboard) may call an endpoint, and an endpoint calls one; a call ends at an endpoint's row, never at a subboard, note or frame as a whole. A path prefix's header is no endpoint, takes none of them, and an edge naming one is refused (`cannot_connect`). An endpoint on another board is reached through a reference for that endpoint itself, beside the API, as a key's table is. Drawn again, the same rows on the same channel are `unchanged`; the same rows on another channel are another arrow.
+Only endpoints start writes and reads, and only tables take them (an enum, a database, a note or a subboard takes none); anything with arrows of its own (a note, a frame, a subboard) may call an endpoint, and an endpoint calls one; a call ends at an endpoint's row, never at a subboard, note or frame as a whole. A path prefix's header is no endpoint, takes none of them, and an edge naming one is refused (`cannot_connect`). An endpoint on another board is reached through a reference for that endpoint itself, beside the API, as a key's table is: drawn on its own, below the API or level with the row, where its line crosses nothing. Drawn again, the same rows on the same channel are `unchanged`; the same rows on another channel are another arrow.
 
 ## Asking
 

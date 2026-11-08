@@ -33,6 +33,11 @@ public enum PlacingStyle {
     /// The room an arrow to or from a shape placed between two others needs, between the two edges it
     /// joins: a body long enough to show a head and read as an arrow, as draw's `normal` gap leaves one.
     public static let arrowRoom: CGFloat = GapName.normal.value
+    /// How far from the shape it's joined to a pill an arrow reaches from a row lands (`landing(of:joinedFrom:of:)`): room for the
+    /// arrow's own pill (`calls`) on the line between them, and its head.
+    public static let pillReach: CGFloat = 120
+    /// How many reaches out a pill is tried at, on each side, before it's landed as draw lands one.
+    public static let pillSteps = 3
 }
 
 /// A board shapes land on, as `canvas draw` reads the board it places shapes on: read in place
@@ -249,6 +254,80 @@ public struct Surroundings {
         let free = LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: clauses, implied: true)
         guard let placed = place(free, fixed: [LayoutProblem.Fixed(rect: bounds, obstacle: solid)], avoiding: avoiding) else { return nil }
         return Landing(board: reading.board, rect: placed.rect, above: placed.zones)
+    }
+
+    /// A pill of `size` an arrow joins to row `row` (its rect, world units) of `near`, a shape of this board, landed where the
+    /// arrow reads clean: where the straight line from the row to the pill crosses no shape. Tried in order (E4 panel 4): below
+    /// `near`, under one of the row's ends (the left first), the line meeting the pill's top; then right of it, then left, level
+    /// with the row (the pill's middle at the row's middle), so the line meets the pill's near side and never its bottom from
+    /// below; each a reach out (`PlacingStyle.pillReach`), then farther. A spot counts where the pill is within the clear view,
+    /// clear of what is on the board (but `near` and what holds it) and of `avoiding` by draw's clearances, and its line crosses
+    /// none of them. Nil where none does: the caller lands it as draw does (`landing(of:at:)`).
+    public func landing(of size: CGSize, joinedFrom row: CGRect, of near: ShapeID, avoiding: [CGRect] = []) -> Landing? {
+        guard size.width.isFinite, size.height.isFinite, row.isFinite, !row.isNull,
+              let bounds = reading.shapes.geometry(of: near)?.bounds, bounds.isFinite, !bounds.isNull else { return nil }
+        let own = obstacle(near)
+        // What holds `near` (a frame it is in) is a region the pill may sit on, never in its way.
+        func inWay(_ obstacle: LayoutProblem.Obstacle) -> Bool { obstacle.id != own && !obstacle.rect.contains(bounds) }
+        let reach = PlacingStyle.pillReach, width = size.width, height = size.height
+        var spots: [(rect: CGRect, from: CGPoint, to: CGPoint)] = []
+        for step in 1...PlacingStyle.pillSteps {
+            let out = reach * CGFloat(step)
+            for end in [row.minX, row.maxX] {
+                let outward: CGFloat = end == row.minX ? -1 : 1
+                // Under the row's end, else slid out from under the shape, else in: the line still meets the top, steep as it is.
+                for slide in [0, outward * width / 2, -outward * width / 2, outward * width] {
+                    let middle = end + slide
+                    // The row leaves by the end facing the pill's middle: this one.
+                    guard (middle < row.midX) == (end == row.minX) else { continue }
+                    let rect = CGRect(x: middle - width / 2, y: bounds.maxY + out, width: width, height: height)
+                    spots.append((rect, CGPoint(x: end, y: row.midY), CGPoint(x: middle, y: rect.minY)))
+                }
+            }
+        }
+        for side: CGFloat in [1, -1] {
+            for step in 1...PlacingStyle.pillSteps {
+                let out = reach * CGFloat(step)
+                let x = side > 0 ? bounds.maxX + out : bounds.minX - out - width
+                let rect = CGRect(x: x, y: row.midY - height / 2, width: width, height: height)
+                spots.append((rect, CGPoint(x: side > 0 ? row.maxX : row.minX, y: row.midY), CGPoint(x: side > 0 ? rect.minX : rect.maxX, y: row.midY)))
+            }
+        }
+        let planned = avoiding.filter(\.isFinite)
+        for spot in spots {
+            if let view = reading.view, !view.contains(spot.rect) { continue }
+            let wanted = spot.rect.insetBy(dx: -LayoutProblem.horizontalClearance, dy: -LayoutProblem.verticalClearance)
+            guard !grid.obstacles(in: wanted).contains(where: { inWay($0) && $0.rect.intersects(wanted) }),
+                  !planned.contains(where: { $0.intersects(wanted) }) else { continue }
+            let line = CGRect(x: min(spot.from.x, spot.to.x), y: min(spot.from.y, spot.to.y),
+                              width: abs(spot.to.x - spot.from.x), height: abs(spot.to.y - spot.from.y)).insetBy(dx: -1, dy: -1)
+            guard !grid.obstacles(in: line).contains(where: { inWay($0) && Self.crosses(spot.from, spot.to, $0.rect) }),
+                  !planned.contains(where: { Self.crosses(spot.from, spot.to, $0) }) else { continue }
+            // Raised above what holds `near` that it sits on, as draw raises a shape over the zones it lands on.
+            let shapes = reading.document.shapes
+            let holders = grid.obstacles(in: spot.rect).filter { $0.id != own && $0.rect.contains(bounds) && shapes.indices.contains($0.id) }
+                .sorted { $0.id < $1.id }.map { shapes[$0.id].id }
+            return Landing(board: reading.board, rect: spot.rect, above: holders)
+        }
+        return nil
+    }
+
+    /// Whether the segment from `a` to `b` passes through `rect`'s inside (touching its edge isn't crossing): Liang and Barsky's
+    /// clip against the rect a point in from each edge.
+    static func crosses(_ a: CGPoint, _ b: CGPoint, _ rect: CGRect) -> Bool {
+        let inner = rect.insetBy(dx: 1, dy: 1)
+        guard !inner.isNull, !inner.isEmpty else { return false }
+        let dx = b.x - a.x, dy = b.y - a.y
+        var t0: CGFloat = 0, t1: CGFloat = 1
+        for (p, q) in [(-dx, a.x - inner.minX), (dx, inner.maxX - a.x), (-dy, a.y - inner.minY), (dy, inner.maxY - a.y)] {
+            if p == 0 {
+                if q < 0 { return false }
+                continue
+            }
+            let r = q / p
+            if p < 0 { if r > t1 { return false }; t0 = max(t0, r) } else { if r < t0 { return false }; t1 = min(t1, r) }
+        }
+        return t0 < t1
     }
 
     /// The free box placed among the board's obstacles by DrawScript's solver: where it goes, and the

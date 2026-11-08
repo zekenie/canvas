@@ -168,10 +168,11 @@ public final class CaretList {
         highlighted = rows.firstIndex { $0.item != nil }
     }
 
-    /// Lists `rows`, the first item highlighted.
-    public func setRows(_ rows: [CaretListRow]) {
+    /// Lists `rows`, the first item highlighted, or the item at `highlighting` (a row the owner says is the default: an action
+    /// nothing else listed is called so).
+    public func setRows(_ rows: [CaretListRow], highlighting: Int? = nil) {
         self.rows = rows
-        highlighted = rows.firstIndex { $0.item != nil }
+        highlighted = highlighting.flatMap { rows.indices.contains($0) && rows[$0].item != nil ? $0 : nil } ?? rows.firstIndex { $0.item != nil }
         onChange?()
     }
 

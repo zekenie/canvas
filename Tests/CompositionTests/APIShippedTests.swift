@@ -151,6 +151,54 @@ private let models = #"""
         expectEqual(w.line?.string, "POST /orders/{id}/refunds (NewRefund) → 201 RefundView", "a rename followed, nothing written")
         walk.press(.escape)
     },
+    test("apis 16 to 21: Refund, which no type is called, highlights New type Refund though a path's stem ranks NewRefund first, and Return makes it; a dashed name committed opens its offers again when the caret comes to its end") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            sticky-note "NewRefund" schema: "{\"type\": \"object\"}"
+            sticky-note "Order" below "NewRefund" (gap: 40) schema: "{\"type\": \"object\"}"
+            api "orders API" right of "NewRefund" (gap: 80) endpoints: "GET /orders/{id}"
+            """#)
+        let api = try require(apis(editor).first)
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.type("POST /orders/{id}/refunds (NewRefund) -> 201 Refund", with: walk)
+        let field = try require(w.line)
+        expectEqual(field.listedOffers.first, "NewRefund", "the path's stem ranks it first")
+        expectEqual(field.listedOffers.last, "New type Refund", "the action last")
+        expectEqual(field.highlightedOffer, "New type Refund", "nothing is called Refund or starts so: the action highlighted")
+        walk.press(.return)
+        let refund = try require(titled(editor, "Refund")).id
+        expect(editor.types?.isType(refund) == true, "Return made the type")
+        expectEqual(undoTitle(w.window), "Undo New Type")
+        expectEqual(apis(editor).first?.props.endpoints.last?.endpoint?.responses.first?.type, TypeRef("Refund", shape: refund), "the words bound to it")
+        walk.press(.return)
+        expectEqual(w.lineRows?.focus, .waiting, "Return again: the line below")
+        // A word some type starts with keeps the first offer highlighted: Return then commits the line as typed.
+        w.type("GET /orders -> 200 Ord", with: walk)
+        expectEqual(field.highlightedOffer, "Order", "Order starts so: the type, not the action")
+        field.selectAll(nil)
+        w.type("GET /refunds -> 200 Nothing", with: walk)
+        expectEqual(field.highlightedOffer, "New type Nothing")
+        walk.press(.escape)
+        expect(field.listedOffers.isEmpty, "Escape closed the list")
+        walk.press(.return)
+        expectEqual(undoTitle(w.window), "Undo Add Endpoint")
+        expect(titled(editor, "Nothing") == nil, "no type made: Nothing dashed")
+        let nothingRow = try require(apis(editor).first?.props.endpoints.last?.id)
+        walk.press(.up)
+        expectEqual(w.lineRows?.focus, .row(nothingRow))
+        walk.press(Chord(Key.right, .command))
+        expectEqual(field.highlightedOffer, "New type Nothing", "the caret at the end of the dashed name: its offers again (apis 18)")
+        walk.press(.return)
+        expect(titled(editor, "Nothing").map { editor.types?.isType($0.id) == true } ?? false, "made from the row it was committed in")
+        walk.press(.escape)
+        walk.press(.escape)
+    },
     test("E3 panels 2 and 3: in the card, 409 Problem is a dashed pill offering New type Problem last; Return makes the note beside Refund, the words bound, the caret kept; one step, New Type") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

@@ -139,9 +139,13 @@ extension StandInRoute {
     ///
     /// `planned`: the box `near` has in that step where it is a shape the step put down (a row taken out into a shape of its own),
     /// which the board doesn't show yet: the pill is landed against that box.
-    public func placePill(standingFor far: ShapeID, row: PartID? = nil, label: String, beside near: ShapeID, edgeIs place: EdgePlace,
-                          sharing: Sharing, avoiding: [CGRect] = [], reading: CanvasDocument? = nil, planned: CGRect? = nil, verdicts: FarVerdicts,
-                          in editor: CanvasEditor) -> PlacedPill? {
+    ///
+    /// `from`: the row of `near` the arrow is joined to (a column's key, an endpoint's call): the pill lands where its line from that
+    /// row is clean (`Surroundings.landing(of:joinedFrom:of:)`: below `near`, then right, then left level with the row), and as
+    /// draw lands one where no spot is.
+    public func placePill(standingFor far: ShapeID, row: PartID? = nil, label: String, beside near: ShapeID, from nearRow: PartID? = nil,
+                          edgeIs place: EdgePlace, sharing: Sharing, avoiding: [CGRect] = [], reading: CanvasDocument? = nil,
+                          planned: CGRect? = nil, verdicts: FarVerdicts, in editor: CanvasEditor) -> PlacedPill? {
         guard let record = editor.shape(inFile: far), let found = verdicts.kind(for: record) else { return nil }
         let standIns = editor.registry.standIns
         // A kind that makes no pill for a row stands for the row's shape, the row on the binding.
@@ -153,6 +157,11 @@ extension StandInRoute {
         else { return nil }
         seat(&made, beside: near, in: editor)
         guard let size = made.box?.size, let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
+        if planned == nil, let nearRow, let line = surroundings.reading.shapes.geometry(of: near)?.parts.frame(nearRow)?.rect,
+           let clean = surroundings.landing(of: size, joinedFrom: line, of: near, avoiding: avoiding) {
+            made.box = clean.rect
+            return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: nil, made: made, above: clean.above)
+        }
         let spot = spot(beside: near, edgeIs: place, side: nil, in: surroundings.reading)
         guard let landing = planned.map({ landing(of: size, at: spot, against: $0, in: surroundings, avoiding: avoiding) })
                 ?? landing(of: size, at: spot, in: surroundings, avoiding: avoiding) else { return nil }

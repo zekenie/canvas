@@ -425,16 +425,25 @@ final class ClipboardState {
             if editor.revision != before { editor.announce("Pasted into shapes on other boards", priority: .low) }
             return
         }
-        let inside = Set(landed), kinds = editor.registry.containingKinds, document = editor.document
-        editor.selectedShapeIDs = landed.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
+        let kinds = editor.registry.containingKinds, document = editor.document
+        // What it made and what it changed are selected, and said; a paste that changed nothing selects all it found, and says so.
+        let made = landed.filter { existing[$0] == nil }, changed = landed.filter { id in existing[id].map { $0 != document[id] } ?? false }
+        let touched = made + changed, shown = touched.isEmpty ? landed : touched
+        let inside = Set(shown)
+        editor.selectedShapeIDs = shown.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
         // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone.
-        editor.revealIfOffscreen(landed)
-        editor.announce(pastedSummary(landed, existing: existing, labels: program.labels), priority: .low)
+        editor.revealIfOffscreen(shown)
+        guard !touched.isEmpty || editor.revision != before else {
+            editor.announce(ClipboardStyle.nothingChanged, priority: .low)
+            return
+        }
+        // Only arrows changed (a key re-aimed): the shapes it restated are what it updated.
+        editor.announce(pastedSummary(made: made, changed: touched.isEmpty ? landed : changed, labels: program.labels), priority: .low)
     }
 
-    /// What a put did, for VoiceOver: the kinds it made and the kinds it restated, by their labels ("Pasted 2 Tables and Enum,
-    /// updated Table"), a kind the put names itself (`DrawPut.labels`) by that.
-    private func pastedSummary(_ landed: [ShapeID], existing: CanvasDocument, labels: [String: String]) -> String {
+    /// What a put did, for VoiceOver: the kinds it made and the kinds whose shapes it changed, by their labels ("Pasted 2 Tables and
+    /// Enum, updated Table"), a kind the put names itself (`DrawPut.labels`) by that. A shape it restated as it was isn't counted.
+    private func pastedSummary(made: [ShapeID], changed: [ShapeID], labels: [String: String]) -> String {
         let registry = editor.registry
         func counts(_ ids: [ShapeID]) -> String {
             var order: [ShapeKind] = [], counts: [ShapeKind: Int] = [:]
@@ -447,11 +456,10 @@ final class ClipboardState {
                 return counts[kind] == 1 ? label : "\(counts[kind]!) \(DeleteSteps.plural(label))"
             })
         }
-        let made = landed.filter { existing[$0] == nil }, restated = landed.filter { existing[$0] != nil }
-        switch (made.isEmpty, restated.isEmpty) {
+        switch (made.isEmpty, changed.isEmpty) {
         case (false, true): return "Pasted \(counts(made))"
-        case (true, false): return "Updated \(counts(restated))"
-        default: return "Pasted \(counts(made)), updated \(counts(restated))"
+        case (true, false): return "Updated \(counts(changed))"
+        default: return "Pasted \(counts(made)), updated \(counts(changed))"
         }
     }
 

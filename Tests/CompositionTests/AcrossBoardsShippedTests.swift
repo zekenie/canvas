@@ -121,7 +121,11 @@ private let shop = #"""
         expectEqual(arrow.props.end.binding?.shapeID, pill.id)
         expectEqual(arrow.props.end.binding?.part, column(editor, "customers", "id"), "the column on the binding")
         expectEqual(arrow.props.end.binding?.isExact, false, "the arrow meets the pill as a whole")
-        expect(try require(pill.frame(in: editor)).minX > statements.props.frame.maxX, "beside the start, right of it")
+        // Where its line from customer_id is clean (connect 24): below statements, else level with the row beside it.
+        let frame = try require(pill.frame(in: editor)), row = try require(editor.shapeContext.geometry(of: statements.id)?.parts
+            .frame(try require(column(editor, "statements", "customer_id")))?.rect)
+        expect(frame.minY >= statements.props.frame.maxY || abs(frame.midY - row.midY) < 1, "below the start, or level with its row: \(frame) \(row)")
+        expect(!frame.intersects(statements.props.frame), "clear of the start")
         expectEqual(keys(editor), ["orders.customer_id -> customers.id", "payments.order_id -> orders.id", "refunds.payment_id -> payments.id",
                                    "statements.customer_id -> customers.id"], "read as a key to the column")
         editor.connect(ConnectEnd(statements.id, part: column(editor, "statements", "account_id")),

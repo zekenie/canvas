@@ -159,7 +159,7 @@ extension CanvasEditor {
                 let alone = part?.standsAlone == true && verdicts.kind(for: far).map { registry.standIns.makesRows($0.kind) } == true
                 guard let placed = route.placePill(standingFor: target.shape, row: alone ? part?.id : nil,
                                                    label: alone ? part?.name ?? "" : registry.mentionAppearance(of: far)?.label ?? "",
-                                                   beside: source.shape, edgeIs: .from, sharing: .any, verdicts: verdicts, in: self) else {
+                                                   beside: source.shape, from: source.part, edgeIs: .from, sharing: .any, verdicts: verdicts, in: self) else {
                     refuseChanges(to: ids)
                     return nil
                 }
@@ -202,8 +202,9 @@ extension CanvasEditor {
                 return made.id
             }
             guard let made else { return nil }
-            // The release every connection has (`ConnectionMade`), as a port's drag let go gives it.
-            connectionMade(made)
+            // The release every connection has (`ConnectionMade`), as a port's drag let go gives it; from a row being edited, the
+            // list hangs from the arrow without selecting it, so the shape edited stays selected (E7 panel 4).
+            connectionMade(made, selecting: editingShapeID == nil)
             return made
         }
     }

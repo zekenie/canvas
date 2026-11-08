@@ -224,7 +224,12 @@ private let refunds = """
         let response = try require(type(editor, "CreateRefundResponse"))
         let landed = try require(api(editor, "refunds API"))
         expectEqual(editor.selectedShapeIDs.count, 5, "the API and four types")
-        expectEqual(try schema(editor, "Refund")["properties"]?["amount"], .object([SchemaMember(key: "$ref", value: .string(SchemaReferences.uri(of: money.id)))]))
+        expectEqual(try schema(editor, "Refund")["properties"]?["amount"], .object([SchemaMember(key: "title", value: .string("amount")),
+                                                                                     SchemaMember(key: "$ref", value: .string(SchemaReferences.uri(of: money.id)))]))
+        // paste 06 and 07: each field titled as the file keys it, so it reads as written (E1 panel 4's `total_cents`).
+        for property in try schema(editor, "Refund")["properties"]?.members ?? [] {
+            expectEqual(FieldName.words(of: ChainField(name: property.key, schema: property.value)), property.key, "\(property.key) reads as written")
+        }
         expectEqual(refund[IsAProperty.self]?.map(\.shape), [base.id], "Refund builds on Base")
         expectEqual(try schema(editor, "Refund")["required"], .array([.string("amount")]), "id is Base's to require")
         expectEqual(try schema(editor, "Money"), SchemaValue(try JSONReader.read(#"{"type": "integer", "exclusiveMinimum": 0, "examples": [1250]}"#)))
@@ -274,7 +279,13 @@ private let refunds = """
         let joined = try schema(editor, "Statement")
         expectEqual(joined["properties"]?.members?.map(\.key), ["id", "period", "total_cents", "memo", "currency"], "held in place, the new after")
         expectEqual(joined["$color"], .string("green"), "the type's color kept")
-        expectEqual(editor.selectedShapeIDs, [again.id, try require(type(editor, "StripeEvent")).id, statement.id])
+        let cents = try require(joined["properties"]?["total_cents"])
+        expectEqual(FieldName.words(of: ChainField(name: "total_cents", schema: cents)), "total_cents", "paste 06: as the wire says it, never \"total cents\"")
+        let memo = try require(joined["properties"]?["memo"])
+        expectEqual(memo["title"], nil, "a field the person added is left as they wrote it")
+        // StripeEvent pasted as it was: neither said nor selected (paste 04).
+        expectEqual(editor.selectedShapeIDs, [again.id, statement.id], "what the paste changed")
+        expectEqual(editor.announcements.last, "Updated API and Type")
         expectEqual(undoTitle(w.window), "Undo Paste OpenAPI")
     },
     test("a plain note called as a type is left alone: the type is made beside it, and the body binds to the type") {

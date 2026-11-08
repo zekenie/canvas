@@ -1,0 +1,61 @@
+@_spi(Host) import Canvas
+import CanvasTesting
+import CoreGraphics
+import Draw
+import TestKit
+
+// Where `Surroundings.landing(of:joinedFrom:of:)` lands a pill an arrow from a row reaches (connect 24, wave 8): below the shape,
+// under the row's left end, then right of it and left of it level with the row, each where the straight line from the row to
+// the pill crosses nothing and the pill is clear of what's there; nil where nowhere is.
+
+@MainActor private func harness(_ records: AnyShapeRecord...) throws -> EditorHarness {
+    try EditorHarness(plugins: [FixturesPlugin(), CorralsPlugin()], file: CanvasFile(root: CanvasDocument(shapes: records)))
+}
+
+@MainActor private func box(_ id: ShapeID, _ rect: CGRect, in container: ShapeID? = nil) -> AnyShapeRecord {
+    AnyShapeRecord(ShapeRecord(id: id, Box(rect))).copy(as: id, container: container)
+}
+
+@MainActor private func corral(_ id: ShapeID, _ frame: CGRect) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, Corral(frame))) }
+
+private let pill = CGSize(width: 200, height: 40)
+/// The shape the arrow leaves, and the row it leaves from: its second line.
+private let near = CGRect(x: 0, y: 0, width: 400, height: 200)
+private let row = CGRect(x: 0, y: 100, width: 400, height: 24)
+@MainActor private let reach = PlacingStyle.pillReach
+
+@MainActor let pillLandingTests = Suite("A far pill landed by its line", [
+    test("nothing round it: below the shape, under the row's left end, a reach down (E4 panel 4)") {
+        let a = ShapeID()
+        let h = try harness(box(a, near))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a))
+        expectEqual(landing.rect, CGRect(x: -100, y: 200 + reach, width: 200, height: 40))
+    },
+    test("a shape below: right of it, level with the row, the pill's middle at the row's middle") {
+        let a = ShapeID(), below = ShapeID()
+        let h = try harness(box(a, near), box(below, CGRect(x: -800, y: 260, width: 2000, height: 1000)))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a))
+        expectEqual(landing.rect, CGRect(x: 400 + reach, y: 92, width: 200, height: 40))
+        expectEqual(landing.rect.midY, row.midY)
+    },
+    test("below taken and a shape on the row's line to the right (connect 24: refunds): left of it, level, never through the shape") {
+        let a = ShapeID(), below = ShapeID(), right = ShapeID()
+        let h = try harness(box(a, near), box(below, CGRect(x: -800, y: 260, width: 2000, height: 1000)),
+                            box(right, CGRect(x: 480, y: 60, width: 100, height: 100)))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a))
+        expectEqual(landing.rect, CGRect(x: -reach - 200, y: 92, width: 200, height: 40))
+    },
+    test("the frame the shape is in is no obstacle: the pill lands in it, raised above it") {
+        let k = ShapeID(), a = ShapeID()
+        let h = try harness(corral(k, CGRect(x: -1000, y: -1000, width: 3000, height: 3000)), box(a, near, in: k))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a))
+        expectEqual(landing.rect, CGRect(x: -100, y: 200 + reach, width: 200, height: 40))
+        expectEqual(landing.above, [k])
+    },
+    test("walled in on every side: nil, for the caller to land it as draw does") {
+        let a = ShapeID(), below = ShapeID(), right = ShapeID(), left = ShapeID()
+        let h = try harness(box(a, near), box(below, CGRect(x: -800, y: 260, width: 2000, height: 1000)),
+                            box(right, CGRect(x: 480, y: 60, width: 100, height: 100)), box(left, CGRect(x: -180, y: 60, width: 100, height: 100)))
+        expect(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a) == nil)
+    },
+])

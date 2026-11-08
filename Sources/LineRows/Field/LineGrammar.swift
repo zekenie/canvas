@@ -120,9 +120,10 @@ public struct LineOffer: Equatable {
 
     /// An action row, listed last by the grammar that offers it: `label` what it says ("New type Problem"), `action` what it does.
     /// Done, the words it was offered for (the offers' range) stand for what it made, and the line is written with them in the
-    /// action's step, the caret staying where it is.
-    public static func action(_ label: String, _ action: LineAction) -> LineOffer {
-        var offer = LineOffer(CaretCompletion(label: label, insert: "", isRelevant: false, isAction: true))
+    /// action's step, the caret staying where it is. `isDefault`: highlighted all the same, so Return does it (nothing else listed
+    /// is called what was typed).
+    public static func action(_ label: String, _ action: LineAction, isDefault: Bool = false) -> LineOffer {
+        var offer = LineOffer(CaretCompletion(label: label, insert: "", isRelevant: false, isAction: true, isDefault: isDefault))
         offer.action = action
         return offer
     }

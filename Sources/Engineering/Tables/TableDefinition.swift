@@ -184,6 +184,27 @@ extension TableDefinition: Editable {
     var editingStepName: String? { TableStyle.renameStep }
 }
 
+@MainActor
+enum TableDrawing {
+    /// How wide a table holding `columns` is drawn for each line to show whole, as `ColumnRow` lays a line out (the name from the
+    /// names' inset, a gap, the type, its `?`), an enum's pill for a type `enums` names: never narrower than a new table, nor wider
+    /// than `TableStyle.mostWholeWidth`. What a paste of SQL makes a table at; one the file has keeps the width it has.
+    static func wholeWidth(of columns: [Column], enums: Set<String> = []) -> CGFloat {
+        var widest = TableStyle.width
+        for column in columns {
+            var width = KitStyle.nameInset + RowText.line(column.name, .name).width + KitStyle.nameGap + KitStyle.trailingInset
+            if enums.contains(column.type.words) {
+                width += AdornmentLabel(column.type.words).tinted(TableStyle.enumPill).contentSize.width
+            } else if !column.type.words.isEmpty {
+                width += RowText.line(column.type.words, .type).width
+            }
+            if column.nullable { width += RowText.line(TableStyle.nullMark, .null).width }
+            widest = max(widest, width)
+        }
+        return min(widest.rounded(.up), TableStyle.mostWholeWidth)
+    }
+}
+
 /// Where a column's row puts what it says, world units: at the right its nullable's `?`, then its type (an enum's pill, or
 /// grey text, which wins the room over the name), and its name from the names' inset, cut short where it meets the type.
 /// What the render draws and what Find rings and marks.
