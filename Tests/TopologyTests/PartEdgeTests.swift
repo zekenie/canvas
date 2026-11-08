@@ -41,6 +41,7 @@ import Topology
         let plain = try require(topology.edges(carriedBy: whole).first)
         expectEqual(plain.parts, .none)
         expectEqual(EdgeParts(source: nil, target: nil), .none)
+        expectEqual(MemoryLayout<EdgeParts>.size, MemoryLayout<Int>.size, "an edge pays one word for its parts, boxed")
     },
     test("a row's edges are filtered from its shape's, either way; the shape as a whole has its own") {
         let (h, left, right, rows) = try partGraph()

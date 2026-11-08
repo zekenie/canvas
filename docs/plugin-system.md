@@ -6970,8 +6970,8 @@ reach still keeps its shape's dots showing as the pointer crosses the edge to it
 
 A kind whose shapes have rows (`PartedShape`) may have ports on its rows instead of its sides:
 `x.partPorts(C.self, role:)` (`registrar.partPorts(K.self, on: C.self)` for another plugin's kind). The
-row the pointer is on shows a dot just outside each end (`PortDot.part`), a drag from one is a
-`Connection` with `part`, and a connection on that channel ending on such a shape binds the row under its
+row the pointer is on shows a dot just outside each end (`PortDot.part`) and a faint band, which stays on
+the row a drag from one starts at while it lasts; the drag is a `Connection` with `part`, and a connection on that channel ending on such a shape binds the row under its
 end (the arrow ports' `ArrowPartRules`). Which kinds may be at a channel's ends is the channel's data:
 `static var isOnEveryChannel: Bool { false }` keeps it off kinds with ports on every channel (a subboard),
 while a stand-in still takes it. By name, `ConnectEnd(shape, part:)`, `ConnectionRequest(fromPart:toPart:)`
@@ -12692,7 +12692,7 @@ Draw knows no title, port, validity, mention or group. `draw` takes each from a 
 |---|---|---|---|---|
 | `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
 | `DrawLabels` | `registrar.drawLabels { record, registry in … }` | What a shape with no title is called for the reference `draw` puts beside the shape an edge ends at on another board (the label the maker is handed): the name where it is named in words, its first line or its values | The kind's name (`Untitled sticky note`) | MentionTextsPlugin |
-| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
+| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:rows:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side, and what an edge at one of its rows carries (`rows`, none by default) (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
 | `DrawEdgeIdentities` | `registrar.drawEdgeIdentity(IsAProperty.key)` | A property of the edge kind that tells two edges of one pair apart, named by the plugin that owns it (one a key) | The pair alone: two connections of one pair are `ambiguous_edge` | TypeNamesPlugin (`is`) |
 | `DrawChecks` | `registrar.drawChecks(touched: { changes, shapes in … }, rest: "canvas query …") { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, its level: a warning, an error, or `incomplete`, that the shape still needs something; the property it's about). And `touched`: of what the run wrote (`transaction.pending`, with its shapes), the other shapes to look at, on any board; the run checks each as it found it and as it leaves it and warns of each issue it brought (`rest` is the command that lists them all, an error, a warning or what a shape still needs, said after the twentieth shape) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`); with no `touched`, a run says only what's wrong with the shapes it wrote | ValidationChecksPlugin |
 | `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds`. A list whose schema is `uniqueItems` is written with each once, the first, after its strings are written (two titles of one shape are one id) | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
@@ -12725,6 +12725,7 @@ registrar.drawNames(name: { record, registry in registry.title(of: record) },
 registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                     attributes: [ChannelProperty.key.rawValue],
                     sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
+                    rows: { kind, registry in registry.drawCanName(kind) ? registry.partChannels(of: kind).map(\.rawValue) : [] },
                     ends: { record, registry in registry.connectionEnds(of: record) },
                     make: { request, existing, shapes throws(DrawError) in
                         try EdgeChannels.connection(for: request, existing: existing, in: shapes)

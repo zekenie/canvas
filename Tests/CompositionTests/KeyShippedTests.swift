@@ -83,6 +83,10 @@ private let shop = #"""
         _ = try drawnInProcess(#"sticky-note "Plan" below "payments""#, on: editor)
         let none = try drawnError(#"delete "Plan".x"#, on: editor)
         expectEqual(none?["reason"]?.stringValue, "unknown_row")
+        // Deletes are read before edges: an edge to a row a later line deletes names that line.
+        let later = try refusedInProcess("edge \"orders\".total_cents -> \"customers\".email\ndelete \"customers\".email", on: editor)
+        expectEqual(later.reason, "unknown_row")
+        expect(later.message.contains("is deleted on line 2"), later.message)
     },
     test("delete \"orders\".customer_id takes the row and, by the cascade, its key, said as the table updated and the arrow deleted") {
         let editor = try shopEditor()
@@ -283,6 +287,10 @@ let t3Panel2 = #"""
         expect(changedPixels(plain, drawing, in: try top("payments")) > 0, "payments takes keys: outlined")
         expect(changedPixels(plain, drawing, in: try top("orders")) > 0, "orders too")
         expectEqual(changedPixels(plain, drawing, in: try top("order_status")), 0, "the enum takes none")
+        // The row it's drawn from keeps its band while the drag lasts; no other row of refunds has one.
+        @MainActor func inside(_ row: CGRect) -> CGRect { CGRect(x: row.minX + 140, y: row.midY - 3, width: 60, height: 6) }
+        expect(changedPixels(plain, drawing, in: inside(paymentID)) > 0, "payment_id banded")
+        expectEqual(changedPixels(plain, drawing, in: inside(reason)), 0, "reason isn't")
         w.release()
         expectEqual(arrows(w.editor).count, 1, "let go on nothing: no key drawn")
     },

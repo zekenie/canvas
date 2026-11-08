@@ -129,13 +129,16 @@ public struct EdgeRequest: Hashable, Sendable {
 
 /// What edges are, for `canvas draw`: the kind connections are (nil while nothing draws them), the
 /// attribute keys an edge takes beside `from:` and `to:`, the sides of a kind an edge may leave by
-/// and what it may carry from each (for `canvas kinds`), which shapes a connection joins, and how
-/// one is made or changed. Only the sugar makes one (`registrar.drawEdges`).
+/// and what it may carry from each, and what an edge at one of its rows may carry (for `canvas
+/// kinds`), which shapes a connection joins, and how one is made or changed. Only the sugar makes
+/// one (`registrar.drawEdges`).
 @MainActor
 public struct DrawEdging {
     let kind: @MainActor (Registry) -> ShapeKind?
     let attributes: [String]
     let sides: @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]]
+    /// What an edge at one of a kind's rows (`"orders".customer_id`) may carry, either way: none for a kind with no rows.
+    let rows: @MainActor (ShapeKind, Registry) -> [String]
     let ends: @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?
     let make: @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord
 }
@@ -556,8 +559,9 @@ extension PluginRegistrar {
 
     /// Makes edges for `canvas draw`: `kind` is what connections are (nil: nothing draws them now,
     /// and an edge is `no_edges`), `attributes` the keys an edge takes beside `from:` and `to:`,
-    /// `sides` which sides of a kind an edge may leave by and what it carries from each (what
-    /// `canvas kinds` lists), `ends` which shapes a connection starts and ends on (nil: not two), and
+    /// `sides` which sides of a kind an edge may leave by and what it carries from each, `rows` what an
+    /// edge at one of its rows carries (what `canvas kinds` lists; none by default), `ends` which shapes
+    /// a connection starts and ends on (nil: not two), and
     /// `make` a connection as a request asks, not inserted: new (`existing` nil), or `existing`
     /// changed (only what the request names; itself when nothing would change). It throws what it
     /// can't do, with a reason (`no_channel`, `cannot_connect`, `invalid_value`); `draw` says which
@@ -566,9 +570,10 @@ extension PluginRegistrar {
     /// most one plugin makes edges.
     public mutating func drawEdges(kind: @escaping @MainActor (Registry) -> ShapeKind?, attributes: [String] = [],
                                    sides: @escaping @MainActor (ShapeKind, Registry) -> [EdgeRequest.Side: [String]],
+                                   rows: @escaping @MainActor (ShapeKind, Registry) -> [String] = { _, _ in [] },
                                    ends: @escaping @MainActor (AnyShapeRecord, Registry) -> (from: ShapeID, to: ShapeID)?,
                                    make: @escaping @MainActor (EdgeRequest, AnyShapeRecord?, ShapeContext) throws(DrawError) -> AnyShapeRecord) {
-        contribute(DrawEdging(kind: kind, attributes: attributes, sides: sides, ends: ends, make: make), to: DrawEdges.self)
+        contribute(DrawEdging(kind: kind, attributes: attributes, sides: sides, rows: rows, ends: ends, make: make), to: DrawEdges.self)
     }
 
     /// Says that the property `key` of the edge kind tells two edges of one pair apart in `canvas draw`

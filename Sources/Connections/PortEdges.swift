@@ -15,6 +15,8 @@ public struct PortEdgesPlugin: ListedPlugin {
         registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                             attributes: [ChannelProperty.key.rawValue],
                             sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
+                            // A kind's rows' channels (a table's columns: `foreign-key`), for an edge that names a row.
+                            rows: { kind, registry in registry.drawCanName(kind) ? registry.partChannels(of: kind).map(\.rawValue) : [] },
                             ends: { record, registry in registry.connectionEnds(of: record) },
                             make: { request, existing, shapes throws(DrawError) in
                                 try EdgeChannels.connection(for: request, existing: existing, in: shapes)

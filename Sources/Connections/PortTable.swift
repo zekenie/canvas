@@ -219,6 +219,11 @@ extension Registry {
         kindPorts(kind, standingFor: targets)?.entries.contains { $0.onParts == onParts } ?? false
     }
 
+    /// The channels `kind` has ports on on its parts (its rows), whatever their role, in the port table's order.
+    public func partChannels(of kind: ShapeKind) -> [ChannelID] {
+        kindPorts(kind, standingFor: [])?.entries.filter(\.onParts).map(\.channel) ?? []
+    }
+
     /// The channels a drag from a dot on one of `kind`'s parts starts connections on, in the port table's order.
     public func partDotChannels(of kind: ShapeKind, standingFor targets: [ShapeKind] = []) -> [ChannelID] {
         kindPorts(kind, standingFor: targets)?.partDots ?? []

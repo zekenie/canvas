@@ -149,7 +149,7 @@ Called Table, placed by the Table tool
 | `locked` | true\|false |
 | `private` | true\|false |
 
-**edges**: none
+**edges**: at its rows only (`"T".row`), on `foreign-key`
 
 **via**: `reference` (needs `public`) can stand for it
 

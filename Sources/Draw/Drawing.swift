@@ -197,6 +197,8 @@ struct Drawing {
     /// The rows `delete "X".row` takes out, by shape, each with its statement, in script order: taken out after the shapes
     /// are written (a statement may restate the shape too), and what they take along with them (keys) goes in the same step.
     private(set) var rowDeletes: [(statement: Statement, shape: ShapeID, parts: Set<PartID>)] = []
+    /// The line each row deleted is deleted on, for an edge that names it.
+    private var rowDeleteLines: [PartAddress: Int] = [:]
     /// The shapes `delete "X"` removes (their connections aside).
     private(set) var deletedShapes: Set<ShapeID> = []
     /// The boards the deleted shapes own, worked out once for the shapes deleted so far (a name asks it once each).
@@ -597,6 +599,7 @@ struct Drawing {
             }
             let part = try self.part(named: row, of: record, said: said, statement)
             try writable(record, statement, said, so: "its rows can't be deleted")
+            rowDeleteLines[PartAddress(record.id, part: part)] = rowDeleteLines[PartAddress(record.id, part: part)] ?? statement.line
             if let at = rowDeletes.firstIndex(where: { $0.shape == record.id }) {
                 guard rowDeletes[at].parts.insert(part).inserted else {
                     throw DrawError(statement, .duplicate, "\(said)\(ShapeName.writtenRow(row)) is deleted twice", hint: "delete it once")
@@ -1498,8 +1501,10 @@ struct Drawing {
             }
             guard let record else { throw DrawError(statement, .internal, "\(written) came out naming a shape that isn't on the board") }
             let id = try self.part(named: row, of: record, said: named.said, statement)
-            if rowDeletes.contains(where: { $0.shape == record.id && $0.parts.contains(id) }) {
-                throw DrawError(statement, .unknownRow, "\(named.said)\(ShapeName.writtenRow(row)) is deleted above", hint: "leave the delete out, or the edge")
+            // Deletes are read before edges, so the one that takes the row may be on a later line.
+            if let line = rowDeleteLines[PartAddress(record.id, part: id)] {
+                throw DrawError(statement, .unknownRow, "\(named.said)\(ShapeName.writtenRow(row)) is deleted on line \(line)",
+                                hint: "leave the delete out, or the edge")
             }
             return id
         }

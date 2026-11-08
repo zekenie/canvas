@@ -59,6 +59,21 @@ func rosterRow(_ index: Int) -> (middle: CGPoint, left: CGPoint, right: CGPoint)
         expectEqual(dotPixels(plain, onThree, at: rosterRow(2).right), 16)
         expectEqual(dotPixels(plain, onThree, at: rosterRow(1).right), 0)
     },
+    test("the row whose dots show wears a faint band across it; no other row does, and it goes with the pointer") {
+        let (h, _, _) = try rosterPortsHarness()
+        let plain = render(h)
+        /// The inside of row `index`, clear of the roster's edges and its dots.
+        func inside(_ index: Int) -> CGRect {
+            CGRect(x: rosterFrame.minX + 20, y: rosterRow(index).middle.y - 4, width: rosterFrame.width - 40, height: 8)
+        }
+        h.move(to: rosterRow(1).middle)
+        let onTwo = render(h)
+        expect(changedPixels(plain, onTwo, in: inside(1)) > 0, "the hovered row is banded")
+        expectEqual(changedPixels(plain, onTwo, in: inside(0)), 0)
+        expectEqual(changedPixels(plain, onTwo, in: inside(2)), 0)
+        h.move(to: CGPoint(x: 600, y: 600))
+        expectEqual(changedPixels(plain, render(h), in: inside(1)), 0, "gone with the dots")
+    },
     test("the row's dot is hovered as a button naming its row, and kept while the pointer goes out to it") {
         let (h, roster, rows) = try rosterPortsHarness()
         h.move(to: rosterRow(1).middle)

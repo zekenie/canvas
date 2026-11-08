@@ -59,8 +59,8 @@ final class KeyIndex {
         return keys
     }
 
-    /// Where `column` of `table`'s key goes, by the far row's live name read with its table's ("id in customers"); nil for a
-    /// column with no key.
+    /// The row `column` of `table`'s key goes to, by address, so its name is read live where it's said
+    /// (`editor.accessibleName(of:)`: "id in customers"); nil for a column with no key.
     func target(of column: PartID, in table: ShapeID) -> PartAddress? { keys(of: table)[column] }
 }
 
