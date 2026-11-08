@@ -6,6 +6,26 @@ Don't edit it: `mise run skill:kinds` writes it again. -->
 Generated from `canvas kinds`, the app's own answer, so it is what the installed plugins say today; `mise run skill:kinds` writes it again. [language.md](language.md)
 says what the words in it do; `canvas kinds <kind> --schema` adds a kind's JSON Schema.
 
+## `api`
+
+Called API, placed by the API tool
+
+- **size**: `420x78`
+- **named**: `named`
+
+| attribute | takes |
+|---|---|
+| `deprecated` | true\|false |
+| `endpoints` | lines (METHOD /whole/path/{param} [(Body)] [→ [status] [Response]]; a path alone a header) or JSON [JSON] |
+| `locked` | true\|false |
+| `private` | true\|false |
+| `server` | a line (host[/path] [bearer \| basic \| apikey NAME \| oauth2]) or JSON {auth, host} |
+| `version` | text |
+
+**edges**: none
+
+**via**: `reference` (needs `public`) can stand for it
+
 ## `database`
 
 Called Database, placed by the Database tool

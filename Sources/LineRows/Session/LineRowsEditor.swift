@@ -570,7 +570,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         var wanted: CGFloat?
         if focus != .title {
             let style = model.style
-            let needed = ceil(style.textInset + textWidth + LineFieldStyle.textSlack + LineFieldStyle.caretMargin + style.trailingInset)
+            let needed = ceil(style.textInset + indent(of: focus) + textWidth + LineFieldStyle.textSlack + LineFieldStyle.caretMargin
+                              + style.trailingInset + chevronRoom)
             if needed > stored { wanted = model.widestLine.map { min(needed, max($0, stored)) } ?? needed }
             if wanted == stored { wanted = nil }
         }

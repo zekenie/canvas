@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import CanvasTesting
 import CoreGraphics
@@ -207,6 +208,38 @@ private struct NewChitsPlugin: CanvasPlugin {
         let made = try require(editor.newType(named: "Thing", besides: chit))
         expectEqual(editor.document[made]?.kind, Memo.kind)
         expectEqual(editor.typesOf(chit), [made])
+    },
+    test("a type made for another plugin's words (an endpoint's body): no owner an instance of it, nothing edited or selected, put down settled beside them; one step, New Type") {
+        let editor = try typeEditor()
+        let ann = editor.add(memo("Ann"))
+        editor.undoHistory.seal()
+        let made = try require(editor.newType(named: "Problem", besides: [ann], givingType: false, editing: false))
+        expectEqual(editor.document[made]?[TitleProperty.self], "Problem")
+        expect(editor.types?.isType(made) == true, "a type")
+        expectEqual(editor.typesOf(ann), [], "the owner is no instance of it")
+        expectEqual(editor.editingShapeID, nil, "nothing edited")
+        expect(!editor.selectedShapeIDs.contains(made), "nothing selected")
+        let box = try require(editor.document[made]?.box)
+        expect(!box.intersects(try require(editor.document[ann]?.box)), "beside it, clear of it")
+        expectEqual(editor.undoHistory.undoName, "New Type")
+        editor.undo()
+        expect(editor.document[made] == nil, "one step")
+    },
+    test("a type's chip by its id, for another plugin: its name now in its color; a shape that is no type, or none, the words in a dashed pill") {
+        let editor = try typeEditor()
+        let ann = editor.add(memo("Ann"))
+        let made = try require(editor.newType(named: "Refund", besides: ann))
+        let types = try require(editor.types)
+        let chip = TypeChips.label(forType: made, named: "Refunds", in: types)
+        expectEqual(chip.text, "Refund", "its name now, not the words")
+        expect(!chip.isMissing && chip.tint == TypeChips.tint(of: made, in: types))
+        expect(TypeChips.label(forType: made, named: "", in: types, onPaper: true).tint != nil)
+        let none = TypeChips.label(forType: nil, named: "Problem", in: types)
+        expectEqual(none.text, "Problem")
+        expect(none.isMissing, "dashed")
+        expect(TypeChips.label(forType: ann, named: "Ann", in: types).isMissing, "a shape that is no type")
+        expectEqual(types.types(named: " Refund "), [made], "found by its name, folded")
+        expectEqual(types.types(named: "Nothing"), [])
     },
     test("a new type made empty asks the model nothing; words typed after it are read as for any type") {
         let model = ScriptedLanguageModel(), scheduler = ManualScheduler()

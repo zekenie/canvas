@@ -103,7 +103,7 @@ public struct LineReading<Row> {
 
 /// One thing that fits at the caret: what the list shows and a pick puts in, and the shape or row it stands for, which
 /// is lit on the board while it's highlighted (an enum offered by name). Or an action ("New type Problem"), done by Return
-/// or a click, never by Tab's pick (`action(_:_:)`).
+/// or a click (and Tab, which picks either) (`action(_:_:)`).
 public struct LineOffer: Equatable {
     public var completion: CaretCompletion
     public var light: PartAddress?

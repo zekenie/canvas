@@ -44,7 +44,7 @@ enum APITypes {
     }
 
     /// A type's pill at rest, on the paper: its name now in its color, or the words in a dashed pill while they name none.
-    static func pill(_ ref: TypeRef, _ editor: CanvasEditor?, types: TypeIndex?) -> AdornmentLabel {
+    static func pill(_ ref: TypeRef, types: TypeIndex?) -> AdornmentLabel {
         TypeChips.label(forType: ref.shape, named: ref.words, in: types, onPaper: true)
     }
 

@@ -227,7 +227,7 @@ enum APIDrawing {
         }
         if let response = endpoint.responses.first {
             if let type = response.type, !type.words.isEmpty {
-                let label = APITypes.pill(type, nil, types: types)
+                let label = APITypes.pill(type, types: types)
                 let size = label.contentSize
                 place(width: size.width) { at in label.draw(at: CGPoint(x: at, y: middle - size.height / 2), in: cg) }
             }
@@ -239,7 +239,7 @@ enum APIDrawing {
             place(width: arrow.width) { at in RowText.draw(arrow, at: at, middle: middle, in: cg) }
         }
         if let body = endpoint.body, !body.words.isEmpty {
-            let label = APITypes.pill(body, nil, types: types)
+            let label = APITypes.pill(body, types: types)
             let size = label.contentSize
             place(width: size.width) { at in label.draw(at: CGPoint(x: at, y: middle - size.height / 2), in: cg) }
         }

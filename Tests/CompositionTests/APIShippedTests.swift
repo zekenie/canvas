@@ -104,6 +104,11 @@ private let models = #"""
         expectEqual(editor.document[api.id]?[TitleProperty.self], "orders")
         expectEqual(undoTitle(w.window), "Undo Add API")
         expectEqual(editor.menuTitle(of: .insertBeside), "New API Beside")
+        walk.press(Chord(Key.return, .shift))
+        expectEqual(apis(editor).count, 2, "⇧↩: an API beside it")
+        expectEqual(w.lineRows?.focus, .title, "its name typed at once")
+        expectEqual(undoTitle(w.window), "Undo Add API")
+        walk.press(.escape)
     },
     test("E2 panel 2: (New offers the file's types and New type New last, an action; Tab takes NewRefund, its pill solid; a type named by nothing is dashed") {
         let w = try EmptyBoardWindow()
@@ -193,6 +198,38 @@ private let models = #"""
         editor.undo()
         expect(editor.document[made.id] == nil, "one undo takes the note")
         expectEqual(apis(editor).first?.props.endpoints.last?.endpoint?.responses.map(\.status), ["201", "404"], "and the words that named it")
+    },
+    test("New type in a row's line: GET /x -> 200 Problem, Return does the action, the type made and the row written with it, the caret kept in the line; Undo New Type takes both") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(models + #"\#napi "orders API" right of "NewRefund" (gap: 80) endpoints: "GET /orders/{id}""#)
+        let api = try require(apis(editor).first)
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.type("GET /x -> 200 Problem", with: walk)
+        let field = try require(w.line)
+        expectEqual(field.highlightedOffer, "New type Problem")
+        let before = Set(editor.document.shapes.map(\.id))
+        walk.press(.return)
+        let made = try require(editor.document.shapes.first { !before.contains($0.id) })
+        expectEqual(made[TitleProperty.self], "Problem")
+        let row = try require(apis(editor).first?.props.endpoints.last?.endpoint)
+        expectEqual(row.responses, [EndpointResponse(status: "200", type: TypeRef("Problem", shape: made.id))])
+        expectEqual(field.string, "GET /x → 200 Problem", "the caret stays in the line")
+        expect(w.window.firstResponder === field)
+        expectEqual(w.lineRows?.focus, .row(row.id), "the line is the row now")
+        expectEqual(undoTitle(w.window), "Undo New Type", "Undo is the board's, not the typing's")
+        expect(!field.highlights.contains(where: \.isDashed), "its pill solid now")
+        walk.press(.return)
+        expectEqual(w.lineRows?.focus, .waiting, "Return again: a new row")
+        walk.press(.escape)
+        editor.undo()
+        expect(editor.document[made.id] == nil)
+        expectEqual(apis(editor).first?.props.endpoints.count, 1, "one undo takes the note and the row")
     },
     test("draw: server: a line, endpoints: whole paths under the longest header, joined by method and full path; a run again unchanged; a type named is bound, a pill, no arrow") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

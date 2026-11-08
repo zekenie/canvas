@@ -243,7 +243,13 @@ extension KitBench {
         expectEqual(b.editor.document[api]?.typed(as: API.self)?.props.server, APIServer(host: "api.shop.dev/v1", auth: "bearer"))
         expectEqual(b.undoName, "Change Server")
         expectEqual(view.focus, .waiting)
+        // Left with the server's caret, the API draws its server again.
+        b.press(.up)
+        b.press(.up)
+        let record = try require(b.editor.document[api])
+        expectEqual(b.editor.shapeContext.layoutInput(LineRowsLayout.fixed, of: record), true, "the field draws it")
         b.press(.escape)
+        expectEqual(b.editor.shapeContext.layoutInput(LineRowsLayout.fixed, of: try require(b.editor.document[api])), nil, "the API draws it again")
         b.editor.undo()
         expectEqual(b.editor.document[api]?.typed(as: API.self)?.props.server, APIServer())
     },

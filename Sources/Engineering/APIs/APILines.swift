@@ -210,11 +210,12 @@ struct APILines: LineModel {
     func isHeader(_ row: APIRow) -> Bool { row.header != nil }
     var showsCardChevron: Bool { true }
 
-    var fixedLine: LineFixedLine<API>? {
-        LineFixedLine(name: APIStyle.serverName, placeholder: APIStyle.serverPlaceholder, stepName: APIStyle.changeServerStep,
-                      grammar: ServerLineGrammar(), rect: APIRows.serverRect(in:),
-                      get: { $0.server.isEmpty ? nil : $0.server }, set: { $0.server = $1 ?? APIServer() })
-    }
+    var fixedLine: LineFixedLine<API>? { Self.server }
+
+    /// Its server: the API's fixed first line.
+    private static let server = LineFixedLine<API>(name: APIStyle.serverName, placeholder: APIStyle.serverPlaceholder, stepName: APIStyle.changeServerStep,
+                                                   grammar: ServerLineGrammar(), rect: APIRows.serverRect(in:),
+                                                   get: { $0.server.isEmpty ? nil : $0.server }, set: { $0.server = $1 ?? APIServer() })
 
     /// A header's prefix starts after its chevron, and the endpoints under a header as far in.
     func indent(at index: Int, of rows: [APIRow], isNew: Bool) -> CGFloat {

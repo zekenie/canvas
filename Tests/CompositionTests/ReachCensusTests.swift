@@ -35,8 +35,8 @@ private let censusFields = #"{"type": "object", "properties": {"role": {"type": 
 
 /// A board with a shape of every shipped kind in a window, the first minute's types and notes among them (`Minute`):
 /// two types with typed notes, a relationship type with fields, a relating arrow, a locked note, a private note that
-/// mentions it, an arrow between those two, a reference standing for the locked note, a frame, a subboard, and the engineering kit's table, enum and
-/// database, with the kit on so its ways in are swept too.
+/// mentions it, an arrow between those two, a reference standing for the locked note, a frame, a subboard, and the engineering kit's table, enum,
+/// database and API, with the kit on so its ways in are swept too.
 @MainActor
 final class CensusBoard {
     let m: Minute
@@ -83,6 +83,9 @@ final class CensusBoard {
         values[TitleProperty.self] = "order_status"
         var database = ShapeRecord(Database(frame: CGRect(x: 1600, y: 1250, width: 300, height: 200)))
         database[TitleProperty.self] = "shop"
+        var api = ShapeRecord(API(frame: CGRect(x: 1960, y: 1460, width: 380, height: 102), server: APIServer(host: "api.shop.dev/v1", auth: "bearer"),
+                                  endpoints: ["/orders", "POST /{id}/refunds (NewRefund) → 201 Refund"].compactMap { EndpointGrammar.read($0) }))
+        api[TitleProperty.self] = "orders API"
         editor.turn(EngineeringKit.self, on: true)
         // A note of more types than its chips have room for: a "+N" chip.
         let account = editor.addTypeNote(#"{"type": "object", "properties": {}}"#, title: "Customer Account",
@@ -103,6 +106,7 @@ final class CensusBoard {
             t.insert(table)
             t.insert(values)
             t.insert(database)
+            t.insert(api)
             t.insert(arrow)
             t.insert(gig)
         }
@@ -111,7 +115,7 @@ final class CensusBoard {
         var names = [m.feature: "Feature", m.layer: "Layer", m.featureNote: "the Feature note", m.layerNote: "the Layer note", made: "in",
                  budget.id: "Budget", ask.id: "Ask", pill.id: "the reference", frame.id: "Plans", subboard.id: "Ship",
                      account: "Customer Account", gig.id: "Gig", table.id: "orders", values.id: "order_status",
-                     database.id: "shop"]
+                     database.id: "shop", api.id: "orders API"]
         for arrow in m.arrows {
             let from = arrow.props.start.binding.flatMap { names[$0.shapeID] } ?? "?", to = arrow.props.end.binding.flatMap { names[$0.shapeID] } ?? "?"
             names[arrow.id] = "the arrow from \(from) to \(to)"

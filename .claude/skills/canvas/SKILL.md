@@ -1,6 +1,6 @@
 ---
 name: canvas
-description: Put or lay out things on a live board in Infinite Canvas (sticky notes, types, relationships, frames, subboards, references, database tables and the arrows between them, for plans, flows, architectures, schemas, retros) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English, and look at it with `canvas capture`, a picture of a board or part of one. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
+description: Put or lay out things on a live board in Infinite Canvas (sticky notes, types, relationships, frames, subboards, references, database tables, APIs and the arrows between them, for plans, flows, architectures, schemas) with `canvas draw`, a text language where each line says what a shape is, what it's called, and where it sits against shapes already named; and find out what's on a board with `canvas query`, a CSS-like query, or `--ask` in English, and look at it with `canvas capture`, a picture of a board or part of one. Use when asked to "draw this on the board", "put these on the canvas", "make a diagram in the app", "connect these on the board", "what's on the board", "which notes mention X", "is X inside Y", "what links to X", "how many…", or to turn a plan, list or architecture into shapes in the app. NOT for changing the app's Swift code, plugins, tests or docs; NOT for reading or writing .canvasboard files (only `canvas` touches a board); NOT for diagrams meant for a file (SVG, Mermaid, images).
 ---
 
 # Drawing on and reading a board with canvas
@@ -146,6 +146,12 @@ A database's tables are the engineering kit's kinds: a `table` takes its `column
 
 ```draw
 table "accounts" below "Sprint 3" columns: "id uuid pk\nemail text unique\ncreated_at timestamptz?"
+```
+
+An `api` is the kit's REST API: `server:` its first line (`host[/path] [bearer]`), `endpoints:` its rows as lines, `METHOD /whole/path/{param} [(Body)] [→ [status] [Response]]`, a path alone a header that the endpoints under it are grouped by (each goes under the longest header its path starts with), joined by method and whole path. A body or a response names a type note by its title, a pill and never an arrow.
+
+```draw
+api "accounts API" below "accounts" server: "api.shop.dev/v1 bearer" endpoints: "/accounts\nGET /accounts/{id} → Account\nPOST /accounts (NewAccount) → 201 Account"
 ```
 
 ### Placements
@@ -460,7 +466,7 @@ For a large body of connected information (a codebase, an org, research notes, a
 
 [reference/query.md](reference/query.md) is the whole query language, on a story file: naming shapes, attributes, inside, edges and their direction, the plugins' words, yes-or-no questions, `--ask`, and every refusal with its fix. [query-prompt.md](query-prompt.md) is what the app tells Claude for `--ask`, word for word, with how to give yourself what it's given. `canvas help query` is the command's own help, and `canvas query-vocabulary` what this app's queries can name: its kinds and their attributes, its edge types and its words.
 
-[reference/engineering.md](reference/engineering.md) is how a database's tables, their enums and the databases that hold them are written: a column a line, values a line each, joined by name.
+[reference/engineering.md](reference/engineering.md) is how a database's tables, their enums and the databases that hold them are written, and an API's server and endpoints: a column, a value or an endpoint a line, joined by name.
 
 [reference/relationships.md](reference/relationships.md) is how a relationship is written and read: a relationship type and its ends, two notes related with values, what a row says of an arrow (`is`, `endOf`, `fits`, `relates`), a misfit, drawing one again and the queries that say what a note is related to. [reference/references.md](reference/references.md) is what a reference does to what you read: a pill that stands for a public shape, so an arrow into it is an arrow into the shape, and how a row says it (`via`, `more`), what it stands for (`stands-for`), and what a script can make of one (an edge to a shape on another board, or a pill drawn by its query and named by its id).
 
