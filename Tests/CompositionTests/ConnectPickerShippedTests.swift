@@ -5,6 +5,7 @@ import Boards
 import CanvasTesting
 import CanvasUI
 import Connections
+import LanguageModels
 import Locking
 import CoreGraphics
 import Mentions
@@ -160,6 +161,19 @@ extension NestedWindow {
         expect(w.pills.isEmpty)
         expectEqual(heard, 1)
         expectEqual(w.editor.undoHistory.undoName, "Connect")
+        expectEqual(w.editor.announcements.last, "Connect", "VoiceOver hears the step")
+        expectEqual(w.picker?.lastClosing, .asked, "the pick closed it")
+    },
+    test("a kind says what a pick means once: two plans for one kind refuse the registry") {
+        let two = [Contributor(id: "one") { $0.connectPicks(StickyNote.self) { _, _ in nil } },
+                   Contributor(id: "two") { $0.connectPicks(StickyNote.self) { _, _ in nil } }]
+        var thrown: (any Error)?
+        do {
+            _ = try Registry(plugins: ShippedPlugins.plugins(model: ScriptedLanguageModel()) + two)
+        } catch {
+            thrown = error
+        }
+        expect(thrown != nil, "a second contribution for the kind is refused")
     },
     test("a pick on another board puts a reference pill beside the shape and draws the arrow to it, in one step; a second pick of it reuses the pill") {
         let w = try NestedWindow()
@@ -484,6 +498,12 @@ extension NestedWindow {
         let arrow = w.nest.arrow(on: 1)
         w.editor.selection = arrow
         expect(!w.canOpenPicker(on: arrow))
+        // Nothing to pick for it, not being edited: ⌘L shakes it, and no picker opens.
+        let steps = w.editor.undoHistory.undoName
+        w.editor.perform(.connect)
+        expect(w.picker?.isOpen == false, "no picker")
+        expect(w.editor.service(RefusalShake.self)?.isShaking == true, "the shape shakes")
+        expectEqual(w.editor.undoHistory.undoName, steps, "no step")
         expect(w.editor.beginEditing(arrow), "an arrow's label is edited")
         w.window.spin { w.window.firstResponder is NSText }
         _ = menus.main.performKeyEquivalent(with: w.window.keyEvent("l", code: 37, modifiers: .command))

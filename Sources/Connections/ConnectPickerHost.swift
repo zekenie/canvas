@@ -113,11 +113,11 @@ public final class ConnectPickerHost {
 
     private func didClose(_ field: ConnectPickerTextView?, _ reason: CanvasCardClosing) {
         guard let field else { return }
-        // Its list goes with it whichever picker is the current one.
+        // Its list goes with it whichever picker is the current one, and why it closed is said either way.
         field.detachList()
+        lastClosing = reason
         guard field === shown?.field else { return }
         shown = nil
-        lastClosing = reason
     }
 
     /// A pick of a row, as Return on it is: it closes first, so the connection is made from the canvas as from a key, then what the pick means is done
