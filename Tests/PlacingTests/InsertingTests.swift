@@ -38,6 +38,7 @@ private let tile = ToolID(placing: Tile.kind)
         let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor)?.near(a, put: .inView(at: 1))?.rect)
         expect(h.editor.insert(tile, beside: [a]))
         expectEqual(try inserted(h).box, expected)
+        expectEqual(h.editor.announcements, ["Add Tile"], "VoiceOver hears the step, once")
         expectEqual(expected.minX, 180, "80 right of it")
         expectEqual(expected.minY, 0, "its top level with the shape's, as two tables side by side are drawn")
     },

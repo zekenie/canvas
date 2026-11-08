@@ -358,6 +358,20 @@ import TextEditing
         let lossy = DroppingGrammar().losses(in: ["red 3 and more"], unread: { $0.unread.split(separator: " ").map(String.init) }, in: context)
         expectEqual(lossy.map(\.line), ["red 3 and more"])
     },
+    test("a word typed whole that longer offers still extend keeps the list, itself first and highlighted; ↑ ↓ on it are the line's") {
+        let b = try Bench()
+        let a = b.tally("a", ["x"])
+        b.tally("berries", [], at: CGPoint(x: 400, y: 100))
+        b.tally("berriesjam", [], at: CGPoint(x: 400, y: 300))
+        b.begin(a)
+        b.type("y berries")
+        expectEqual(b.field.listedOffers.first, "berries", "the word typed whole, first")
+        expect(b.field.listedOffers.contains("berriesjam"), "a longer one still offered: \(b.field.listedOffers)")
+        expectEqual(b.field.highlightedOffer, "berries")
+        b.press(.up)
+        expect(b.field.offerList == nil, "↑ goes on to the rows, the list gone")
+        expectEqual(b.rows(a).last?.ref, tallies(named: "berries", in: b.editor).first, "the line written as typed, never the longer offer")
+    },
     test("after a label the list offers numbers and the other tallies, ranked by what's typed; Tab picks; Return never picks a word and commits") {
         let b = try Bench()
         let a = b.tally("a", ["x"])

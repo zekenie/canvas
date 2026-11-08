@@ -121,6 +121,24 @@ let columnCorpus = [
         b.type("email text unique ")
         expectEqual(b.field.listedOffers, ["null", "default", "pk", "→"], "what the line says already isn't offered")
     },
+    test("a type typed whole that longer types extend keeps the list (`time`: timestamp, timestamptz), the word first; ↓ is the next row") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk", "customer_id uuid"])
+        b.begin(orders)
+        b.press(.up)
+        b.type(" ")
+        b.field.setSelectedRange(NSRange(location: 0, length: (b.field.string as NSString).length))
+        b.type("created_at time")
+        expectEqual(b.field.listedOffers.first, "time", "the word as typed, first")
+        expect(b.field.listedOffers.contains("timestamp") && b.field.listedOffers.contains("timestamptz"), "\(b.field.listedOffers)")
+        expectEqual(b.field.highlightedOffer, "time")
+        b.field.setSelectedRange(NSRange(location: 0, length: (b.field.string as NSString).length))
+        b.type("customer_id int")
+        expect(b.field.listedOffers.contains("int8") && b.field.listedOffers.contains("integer"), "int still extended")
+        b.press(.down)
+        expect(b.field.offerList == nil, "↓ on the word typed whole goes on, as T4's uuid typed over as int")
+        expectEqual(b.lines(orders), ["id uuid pk", "customer_id int"])
+    },
     test("the file's enums are offered after a name, each a purple chip lit on the board while it's highlighted; picked, the column is bound to it") {
         let b = try KitBench()
         let status = b.enumType("order_status", ["pending", "paid"])

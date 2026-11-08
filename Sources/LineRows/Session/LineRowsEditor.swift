@@ -485,6 +485,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         if band != nil { band = nil }
         isMoving = true
         defer { isMoving = false }
+        if focus == .title, stop != .title { titleLeft() }
+        if stop == .title, focus != .title { titleAtFocus = shape?[TitleProperty.self] }
         focus = stop
         if let waitingAt { self.waitingAt = waitingAt }
         slide = 0
@@ -1155,11 +1157,27 @@ final class LineSession<Model: LineModel>: LineRowsView {
         show(.title, at: .end, takingKeys: false)
     }
 
+    /// The title as it was when the caret came into its field, to tell a rename as the caret leaves it.
+    private var titleAtFocus: String?
+
+    /// The caret leaves the title's field: a name changed there in the kind's rename step ("Rename Table") is heard by
+    /// VoiceOver once, as a row's commit is. A name typed into the step that placed the shape ("Add Table", heard as it
+    /// landed) is not said again.
+    private func titleLeft() {
+        let now = shape?[TitleProperty.self]
+        guard now != titleAtFocus else { return }
+        titleAtFocus = now
+        let rename = (editor.registry.definition(for: Model.Props.kind) as? any Editable)?.editingStepName
+        if let rename, editor.undoHistory.undoName == rename { editor.announce(rename) }
+    }
+
     /// The title's field ended: Return to the waiting line, Tab on, ⇧Tab back, Escape out.
     private func titleEnded(_ ending: TitleField.Ending) {
         switch ending {
         case .done: show(.waiting, at: .end, waitingAt: rows.count)
-        case .escape: context.end()
+        case .escape:
+            titleLeft()
+            context.end()
         case .tab: tab(by: 1)
         case .backTab: tab(by: -1)
         }

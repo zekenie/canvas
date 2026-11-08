@@ -1388,7 +1388,7 @@ public final class CanvasEditor {
     /// is placed, nothing else happens (the tool stays, nothing's selected), and services hear the
     /// board's owner refused. (Other tools create shapes with `transact { $0.insert(...) }`, as a
     /// port's drag does.)
-    /// The insert names its undo step "Add" and the placing tool's label ("Add Note").
+    /// The insert names its undo step "Add" and the placing tool's label ("Add Note"), which VoiceOver hears.
     public func place(_ placement: Placement, at point: CGPoint) {
         put(placement.shape(at: point), placing: placement, from: undoHistory.isPressHeld && session == nil ? point : nil)
     }
@@ -1578,6 +1578,8 @@ public final class CanvasEditor {
         if settled { return glide(nudges) }
         if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace([record.id], in: self) }
+        // VoiceOver hears the step, as it hears a row's commit: however it was put down (a tool's click, Insert, ⇧↩, a command).
+        if document[record.id] != nil { announce("Add \(label ?? "Shape")") }
         let edits = placement.completion == .edit
         if let point, session == nil {
             session = PlacingSession([record.id], from: point, edits: edits, restoring: before, in: self)
