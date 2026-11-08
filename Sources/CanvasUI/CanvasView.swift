@@ -673,6 +673,7 @@ extension CanvasView: NSMenuItemValidation {
             layoutCard()
             if let responder = card.firstResponder { window?.makeFirstResponder(responder) }
         } else {
+            cardHost?.setAccessibilityLabel(card.accessibilityLabel ?? CardStyle.accessibilityLabel)
             layoutCard()
         }
     }

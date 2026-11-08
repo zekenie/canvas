@@ -99,6 +99,19 @@ private final class Stop: NSView {
         rig.h.editor.moveCard(to: CGRect(x: 100, y: 500, width: 120, height: 22))
         expectEqual(rig.canvas.cardFrame, CGRect(x: 100, y: 8, width: 200, height: 488))
     },
+    test("what VoiceOver calls it is set again while it shows, its box named anew; the same label is nothing") {
+        let rig = try Rig()
+        expect(rig.show())
+        let host = try require(rig.host)
+        expectEqual(host.accessibilityLabel(), "Card")
+        rig.h.editor.setCardLabel("Details of customer_id")
+        expectEqual(rig.h.editor.card?.accessibilityLabel, "Details of customer_id")
+        expectEqual(host.accessibilityLabel(), "Details of customer_id")
+        expect(rig.host === host, "the same box, not a new one")
+        rig.h.editor.setCardLabel("Details of customer_id")
+        rig.h.editor.setCardLabel(nil)
+        expectEqual(host.accessibilityLabel(), "Card")
+    },
     test("it stays under what the host covers of the canvas's top") {
         let rig = try Rig()
         rig.h.editor.coveredTop = { _ in 100 }

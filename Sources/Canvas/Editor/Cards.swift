@@ -36,7 +36,7 @@ public struct CanvasCard {
     /// shows none of.
     public let showsZoomedOut: Bool
     /// What VoiceOver calls it ("Fields of Checkout"); the host names its box with it. Nil: "Card".
-    public let accessibilityLabel: String?
+    public internal(set) var accessibilityLabel: String?
     /// The size it wants, in view points, no larger than `room`. Asked each time it is laid out.
     public let size: @MainActor (_ room: CGSize) -> CGSize
     /// Called once, after it is taken down and the keyboard is back where it was. Closed because a commit took
@@ -152,6 +152,15 @@ extension CanvasEditor {
     /// Its content wants another size: the host lays it out again.
     public func cardDidResize() {
         guard shownCard != nil else { return }
+        delegate?.editorCardDidChange(self)
+    }
+
+    /// What VoiceOver calls the card showing is another now (its row was renamed): the host names its box again. Nothing, for
+    /// the same label.
+    public func setCardLabel(_ label: String?) {
+        guard var card = shownCard, card.accessibilityLabel != label else { return }
+        card.accessibilityLabel = label
+        shownCard = card
         delegate?.editorCardDidChange(self)
     }
 
