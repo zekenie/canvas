@@ -17,7 +17,12 @@ whatever its form.
   board (`QueryFieldsBoard.swift`: two types, two relationship types (Placed by, Friendship) and six notes
   with field values, a mention, the relationships between them and one that is a misfit) and 19 on the
   school board (`QuerySchoolBoard.swift`: Teacher, Student and Pet, the relationship types Teaches and Has pet
-  between their notes, and a subboard of plain notes and arrows). The fields board's ten
+  between their notes, and a subboard of plain notes and arrows), and 12 on the kit board (`QueryKitBoard.swift`, file
+  `kit`, category `engineering`: a database of tables with their keys, an enum, a table outside it, two APIs whose
+  endpoints write, read and call, and a note that calls one). The kit board's k01 to k12 ask about columns (k01, k09:
+  `[columns.…]`), a database's tables, keys either way, which endpoint writes or reads a table (the API whose row the arrow
+  leaves), a route by another parameter's name (k06: `:route`), what calls an API, an enum's value, the arrows of a
+  relation, and a change (k12, unanswerable). The fields board's ten
   relationship cases are r01 to r10 (who is Ann Lee friends with, which orders she placed, who placed an
   order, which friendships began before 2020, which orders have no customer, which relationships don't fit,
   which relationship types Order has, who has the most friends, a mention that is not a relationship, and

@@ -78,14 +78,15 @@ enum KitAskFacts {
                 endpoint.path = APIGroups.fullPath(of: index, in: api.props.endpoints)
                 var line = "- " + EndpointGrammar.print(endpoint)
                 said.append(line)
+                // What it does first (writes, reads, calls), then what calls it, each once.
                 var seen: Set<String> = []
-                for edge in snapshot.edges(of: record.id, part: endpoint.id, .either, types: .only(relations)) where edge.isConnection {
-                    let outgoing = edge.source == record.id && edge.sourcePart == endpoint.id
-                    let far = outgoing ? PartAddress(edge.target, part: edge.targetPart) : PartAddress(edge.source, part: edge.sourcePart)
-                    guard let written = self.written(far, snapshot, registry) else { continue }
-                    let relation = outgoing ? edge.type.rawValue : "called by"
-                    let said = "\(relation) \(written)"
-                    if seen.insert(said).inserted { line += "; " + said }
+                for direction in [EdgeDirection.outgoing, .incoming] {
+                    for edge in snapshot.edges(of: record.id, part: endpoint.id, direction, types: .only(relations)) where edge.isConnection {
+                        let far = direction == .outgoing ? PartAddress(edge.target, part: edge.targetPart) : PartAddress(edge.source, part: edge.sourcePart)
+                        guard let written = self.written(far, snapshot, registry) else { continue }
+                        let said = "\(direction == .outgoing ? edge.type.rawValue : "called by") \(written)"
+                        if seen.insert(said).inserted { line += "; " + said }
+                    }
                 }
                 lines.append(line)
             }

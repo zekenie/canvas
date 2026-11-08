@@ -153,7 +153,46 @@ table:edge-from("orders API", writes)
 arrow[channel=calls]
 ```
 
-A table's columns, each its id and what its line said, are its `columns` attribute, as a row of `canvas query` gives them; a test inside the list (`[columns.name=…]`) isn't built yet.
+Which endpoint writes refunds is the API whose row the arrow leaves; the arrow's own row in an answer names it, `"from": {"id": …, "title": "orders API", "row": "POST /orders/{id}/refunds"}`, as a key's names the column at each end (`"row": "customer_id"`):
+
+```query
+/* matches: "orders API" */
+api:edge-to("refunds", writes)
+```
+
+`:route("…")` is the APIs with an endpoint of that method and whole path: a parameter in braces stands for any parameter, and a path with no method for any method. Each row says the endpoints it matched, `"routes": ["POST /orders/{id}/refunds"]`:
+
+```query
+/* matches: "orders API" */
+:route("POST /orders/{order_id}/refunds")
+```
+
+```query
+/* matches: "Stripe API" */
+:route("/v1/refunds")
+```
+
+A table's columns are its `columns` attribute, a list, each its id and what its line said; a test inside it holds when any column's does. A column reads as its name, and a type as its words, so `[columns.type="order_status"]` is the tables with a column of that enum; an enum's values read as their text, and an endpoint's body and response types as their words (`api[endpoints.body="NewRefund"]`):
+
+```query
+/* matches: "customers" */
+table[columns.name="email"]
+```
+
+```query
+/* matches: "customers", "products" */
+table[columns.unique=true]
+```
+
+```query
+/* matches: "orders" */
+table[columns.type="order_status"]
+```
+
+```query
+/* matches: "order_status" */
+enum-type[values="paid"]
+```
 
 ```draw-error
 // reason: invalid_value

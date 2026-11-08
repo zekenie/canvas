@@ -2347,8 +2347,9 @@ switched point; EngineeringTests' `kitTests` and CompositionTests' `kitsShippedT
 The first real kit ([`Sources/Engineering`](../Sources/Engineering), product): database tables, their
 enums and the databases that hold them, and REST APIs. One module in parts, `Model` (the kinds' props, `TypeRef`,
 `KitStyle`, how a row is drawn on the paper, the file's tables and enums by name), `Grammar` (the line grammars,
-pure), `Tables` and `APIs` (the kinds drawn, placed and written) and `Readers` (what's pasted: SQL), since an API
-names tables and two products could not see each other. Its plugin joins the kit and gives:
+pure), `Tables` and `APIs` (the kinds drawn, placed and written), `Readers` (what's pasted: SQL, OpenAPI) and
+`Agents` (what agents read: routes, `--ask`'s blocks), since an API names tables and two products could not see
+each other. Its plugin joins the kit and gives:
 
 ```swift
 registrar.join(EngineeringKit.self)
@@ -2369,6 +2370,17 @@ registrar.rowsDraw()                                                     // canv
 registrar.apiDraw()                                                      // canvas draw's server: and endpoints:
 registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
 registrar.openAPIPaste()                                                 // ⌘V of OpenAPI, "Paste OpenAPI"
+```
+
+What agents read of it is a plugin value of its own, `EngineeringAgentsPlugin`, after Queries and in no kit, so a file
+with the kit off is asked about its tables as one with it on:
+
+```swift
+registrar.queryPseudoClass("route", …, argument: "route", reads: .file,              // :route("POST /orders/{id}/refunds")
+                           prepare: { _, text in RoutePattern(text) }, matches: …, members: ["routes"], rowMembers: …)
+registrar.queryPartNames(of: DatabaseTable.kind) { record, part in …columns.first { $0.id == part }?.name }   // "row": "customer_id"
+registrar.queryAskFact(tag: "tables") { editor, question in KitAskFacts.tables(in: editor, question: question) }
+registrar.queryAskFact(tag: "apis") { editor, question in KitAskFacts.apis(in: editor, question: question) }
 ```
 
 A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
@@ -10042,8 +10054,9 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
 - **Members inside an attribute: `[a.b.c]`.** `AttributeTest.path` holds the identifier members
   after the attribute's name (a letter or `_`, then letters, digits, `-` and `_`; a quoted name has
   none), and the printer writes them bare, `[meta.owner=Ann i]`. Only an attribute whose schema is an
-  object or any JSON has members (any other is `unknown_attribute`: "note is text, so it has no
-  members"), and the test is **untyped**: an object's members are whatever the shape holds, so each
+  object or any JSON, or a list of them, has members (any other is `unknown_attribute`: "note is text,
+  so it has no members"; "tags is a list" of text has none either), a list at the attribute searched an
+  item at a time as one on the way is (`table[columns.name="email"]`), and the test is **untyped**: an object's members are whatever the shape holds, so each
   test is typed by the JSON value found at the path, shape by shape (`PathTest`, a `.path`
   comparison). A string takes the text operators, `=` and `i`, and `~=` as a word; a number takes `=`
   and the orderings when the literal reads as a decimal number (`[a.b="30"]` is `[a.b=30]`; an
@@ -10051,7 +10064,12 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   `unsupported_operator`); a boolean takes `true` or `false`; an array takes `~=` for an item; any
   other sort of value matches nothing (`[a.b^=3]` on a number). A member that is missing, null, or
   inside something that isn't an object is no value: `[a.b]` is false, `[a.b=""]` true, and `!=`
-  is the `:not` of the test, as everywhere. Typing by the schemas of a shape's types is left for
+  is the `:not` of the test, as everywhere. One thing the schema does say: an object whose schema names
+  the member it reads as (`Properties(readsAs:)`, KindSchema's `x-canvas-reads-as`, `readsAs(_:at:)`)
+  is compared by that member where a path ends at it, so `[columns.type="uuid"]` tests a type's
+  `words`, and a list of such objects compared with no path is searched by it, an item at a time
+  (`enum-type[values="paid"]`, an enum's values read as their `text`): the engine knows no kind's
+  meaning, the kind's schema says it. The canonical form stays as written. Typing by the schemas of a shape's types is left for
   later: it would make the vocabulary depend on the file, which today is built once from the
   registry and is `Sendable`.
 - **Text as a person reads it.** A string whose schema names a media type a text format reads
@@ -10306,6 +10324,7 @@ a query does without:
 | Point | Sugar | What a query gets | Without it | Shipped |
 |---|---|---|---|---|
 | `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueriesPlugin |
+| `QueryPartNames` | `registrar.queryPartNames(of:_:)` | What a kind's parts (its rows) are called, read off the record anywhere, one plugin a kind: a connection's end bound to a row says it (`QueryEnd.row`, `"row": "customer_id"`) | An end says no row | EngineeringAgentsPlugin (`table`, `enum-type`, `api`) |
 | `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueriesPlugin |
 | `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:problems:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`, and `members:`, `rowMembers:`, `absent:`; with `argument:` too, a word that takes one quoted text), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, TypeQueriesPlugin, SelectionQueriesPlugin |
 | `QueryPathChecks` | `registrar.queryPathCheck(attribute:_:)` | What the members of an object attribute can be: the first member of a path a query tests that no shape of the file can hold (`[fieldValues.stauts]`), asked on the main actor, once a path | No warning | TypeQueriesPlugin |
@@ -10313,7 +10332,7 @@ a query does without:
 | `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` (and with `reads: .file`) | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueriesPlugin |
 | `QueryEngines` | none: `QueriesPlugin`'s mark, which only Queries makes | That the app answers queries (`registry.answersQueries`), for what has a registry and no editor | `canvas query` and `query-vocabulary` answer `no_queries` | QueriesPlugin |
 
-`QueryNames` and `QueryBoardNames` take one contribution each, `QueryWords` one a word,
+`QueryNames` and `QueryBoardNames` take one contribution each, `QueryPartNames` one a kind (`query part names`), `QueryWords` one a word,
 `QueryPathChecks` one an attribute, `QueryAskFacts` one a tag and `QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
 word :mentions`, `query path fieldValues`, `ask fact fields`, `query text text/x-canvas-mentions`; `query engine` on queries'). The five
 registrations, whole (each plugin's words are its own nested `enum Word: String`, and
