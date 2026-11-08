@@ -85,6 +85,22 @@ enum APIStyle {
     /// The lines of an endpoint's card.
     static let nameLine = "name", summaryLine = "summary", authLine = "auth", bodyLine = "body", responsesLine = "responses"
     static let deprecatedLine = "deprecated"
+    static let methodLine = "method"
+    /// The card's deprecated toggled on, and off.
+    static let deprecateStep = "Deprecate Endpoint"
+    static let undeprecateStep = "Undeprecate Endpoint"
+    /// What VoiceOver calls an endpoint's chip, a button after its row: "Method, PATCH".
+    static func methodButton(_ method: String) -> String { method.isEmpty ? methodWord : "\(methodWord), \(method)" }
+    static let methodWord = "Method"
+    /// Change Method ▸ in the selection's menu.
+    static let changeMethodMenu = "Change Method"
+    /// `/new-version` and New Version: the step, the command's name, and what a copy's title gets where it ends in no version.
+    static let newVersionStep = "New Version"
+    static let newVersionCommand = "new-version"
+    static let firstNewVersion = "v2"
+    /// Group by Prefix, the step and the command's name.
+    static let groupByPrefixStep = "Group by Prefix"
+    static let groupByPrefixCommand = "group-by-prefix"
 
     /// From the paper's left to where a top row's text (the server, a chip, a header's chevron) starts.
     static let inset: CGFloat = 14
@@ -142,6 +158,15 @@ enum APIStyle {
 
     /// A chip's text.
     static let chipInk = NSColor.white
+
+    /// A method's chip's color as a hex number: a deprecated endpoint's hollow chip's caps are in it.
+    static func chipHex(_ method: String) -> UInt32 { UInt32(chipRGB(method).hexString.dropFirst(), radix: 16) ?? 0 }
+
+    /// A deprecated endpoint (E5 panel 3): its chip hollow, its edge this wide, edge and caps at `deprecatedChipAlpha`; its words
+    /// (path, pills, status) at `deprecatedAlpha`, as is all of an old version's content (E5 panel 4), its paper as ever.
+    static let hollowChipEdge: CGFloat = 1.25
+    static let deprecatedChipAlpha: CGFloat = 0.55
+    static let deprecatedAlpha: CGFloat = 0.45
 
     /// A chip as the field lays a method out, so nothing moves as editing starts: its glyphs `chipPadding` in from where the chip
     /// is at rest (the row's indent), the chip behind them reaching `fieldChipPad` past each end (TextEditing's highlight) and the

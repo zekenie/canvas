@@ -406,6 +406,34 @@ struct APILines: LineModel {
     }
     var takeOutEditsTitle: Bool { true }
 
+    /// One endpoint taken out alone is an endpoint of its own (decided 20, E3 panel 4): under its row's id, so what was bound to the
+    /// row is bound to it, its path whole, put where the API was, as wide; titled by its name. Several, or a header, are a new API.
+    func takeOutShape(_ rows: [APIRow], from shape: ShapeRecord<API>) -> AnyShapeRecord? {
+        guard rows.count == 1, let endpoint = rows[0].endpoint else { return nil }
+        var alone = StandaloneEndpoint(frame: CGRect(origin: shape.props.frame.origin, size: CGSize(width: shape.props.frame.width, height: 0)),
+                                       endpoint: endpoint)
+        EndpointDefinition().derive(&alone)
+        return AnyShapeRecord(ShapeRecord(alone))
+    }
+
+    /// "Take Out Endpoint" for one endpoint alone; the noun's ("Move Endpoints to New API") for more.
+    func takeOutStep(of rows: [APIRow]) -> String? {
+        rows.count == 1 && rows[0].endpoint != nil ? EndpointStyle.takeOutStep : nil
+    }
+
+    /// An endpoint standing alone, dropped on an API or pasted in one, is its row again.
+    func takesRows(of kind: ShapeKind) -> Bool { kind == StandaloneEndpoint.kind }
+
+    func rows(taken record: AnyShapeRecord) -> [APIRow]? {
+        record.typed(as: StandaloneEndpoint.self).map { [.endpoint($0.props.endpoint)] }
+    }
+
+    /// An endpoint's chip's click: its method menu, the method it has checked (E5 panel 2).
+    func leadAction(of row: APIRow, at index: Int, among rows: [APIRow], in context: LineContext) -> LineLeadAction? {
+        guard case .endpoint(let endpoint) = row else { return nil }
+        return EndpointMethods.leadAction(endpoint, of: context.shape)
+    }
+
     /// An endpoint's lead is its method chip (decided 21): a press there drags the row, selected or not. A header has none.
     func lead(of row: APIRow, at index: Int, among rows: [APIRow], line: CGRect, in context: LineContext) -> CGRect? {
         guard case .endpoint(let endpoint) = row else { return nil }
@@ -430,12 +458,21 @@ struct APILines: LineModel {
             switch (from, to) {
             case (.header, .header): APIStyle.renamePrefixStep
             case (.endpoint(let was), .endpoint(let now)) where Self.onlyMethod(was, now): APIStyle.changeMethodStep
+            case (.endpoint(let was), .endpoint(let now)) where Self.onlyDeprecated(was, now):
+                now.deprecated ? APIStyle.deprecateStep : APIStyle.undeprecateStep
             default: APIStyle.changeEndpointStep
             }
         case .delete(let rows):
             rows.count == 1 ? (rows[0].header == nil ? APIStyle.deleteEndpointStep : APIStyle.deletePrefixStep) : APIStyle.deleteEndpointsStep
         case .move(let row, _): row.header == nil ? APIStyle.moveEndpointStep : APIStyle.movePrefixStep
         }
+    }
+
+    /// Whether `now` is `was` with only whether it's deprecated changed (the card's toggle).
+    static func onlyDeprecated(_ was: Endpoint, _ now: Endpoint) -> Bool {
+        var changed = was
+        changed.deprecated = now.deprecated
+        return changed == now && was.deprecated != now.deprecated
     }
 
     /// Whether `now` is `was` with only its method changed.
@@ -455,6 +492,7 @@ struct APILines: LineModel {
         var lines: [LineCardLine<APIRow>] = [
             .field(APIStyle.nameLine, grammar: WordsGrammar(), get: { row, _ in row.endpoint.flatMap { $0.name.isEmpty ? nil : $0.name } },
                    set: { row, value, _ in row = Self.changing(row) { $0.name = value ?? "" } }),
+
             .field(APIStyle.summaryLine, grammar: WordsGrammar(), get: { row, _ in row.endpoint.flatMap { $0.summary.isEmpty ? nil : $0.summary } },
                    set: { row, value, _ in row = Self.changing(row) { $0.summary = value ?? "" } }),
             .field(APIStyle.authLine, grammar: WordsGrammar(code: true), get: { row, _ in row.endpoint.flatMap { $0.authScope.isEmpty ? nil : $0.authScope } },
@@ -470,6 +508,10 @@ struct APILines: LineModel {
                    set: { row, value, _ in row = Self.changing(row) { $0.body = value } }),
             .list(APIStyle.responsesLine, grammar: ResponseGrammar(), get: { row, _ in row.endpoint?.responses ?? [] },
                   set: { row, value, _ in row = Self.changing(row) { $0.responses = value } }),
+            // Its method, one of the five (and the one it has, if another): Space opens them, the current checked; "Change Method".
+            .choice(APIStyle.methodLine, options: EndpointMethods.options(current: endpoint.method), get: { $0.endpoint?.method },
+                    set: { row, method in row = Self.changing(row) { $0.method = method } }),
+            // Space: "Deprecate Endpoint" (E5 panel 3), the row's chip hollow and its words faint.
             .toggle(APIStyle.deprecatedLine, get: { $0.endpoint?.deprecated ?? false }, set: { row, on in row = Self.changing(row) { $0.deprecated = on } }),
             // Its connections, a line each (`writes refunds`): each its arrow, written in a step of the line's own.
             .list(APIStyle.connectionsLine, grammar: EndpointLinkGrammar(),

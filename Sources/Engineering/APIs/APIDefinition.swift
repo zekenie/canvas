@@ -21,6 +21,12 @@ extension APIDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<API>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
         KitPaper.draw(frame, in: context)
+        // An old version (deprecated, E5 panel 4): everything on its paper faint, the paper as ever.
+        APIDrawing.fading(shape.props.deprecated, in: context.cg) { drawContent(shape, in: frame, context) }
+    }
+
+    /// Its server line, the hairline under it, and its rows in view.
+    private func drawContent(_ shape: ShapeRecord<API>, in frame: CGRect, _ context: RenderContext) {
         let api = shape.props, rows = KitRows(shape, in: context.shapes), cg = context.cg
         let server = APIRows.serverRect(in: frame)
         if context.shapes.layoutInput(LineRowsLayout.fixed, of: shape) != true { APIDrawing.drawServer(api.server, in: server, cg) }
@@ -163,7 +169,7 @@ extension APIDefinition: CustomSkeleton {
                                           at: path, in: rect, room: end - path) { bars.append(bar) }
             }
         }
-        context.fillSkeletonText(bars)
+        APIDrawing.fading(api.deprecated, in: context.cg) { context.fillSkeletonText(bars) }
         rows.fillFaded(text: faded, in: context) {}
     }
 }
@@ -275,11 +281,7 @@ enum APIDrawing {
         let middle = rect.midY
         var x = start
         if let chip = chipRect(endpoint.method, member: member, in: rect) {
-            let text = RowText.line(endpoint.method, .chip)
-            cg.addPath(CGPath(roundedRect: chip, cornerWidth: APIStyle.chipRadius, cornerHeight: APIStyle.chipRadius, transform: nil))
-            cg.setFillColor(APIStyle.chipFill(endpoint.method).cgColor)
-            cg.fillPath()
-            RowText.draw(text, at: chip.midX - text.width / 2, middle: middle, in: cg)
+            drawChip(endpoint.method, deprecated: endpoint.deprecated, in: chip, cg)
             x = chip.maxX + APIStyle.gap
         }
         // The right side, laid from the right: the response's pill, its status, the arrow, the body's pill.
@@ -310,8 +312,48 @@ enum APIDrawing {
             let size = label.contentSize
             place(width: size.width) { at in label.draw(at: CGPoint(x: at, y: middle - size.height / 2), in: cg) }
         }
-        for draw in drawn { draw() }
-        drawPath(endpoint, from: x, room: right + APIStyle.pillGap - APIStyle.gap - x, middle: middle, cg)
+        fading(endpoint.deprecated, in: cg) {
+            for draw in drawn { draw() }
+            drawPath(endpoint, from: x, room: right + APIStyle.pillGap - APIStyle.gap - x, middle: middle, cg)
+        }
+    }
+
+    /// A method's chip at `chip`: white bold caps on its color; deprecated, hollow, its edge and its caps in its color, faint
+    /// (`APIStyle.deprecatedChipAlpha`).
+    static func drawChip(_ method: String, deprecated: Bool, in chip: CGRect, _ cg: CGContext) {
+        let path = CGPath(roundedRect: chip, cornerWidth: APIStyle.chipRadius, cornerHeight: APIStyle.chipRadius, transform: nil)
+        guard deprecated else {
+            let text = RowText.line(method, .chip)
+            cg.addPath(path)
+            cg.setFillColor(APIStyle.chipFill(method).cgColor)
+            cg.fillPath()
+            RowText.draw(text, at: chip.midX - text.width / 2, middle: chip.midY, in: cg)
+            return
+        }
+        let text = RowText.line(method, .hollowChip(APIStyle.chipHex(method)))
+        cg.saveGState()
+        cg.setAlpha(APIStyle.deprecatedChipAlpha)
+        cg.beginTransparencyLayer(auxiliaryInfo: nil)
+        let width = APIStyle.hollowChipEdge
+        cg.addPath(CGPath(roundedRect: chip.insetBy(dx: width / 2, dy: width / 2), cornerWidth: APIStyle.chipRadius, cornerHeight: APIStyle.chipRadius, transform: nil))
+        cg.setStrokeColor(APIStyle.chipFill(method).cgColor)
+        cg.setLineWidth(width)
+        cg.strokePath()
+        RowText.draw(text, at: chip.midX - text.width / 2, middle: chip.midY, in: cg)
+        cg.endTransparencyLayer()
+        cg.restoreGState()
+    }
+
+    /// Draws `body` faint (`APIStyle.deprecatedAlpha`, as one layer) where `faded`, else as it is: a deprecated endpoint's words, an
+    /// old version's content.
+    static func fading(_ faded: Bool, in cg: CGContext, _ body: () -> Void) {
+        guard faded else { return body() }
+        cg.saveGState()
+        cg.setAlpha(APIStyle.deprecatedAlpha)
+        cg.beginTransparencyLayer(auxiliaryInfo: nil)
+        body()
+        cg.endTransparencyLayer()
+        cg.restoreGState()
     }
 
     /// A path in code, its parameters in the method's color, the words no part reads after it; cut short with an ellipsis where

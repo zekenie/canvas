@@ -69,8 +69,29 @@ public protocol LineModel {
     /// menu): by default the shape's own props holding only them, so a new shape of its kind, untitled. A table's has its
     /// `id uuid pk` first.
     func takeOut(_ rows: [Row], from shape: ShapeRecord<Props>) -> Props
-    /// Whether a shape taken out has its name typed at once (T5: "Name it addresses"). False by default.
+    /// Whether a shape taken out has its name typed at once (T5: "Name it addresses"). False by default; never for a take-out of
+    /// another kind (`takeOutShape`), which its kind names.
     var takeOutEditsTitle: Bool { get }
+    /// The shape `rows` taken out of `shape` make where it is of another kind than this one (one endpoint taken out of an API is
+    /// an endpoint of its own, under the row's id): a record of its own, under a new id. Nil, by default, for `takeOut`'s, a shape
+    /// of this kind.
+    func takeOutShape(_ rows: [Row], from shape: ShapeRecord<Props>) -> AnyShapeRecord?
+    /// What taking `rows` out is called, where the kind names it ("Take Out Endpoint"); nil, by default, for the noun's ("Move
+    /// Columns to New Table").
+    func takeOutStep(of rows: [Row]) -> String?
+    /// Whether a shape of the kind is its rows, one row standing alone (an endpoint taken out of its API): it takes no rows, has
+    /// no take-out, and goes when the last of its rows goes, moved into another shape, cut or deleted. False by default.
+    var goesWithItsRows: Bool { get }
+    /// Whether its shapes take rows of `kind`, besides their own kind's (an API takes an endpoint's row, dropped on it or pasted in
+    /// it): false by default.
+    func takesRows(of kind: ShapeKind) -> Bool
+    /// The rows of `record`, a shape of a kind its shapes take (`takesRows(of:)`), as rows of this kind: what's put in when they
+    /// land. Nil, by default.
+    func rows(taken record: AnyShapeRecord) -> [Row]?
+    /// What a click on row `index`'s lead does besides what a click on the row does (an endpoint's method chip: its method menu,
+    /// the method it has checked), with what VoiceOver calls it ("Method, PATCH"), which Space on the row selected does too. Nil, by
+    /// default, for none: a click goes a level at a time, as on the row.
+    func leadAction(of row: Row, at index: Int, among rows: [Row], in context: LineContext) -> LineLeadAction?
     /// Whether the row with the caret shows a "›" at its right that a click opens its card by (an endpoint's, E3 panel 1);
     /// false by default (a column's card is ⌘↓'s alone, as the frames draw a table).
     var showsCardChevron: Bool { get }
@@ -117,6 +138,12 @@ extension LineModel {
         return props
     }
     public var takeOutEditsTitle: Bool { false }
+    public func takeOutShape(_ rows: [Row], from shape: ShapeRecord<Props>) -> AnyShapeRecord? { nil }
+    public func takeOutStep(of rows: [Row]) -> String? { nil }
+    public var goesWithItsRows: Bool { false }
+    public func takesRows(of kind: ShapeKind) -> Bool { false }
+    public func rows(taken record: AnyShapeRecord) -> [Row]? { nil }
+    public func leadAction(of row: Row, at index: Int, among rows: [Row], in context: LineContext) -> LineLeadAction? { nil }
     public var headerNoun: LineNoun? { nil }
     public var showsCardChevron: Bool { false }
     public var fixedLine: LineFixedLine<Props>? { nil }
@@ -177,6 +204,12 @@ extension LineModel {
         for change in changes {
             guard applying(change, to: &rows) else { return false }
             if case .delete(let gone) = change { removed.formUnion(gone.map { PartAddress(id, part: self.id(of: $0)) }) }
+        }
+        // A shape that is its rows goes with the last of them, and what's bound to it with it, as a delete of it takes it.
+        if goesWithItsRows, rows.isEmpty {
+            guard !transaction.isReadOnly(AnyShapeRecord(record)) else { return false }
+            transaction.delete([id])
+            return true
         }
         var refused = false
         transaction.update(id, as: Props.self) { setRows(rows, in: &$0.props) }
@@ -253,5 +286,20 @@ public struct LineFixedLine<Props: ShapeProps> {
         }
         write = { line, props, context in set(&props, grammar.read(line, id: context.row ?? PartID(), in: context).row) }
         substitutions = grammar.substitutions
+    }
+}
+
+/// What a row's lead does besides what a click on the row does (`LineModel.leadAction`): an endpoint's method chip pops its method
+/// menu. Its click, Space on the row selected as an item, and VoiceOver's press on it (a button after the row, `title`) all do it.
+@MainActor
+public struct LineLeadAction {
+    /// What VoiceOver calls it: "Method, PATCH".
+    public var title: String
+    /// What it does, given the lead's rect (world units: a menu hangs from it).
+    public var press: @MainActor (CanvasEditor, CGRect) -> Void
+
+    public init(title: String, press: @escaping @MainActor (CanvasEditor, CGRect) -> Void) {
+        self.title = title
+        self.press = press
     }
 }

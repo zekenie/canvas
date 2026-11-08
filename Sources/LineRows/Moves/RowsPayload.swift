@@ -148,8 +148,15 @@ extension CanvasEditor {
         let bound = payload.bound
         let done: Bool? = transactWhole(nil, shaking: [shape]) { transaction in
             far = []
-            guard let fresh = transaction.document[shape], let without = moving.removing(fresh, Set(ids)) else { throw Transaction.Refused([shape]) }
-            transaction.update(shape) { $0 = without }
+            guard let fresh = transaction.document[shape] else { throw Transaction.Refused([shape]) }
+            // A shape that is its rows (an endpoint of its own) goes with the last of them, once what was bound to them is taken.
+            let emptied = moving.goesWithItsRows && Set(moving.rows(fresh) ?? []).isSubset(of: Set(ids))
+            if emptied {
+                guard !transaction.isReadOnly(fresh) else { throw Transaction.Refused([shape]) }
+            } else {
+                guard let without = moving.removing(fresh, Set(ids)) else { throw Transaction.Refused([shape]) }
+                transaction.update(shape) { $0 = without }
+            }
             guard transaction.refusedShapes.isEmpty else { throw Transaction.Refused([shape]) }
             // The arrows bound to them go with them, counted: those cut with them, and what the core takes along for the rest.
             let arrows = Set(bound.map(\.id)).filter { transaction.document[$0] != nil }
@@ -162,6 +169,7 @@ extension CanvasEditor {
             let keys = Self.keysThroughPills(to: Set(ids), of: shape, in: transaction, registry: registry)
             let gone = transaction.removeParts(Set(ids.map { PartAddress(shape, part: $0) }))
             far = keys.filter { gone.contains($0.record.id) }
+            if emptied { transaction.delete([shape]) }
             for item in transaction.deletedAlong {
                 if let at = counts.firstIndex(where: { $0.kind == item.kind }) { counts[at].count += item.count } else { counts.append(item) }
             }
@@ -213,8 +221,8 @@ extension CanvasEditor {
         guard !rows.isEmpty else { return nil }
         let moves = payload.cut != nil && !boardHolds(rows, of: payload.carrier.kind)
         let noun = stepNoun(of: rows, in: payload.carrier, moving)
-        let step: String = if case .into = place { RowSteps.paste(noun, count: rows.count) } else if moves {
-            RowSteps.takeOut(noun, count: rows.count, into: payload.carrier.kind, in: registry)
+        let step: String = if case .into = place { RowSteps.paste(noun, count: rows.count) } else if moves, !moving.goesWithItsRows {
+            takeOutStep(of: payload.carrier, noun: noun, count: rows.count, moving)
         } else {
             RowSteps.paste(noun, count: rows.count)
         }

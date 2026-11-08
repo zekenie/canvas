@@ -250,13 +250,14 @@ extension KitNames {
     /// frames' offers say `refunds  shop` for a table beside the API.
     func boardName(_ board: BoardID) -> String { editor.mentions?.boardName(of: board) ?? "" }
 
-    /// Every endpoint of the file's named APIs, the board shown's first: its address, its full name, its API's name.
+    /// Every endpoint of the file's named APIs, and every endpoint standing alone (its name as its API's), the board shown's first:
+    /// its address, its full name, its API's name.
     var endpoints: [(address: PartAddress, name: String, api: String)] {
         let file = editor.file, registry = editor.registry, shown = editor.board
         let boards = [shown] + file.everyBoard.filter { $0 != shown }.sorted { ($0.owner?.description ?? "") < ($1.owner?.description ?? "") }
         var found: [(address: PartAddress, name: String, api: String)] = []
         for board in boards {
-            for record in file[board].shapes where record.kind == API.kind {
+            for record in file[board].shapes where record.kind == API.kind || record.kind == StandaloneEndpoint.kind {
                 guard let api = registry.title(of: record), let parts = registry.parts(of: record) else { continue }
                 for part in parts where part.standsAlone { found.append((PartAddress(record.id, part: part.id), part.name, api)) }
             }

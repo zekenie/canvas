@@ -9,15 +9,18 @@ import Connections
 @MainActor
 enum EndpointPicks {
     static func admits(_ pick: ConnectPick, _ editor: CanvasEditor) -> Bool {
-        guard let row = pick.from.part, let source = editor.shape(inFile: pick.from.shape)?.typed(as: API.self),
-              source.props.endpoints.contains(where: { $0.id == row && $0.endpoint != nil }),
+        guard let row = pick.from.part, let source = editor.shape(inFile: pick.from.shape), isEndpoint(row, of: source),
               let far = editor.shape(inFile: pick.to.shape) else { return false }
         if far.kind == DatabaseTable.kind { return pick.to.part == nil }
-        if let api = far.typed(as: API.self) {
-            guard let part = pick.to.part else { return false }
-            return pick.to.address != pick.from.address && api.props.endpoints.contains { $0.id == part && $0.endpoint != nil }
-        }
-        // Any other kind: calls end on endpoints' rows alone.
+        // Calls end on endpoints' rows alone: an API's, or one standing alone; any other kind takes none.
+        guard let part = pick.to.part else { return false }
+        return pick.to.address != pick.from.address && isEndpoint(part, of: far)
+    }
+
+    /// Whether `part` is an endpoint of `record`: an API's endpoint row (not a header), or an endpoint standing alone's row.
+    static func isEndpoint(_ part: PartID, of record: AnyShapeRecord) -> Bool {
+        if let api = record.typed(as: API.self) { return api.props.endpoints.contains { $0.id == part && $0.endpoint != nil } }
+        if let alone = record.typed(as: StandaloneEndpoint.self) { return alone.props.endpoint.id == part }
         return false
     }
 

@@ -51,6 +51,9 @@ final class RowDragSession {
     private var ghost: AnyShapeRecord
     /// The middle of the ghost's first line, from its top: the pointer is level with it.
     private let firstLineMiddle: CGFloat
+    /// Where the take-out is a shape of another kind (one endpoint out of an API: an endpoint of its own), that shape, the ghost
+    /// while the rows would go onto the board, and the middle of its first line; nil where it's the rows' own kind.
+    private var outGhost: (record: AnyShapeRecord, firstLineMiddle: CGFloat)?
     private(set) var drop: Drop = .none
     /// The last place worked out, and where they'd land there: one event at the same gap costs no landing.
     private var landed: (target: ShapeID, revision: Int, gap: Int, drop: Drop)?
@@ -75,25 +78,43 @@ final class RowDragSession {
         var ghost = carrier.copy(as: ShapeID())
         ghost.box = CGRect(origin: origin, size: size)
         self.ghost = ghost
+        if !moving.goesWithItsRows, let out = moving.takeOut(carrier), out.kind != carrier.kind,
+           let middle = Self.firstPartMiddle(of: out, in: editor.registry) {
+            outGhost = (out, middle)
+        }
         editor.setLayoutInput(LineRowsLayout.faded, Set(ids), for: shape)
+    }
+
+    /// The middle of `record`'s first part from its top, laid out on its own: where the pointer is level with a ghost of it.
+    private static func firstPartMiddle(of record: AnyShapeRecord, in registry: Registry) -> CGFloat? {
+        let context = ShapeContext(document: CanvasDocument(shapes: [record]), registry: registry)
+        guard let geometry = context.geometry(of: record.id), let first = geometry.parts.first?.rect else { return nil }
+        return first.midY - geometry.bounds.minY
     }
 
     /// Where the drop would be with the pointer at `point`, world units.
     private func update(at point: CGPoint, in editor: CanvasEditor) {
+        let gap = RowDragStyle.ghostGap / editor.shapeContext.zoom
         if let box = ghost.box {
-            let origin = CGPoint(x: point.x + RowDragStyle.ghostGap / editor.shapeContext.zoom, y: point.y - firstLineMiddle)
-            ghost.box = CGRect(origin: origin, size: box.size)
+            ghost.box = CGRect(origin: CGPoint(x: point.x + gap, y: point.y - firstLineMiddle), size: box.size)
+        }
+        if let out = outGhost, let box = out.record.box {
+            outGhost?.record.box = CGRect(origin: CGPoint(x: point.x + gap, y: point.y - out.firstLineMiddle), size: box.size)
         }
         let registry = editor.registry
         let kind = ghost.kind
+        // A shape written as lines that takes the rows' kind (its own, or an API an endpoint's).
         let target = editor.shape(at: point) { record in
-            record.kind == kind && registry.rowMoving(of: record.kind)?.takes(kind) == true
+            registry.lineRows(of: record.kind) != nil && registry.rowMoving(of: record.kind)?.takes(kind) == true
         }
         let next: Drop
         if let target {
             next = editor.isReadOnly(target) ? .refused(target) : landing(at: point, in: target, editor) ?? .none
+        } else if moving.goesWithItsRows {
+            // A shape that is its rows has no take-out: off every shape that takes them, nothing.
+            next = .none
         } else {
-            next = .board(ghost.box?.origin ?? point)
+            next = .board((outGhost?.record ?? ghost).box?.origin ?? point)
         }
         drop = next
         if case .into(let shape, _, _) = next { editor.hintedShapeID = shape } else { editor.hintedShapeID = nil }
@@ -187,7 +208,11 @@ extension RowDragSession: Session {
     func cursor(in editor: CanvasEditor) -> CanvasCursor? { .closedHand }
     var scrollsAtEdges: Bool { true }
 
-    var ghosts: [AnyShapeRecord] { [ghost] }
+    /// The rows as they'd land: over the board, the take-out where it's of another kind (an endpoint of its own), else the rows.
+    var ghosts: [AnyShapeRecord] {
+        if case .board = drop, let out = outGhost { return [out.record] }
+        return [ghost]
+    }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         update(at: pointer.world, in: editor)

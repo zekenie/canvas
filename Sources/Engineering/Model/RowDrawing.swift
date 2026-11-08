@@ -20,6 +20,8 @@ enum RowText {
         case name, type, null, value, more
         case code, faintCode, chip, placeholder
         case coloredCode(UInt32)
+        /// A deprecated endpoint's method, in its chip's color by its RGB's hex (the chip hollow).
+        case hollowChip(UInt32)
 
         @MainActor var font: NSFont {
             switch self {
@@ -27,7 +29,7 @@ enum RowText {
             case .type: KitStyle.typeFont
             case .value: KitStyle.valueFont
             case .code, .faintCode, .coloredCode: KitStyle.codeFont
-            case .chip: KitStyle.chipFont
+            case .chip, .hollowChip: KitStyle.chipFont
             case .placeholder: KitStyle.placeholderFont
             }
         }
@@ -37,7 +39,7 @@ enum RowText {
             case .name, .null, .value, .code: KitStyle.ink.cgColor
             case .type, .more, .faintCode, .placeholder: KitStyle.secondaryInk.cgColor
             case .chip: CGColor(gray: 1, alpha: 1)
-            case .coloredCode(let hex): RGB(hex: hex).cgColor
+            case .coloredCode(let hex), .hollowChip(let hex): RGB(hex: hex).cgColor
             }
         }
     }

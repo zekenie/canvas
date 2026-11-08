@@ -120,6 +120,26 @@ public struct EngineeringPlugin: ListedPlugin {
             // ⌘L from an endpoint: the tables it may write or read, the endpoints it may call, and what else takes a call.
             api.connectPicks(admitting: EndpointPicks.admits, EndpointPicks.plan)
         }
+        // One endpoint taken out of an API, standing alone (E3 panel 4): no tool (a row taken out makes one), titled by its name.
+        registrar.shape(EndpointDefinition()) { endpoint in
+            endpoint.label(EndpointStyle.label, systemImage: APIStyle.symbol)
+            endpoint.tint(NSColor(KitStyle.secondaryInk))
+            endpoint.title(symbolInPill: true, placeholderInPill: EndpointStyle.label) { EndpointStyle.title(of: $0.props.endpoint) }
+            endpoint.mentionable()
+            endpoint.resizable(minimumSize: CGSize(width: APIStyle.minimumWidth, height: KitStyle.height(rows: 1)))
+            endpoint.contentsRow { _, _ in ContentsLabel("", placeholder: EndpointStyle.placeholder, systemImage: APIStyle.symbol) }
+            endpoint.details(header: { $endpoint in
+                TitleHeader($endpoint.endpoint.name, placeholder: EndpointStyle.title(of: endpoint.endpoint), systemImage: APIStyle.symbol)
+            }) {}
+            endpoint.accessibility { endpoint, _ in AccessibleTraits(value: EndpointStyle.accessibleValue(of: endpoint.props.endpoint)) }
+            // Its one row, as LineRows moves rows: an item of it, its chip its lead (the method menu, a drag into an API).
+            endpoint.lineRows(EndpointLines())
+            // Its row's dots, as an API's row's: it calls, writes and reads, and is called.
+            endpoint.partPorts(Calls.self)
+            endpoint.partPorts(Writes.self, role: .source)
+            endpoint.partPorts(Reads.self, role: .source)
+            endpoint.connectPicks(admitting: EndpointPicks.admits, EndpointPicks.plan)
+        }
         registrar.shape(DatabaseDefinition()) { database in
             database.label(DatabaseStyle.label, systemImage: DatabaseStyle.symbol)
             let place = database.placement(size: DatabaseStyle.defaultSize, minimumSize: DatabaseStyle.minimumSize) { Database() }
@@ -138,6 +158,8 @@ public struct EngineeringPlugin: ListedPlugin {
         }
         if let editedTable { registrar.tableCommands(placing: editedTable) }
         if let placedAPI { registrar.apiCommands(placing: placedAPI) }
+        // New Version, Group by Prefix and Change Method ▸, the selection's menu's and the command bar's.
+        registrar.apiChanges()
         registrar.rowsDraw()
         registrar.apiDraw()
         // ⌘V of SQL, and of OpenAPI: tables and enums, an API and its types, put down by names, the kit's (gone with it off).

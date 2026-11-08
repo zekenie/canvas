@@ -264,7 +264,7 @@ extension KitBench {
         b.press(.up)
         b.press(Chord(Key.down, .command))
         let card = try require(b.canvas.cardView as? LineCardView)
-        expectEqual(card.stopNames, ["name", "summary", "auth", "{id}", "body", "responses 1", "deprecated", "relations 1"])
+        expectEqual(card.stopNames, ["name", "summary", "auth", "{id}", "body", "responses 1", "method", "deprecated", "relations 1"])
         expectEqual(card.value(of: "body"), "→ NewRefund")
         expectEqual(card.value(of: "responses 1"), "201 → Refund")
         expectEqual(card.focusedStop, "name")
