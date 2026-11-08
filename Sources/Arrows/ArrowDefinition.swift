@@ -217,7 +217,7 @@ extension ArrowDefinition: HandleProviding {
             isPrecise = binding.isPrecise
         }
         // From where the handle is drawn: a half's end at a relationship type's pill is where its line meets the pill (`handles(of:)`).
-        var point = targeting.geometry(of: arrow).point(for: handle)
+        var point = targeting.geometry(of: arrow, id: shape.id).point(for: handle)
         if case .terminal(let end) = handle, let line = editor.shapeContext.geometry(of: shape.id)?.arrowDetail?.line, line.hubEnd == end {
             point = arrowGeometry(of: shape, in: editor.shapeContext).visiblePoint(at: end)
         }
@@ -305,14 +305,21 @@ extension Arrow {
     /// The arrow with `ends` let go of the shapes they're bound to: each end stays where it
     /// visibly is, and the arrow keeps its curve.
     @MainActor
-    func releasing(_ ends: Set<ArrowEnd>, connectables: Connectables) -> Arrow {
-        let geometry = ArrowGeometry(arrow: self, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+    func releasing(_ ends: Set<ArrowEnd>, markReach: (start: CGFloat, end: CGFloat) = (0, 0), connectables: Connectables) -> Arrow {
+        let geometry = ArrowGeometry(arrow: self, strokeWidth: ArrowStyle.strokeWidth, markReach: markReach) { connectables[$0] }
         var arrow = self
         if let bend = geometry.bendKeepingCurve(movingHandlesToVisibleEndsAt: ends) {
             arrow.bend = bend
         }
         for end in ends {
             arrow[end] = .free(geometry.visiblePoint(at: end))
+        }
+        if let body = geometry.levelBody {
+            // A level curve can't be kept by a bend of the new arrow (let go at both ends it is an arc or a line; at one, a
+            // curve whose free end has no way out), so the arrow keeps the nearest it can: its middle, by length.
+            arrow.bend = 0
+            let freed = ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+            arrow.bend = (body.measured().point(atFraction: 0.5) - freed.bendOrigin).dot(freed.bendAxis)
         }
         return arrow
     }
@@ -339,7 +346,7 @@ extension ArrowDefinition: ShapeReferencing {
                 return nil
             }
         }
-        var arrow = released.isEmpty ? shape.props : shape.props.releasing(released, connectables: connectables)
+        var arrow = released.isEmpty ? shape.props : shape.props.releasing(released, markReach: context.geometry(of: shape.id)?.arrowDetail?.markReach ?? (0, 0), connectables: connectables)
         for (end, id) in remapped {
             guard var binding = arrow[end].binding else { continue }
             binding.shapeID = id

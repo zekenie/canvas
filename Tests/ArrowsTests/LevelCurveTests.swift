@@ -205,6 +205,34 @@ private let scale: CGFloat = 2
         expectEqual(brushed(b.h, from: onChord - CGPoint(x: 3, y: 3), to: onChord + CGPoint(x: 3, y: 3)), [])
         expectEqual(brushed(b.h, from: onCurve - CGPoint(x: 3, y: 3), to: onCurve + CGPoint(x: 3, y: 3)), [id])
     },
+    test("a level arrow let go of its shapes (a key copied alone, a shape deleted) keeps its middle: an S or a C as an arc through it") {
+        let b = try LevelBoard()
+        let shape = { (id: ShapeID) in try require(b.h.editor.document[id]) }
+        let context = b.h.editor.shapeContext
+        let s = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2), bend: 20))
+        let c = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.left, 2)))
+        for id in [s, c] {
+            let before = try b.geometry(id), middle = try require(before.levelBody).measured().point(atFraction: 0.5)
+            // Copied alone: both ends let go, where they visibly are.
+            let alone = try require(shape(id).remappingReferences({ _ in nil }, in: context)?.typed(as: Arrow.self)?.props)
+            expectEqual(alone.start, .free(before.start))
+            expectEqual(alone.end, .free(before.end))
+            let copy = b.h.add(alone), after = try b.geometry(copy)
+            expect(!after.isLevel, "no end at a row")
+            // The arc's middle is on the chord's bisector: the nearest it comes to the curve's middle by length is across the
+            // chord, within the little the curve's middle is off it.
+            expectClose((after.middle - middle).dot(after.bendAxis), 0, within: 1e-6)
+            expect(after.middle.distance(to: middle) < 2, "and near it: \(after.middle) for \(middle)")
+            // One end let go: the other still at its row, the curve through the same middle.
+            let half = try require(shape(id).remappingReferences({ $0 == b.left ? $0 : nil }, in: context)?.typed(as: Arrow.self)?.props)
+            if id == s {
+                expect(half.start.binding != nil && half.end.binding == nil)
+                let kept = try b.geometry(b.h.add(half))
+                expect(kept.isLevel, "still level at its row")
+                expectClose((kept.middle - middle).dot(kept.bendAxis), 0, within: 1e-6)
+            }
+        }
+    },
     test("its label sits on the curve halfway along it by length, and the curve is cut there") {
         let b = try LevelBoard()
         let id = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.right, 2), text: "ok"))
@@ -342,6 +370,55 @@ private let scale: CGFloat = 2
         expect(!isInked(hidden, CGPoint(x: 304, y: 145.9), zoom: 0.2), "the crow's foot, 2.6 points, not at 20%")
         expect(isInked(hidden, CGPoint(x: 484, y: 205), zoom: 0.2), "the far bars, 3.5 points out, still")
         expect(isInked(hidden, CGPoint(x: 330, y: 140), zoom: 0.2), "the line still")
+    },
+    test("a key between close rows of one table (a C) runs out past its marks before it turns, and its bend handle is where it is drawn") {
+        // The marks reach 13 (a crow's foot), 17.5 (bars) and 30 (the circle) out; the turn is 6 beyond, the controls 4/3 of that.
+        for (name, reach) in [("manager", 13.0), ("unique", 17.5), ("null", 30.0)] as [(String, CGFloat)] {
+            var b = try LevelBoard(looks: true)
+            let id = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.left, 1)))
+            b.rename(0, to: name)
+            let geometry = try b.geometry(id), cubic = try curve(geometry)
+            let apex = cubic.flattened().map(\.x).max() ?? 0
+            expect(apex >= 300 + reach + 6 - 0.01, "\(name): the turn \(apex - 300) out, past the mark's \(reach)")
+            // The circle's centre, 25 out, is on the line.
+            expect(cubic.distance(to: geometry.point(25, along: .start).point) < 0.2, "\(name): on the line")
+            // Dragging the bend handle from where it is drawn puts the middle under the pointer.
+            b.h.editor.selection = id
+            let target = geometry.middle + geometry.bendAxis * 10
+            b.h.move(to: geometry.middle)
+            b.h.press()
+            b.h.drag(to: target)
+            b.h.release()
+            expectClose(try b.geometry(id).middle, target, within: 1e-6)
+        }
+        // With no marks it is the plain C, 24 out.
+        let plain = try LevelBoard()
+        let id = plain.h.add(Arrow(start: plain.end(plain.left, 0), end: plain.end(plain.left, 1)))
+        expectEqual(try curve(plain.geometry(id)).control1.x, 324)
+    },
+    test("VoiceOver says what the marks say after where the arrow runs: many to one, one to one, many to zero or one") {
+        var b = try LevelBoard(looks: true)
+        let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        expectEqual(b.h.editor.accessibleDescription(of: id)?.label, "Arrow, from two in roster to three in roster, many to one")
+        b.rename(1, to: "unique")
+        expectEqual(b.h.editor.accessibleDescription(of: id)?.label, "Arrow, from unique in roster to three in roster, one to one")
+        b.rename(1, to: "null")
+        expectEqual(b.h.editor.accessibleDescription(of: id)?.label, "Arrow, from null in roster to three in roster, many to zero or one")
+        // An arrow with no look says no more than where it runs.
+        let plain = try LevelBoard()
+        let bare = plain.h.add(Arrow(start: plain.end(plain.left, 1), end: plain.end(plain.right, 2)))
+        expectEqual(plain.h.editor.accessibleDescription(of: bare)?.label, "Arrow, from two in roster to three in roster")
+    },
+    test("marks aren't hit: a pointer or a brush at a bar's end, off the line, finds nothing") {
+        let b = try LevelBoard(looks: true)
+        let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        // The bars of the end at (500, 200) reach 9 either side of the line, 12 and 17.5 in: drawn (above), not hit.
+        for bar in [CGPoint(x: 488, y: 209), CGPoint(x: 482.5, y: 191)] {
+            expectEqual(b.h.editor.shape(at: bar), nil, "nothing at the bar's end \(bar)")
+            expectEqual(brushed(b.h, from: bar - CGPoint(x: 1.5, y: 1.5), to: bar + CGPoint(x: 1.5, y: 1.5)), [], "a brush at \(bar)")
+        }
+        let line = try b.geometry(id).point(12, along: .end).point
+        expectEqual(b.h.editor.shape(at: line), id, "the line itself is hit beside them")
     },
     test("a change to the row its start is at lays the marks out again, with nothing written to the arrow") {
         var b = try LevelBoard(looks: true)

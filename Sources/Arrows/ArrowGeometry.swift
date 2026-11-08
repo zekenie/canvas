@@ -50,7 +50,10 @@ public struct ArrowGeometry: Sendable {
     /// `shape` looks up the shapes the arrow is bound to. An end bound to a shape it can't find is
     /// drawn at the origin. A bend under `minBend` draws straight: a line through a pill (`ArrowThrough`) asks for any,
     /// since its bend is worked out from the pill's place, never a person's.
-    public init(arrow: Arrow, strokeWidth: CGFloat, minBend: CGFloat = ArrowGeometry.minBend, shape: (ShapeID) -> ConnectableShape?) {
+    /// `markReach` is how far out along the line each end's mark reaches (`ArrowMarks.reach(of:)`): a level curve between
+    /// ends too near to make a way for the marks reaches out far enough to turn clear of them.
+    public init(arrow: Arrow, strokeWidth: CGFloat, minBend: CGFloat = ArrowGeometry.minBend,
+                markReach: (start: CGFloat, end: CGFloat) = (0, 0), shape: (ShapeID) -> ConnectableShape?) {
         var startShape = arrow.start.binding.flatMap { binding in
             shape(binding.shapeID).map { BoundShape($0, isExact: binding.isExact) }
         }
@@ -97,8 +100,9 @@ public struct ArrowGeometry: Sendable {
             let e = partEnd ?? Self.levelAnchor(of: arrow.end, in: endShape, handle: endPoint, toward: s.point)
             let chord = e.point - s.point
             bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
-            let reachStart = s.normal.map { Self.reach($0, from: s.point, to: e.point) } ?? 0
-            let reachEnd = e.normal.map { Self.reach($0, from: e.point, to: s.point) } ?? 0
+            let clear = ArrowStyle.levelClearReach(ofMark: max(markReach.start, markReach.end))
+            let reachStart = s.normal.map { Self.reach($0, from: s.point, to: e.point, clearing: clear) } ?? 0
+            let reachEnd = e.normal.map { Self.reach($0, from: e.point, to: s.point, clearing: clear) } ?? 0
             let plain = Cubic(s.point, s.point + (s.normal ?? .zero) * reachStart, e.point + (e.normal ?? .zero) * reachEnd, e.point)
             bendOrigin = plain.point(at: 0.5)
             // tldraw's bend: both controls move by 4/3 of it across the chord, so the middle moves exactly by it.
@@ -164,11 +168,12 @@ public struct ArrowGeometry: Sendable {
 
     /// How far a level curve's end reaches out along the way out of its side before it turns, from where it is to the other
     /// end's: half the way when the other end is ahead, far less when it is behind (a C rather than an S), never under
-    /// `ArrowStyle.levelMinReach`.
-    static func reach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint) -> CGFloat {
+    /// `ArrowStyle.levelMinReach`; and, with marks, when the other end is not yet `clearing` ahead (a C, or rows too near for an
+    /// S), at least `clearing`, the reach that turns the curve beyond the longer mark (`ArrowStyle.levelClearReach`).
+    static func reach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint, clearing: CGFloat = 0) -> CGFloat {
         let along = normal.dot(other - point)
         let reach = along >= 0 ? along * ArrowStyle.levelAheadShare : ArrowStyle.levelBackReach * (-along).squareRoot()
-        return max(ArrowStyle.levelMinReach, reach)
+        return max(ArrowStyle.levelMinReach, reach, along < clearing ? clearing : 0)
     }
 
     /// Where a level curve meets an end that isn't at a row, and the way out of the shape there: a free end its point, with no
@@ -258,24 +263,68 @@ public struct ArrowGeometry: Sendable {
     }
 
     /// The point `distance` along the visible body from its end at `end` (clamped to the body), and the way on into the arrow
-    /// there, a unit vector: where a mark at that end puts its bars and circle, so they sit on the line as it curves.
+    /// there, a unit vector: where a mark at that end puts its bars and circle, so they sit on the line as it curves. Placing
+    /// several (`placing()`) measures a level curve once.
     public func point(_ distance: CGFloat, along end: ArrowEnd) -> (point: CGPoint, inward: CGPoint) {
-        let length = bodyLength
-        guard length > 0, length.isFinite else { return (visiblePoint(at: end), inward(at: end)) }
-        let d = min(max(distance, 0), length)
-        let sign: CGFloat = end == .start ? 1 : -1
-        switch path {
-        case .straight:
-            let way = inward(at: end)
-            return (visiblePoint(at: end) + way * d, way)
-        case .curved(let arc, let startT, let endT):
-            let body = arc.trimmed(from: startT, to: endT), f = end == .start ? d / length : 1 - d / length
-            return (body.point(at: f), body.tangent(at: f) * sign)
-        case .level(let cubic, let startT, let endT):
-            let measure = cubic.trimmed(from: startT, to: endT).measured()
-            let t = measure.parameter(atLength: end == .start ? d : measure.length - d)
-            return (measure.cubic.point(at: t), measure.cubic.tangent(at: t) * sign)
+        placing()(distance, end)
+    }
+
+    /// `point(_:along:)` for several points, the curve measured once.
+    public func placing() -> (_ distance: CGFloat, _ end: ArrowEnd) -> (point: CGPoint, inward: CGPoint) {
+        let level = levelBody?.measured()
+        let length = level?.length ?? bodyLength
+        return { [self] distance, end in
+            guard length > 0, length.isFinite else { return (visiblePoint(at: end), inward(at: end)) }
+            let d = min(max(distance, 0), length)
+            let sign: CGFloat = end == .start ? 1 : -1
+            switch path {
+            case .straight:
+                let way = inward(at: end)
+                return (visiblePoint(at: end) + way * d, way)
+            case .curved(let arc, let startT, let endT):
+                let body = arc.trimmed(from: startT, to: endT), f = end == .start ? d / length : 1 - d / length
+                return (body.point(at: f), body.tangent(at: f) * sign)
+            case .level:
+                guard let measure = level else { return (visiblePoint(at: end), inward(at: end)) }
+                let t = measure.parameter(atLength: end == .start ? d : measure.length - d)
+                return (measure.cubic.point(at: t), measure.cubic.tangent(at: t) * sign)
+            }
         }
+    }
+
+    /// The visible body less the stretches of it `cuts` name, each as distances along it from its start (where a circle is
+    /// drawn on the line, which the line does not run through): the body in the pieces between them.
+    public func bodyPath(cuttingOut cuts: [ClosedRange<CGFloat>]) -> CGPath {
+        let length = bodyLength
+        guard length > 0, length.isFinite, !cuts.isEmpty else { return bodyPath }
+        // The pieces kept, as distances from the start.
+        var kept: [ClosedRange<CGFloat>] = []
+        var from: CGFloat = 0
+        for cut in cuts.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if cut.lowerBound > from { kept.append(from...cut.lowerBound) }
+            from = max(from, cut.upperBound)
+        }
+        if from < length { kept.append(from...length) }
+        let path = CGMutablePath()
+        switch self.path {
+        case .straight:
+            for piece in kept {
+                path.move(to: start.moved(toward: end, by: piece.lowerBound))
+                path.addLine(to: start.moved(toward: end, by: piece.upperBound))
+            }
+        case .curved(let arc, let startT, let endT):
+            for piece in kept {
+                let t0 = startT + (endT - startT) * piece.lowerBound / length, t1 = startT + (endT - startT) * piece.upperBound / length
+                path.addPath(arc.trimmed(from: min(t0, t1), to: max(t0, t1)).cgPath)
+            }
+        case .level:
+            guard let body = levelBody else { return bodyPath }
+            let measure = body.measured()
+            for piece in kept {
+                path.addPath(body.trimmed(from: measure.parameter(atLength: piece.lowerBound), to: measure.parameter(atLength: piece.upperBound)).cgPath)
+            }
+        }
+        return path
     }
 
     /// The way along the body from its visible end at `end`, into the arrow, a unit vector: where a mark at that end points

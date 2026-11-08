@@ -54,6 +54,7 @@ extension ArrowHandleDragSession: Session {
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         targeting.cancelPreciseTimer()
+        targeting.setProvisionalChannel(nil, for: arrowID)
         editor.hintedShapeID = nil
         if let connecting {
             finish(connecting, in: editor)
@@ -90,6 +91,7 @@ extension ArrowHandleDragSession: Session {
     func cancel(in editor: CanvasEditor) -> Bool {
         guard connecting != nil else { return false }
         targeting.cancelPreciseTimer()
+        targeting.setProvisionalChannel(nil, for: arrowID)
         editor.transact { $0.delete([arrowID]) }
         editor.connectionReleased(arrowID)
         editor.hintedShapeID = nil
@@ -107,7 +109,7 @@ extension ArrowHandleDragSession {
             // The curve passes through the pointer's projection onto the perpendicular bisector
             // of the ends; sideways motion does nothing. A level arrow's middle is the pointer's projection onto the line
             // across its chord through the middle of its curve unbent (`bendOrigin`).
-            let geometry = targeting.geometry(of: arrow)
+            let geometry = targeting.geometry(of: arrow, id: arrowID)
             targeting.updateArrow(arrowID, named: "Bend Arrow") { $0.bend = (point - geometry.bendOrigin).dot(geometry.bendAxis) }
 
         case .terminal(let end):
@@ -115,11 +117,17 @@ extension ArrowHandleDragSession {
                 // A port's arrow pivots on the middle of the shape it starts from, looped back on it or not, so the loop
                 // moving its start never moves where the pointer snaps to.
                 let pivot = connecting.flatMap { targeting.connectables[$0.start.shapeID]?.bounds.center }
-                    ?? targeting.geometry(of: arrow).handlePoint(at: end.opposite)
+                    ?? targeting.geometry(of: arrow, id: arrowID).handlePoint(at: end.opposite)
                 point = snapAngle(of: point, around: pivot, steps: 24)
             }
             let before = arrow[end].binding
-            let reshape: ((inout Arrow) -> Void)? = connecting.map { connecting in { [self] in loopBack(&$0, connecting) } }
+            let reshape: ((inout Arrow) -> Void)? = connecting.map { connecting in {
+                [self] in
+                loopBack(&$0, connecting)
+                // The channel it will be released on at the shape its end is on, so its look (a key's marks) is the one it will have.
+                let shape = $0.end.binding.flatMap { targeting.editor.document[$0.shapeID] }
+                targeting.setProvisionalChannel(shape.flatMap(connecting.channelAt), for: arrowID)
+            } }
             targeting.bindTerminal(of: arrowID, end, to: point, isPrecise: isPrecise || modifiers.contains(.option), modifiers: modifiers,
                                    accepting: connecting?.canBind, bindsPart: connecting?.bindsPart, then: reshape)
             let after = targeting.arrow(arrowID)?[end].binding

@@ -17,6 +17,9 @@ import Geometry
 final class ArrowTargeting {
     unowned let editor: CanvasEditor
     private var preciseTimer: ScheduledTask?
+    /// The channel each arrow being drawn for a port's drag will be released on, by the shape its end is on: not stored on the arrow
+    /// (a channel restricts what an end binds to), only read as its look is asked, so the marks it will have show as it is drawn.
+    private(set) var provisionalChannels: [ShapeID: ChannelID] = [:]
     /// Every plugin's rules for what an end may bind to (`ArrowBindingRules`), found once.
     let rules: [ArrowBindingRules.Contribution]
 
@@ -27,9 +30,12 @@ final class ArrowTargeting {
 
     var connectables: Connectables { Connectables(shapes: editor.shapeContext) }
 
-    func geometry(of arrow: Arrow) -> ArrowGeometry {
+    /// `arrow` (a value that may not be written yet) as the arrow `id` is laid out, but for its heads and width: a level curve
+    /// reaches as far as its kept marks need, so the bend handle is where it is drawn.
+    func geometry(of arrow: Arrow, id: ShapeID) -> ArrowGeometry {
         let connectables = connectables
-        return ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth) { connectables[$0] }
+        return ArrowGeometry(arrow: arrow, strokeWidth: ArrowStyle.strokeWidth,
+                             markReach: editor.shapeContext.geometry(of: id)?.arrowDetail?.markReach ?? (0, 0)) { connectables[$0] }
     }
 
     func arrow(_ id: ShapeID) -> Arrow? { editor.document[id]?.typed(as: Arrow.self)?.props }
@@ -160,7 +166,7 @@ final class ArrowTargeting {
             editor.hintedShapeID = nil
             return
         }
-        let far = geometry(of: arrow).handlePoint(at: end.opposite).x
+        let far = geometry(of: arrow, id: arrowID).handlePoint(at: end.opposite).x
         let binding = ArrowConnections.binding(to: target.id, part: frame.id, side: PartSide(facing: far, from: frame.rect), in: editor.shapeContext)
             ?? ArrowBinding(shapeID: target.id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: frame.id)
         updateArrow(arrowID) {
@@ -177,6 +183,11 @@ final class ArrowTargeting {
             guard let self else { return }
             fire(self)
         }
+    }
+
+    /// Sets, or with nil clears, the channel the arrow being drawn will be released on (in the transaction that binds its end).
+    func setProvisionalChannel(_ channel: ChannelID?, for id: ShapeID) {
+        provisionalChannels[id] = channel
     }
 
     func cancelPreciseTimer() {

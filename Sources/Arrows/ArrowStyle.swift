@@ -18,6 +18,12 @@ enum ArrowStyle {
     nonisolated static let levelMinReach: CGFloat = 24
     nonisolated static let levelAheadShare: CGFloat = 0.5
     nonisolated static let levelBackReach: CGFloat = 6.25
+    /// A curve between ends carrying marks runs out far enough that its turn is clear of the longer mark by this much: a
+    /// cubic with its controls `r` out bends back by `3/4 r` at the most, so the reach is the mark's, and this, over 3/4.
+    nonisolated static let levelMarkClearance: CGFloat = 6
+    nonisolated static func levelClearReach(ofMark reach: CGFloat) -> CGFloat {
+        reach > 0 ? (reach + levelMarkClearance) / 0.75 : 0
+    }
     /// How far from an arrow's centerline (beyond its stroke) a click still hits it, in view points.
     static let hitMargin: CGFloat = 3
     /// The bend handle hides when it's this close to an end handle, in view points.

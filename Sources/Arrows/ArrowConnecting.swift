@@ -95,6 +95,8 @@ struct ArrowConnecting {
     let canBind: @MainActor (AnyShapeRecord) -> Bool
     /// Whether its end binds a row of a shape it may bind to (the connection's channel is on that shape's parts).
     var bindsPart: @MainActor (AnyShapeRecord) -> Bool = { _ in false }
+    /// The channel the arrow will be released on if its end is on this shape: what its look is asked with while it is drawn.
+    var channelAt: @MainActor (AnyShapeRecord) -> ChannelID? = { _ in nil }
     let complete: @MainActor (inout AnyShapeRecord, ShapeID) -> Void
     /// Called with the arrow after the transaction that completed it and before the press ends, so what it
     /// changes is the press's step (`ArrowPortsPlugin` has Types read what the arrow is and give it a type).
@@ -125,6 +127,7 @@ extension CanvasEditor {
     func beginArrow(from shape: ShapeID, part: PartID? = nil, side: PortSide, at origin: CGPoint,
                     canBind: @escaping @MainActor (AnyShapeRecord) -> Bool,
                     bindsPart: @escaping @MainActor (AnyShapeRecord) -> Bool = { _ in false },
+                    channelAt: @escaping @MainActor (AnyShapeRecord) -> ChannelID? = { _ in nil },
                     complete: @escaping @MainActor (inout AnyShapeRecord, ShapeID) -> Void,
                     finished: (@MainActor (ShapeID) -> Void)? = nil) -> (any Session)? {
         guard !isBoardReadOnly, canBindArrow(to: shape), let targeting = service(ArrowTargeting.self) else { return nil }
@@ -135,7 +138,7 @@ extension CanvasEditor {
         }
         let arrow = ShapeRecord(Arrow(start: .bound(start), end: .free(origin)))
         transact("Add Arrow") { $0.insert(arrow) }
-        let connecting = ArrowConnecting(canBind: canBind, bindsPart: bindsPart, complete: complete, finished: finished, start: start, side: side)
+        let connecting = ArrowConnecting(canBind: canBind, bindsPart: bindsPart, channelAt: channelAt, complete: complete, finished: finished, start: start, side: side)
         return ArrowHandleDragSession(arrowID: arrow.id, handle: .terminal(.end), handleOffset: .zero, isPrecise: false,
                                       targeting: targeting, connecting: connecting)
     }

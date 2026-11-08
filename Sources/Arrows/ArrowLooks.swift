@@ -99,6 +99,11 @@ struct ArrowDetail: @unchecked Sendable {
     /// Whether the look says what `end` is drawn with, so its stored head isn't used (nor toggled).
     func isMarked(_ end: ArrowEnd) -> Bool { look?.mark(atStart: end == .start) != nil }
 
+    /// How far out along the line each end's mark reaches (0 for an end with none).
+    var markReach: (start: CGFloat, end: CGFloat) {
+        (mark(at: .start).map(ArrowMarks.reach(of:)) ?? 0, mark(at: .end).map(ArrowMarks.reach(of:)) ?? 0)
+    }
+
     /// The mark at `end`, if the look gives one that is drawn as a mark (not a head, not nothing).
     func mark(at end: ArrowEnd) -> EndMark? {
         guard let mark = look?.mark(atStart: end == .start), mark != .none, mark != .arrowhead else { return nil }
@@ -143,18 +148,23 @@ struct ArrowDrawing: @unchecked Sendable {
         self.triangles = triangles
         let marks = CGMutablePath()
         var ends: [Mark] = []
-        var body: CGPath = whole
+        // The stretches of the line a circle sits on, as distances from its start: the line is not drawn inside it.
+        var cuts: [ClosedRange<CGFloat>] = []
+        let length = geometry.bodyLength, place = geometry.placing()
         for end in [ArrowEnd.start, .end] {
             guard let mark = detail.mark(at: end) else { continue }
             let path = CGMutablePath()
-            let cut = ArrowMarks.add(mark, along: { geometry.point($0, along: end) }, to: path)
-            if let cut { body = body.lineSubtracting(CGPath(ellipseIn: cut, transform: nil)) }
-            ends.append(Mark(path: path, reach: ArrowMarks.reach(of: mark), isCut: cut != nil))
+            let circle = ArrowMarks.add(mark, along: { place($0, end) }, to: path)
+            if circle != nil {
+                let centre = min(ArrowMarks.circleCentre, length), from = end == .start ? centre : length - centre
+                cuts.append((from - ArrowMarks.circleRadius)...(from + ArrowMarks.circleRadius))
+            }
+            ends.append(Mark(path: path, reach: ArrowMarks.reach(of: mark), isCut: circle != nil))
             marks.addPath(path)
         }
         self.ends = ends
         self.marks = marks
-        self.body = body
+        body = cuts.isEmpty ? whole : geometry.bodyPath(cuttingOut: cuts)
     }
 
     /// The marks drawn zoomed out at `zoom`, each once it reaches `ArrowStyle.skeletonMarkLength` view points along the line,
@@ -177,14 +187,16 @@ extension ArrowDefinition {
     func look(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ConnectionLook? {
         let registry = context.registry
         guard !registry.contributions(to: ConnectionLooks.self).isEmpty else { return nil }
-        return registry.connectionLook(of: AnyShapeRecord(shape), from: shape.props.start.binding?.address, to: shape.props.end.binding?.address, in: context)
+        // A connection being drawn has no channel yet: the one it will be released on, which its drag says (`ArrowTargeting`).
+        let drawn = shape[ChannelProperty.self] == nil ? context.service(ArrowTargeting.self)?.provisionalChannels[shape.id] : nil
+        return registry.connectionLook(of: AnyShapeRecord(shape), channel: drawn, from: shape.props.start.binding?.address, to: shape.props.end.binding?.address, in: context)
     }
 
     /// An arrow's geometry as its detail draws it: a relationship's end's line, a look's heads and width.
     func arrowGeometry(_ arrow: Arrow, detail: ArrowDetail?, in context: ShapeContext) -> ArrowGeometry {
         guard let detail else { return arrowGeometry(arrow, in: context) }
         let connectables = Connectables(shapes: context)
-        return ArrowGeometry(arrow: detail.drawn(arrow), strokeWidth: detail.width, minBend: detail.minBend) { connectables[$0] }
+        return ArrowGeometry(arrow: detail.drawn(arrow), strokeWidth: detail.width, minBend: detail.minBend, markReach: detail.markReach) { connectables[$0] }
     }
 }
 

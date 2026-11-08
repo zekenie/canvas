@@ -350,6 +350,10 @@ let t3Panel2 = #"""
         let refunds = try require(table(w.editor, "refunds")), payments = try require(table(w.editor, "payments"))
         expectEqual(w.editor.hintedShapeID, payments.id)
         expectEqual(w.editor.hintedPart, payments.props.columns[0].id, "payments.id lit")
+        // The key is drawn with the marks it will have, though it has no channel until the release.
+        let drawing = try require(arrows(w.editor).first { $0.props.start.binding?.shapeID == refunds.id })
+        expectEqual(drawing[ChannelProperty.self], nil, "no channel yet")
+        expectEqual(w.editor.arrowLook(of: drawing.id), ConnectionLook(start: .many, end: .one, lineWidth: 2.5), "its marks as it is drawn")
         w.release()
         let key = try require(arrows(w.editor).first { $0.props.start.binding?.shapeID == refunds.id })
         expectEqual(key.props.start.binding?.part, refunds.props.columns[1].id)
