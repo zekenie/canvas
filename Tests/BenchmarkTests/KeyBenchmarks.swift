@@ -29,6 +29,17 @@ extension Budget {
     /// tables took their keys: 1.3 ms at 1,000 shapes and 6.7 at 10,000 (the one pass over the board's arrows), release,
     /// 2026-11-07; the budget some three times that.
     static let keyedTableDelete = 20.0
+    /// A pan's frame over 450 keys at 100% between four 40-row tables in view, each a level curve with its marks (K4), and the
+    /// columns' link marks the key index gives the tables: the thread's CPU time. Never measured before level keys: a release
+    /// build did 19 ms on a quiet machine and 41 to 43 under a load of 19 (2026-11-07), of which the curves' rasterizing is
+    /// about 4 and the marks and link marks about 12 over level arrows with none; the budget some two and a half times the
+    /// quiet figure.
+    static let levelArrowsFrame = 50.0
+    /// How much more the same frame over 450 level arrows (no channel: no marks) may cost than over 450 plain arrows bound to
+    /// the same points of the same tables (which each render works out again, where a level arrow draws what it keeps). Never
+    /// measured before: 31 ms against 26 to 27, release, under load; Core Graphics rasterizes a short cubic about half again as
+    /// slowly as a line (a probe of 450 strokes: 14 to 16 ms against 9 to 10), so the plan's "no worse" is held at 1.3.
+    static let levelArrowsSlack = 1.3
 }
 
 /// `count` tables of `rows` rows each, laid in a row from `origin`, 360 apart, each titled `t<n>`, and `keys` keys between
@@ -55,7 +66,79 @@ extension Budget {
     return (tables.map(AnyShapeRecord.init), arrows)
 }
 
+/// What the arrows between the tables are: plain arrows bound to the tables as wholes, precisely at the rows' sides (tldraw's,
+/// straight, worked out again by each render); the same bound to the rows, on no channel (level curves, kept); or keys, on
+/// foreign-key (level curves with their marks, and the columns' link marks the key index gives the tables).
+private enum Arrows450: CaseIterable { case plain, level, keys }
+
+/// Four 40-row tables in a row from `origin`, 360 apart (100 between them), and 450 arrows between neighbors' rows, from row
+/// `k / 3 % 40` of table `k % 3` to row `k / 7 % 40` of the next, as `kind` says. The arrows' ids besides.
+@MainActor private func arrowsBetween(_ kind: Arrows450, at origin: CGPoint) -> (shapes: [AnyShapeRecord], arrows: [ShapeID]) {
+    let rows = 40
+    var tables: [ShapeRecord<DatabaseTable>] = []
+    for index in 0..<4 {
+        let columns = (0..<rows).map { Column(name: "c\($0)", type: TypeRef("uuid"), primaryKey: $0 == 0) }
+        var table = ShapeRecord(DatabaseTable(frame: CGRect(x: origin.x + CGFloat(index) * 360, y: origin.y, width: 260, height: KitStyle.height(rows: rows)),
+                                              columns: columns))
+        table[TitleProperty.self] = "g\(index)"
+        tables.append(table)
+    }
+    func binding(_ table: ShapeRecord<DatabaseTable>, row: Int, side: CGFloat) -> ArrowBinding {
+        let frame = table.props.frame, rect = KitStyle.rowRect(row, in: frame)
+        let anchor = CGPoint(x: side, y: (rect.midY - frame.minY) / frame.height)
+        return ArrowBinding(shapeID: table.id, normalizedAnchor: anchor, isPrecise: true, isExact: true, part: kind == .plain ? nil : table.props.columns[row].id)
+    }
+    var arrows: [AnyShapeRecord] = []
+    for k in 0..<450 {
+        let from = tables[k % 3], to = tables[k % 3 + 1]
+        var arrow = ShapeRecord(Arrow(start: .bound(binding(from, row: (k / 3) % rows, side: 1)), end: .bound(binding(to, row: (k / 7) % rows, side: 0))))
+        if kind == .keys { arrow[ChannelProperty.self] = ForeignKey.id }
+        arrows.append(AnyShapeRecord(arrow))
+    }
+    return (tables.map(AnyShapeRecord.init) + arrows, arrows.map(\.id))
+}
+
 @MainActor let keyBenchmarks = Suite("Key benchmarks", [
+    test("a pan's frame over 450 level arrows no worse than over 450 plain bound arrows, and over 450 keys with their marks within a frame") {
+        let viewport = CGSize(width: 1600, height: 1000)
+        let context = try require(CGContext(data: nil, width: Int(viewport.width), height: Int(viewport.height), bitsPerComponent: 8,
+                                            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.translateBy(x: 0, y: viewport.height)
+        context.scaleBy(x: 1, y: -1)
+        for size in sizes {
+            var frames: [Arrows450: Double] = [:]
+            for kind in Arrows450.allCases {
+                let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+                let origin = CGPoint(x: 0, y: 60_000)
+                let between = arrowsBetween(kind, at: origin)
+                let document = CanvasDocument(shapes: generatedBoard(shapes: size).shapes + between.shapes)
+                let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+                h.editor.turn(EngineeringKit.self, on: true)
+                h.editor.viewportDidResize(to: viewport)
+                let camera = Camera(origin: CGPoint(x: origin.x - 40, y: origin.y - 40), zoom: 1)
+                h.editor.camera = camera
+                draw(h.editor, into: context, size: viewport)
+                expectEqual(h.editor.paintOrder(in: camera.toWorld(CGRect(origin: .zero, size: viewport))).filter { $0.kind == Arrow.kind }.count, 450,
+                            "every arrow in view")
+                let any = try require(between.arrows.first)
+                expectEqual(try require(h.editor.arrowGeometry(of: any)).isLevel, kind != .plain)
+                expectEqual(h.editor.arrowLook(of: any) != nil, kind == .keys)
+                var step = 0.0
+                frames[kind] = median(runs: 11, prepare: {
+                    step = step == 0 ? 1 : 0
+                    h.editor.camera = Camera(origin: CGPoint(x: camera.origin.x + step, y: camera.origin.y), zoom: 1)
+                }, onThread: true) { draw(h.editor, into: context, size: viewport) }
+            }
+            let plain = frames[.plain] ?? 0, level = frames[.level] ?? 0, keys = frames[.keys] ?? 0
+            report(String(format: "%6d shapes, 450 arrows between four 40-row tables in view, a pan's frame: %5.2f ms plain, %5.2f ms level (at most %.2f times plain), %5.2f ms keys with their marks (budget %.0f)",
+                          size, plain, level, Budget.levelArrowsSlack, keys, Budget.levelArrowsFrame))
+            if holdsToBudgets {
+                expect(level <= plain * Budget.levelArrowsSlack, "450 level arrows (\(level) ms) cost more than 450 plain arrows (\(plain) ms) over \(size) shapes")
+                expect(keys < Budget.levelArrowsFrame, "a pan's frame over 450 keys took \(keys) ms over \(size) shapes")
+            }
+        }
+    },
     test("a pan's frame over 100 keys between four 40-row tables, and a pointer moving over a 200-row table, each within a frame") {
         let viewport = CGSize(width: 1600, height: 1000)
         let context = try require(CGContext(data: nil, width: Int(viewport.width), height: Int(viewport.height), bitsPerComponent: 8,
