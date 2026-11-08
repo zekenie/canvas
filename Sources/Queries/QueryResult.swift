@@ -310,14 +310,18 @@ public struct QueryPair: Sendable, Equatable, Encodable {
     }
 }
 
-/// An end of a connection: its shape's id, and its name if it has one.
+/// An end of a connection: its shape's id, its name if it has one, and the row of it the connection is bound to, by the
+/// row's name, when it's bound to one (a key's column, `customer_id`; an endpoint, `POST /orders/{id}/refunds`) and the
+/// shape's kind names its parts (`registrar.queryPartNames`).
 public struct QueryEnd: Sendable, Equatable, Encodable {
     public var id: ShapeID
     public var title: String?
+    public var row: String?
 
-    public init(id: ShapeID, title: String? = nil) {
+    public init(id: ShapeID, title: String? = nil, row: String? = nil) {
         self.id = id
         self.title = title
+        self.row = row
     }
 }
 

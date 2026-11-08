@@ -34,7 +34,7 @@ public struct DatabaseTable: BoxShapeProps {
 
 /// One column of a table: a row, with an id of the table's own that a copy keeps.
 public struct Column: SchemaDefined, Hashable, Sendable {
-    public static let properties = Properties<Column>(definition: "column") {
+    public static let properties = Properties<Column>(definition: "column", readsAs: "name") {
         Property("id", \.id).required()
         Property("name", \.name).description("What it's called.")
         Property("type", \.type).description("Its type, as written; an enum of the file's once its words name one.")
@@ -99,6 +99,7 @@ extension TypeRef: SchemaDescribed {
              "properties": ["words": ["type": "string"], "shape": ["type": "string", "format": "uuid"]],
              "required": ["words"],
              "additionalProperties": false,
+             KindSchema.readsAsKeyword: "words",
              "description": "A type as written, and the shape its words name (an enum), if one matches."]
         }
     }
@@ -132,7 +133,7 @@ public struct DatabaseEnum: BoxShapeProps {
 
 /// One value of an enum: a row, with an id of the enum's own, so a rename keeps it.
 public struct EnumValue: SchemaDefined, Hashable, Sendable {
-    public static let properties = Properties<EnumValue>(definition: "enum-value") {
+    public static let properties = Properties<EnumValue>(definition: "enum-value", readsAs: "text") {
         Property("id", \.id).required()
         Property("text", \.text).description("The value.")
     }

@@ -153,6 +153,44 @@ public struct KindSchema: Sendable {
         return schema["properties"]?.objectValue == nil ? nil : written(schema)
     }
 
+    // MARK: What an object reads as
+
+    /// The keyword that says which member a value of an object schema reads as where a text compares it as one value
+    /// (`Properties(readsAs:)`): a type as written reads as its `words`, an enum's value as its `text`.
+    public static let readsAsKeyword = "x-canvas-reads-as"
+
+    /// The member the value at `path` inside a property reads as (`readsAsKeyword`), a list met at any step, or at the end,
+    /// read as its items, and each branch of a `oneOf` or `anyOf` looked in for a member; nil where the value is no object, or
+    /// its schema says no member. What a query's test of `[columns.type="uuid"]` compares: `columns.type.words`.
+    public func readsAs(_ property: String, at path: [String]) -> String? {
+        guard let start = properties[property] else { return nil }
+        var schemas = items(resolved(start))
+        for member in path {
+            schemas = schemas.flatMap { schema in branches(of: schema).compactMap { $0["properties"]?[member] }.flatMap { items(resolved($0)) } }
+            guard !schemas.isEmpty else { return nil }
+        }
+        for schema in schemas.flatMap(branches) {
+            if let member = schema[Self.readsAsKeyword]?.stringValue, schema["properties"]?[member] != nil { return member }
+        }
+        return nil
+    }
+
+    /// A schema, or the items of the lists it is, however deep, each resolved.
+    private func items(_ schema: JSONObject) -> [JSONObject] {
+        var schema = schema, depth = 0
+        while schema["type"]?.stringValue == "array", let items = schema["items"], depth < Self.listDepth {
+            schema = resolved(items)
+            depth += 1
+        }
+        return [schema]
+    }
+
+    /// A schema and the branches of its `oneOf` or `anyOf`, each resolved.
+    private func branches(of schema: JSONObject) -> [JSONObject] {
+        let more = (schema["oneOf"]?.arrayValue ?? []) + (schema["anyOf"]?.arrayValue ?? [])
+        return [schema] + more.map(resolved)
+    }
+
     /// A number's bounds: `≥ 0`, `≤ 5`, `0…1`.
     private func range(_ schema: JSONObject) -> String? {
         switch (schema["minimum"]?.numberValue, schema["maximum"]?.numberValue) {

@@ -1446,10 +1446,12 @@ final class Evaluation {
                                inside: ancestors(id).reversed().map(containerName), at: entry.record.box)
             (row.properties, row.cut) = listed(entry, kind: kind, wanted)
             if let edges = runs[id], let first = edges.first {
-                row.connection = QueryConnection(type: first.type, from: end(first.source), to: end(first.target))
+                row.connection = QueryConnection(type: first.type, from: end(first.source, part: first.sourcePart), to: end(first.target, part: first.targetPart))
                 if case .forwarded(let source, let target) = first.origin {
-                    row.connection?.via = QueryVia(from: source.map(end), to: target.map(end))
-                    if edges.count > 1 { row.connection?.more = edges.dropFirst().map { QueryPair(from: end($0.source), to: end($0.target)) } }
+                    row.connection?.via = QueryVia(from: source.map { end($0) }, to: target.map { end($0) })
+                    if edges.count > 1 {
+                        row.connection?.more = edges.dropFirst().map { QueryPair(from: end($0.source, part: $0.sourcePart), to: end($0.target, part: $0.targetPart)) }
+                    }
                 }
             }
             if id == snapshot.editing { row.editing = true }
@@ -1516,8 +1518,13 @@ final class Evaluation {
         return found
     }
 
-    /// An end of a connection, with its name if it has one (read already).
-    private func end(_ id: ShapeID) -> QueryEnd { QueryEnd(id: id, title: name(id)) }
+    /// An end of a connection, with its name if it has one (read already), and the row of it the edge reaches, by its name, where
+    /// its kind names its parts.
+    private func end(_ id: ShapeID, part: PartID? = nil) -> QueryEnd {
+        QueryEnd(id: id, title: name(id), row: part.flatMap { part in
+            entry(id).flatMap { entry in vocabulary.partNames[entry.record.kind]?(entry.record, part) }.flatMap { $0.isEmpty ? nil : $0 }
+        })
+    }
 
     /// What a shape carries in slot `""` as a connection, in the view the query reads: its first
     /// edge as emitted, or, when that was forwarded through a stand-in at an end, every copy of it

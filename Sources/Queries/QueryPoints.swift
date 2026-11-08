@@ -69,6 +69,25 @@ extension QueryBoardNames: KeyedExtensionPoint {
     static let label = "query board names"
 }
 
+// MARK: Parts' names
+
+/// What a part of a kind's shapes is called, for queries: a connection's end bound to a row says the row (`QueryEnd.row`,
+/// "customer_id", "POST /orders/{id}/refunds"), read off the main actor from the record, as a named shape's name is. Nil for
+/// a part the record doesn't hold, or one with no name. Only the sugar makes one (`registrar.queryPartNames`).
+public struct QueryPartNaming: Sendable {
+    let name: @Sendable (AnyShapeRecord, PartID) -> String?
+}
+
+/// What names the parts of a kind's shapes for queries: one plugin a kind, contributed for that kind.
+public enum QueryPartNames {}
+
+extension QueryPartNames: KeyedExtensionPoint {
+    public typealias Contribution = QueryPartNaming
+    public static var owner: PluginID { .queries }
+    public static func uniqueKeys(of _: QueryPartNaming, for target: ShapeTarget) -> [AnyHashable] { [QueryPointKey(name: "query part names \(target)")] }
+    public static func summary(of _: QueryPartNaming, for _: ShapeTarget) -> String { "query part names" }
+}
+
 // MARK: Words
 
 /// Whether a shape meets a contributed pseudo-class, as far as `matches` can say anywhere: yes, no,
@@ -550,6 +569,14 @@ extension PluginRegistrar {
                                     derived: @escaping @MainActor (AnyShapeRecord, Registry) -> String?,
                                     fold: @escaping @Sendable (String) -> String?) {
         contribute(QueryNaming(attribute: attribute, source: source, named: named, derived: derived, fold: fold), to: QueryNames.self)
+    }
+
+    /// What the parts of `kind`'s shapes are called, for queries: `name` is given a shape's record and one of its parts, read
+    /// anywhere (off the main actor, as a query's rows are made), and says the part's whole name, as `PartedShape.parts(of:)`
+    /// does ("customer_id"); nil for a part the record doesn't hold. A connection's end bound to a part says it (`QueryEnd.row`).
+    /// One plugin a kind: the one that defines it.
+    public mutating func queryPartNames(of kind: ShapeKind, _ name: @escaping @Sendable (AnyShapeRecord, PartID) -> String?) {
+        contribute(QueryPartNaming(name: name), to: QueryPartNames.self, for: .kind(kind))
     }
 
     /// What a board is called while its owner has no name, per board-owning kind, asked once per

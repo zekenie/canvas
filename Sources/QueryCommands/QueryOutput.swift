@@ -107,6 +107,7 @@ public enum QueryOutput {
     private nonisolated static func end(_ end: QueryEnd) -> JSON {
         var object: [String: JSON] = ["id": .string(end.id.description)]
         if let title = end.title { object["title"] = .string(title) }
+        if let row = end.row { object["row"] = .string(row) }
         return .object(object)
     }
 
