@@ -437,7 +437,7 @@ Horizontals are part of the **platform**: what every shape gets, whatever its ki
 holds three more groups, which are not interfaces a kind plugs into but are still every shape's:
 
 - **Things you do**: a palette, a command or a gesture the person uses, that no kind opts into and
-  nothing builds on. Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
+  nothing builds on (but Clipboard, which plugins import to read the pasteboard: [the clipboard](#the-clipboard)). Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
   and the table of contents' drops, Snapping is what a drag lines up with, the clipboard is cut, copy
   and paste, and [Reordering](#many-kinds-reordering) is the Arrange menu of the kinds painted in document order: each works on the
   shapes its rule covers (Snapping: those with a frame) and no kind opts in. Jump To reaches into
@@ -642,7 +642,7 @@ Ask in this order, and the first yes is the rung:
 3. Is it a shape that holds something of its own, which no other plugin need build on? Then product.
 4. Otherwise, platform: what every shape gets, whatever its kind. Under which heading: an interface
    a kind plugs into, something a shape shows up on or has, is a horizontal; a palette, a command or
-   a gesture nothing builds on is a thing you do; what any plugin runs or asks is an engine; what
+   a gesture nothing builds on (but Clipboard, for its paste readers) is a thing you do; what any plugin runs or asks is an engine; what
    speaks the wire to an agent is for agents.
 
 A kind other plugins must build on is platform, as References is: a product can't be imported.
@@ -6415,7 +6415,7 @@ giving a shape back the id it had.
   Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste
   wherever the keyboard is, the table of contents' list included, except in text (a note being
   edited, a panel's field), which takes them first. Cut and Paste don't run mid-gesture; Copy does.
-- **Undo.** Cut and Paste are one step each, "Cut" and "Paste" (a duplicate's is "Duplicate", a ⌥-drag's copy and its move together), by key, menu or context menu.
+- **Undo.** Cut and Paste are one step each, "Cut" and "Paste" (a paste a reader reads is "Paste" and its name, "Paste SQL", and ⌥⇧⌘V's is "Paste as Note"; a duplicate's is "Duplicate", a ⌥-drag's copy and its move together), by key, menu or context menu.
   Undoing a cut brings the shapes back selected; undoing a paste selects what was before it, and
   redoing it brings back the same copies (the same ids, `copiedFrom` and all). Undoing a move's
   paste takes the shapes out and frees their ids (a paste after it moves them again), redoing it

@@ -130,8 +130,9 @@ public struct StickyNotesPlugin: ListedPlugin {
         // Paste as Note (⌥⇧⌘V, Clipboard's): any text on the pasteboard, or a small text file's, one note with those words and
         // no title, put down beside the selection by Draw. `@[` is escaped, so nothing in it turns into a mention. ⌘V of plain
         // text is no note: this reader is a plain one, which only Paste as Note asks.
-        registrar.pasteReader(NoteStyle.pastedNote, role: .plain, sniff: { $0.plainText != nil }) { content, _ in
-            content.plainText.map { text in
+        // Not more than a note can sensibly hold (`NoteStyle.pastedNoteLimit`): a log or a dump is no note, and Paste as Note is dim.
+        registrar.pasteReader(NoteStyle.pastedNote, role: .plain, sniff: { $0.plainText?.fitsNote == true }) { content, _ in
+            content.plainText.flatMap { $0.fitsNote ? $0 : nil }.map { text in
                 DrawPut(rows: [[DrawPut.Shape(kind: StickyNote.kind.rawValue, values: [(key: "text", text: MentionText(plain: text).stored)])]])
             }
         }
@@ -140,6 +141,11 @@ public struct StickyNotesPlugin: ListedPlugin {
         registrar.selectionSlashCommand(BulkCreate.command)
         registrar.keyHint("⌥ Click or ⌥↩", BulkCreateStyle.inRow, while: .pointer)
     }
+}
+
+extension String {
+    /// Whether Paste as Note makes a note of it.
+    @MainActor var fitsNote: Bool { utf8.count <= NoteStyle.pastedNoteLimit }
 }
 
 struct StickyNoteDefinition {}
@@ -240,6 +246,8 @@ enum NoteStyle {
     static let size = StickyNote.defaultSize
     /// What the plain reader is called, and so its report line.
     static let pastedNote = "Note"
+    /// The most text Paste as Note makes a note of, in bytes: its height is measured over all of it.
+    static let pastedNoteLimit = 50_000
     static let cornerRadius: CGFloat = 4
     static let padding: CGFloat = 16
     /// Between a note's words and the rows under them, when it has words.

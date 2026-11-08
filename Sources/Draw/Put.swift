@@ -188,6 +188,8 @@ private struct Putting {
         let names = naming.map { FileNames(editor, naming: $0) }
         var planned: [Planned] = []
         var byTitle: [String: ShapeID] = [:]
+        // The statement that first named each kind and title in the put: a later one of the same is the same shape, and joins it.
+        var first: [String: Int] = [:]
         for statement in block.script.statements {
             guard case .shape(var shape) = statement.body else {
                 planned.append(Planned(statement: statement, board: shown, id: nil, isNew: false, original: statement.line))
@@ -198,7 +200,22 @@ private struct Putting {
             switch shape.name {
             case .title(let written)?:
                 if let naming, let names, let folded = naming.fold(written) {
-                    let candidates = (names.places[folded] ?? []).filter { editor.file.record($0.id)?.kind == kind }
+                    let key = "\(shape.word)\n\(folded)"
+                    if let index = first[key], case .shape(var earlier) = planned[index].statement.body {
+                        // A title written twice names one shape: the later statement's values join the earlier's (which keeps a
+                        // key both write), and it is drawn once, so the put never makes two of a name nor writes one twice.
+                        for attribute in shape.attributes where !earlier.attributes.contains(where: { $0.key == attribute.key }) {
+                            earlier.attributes.append(attribute)
+                        }
+                        planned[index].statement.body = .shape(earlier)
+                        continue
+                    }
+                    // A shape that cannot be changed is no match for a statement that gives it values: a new shape is made.
+                    let writes = !shape.attributes.isEmpty
+                    let candidates = (names.places[folded] ?? []).filter {
+                        editor.file.record($0.id)?.kind == kind && !(writes && editor.isReadOnly(inFile: $0.id))
+                    }
+                    first[key] = planned.count
                     if let found = nearest(of: candidates) {
                         id = found.id
                         board = found.board
@@ -225,7 +242,7 @@ private struct Putting {
             named.body = .shape(shape)
             planned.append(Planned(statement: named, board: board, id: id, isNew: isNew, original: statement.line))
         }
-        // An edge, a group or a delete naming a shape of the put by its title names the shape found or made.
+        // An edge naming a shape of the put by its title names the shape found or made (groups and deletes are not resolved: the readers give shapes and edges).
         guard let naming, !byTitle.isEmpty else { return planned }
         func resolved(_ name: ShapeName) -> ShapeName {
             guard case .title(let written) = name, let folded = naming.fold(written), let id = byTitle[folded] else { return name }

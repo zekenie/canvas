@@ -312,8 +312,10 @@ final class ClipboardState {
     /// Whether a paste would put anything down: this app's shapes, or a recognizing reader that sniffs what is there.
     var hasShapes: Bool {
         if let app = appShapes() { return !app.file.root.shapes.isEmpty }
+        let readers = editor.contributions(to: PasteReaders.self).filter { $0.value.role == .recognizing }
+        guard !readers.isEmpty else { return false }
         let content = pasteContent()
-        for entry in editor.contributions(to: PasteReaders.self) where entry.value.role == .recognizing {
+        for entry in readers {
             guard let sniff = entry.value.sniff else { return reading(.recognizing) != nil }
             if sniff(content) { return true }
         }
@@ -375,12 +377,20 @@ final class ClipboardState {
     private func putDown(_ program: DrawPut, at site: PutSite, named name: String) {
         editor.endEditing()
         let landed: [ShapeID]
+        let before = editor.revision
         do {
             landed = try editor.undoHistory.group(name) { try Draw.put(program, at: site, in: editor, step: name) }
         } catch {
+            // Refused as a shape paste is: said, and the shapes it was beside shake (a locked frame that would take it).
+            if case .beside(let ids) = site, !ids.isEmpty { editor.refuseChanges(to: Set(ids)) }
+            editor.announce((error as? DrawError)?.message ?? "Nothing was pasted")
             return
         }
-        guard !landed.isEmpty else { return }
+        guard !landed.isEmpty else {
+            // Restated only shapes of other boards: it did something, and says so.
+            if editor.revision != before { editor.announce("Pasted into shapes on other boards", priority: .low) }
+            return
+        }
         let inside = Set(landed), kinds = editor.registry.containingKinds, document = editor.document
         editor.selectedShapeIDs = landed.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
         editor.announce(landed.count == 1 ? "Pasted 1 shape" : "Pasted \(landed.count) shapes", priority: .low)

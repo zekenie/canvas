@@ -105,7 +105,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [line rows](.claude/rules/line-rows.md): rows written a line each, any kind's (`lineRows`, `.lineRows`): the line field moved to the row with the caret, the grammar a role's lines are read and printed in (spans, references kept by id, offers in the caret list whose Return does only actions, the no-loss law), the stops (title, rows, the waiting line) and their keys, a row committed as the caret leaves it as one step the kind names, the layout inputs the kind draws by, hops to the next shape of the kind, the light, VoiceOver.
 - [references](.claude/rules/references.md): a pill that stands for a public shape: its props and writers, its look in every state, what it stands for, going to the original, its row and panel.
 
-**Platform**, things you do (no kind opts in and no plugin imports one)
+**Platform**, things you do (no kind opts in; only Clipboard is imported, by the plugins that read the pasteboard)
 - [clipboard](.claude/rules/clipboard.md): cut, copy and paste; boards and containers copied whole; cut and paste as a move.
 - [jump to](.claude/rules/jump-to.md): ⌘K, a palette that goes to a shape by its title and where it is; the catalog, the ranking over the containment tree, the palette and its list, picks.
 - [moving](.claude/rules/moving.md): `/move-to` and `/move-near`, the shape typed in, or the shapes selected (typed in the command bar) as one block, moved into a frame, onto a subboard's board or beside a shape, on any board; the table of contents' drops that move shapes; what each takes, where it lands (draw's solver), the commit (an arrow that would cross boards goes where its start goes, through reference pills), and going where the shapes went.
