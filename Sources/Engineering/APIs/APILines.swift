@@ -241,6 +241,7 @@ struct APILines: LineModel {
     typealias Row = APIRow
 
     var noun: LineNoun { LineNoun("endpoint") }
+    var headerNoun: LineNoun? { LineNoun("path prefix", plural: "path prefixes") }
     var style: LineStyle { APILooks.line }
     func rows(of props: API) -> [APIRow] { props.endpoints }
     func setRows(_ rows: [APIRow], in props: inout API) { props.endpoints = rows }

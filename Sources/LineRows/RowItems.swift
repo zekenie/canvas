@@ -54,6 +54,7 @@ extension ShapeRegistrar {
                 return AnyShapeRecord(ShapeRecord(model.takeOut(model.rows(of: shape.props), from: shape)))
             },
             editsTitle: model.takeOutEditsTitle,
+            headerNoun: model.headerNoun,
             lines: { carrier, editor in
                 rows(carrier).map { row in
                     model.grammar(for: model.role(of: row)).print(row, in: LineContext(editor: editor, shape: carrier.id, row: model.id(of: row))).string
@@ -92,7 +93,8 @@ extension ShapeRegistrar {
                 return RowDragSession(rows: acting.compactMap { $0.base as? PartID }, of: shape, from: origin, in: editor)
             },
             lead: { editor, record, point in
-                guard let shape = typed(record) else { return nil }
+                // Zoomed out the marks aren't drawn: a press there moves the shape.
+                guard !editor.drawsSkeletons, let shape = typed(record) else { return nil }
                 let all = model.rows(of: shape.props)
                 guard let item = RowItems.items(of: record, in: editor, title: { _ in "" }).first(where: { $0.rect.contains(point) }),
                       let id = item.id.base as? PartID, let index = all.firstIndex(where: { model.id(of: $0) == id }),
@@ -174,7 +176,7 @@ enum RowItems {
               let moving = editor.registry.rowMoving(of: record.kind) else { return nil }
         let rows = selection.acting.compactMap { $0.base as? PartID }
         guard !rows.isEmpty else { return nil }
-        let title = RowSteps.takeOut(moving.noun, count: rows.count, into: record.kind, in: editor.registry)
+        let title = RowSteps.takeOut(editor.stepNoun(of: rows, in: record, moving), count: rows.count, into: record.kind, in: editor.registry)
         return MenuItem(title, in: RowsMenuGroup.self, id: "take-out-rows", stepName: title) { ids, editor in
             editor.moveRows(rows, of: selection.shape, to: .beside(ids))
         }

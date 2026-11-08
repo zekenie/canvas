@@ -71,6 +71,12 @@ extension EmptyBoardWindow {
         window.settle()
     }
 
+    /// The menu a right click at a world point asks for, as AppKit asks the canvas.
+    func menu(at point: CGPoint) -> NSMenu? {
+        mouseTime += 1
+        return canvas.menu(for: mouse(.rightMouseDown, at: point))
+    }
+
     /// The mouse let go at a world point.
     func mouseUp(at point: CGPoint) {
         mouseTime += 0.016
@@ -137,7 +143,8 @@ private let shopAPI = #"""
         expectEqual(table(editor, "customers")?.props.columns.map(\.name), ["id", "email", "name", "created_at"])
         expectEqual(editor.shapeContext.frame(of: editor.document[customers.id]!)?.height, KitStyle.height(rows: 4),
                     "customers as tall as its rows: the ended session lays no waiting line out as its band's rows go")
-        expect(try require(editor.shapeContext.frame(of: editor.document[made]!)).contains(drop), "where it was dropped")
+        expect(try require(editor.shapeContext.frame(of: editor.document[made]!)).contains(CGPoint(x: drop.x + RowDragStyle.ghostGap + 4, y: drop.y)),
+               "where the ghost was: at the pointer's right")
         w.type("addresses", with: walk)
         walk.press(.escape)
         expectEqual(undoTitle(w.window), "Undo Move Columns to New Table", "the move and the name one step")
@@ -203,5 +210,75 @@ private let shopAPI = #"""
         (w.window as! BoardWindow).undo(nil)
         expectEqual(api(editor, "shop")?.props.endpoints, shop.props.endpoints)
         expectEqual(api(editor, "billing")?.props.endpoints, billing.props.endpoints)
+    },
+    test("an API's endpoints cut or copied by ⌘C and ⌘X and pasted by ⌘V into another API land under its header, full paths kept, each Undo title as Edit says it") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(shopAPI)
+        let editor = w.editor
+        let shop = try require(api(editor, "shop")), billing = try require(api(editor, "billing"))
+        let rows = shop.props.endpoints
+        let walk = w.walk()
+        editor.selectedShapeIDs = [shop.id]
+        editor.selectItems([AnyHashable(rows[3].id)], of: shop.id)
+        walk.press(Chord("c", .command))
+        editor.selectedShapeIDs = [billing.id]
+        editor.selectItems([AnyHashable(billing.props.endpoints[1].id)], of: billing.id)
+        walk.press(Chord("v", .command))
+        expectEqual(undoTitle(w.window), "Undo Paste Endpoint")
+        expectEqual(api(editor, "billing")?.props.endpoints.map(EndpointGrammar.print), ["/orders", "GET /", "POST /{id}/refunds", "/payments", "GET /{id}"])
+        expectEqual(fullNames(api(editor, "billing"))[1], "POST /orders/{id}/refunds")
+        expectEqual(api(editor, "shop")?.props.endpoints, rows, "a copy leaves the source")
+        (w.window as! BoardWindow).undo(nil)
+        editor.selectedShapeIDs = [shop.id]
+        editor.selectItems([AnyHashable(rows[5].id)], of: shop.id)
+        walk.press(Chord("x", .command))
+        expectEqual(undoTitle(w.window), "Undo Cut Endpoint")
+        editor.selectedShapeIDs = [billing.id]
+        editor.selectItems([AnyHashable(billing.props.endpoints[3].id)], of: billing.id)
+        walk.press(Chord("v", .command))
+        expectEqual(undoTitle(w.window), "Undo Paste Endpoint")
+        expectEqual(fullNames(api(editor, "billing")).first, "GET /customers/{id}/orders", "under none of billing's headers: at the top, its whole path")
+        expectEqual(fullNames(api(editor, "shop")), ["GET /health", "GET /orders/{id}", "POST /orders/{id}/refunds"])
+    },
+    test("a path prefix selected alone is cut with its group by ⌘X and put on the board by ⌘V as a new API of them; the selection's menu takes endpoints out as Move Endpoints to New API, their names typed at once") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(shopAPI)
+        let editor = w.editor
+        let shop = try require(api(editor, "shop"))
+        let rows = shop.props.endpoints
+        let walk = w.walk()
+        editor.selectedShapeIDs = [shop.id]
+        editor.selectItems([AnyHashable(rows[1].id)], of: shop.id)
+        walk.press(Chord("x", .command))
+        expectEqual(undoTitle(w.window), "Undo Cut Endpoints")
+        expectEqual(api(editor, "shop")?.props.endpoints.map(EndpointGrammar.print), ["GET /health", "/customers", "GET /{id}/orders"], "its group left with it")
+        walk.press(.escape)
+        walk.press(.escape)
+        expectEqual(editor.selectedShapeIDs, [])
+        walk.press(Chord("v", .command))
+        let made = try require(editor.editingShapeID, "its name typed at once")
+        expectEqual(editor.document[made]?.typed(as: API.self)?.props.endpoints.map(EndpointGrammar.print), ["/orders", "GET /{id}", "POST /{id}/refunds"])
+        expectEqual(fullNames(editor.document[made]?.typed(as: API.self)), ["GET /orders/{id}", "POST /orders/{id}/refunds"])
+        walk.press(.escape)
+        expectEqual(undoTitle(w.window), "Undo Move Endpoints to New API")
+        (w.window as! BoardWindow).undo(nil)
+        (w.window as! BoardWindow).undo(nil)
+        expectEqual(api(editor, "shop")?.props.endpoints, rows, "the paste and the cut undone")
+        // The same by the selection's menu, for endpoints across two groups.
+        editor.selectedShapeIDs = [shop.id]
+        editor.selectItems([AnyHashable(rows[2].id), AnyHashable(rows[5].id)], of: shop.id)
+        let spot = try w.rowRect(2, of: shop.id)
+        let menu = try require(w.menu(at: CGPoint(x: spot.midX, y: spot.midY)))
+        expect(menu.outline.contains("Move Endpoints to New API"), "\(menu.outline)")
+        try menu.choose("Move Endpoints to New API")
+        let taken = try require(editor.editingShapeID, "its name typed at once")
+        expectEqual(fullNames(editor.document[taken]?.typed(as: API.self)), ["GET /orders/{id}", "GET /customers/{id}/orders"])
+        expectEqual(fullNames(api(editor, "shop")), ["GET /health", "POST /orders/{id}/refunds"])
+        walk.press(.escape)
+        expectEqual(undoTitle(w.window), "Undo Move Endpoints to New API")
     },
 ])

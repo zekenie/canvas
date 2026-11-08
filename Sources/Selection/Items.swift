@@ -482,10 +482,17 @@ extension PointingLeadSession: Session {
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         guard pointer.view.distance(to: press) > Style.dragThreshold, let record = editor.document[shape],
               let drag = editor.itemSource(of: record.kind)?.actions.drag else { return }
-        editor.selectItems([lead.item], of: shape)
-        guard let session = drag(editor, shape, [lead.item], editor.camera.toWorld(press)) else { return }
-        editor.session = session
-        session.drag(pointer, in: editor)
+        let origin = editor.camera.toWorld(press)
+        // A read-only shape (or one whose kind starts no drag) is dragged as a press on it would, which refuses a locked one: the
+        // row isn't selected, and the release isn't the lead's click.
+        var session: (any Session)?
+        if !editor.isReadOnly(shape) {
+            editor.selectItems([lead.item], of: shape)
+            session = drag(editor, shape, [lead.item], origin)
+        }
+        let next = session ?? editor.translationSession(from: origin, pointer: pointer)
+        editor.session = next
+        next.drag(pointer, in: editor)
     }
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {

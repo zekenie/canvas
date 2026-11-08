@@ -97,7 +97,8 @@ extension CanvasEditor {
     /// arrows that start at one (a column's keys), never those that end there. Nil for none.
     public func rowsPayload(_ rows: [PartID], of shape: ShapeID, cut: Bool) -> RowsPayload? {
         guard let record = document[shape], let moving = registry.rowMoving(of: record.kind) else { return nil }
-        let wanted = Set(rows)
+        // A header goes with the rows it heads, as in every move.
+        let wanted = withGroups(Set(rows), of: record)
         let ids = (moving.rows(record) ?? []).filter(wanted.contains)
         guard !ids.isEmpty, let carrier = moving.carrier(record, ids) else { return nil }
         return RowsPayload(carrier: carrier, bound: cut ? arrowsBound(to: ids, of: shape) : arrowsStarted(by: ids, of: shape), cut: cut ? UUID() : nil)
@@ -164,7 +165,7 @@ extension CanvasEditor {
             for item in transaction.deletedAlong {
                 if let at = counts.firstIndex(where: { $0.kind == item.kind }) { counts[at].count += item.count } else { counts.append(item) }
             }
-            name = RowSteps.cut(moving.noun, count: ids.count, along: counts, in: registry)
+            name = RowSteps.cut(stepNoun(of: ids, in: record, moving), count: ids.count, along: counts, in: registry)
             transaction.stepName = name
             return true
         }
@@ -211,10 +212,11 @@ extension CanvasEditor {
         let rows = moving.rows(payload.carrier) ?? []
         guard !rows.isEmpty else { return nil }
         let moves = payload.cut != nil && !boardHolds(rows, of: payload.carrier.kind)
-        let step: String = if case .into = place { RowSteps.paste(moving.noun, count: rows.count) } else if moves {
-            RowSteps.takeOut(moving.noun, count: rows.count, into: payload.carrier.kind, in: registry)
+        let noun = stepNoun(of: rows, in: payload.carrier, moving)
+        let step: String = if case .into = place { RowSteps.paste(noun, count: rows.count) } else if moves {
+            RowSteps.takeOut(noun, count: rows.count, into: payload.carrier.kind, in: registry)
         } else {
-            RowSteps.paste(moving.noun, count: rows.count)
+            RowSteps.paste(noun, count: rows.count)
         }
         return landRows(payload.carrier, source: nil, arrows: payload.bound, far: payload.far, moves: moves, at: place, step: step)
     }

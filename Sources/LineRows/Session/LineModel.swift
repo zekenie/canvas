@@ -96,6 +96,9 @@ public protocol LineModel {
     /// as `applying` does for one row (an API: an endpoint that leaves every group takes its prefix along, one moved under
     /// another header keeps its own path, and those a header lands among or leaves keep their full paths).
     func reordering(_ moved: Set<PartID>, to index: Int, in rows: [Row]) -> [Row]
+    /// What a block of only headers is called in the steps of moving it, cutting it or taking it out (an API's "path prefix": "Move
+    /// Path Prefix"). Nil, by default, for the kind's noun.
+    var headerNoun: LineNoun? { get }
     /// Where the lead of row `index` of `rows` is drawn, world units, its line at `line` (a column's key mark, an endpoint's
     /// method chip): a press there drags the row at once, selected or not, and a click selects it as a click on the shape
     /// would. Nil, by default, for none.
@@ -114,6 +117,7 @@ extension LineModel {
         return props
     }
     public var takeOutEditsTitle: Bool { false }
+    public var headerNoun: LineNoun? { nil }
     public var showsCardChevron: Bool { false }
     public var fixedLine: LineFixedLine<Props>? { nil }
     public func indent(at index: Int, of rows: [Row], isNew: Bool) -> CGFloat { 0 }

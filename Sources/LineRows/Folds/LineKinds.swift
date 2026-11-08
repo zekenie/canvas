@@ -16,8 +16,13 @@ public struct LineNoun: Hashable, Sendable {
     }
 
     /// "Column", "Columns".
-    public var title: String { singular.prefix(1).uppercased() + singular.dropFirst() }
-    public var pluralTitle: String { plural.prefix(1).uppercased() + plural.dropFirst() }
+    public var title: String { Self.titled(singular) }
+    public var pluralTitle: String { Self.titled(plural) }
+
+    /// Each word's first letter capital: "Path Prefix".
+    private static func titled(_ words: String) -> String {
+        words.split(separator: " ", omittingEmptySubsequences: false).map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+    }
 
     /// "1 column", "37 columns".
     public func counted(_ count: Int) -> String { "\(count) \(count == 1 ? singular : plural)" }

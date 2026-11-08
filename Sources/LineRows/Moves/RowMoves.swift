@@ -44,6 +44,8 @@ public struct LineRowsMoving {
     let takeOut: @MainActor (AnyShapeRecord) -> AnyShapeRecord?
     /// Whether a shape taken out has its name typed at once.
     let editsTitle: Bool
+    /// What a block of only headers is called in steps (an API's "path prefix"); nil for the noun.
+    let headerNoun: LineNoun?
     /// A carrier's rows as their lines print, one a line: what goes on the pasteboard as text beside them.
     let lines: @MainActor (AnyShapeRecord, CanvasEditor) -> [String]
 
@@ -52,7 +54,7 @@ public struct LineRowsMoving {
                 removing: @escaping @MainActor (AnyShapeRecord, Set<PartID>) -> AnyShapeRecord?,
                 inserting: @escaping @MainActor (AnyShapeRecord, AnyShapeRecord, Int, [PartID: PartID]) -> AnyShapeRecord?,
                 reordering: @escaping @MainActor (AnyShapeRecord, [PartID], Int) -> AnyShapeRecord?,
-                takeOut: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord?, editsTitle: Bool,
+                takeOut: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord?, editsTitle: Bool, headerNoun: LineNoun? = nil,
                 lines: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> [String]) {
         self.noun = noun
         self.takes = takes
@@ -63,6 +65,7 @@ public struct LineRowsMoving {
         self.reordering = reordering
         self.takeOut = takeOut
         self.editsTitle = editsTitle
+        self.headerNoun = headerNoun
         self.lines = lines
     }
 
@@ -151,8 +154,9 @@ extension CanvasEditor {
                                coalescing: key) ? shape : nil
         }
         guard let carrier = moving.carrier(record, ids) else { return nil }
-        let step: String = if case .into = place { RowSteps.move(moving.noun, count: ids.count) } else {
-            RowSteps.takeOut(moving.noun, count: ids.count, into: record.kind, in: registry)
+        let noun = stepNoun(of: ids, in: record, moving)
+        let step: String = if case .into = place { RowSteps.move(noun, count: ids.count) } else {
+            RowSteps.takeOut(noun, count: ids.count, into: record.kind, in: registry)
         }
         return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key)?.shape
     }
@@ -206,7 +210,7 @@ extension CanvasEditor {
         let rest = order.filter { !moved.contains($0) }
         let index = before.flatMap { rest.firstIndex(of: $0) } ?? rest.count
         guard let record = document[shape], let reordered = moving.reordering(record, ids, index), reordered != record else { return false }
-        let step = RowSteps.move(moving.noun, count: ids.count)
+        let step = RowSteps.move(stepNoun(of: ids, in: record, moving), count: ids.count)
         let done: Bool? = transactWhole(step, coalescing: key, shaking: [shape]) { transaction in
             guard let fresh = transaction.document[shape], let reordered = moving.reordering(fresh, ids, index) else { throw Transaction.Refused([shape]) }
             transaction.update(shape) { $0 = reordered }
@@ -382,6 +386,15 @@ extension CanvasEditor {
             if row.isHeader { heading = rows.contains(row.id) } else if heading { block.insert(row.id) }
         }
         return block
+    }
+
+    /// What the steps of moving `ids` of `record` call them: the kind's noun, or its header noun for a block of only headers (a
+    /// path prefix moved with nothing under it is no endpoint).
+    func stepNoun(of ids: [PartID], in record: AnyShapeRecord, _ moving: LineRowsMoving) -> LineNoun {
+        guard let header = moving.headerNoun, let rows = registry.lineRows(of: record.kind)?.rows(record) else { return moving.noun }
+        let wanted = Set(ids)
+        let chosen = rows.filter { wanted.contains($0.id) }
+        return !chosen.isEmpty && chosen.allSatisfy(\.isHeader) ? header : moving.noun
     }
 
     /// How big `record` is laid out, as a shape of its own.
