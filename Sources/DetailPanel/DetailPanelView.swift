@@ -101,6 +101,9 @@ public struct DetailPanelView: View {
         // table (a list), which `WindowBox.takeCommandPeriod` tells apart.
         .onExitCommand { _ = exitByKey(window.takeCommandPeriod() ? .commandPeriod : .escape, withOption: false) }
         .onChange(of: editor.selectedShapeIDs) { reclaimSoon() }
+        // A row as the subject comes and goes with the shape still selected (the row deleted, Undo, the caret moving out of it):
+        // its panel's views are replaced by the shape's or another row's, and a control that had the keys leaves the window.
+        .onChange(of: editor.detailRow) { reclaimSoon() }
         // The band's controls join the ring first (they are above everything), or leave it; a band that goes with the keyboard
         // in it (Done, pressed) leaves it on the window, which the canvas then has.
         .onChange(of: activeBand?.index) { reclaimSoonOfBand() }

@@ -109,6 +109,31 @@ private let e6 = #"""
         w.window.spin { editor.selection == storefront }
         expectEqual(editor.selection, storefront, "Return goes to the shape")
     },
+    test("deleting the row whose Connections list has the keys hands them to the canvas: the row's panel is replaced under the focus") {
+        let w = try InspectorWindow()
+        let editor = w.editor
+        _ = try drawnInProcess(e6, on: editor)
+        let api = try require(shape(editor, "orders API")).id
+        let row = try require(endpoint(editor, api, "POST /orders/{id}/refunds"))
+        let list = try require(editor.neighborList)
+        try require(editor.detailPanel).choose(.of(NeighborsTab.self), for: ShapeKind(rawValue: API.kind.rawValue + "#row"))
+        editor.selectedShapeIDs = [api]
+        editor.selectItems([AnyHashable(try require(row.part))], of: api)
+        w.window.spin { list.subject == row && list.hasLanded && !list.isAsking }
+        w.window.spin { w.connectionRows.count == 3 }
+        let table = try require(w.connectionTable)
+        w.window.makeFirstResponder(table)
+        w.window.spin { w.window.firstResponder === table }
+        expect(w.window.firstResponder === table, "the list has the keys")
+        editor.transact("Delete Endpoint") { tx in
+            tx.update(api, as: API.self) { $0.props.endpoints.removeAll { $0.id == row.part } }
+            tx.removeParts([row])
+        }
+        w.window.spin { editor.detailRow == nil }
+        expectEqual(editor.detailRow, nil, "the row is gone, and the panel is the API's")
+        w.window.spin { w.canvasHasKeyboard }
+        expect(w.canvasHasKeyboard, "the keys are the canvas's, not the window's")
+    },
     test("E5 panel 1: a note's mention of an endpoint follows its path prefix retyped from /orders to /purchases, drawn as the row's chip and path") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -137,5 +162,24 @@ private let e6 = #"""
                     "Partial refunds go through\n@POST /purchases/{id}/refunds")
         expectEqual(editor.mentionPills(of: note).map(\.target), [row])
         expect(editor.mentionPills(of: note).allSatisfy(\.isLive))
+    },
+    test("a note measured from its words alone gives an endpoint's pill the width it is drawn with, its chip's, not a symbol's and the method's letters") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"api "orders API" server: "api.shop.dev/v1 bearer" endpoints: "POST /orders/{id}/refunds\nDELETE /orders/{id}\nGET /orders""#)
+        let editor = w.editor
+        let api = try require(shape(editor, "orders API"))
+        let style = MentionTextStyle(font: .systemFont(ofSize: 15), color: .black, lineHeight: 19)
+        let rows = try require(editor.registry.parts(of: api))
+        expectEqual(rows.count, 3)
+        for part in rows {
+            let address = PartAddress(api.id, part: part.id)
+            let live = try require(editor.mentions?.resolve(address).appearance)
+            let text = MentionText([.mention(address, label: live.label)])
+            let drawn = style.attributedString(text) { _ in .live(live) }.size().width
+            expectEqual(style.measuredString(text, width: nil).size().width, drawn, live.label)
+            expect(drawn > 0)
+        }
     },
 ])
