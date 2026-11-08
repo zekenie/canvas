@@ -119,14 +119,54 @@ extension EmptyBoardWindow {
         expectEqual(keys(editor), [])
         expectEqual(undoTitle(w.window), "Undo Delete Key")
         expectEqual(card.value(of: "references"), "")
+        expectEqual(card.header.mark == nil, true, "no key: no link in the header")
         card.go(to: "references")
         w.type("customers", with: walk)
         if card.field(of: "references")?.offerList != nil { walk.press(.escape) }
         walk.press(.return)
         expectEqual(keys(editor), ["orders.customer_id -> customers.id"], "a table alone: its primary key's row")
         expectEqual(undoTitle(w.window), "Undo Add Key")
+        expectEqual(card.header.mark?.symbol, "link", "the key made from the card, its mark")
         expect(editor.card == nil, "Return is done with a field: the row has the keyboard back")
         expectEqual(w.line?.string, "customer_id uuid → customers.id")
         walk.press(.escape)
+    },
+    test("references typed with an arrow or more words: the target is the first word after the arrow, the others stay the line's, once; words naming no row stay words") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop)
+        let walk = w.walk()
+        try w.edit("orders", row: "customer_id")
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.rowCard { _ in })
+        card.go(to: "references")
+        try require(card.field(of: "references")).selectAll(nil)
+        w.type("-> customers.email", with: walk)
+        if card.field(of: "references")?.offerList != nil { walk.press(.escape) }
+        walk.press(.down)
+        expectEqual(keys(editor), ["orders.customer_id -> customers.email"], "the arrow typed is not a second one")
+        expectEqual(table(editor, "orders")?.props.columns[1].unread, "")
+        card.go(to: "references")
+        try require(card.field(of: "references")).selectAll(nil)
+        w.type("customers.id extra", with: walk)
+        if card.field(of: "references")?.offerList != nil { walk.press(.escape) }
+        walk.press(.down)
+        expectEqual(keys(editor), ["orders.customer_id -> customers.id"], "the first word is the target")
+        expectEqual(table(editor, "orders")?.props.columns[1].unread, "extra", "the rest is the line's own")
+        expectEqual(w.line?.string, "customer_id uuid extra → customers.id")
+        // Words that name no row: kept as the line's words, no key; the line, read again, makes none.
+        card.go(to: "references")
+        try require(card.field(of: "references")).selectAll(nil)
+        w.type("nowhere", with: walk)
+        if card.field(of: "references")?.offerList != nil { walk.press(.escape) }
+        walk.press(.down)
+        expectEqual(keys(editor), [])
+        expectEqual(table(editor, "orders")?.props.columns[1].unread, "extra → nowhere")
+        card.go(to: "type")
+        walk.press(.escape)
+        walk.press(.escape)
+        expectEqual(keys(editor), [], "and the next change to the row's line draws none")
     },
 ])

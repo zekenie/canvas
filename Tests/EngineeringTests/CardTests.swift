@@ -81,6 +81,75 @@ extension KitBench {
         expectEqual(b.columns(orders).last?.onDelete, "restrict")
         expectEqual(b.columns(orders).last?.nullable, true)
     },
+    test("unique, primary key and on update changed from the card: each one step, the header's mark following, the line printed again") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk", "email text"])
+        let card = try b.openCard(orders, column: "email")
+        expectEqual(card.header.mark == nil, true)
+        card.go(to: "unique")
+        b.press(.space)
+        expectEqual(b.columns(orders).last?.unique, true)
+        expectEqual(b.undoName, "Change Column")
+        expectEqual(card.header.mark?.symbol, "1.square")
+        expectEqual(b.field.string, b.lines(orders).last, "the row's line as stored now")
+        expect(b.lines(orders).last?.contains("unique") == true, "\(b.lines(orders))")
+        card.go(to: "primary key")
+        b.press(.space)
+        expectEqual(b.columns(orders).last?.primaryKey, true)
+        expectEqual(b.undoName, "Change Column")
+        expectEqual(card.header.mark?.symbol, "key.horizontal", "a primary key's mark before a unique's")
+        expectEqual(card.value(of: "primary key"), "yes")
+        b.press(.space)
+        expectEqual(b.columns(orders).last?.primaryKey, false)
+        expectEqual(card.header.mark?.symbol, "1.square")
+        card.go(to: "unique")
+        b.press(.space)
+        expectEqual(card.header.mark == nil, true)
+        card.go(to: "on update")
+        b.press(.space)
+        let menu = try require(b.menus.last)
+        expectEqual(menu.outline, ["✓ no action", "restrict", "cascade", "set null", "set default"])
+        let undoName = b.undoName
+        try menu.choose("no action")
+        expectEqual(b.columns(orders).last?.onUpdate, nil, "the option shown while none is held is none")
+        expectEqual(b.undoName, undoName)
+        b.press(.space)
+        try require(b.menus.last).choose("set null")
+        b.window.settle()
+        expectEqual(b.columns(orders).last?.onUpdate, "set null")
+        expectEqual(b.undoName, "Change Key Action")
+        expectEqual(card.value(of: "on update"), "set null")
+        expectEqual(b.editor.announcements.last, "on update set null")
+        b.press(.escape)
+    },
+    test("the card's reading order and look: the lines in the order the keys walk them, its pills in colors that follow the appearance") {
+        let b = try KitBench()
+        let status = b.enumType("order_status", ["pending", "paid"])
+        let orders = b.table("orders", ["id uuid pk", "state order_status"])
+        let card = try b.openCard(orders, column: "state")
+        let labels = (card.accessibilityChildren() ?? []).compactMap { ($0 as? NSView)?.accessibilityLabel() }
+        expectEqual(labels, card.stopNames, "type, references, null, unique, primary key, default, on delete, on update")
+        let field = try require(card.field(of: "type"))
+        expectEqual(card.value(of: "type"), "order_status")
+        expectEqual(field.highlights.count, 1, "the enum's name in its pill")
+        let ink = try require(field.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
+        // The pill's ink on the bubble, which is white in the light appearance and a dark gray in the dark: it reads in both.
+        @MainActor func luminance(_ name: NSAppearance.Name, _ color: NSColor) throws -> Double {
+            var rgb: [Double] = []
+            try require(NSAppearance(named: name)).performAsCurrentDrawingAppearance {
+                let c = color.usingColorSpace(.sRGB) ?? color
+                rgb = [c.redComponent, c.greenComponent, c.blueComponent].map { Double($0) <= 0.03928 ? Double($0) / 12.92 : pow((Double($0) + 0.055) / 1.055, 2.4) }
+            }
+            return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+        }
+        func contrast(_ a: Double, _ b: Double) -> Double { (max(a, b) + 0.05) / (min(a, b) + 0.05) }
+        let light = contrast(try luminance(.aqua, ink), 1.0)
+        let dark = contrast(try luminance(.darkAqua, ink), pow(0.15, 2.2))
+        expect(light >= 4.5, "light \(light)")
+        expect(dark >= 4.5, "dark \(dark)")
+        _ = status
+        b.press(.escape)
+    },
     test("the type typed in the card: SQL's types and the file's enums offered, an enum's name its pill, uuid? a nullable uuid, one step") {
         let b = try KitBench()
         let status = b.enumType("order_status", ["pending", "paid"])

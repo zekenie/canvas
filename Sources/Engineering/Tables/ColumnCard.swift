@@ -68,7 +68,7 @@ enum ColumnCard {
 
     /// The row a column's key references, read from the key index, or the words its line's `→` keeps that name none.
     static func reference(of line: ColumnLine, in context: LineContext) -> ColumnReference? {
-        if let target = ColumnLineGrammar.key(of: line, in: context) { return .row(target) }
+        if let target = ColumnLineGrammar.key(of: line, in: context) { return .row(target, rest: "") }
         guard let words = ColumnGrammar.key(in: line.column.unread) else { return nil }
         return .words(String(words.written.dropFirst(ColumnGrammar.arrow.count)).trimmingCharacters(in: .whitespaces))
     }
@@ -79,8 +79,9 @@ enum ColumnCard {
         let rest = ColumnGrammar.key(in: line.column.unread)?.rest ?? line.column.unread
         let current = ColumnLineGrammar.key(of: line, in: context)
         switch reference {
-        case .row(let target):
-            line.column.unread = rest
+        case .row(let target, let extra):
+            // Words after the target stay the line's own, once.
+            line.column.unread = extra.isEmpty || rest.hasSuffix(extra) ? rest : [rest, extra].filter { !$0.isEmpty }.joined(separator: " ")
             if target != current { line.key = .to(target) }
         case .words(let words):
             line.column.unread = [rest, "\(ColumnGrammar.arrow) \(words)"].filter { !$0.isEmpty }.joined(separator: " ")
@@ -92,9 +93,10 @@ enum ColumnCard {
     }
 }
 
-/// What a column's card says it references: a row (its key), or words that name none.
+/// What a column's card says it references: a row (its key, and the words typed after it, which stay the line's), or words that
+/// name none.
 enum ColumnReference: Equatable {
-    case row(PartAddress)
+    case row(PartAddress, rest: String)
     case words(String)
 }
 
@@ -111,7 +113,7 @@ struct ColumnTypeGrammar: LineGrammar {
         } else {
             context.editor.service(KitNames.self)?.enumNamed(bare, near: context.shape)
         }
-        var spans = [LineSpan(first.range, named == nil ? .code : .pill(LineLooks.enumFill, ink: LineLooks.enumInk))]
+        var spans = [LineSpan(first.range, named == nil ? .code : .pill(LineLooks.cardEnumFill, ink: LineLooks.cardEnumInk))]
         spans += words.dropFirst().map { LineSpan($0.range, ColumnGrammar.isFlag($0.text) ? .keyword : .plain) }
         return LineReading(row: TypeRef(words.map(\.text).joined(separator: " "), shape: named), spans: spans)
     }
@@ -137,20 +139,29 @@ struct ColumnTypeGrammar: LineGrammar {
 /// run's reference, else by name); the tables' key columns offered, as after `→` in the line, each lit.
 struct ColumnReferenceGrammar: LineGrammar {
     func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<ColumnReference> {
-        let words = ColumnGrammar.placedWords(of: line.string)
-        guard let first = words.first else { return LineReading(row: nil) }
-        let text = words.map(\.text).joined(separator: " ")
-        if words.count == 1, let found = ColumnLineGrammar.target(first.text, at: first.range, in: line, from: context.row ?? id, context) {
-            return LineReading(row: .row(found.row), spans: [LineSpan(first.range, .pill(LineLooks.keyFill, ink: LineLooks.keyInk))])
+        var words = ColumnGrammar.placedWords(of: line.string)
+        // The arrow the line's key starts with, typed or not, isn't part of the target.
+        var spans: [LineSpan] = []
+        if let arrow = words.first, arrow.text == ColumnGrammar.arrow || arrow.text == ColumnGrammar.typedArrow {
+            spans.append(LineSpan(arrow.range, .keyword))
+            words.removeFirst()
         }
-        return LineReading(row: .words(text), spans: words.map { LineSpan($0.range, .plain) })
+        guard let first = words.first else { return LineReading(row: nil, spans: spans) }
+        if let found = ColumnLineGrammar.target(first.text, at: first.range, in: line, from: context.row ?? id, context) {
+            spans.append(LineSpan(first.range, .pill(LineLooks.cardKeyFill, ink: LineLooks.cardKeyInk)))
+            spans += words.dropFirst().map { LineSpan($0.range, .plain) }
+            return LineReading(row: .row(found.row, rest: words.dropFirst().map(\.text).joined(separator: " ")), spans: spans)
+        }
+        spans += words.map { LineSpan($0.range, .plain) }
+        return LineReading(row: .words(words.map(\.text).joined(separator: " ")), spans: spans)
     }
 
     func print(_ reference: ColumnReference, in context: LineContext) -> LineText {
         switch reference {
-        case .row(let target):
+        case .row(let target, let rest):
             guard let written = ColumnLineGrammar.written(target, context.editor) else { return LineText("") }
-            return LineText(written, references: [LineReference(range: NSRange(location: 0, length: (written as NSString).length), target: target)])
+            let length = (written as NSString).length
+            return LineText(rest.isEmpty ? written : "\(written) \(rest)", references: [LineReference(range: NSRange(location: 0, length: length), target: target)])
         case .words(let words):
             return LineText(words)
         }
@@ -169,7 +180,7 @@ struct ColumnReferenceGrammar: LineGrammar {
 
     func spoken(_ reference: ColumnReference, in context: LineContext) -> String {
         switch reference {
-        case .row(let target): context.editor.accessibleName(of: target) ?? ""
+        case .row(let target, _): context.editor.accessibleName(of: target) ?? ""
         case .words(let words): words
         }
     }

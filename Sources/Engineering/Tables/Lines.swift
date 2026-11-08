@@ -531,6 +531,12 @@ enum LineLooks {
     /// A key's target in a line: the link's blue, faint behind it, its text in the blue.
     static let keyFill = NSColor(TableStyle.linkColor).withAlphaComponent(TableStyle.keyPillFill)
     static let keyInk = NSColor(TableStyle.linkColor)
+    /// The same pills on a card's bubble, which follows the appearance where the table's paper doesn't: the hues made for the
+    /// canvas, light and dark.
+    static let cardKeyFill = NSColor(Swatch(KitStyle.linkBlue).solid).fading(to: TableStyle.keyPillFill)
+    static let cardKeyInk = NSColor(Swatch(KitStyle.linkBlue).ink)
+    static let cardEnumFill = NSColor(Swatch(KitStyle.enumPurple).solid).fading(to: TableStyle.enumPillFill)
+    static let cardEnumInk = NSColor(Swatch(KitStyle.enumPurple).ink)
 
     /// What's offered after a type: each flag's word, what the list says, what a pick puts in.
     static let flags: [(word: String, label: String, insert: String)] = [
