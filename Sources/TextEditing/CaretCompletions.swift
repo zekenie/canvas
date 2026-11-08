@@ -76,13 +76,14 @@ extension CaretCompletions {
     public typealias Scoring = (_ query: String, _ labels: [String]) -> [(score: Int, matched: [Range<Int>])?]
 
     /// What the list shows, in order: every item as offered while nothing's typed (`isBlank` says what's nothing); else
-    /// the items what's typed matches, the best score first, then those that matter, then as offered. Nothing, where
-    /// nothing matches.
+    /// the items what's typed matches, the best score first, then those that matter, then as offered; an action
+    /// ("New type Problem") after every word, whatever its score. Nothing, where nothing matches.
     public func listed(isBlank: (String) -> Bool = { $0.isEmpty }, scoring: Scoring) -> [Listed] {
         guard !isBlank(query) else { return items.map { Listed(item: $0, matched: []) } }
         let matches = scoring(query, items.map(\.label))
         let found = items.indices.compactMap { i in matches[i].map { (index: i, match: $0) } }
         return found.sorted { a, b in
+            if items[a.index].isAction != items[b.index].isAction { return !items[a.index].isAction }
             if a.match.score != b.match.score { return a.match.score > b.match.score }
             if items[a.index].isRelevant != items[b.index].isRelevant { return items[a.index].isRelevant }
             return a.index < b.index

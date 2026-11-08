@@ -2343,10 +2343,10 @@ switched point; EngineeringTests' `kitTests` and CompositionTests' `kitsShippedT
 ## The engineering kit
 
 The first real kit ([`Sources/Engineering`](../Sources/Engineering), product): database tables, their
-enums and the databases that hold them. One module in parts, `Model` (the kinds' props, `TypeRef`,
-`KitStyle`), `Grammar` (the line grammars, pure), `Tables` (the kinds drawn, placed and written) and `Readers`
-(what's pasted: SQL), since the APIs that come later name tables and two products could not see each other. Its plugin joins the kit
-and gives:
+enums and the databases that hold them, and REST APIs. One module in parts, `Model` (the kinds' props, `TypeRef`,
+`KitStyle`, how a row is drawn on the paper, the file's tables and enums by name), `Grammar` (the line grammars,
+pure), `Tables` and `APIs` (the kinds drawn, placed and written) and `Readers` (what's pasted: SQL), since an API
+names tables and two products could not see each other. Its plugin joins the kit and gives:
 
 ```swift
 registrar.join(EngineeringKit.self)
@@ -2356,8 +2356,15 @@ registrar.shape(TableDefinition()) { table in
     table.lineRows(TableLines())                                       // its columns written a line each (LineRows)
     …
 }
+registrar.shape(APIDefinition()) { api in
+    api.tool(label: "API", systemImage: …, placing: api.editingPlacement(size: …) { API() })
+    api.lineRows(APILines())                                           // its server a fixed line, its endpoints a line each
+    …
+}
 registrar.tableCommands(placing: editedTable)                            // /table, /database, Create Database
+registrar.apiCommands(placing: placedAPI)                                // /api [NAME]
 registrar.rowsDraw()                                                     // canvas draw's columns: and values:
+registrar.apiDraw()                                                      // canvas draw's server: and endpoints:
 registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
 ```
 
@@ -2467,6 +2474,23 @@ that names nothing stays words (a key to a table with no name yet prints with th
 value writer, [draw](#draw)), and ⌘L's picker on a table makes a key column (`table.connectPicks(admitting:_:)`:
 `customer_id`, typed as customers' primary key, "Add Key Column").
 
+**An API.** An `api` keeps its server (`APIServer`: host and auth, its first line), its version, deprecated, and one
+flat list of rows (`APIRow`): a path-prefix header (`{"header": "/orders"}`) or an `Endpoint` (method, a path under
+the header above it, name, summary, scope, path parameters' types, a body and responses whose types are `TypeRef`s
+to type notes, deprecated, unread words). A group is a header and the endpoints after it, so retyping `/orders` is one
+row's edit and every full path follows (`APIGroups`, which every writer of whole paths shares: a whole path goes under
+the longest header it starts with; a header taken out or moved leaves each endpoint's full path as it was, `APIGroups.regrouped`,
+by `LineModel.applying`). An endpoint is written `METHOD /path/{param} [(Body)] [→ [status] [Response]]`
+(`EndpointGrammar`); its part's name is its method and full path. A body names a type note and is drawn as that type's
+pill, live, dashed while it names none; "New type Problem", last in the caret list, makes the note through Types,
+which puts it down settled (`Placement.settled()`) and makes nothing an instance of it. Words written before their type was made are bound
+at rest, a name of several words is quoted after a status:
+
+```swift
+editor.newType(named: "Problem", besides: typesTheAPINames, givingType: false, editing: false)   // in the line's "New Type" step
+TypeChips.label(forType: ref.shape, named: ref.words, in: editor.types, onPaper: true)           // the pill, at rest
+```
+
 **Paste SQL.** ⌘V of `CREATE TABLE` (or `AS ENUM`, or a `.sql` file) is a paste reader of the kit's, so it's gone
 with the kit off ([the clipboard](#the-clipboard)). The reader parses SQL itself (`SQLReader`, pure: Postgres DDL into
 tables, columns, enums and keys) and writes a draw program for Draw to put down (`DrawPut`), knowing nothing of how
@@ -2546,9 +2570,22 @@ editing; Return is done with a field and opens a list's next line; Space toggles
 its row as commits move it (or a waiting line opened above it), shows what the row holds now (its header's mark and
 name too, and what VoiceOver calls it) and closes as the row goes. A line the file refuses keeps its words and the
 shape shakes, as a row's line does; a toggle or a pick is spoken ("null yes") beside the step's name. A kind that
-draws a row's "›" opens it with
-`editor.service(LineRowsService.self)?.openCard(of: PartAddress(shape, part: row))`. A table's column has one
+asks for one gets a "›" on the row with the caret (`showsCardChevron`), a click opening the card; one that draws its
+own opens it with `editor.service(LineRowsService.self)?.openCard(of: PartAddress(shape, part: row))`. A table's column has one
 (type, references, null, unique, primary key, default, on delete, on update: [engineering](../.claude/rules/engineering.md)).
+
+**A fixed line, action rows, indents.** A kind may have a line above its rows that's never a row (an API's server):
+`fixedLine` gives its grammar, placeholder, step and rect, and the session makes it a stop after the title. An offer
+may be an action, done by Return (which never picks a word) or Tab, listed last; the host makes what it makes and the words stand for it:
+
+```swift
+var fixedLine: LineFixedLine<API>? {
+    LineFixedLine(name: "Server", placeholder: "server", stepName: "Change Server", grammar: ServerLineGrammar(),
+                  rect: APIRows.serverRect(in:), get: { $0.server.isEmpty ? nil : $0.server }, set: { $0.server = $1 ?? APIServer() })
+}
+items.append(.action("New type \(name)", LineAction(step: "New Type") { context in make(name, context).map { PartAddress($0) } }))
+func indent(at index: Int, of rows: [APIRow], isNew: Bool) -> CGFloat { … }   // a header's members, further in
+```
 
 **Folds.** ⌃⌘↑ (View › Fold Rows) folds the selection's shapes written as lines, or every one on the board with
 nothing selected, to the rows their model marks (`marked(_:in:)`; the first two where it marks none), with a
@@ -16275,7 +16312,7 @@ neighbor-details     service NeighborList · ShapeDetails in Connections → eve
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values · paste reader SQL
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 

@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 import Canvas
 import Foundation
+import Palette
 import Selection
 import Titles
 
@@ -58,6 +59,25 @@ extension TypeChips {
     static func fieldCount(of type: ShapeID, in book: FieldBook) -> Int? {
         let count = book.fields(types: [type]).fields.count
         return count > 0 ? count : nil
+    }
+
+    /// The chip of a type as another plugin names one (an endpoint's body): the type's name now, in its color, as the chip of a
+    /// shape that is it shows it; while `id` is no type of the file (gone, or never one: nil), the words it was named by in a
+    /// dashed pill (`missing()`), as a gone type's chip is. `onPaper`: drawn on a sheet that is light in both appearances (an
+    /// API's card), so in the light appearance's roles, fixed.
+    @MainActor
+    public static func label(forType id: ShapeID?, named words: String, in types: TypeIndex?, onPaper: Bool = false) -> AdornmentLabel {
+        guard let id, let types, types.isType(id) else { return AdornmentLabel(words.isEmpty ? TypesStyle.deletedType : words).missing() }
+        guard let title = types.name(of: id) else { return AdornmentLabel(placeholder: TypesStyle.untitledType) }
+        return AdornmentLabel(title).tinted(tint(of: id, in: types, onPaper: onPaper))
+    }
+
+    /// A type's chip's tint: its color faint, with a line of it, its name in the color's ink; `onPaper`, the light appearance's.
+    @MainActor
+    public static func tint(of id: ShapeID, in types: TypeIndex, onPaper: Bool = false) -> AdornmentTint {
+        let look = types.look(of: id)
+        guard onPaper else { return look.light }
+        return AdornmentTint(NSColor(look.swatch.solid.light), ink: NSColor(look.swatch.ink.light), style: .light)
     }
 
     /// The chip for one type a shape is.

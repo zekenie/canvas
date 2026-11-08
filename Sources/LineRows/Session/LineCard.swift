@@ -23,10 +23,14 @@ public struct LineCardHeader: Equatable {
 public struct LineCard<Row> {
     public var header: LineCardHeader
     public var lines: [LineCardLine<Row>]
+    /// How wide it is (view points), where the kind's values are longer than the usual card's (an endpoint's summary); nil for
+    /// the usual.
+    public var width: CGFloat?
 
-    public init(header: LineCardHeader, lines: [LineCardLine<Row>]) {
+    public init(header: LineCardHeader, lines: [LineCardLine<Row>], width: CGFloat? = nil) {
         self.header = header
         self.lines = lines
+        self.width = width
     }
 }
 

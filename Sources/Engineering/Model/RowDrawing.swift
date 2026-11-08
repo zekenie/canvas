@@ -13,22 +13,31 @@ import Palette
 /// The lines a kit shape draws, kept by text and role.
 @MainActor
 enum RowText {
-    /// How a line is set: a row's name, a type, a nullable's `?`, an enum's value, a fold's "+N ›".
+    /// How a line is set: a row's name, a type, a nullable's `?`, an enum's value, a fold's "+N ›"; an API's code (a path, a
+    /// header's prefix), its faint code (the server, a status, a count), a method's chip's text, and code in a color of its own
+    /// (a path's parameter in its method's, by its RGB's hex).
     enum Role: Hashable {
         case name, type, null, value, more
+        case code, faintCode, chip, placeholder
+        case coloredCode(UInt32)
 
         @MainActor var font: NSFont {
             switch self {
             case .name, .null, .more: KitStyle.nameFont
             case .type: KitStyle.typeFont
             case .value: KitStyle.valueFont
+            case .code, .faintCode, .coloredCode: KitStyle.codeFont
+            case .chip: KitStyle.chipFont
+            case .placeholder: KitStyle.placeholderFont
             }
         }
 
         @MainActor var ink: CGColor {
             switch self {
-            case .name, .null, .value: KitStyle.ink.cgColor
-            case .type, .more: KitStyle.secondaryInk.cgColor
+            case .name, .null, .value, .code: KitStyle.ink.cgColor
+            case .type, .more, .faintCode, .placeholder: KitStyle.secondaryInk.cgColor
+            case .chip: CGColor(gray: 1, alpha: 1)
+            case .coloredCode(let hex): RGB(hex: hex).cgColor
             }
         }
     }
@@ -85,10 +94,10 @@ enum RowText {
 enum RowMarks {
     private static var images: [String: NSImage] = [:]
 
-    static func image(_ name: String, color: RGB) -> NSImage? {
-        let key = "\(name) \(color.hexString)"
+    static func image(_ name: String, color: RGB, size: CGFloat = KitStyle.markSize) -> NSImage? {
+        let key = "\(name) \(color.hexString) \(size)"
         if let image = images[key] { return image }
-        let configuration = NSImage.SymbolConfiguration(pointSize: TableStyle.markSize, weight: .semibold)
+        let configuration = NSImage.SymbolConfiguration(pointSize: size, weight: .semibold)
             .applying(NSImage.SymbolConfiguration(paletteColors: [NSColor(color)]))
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(configuration) else { return nil }
         images[key] = image
@@ -96,8 +105,8 @@ enum RowMarks {
     }
 
     /// Draws a mark centered at `middle`, as big as its symbol is set (world units).
-    static func draw(_ name: String, color: RGB, centeredAt middle: CGPoint) {
-        guard let image = image(name, color: color) else { return }
+    static func draw(_ name: String, color: RGB, size: CGFloat = KitStyle.markSize, centeredAt middle: CGPoint) {
+        guard let image = image(name, color: color, size: size) else { return }
         let size = image.size
         image.draw(in: CGRect(x: middle.x - size.width / 2, y: middle.y - size.height / 2, width: size.width, height: size.height),
                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
@@ -134,19 +143,19 @@ enum KitPaper {
         KitStyle.rows(count, in: frame, reaching: context.cg.boundingBoxOfClipPath)
     }
 
-    /// The rows a skeleton draws bars for: those of `rowsInView`, none while a row is under `TableStyle.skeletonLeastRow` view
+    /// The rows a skeleton draws bars for: those of `rowsInView`, none while a row is under `KitStyle.skeletonLeastRow` view
     /// points tall, where its bars would be a smear of fractions of a pixel the paper alone says as well, so a board of
     /// thousands of tables far out costs a card each, and not a bar a row of every one.
     static func skeletonRowsInView(_ count: Int, in frame: CGRect, _ context: RenderContext) -> Range<Int> {
-        guard KitStyle.rowHeight * context.zoom >= TableStyle.skeletonLeastRow else { return 0..<0 }
+        guard KitStyle.rowHeight * context.zoom >= KitStyle.skeletonLeastRow else { return 0..<0 }
         return rowsInView(count, in: frame, context)
     }
 
     /// A bar of `columns` columns of `column` wide each, from `x` (or ending at it, `trailing`), in row `row`'s middle.
     static func bar(columns: Int, column: CGFloat, at x: CGFloat, trailing: Bool = false, in row: CGRect, room: CGFloat) -> CGRect? {
-        let width = min(room, CGFloat(min(columns, TableStyle.skeletonMostColumns)) * column)
+        let width = min(room, CGFloat(min(columns, KitStyle.skeletonMostColumns)) * column)
         guard width > 0 else { return nil }
-        return CGRect(x: trailing ? x - width : x, y: row.midY - TableStyle.skeletonBarHeight / 2, width: width, height: TableStyle.skeletonBarHeight)
+        return CGRect(x: trailing ? x - width : x, y: row.midY - KitStyle.skeletonBarHeight / 2, width: width, height: KitStyle.skeletonBarHeight)
     }
 }
 
@@ -207,7 +216,7 @@ enum MoreLine {
 
     static func bar(_ count: Int, in row: CGRect) -> CGRect? {
         let start = row.minX + KitStyle.nameInset
-        return KitPaper.bar(columns: SkeletonText.columns(of: text(count), upTo: TableStyle.skeletonMostColumns), column: TableStyle.skeletonNameColumn,
+        return KitPaper.bar(columns: SkeletonText.columns(of: text(count), upTo: KitStyle.skeletonMostColumns), column: KitStyle.skeletonNameColumn,
                             at: start, in: row, room: row.maxX - KitStyle.trailingInset - start)
     }
 }

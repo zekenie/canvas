@@ -192,7 +192,7 @@ extension EmptyBoardWindow {
         controller.runCommand(commandItem(.kit(EngineeringKit.id), title: "Engineering"))
         expect(editor.isOn(EngineeringKit.self))
         expectEqual(registry.tools.filter { registry.kit(ofTool: $0.id) == EngineeringKit.id && editor.isToolEnabled($0.id) }.map(\.label),
-                    ["Table", "Enum", "Database"], "the kit's segment")
+                    ["Table", "Enum", "API", "Database"], "the kit's segment")
         w.window.makeFirstResponder(w.canvas)
         expect(editor.perform(.insert(table)), "Insert ▸ Engineering ▸ Table")
         w.window.settle()

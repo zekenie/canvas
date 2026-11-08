@@ -455,7 +455,7 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("Insert", "Note", .insert(ToolID(placing: StickyNote.kind)))
         let insert = try require(menus.main.item(withTitle: "Insert")?.submenu)
         expectEqual(insert.items.map(\.title), ["New Shape Beside", "Note", "Subboard", "Frame", "Reference", "Engineering", "", "Connect"], "and the engineering kit's tools in a submenu named for it, then Connect (⌘L) in a section of its own")
-        expectEqual(try require(insert.item(withTitle: "Engineering")?.submenu).items.map(\.title), ["Table", "Enum", "Database"])
+        expectEqual(try require(insert.item(withTitle: "Engineering")?.submenu).items.map(\.title), ["Table", "Enum", "API", "Database"])
         let find = try require(edit.item(withTitle: "Find")?.submenu)
         expectEqual(find.items.map(\.title), ["Find…", "Find Next", "Find Previous"])
         expectEqual(find.items.compactMap(BoardMenus.command(of:)), [.find, .findNext, .findPrevious], "never an AppKit find action, which a text view answers")

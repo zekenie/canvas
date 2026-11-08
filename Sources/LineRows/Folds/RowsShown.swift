@@ -152,6 +152,9 @@ public enum LineRowsLayout {
     /// How wide the shape is laid out while the line being typed in it is wider than it is (its text, the row's insets
     /// and gutter), provided by LineRows from the session: never narrower than the stored width, nil at rest.
     public static let width = LayoutInputKey<CGFloat>("line-rows-width")
+    /// The kind's fixed line has the caret (`LineFixedLine`): the kind draws it not at all, since the field draws it as it's
+    /// typed. Nil at rest and while the title or a row has it.
+    public static let fixed = LayoutInputKey<Bool>("line-rows-fixed")
 
     /// The line row `index` is drawn on while the waiting line is at `waiting` (nil: none): the rows after it a line down.
     public static func line(of index: Int, waiting: Int?) -> Int {

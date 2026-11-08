@@ -1,6 +1,6 @@
-# Tables, enums and databases
+# Tables, enums, databases and APIs
 
-The engineering kit draws a database's tables the way an engineer sketches them: a **table** is a card of columns, a line each (`id uuid pk`); an **enum** is a card of values, a line each; a **database** is a region that holds them, as a frame does. A person turns the kit on in a file (File ▸ Kits ▸ Engineering) to get its tools and commands; `canvas draw` and `canvas query` reach its kinds in every file, on or off. [kinds.md](kinds.md) has each kind's size and attributes; this page is how their rows are written.
+The engineering kit draws a database's tables and a REST API the way an engineer sketches them: a **table** is a card of columns, a line each (`id uuid pk`); an **enum** is a card of values, a line each; a **database** is a region that holds them, as a frame does; an **api** is a card of endpoints, a line each (`POST /orders/{id}/refunds (NewRefund) → 201 Refund`), under its server. A person turns the kit on in a file (File ▸ Kits ▸ Engineering) to get its tools and commands; `canvas draw` and `canvas query` reach its kinds in every file, on or off. [kinds.md](kinds.md) has each kind's size and attributes; this page is how their rows are written.
 
 ## A table and its columns
 
@@ -78,6 +78,22 @@ table "products" in "shop" columns: "id uuid pk\nsku text unique\ntitle text\npr
 table "line_items" in "shop" right of "products" columns: "id uuid pk\nproduct_id uuid\nqty int"
 ```
 
+## An API
+
+`server:` is an API's first line: where it's served and how a client signs in, `host[/path] [bearer | basic | apikey NAME | oauth2]`. `endpoints:` takes its rows as lines, one a row: an endpoint `METHOD /path/{param} [(Body)] [→ [status] [Response]]`, each bracketed part left out as you like, or a path alone, a header that groups the endpoints under it (the app draws them indented, their paths written after the header's, so renaming `/orders` is one edit there). Write every endpoint's path whole: each goes under the longest header it starts with, else at the top. A statement joins its endpoints onto the API's by method and whole path, so it names only what it changes, the rows it leaves out stay, and run again it changes nothing; what only an endpoint's card says (its name, summary, more responses) stays when a line restates it.
+
+```draw
+sticky-note "NewRefund" below "shop" (gap: wide) schema: "{\"type\": \"object\", \"properties\": {\"amount_cents\": {\"type\": \"number\"}}}"
+sticky-note "Refund" right of "NewRefund" schema: "{\"type\": \"object\", \"properties\": {\"id\": {\"type\": \"string\"}}}"
+api "orders API" below "NewRefund" (gap: wide) server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /orders/{id} → Refund\nPOST /orders/{id}/refunds (NewRefund) → 201 Refund\nGET /health"
+```
+
+A body or a response names a type, a note with a `schema:`, by its title: it's drawn as that type's pill, never an arrow, and a name no type has stays words, in a dashed pill, until one does. JSON items take the card's fields too, a header as `{"header": "/orders"}`:
+
+```draw
+api "orders API" endpoints: [{"header": "/customers"}, {"method": "GET", "path": "/customers/{id}/orders", "name": "listCustomerOrders", "responses": [{"status": "200", "type": "Refund"}]}]
+```
+
 ## Asking
 
 The tables in a database, and how many tables there are:
@@ -102,6 +118,13 @@ table:edge-to("customers", foreign-key)
 ```query
 /* count: 2 */
 arrow[channel=foreign-key]
+```
+
+An API is found by its kind and its title:
+
+```query
+/* matches: "orders API" */
+api
 ```
 
 A table's columns, each its id and what its line said, are its `columns` attribute, as a row of `canvas query` gives them; a test inside the list (`[columns.name=…]`) isn't built yet.

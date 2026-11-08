@@ -283,11 +283,13 @@ let parts: KeyValuePairs<String, [String]> = [
     "LineRows/Moves": ["Folds"],
     "LineRows/Session": ["Field", "Folds", "Moves"],
     "LineRows/Card": ["Field", "Folds", "Moves", "Session"],
-    // Engineering: the kinds' props and looks' constants; the line grammars a column and an enum's values are
-    // written in, read and printed (pure); the table, the enum and the database, drawn, placed and written.
+    // Engineering: the kinds' props, looks' constants and how a row is drawn on the paper, and the file's tables and enums
+    // by name; the line grammars a column, an enum's values and an API's rows and server are written in, read and printed
+    // (pure); the table, the enum and the database, drawn, placed and written; the API, the same.
     "Engineering/Model": [],
     "Engineering/Grammar": ["Model"],
     "Engineering/Tables": ["Model", "Grammar"],
+    "Engineering/APIs": ["Model", "Grammar"],
     // The readers of what's pasted: SQL's tables and enums, read and put down by Draw as a draw program.
     "Engineering/Readers": ["Model"],
 ]
@@ -391,7 +393,7 @@ let package = Package(
         .target(name: "StickyNotes", dependencies: ["Canvas", "Clipboard", "Colors", "Connections", "DetailPanel", "Draw", "Keyboard", "LanguageRules", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
         .target(name: "Frames", dependencies: ["Canvas", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
-        .target(name: "Engineering", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Find", "Geometry", "LineRows", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Transform"]), // layer: product
+        .target(name: "Engineering", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Find", "Geometry", "LineRows", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Transform", "Types"]), // layer: product
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "CanvasRPC", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport

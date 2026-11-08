@@ -28,9 +28,10 @@ extension PluginID {
     public static let engineering: PluginID = "engineering"
 }
 
-/// The kit's plugin: the `table`, `enum-type` and `database` kinds; the Table, Enum and Database tools, each a new shape
-/// whose name is typed in its pill as it lands (a database's tab), "Add Table"; `/table NAME`, `/database NAME` and Create
-/// Database; ⌘V of SQL ("Paste SQL"); and `canvas draw`'s `columns:` and `values:`, lines in their grammars. Its kinds opt into Titles (the name in
+/// The kit's plugin: the `table`, `enum-type`, `api` and `database` kinds; the Table, Enum, API and Database tools, each a new
+/// shape whose name is typed in its pill as it lands (a database's tab), "Add Table"; `/table NAME`, `/api [NAME]`, `/database
+/// NAME` and Create Database; ⌘V of SQL ("Paste SQL"); and `canvas draw`'s `columns:`, `values:`, `server:` and `endpoints:`,
+/// lines in their grammars. Its kinds opt into Titles (the name in
 /// the pill, bars zoomed out), Mentions, the table of contents and the detail panel's header; Locking, Publishing and
 /// Grouping are every shape's.
 public struct EngineeringPlugin: ListedPlugin {
@@ -47,6 +48,7 @@ public struct EngineeringPlugin: ListedPlugin {
         registrar.keyHint("⇧↩ in a Row", "New Shape Beside It", while: .text)
         registrar.keyHint("⌘L in a Row", "Connect the Row", while: .text)
         registrar.keyHint("⌘↓ in a Column", "Show the Column's Details", while: .text)
+        registrar.keyHint("⌘↓ in an Endpoint", "Show the Endpoint's Details", while: .text)
         // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
         registrar.channel(ForeignKey.self)
         registrar.service { KeyIndex(editor: $0) }
@@ -87,6 +89,23 @@ public struct EngineeringPlugin: ListedPlugin {
             type.accessibility { type, _ in AccessibleTraits(value: EnumStyle.accessibleRows(type.props.values.count)) }
             type.lineRows(EnumLines())
         }
+        var placedAPI: Placement?
+        registrar.shape(APIDefinition()) { api in
+            api.label(APIStyle.label, systemImage: APIStyle.symbol)
+            let size = CGSize(width: APIStyle.width, height: APIRows.height(lines: 1))
+            let placing = api.editingPlacement(size: size) { API() }
+            placedAPI = placing
+            api.tool(label: APIStyle.label, systemImage: APIStyle.symbol, placing: placing)
+            api.tint(NSColor(KitStyle.secondaryInk))
+            api.title(symbolInPill: true, placeholderInPill: APIStyle.label, bars: true)
+            api.mentionable()
+            api.resizable(minimumSize: CGSize(width: APIStyle.minimumWidth, height: APIRows.height(lines: 1)))
+            api.contentsRow { _, _ in ContentsLabel("", placeholder: APIStyle.placeholder, systemImage: APIStyle.symbol) }
+            api.details(header: { $api in TitleHeader($api, placeholder: APIStyle.placeholder, systemImage: APIStyle.symbol) }) {}
+            api.accessibility { api, _ in AccessibleTraits(value: APIStyle.accessibleRows(api.props.endpoints.count { $0.endpoint != nil })) }
+            // Its server and rows written as lines; an endpoint's card (⌘↓, or the "›" on its row).
+            api.lineRows(APILines())
+        }
         registrar.shape(DatabaseDefinition()) { database in
             database.label(DatabaseStyle.label, systemImage: DatabaseStyle.symbol)
             let place = database.placement(size: DatabaseStyle.defaultSize, minimumSize: DatabaseStyle.minimumSize) { Database() }
@@ -104,7 +123,9 @@ public struct EngineeringPlugin: ListedPlugin {
             }
         }
         if let editedTable { registrar.tableCommands(placing: editedTable) }
+        if let placedAPI { registrar.apiCommands(placing: placedAPI) }
         registrar.rowsDraw()
+        registrar.apiDraw()
         // ⌘V of SQL: its tables and enums put down by names, the kit's (gone with it off).
         registrar.sqlPaste()
     }

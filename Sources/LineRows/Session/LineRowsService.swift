@@ -128,6 +128,7 @@ extension LineRowsService: EditorService {
         setLight(nil)
         editor.setLayoutInput(LineRowsLayout.waiting, nil, for: id)
         editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)
+        editor.setLayoutInput(LineRowsLayout.fixed, nil, for: id)
         setWidth(nil, of: id)
     }
 }

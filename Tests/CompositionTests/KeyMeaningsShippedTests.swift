@@ -329,6 +329,7 @@ extension SampleBoardWindow {
             guard let view = w.lineRows, editor.editingShapeID != nil, let responder = window.firstResponder as? NSView, responder.isDescendant(of: view) else { return nil }
             let name: String = switch view.focus {
             case .title: "title"
+            case .fixed: "fixed"
             case .waiting: "waiting"
             case .row(_): view.line(of: view.focus).flatMap { ColumnGrammar.read($0)?.name } ?? "?"
             }

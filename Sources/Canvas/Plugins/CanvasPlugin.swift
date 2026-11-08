@@ -354,7 +354,9 @@ public struct Placement {
     let completion: Completion
     let make: @MainActor (CGRect) -> AnyShapeRecord
 
-    enum Completion { case translate, edit }
+    /// What follows the put: the shape follows a press (or settles at once with none), then, for `.edit`, is edited;
+    /// `.settled` puts it down settled at once whatever the press, selects nothing and edits nothing (`settled()`).
+    enum Completion { case translate, edit, settled }
 
     init<P: BoxShapeProps>(kind: ShapeKind, size: CGSize, minimumSize: CGSize, completion: Completion, props: @escaping @MainActor () -> P) {
         self.init(kind: kind, size: size, minimumSize: minimumSize, completion: completion) { frame in
@@ -398,6 +400,13 @@ public struct Placement {
     /// where it lands (or in the rect it is given, `editor.place(_:in:)`). Its smallest size stays.
     public func sized(_ size: CGSize) -> Placement {
         Placement(kind: kind, size: size, minimumSize: minimumSize, completion: completion, make: make)
+    }
+
+    /// The same placement, put down settled where it lands and left at that: no press follows it, nothing is selected
+    /// or edited, and the tool stays. What a plugin puts down beside the work under way while the keyboard stays where
+    /// it is: a type made for an endpoint's body while its line or card has the caret (Types' `newType(…editing: false)`).
+    public func settled() -> Placement {
+        Placement(kind: kind, size: size, minimumSize: minimumSize, completion: .settled, make: make)
     }
 
     /// The same placement, with an added property set on every shape it places:

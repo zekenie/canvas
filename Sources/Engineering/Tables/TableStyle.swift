@@ -50,7 +50,7 @@ enum TableStyle {
     /// unique column's "1" in a rounded square, in the types' grey.
     static let keySymbol = "key.horizontal"
     static let uniqueSymbol = "1.square"
-    static let markSize: CGFloat = 13
+    static let markSize = KitStyle.markSize
     static let keyColor = KitStyle.onPaper(KitStyle.keyGold).solid.light
     /// A column that starts a key (the key index's): a link, in the frames' blue made to read on the paper.
     static let linkSymbol = "link"
@@ -70,13 +70,11 @@ enum TableStyle {
 
     /// Zoomed out: a bar where a name is and one where its type is, the names' 15-point text greeked (0.52 em a column),
     /// the types' 13-point monospaced (0.6 em), each bar where the text's x-height is.
-    static let skeletonNameColumn: CGFloat = 0.52 * 15
+    static let skeletonNameColumn = KitStyle.skeletonNameColumn
     static let skeletonTypeColumn: CGFloat = 0.6 * 13
-    static let skeletonBarHeight: CGFloat = 8
-    /// The most columns a bar stands for, so a name of hundreds of characters costs what one of twenty does.
-    static let skeletonMostColumns = 40
-    /// The least a row is on screen, view points, for a skeleton to draw its bars: under it the paper says it.
-    static let skeletonLeastRow: CGFloat = 2
+    static let skeletonBarHeight = KitStyle.skeletonBarHeight
+    static let skeletonMostColumns = KitStyle.skeletonMostColumns
+    static let skeletonLeastRow = KitStyle.skeletonLeastRow
 }
 
 /// An enum's look.

@@ -25,7 +25,7 @@ import Validation
         let editor = h.editor, registry = editor.registry
         editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
         let tools = registry.tools.filter { registry.kit(ofTool: $0.id) == EngineeringKit.id }.map(\.id)
-        expectEqual(tools, [ToolID(placing: DatabaseTable.kind), ToolID(placing: DatabaseEnum.kind), ToolID(placing: Database.kind)])
+        expectEqual(tools, [ToolID(placing: DatabaseTable.kind), ToolID(placing: DatabaseEnum.kind), ToolID(placing: API.kind), ToolID(placing: Database.kind)])
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: registry, editor: { editor })
         let insert = try require(menus.main.item(withTitle: "Insert")?.submenu)
         @MainActor func table(_ x: CGFloat) -> ShapeID {
@@ -54,7 +54,7 @@ import Validation
         expect(tools.allSatisfy { editor.isToolEnabled($0) && editor.claims(.insert($0)) })
         BoardMenus.showCommands(of: editor, in: menus.main, registry: registry)
         expectEqual(insert.items.filter { !$0.isHidden }.map(\.title), ["New Shape Beside", "Note", "Subboard", "Frame", "Reference", "Engineering", "", "Connect"])
-        expectEqual(try require(insert.item(withTitle: "Engineering")?.submenu).items.map(\.title), ["Table", "Enum", "Database"])
+        expectEqual(try require(insert.item(withTitle: "Engineering")?.submenu).items.map(\.title), ["Table", "Enum", "API", "Database"])
         expect(listed([first]).contains("table") && listed([first]).contains("database"))
         expect(menu(at: first).contains("Create Database"))
 

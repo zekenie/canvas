@@ -34,6 +34,12 @@ public enum KitStyle {
     /// A type, an enum's value: monospaced, 13 points.
     public static let typeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     public static let valueFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+    /// An API's code (a path, the server, a status): monospaced, 14 points.
+    public static let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+    /// A method's chip's text: bold caps, 10 points.
+    public static let chipFont = NSFont.systemFont(ofSize: 10, weight: .bold)
+    /// A line's placeholder (an API's faint "server"): the code's font, slanted.
+    public static let placeholderFont = NSFontManager.shared.convert(codeFont, toHaveTrait: .italicFontMask)
 
     /// The ink names are drawn in: #111113.
     public static let ink = RGB(hex: 0x111113)
@@ -56,6 +62,18 @@ public enum KitStyle {
     public static let skeletonEdge = NSColor(white: 0, alpha: 0.16)
     /// That ring's width, view points.
     public static let skeletonEdgeWidth: CGFloat = 1
+
+    /// A gutter mark's size (a primary key's key, a unique column's "1").
+    public static let markSize: CGFloat = 13
+
+    /// Zoomed out: a bar where a name is, the names' 15-point text greeked (0.52 em a column), each bar where the text's
+    /// x-height is, 8 tall.
+    public static let skeletonNameColumn: CGFloat = 0.52 * 15
+    public static let skeletonBarHeight: CGFloat = 8
+    /// The most columns a bar stands for, so a name of hundreds of characters costs what one of twenty does.
+    public static let skeletonMostColumns = 40
+    /// The least a row is on screen, view points, for a skeleton to draw its bars: under it the paper says it.
+    public static let skeletonLeastRow: CGFloat = 2
 
     /// The paper's path at `rect`.
     public static func paperPath(_ rect: CGRect) -> CGPath {

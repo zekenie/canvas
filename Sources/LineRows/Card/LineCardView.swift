@@ -187,6 +187,8 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             field.onBlur = { [weak self, weak field] in
                 guard let self, let field, !self.isMoving, let stop = self.stop(of: field) else { return }
                 self.commit(stop.line, leaving: stop.item)
+                // The field slid to its caret slides back, now another has the keyboard.
+                self.needsLayout = true
             }
             field.onFocus = { [weak self, weak field] in
                 guard let self, let field, let stop = self.stop(of: field) else { return }
@@ -201,6 +203,10 @@ final class LineCardSession<Model: LineModel>: LineCardView {
                 return index < line.shown.count && field.line != line.shown[index]
             }
             field.onLight = { [weak self] light in self?.session?.service.setLight(light) }
+            field.onAction = { [weak self, weak field] action, range in
+                guard let self, let field, let stop = self.stop(of: field) else { return }
+                self.act(action, at: range, in: field, stop: stop)
+            }
             line.fields.append(field)
             line.clips.append(clip)
         }
@@ -276,6 +282,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     private func focused(_ stop: CardStop) {
         focus = stop
         needsDisplay = true
+        needsLayout = true
         if let responder = responder(of: stop) { NSAccessibility.post(element: responder, notification: .focusedUIElementChanged) }
     }
 
@@ -340,6 +347,25 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         isMoving = keep
         editor.cardDidResize()
         return result
+    }
+
+    /// An action row done in a line of the card ("New type Problem"): what it makes, the line's words standing for it, and the line
+    /// written with them, in one step of the action's name, heard by VoiceOver; the caret stays at the end of that line.
+    private func act(_ action: LineAction, at range: NSRange, in field: LineField, stop: CardStop) {
+        guard session != nil, editor.canTransact else { return }
+        let context = context
+        var result = CardCommit.unchanged
+        editor.undoHistory.group(action.stepName) {
+            guard let made = action.perform(context) else { return }
+            field.stand(for: made, at: range)
+            result = commit(stop.line)
+        }
+        guard result == .written else { return }
+        editor.announce(action.stepName)
+        if let kept = responder(of: stop) as? LineField, let window, window.firstResponder !== kept {
+            window.makeFirstResponder(kept)
+        }
+        if let kept = responder(of: stop) as? LineField { kept.setSelectedRange(NSRange(location: (kept.string as NSString).length, length: 0)) }
     }
 
     /// A commit the file couldn't take while it was delivering one: made a turn later, if the line still has words to write.
@@ -520,7 +546,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     func size(in room: CGSize) -> CGSize {
         let count = card.lines.indices.reduce(0) { $0 + max(texts[$1]?.fields.count ?? 1, 1) }
         let height = LineCardStyle.padding * 2 + LineCardStyle.headerHeight + LineCardStyle.headerGap + CGFloat(count) * LineCardStyle.lineHeight
-        return CGSize(width: min(LineCardStyle.width, room.width), height: min(height, room.height))
+        return CGSize(width: min(card.width ?? LineCardStyle.width, room.width), height: min(height, room.height))
     }
 
     /// The rect of a stop's line, view points.
@@ -565,7 +591,8 @@ final class LineCardSession<Model: LineModel>: LineCardView {
                     width = max(width, layout.usageBoundsForTextContainer.width + LineCardStyle.textSlack)
                 }
                 var x: CGFloat = 0
-                if let caret = field.caretFrame, caret.maxX > clipFrame.width - 1 { x = -(caret.maxX - clipFrame.width + 1) }
+                // Only the field with the keyboard slides to its caret; another shows its text from the start.
+                if window?.firstResponder === field, let caret = field.caretFrame, caret.maxX > clipFrame.width - 1 { x = -(caret.maxX - clipFrame.width + 1) }
                 let frame = CGRect(x: x, y: ((rect.height - height) / 2).rounded(), width: width, height: height)
                 if field.frame != frame { field.frame = frame }
             }

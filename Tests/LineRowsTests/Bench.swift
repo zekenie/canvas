@@ -73,6 +73,7 @@ final class Bench {
         guard let view, editor.editingShapeID != nil else { return nil }
         switch view.focus {
         case .title: return "title"
+        case .fixed: return "fixed"
         case .waiting: return "waiting"
         case .row(let row):
             guard let id = editor.editingShapeID else { return nil }
