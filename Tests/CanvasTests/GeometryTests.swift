@@ -62,3 +62,98 @@ import TestKit
         expect(!rect.touches(CGRect(x: 5, y: 11, width: 0, height: 20)))
     },
 ])
+
+/// A curve that leaves (0, 0) going right and arrives at (300, 100) going right: an S, a level arrow's between two rows.
+private let sCurve = Cubic(CGPoint(x: 0, y: 0), CGPoint(x: 150, y: 0), CGPoint(x: 150, y: 100), CGPoint(x: 300, y: 100))
+
+/// Its points every `1 / count` of `t`, worked out by the polynomial written out, not by the type's own arithmetic.
+private func sampled(_ cubic: Cubic, _ t: CGFloat) -> CGPoint {
+    let (p0, p1, p2, p3) = (cubic.start, cubic.control1, cubic.control2, cubic.end)
+    func axis(_ a: CGFloat, _ b: CGFloat, _ c: CGFloat, _ d: CGFloat) -> CGFloat {
+        pow(1 - t, 3) * a + 3 * pow(1 - t, 2) * t * b + 3 * (1 - t) * t * t * c + t * t * t * d
+    }
+    return CGPoint(x: axis(p0.x, p1.x, p2.x, p3.x), y: axis(p0.y, p1.y, p2.y, p3.y))
+}
+
+/// Its length summed over `count` chords of evenly spaced `t`: as near the true length as `count` is large.
+private func chordLength(_ cubic: Cubic, count: Int) -> CGFloat {
+    (1...count).reduce(0) { sum, index in
+        sum + sampled(cubic, CGFloat(index - 1) / CGFloat(count)).distance(to: sampled(cubic, CGFloat(index) / CGFloat(count)))
+    }
+}
+
+@MainActor let cubicTests = Suite("Cubic curves", [
+    test("its points and tangents are the polynomial's, its ends where it starts and ends") {
+        for step in 0...20 {
+            let t = CGFloat(step) / 20
+            expectClose(sCurve.point(at: t), sampled(sCurve, t), within: 1e-9)
+        }
+        expectEqual(sCurve.point(at: 0), sCurve.start)
+        expectEqual(sCurve.point(at: 1), sCurve.end)
+        expectClose(sCurve.tangent(at: 0), CGPoint(x: 1, y: 0), within: 1e-9)
+        expectClose(sCurve.tangent(at: 1), CGPoint(x: 1, y: 0), within: 1e-9)
+        expectClose(sCurve.point(at: 0.5), CGPoint(x: 150, y: 50), within: 1e-9)
+        // A control on its end: the curve still sets off toward the next point.
+        let pinned = Cubic(.zero, .zero, CGPoint(x: 0, y: 10), CGPoint(x: 10, y: 10))
+        expectClose(pinned.tangent(at: 0), CGPoint(x: 0, y: 1), within: 1e-9)
+        expectEqual(Cubic(.zero, .zero, .zero, .zero).tangent(at: 0.5), .zero)
+    },
+    test("split and trimmed are the same curve, reparameterized") {
+        let (left, right) = sCurve.split(at: 0.3)
+        expectClose(left.end, sCurve.point(at: 0.3), within: 1e-9)
+        expectClose(right.start, sCurve.point(at: 0.3), within: 1e-9)
+        for step in 0...10 {
+            let u = CGFloat(step) / 10
+            expectClose(left.point(at: u), sCurve.point(at: 0.3 * u), within: 1e-9)
+            expectClose(right.point(at: u), sCurve.point(at: 0.3 + 0.7 * u), within: 1e-9)
+        }
+        let middle = sCurve.trimmed(from: 0.2, to: 0.7)
+        for step in 0...10 {
+            let u = CGFloat(step) / 10
+            expectClose(middle.point(at: u), sCurve.point(at: 0.2 + 0.5 * u), within: 1e-9)
+        }
+        expectEqual(sCurve.trimmed(from: 0, to: 1), sCurve)
+        expectEqual(sCurve.flattened(segments: 4).count, 5)
+    },
+    test("its length is the arc length, and a measure finds points by length both ways") {
+        let truth = chordLength(sCurve, count: 20_000)
+        expectClose(sCurve.length, truth, within: 0.05)
+        let line = Cubic(.zero, CGPoint(x: 10, y: 0), CGPoint(x: 20, y: 0), CGPoint(x: 30, y: 0))
+        expectClose(line.length, 30, within: 1e-9)
+        let measure = sCurve.measured()
+        expectClose(measure.length, sCurve.length, within: 1e-9)
+        for fraction in [0.0, 0.1, 0.25, 0.5, 0.8, 1.0] as [CGFloat] {
+            let t = measure.parameter(atLength: fraction * measure.length)
+            expectClose(measure.length(at: t), fraction * measure.length, within: 0.01)
+            // By length, not by t: a quarter of the length along is a quarter of the chords' sum along.
+            expectClose(chordLength(sCurve.trimmed(from: 0, to: t), count: 4_000), fraction * truth, within: 0.1)
+            expectClose(measure.fraction(nearest: measure.point(atFraction: fraction)), fraction, within: 0.001)
+        }
+        expectEqual(measure.parameter(atLength: -5), 0)
+        expectEqual(measure.parameter(atLength: measure.length + 5), 1)
+    },
+    test("distance to it, bounds round it, and where it crosses a polygon") {
+        expectClose(sCurve.distance(to: CGPoint(x: 150, y: 50)), 0, within: 0.01)
+        expectClose(sCurve.distance(to: CGPoint(x: -10, y: 0)), 10, within: 1e-6)
+        expectClose(sCurve.distance(to: CGPoint(x: 0, y: 30)), 30, within: 0.5)
+        let bounds = sCurve.bounds
+        expectClose(bounds.minX, 0, within: 1e-9)
+        expectClose(bounds.maxX, 300, within: 1e-9)
+        expectClose(bounds.minY, 0, within: 1e-9)
+        expectClose(bounds.maxY, 100, within: 1e-9)
+        // A curve that bows past its ends: its bounds hold the bow, not its controls.
+        let bow = Cubic(.zero, CGPoint(x: 0, y: -100), CGPoint(x: 100, y: -100), CGPoint(x: 100, y: 0))
+        expectClose(bow.bounds.minY, -75, within: 1e-6)
+        expect(bow.bounds.minY > -100, "the controls aren't in its bounds")
+        // A box round its middle: entered and left once each, where the polygon's sides are.
+        let box = CGRect(x: 100, y: 20, width: 100, height: 60).polygon
+        let crossings = sCurve.intersections(withPolygon: box)
+        expectEqual(crossings.count, 2)
+        for t in crossings {
+            let point = sCurve.point(at: t)
+            expect(abs(point.x - 100) < 1e-4 || abs(point.x - 200) < 1e-4 || abs(point.y - 20) < 1e-4 || abs(point.y - 80) < 1e-4,
+                   "\(point) is on the box's edge")
+        }
+        expect(sCurve.intersections(withPolygon: CGRect(x: 400, y: 0, width: 10, height: 10).polygon).isEmpty)
+    },
+])

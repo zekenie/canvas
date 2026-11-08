@@ -19,12 +19,30 @@ import Geometry
 /// solid one, below 25%), so what it draws and outlines is for the app to say.
 extension ArrowDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<Arrow>, in context: RenderContext) {
-        guard let geometry = context.shapes.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return }
+        guard let geometry = context.shapes.geometry(of: shape.id) else { return }
         let cg = context.cg, color = context.colors(of: shape)?.solid ?? ArrowStyle.color.cgColor, arrow = shape.props
+        let width = max(geometry.arrowDetail?.width ?? ArrowStyle.strokeWidth, ArrowStyle.skeletonLineWidth / context.zoom)
+        if let drawing = geometry.arrowDetail?.drawing {
+            // A level arrow, or one with a look: its kept curve, heads filled, and its marks once they are long enough to see.
+            let skeleton = drawing.skeleton(atZoom: context.zoom)
+            cg.addPath(skeleton.body)
+            for mark in skeleton.marks { cg.addPath(mark) }
+            cg.setStrokeColor(color)
+            cg.setLineWidth(width)
+            cg.strokePath()
+            if !drawing.triangles.isEmpty {
+                cg.addPath(drawing.triangles)
+                cg.setFillColor(color)
+                cg.fillPath()
+            }
+            drawLead(of: shape, at: geometry, in: context)
+            return
+        }
+        guard let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return }
         let (startHead, endHead) = ArrowDefinition.heads(of: arrow, in: geometry)
         body.add(to: cg)
         cg.setStrokeColor(color)
-        cg.setLineWidth(max(ArrowStyle.strokeWidth, ArrowStyle.skeletonLineWidth / context.zoom))
+        cg.setLineWidth(width)
         cg.strokePath()
         if startHead || endHead {
             if startHead { body.addHead(at: .start, strokeWidth: ArrowStyle.strokeWidth, to: cg) }
@@ -32,7 +50,12 @@ extension ArrowDefinition: CustomSkeleton {
             cg.setFillColor(color)
             cg.fillPath()
         }
-        // The pill that leads its label, which Adornments draws only in full: a capsule of its size, tinted as it is, no letters.
+        drawLead(of: shape, at: geometry, in: context)
+    }
+
+    /// The pill that leads its label, which Adornments draws only in full: a capsule of its size, tinted as it is, no letters.
+    private func drawLead(of shape: ShapeRecord<Arrow>, at geometry: ShapeGeometry, in context: RenderContext) {
+        let cg = context.cg
         if let lead = geometry.labelLead, let tint = context.shapes.layoutInput(AdornmentLead.faces, of: shape)?.tint {
             let capsule = CGPath(roundedRect: lead, cornerWidth: min(lead.width, lead.height) / 2, cornerHeight: min(lead.width, lead.height) / 2, transform: nil)
             cg.addPath(capsule)
@@ -48,7 +71,17 @@ extension ArrowDefinition: CustomSkeleton {
 
 extension ArrowDefinition: CustomSkeletonOutline {
     func skeletonIndicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath? {
-        guard let geometry = context.geometry(of: shape.id), let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return nil }
+        guard let geometry = context.geometry(of: shape.id) else { return nil }
+        if let drawing = geometry.arrowDetail?.drawing {
+            // What the skeleton draws: the kept curve, its heads closed, and its marks while they show.
+            let skeleton = drawing.skeleton(atZoom: context.zoom)
+            let path = CGMutablePath()
+            path.addPath(skeleton.body)
+            path.addPath(drawing.triangles)
+            for mark in skeleton.marks { path.addPath(mark) }
+            return path
+        }
+        guard let body = ArrowSkeleton(geometry, zoom: context.zoom) else { return nil }
         let (startHead, endHead) = Self.heads(of: shape.props, in: geometry)
         return body.outline(startHead: startHead, endHead: endHead, strokeWidth: ArrowStyle.strokeWidth)
     }
@@ -57,7 +90,7 @@ extension ArrowDefinition: CustomSkeletonOutline {
 extension ArrowDefinition {
     /// The heads a skeleton draws: the arrow's, but for an end of a relationship type's none at its pill (`EndLine`).
     static func heads(of arrow: Arrow, in geometry: ShapeGeometry) -> (start: Bool, end: Bool) {
-        guard let line = geometry.detail as? EndLine else { return (arrow.startArrowhead, arrow.endArrowhead) }
+        guard let line = geometry.arrowDetail?.line else { return (arrow.startArrowhead, arrow.endArrowhead) }
         return (line.hasHead(at: .start, of: arrow), line.hasHead(at: .end, of: arrow))
     }
 }

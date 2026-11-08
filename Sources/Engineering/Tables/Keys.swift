@@ -76,6 +76,30 @@ extension ShapeContext {
     var keys: KeyIndex? { service(KeyIndex.self) }
 }
 
+// How a key looks (Connections' `ConnectionLooks`, the kit's answer for its channel): a crow's foot at the column's end, two
+// bars when the column is unique (T3 panel 4), and at the row it references two bars, a bar and a circle when the column may be
+// null; the line 2.5 wide (`KitStyle.keyLineWidth`) and ink, as every line is. Worked out from the column as the arrow's geometry
+// is, through the shapes it reads, so a column made unique or nullable redraws its keys with nothing written to them. A key
+// whose start isn't at a row (drawn to a table as a whole) has the marks of a column that is neither.
+enum KeyLooks {
+    @MainActor
+    static func look(_ query: ConnectionLookQuery) -> ConnectionLook? {
+        guard query.channel == ForeignKey.id else { return nil }
+        let column = query.from.flatMap { from in
+            from.part.flatMap { part in query.shapes.shape(from.shape)?.typed(as: DatabaseTable.self)?.props.columns.first { $0.id == part } }
+        }
+        let table = query.from.flatMap { query.shapes.shape($0.shape)?.typed(as: DatabaseTable.self)?.props }
+        return ConnectionLook(start: column.map { isUnique($0, in: table) } == true ? .one : .many,
+                              end: column?.nullable == true ? .zeroOrOne : .one,
+                              lineWidth: KitStyle.keyLineWidth)
+    }
+
+    /// Whether no two rows may hold one value of `column`: it says unique, or it is its table's one primary key column.
+    static func isUnique(_ column: Column, in table: DatabaseTable?) -> Bool {
+        column.unique || (column.primaryKey && (table?.columns.filter(\.primaryKey).count ?? 1) == 1)
+    }
+}
+
 // The kit's kinds take what is bound to them along (the core's `TakesBoundShapes`): deleting a table deletes its keys
 // ("Delete Table and 3 Arrows"), taking a column out deletes the keys at it ("Delete Column and 1 Arrow"), and copying tables
 // copies the keys among them. Any other kind keeps tldraw's rule.

@@ -46,6 +46,7 @@ public struct ArrowPortsPlugin: ListedPlugin {
                               bindsPart: { shape in
                                   editor.channel(of: connection, endingAt: shape).map { editor.registry.takesOnParts(shape.kind, $0, as: .target) } ?? false
                               },
+                              channelAt: { editor.channel(of: connection, endingAt: $0) },
                               complete: { arrow, end in
                                   guard let shape = editor.document[end] else { return }
                                   arrow[ChannelProperty.self] = editor.channel(of: connection, endingAt: shape)

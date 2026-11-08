@@ -12,12 +12,15 @@ public struct ConnectableShape: Sendable {
     public let bounds: CGRect
     /// Where its parts are (`ShapeGeometry.parts`: a table's rows), which an end bound to a part meets at a side of.
     public let parts: PartFrames
+    /// Where a level arrow's end bound to it as a whole meets it (`ShapeGeometry.entries`: a table's first row), else empty.
+    public let entries: [ShapeEntry]
 
-    public init(id: ShapeID, outline: [CGPoint], bounds: CGRect, parts: PartFrames = PartFrames()) {
+    public init(id: ShapeID, outline: [CGPoint], bounds: CGRect, parts: PartFrames = PartFrames(), entries: [ShapeEntry] = []) {
         self.id = id
         self.outline = outline
         self.bounds = bounds
         self.parts = parts
+        self.entries = entries
     }
 }
 
@@ -29,7 +32,7 @@ struct Connectables {
     subscript(id: ShapeID) -> ConnectableShape? {
         guard let record = shapes.shape(id), record.kind != Arrow.kind,
               let geometry = shapes.geometry(of: id), geometry.isClosed else { return nil }
-        return ConnectableShape(id: id, outline: geometry.outline, bounds: geometry.bounds, parts: geometry.parts)
+        return ConnectableShape(id: id, outline: geometry.outline, bounds: geometry.bounds, parts: geometry.parts, entries: geometry.entries)
     }
 
     /// The front-most shape under `point` that arrows can bind to (in document order, as before:

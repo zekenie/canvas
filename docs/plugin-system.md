@@ -1265,7 +1265,7 @@ chevrons, below 35% alone: the POC's transcript and every render at 35% and abov
 A skeleton is this app's own, with nothing of tldraw's to match.
 
 An arrow says how wide its line is, 3.5 world units whatever it holds (`StrokedShape`, `ArrowStyle.strokeWidth`),
-so a tinted outline of it, a light of [Neighbors](#neighbors), covers its body and heads as wide on screen as
+or the width its connection's look gives (a key's 2.5), so a tinted outline of it, a light of [Neighbors](#neighbors), covers its body and heads as wide on screen as
 its line and a point more, instead of a thin stripe down the middle of it.
 
 ## A horizontal plugin
@@ -2410,6 +2410,20 @@ An arrow's end binds a row (`ArrowBinding.part`) and is drawn at the row's side 
 change to those edges touched, and the column that starts a key shows a link in its gutter. `canvas draw`
 names a row with a dot outside the quotes: `edge "orders".customer_id -> "customers".id`, `delete
 "orders".legacy_note`; a kind takes a row out by id through `PartedShape.removing(_:from:)`.
+
+**How a key looks.** What a connection means is its channel's plugin's, so the kit says how a key's ends
+are drawn, from its column, through Connections' `ConnectionLooks`; the arrow asks when it works out its
+geometry and keeps the answer, so a column made nullable redraws its keys with nothing written to them:
+
+```swift
+registrar.connectionLook { query in                       // the first answer wins; nil: not a key
+    guard query.channel == ForeignKey.id else { return nil }
+    let column = …                                        // the column at query.from, read through query.shapes
+    return ConnectionLook(start: unique ? .one : .many,  // a crow's foot, two bars when unique
+                          end: nullable ? .zeroOrOne : .one, lineWidth: KitStyle.keyLineWidth)   // 2.5
+}
+ShapeGeometry(outline: …, parts: …, entries: ShapeEntry.sides(of: firstRow))   // a line to the table meets its first row
+```
 
 **Columns written as lines.** Edited, a table is LineRows' editing view ([rows written as
 lines](#rows-written-as-lines)): its name in its pill, then a line a column. `ColumnLineGrammar` reads a line
@@ -7134,8 +7148,16 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 
 An arrow's end may bind a row (`ArrowBinding.part`, arrow version 3): drawn at the middle of the row's
 side facing the other end, unclipped, kept by an arrow moved alone, stepped a row by ↑ ↓ on its ⌥Tab
-part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`); an end with
-no part is drawn as it always was.
+part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`). Such an arrow
+is a level curve, a cubic (Geometry's `Cubic`) leaving each end along the way out of its side, half the way
+ahead or a C behind, and entering a shape bound as a whole square to the side it meets, or at the entry its
+kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its middle exactly by itself. An
+arrow with no row end is drawn as it always was. How a connection looks, its ends' marks (`EndMark`: a
+crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLooks` when the geometry is
+worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
+head, and Toggle Arrowhead leaves it. A curve between ends too near for the marks runs out far enough to turn
+clear of them, VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
+with the channel it will be released on (`registry.connectionLook(…, channel:)`), so its marks show as it is dragged.
 
 The ports code never learns what a connection is. One plugin draws them, the connector
 (`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:parts:begin:)`, the `Connectors`
@@ -16048,7 +16070,7 @@ neighbor-details     service NeighborList · ShapeDetails in Connections → eve
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · outlines
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · channel foreign-key · edge type foreign-key · service KeyIndex · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as

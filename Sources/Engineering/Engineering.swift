@@ -48,6 +48,8 @@ public struct EngineeringPlugin: ListedPlugin {
         // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
         registrar.channel(ForeignKey.self)
         registrar.service { KeyIndex(editor: $0) }
+        // A key's marks and width, from its column: a crow's foot (bars when unique), bars (a bar and a circle when nullable), 2.5.
+        registrar.connectionLook(KeyLooks.look)
         var editedTable: Placement?
         registrar.shape(TableDefinition()) { table in
             table.label(TableStyle.label, systemImage: TableStyle.symbol)

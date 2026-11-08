@@ -44,6 +44,9 @@ public enum KitStyle {
     /// A hue's roles drawn on the paper: the paper is the ground and the raised surface both.
     public static func onPaper(_ color: RGB) -> Swatch { Swatch(color, on: Tone(paper), raised: Tone(paper)) }
 
+    /// A key's line, world units: narrower than an arrow's 3.5, as the frames draw keys (arrow-look §0). Lines stay ink.
+    public static let keyLineWidth: CGFloat = 2.5
+
     /// A shape of the kit zoomed out on the light canvas: its paper is ringed in this, so #EBEBEB stays seen on white, as a
     /// type's note is.
     public static let skeletonEdge = NSColor(white: 0, alpha: 0.16)

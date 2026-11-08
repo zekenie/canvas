@@ -1,4 +1,5 @@
 import Canvas
+import Connections
 import CoreGraphics
 import Geometry
 import Mentions
@@ -50,7 +51,7 @@ enum ArrowParts {
                                    press: { toggleHead(at: end, of: id, in: $0) },
                                    adjust: { adjustEnd(end, of: id, by: $1, in: $0) }))
         }
-        if (context.geometry(of: id)?.detail as? EndLine)?.bend == nil {
+        if context.geometry(of: id)?.arrowDetail?.line?.bend == nil {
             let middle = definition.arrowGeometry(of: shape, in: context).middle
             parts.append(ShapePart(id: Part.handle(.middle), title: ArrowStyle.bendPart, role: .handle, rect: rect(at: middle),
                                    press: { straighten(id, in: $0) },
@@ -66,6 +67,9 @@ enum ArrowParts {
 
     /// Return on an end: its head on or off, the double-click's step.
     static func toggleHead(at end: ArrowEnd, of id: ShapeID, in editor: CanvasEditor) {
+        // A marked end (a key's, `marked-end`): its look says what it is drawn with, so there is no head to toggle, and Return and
+        // Space do nothing.
+        guard !ArrowDefinition.isMarked(end, of: id, in: editor.shapeContext) else { return }
         editor.transact("Toggle Arrowhead") { $0.update(id, as: Arrow.self) { $0.props.toggleArrowhead(at: end) } }
     }
 
@@ -73,7 +77,7 @@ enum ArrowParts {
     /// arrow key is taken, so none nudges the arrow while an end has the keyboard.
     static func adjustEnd(_ end: ArrowEnd, of id: ShapeID, by step: PartStep, in editor: CanvasEditor) -> Bool {
         guard let targeting = editor.service(ArrowTargeting.self), let arrow = targeting.arrow(id) else { return true }
-        let from = targeting.geometry(of: arrow).handlePoint(at: end)
+        let from = targeting.geometry(of: arrow, id: id).handlePoint(at: end)
         if step.toNearest {
             bindNearest(end, of: id, from: from, toward: step.adjacentDirection, targeting: targeting)
             return true
@@ -152,7 +156,7 @@ enum ArrowParts {
     /// step's part across the arrow. A key along the arrow is taken and bends it no more.
     static func bend(_ id: ShapeID, by step: PartStep, in editor: CanvasEditor) -> Bool {
         guard let targeting = editor.service(ArrowTargeting.self), let arrow = targeting.arrow(id) else { return true }
-        let change = step.offset.dot(targeting.geometry(of: arrow).bendAxis)
+        let change = step.offset.dot(targeting.geometry(of: arrow, id: id).bendAxis)
         guard abs(change) > ArrowStyle.keyBendEpsilon else { return true }
         targeting.updateArrow(id, named: "Bend Arrow") { $0.bend += change }
         return true
@@ -173,7 +177,7 @@ enum ArrowParts {
     }
 
     /// What VoiceOver says of an arrow besides its kind: where it runs ("from Checkout to Payment", by the
-    /// names of the shapes its ends are bound to, as VoiceOver says them), and its label's words.
+    /// names of the shapes its ends are bound to, as VoiceOver says them), the relation its end marks say ("many to one"), and its label's words.
     static func accessibility(of shape: ShapeRecord<Arrow>, in editor: CanvasEditor) -> AccessibleTraits {
         // A row's end by the row's name, read with its shape's ("id in customers").
         func name(_ end: ArrowEnd) -> String? {
@@ -181,6 +185,8 @@ enum ArrowParts {
         }
         let runs = ArrowStyle.accessibleRun(from: name(.start), to: name(.end))
         let text = shape.props.hasText ? editor.mentions?.plainText(shape.props.text) ?? shape.props.text.plainText() : nil
-        return AccessibleTraits(labelParts: runs.map { [$0] } ?? [], value: text)
+        // A key's marks say what the eye reads off its ends: "many to one".
+        let cardinality = editor.shapeContext.geometry(of: shape.id)?.arrowDetail?.look?.cardinality
+        return AccessibleTraits(labelParts: [runs, cardinality].compactMap { $0 }, value: text)
     }
 }
