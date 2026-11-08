@@ -409,12 +409,12 @@ extension CanvasEditor {
     /// in neither.
     public var selectionEnclosure: SelectionEnclosure? { selectionState?.enclosure }
 
-    /// Steps out of the group or container the selection is in, selecting it, and brings it into view
-    /// if it is not (tldraw's `selectParentShape`); false if the selection is in neither.
+    /// Steps out of the group or container the selection is in, selecting it, and pans to it if none of it
+    /// is in view (tldraw's `selectParentShape`, never zooming out: `revealEnclosure`); false if the selection is in neither.
     @discardableResult
     public func selectEnclosure() -> Bool {
         guard let state = selectionState, state.selectEnclosure() else { return false }
-        revealIfOffscreen(selectedShapeIDs)
+        revealEnclosure(selectedShapeIDs)
         return true
     }
 }

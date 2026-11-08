@@ -594,10 +594,11 @@ extension SelectionState: EditorService {
     }
 
     /// What was placed is all that's selected, and brought into view if it isn't (a shape Insert or ⇧↩ put beside a shape at the
-    /// view's edge; one placed under the pointer is in view, and the camera stays still while a press lasts).
+    /// view's edge, by the least pan, keeping that shape in view with it when both fit: `editor.placingBeside`; one placed under
+    /// the pointer is in view, and the camera stays still while a press lasts).
     func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) {
         select(ids)
-        if !editor.undoHistory.isPressHeld { editor.revealIfOffscreen(ids) }
+        if !editor.undoHistory.isPressHeld { editor.revealIfOffscreen(ids, keeping: editor.placingBeside) }
     }
 
     /// Shapes are drawn as skeletons now, or in full again, so their faces and adornments went or

@@ -227,13 +227,23 @@ public struct SizeAxes: OptionSet, Hashable, Sendable {
 }
 
 /// Painted relative to another shape instead of by document order, so bringing it to front means
-/// nothing. A connector stays just above the shapes it joins; a label, above its host.
+/// nothing. A connector stays just above the shapes it joins (or, bound to their rows, just below the
+/// lower of them: `paintsBelowAnchor`); a label, above its host.
 public protocol PaintOrderAnchored: ShapeDefinition {
     /// Paint just above this shape; nil (or a shape that isn't there) paints above everything.
     /// It must follow from the shape's own props and the document's order (which shapes there
     /// are, and where), not other shapes' props: the editor works the paint order out again only
     /// when the stack, or this shape, changes.
     func paintAnchor(of shape: ShapeRecord<Props>, in document: CanvasDocument) -> ShapeID?
+
+    /// Painted just below its anchor instead of just above (false, by default): a connector bound to rows of cards
+    /// (a key), under the lower of the cards it joins, so a card it passes covers it. As `paintAnchor`, it must follow
+    /// from the shape's own props and the document's order.
+    func paintsBelowAnchor(_ shape: ShapeRecord<Props>, in document: CanvasDocument) -> Bool
+}
+
+extension PaintOrderAnchored {
+    public func paintsBelowAnchor(_ shape: ShapeRecord<Props>, in document: CanvasDocument) -> Bool { false }
 }
 
 /// Drawn more simply zoomed out: how a shape shows in place of `render` while the canvas draws

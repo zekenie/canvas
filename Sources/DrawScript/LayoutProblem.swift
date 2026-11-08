@@ -206,6 +206,26 @@ public struct LayoutProblem {
     /// How a message names a fixed box or an obstacle, as `Free.name` names a free one; asked only
     /// when one is needed.
     public var name: (Ref) -> String
+    /// Where a drawing with nothing to hang on lands for a person (a shape Insert puts down): at the nearest spot where
+    /// it is inside `clear` with `above` over its top too (the row of things shown just above it), when one is clear,
+    /// before the spots out of it. Nil, as `canvas draw` places one, for the nearest spot wherever it is.
+    public var landsInView: InView?
+
+    /// `landsInView`'s region: world units.
+    public struct InView: Sendable, Equatable {
+        public var clear: CGRect
+        public var above: CGFloat
+
+        public init(clear: CGRect, above: CGFloat) {
+            self.clear = clear
+            self.above = above
+        }
+
+        /// Whether `rect`, with the room above it, is inside.
+        func holds(_ rect: CGRect) -> Bool {
+            clear.contains(CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above))
+        }
+    }
 
     public init(free: [Free], fixed: [Fixed] = [], obstacles: @escaping (CGRect) -> [Obstacle] = { _ in [] }, boardBounds: CGRect? = nil,
                 viewMiddle: CGPoint = .zero, view: CGRect? = nil, name: @escaping (Ref) -> String = { _ in "a shape" }) {

@@ -64,6 +64,8 @@ extension CanvasEditor {
         // A group, as a press is for a placing tool: the step stays open while the new shape is edited,
         // so what is typed into it is the one step.
         var placed: ShapeID?
+        placingBeside = shapes
+        defer { placingBeside = [] }
         undoHistory.group(step) {
             placed = place(placement, in: frame)
         }

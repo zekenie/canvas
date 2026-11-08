@@ -294,10 +294,20 @@ extension ArrowDefinition: CustomTranslation {
 }
 
 extension ArrowDefinition: PaintOrderAnchored {
-    /// Just above the highest shape it's bound to, so it's never hidden behind its own shapes.
+    /// Just above the highest shape it's bound to, so it's never hidden behind its own shapes; an arrow with an end at a row
+    /// (a key, writes, reads, calls) just below the lowest (`paintsBelowAnchor`), however it was made, so a card it passes
+    /// covers it and no line strikes through a table's text. Its ends sit at the rows' sides, outside the cards, so its
+    /// marks and heads still show. A departure from tldraw, whose new arrows go on top.
     func paintAnchor(of shape: ShapeRecord<Arrow>, in document: CanvasDocument) -> ShapeID? {
         let indices = [shape.props.start, shape.props.end].compactMap { $0.binding.flatMap { document.index(of: $0.shapeID) } }
-        return indices.max().map { document.shapes[$0].id }
+        return (Self.isRowBound(shape.props) ? indices.min() : indices.max()).map { document.shapes[$0].id }
+    }
+
+    func paintsBelowAnchor(_ shape: ShapeRecord<Arrow>, in document: CanvasDocument) -> Bool { Self.isRowBound(shape.props) }
+
+    /// Whether an end is bound to a part of its shape (a row).
+    private static func isRowBound(_ arrow: Arrow) -> Bool {
+        arrow.start.binding?.part != nil || arrow.end.binding?.part != nil
     }
 }
 

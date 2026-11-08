@@ -13,8 +13,9 @@ import SwiftUI
 /// sidebar shown while `showsSidebar`, the inspector by its rule (`HostInspector.isShown`: while
 /// `showsInspector` and it has something to show, or while it's wanted); and each view over the canvas
 /// (`registry.hostOverlays`), in plugin order, a later one over an earlier, in the part the title bar
-/// and the sheets leave clear. The editor is told what they cover (`coveredEdges`), so fits and reveals
-/// land in that part, and the canvas lays out the minimap in it. It knows no plugin: a list without the
+/// and the sheets leave clear. The editor is told what they cover (`coveredEdges`), and what they will cover once the
+/// inspector's rule has been followed for what the editor shows now (`coveredEdgesAhead`), so fits, reveals and what Insert
+/// puts down land in that part, and the canvas lays out the minimap in it. It knows no plugin: a list without the
 /// path has no path, one without a sidebar none, and one without an inspector none.
 ///
 /// Apply it to the canvas view (`CanvasRepresentable`), after its frame and toolbar, which stay the
@@ -86,6 +87,16 @@ public struct BoardChrome: ViewModifier {
                         .animation(paneAnimation, value: sidebarShown)
                         .animation(paneAnimation, value: inspectorShown)
                         .onChange(of: edges, initial: true) { _, edges in editor.coveredEdges = edges }
+                        // What the chrome will cover once it settles with what the editor shows then: the inspector's rule read
+                        // when asked, so a selection just made counts its inspector before it slides in.
+                        .onChange(of: CoveredEdges(top: titleBar, left: sidebarShown ? left : 0, right: right), initial: true) { _, reach in
+                            let showsInspector = $showsInspector, editor = editor
+                            editor.coveredEdgesAhead = { [weak editor] in
+                                guard let editor else { return reach }
+                                let shown = inspector?.isShown(in: editor, chosen: showsInspector.wrappedValue) ?? false
+                                return CoveredEdges(top: reach.top, left: reach.left, right: shown ? reach.right : 0)
+                            }
+                        }
                     }
                     .ignoresSafeArea()
                 }

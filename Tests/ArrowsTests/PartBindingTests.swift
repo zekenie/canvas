@@ -91,6 +91,40 @@ private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
         expectEqual(tied.endHandle.x, 300)
         expectEqual([tied.partSide(at: .start), tied.partSide(at: .end)], [.right, .right])
     },
+    test("rows one above the other leave one side, whatever their middles: a roster made wider as a row is typed flips no end") {
+        let b = try RosterBoard()
+        // R moved under L, as stacked tables are: their spans across overlap, so both ends leave the right.
+        b.h.editor.transact { $0.update(b.right, as: Roster.self) { $0.props.frame = CGRect(x: 100, y: 300, width: 200, height: 80) } }
+        let key = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.right, 2)))
+        var geometry = try require(b.h.editor.arrowGeometry(of: key))
+        expectEqual([geometry.partSide(at: .start), geometry.partSide(at: .end)], [.right, .right], "stacked, middles tied")
+        // R wider (as a line typed wider than the card lays it out), its middle past L's: still both on the right.
+        b.h.editor.transact { $0.update(b.right, as: Roster.self) { $0.props.frame = CGRect(x: 100, y: 300, width: 260, height: 80) } }
+        geometry = try require(b.h.editor.arrowGeometry(of: key))
+        expectEqual([geometry.partSide(at: .start), geometry.partSide(at: .end)], [.right, .right], "the middles untied: no flip across a roster")
+        expectEqual(geometry.endHandle.x, 360, "at the wider roster's right edge")
+        // Moved apart side by side again, each faces the other.
+        b.h.editor.transact { $0.update(b.right, as: Roster.self) { $0.props.frame = CGRect(x: 500, y: 300, width: 200, height: 80) } }
+        geometry = try require(b.h.editor.arrowGeometry(of: key))
+        expectEqual([geometry.partSide(at: .start), geometry.partSide(at: .end)], [.right, .left])
+    },
+    test("an arrow with an end at a row is painted just below the lower of its shapes, however it was made, so a card it passes covers it") {
+        let b = try RosterBoard()
+        // A roster between the two in the stack, which the key passes.
+        let between = b.h.add(Roster(CGRect(x: 320, y: 100, width: 160, height: 200), rows: [RosterRow(name: "mid")]))
+        b.h.editor.transact { $0.move(between, below: b.right) }
+        let key = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.right, 2)))
+        expectEqual(b.h.editor.paintOrder().map(\.id), [key, b.left, between, b.right], "under both rosters, and under the one it passes")
+        // Bound to the rosters as wholes, it is above the higher, as tldraw's arrows are.
+        let whole = b.h.add(Arrow(start: .bound(ArrowBinding(shapeID: b.left, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)),
+                                  end: .bound(ArrowBinding(shapeID: b.right, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))))
+        expectEqual(b.h.editor.paintOrder().map(\.id), [key, b.left, between, b.right, whole])
+        // An end let go of its row: back above.
+        b.h.editor.transact { $0.update(key, as: Arrow.self) { $0.props.end = .free(CGPoint(x: 900, y: 400)) } }
+        expectEqual(b.h.editor.paintOrder().map(\.id), [key, b.left, between, b.right, whole], "still at a row at its start: below its one shape")
+        b.h.editor.transact { $0.update(key, as: Arrow.self) { $0.props.start = .free(CGPoint(x: 0, y: 0)) } }
+        expectEqual(b.h.editor.paintOrder().map(\.id), [b.left, between, b.right, whole, key], "bound to nothing: on top")
+    },
     test("a part the shape doesn't list is drawn at the stored anchor; a folded one at what's shown in its place") {
         let b = try RosterBoard()
         let gone = b.h.add(Arrow(start: .bound(ArrowBinding(shapeID: b.left, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true,

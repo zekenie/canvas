@@ -185,7 +185,7 @@ extension CanvasEditor {
 
 extension CanvasEditor {
     /// A new type titled `name`, put down beside `owner` as `/move-near` puts a shape beside another
-    /// (`Surroundings.near`), with the starter schema and no words, and `owner` made an instance of
+    /// (`Surroundings.near`), on a side in the clear part of the view where one is free (`PutBeside`), with the starter schema and no words, and `owner` made an instance of
     /// it: one step, "New Type", which stays open while the new note is edited, as a placed note's
     /// does. For an owner that is an arrow (a kind that relates) it is a relationship type, with no ends,
     /// in the step "New Relationship Type", and it replaces the relationship type the arrow had. Nil, with nothing changed, when nothing could be put down: `owner` is not on the board
@@ -225,12 +225,16 @@ extension CanvasEditor {
         placement = placement.mapping { record in made.id = record.id; return record }
         guard let surroundings = Surroundings(on: board, moving: placement.size, in: self) else { return nil }
         let landing: Landing?
+        // Put down for the person: on a side of them in the clear part of the view, where one is free.
+        let put = PutBeside.inView(of: self)
         if owners.count == 1 {
-            landing = surroundings.near(owners[0])
+            landing = surroundings.near(owners[0], put: put)
         } else {
             // Beside the box around them all, as a shape that is not on the board yet is landed beside, clear of every owner.
             let shapes = surroundings.reading.shapes
-            landing = shapes.bounds(of: owners).flatMap { box in surroundings.near(box, avoiding: owners.compactMap { shapes.geometry(of: $0)?.bounds }) }
+            landing = shapes.bounds(of: owners).flatMap { box in
+                surroundings.near(box, avoiding: owners.compactMap { shapes.geometry(of: $0)?.bounds }, put: put)
+            }
         }
         guard let landing else { return nil }
         return undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) {

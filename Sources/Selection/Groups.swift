@@ -138,8 +138,8 @@ extension SelectionState {
     /// Escape with nothing under way, one level out at a time (P5): from a focused part of the selected shape
     /// (⌥Tab), back to the shape, still selected; else out of the group the selection is inside, selecting it
     /// whole (tldraw's popFocusedGroupId), or, with nothing selected there, out of it altogether; else out of
-    /// the container its shapes are all in (a frame), selecting that, as ⌘↑ does (`selectEnclosure`), brought
-    /// into view if it is not; with the selection in neither, nothing selected. It never leaves the board.
+    /// the container its shapes are all in (a frame), selecting that, as ⌘↑ does (`selectEnclosure`), panned to
+    /// if none of it is in view (`revealEnclosure`, never zoomed out to); with the selection in neither, nothing selected. It never leaves the board.
     func escape() {
         // A focus whose part went with no commit (left out as the zoom changed) shows nothing: let it go and go on.
         let partShown = editor.hasFocusedPart
@@ -154,7 +154,7 @@ extension SelectionState {
             focus = []
             return
         }
-        if selectEnclosure() { return editor.revealIfOffscreen(selectedIDs) }
+        if selectEnclosure() { return editor.revealEnclosure(selectedIDs) }
         select([])
     }
 

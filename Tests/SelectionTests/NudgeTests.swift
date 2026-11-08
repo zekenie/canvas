@@ -65,7 +65,8 @@ private let left = "\u{F702}", right = "\u{F703}", up = "\u{F700}", down = "\u{F
         h.editor.selection = far
         expect(h.key(right))
         h.wait(200)
-        let there = Camera(fitting: CGRect(x: 3000, y: 2000, width: 100, height: 100), in: view, inset: 100, maxZoom: 1)
+        // The least pan: its right edge and bottom 40 points in from the view's (its title's row counted above it).
+        let there = Camera(origin: CGPoint(x: 2140, y: 1440), zoom: 1)
         expectEqual(h.editor.camera, there, "where it was as the key came")
         expectEqual(h.editor.document[far]?.box?.origin, CGPoint(x: 3001, y: 2000))
         expect(h.key(right))
@@ -75,7 +76,7 @@ private let left = "\u{F702}", right = "\u{F703}", up = "\u{F700}", down = "\u{F
         expect(h.key("\u{7f}"))
         expectEqual(h.editor.document[other], nil)
         h.wait(200)
-        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: -3000, y: -2000, width: 100, height: 100), in: view, inset: 100, maxZoom: 1))
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: -3040, y: -2068), zoom: 1), "its top-left 40 points in, with its row above")
     },
     test("a read-only shape in the selection stays, refused, and the rest move") {
         let log = RefusalLog()

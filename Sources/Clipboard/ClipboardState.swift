@@ -428,7 +428,7 @@ final class ClipboardState {
         let inside = Set(landed), kinds = editor.registry.containingKinds, document = editor.document
         editor.selectedShapeIDs = landed.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
         // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone.
-        editor.revealIfOffscreen(landed)
+        if case .beside(let ids) = site { editor.revealIfOffscreen(landed, keeping: ids) } else { editor.revealIfOffscreen(landed) }
         editor.announce(pastedSummary(landed, existing: existing, labels: program.labels), priority: .low)
     }
 

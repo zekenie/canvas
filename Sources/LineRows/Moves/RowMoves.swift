@@ -243,6 +243,7 @@ extension CanvasEditor {
             case out(AnyShapeRecord)
         }
         let landing: Landing
+        var besideShapes: [ShapeID] = []
         switch place {
         case .into(let target, let before):
             guard let held = document[target], let into = registry.rowMoving(of: held.kind), into.takes(carrier.kind), held.kind == carrier.kind else { return nil }
@@ -256,6 +257,7 @@ extension CanvasEditor {
             made = placed(made, at: origin)
             landing = .out(made)
         case .beside(let shapes):
+            besideShapes = shapes.filter { document[$0] != nil }
             guard let made = moving.takeOut(carrier), let size = laidOutSize(of: made),
                   let frame = insertionFrame(of: size, beside: shapes.filter { document[$0] != nil }) else { return nil }
             landing = .out(placed(made, at: frame.origin))
@@ -347,27 +349,27 @@ extension CanvasEditor {
             // The name typed into the new shape is the same step.
             undoHistory.group(step) {
                 nudges = body()
-                if let nudges { finishLanding(destination, landed: landed, out: true, editsTitle: true, nudges: nudges) }
+                if let nudges { finishLanding(destination, landed: landed, out: true, editsTitle: true, nudges: nudges, beside: besideShapes) }
             }
         } else {
             nudges = body()
-            if let nudges { finishLanding(destination, landed: landed, out: out, editsTitle: false, nudges: nudges) }
+            if let nudges { finishLanding(destination, landed: landed, out: out, editsTitle: false, nudges: nudges, beside: besideShapes) }
         }
         guard nudges != nil else { return nil }
         announce(left.isEmpty ? step : "\(step), \(RowSteps.leftOut(left, in: registry))")
         return (destination, landed)
     }
 
-    /// What a landing leaves: the new shape selected and brought into view, its name typed where the kind says so; else the
-    /// rows selected as items of their shape.
-    private func finishLanding(_ shape: ShapeID, landed: [PartID], out: Bool, editsTitle: Bool, nudges: [ShapeID: CGPoint]) {
+    /// What a landing leaves: the new shape selected and brought into view (keeping what it was put beside in view with it, when
+    /// both fit), its name typed where the kind says so; else the rows selected as items of their shape.
+    private func finishLanding(_ shape: ShapeID, landed: [PartID], out: Bool, editsTitle: Bool, nudges: [ShapeID: CGPoint], beside: [ShapeID]) {
         if out {
             // A shape whose name is typed at once is laid out where it is, under its editing view.
             var nudges = nudges
             if editsTitle { nudges[shape] = nil }
             glide(nudges)
             selectedShapeIDs = [shape]
-            revealIfOffscreen([shape])
+            revealIfOffscreen([shape], keeping: beside)
             if editsTitle {
                 beginEditing(shape)
                 return

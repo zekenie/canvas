@@ -1387,7 +1387,8 @@ struct Solver {
     /// spot around it, on square rings `ringStep` apart (each ring nearest the middle first; then
     /// higher, then further left), where none of it (but what may overlap) comes within
     /// `anchorClearance` of an obstacle (but one that holds the whole view) or a box placed on the
-    /// board. Past the last ring, right of everything, top-aligned with it. Returns how far to move
+    /// board; with `landsInView`, the nearest such spot inside that region first. Past the last ring, right of
+    /// everything, top-aligned with it. Returns how far to move
     /// it. The obstacles are where `placement` (the boxes placed on the board) has them: what a box
     /// in the drawing takes along goes with the drawing.
     func spot(for drawing: [(box: Int, rect: CGRect)], clearOf placed: [CGRect], among placement: Placement) -> CGPoint {
@@ -1416,9 +1417,22 @@ struct Solver {
             }
         }
         let taken = spots.counted()
+        func offset(_ i: Int, _ j: Int) -> CGPoint {
+            CGPoint(x: problem.viewMiddle.x + CGFloat(i) * step - middle.x, y: problem.viewMiddle.y + CGFloat(j) * step - middle.y)
+        }
+        // For a person, a clear spot in view first: the rings out to the view's edge, the drawing and the row above it inside.
+        if let inView = problem.landsInView, !inView.clear.isNull, inView.clear.isFinite {
+            let across = max(inView.clear.width, inView.clear.height + inView.above)
+            for ring in 0...min(LayoutProblem.rings, Int((across / step).rounded(.up))) {
+                for (i, j) in Self.ring(ring) where !taken(i, j) {
+                    let moved = offset(i, j)
+                    if inView.holds(bounds.offsetBy(dx: moved.x, dy: moved.y)) { return moved }
+                }
+            }
+        }
         for ring in 0...LayoutProblem.rings {
             for (i, j) in Self.ring(ring) where !taken(i, j) {
-                return CGPoint(x: problem.viewMiddle.x + CGFloat(i) * step - middle.x, y: problem.viewMiddle.y + CGFloat(j) * step - middle.y)
+                return offset(i, j)
             }
         }
         var board = problem.boardBounds ?? found.reduce(CGRect.null) { $0.union($1) }

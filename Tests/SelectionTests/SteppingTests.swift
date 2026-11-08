@@ -195,7 +195,7 @@ extension EditorHarness {
         h.editor.endEditing()
         expect(h.tab())
     },
-    test("the camera stays where the next shape is in view, and goes where it is not, at the zoom it has") {
+    test("the camera stays where the next shape is in view, and goes where it is not by the least pan, at the zoom it has") {
         let view = CGSize(width: 1000, height: 700)
         let h = try stepHarness(view: view)
         let a = h.dot(150, 150, size: 100), c = h.dot(450, 150, size: 100), far = h.dot(3050, 2050, size: 100)
@@ -207,18 +207,18 @@ extension EditorHarness {
         h.tab()
         expectEqual(h.editor.selectedShapeIDs, [far])
         h.wait(100)
-        expect(h.editor.camera != Camera() && h.editor.camera != Camera(fitting: CGRect(x: 3000, y: 2000, width: 100, height: 100), in: view, inset: 100, maxZoom: 1),
-               "on its way over 200 ms: \(h.editor.camera)")
+        // The least pan, never centering it: its right and bottom edges 40 points in from the view's, its title's row above it.
+        let there = Camera(origin: CGPoint(x: 2140, y: 1440), zoom: 1)
+        expect(h.editor.camera != Camera() && h.editor.camera != there, "on its way over 200 ms: \(h.editor.camera)")
         h.wait(100)
-        let there = Camera(fitting: CGRect(x: 3000, y: 2000, width: 100, height: 100), in: view, inset: 100, maxZoom: 1)
         expectEqual(h.editor.camera, there)
         expectEqual(h.editor.camera.zoom, 1, "not closer, as going to a shape would bring it")
         h.tab(back: true)
         h.wait(200)
         expectEqual(h.editor.selectedShapeIDs, [c])
-        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: 400, y: 100, width: 100, height: 100), in: view, inset: 100, maxZoom: 1), "and back")
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 360, y: 32), zoom: 1), "and back, its top-left 40 points in")
     },
-    test("a shape partly in view is brought in, and one too big for the view zooms it out to fit") {
+    test("a shape partly in view is brought in by the least pan, and one too big for the view zooms it out to fit") {
         let view = CGSize(width: 1000, height: 700)
         let edge = try stepHarness(view: view)
         let a = edge.dot(150, 150, size: 100), cut = edge.dot(1000, 150, size: 100)
@@ -226,7 +226,7 @@ extension EditorHarness {
         edge.tab()
         expectEqual(edge.editor.selectedShapeIDs, [cut])
         edge.wait(200)
-        expectEqual(edge.editor.camera, Camera(fitting: CGRect(x: 950, y: 100, width: 100, height: 100), in: view, inset: 100, maxZoom: 1))
+        expectEqual(edge.editor.camera, Camera(origin: CGPoint(x: 90, y: 0), zoom: 1), "panned along by as little as brings it in, 40 points from the edge")
 
         let big = try stepHarness(view: view)
         let first = big.dot(150, 150, size: 100)
@@ -612,7 +612,7 @@ extension EditorHarness {
         h.command(down)
         expectEqual(h.editor.selectedShapeIDs, [far])
         h.wait(200)
-        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: 5450, y: 150, width: 100, height: 100), in: view, inset: 100, maxZoom: 1))
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 4590, y: 0), zoom: 1), "the least pan")
     },
     test("a selection is enclosed by the group it is inside, whole, else the container its shapes are all in; selecting it steps out a level at a time") {
         let groups = GroupsFixture()

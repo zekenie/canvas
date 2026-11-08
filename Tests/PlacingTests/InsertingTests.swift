@@ -32,19 +32,19 @@ private let tile = ToolID(placing: Tile.kind)
 }
 
 @MainActor let insertingTests = Suite("Inserting", [
-    test("beside one shape: where Placing puts the box beside it, right of it when that's free") {
+    test("beside one shape: where Placing puts the box beside it for a person, right of it when that's free, tops aligned") {
         let a = ShapeID()
         let h = try harness(box(a, 0, 0))
-        let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor)?.near(a)?.rect)
+        let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor)?.near(a, put: .inView(at: 1))?.rect)
         expect(h.editor.insert(tile, beside: [a]))
         expectEqual(try inserted(h).box, expected)
         expectEqual(expected.minX, 180, "80 right of it")
-        expectEqual(expected.midY, 50, "centered on it")
+        expectEqual(expected.minY, 0, "its top level with the shape's, as two tables side by side are drawn")
     },
     test("beside a shape in a frame, within the frame, and held by it once put down") {
         let k = ShapeID(), a = ShapeID()
         let h = try harness(corral(k, CGRect(x: -100, y: -100, width: 600, height: 400)), box(a, 0, 0, in: k))
-        let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor)?.near(a, within: k)?.rect)
+        let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor)?.near(a, within: k, put: .inView(at: 1))?.rect)
         expect(h.editor.insert(tile, beside: [a]))
         let placed = try inserted(h)
         expectEqual(placed.box, expected)
@@ -55,10 +55,10 @@ private let tile = ToolID(placing: Tile.kind)
         let a = ShapeID(), b = ShapeID()
         let h = try harness(box(a, 0, 0), box(b, 0, 200))
         let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: h.editor)?
-            .near(CGRect(x: 0, y: 0, width: 100, height: 300))?.rect)
+            .near(CGRect(x: 0, y: 0, width: 100, height: 300), put: .inView(at: 1))?.rect)
         expect(h.editor.insert(tile, beside: [a, b]))
         expectEqual(try inserted(h).box, expected)
-        expectEqual(expected.midY, 150, "centered on the two")
+        expectEqual(expected.minY, 0, "level with the top of the two")
     },
     test("with nothing beside, in the middle of the view, or the nearest spot round it clear of what's there") {
         let h = try harness()
@@ -66,11 +66,36 @@ private let tile = ToolID(placing: Tile.kind)
         expectEqual(try inserted(h).box, CGRect(x: 340, y: 260, width: 120, height: 80), "the middle of the view")
         let a = ShapeID()
         let crowded = try harness(box(a, 350, 250))
-        let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: crowded.editor)?.anywhere().rect)
+        let expected = try require(Surroundings(on: .root, moving: TilesPlugin.size, in: crowded.editor)?.anywhere(put: .inView(at: 1)).rect)
         expect(crowded.editor.insert(tile, beside: []))
         let placed = try inserted(crowded)
         expectEqual(placed.box, expected)
         expect(!(placed.box ?? .null).intersects(CGRect(x: 350, y: 250, width: 100, height: 100)), "clear of the box in the middle")
+    },
+    test("beside a shape at the view's right edge: on a side in view, not out of sight past it") {
+        let a = ShapeID()
+        // Right of it would be past the view's right edge (800); left of it is in view.
+        let h = try harness(box(a, 640, 100))
+        expect(h.editor.insert(tile, beside: [a]))
+        let placed = try require(try inserted(h).box)
+        expect(CGRect(x: 0, y: 0, width: 800, height: 600).contains(placed), "in view: \(placed)")
+        expectEqual(placed, CGRect(x: 630, y: 280, width: 120, height: 80), "below it, centered: the first side in view as near as any")
+        // With the inspector about to come in over the right 300 points, the side under it is out of view too.
+        let b = ShapeID()
+        let ahead = try harness(box(b, 380, 100))
+        ahead.editor.coveredEdgesAhead = { CoveredEdges(right: 300) }
+        expect(ahead.editor.insert(tile, beside: [b]))
+        let clear = try require(try inserted(ahead).box)
+        expect(clear.maxX <= 500, "clear of the inspector to come: \(clear)")
+    },
+    test("with nothing beside, and the middle of the view taken: at the nearest clear spot in view, with the row above it in view") {
+        let a = ShapeID()
+        // A column down the middle of the view, from just under its top to its bottom: the nearest clear spot above the
+        // column would put the tile's title row past the view's top, so it goes beside the column instead.
+        let h = try harness(box(a, 300, 60, size: 200), box(ShapeID(), 300, 260, size: 200), box(ShapeID(), 300, 460, size: 200))
+        expect(h.editor.insert(tile, beside: []))
+        let placed = try require(try inserted(h).box)
+        expect(placed.minY - 27 >= 16 && placed.maxY <= 584 && placed.minX >= 16 && placed.maxX <= 784, "in view with its row above: \(placed)")
     },
     test("with no view and nothing beside, nowhere to put it: nothing") {
         let h = try harness(view: false)

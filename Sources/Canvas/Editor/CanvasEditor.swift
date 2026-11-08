@@ -184,6 +184,14 @@ public final class CanvasEditor {
         }
     }
 
+    /// What the host's chrome will cover of the canvas along its edges once it settles with what the editor shows now
+    /// (the inspector a selection just made shows, which comes in on the window's next pass): `coveredEdges` as it is
+    /// headed, as `cameraTarget` is the camera as it is headed. Nil, as by default, for the edges as they are laid out.
+    /// What the clear part a fit, a reveal or an insertion goes by is worked out from (`unobscuredViewport`), so a shape
+    /// put down and selected at once is placed and brought into view in what will be clear of the inspector, never in
+    /// what it is about to cover. Read when asked, so it reads the selection as it is then.
+    @_spi(Host) @ObservationIgnored public var coveredEdgesAhead: (@MainActor () -> CoveredEdges)?
+
     /// How far down the host's views over the canvas reach on the board shown, in view points, from the top
     /// of the part its chrome leaves clear (`coveredTop`: the path's pill inside a subboard): where a view
     /// the host places in that part (a plugin's, `registrar.hostOverlay`) goes to stay clear of them. None
@@ -191,15 +199,24 @@ public final class CanvasEditor {
     public var hostViewsReach: CGFloat { max(coveredTop(board), 0) }
 
     /// The part of the view nothing the host puts over the canvas covers, on the board shown, in view
-    /// points: the view, less what the host's chrome covers along its edges (`coveredEdges`) and,
-    /// under the top's, what its views over the canvas cover there (`coveredTop`). What a fit fits
-    /// shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`. Empty before the view
-    /// has a size; at least a point either way however much is covered.
+    /// points: the view, less what the host's chrome covers along its edges as it is headed
+    /// (`coveredEdgesAhead`, else `coveredEdges`: the inspector a selection just made counts before it has
+    /// slid in) and, under the top's, what its views over the canvas cover there (`coveredTop`). What a
+    /// fit fits shapes into: a board's first visit, Zoom to Fit, Selection's `reveal`; and where Insert
+    /// puts a shape down. Empty before the view has a size; at least a point either way however much is
+    /// covered.
     public var unobscuredViewport: CGRect { unobscuredViewport(on: board) }
 
+    /// The same, of the chrome as it is laid out now (`coveredEdges`), whatever it is headed for: what of a
+    /// selection is in view now, which the view keeps as the inspector slides in (`keepInViewWhileSettling`).
+    var laidOutViewport: CGRect { unobscuredViewport(on: board, edges: coveredEdges) }
+
     func unobscuredViewport(on target: BoardID) -> CGRect {
+        unobscuredViewport(on: target, edges: coveredEdgesAhead?() ?? coveredEdges)
+    }
+
+    private func unobscuredViewport(on target: BoardID, edges: CoveredEdges) -> CGRect {
         guard viewportSize.width > 0, viewportSize.height > 0 else { return .zero }
-        let edges = coveredEdges
         let left = min(max(edges.left, 0), viewportSize.width - 1)
         let right = min(max(edges.right, 0), viewportSize.width - 1 - left)
         let top = min(max(edges.top + max(coveredTop(target), 0), 0), viewportSize.height - 1)
@@ -427,6 +444,9 @@ public final class CanvasEditor {
     @ObservationIgnored var cameraBeforeFit: (before: Camera, fit: Camera)?
     /// What the camera keeps in view while the view around it settles (CanvasEditor+Camera.swift).
     @ObservationIgnored var keptView: KeptView?
+    /// What the shape Insert is putting down goes beside (`insert(_:named:beside:)`), while it is placed: what a service
+    /// told it was placed (`didPlace`) keeps in view with it, as it brings it into view. Empty otherwise.
+    @ObservationIgnored public internal(set) var placingBeside: [ShapeID] = []
     // The popover (Popovers.swift): the one showing, the one waiting its delay and its timer, and
     // while one has just gone, the end of that moment.
     @ObservationIgnored var shownPopover: CanvasPopover?

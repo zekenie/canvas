@@ -86,23 +86,55 @@ extension CanvasEditor {
     }
 
     /// Brings the shapes into view only if they are not all in it (tldraw's `zoomToSelectionIfOffscreen`,
-    /// what stepping from shape to shape does): in what the host leaves clear of the view, where the
-    /// camera is headed, the camera stays. Otherwise it moves over 200 ms to center their bounds with 100
-    /// points of margin, at the zoom it has, or farther out where they do not fit (never closer, which
-    /// `reveal` brings small shapes to). Does nothing before the view has a size, or when none of the
-    /// shapes has bounds.
-    public func revealIfOffscreen(_ ids: [ShapeID]) {
-        guard let bounds = shapeContext.bounds(of: ids), revealIfOffscreen(rect: bounds, settling: false) else { return }
+    /// what stepping from shape to shape does): in what the host leaves clear of the view as it is headed (the
+    /// inspector the selection shows counted before it has slid in), where the camera is headed, with the row
+    /// above their top (a title's pill) counted as theirs, the camera stays. Otherwise it moves over 200 ms by
+    /// the least pan that brings them in, `SelectionStyle.revealMargin` in from the edges, at the zoom it has
+    /// (`animateCamera(toShow:…)`), never centering them, so what was beside them in view stays there; and
+    /// `keeping` (the shape a new one was put down beside), when the two fit in view together, is kept in view
+    /// with them. Shapes too big to fit at that zoom are fitted, farther out (never closer, which `reveal`
+    /// brings small shapes to); with `zoomingOut` false they are panned to, their top-left in view, and the
+    /// zoom kept. Does nothing before the view has a size, or when none of the shapes has bounds.
+    public func revealIfOffscreen(_ ids: [ShapeID], keeping: [ShapeID] = [], zoomingOut: Bool = true) {
+        guard let bounds = shapeContext.bounds(of: ids),
+              revealIfOffscreen(rect: bounds, keeping: shapeContext.bounds(of: keeping), withRowAbove: true, zoomingOut: zoomingOut, settling: false)
+        else { return }
         settleIfSelected(ids)
     }
 
+    /// Brings what the selection climbed to (a group, or the container it is in: Escape, ⌘↑) into view only if none
+    /// of it is in view: a database the table just left is in shows partly at least, and the camera stays; one wholly
+    /// out of view is panned to (its top-left in view when it is bigger than the view), never zoomed out to, so the
+    /// shapes the person was at keep their size.
+    func revealEnclosure(_ ids: [ShapeID]) {
+        guard let bounds = shapeContext.bounds(of: ids), !unobscuredViewport.isEmpty,
+              !cameraTarget.toWorld(unobscuredViewport).intersects(bounds) else { return }
+        revealIfOffscreen(ids, zoomingOut: false)
+    }
+
     /// The same for a rect in world units (a part of the selected shape, `ShapeParts`, where the person
-    /// then is, `settling`), answering whether it moved the camera.
+    /// then is, `settling`), answering whether it moved the camera; the row above it counted only `withRowAbove`
+    /// (a shape's, never a part's).
     @discardableResult
-    func revealIfOffscreen(rect bounds: CGRect, settling: Bool = true) -> Bool {
+    func revealIfOffscreen(rect bounds: CGRect, keeping neighbour: CGRect? = nil, withRowAbove: Bool = false, zoomingOut: Bool = true,
+                           settling: Bool = true) -> Bool {
         let view = unobscuredViewport, camera = cameraTarget
-        guard !view.isEmpty, !bounds.isNull, !camera.toWorld(view).contains(bounds) else { return false }
-        animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: camera.zoom, duration: SelectionStyle.revealDuration)
+        guard !view.isEmpty, !bounds.isNull, bounds.isFinite else { return false }
+        let above = withRowAbove ? SelectionStyle.revealRowAbove / camera.zoom : 0
+        func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
+        let shown = withRow(bounds)
+        guard !camera.toWorld(view).contains(shown) else { return false }
+        let margin = SelectionStyle.revealMargin
+        let room = view.insetBy(dx: margin, dy: margin)
+        func fits(_ rect: CGRect) -> Bool { rect.width * camera.zoom <= room.width && rect.height * camera.zoom <= room.height }
+        if fits(shown) {
+            let together = neighbour.map { withRow($0.union(bounds)) }.flatMap { fits($0) ? $0 : nil }
+            animateCamera(toShow: together ?? shown, margin: margin, duration: SelectionStyle.revealDuration)
+        } else if zoomingOut {
+            animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: camera.zoom, duration: SelectionStyle.revealDuration)
+        } else {
+            animateCamera(toShow: shown, margin: margin, duration: SelectionStyle.revealDuration)
+        }
         if settling { selectionState?.settle() }
         return true
     }
