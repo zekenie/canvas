@@ -30,14 +30,18 @@ public struct DrawPut: Sendable {
     /// Which of the file's shapes a statement may find, by its `line`, besides those of its kind and title (a type's statement,
     /// only a note that is a type): one it doesn't admit is no match, and a new shape is made.
     public var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool]
+    /// The width a statement's shape is drawn at when the put makes it, by its `line` (an API wide enough for its paths): a shape
+    /// the file has keeps its own, which a person may have given it.
+    public var widths: [Int: CGFloat]
 
     public init(script: Script, block: [[Int]], edges: [Int: [Edge]] = [:], late: [Int: [LateValue]] = [:],
-                admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:]) {
+                admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], widths: [Int: CGFloat] = [:]) {
         self.script = script
         self.block = block
         self.edges = edges
         self.late = late
         self.admits = admits
+        self.widths = widths
     }
 
     /// A value written once the put has found or made each of its shapes: `text` is handed what it found (`PutNames`) and gives
@@ -73,6 +77,8 @@ public struct DrawPut: Sendable {
         public var late: [LateValue]
         /// Which of the file's shapes of its kind and title it may find (`DrawPut.admits`); nil for any.
         public var admits: (@MainActor @Sendable (AnyShapeRecord) -> Bool)?
+        /// The width it is drawn at when the put makes it (`DrawPut.widths`), a script's `size:` of a width alone.
+        public var width: CGFloat?
 
         public init(kind: String, title: String? = nil, within: [String] = [], values: [(key: String, text: String)] = [],
                     json: [(key: String, text: String)] = [], edges: [Edge] = [], late: [LateValue] = [],
@@ -145,7 +151,7 @@ public struct DrawPut: Sendable {
     /// Shapes in layout rows, numbered in order from 1: each row left to right, the rows top to bottom.
     public init(rows: [[Shape]]) {
         var statements: [Statement] = [], block: [[Int]] = [], edges: [Int: [Edge]] = [:], late: [Int: [LateValue]] = [:]
-        var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:]
+        var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool] = [:], widths: [Int: CGFloat] = [:]
         for row in rows {
             var lines: [Int] = []
             for shape in row {
@@ -158,10 +164,11 @@ public struct DrawPut: Sendable {
                 if !shape.edges.isEmpty { edges[line] = shape.edges }
                 if !shape.late.isEmpty { late[line] = shape.late }
                 if let admit = shape.admits { admits[line] = admit }
+                if let width = shape.width { widths[line] = width }
             }
             if !lines.isEmpty { block.append(lines) }
         }
-        self.init(script: Script(statements: statements, styles: []), block: block, edges: edges, late: late, admits: admits)
+        self.init(script: Script(statements: statements, styles: []), block: block, edges: edges, late: late, admits: admits, widths: widths)
     }
 
     /// Whether it puts nothing down.
@@ -387,6 +394,7 @@ private struct Putting {
                 break
             }
             if isNew, shape.container == nil, let holder = finding.holder { shape.container = .id(holder.description) }
+            if isNew, let width = block.widths[statement.line] { shape.size = Size(width: width, height: nil) }
             var named = statement
             named.body = .shape(shape)
             planned.append(Planned(statement: named, board: board, id: id, isNew: isNew, original: statement.line, within: within, title: title, late: late))

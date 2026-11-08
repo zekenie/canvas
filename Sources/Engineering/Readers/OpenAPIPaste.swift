@@ -34,6 +34,7 @@ public enum OpenAPIPaste {
 
     /// What ⌘V puts down of the pasteboard's OpenAPI (its files', each an API, else its text's), its types notes of `typeKind`
     /// (none without one); nil when nothing reads.
+    @MainActor
     static func read(_ content: PasteContent, typeKind: ShapeKind?) -> DrawPut? {
         let files = content.files.filter { fileExtensions.contains($0.fileExtension) }
         let documents: [OpenAPIDocument]
@@ -46,11 +47,13 @@ public enum OpenAPIPaste {
     }
 
     /// What a paste of `text` (from a file named `fileName`) puts down, its types notes of `typeKind`; nil when it isn't OpenAPI 3.
+    @MainActor
     public static func program(of text: String, named fileName: String? = nil, typeKind: ShapeKind?) -> DrawPut? {
         OpenAPIReader.read(text, fileName: fileName).map { program([$0], typeKind: typeKind) }
     }
 
     /// The program that puts `documents` down: each API alone on a row, its types below it, four to a row.
+    @MainActor
     static func program(_ documents: [OpenAPIDocument], typeKind: ShapeKind?) -> DrawPut {
         var rows: [[DrawPut.Shape]] = []
         for document in documents {
@@ -65,6 +68,7 @@ public enum OpenAPIPaste {
     // MARK: Statements
 
     /// The API's statement: its title, server, version and rows, each endpoint by its full path.
+    @MainActor
     static func api(_ document: OpenAPIDocument) -> DrawPut.Shape {
         var items: [Any] = []
         for (index, row) in document.rows.enumerated() {
@@ -94,6 +98,8 @@ public enum OpenAPIPaste {
         shape.json = [(key: "server", text: json(["host": document.server.host, "auth": document.server.auth])),
                       (key: "endpoints", text: json(items))]
         if !document.version.isEmpty { shape.values = [(key: "version", text: document.version)] }
+        // Made wide enough for its paths to show whole; one the file has keeps the width it has.
+        shape.width = APIDrawing.wholeWidth(of: document.rows)
         return shape
     }
 

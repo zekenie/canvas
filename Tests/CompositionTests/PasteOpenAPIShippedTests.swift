@@ -195,6 +195,7 @@ private let refunds = """
         expectEqual(editor.document.shapes.count, 3, "nothing else")
         expectEqual(event.kind, editor.newTypeKind(), "a note, the kind New Type makes")
         expectEqual(landed.props.server, APIServer(host: "billing.shop.dev", auth: "bearer"))
+        expect(landed.props.frame.width > 420, "wider than a new API, so /customers/{id}/statements shows whole: \(landed.props.frame.width)")
         expectEqual(landed.props.version, "1.0.0")
         expectEqual(landed.props.endpoints.map(EndpointGrammar.print), [
             "POST /webhooks/stripe (StripeEvent) → 200", "GET /statements/{id} → 200 Statement", "GET /customers/{id}/statements → 200 Statement",
@@ -251,6 +252,8 @@ private let refunds = """
             held = .object(members)
         }
         editor.transact("Edit Schema") { $0.update(statement.id) { $0[TypeSchemaProperty.self] = SchemaText(held.pretty) } }
+        // And the API made narrower by hand, which a paste again leaves as it is.
+        editor.transact("Resize") { $0.update(first.id, as: API.self) { $0.props.frame.size.width = 500 } }
         let shapes = editor.document.shapes.count
         let changed = billing
             .replacingOccurrences(of: "        total_cents: {type: integer}", with: "        total_cents: {type: integer}\n        currency: {type: string}")
@@ -260,6 +263,7 @@ private let refunds = """
         expectEqual(editor.document.shapes.count, shapes, "nothing made: restated")
         let again = try require(api(editor, "billing API"))
         expectEqual(again.id, first.id)
+        expectEqual(again.props.frame.width, 500, "the width the person gave it")
         for endpoint in first.props.endpoints.compactMap(\.endpoint) {
             expectEqual(again.props.endpoints.first { $0.endpoint?.method == endpoint.method && $0.endpoint?.path == endpoint.path }?.id, endpoint.id,
                         "\(endpoint.method) \(endpoint.path) keeps its id")

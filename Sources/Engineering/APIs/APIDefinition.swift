@@ -211,6 +211,38 @@ enum APIDrawing {
         RowText.draw(RowText.line(prefix, .code), at: x, middle: middle, room: end - counted.width - APIStyle.gap - x, in: cg)
     }
 
+    /// How wide an API is drawn for each of `rows` to show whole, as `drawEndpoint` lays one out (a header's prefix, its count
+    /// besides), never narrower than a new API (`APIStyle.width`) nor wider than `APIStyle.mostWholeWidth`: what a paste of
+    /// OpenAPI makes an API at, so E1's paths aren't cut short.
+    static func wholeWidth(of rows: [APIRow]) -> CGFloat {
+        var widest = APIStyle.width
+        for (index, row) in rows.enumerated() {
+            var width = APIStyle.inset + KitStyle.trailingInset
+            switch row {
+            case .header(let header):
+                width += APIStyle.memberIndent + RowText.line(header.prefix, .code).width + APIStyle.gap
+                    + RowText.line(APIGroups.members(of: index, in: rows).formatted(), .faintCode).width
+            case .endpoint(let endpoint):
+                if APIGroups.isMember(index, in: rows) { width += APIStyle.memberIndent }
+                if !endpoint.method.isEmpty {
+                    width += max(APIStyle.chipLeast, RowText.line(endpoint.method, .chip).width + 2 * APIStyle.chipPadding) + APIStyle.gap
+                }
+                let path = endpoint.unread.isEmpty ? endpoint.path : endpoint.path + " " + endpoint.unread
+                width += RowText.line(path, .code).width + APIStyle.gap
+                var right: [CGFloat] = []
+                if let body = endpoint.body, !body.words.isEmpty { right.append(APITypes.pill(body, types: nil).contentSize.width) }
+                if let response = endpoint.responses.first {
+                    right.append(RowText.line(EndpointGrammar.arrow, .faintCode).width)
+                    if !response.status.isEmpty { right.append(RowText.line(response.status, .faintCode).width) }
+                    if let type = response.type, !type.words.isEmpty { right.append(APITypes.pill(type, types: nil).contentSize.width) }
+                }
+                width += right.reduce(0, +) + CGFloat(right.count) * APIStyle.pillGap
+            }
+            widest = max(widest, width)
+        }
+        return min(widest.rounded(.up), APIStyle.mostWholeWidth)
+    }
+
     /// An endpoint: its chip, its path (its parameters in the chip's color, its unread words after it), and at the right its body,
     /// an arrow, its first response's status and type; the path cut short first.
     static func drawEndpoint(_ endpoint: Endpoint, member: Bool, types: TypeIndex?, in rect: CGRect, _ cg: CGContext) {

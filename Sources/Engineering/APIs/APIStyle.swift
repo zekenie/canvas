@@ -18,6 +18,8 @@ enum APIStyle {
     static let width: CGFloat = 420
     /// The narrowest it's resized to.
     static let minimumWidth: CGFloat = 200
+    /// The widest a pasted API is made for its rows to show whole (`APIDrawing.wholeWidth`): past it, paths are cut short.
+    static let mostWholeWidth: CGFloat = 760
     /// What its rows are, said by VoiceOver: "7 endpoints".
     static func accessibleRows(_ count: Int) -> String { count == 1 ? "1 endpoint" : "\(count.formatted()) endpoints" }
     /// What VoiceOver calls the field its name is typed in.
