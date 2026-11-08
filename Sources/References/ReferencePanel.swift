@@ -75,7 +75,7 @@ extension ReferenceState {
     /// The whole place the Reference tab shows: the original's, from where the pill sits; nil with no original.
     public func panelPlace(of props: Reference, id: ShapeID?) -> [PlaceStep]? {
         guard let id, let target = props.target, state(of: props, id: id).hasOriginal else { return nil }
-        return placeOfPick(from: id, target.id)
+        return placeOfPick(from: id, target.id) + rowStep(of: target)
     }
 }
 

@@ -19,8 +19,10 @@ import Topology
 /// (`rebind(in:)` before `Transaction.move`, `Rebound.finish(in:)` right after it).
 ///
 /// An arrow is one of the connector kind (`drawEdges`) bound at both ends, one end among the shapes that move (or are carried
-/// with them) and one not. A read-only arrow, an arrow with an end at a part (a key at a row), and an end no kind admits (a private shape: a move never makes a shape public), are
-/// not planned: the move lets them go as it does without this.
+/// with them) and one not. A read-only arrow, and an end no kind admits (a private shape: a move never makes a shape public), are
+/// not planned: the move lets them go as it does without this. An end at a row keeps it: re-pointed to a pill for the row's shape,
+/// the row stays on the binding (a key to a column, through a pill for its table), and a row that stands alone (an endpoint) gets
+/// a pill of its own, as ⌘L's pick and `canvas draw` make them.
 @MainActor
 public struct CrossingArrows {
     /// One arrow's end, re-pointed.
@@ -55,17 +57,20 @@ public struct CrossingArrows {
         let sourceDoc = editor.contents(of: source)
         var crossing: [AnyShapeRecord] = [], ends: [ShapeID: (from: ShapeID, to: ShapeID)] = [:]
         for record in sourceDoc.shapes where record.kind == connector && !record.isOpaque {
-            // An arrow with an end at a part (a key at a row) isn't kept through a pill: the pill would stand for the whole shape,
-            // and the row is lost. The move lets it go as it does without this, until pills stand for rows (K10).
             guard let found = edging.ends(record, registry), movers.contains(found.from) != movers.contains(found.to),
-                  record.boundParts(in: registry).isEmpty, !editor.isReadOnly(record, in: sourceDoc) else { continue }
+                  !editor.isReadOnly(record, in: sourceDoc) else { continue }
             crossing.append(record)
             ends[record.id] = found
         }
         guard !crossing.isEmpty else { return nil }
         var plan = Plan(editor: editor, route: route, movers: movers, source: source, destination: destination, delta: delta,
                         sourceDoc: sourceDoc, label: label)
-        for record in crossing { if let end = ends[record.id] { plan.add(record.id, from: end.from, to: end.to) } }
+        for record in crossing {
+            guard let end = ends[record.id] else { continue }
+            // The row the far end is at, which the end keeps wherever it is re-pointed (the binding's part rides `remappingReferences`).
+            let row = record.boundParts(in: registry).first { $0.shape == end.to }?.part
+            plan.add(record.id, from: end.from, to: end.to, row: row)
+        }
         guard !plan.repoints.isEmpty else { return nil }
         self.source = source
         self.destination = destination
@@ -165,8 +170,9 @@ public struct CrossingArrows {
 
         var pills: [(record: AnyShapeRecord, moves: Bool, placed: Bool)] = []
         var repoints: [Repoint] = []
-        /// The pills this plan puts on the destination (`new`) and keeps on the origin (`away`), by the shape each stands for.
-        private var new: [ShapeID: ShapeID] = [:], away: [ShapeID: ShapeID] = [:], carriers: [ShapeID: ShapeID] = [:]
+        /// The pills this plan puts on the destination (`new`) and keeps on the origin (`away`), by the shape (and the row, for a pill
+        /// for a row) each stands for.
+        private var new: [PartAddress: ShapeID] = [:], away: [PartAddress: ShapeID] = [:], carriers: [ShapeID: ShapeID] = [:]
         /// The last pill planned beside each start: the next goes past it.
         private var last: [ShapeID: CGRect] = [:]
         /// The boxes of the pills planned on each board: what the next on that board keeps clear of.
@@ -197,13 +203,18 @@ public struct CrossingArrows {
             canInsert = !editor.isReadOnly(board: editor.board)
         }
 
-        /// Plans one arrow: the arrow goes where its start goes, so the end that is not the start is the one re-pointed.
-        mutating func add(_ arrow: ShapeID, from start: ShapeID, to end: ShapeID) {
+        /// Plans one arrow: the arrow goes where its start goes, so the end that is not the start is the one re-pointed. `part` is the
+        /// row the end is at, if it is at one: kept on the binding wherever the end goes, and a pill of its own when it stands alone.
+        mutating func add(_ arrow: ShapeID, from start: ShapeID, to end: ShapeID, row part: PartID?) {
             let startMoves = movers.contains(start)
             // An end that is a pill is the shape it stands for.
             let subject = route.stoodFor(end, in: sourceDoc)?.shape ?? end
             guard subject != start, let far = editor.shape(inFile: subject), let board = editor.file.board(containing: subject) else { return }
             let kind = route.kind(for: far, fulfilling: false, among: makers)?.kind
+            // A row that stands alone (an endpoint) is stood for by a pill of its own; any other (a column) by its shape's.
+            let named = part.flatMap { part in editor.registry.parts(of: far)?.first { $0.id == part } }
+            let row = named?.standsAlone == true && kind.map(editor.registry.standIns.makesRows) == true ? named : nil
+            let key = PartAddress(subject, part: row?.id)
             func repoint(to carrier: ShapeID, after: ShapeID? = nil) { repoints.append(Repoint(arrow: arrow, old: end, carrier: carrier, after: after)) }
             if startMoves {
                 // On the destination: the shape if it is there, a pill for it already there, else a new one beside the start.
@@ -213,12 +224,14 @@ public struct CrossingArrows {
                 }
                 guard let kind else { return }
                 let holder = finalContainer(of: start)
-                if let have = destinationPills(for: subject).first(where: { destDoc[$0]?.kind == kind && containerOf($0) == holder }) {
+                if let have = destinationPills(for: subject).first(where: {
+                    destDoc[$0]?.kind == kind && route.row(of: $0, in: destDoc) == row?.id && containerOf($0) == holder
+                }) {
                     if let carrier = carrier(for: subject, standing: far, in: kind) { repoint(to: carrier, after: have) }
-                } else if let made = new[subject] {
+                } else if let made = new[key] {
                     repoint(to: made)
-                } else if let made = newPill(for: far, kind: kind, beside: start, startMoves: true, container: holder) {
-                    new[subject] = made
+                } else if let made = newPill(for: far, row: row, kind: kind, beside: start, startMoves: true, container: holder) {
+                    new[key] = made
                     repoint(to: made)
                 }
             } else {
@@ -229,13 +242,13 @@ public struct CrossingArrows {
                 }
                 guard let kind else { return }
                 let holder = kinds.isEmpty ? nil : sourceDoc.container(of: start, containingKinds: kinds)
-                if let have = route.existing(for: subject, kind: kind, sharing: .any, near: start, in: sourceDoc, excluding: movers,
+                if let have = route.existing(for: subject, row: row?.id, kind: kind, sharing: .any, near: start, in: sourceDoc, excluding: movers,
                                              index: index()) {
                     repoint(to: have)
-                } else if let made = away[subject] {
+                } else if let made = away[key] {
                     repoint(to: made)
-                } else if let made = newPill(for: far, kind: kind, beside: start, startMoves: false, container: holder) {
-                    away[subject] = made
+                } else if let made = newPill(for: far, row: row, kind: kind, beside: start, startMoves: false, container: holder) {
+                    away[key] = made
                     repoint(to: made)
                 }
             }
@@ -304,8 +317,11 @@ public struct CrossingArrows {
         /// A new pill for `far`, landed beside `start` (the start of the arrow, where it lands if it moves), clear of the shapes
         /// moved and of the pills planned already; its id, or nil where it can't be put down (no room, or a read-only frame it
         /// would sit in).
-        private mutating func newPill(for far: AnyShapeRecord, kind: ShapeKind, beside start: ShapeID, startMoves: Bool, container: ShapeID?) -> ShapeID? {
-            guard canInsert, var made = editor.registry.standIns.make(kind, standingFor: far.id, label: label(far)) else { return nil }
+        private mutating func newPill(for far: AnyShapeRecord, row: PartName? = nil, kind: ShapeKind, beside start: ShapeID, startMoves: Bool,
+                                      container: ShapeID?) -> ShapeID? {
+            let standIns = editor.registry.standIns
+            guard canInsert, var made = row.map({ standIns.make(kind, standingFor: far.id, row: $0.id, label: $0.name) })
+                    ?? standIns.make(kind, standingFor: far.id, label: label(far)) else { return nil }
             let board = startMoves ? destination : source
             guard let surroundings = surroundings(on: board) else { return nil }
             editor.registry.standIns.seat(&made, at: .file(container: container, board: board), in: surroundings.reading.shapes)

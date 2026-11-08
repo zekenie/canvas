@@ -560,6 +560,10 @@ public struct Registry {
     var partsMovedHandlers: [@MainActor ([PartAddress: PartAddress], inout Transaction) -> Void] {
         contributions(to: CorePoints.PartsMoved.self).map(\.value)
     }
+    /// What finds the stand-ins naming a shape, if a plugin gives it (`registrar.standInLookup`).
+    var standInLookup: (@MainActor (CanvasEditor, ShapeID) -> [ShapeID])? {
+        contributions(to: CorePoints.StandInLookups.self).first?.value
+    }
     /// A kind's rules for what its shapes hold (`keepsInStep`), found once a kind: every write of an
     /// added value asks.
     func stepRules(for kind: ShapeKind) -> [StepRule] {
@@ -667,6 +671,7 @@ struct RawContribution {
             switch P.self {
             case is CorePoints.WillDelete.Type: "willDelete"
             case is CorePoints.PartsMoved.Type: "parts moved"
+            case is CorePoints.StandInLookups.Type: "stand-in lookup"
             case is CorePoints.KeepsInStep.Type: "keeps in step → \(target)"
             case is CorePoints.ReadOnlyRules.Type: "read-only shapes"
             case is CorePoints.ShapeTints.Type: "shape tints"

@@ -43,6 +43,8 @@ public struct Reference: BoxShapeProps {
             // The center stays where it was: the origin moves by half the difference.
             props["frame"] = .array([.array([origin[0], .number(y + (height - 40) / 2)]), .array([size[0], .number(40)])])
         },
+        // A pill may stand for a row of its shape (`ReferenceTarget.row`): absent reads as the shape as a whole, so nothing changes.
+        PropsMigration("a pill may stand for a row") { _ in },
     ]
     public static let properties = Properties<Reference>(title: "Reference") {
         Property("frame", \.frame).required()
@@ -98,26 +100,35 @@ extension Reference {
 }
 
 /// The shape a direct reference stands for, by name: its id, and what it was called when picked,
-/// which the pill shows (dashed) once the shape is gone. Coded as written in a board:
-/// `{"id": …, "label": …}`.
+/// which the pill shows (dashed) once the shape is gone; and, for a pill that stands for one row of it
+/// (a row that stands alone, an endpoint: `PartName.standsAlone`), that row, by the shape's own part id,
+/// which a copy of the shape keeps. Coded as written in a board: `{"id": …, "label": …}`, and `"row": …`
+/// only for a row.
 public struct ReferenceTarget: Codable, Equatable, Hashable, Sendable {
     public var id: ShapeID
     public var label: String
+    /// The row of the shape it stands for; nil for the shape as a whole.
+    public var row: PartID?
 
-    public init(id: ShapeID, label: String) {
+    public init(id: ShapeID, label: String, row: PartID? = nil) {
         self.id = id
         self.label = label
+        self.row = row
     }
+
+    /// The shape, or the row of it, it stands for.
+    public var address: PartAddress { PartAddress(id, part: row) }
 }
 
 extension ReferenceTarget: SchemaDescribed {
     public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
-        definitions.reference("reference-target", of: Self.self) { _ in
-            ["type": "object",
-             "properties": ["id": ["type": "string", "format": "uuid"], "label": ["type": "string"]],
+        definitions.reference("reference-target", of: Self.self) { definitions in
+            let row = PartID.schema(in: &definitions)
+            return ["type": "object",
+             "properties": ["id": ["type": "string", "format": "uuid"], "label": ["type": "string"], "row": .object(row)],
              "required": ["id", "label"],
              "additionalProperties": false,
-             "description": "A shape it names, which may be gone, and what it was called."]
+             "description": "A shape it names, which may be gone, and what it was called; and the row of it, for a pill for a row."]
         }
     }
 }
@@ -126,7 +137,7 @@ extension ReferenceTarget: ShapeNaming {
     public func forEachNamedShape(_ body: (ShapeID) -> Void) { body(id) }
 
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> ReferenceTarget {
-        ReferenceTarget(id: rename(id) ?? id, label: label)
+        ReferenceTarget(id: rename(id) ?? id, label: label, row: row)
     }
 }
 
@@ -194,6 +205,9 @@ public struct ReferencesPlugin: ListedPlugin {
                 editor.service(ReferenceState.self)?.showMatches(of: Set(ids))
             }
         }
+        // A row a pill stands for, moved to another shape (out of its API into one of its own): the pill follows it, in the same
+        // step, wherever it is (Topology's stand-ins naming the shape).
+        registrar.partsMoved { moves, transaction in ReferenceEdits.follow(moves, in: &transaction) }
         registrar.shape(ReferenceDefinition()) { reference in
             let place = reference.editingPlacement(size: Reference.defaultSize) { Reference() }
             reference.tool(label: "Reference", systemImage: ReferenceStyle.systemImage, shortcut: "r", placing: place)
@@ -205,12 +219,17 @@ public struct ReferencesPlugin: ListedPlugin {
                                fulfilling: { record, registry in registry.makePublic(&record) },
                                calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
                                makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) },
+                               // A pill for a row that stands alone (an endpoint): the row's name, the shape's place over it.
+                               makesRow: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target.shape, label: label, row: target.part)) },
                                // Where its shape is, beside the name, when the name is another shape's too: fitted as a pick fits it.
                                seats: { props, seat, context in
-                                   guard let target = props.target, let place = ReferenceState.place(of: target.id, at: seat, in: context) else { return }
+                                   guard let target = props.target, let place = ReferenceState.place(of: target, at: seat, in: context) else { return }
                                    ReferenceEdits.fit(&props, place: place)
                                }) { shape, _ in
-                if let target = shape.props.target { return .shapes([target.id]) }
+                if let target = shape.props.target {
+                    if let row = target.row { return .row(target.id, row) }
+                    return .shapes([target.id])
+                }
                 if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
                 return nil
             }

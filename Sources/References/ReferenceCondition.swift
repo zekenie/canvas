@@ -125,9 +125,21 @@ extension ReferenceCondition {
             guard let record = lookup(target.id) else {
                 return isElsewhere(target.id) ? .unavailable(label: target.label) : .missing(label: target.label)
             }
-            guard let appearance = appearanceOf(record) else { return .unavailable(label: target.label) }
+            guard var appearance = appearanceOf(record) else { return .unavailable(label: target.label) }
+            if let row = target.row {
+                // A pill for a row: the row's live name and its lead; gone from a shape that's there, it's missing, as a gone shape is.
+                guard let part = registry.parts(of: record)?.first(where: { $0.id == row }) else { return .missing(label: target.label) }
+                appearance = Self.appearance(of: part, on: appearance)
+            }
             return registry.isPublic(record) ? .live(appearance) : .notPublic(appearance)
         }
+    }
+
+    /// How a row a pill stands for shows: its name, its lead's symbol (else its shape's), and its kind word ("Endpoint"), in its
+    /// shape's tint.
+    static func appearance(of part: PartName, on shape: MentionAppearance) -> MentionAppearance {
+        let symbol = if case .symbol(let name) = part.lead { name } else { shape.systemImage }
+        return MentionAppearance(label: part.name, systemImage: symbol, kindName: part.kindWord, detail: part.kindWord, tint: shape.tint)
     }
 
     /// `of(...).standsForNothing`, without working out a name: the answer a skeleton needs, which is
@@ -150,6 +162,7 @@ extension ReferenceCondition {
             }
         case .direct:
             guard let target = props.target, let record = lookup(target.id) else { return true }
+            if let row = target.row, registry.parts(of: record)?.contains(where: { $0.id == row }) != true { return true }
             return record.isOpaque || !registry.isMentionable(record.kind) || !registry.isPublic(record)
         }
     }

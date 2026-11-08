@@ -81,7 +81,7 @@ final class PortState {
         let revision = topology.revision(of: record.id)
         if let kept = standingPorts[record.id], kept.revision == revision { return kept.ports }
         let stood = topology.standingKinds(of: record.id)
-        let ports = stood.isEmpty ? nil : own.standing(for: stood.map { kinds[$0] })
+        let ports = stood.isEmpty ? nil : own.standing(for: stood.map { kinds[$0] }, asRow: topology.directPart(of: record.id) != nil)
         standingPorts[record.id] = (revision, ports)
         return ports
     }

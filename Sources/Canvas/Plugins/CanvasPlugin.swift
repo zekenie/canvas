@@ -151,6 +151,13 @@ public struct PluginRegistrar {
         contribute(handler, to: CorePoints.PartsMoved.self)
     }
 
+    /// Says which shapes stand in for a shape (Topology's index: the stand-ins whose record names it, on any board the editor
+    /// can show), so the core's part lifecycle (`Transaction.removeParts`, `moveParts`) reaches a binding to a part through a
+    /// pill for its shape (a key to a column on another board) in the same step. One plugin at most gives it.
+    public mutating func standInLookup(_ lookup: @escaping @MainActor (CanvasEditor, ShapeID) -> [ShapeID]) {
+        contribute(lookup, to: CorePoints.StandInLookups.self)
+    }
+
     /// `ShapeRegistrar.keepsInStep` for another plugin's kind.
     public mutating func keepsInStep<P: ShapeProps>(_: P.Type, _ rule: @escaping StepRule) {
         contribute(rule, to: CorePoints.KeepsInStep.self, for: .kind(P.kind))

@@ -893,7 +893,8 @@ public final class CanvasEditor {
                    subtree: { [unowned self] in storedFile.subtree(ownedBy: $0) },
                    contents: { [unowned self] in storedFile[$0] },
                    canShow: { [unowned self] in Self.canShow($0, in: storedFile, registry: registry) },
-                   values: { [unowned self] in storedFile.fileValues })
+                   values: { [unowned self] in storedFile.fileValues },
+                   standIns: { [unowned self] in registry.standInLookup?(self, $0) ?? [] })
     }
 
     /// A board of the file: `document` for the one shown, else its shapes as the file has them

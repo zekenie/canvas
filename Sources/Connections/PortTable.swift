@@ -77,13 +77,18 @@ struct KindPorts {
     /// connections only start and one whose connections only end share none); nil if there is none,
     /// or no target, or the first has no ports. With one target, that kind's channels and roles; with
     /// several, the channels they all take.
-    func standing(for targets: [KindPorts?]) -> KindPorts? {
+    ///
+    /// A channel the shapes take on their rows (a table's keys) the stand-in takes on its parts too, as they do: it has no rows,
+    /// so no dot of it shows and no drag ends on it, and a connection made by name that names a row through it (a key to a
+    /// column of a table on another board: the pill, with the column on the binding) is taken. A stand-in for one row
+    /// (`asRow`: a pill for an endpoint) is that row: what the row takes on its rows it takes on its own sides, as a whole.
+    func standing(for targets: [KindPorts?], asRow: Bool = false) -> KindPorts? {
         guard let head = targets.first, let first = head else { return nil }
         var shared: [Entry] = []
         for lead in first.entries {
-            // A channel the shape takes on its rows only is not the pill's: it would bind the pill as a whole, a key with no row,
-            // until pills stand for rows (K10).
-            guard !lead.onParts, let own = entry(on: lead.channel) else { continue }
+            // A pill for a row takes what rows take, and nothing a shape takes as a whole.
+            if asRow, !lead.onParts { continue }
+            guard let own = entry(on: lead.channel) else { continue }
             var role: PortRole? = own.role
             for target in targets {
                 guard let theirs = target?.entry(on: lead.channel) else {
@@ -93,7 +98,7 @@ struct KindPorts {
                 role = role?.shared(with: theirs.role)
                 if role == nil { break }
             }
-            if let role { shared.append(Entry(channel: lead.channel, role: role, sides: own.sides, onParts: own.onParts)) }
+            if let role { shared.append(Entry(channel: lead.channel, role: role, sides: own.sides, onParts: lead.onParts && !asRow)) }
         }
         return shared.isEmpty ? nil : KindPorts(entries: shared)
     }

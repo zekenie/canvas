@@ -61,14 +61,16 @@ final class KitNames {
         enums.first { $0.id == id }?.name
     }
 
-    /// The table called `name` on `shape`'s board: what a key's `→` names (a key reaches a table on its own board until pills stand
-    /// for rows). The first in the board's order of two alike.
+    /// The table called `name` nearest `shape`: on its board, else anywhere in the file (the board shown's, then the others'), as an
+    /// enum's name is found; what a key's `→` names, a table on another board reached through a pill for it. The first in its board's
+    /// order of two alike.
     func tableNamed(_ name: String, besides shape: ShapeID) -> ShapeID? {
         read()
         let board = editor.file.board(containing: shape)
         // As `canvas draw` finds a table by its title: with its whitespace folded.
         let folded = TitleProperty.folded(name) ?? name
-        return keptTables.first { $0.board == board && $0.name == folded }?.id
+        let named = keptTables.filter { $0.name == folded }
+        return (named.first { $0.board == board } ?? named.first)?.id
     }
 }
 
@@ -101,7 +103,7 @@ public enum ColumnKey: Hashable, Sendable {
 /// The column grammar as a line reads: its name in the line's font, its type in code (an enum's name in its purple pill, standing
 /// for that enum), the grammar's words in grey code, a key's target in the link's blue pill once it names a table's row, what it
 /// can't place plain; a primary key's key or a unique column's "1" in the gutter. After a name it offers SQL's types and the
-/// file's enums; after a type, null, unique, default, pk and →; after `→`, the key columns of the tables on the board (Mentions'
+/// file's enums; after a type, null, unique, default, pk and →; after `→`, the key columns of the file's tables, nearest first (Mentions'
 /// search with the table kind), and after `customers.` that table's, each lit on the board while it's highlighted.
 struct ColumnLineGrammar: LineGrammar {
     typealias Row = ColumnLine
@@ -158,14 +160,14 @@ struct ColumnLineGrammar: LineGrammar {
     }
 
     /// The row a key's target names, at `range` in the line: the run's reference (printed or picked: the row it stood for, whatever
-    /// else is called so), on the whole target or on its column after the dot; else by name, a table on the shape's board and its
-    /// column, or its primary key for a table alone. Nil where it names no row, or the line's own (`own`: a column is not its own key).
+    /// else is called so), on the whole target or on its column after the dot; else by name, the table nearest the shape (its board's,
+    /// else another's, reached through a pill) and its column, or its primary key for a table alone. Nil where it names no row, or the line's own (`own`: a column is not its own key).
     static func target(_ word: String, at range: NSRange, in line: LineText, from own: PartID, _ context: LineContext) -> (table: ShapeID, row: PartAddress)? {
         let editor = context.editor
         // Where nothing draws connections, a key can't be drawn: its words stay words.
         guard editor.registry.drawsConnections else { return nil }
         func row(_ address: PartAddress?) -> (table: ShapeID, row: PartAddress)? {
-            guard let address, address.part != nil, address != PartAddress(context.shape, part: own), let record = editor.document[address.shape],
+            guard let address, address.part != nil, address != PartAddress(context.shape, part: own), let record = editor.shape(inFile: address.shape),
                   record.kind == DatabaseTable.kind,
                   editor.registry.parts(of: record)?.contains(where: { $0.id == address.part }) == true else { return nil }
             return (address.shape, address)
@@ -177,7 +179,7 @@ struct ColumnLineGrammar: LineGrammar {
             if let found = row(line.reference(at: NSRange(location: NSMaxRange(range) - length, length: length))) { return found }
         }
         guard let id = editor.service(KitNames.self)?.tableNamed(table, besides: context.shape),
-              let record = editor.document[id]?.typed(as: DatabaseTable.self) else { return nil }
+              let record = editor.shape(inFile: id)?.typed(as: DatabaseTable.self) else { return nil }
         let picked = column.map { name in record.props.columns.first { $0.name == name } } ?? Self.primaryKey(of: record.props)
         return picked.flatMap { $0.id == own && id == context.shape ? nil : (id, PartAddress(id, part: $0.id)) }
     }
@@ -263,7 +265,7 @@ struct ColumnLineGrammar: LineGrammar {
     private func keyOffers(_ typed: String, range: NSRange, _ context: LineContext) -> LineOffers? {
         let editor = context.editor
         func keyColumns(_ id: ShapeID) -> [Column] {
-            guard let table = editor.document[id]?.typed(as: DatabaseTable.self)?.props else { return [] }
+            guard let table = editor.shape(inFile: id)?.typed(as: DatabaseTable.self)?.props else { return [] }
             let keys = table.columns.filter { $0.primaryKey || $0.unique }
             return keys.isEmpty ? table.columns : keys
         }
@@ -281,14 +283,19 @@ struct ColumnLineGrammar: LineGrammar {
             return LineOffers(range: NSRange(location: start, length: max(length, wordEnd - start)), query: after, items: items)
         }
         guard let mentions = editor.mentions else { return nil }
-        let board = editor.file.board(containing: context.shape)
+        // Every table of the file a key can reach, nearest first (Mentions' ranking): one on another board through a pill for it,
+        // so only one a pill can stand for as it is (typing never makes a shape public).
+        let verdicts = FarVerdicts(editor)
         let found = mentions.candidates(matching: typed, in: AnyMentionable.self, for: context.shape, kinds: [DatabaseTable.kind]) { id in
-            editor.file.board(containing: id) == board
+            switch verdicts.verdict(of: id) {
+            case .here, .reads: true
+            case .fulfils, .cannot: false
+            }
         }
         var seen: Set<ShapeID> = []
         var items: [LineOffer] = []
         for candidate in found.all where seen.insert(candidate.id).inserted {
-            guard let record = editor.document[candidate.id], let name = editor.registry.title(of: record) else { continue }
+            guard let record = editor.shape(inFile: candidate.id), let name = editor.registry.title(of: record) else { continue }
             for column in keyColumns(candidate.id) {
                 items.append(offer(candidate.id, column, label: ColumnGrammar.written(table: name, column: column.name)))
             }

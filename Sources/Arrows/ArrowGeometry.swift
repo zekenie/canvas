@@ -54,6 +54,16 @@ public struct ArrowGeometry: Sendable {
     /// ends too near to make a way for the marks reaches out far enough to turn clear of them.
     public init(arrow: Arrow, strokeWidth: CGFloat, minBend: CGFloat = ArrowGeometry.minBend,
                 markReach: (start: CGFloat, end: CGFloat) = (0, 0), shape: (ShapeID) -> ConnectableShape?) {
+        // A part named on a binding to a shape that lists none (a pill standing for the table the part is a column of): the end
+        // meets that shape as a whole, at its middle, whatever anchor the binding kept; the part is Topology's and the key index's.
+        var arrow = arrow
+        for end in [ArrowEnd.start, .end] {
+            guard var binding = arrow[end].binding, binding.part != nil, let bound = shape(binding.shapeID), bound.parts.isEmpty else { continue }
+            binding.normalizedAnchor = CGPoint(x: 0.5, y: 0.5)
+            binding.isPrecise = false
+            binding.isExact = false
+            arrow[end] = .bound(binding)
+        }
         var startShape = arrow.start.binding.flatMap { binding in
             shape(binding.shapeID).map { BoundShape($0, isExact: binding.isExact) }
         }

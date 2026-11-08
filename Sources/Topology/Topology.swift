@@ -291,5 +291,7 @@ public struct TopologyPlugin: ListedPlugin {
         registrar.service { TopologyIndex(editor: $0) }
         // Its own: the edge from a stand-in to each shape it stands for.
         registrar.edgeType(StandingEdge.self)
+        // The core's part lifecycle reaches a binding through a pill for a part's shape (a key to a column on another board).
+        registrar.standInLookup { editor, shape in editor.topology?.standIns(naming: shape) ?? [] }
     }
 }

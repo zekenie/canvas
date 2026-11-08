@@ -5,6 +5,7 @@ import ContextMenus
 import Draw
 import Keyboard
 import Mentions
+import Topology
 
 extension CanvasCommand {
     /// Connect (⌘L): the first of two selected shapes connected to the second, or one connected to itself, as a
@@ -155,13 +156,21 @@ extension CanvasEditor {
                 refuseChanges(to: ids)
                 return nil
             case .reads, .fulfils:
-                // A row of a shape on another board is no end until pills stand for rows (K10): the pill would be the whole shape.
-                guard target.part == nil else {
+                // A row of a shape on another board: a row that stands alone (an endpoint) gets a pill of its own; any other (a
+                // column) is reached through a pill for its shape, the board's one for it if it has one. Either way the row is on
+                // the arrow's binding, which Topology reads as the edge's end.
+                guard let route = verdicts.route, let far = shape(inFile: target.shape) else {
                     refuseChanges(to: ids)
                     return nil
                 }
-                guard let route = verdicts.route, let far = shape(inFile: target.shape),
-                      let placed = route.placePill(standingFor: target.shape, label: registry.mentionAppearance(of: far)?.label ?? "",
+                let part = target.part.flatMap { part in registry.parts(of: far)?.first { $0.id == part } }
+                if target.part != nil, part == nil {
+                    refuseChanges(to: ids)
+                    return nil
+                }
+                let alone = part?.standsAlone == true && verdicts.kind(for: far).map { registry.standIns.makesRows($0.kind) } == true
+                guard let placed = route.placePill(standingFor: target.shape, row: alone ? part?.id : nil,
+                                                   label: alone ? part?.name ?? "" : registry.mentionAppearance(of: far)?.label ?? "",
                                                    beside: source.shape, edgeIs: .from, sharing: .any, verdicts: verdicts, in: self) else {
                     refuseChanges(to: ids)
                     return nil
@@ -195,7 +204,7 @@ extension CanvasEditor {
                 }
                 if let pill {
                     try pill.claim(in: &transaction, registry: registry)
-                    ends.to = ConnectEnd(try pill.put(in: &transaction))
+                    ends.to = ConnectEnd(try pill.put(in: &transaction), part: target.part)
                 }
                 guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: standingFor,
                                                          parts: (ends.from.part, ends.to.part))

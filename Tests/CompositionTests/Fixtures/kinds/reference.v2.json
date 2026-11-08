@@ -1,0 +1,20 @@
+{
+  "all" : false,
+  "frame" : [
+    [
+      0,
+      0
+    ],
+    [
+      160,
+      40
+    ]
+  ],
+  "query" : "sticky-note",
+  "target" : {
+    "id" : "7A1F0C52-0000-4000-8000-0000000000A1",
+    "label" : "POST /orders",
+    "row" : "7A1F0C52-0000-4000-8000-0000000000B2"
+  },
+  "words" : "every note"
+}
