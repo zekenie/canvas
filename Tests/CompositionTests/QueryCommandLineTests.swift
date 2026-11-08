@@ -546,7 +546,8 @@ func rowIDs(_ output: String) throws -> [String] {
         expectEqual(note["holdsShapes"], false)
         expectEqual(note["holdsBoard"], false)
         expectEqual(note["attributes"]?["text"], "text (mentions read as @Name)")
-        expect(vocabulary["kinds"]?.arrayValue?.contains { $0["naming"] == "derived" } == false, "no shipped kind's titles are worked out")
+        expectEqual(vocabulary["kinds"]?.arrayValue?.filter { $0["naming"] == "derived" }.compactMap { $0["kind"]?.stringValue }, ["endpoint"],
+                    "only an endpoint's title is worked out, from its endpoint")
         expectEqual(note["attributes"]?["schema"], "text")
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsShapes"], true)
         expectEqual(vocabulary["kinds"]?.arrayValue?.first { $0["kind"] == "subboard" }?["holdsBoard"], true)

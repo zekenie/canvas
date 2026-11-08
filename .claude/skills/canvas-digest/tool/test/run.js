@@ -1337,7 +1337,7 @@ Promise.all([import('../lib/dial.mjs'), import('../lib/model.mjs'), import('../l
     await clim.run(['applied', '/ap2.json', '/dr.json'], mem.io);
     eq(mem.printed.pop(), 'dry run x: shapes none; edges none; 0 deleted\nwarning: edge from "c" to "d": odd');
     await clim.run(['extract', 'kinds', KINDS_PATH], mem.io);
-    eq(JSON.parse(mem.printed.pop()).map(function (k) { return k.kind; }), ['api', 'arrow', 'database', 'enum-type', 'frame', 'reference', 'sticky-note', 'subboard', 'table']);
+    eq(JSON.parse(mem.printed.pop()).map(function (k) { return k.kind; }), ['api', 'arrow', 'database', 'endpoint', 'enum-type', 'frame', 'reference', 'sticky-note', 'subboard', 'table']);
     threw = ''; try { await clim.run(['nonsense'], mem.io); } catch (e) { threw = e.message; }
     assert(/THE MESS DIAL/.test(threw), 'the usage');
   });

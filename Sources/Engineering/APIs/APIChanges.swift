@@ -21,8 +21,7 @@ extension CanvasCommand {
     public static let groupByPrefix: CanvasCommand = "groupByPrefix"
 }
 
-/// An API's items in a context menu (New Version, Group by Prefix, Change Method ▸): after what turns a shape into another, as Create
-/// Database's are.
+/// An API's items in a context menu (New Version, Group by Prefix): after what turns a shape into another, as Create Database's are.
 public enum APIMenuGroup {}
 extension APIMenuGroup: MenuGroup {
     public static var order: Order<Self> { .after(TransformMenuGroup.self) }
@@ -283,11 +282,12 @@ extension PluginRegistrar {
         contextMenuForCanvas {
             MenuItem(command: .newVersion, in: APIMenuGroup.self)
             MenuItem(command: .groupByPrefix, in: APIMenuGroup.self)
-            MenuItems(in: APIMenuGroup.self, id: "change-method") { subject in
+            // About the rows selected, beside their take-out (Take Out Endpoint).
+            MenuItems(in: RowsMenuGroup.self, id: "change-method") { subject in
                 if let held = EndpointMethods.rows(of: subject) {
-                    Submenu(APIStyle.changeMethodMenu, in: APIMenuGroup.self) {
+                    Submenu(APIStyle.changeMethodMenu, in: RowsMenuGroup.self) {
                         for method in EndpointMethods.options(current: held.methods.count == 1 ? held.methods[0] : "") {
-                            MenuItem(method, in: APIMenuGroup.self, id: method, isChecked: { _ in held.methods.allSatisfy { $0 == method } },
+                            MenuItem(method, in: RowsMenuGroup.self, id: method, isChecked: { _ in held.methods.allSatisfy { $0 == method } },
                                      stepName: APIStyle.changeMethodStep) { _, editor in
                                 EndpointMethods.change(held.rows, of: held.shape, to: method, in: editor)
                             }

@@ -1,0 +1,50 @@
+{
+  "endpoint" : {
+    "authScope" : "orders:write",
+    "body" : {
+      "shape" : "0A91A0E0-0000-4000-8000-0000000000B1",
+      "words" : "NewRefund"
+    },
+    "deprecated" : true,
+    "id" : "0A91A0E0-0000-4000-8000-0000000000E1",
+    "method" : "POST",
+    "name" : "createRefund",
+    "parameters" : [
+      {
+        "name" : "id",
+        "type" : "uuid"
+      }
+    ],
+    "path" : "/orders/{id}/refunds",
+    "responses" : [
+      {
+        "status" : "201",
+        "type" : {
+          "shape" : "0A91A0E0-0000-4000-8000-0000000000B2",
+          "words" : "Refund"
+        }
+      },
+      {
+        "status" : "404"
+      },
+      {
+        "status" : "409",
+        "type" : {
+          "words" : "Problem"
+        }
+      }
+    ],
+    "summary" : "Refund part or all of a paid order.",
+    "unread" : "idempotent"
+  },
+  "frame" : [
+    [
+      0,
+      0
+    ],
+    [
+      420,
+      184
+    ]
+  ]
+}

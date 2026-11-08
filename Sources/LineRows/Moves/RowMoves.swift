@@ -379,7 +379,7 @@ extension CanvasEditor {
     }
 
     /// What a landing leaves: the new shape selected and brought into view, its name typed where the kind says so; else the
-    /// rows selected as items of their shape.
+    /// rows selected as items of their shape. A shape that is its rows (an endpoint of its own) is selected whole: its row is it.
     private func finishLanding(_ shape: ShapeID, landed: [PartID], out: Bool, editsTitle: Bool, nudges: [ShapeID: CGPoint]) {
         if out {
             // A shape whose name is typed at once is laid out where it is, under its editing view.
@@ -392,6 +392,7 @@ extension CanvasEditor {
                 beginEditing(shape)
                 return
             }
+            if let kind = document[shape]?.kind, registry.rowMoving(of: kind)?.goesWithItsRows == true { return }
         }
         if editingShapeID != shape { selectItems(landed.map(AnyHashable.init), of: shape) }
     }

@@ -124,7 +124,7 @@ public struct EngineeringPlugin: ListedPlugin {
         registrar.shape(EndpointDefinition()) { endpoint in
             endpoint.label(EndpointStyle.label, systemImage: APIStyle.symbol)
             endpoint.tint(NSColor(KitStyle.secondaryInk))
-            endpoint.title(symbolInPill: true, placeholderInPill: EndpointStyle.label) { EndpointStyle.title(of: $0.props.endpoint) }
+            endpoint.title(symbolInPill: true, placeholderInPill: EndpointStyle.label, bars: true) { EndpointStyle.title(of: $0.props.endpoint) }
             endpoint.mentionable()
             endpoint.resizable(minimumSize: CGSize(width: APIStyle.minimumWidth, height: KitStyle.height(rows: 1)))
             endpoint.contentsRow { _, _ in ContentsLabel("", placeholder: EndpointStyle.placeholder, systemImage: APIStyle.symbol) }

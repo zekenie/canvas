@@ -108,6 +108,16 @@ edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds"
 
 Only endpoints start writes and reads, and only tables take them (an enum, a database, a note or a subboard takes none); anything with arrows of its own (a note, a frame, a subboard) may call an endpoint, and an endpoint calls one; a call ends at an endpoint's row, never at a subboard, note or frame as a whole. A path prefix's header is no endpoint, takes none of them, and an edge naming one is refused (`cannot_connect`). An endpoint on another board is reached through a reference for that endpoint itself, beside the API, as a key's table is. Drawn again, the same rows on the same channel are `unchanged`; the same rows on another channel are another arrow.
 
+## Retiring and changing
+
+An endpoint is retired with `"deprecated": true` in its item (the app draws its chip hollow and its line faint; arrows into it stay), and an API with `deprecated: true`, an old version (drawn faint). Joined by method and whole path as ever, the item names only what it changes:
+
+```draw
+api "orders API" endpoints: [{"method": "GET", "path": "/orders/{id}", "deprecated": true}]
+```
+
+What a person does in the app reads back the same way: New Version marks an API `deprecated` and puts a copy beside it titled with its version bumped (`orders API v2`), its server's `/v1` now `/v2`, the same rows, and the arrows its rows start; Group by Prefix puts the endpoints under a header for each first path segment two or more share; and one endpoint taken out of an API is an `endpoint` of its own, its card drawn open, its arrows still bound to its row, which is named as an API's row is (`"createRefund"."POST /orders/{id}/refunds"`). No statement draws an `endpoint`; to put one back, write its row into an API's `endpoints:`.
+
 ## Asking
 
 The tables in a database, and how many tables there are:
