@@ -2398,6 +2398,9 @@ registrar.standInLookup { editor, shape in editor.topology?.standIns(naming: sha
 transaction.standIns(naming: table)      // [(id, board)]: each pill for the table, where it is
 ```
 
+In a step on a board that is not shown (`transact(on:)`) they leave the board shown's bindings as they are, as a handler of
+yours must (`transaction.mayWrite(on: board)`): a write there would drop the whole commit.
+
 **Keys.** A key is an arrow bound to two rows, on the kit's channel. The kit declares the channel, gives
 a table's rows ports on it both ways, and keeps an index of each table's keys that its render reads:
 

@@ -33,12 +33,12 @@ let musterM = CGRect(x: 460, y: 400, width: 200, height: 80)
     let leftRows = ["id", "customer_id", "placed_at"].map { RosterRow(name: $0) }
     let rightRows = ["id", "email", "name"].map { RosterRow(name: $0) }
 
-    init() throws {
+    init(more: [any CanvasPlugin] = []) throws {
         let ties = Contributor(id: "ties") { registrar in
             registrar.channel(Tie.self)
             registrar.partPorts(Roster.self, on: Tie.self)
         }
-        board = try PortBoard(more: [RostersPlugin(), StrapsPlugin(), ties])
+        board = try PortBoard(more: [RostersPlugin(), StrapsPlugin(), ties] + more)
         left = board.h.add(Roster(rosterL, rows: leftRows))
         right = board.h.add(Roster(rosterR, rows: rightRows))
         muster = board.h.add(Muster(musterM, rows: [RosterRow(name: "pending")]))

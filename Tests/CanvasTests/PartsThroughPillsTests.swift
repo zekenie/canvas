@@ -116,6 +116,39 @@ import TestKit
         s.h.editor.transact { $0.moveParts([PartAddress(s.muster, part: s.bob.id): PartAddress(s.other, part: s.bob.id)]) }
         expectEqual(s.strap(lone)?.to, PartAddress(s.pill), "nothing on that board stands for where it went: the pill as a whole")
     },
+    test("a step on a board that isn't shown leaves the bindings on the board shown as they are, through a pill, and commits (else the whole step would be dropped)") {
+        let s = try Far()
+        let atBob = s.strap(to: PartAddress(s.pill, part: s.bob.id))
+        let atAlice = s.strap(to: PartAddress(s.pill, part: s.alice.id))
+        expect(s.h.editor.showBoard(s.board), "the pocket's board is the one shown, and the muster is on the root")
+        var taken: Set<ShapeID> = [], alongside = false
+        let result: Bool? = s.h.editor.transact(on: .root, "Delete Entry") { tx in
+            alongside = tx.mayWrite(on: s.board)
+            tx.update(s.muster, as: Muster.self) { $0.props.rows = [s.alice] }
+            taken = tx.removeParts([PartAddress(s.muster, part: s.bob.id)])
+            tx.moveParts([PartAddress(s.muster, part: s.alice.id): PartAddress(s.other, part: s.alice.id)])
+            return true
+        }
+        expectEqual(result, true)
+        expect(!alongside, "the board shown is not for the step to write")
+        expect(taken.isEmpty)
+        expectEqual(s.h.file[.root][s.muster]?.typed(as: Muster.self)?.props.rows.count, 1, "the step committed")
+        expectEqual(s.strap(atBob)?.to, PartAddress(s.pill, part: s.bob.id), "the strap on the board shown is as it was")
+        expectEqual(s.strap(atAlice)?.to, PartAddress(s.pill, part: s.alice.id))
+    },
+    test("of several pills on a board that stand for the shape a row moved to, the same one every time") {
+        let s = try Far()
+        let second = ShapeID()
+        s.h.editor.transact(on: s.board) { $0.insert(AnyShapeRecord(ShapeRecord(id: second, Box(CGRect(x: 0, y: 300, width: 80, height: 40))))) }
+        let first = try require([s.pill, second].min { $0.description < $1.description })
+        for order in [[s.pill, second], [second, s.pill]] {
+            let atCarol = s.strap(to: PartAddress(s.rosterPill, part: s.carol.id))
+            s.table.standing[s.muster] = order
+            s.h.editor.transact { $0.moveParts([PartAddress(s.roster, part: s.carol.id): PartAddress(s.muster, part: s.carol.id)]) }
+            expectEqual(s.strap(atCarol)?.to, PartAddress(first, part: s.carol.id), "by id, whatever order the lookup gives")
+            s.h.editor.undo()
+        }
+    },
     test("without a stand-in lookup, a strap through a pill is not reached: the core knows no pill") {
         let s = try Far()
         let atBob = s.strap(to: PartAddress(s.pill, part: s.bob.id))

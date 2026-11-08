@@ -158,6 +158,21 @@ private struct BadgeDefinition: ShapeDefinition {
         expect(touched.contains(right), "the shape it stands for is touched: its row's edges changed")
         following.cancel()
     },
+    test("a stand-in for a row stands for nothing once the row is gone from its shape, as it is drawn (missing); the row back, it stands for it again") {
+        let (h, left, right, rows) = try badgeGraph()
+        let badge = h.add(Badge(roster: right, row: rows[1].id))
+        let strap = h.add(Strap(from: PartAddress(left), to: PartAddress(badge)))
+        let topology = try require(h.editor.topology)
+        expectEqual(topology.forwarding(of: badge), .record([right]))
+        expectEqual(topology.edges(of: right, part: rows[1].id, .incoming).map(\.carrier), [strap])
+        h.editor.transact { $0.update(right, as: Roster.self) { $0.props.rows = [rows[0], rows[2]] } }
+        expectEqual(topology.forwarding(of: badge), .record([]), "it stands for nothing")
+        expectEqual(topology.edges(of: right, .incoming, types: .only(WireEdge.id)).count, 0, "no edge into the roster through it")
+        expectEqual(topology.edges(of: badge, .incoming, types: .only(WireEdge.id)).map(\.carrier), [strap], "the arrow stays at the pill")
+        h.editor.undo()
+        expectEqual(topology.forwarding(of: badge), .record([right]))
+        expectEqual(topology.edges(of: right, part: rows[1].id, .incoming).map(\.carrier), [strap])
+    },
     test("the core's stand-in lookup is Topology's: the stand-ins naming a shape, a row's among them") {
         let (h, _, right, rows) = try badgeGraph()
         let badge = h.add(Badge(roster: right, row: rows[1].id))

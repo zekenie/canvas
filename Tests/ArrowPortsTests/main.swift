@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([connectionBindingTests, connectionTargetTests, connectionDragTests, drawnArrowTests, connectionUndoTests, connectionMakingTests, arrowEdgeTests, standInArrowTests, arrowLightTests, arrowTouchingTests, releaseHookTests, releaseBetweenTypesTests, arrowLoopTests, pairTests, containerEndTests, rowArrowTests])
+runTests([connectionBindingTests, connectionTargetTests, connectionDragTests, drawnArrowTests, connectionUndoTests, connectionMakingTests, arrowEdgeTests, standInArrowTests, arrowLightTests, arrowTouchingTests, releaseHookTests, releaseBetweenTypesTests, arrowLoopTests, pairTests, containerEndTests, rowArrowTests, rowPillArrowTests])
