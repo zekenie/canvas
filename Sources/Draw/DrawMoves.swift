@@ -19,7 +19,7 @@ import Topology
 /// (`rebind(in:)` before `Transaction.move`, `Rebound.finish(in:)` right after it).
 ///
 /// An arrow is one of the connector kind (`drawEdges`) bound at both ends, one end among the shapes that move (or are carried
-/// with them) and one not. A read-only arrow, and an end no kind admits (a private shape: a move never makes a shape public), are
+/// with them) and one not. A read-only arrow, an arrow with an end at a part (a key at a row), and an end no kind admits (a private shape: a move never makes a shape public), are
 /// not planned: the move lets them go as it does without this.
 @MainActor
 public struct CrossingArrows {
@@ -55,8 +55,10 @@ public struct CrossingArrows {
         let sourceDoc = editor.contents(of: source)
         var crossing: [AnyShapeRecord] = [], ends: [ShapeID: (from: ShapeID, to: ShapeID)] = [:]
         for record in sourceDoc.shapes where record.kind == connector && !record.isOpaque {
+            // An arrow with an end at a part (a key at a row) isn't kept through a pill: the pill would stand for the whole shape,
+            // and the row is lost. The move lets it go as it does without this, until pills stand for rows (K10).
             guard let found = edging.ends(record, registry), movers.contains(found.from) != movers.contains(found.to),
-                  !editor.isReadOnly(record, in: sourceDoc) else { continue }
+                  record.boundParts(in: registry).isEmpty, !editor.isReadOnly(record, in: sourceDoc) else { continue }
             crossing.append(record)
             ends[record.id] = found
         }

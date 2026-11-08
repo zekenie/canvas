@@ -81,7 +81,9 @@ struct KindPorts {
         guard let head = targets.first, let first = head else { return nil }
         var shared: [Entry] = []
         for lead in first.entries {
-            guard let own = entry(on: lead.channel) else { continue }
+            // A channel the shape takes on its rows only is not the pill's: it would bind the pill as a whole, a key with no row,
+            // until pills stand for rows (K10).
+            guard !lead.onParts, let own = entry(on: lead.channel) else { continue }
             var role: PortRole? = own.role
             for target in targets {
                 guard let theirs = target?.entry(on: lead.channel) else {

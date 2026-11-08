@@ -138,6 +138,11 @@ extension CanvasEditor {
                 refuseChanges(to: ids)
                 return nil
             case .reads, .fulfils:
+                // A row of a shape on another board is no end until pills stand for rows (K10): the pill would be the whole shape.
+                guard target.part == nil else {
+                    refuseChanges(to: ids)
+                    return nil
+                }
                 guard let route = verdicts.route, let far = shape(inFile: target.shape),
                       let placed = route.placePill(standingFor: target.shape, label: registry.mentionAppearance(of: far)?.label ?? "",
                                                    beside: source.shape, edgeIs: .from, sharing: .any, verdicts: verdicts, in: self) else {
