@@ -125,7 +125,7 @@ A query finds shapes, so a question about a column finds its table, and one abou
 - table[columns.name="email"] — tables with a column called email. A column's other parts the same way: [columns.type="uuid"], [columns.unique=true]
 - enum-type[values="paid"] — enums with that value
 - :route("POST /orders/{id}/refunds") — APIs with that endpoint, by method and whole path: {id} stands for any parameter, and a path with no method for any method
-- arrow[channel=writes] — the arrows themselves, every write; :ends-at("refunds") the ones into that table
+- arrow[channel=writes] — the arrows themselves, every write
 "which tables reference customers?" → table:edge-to("customers", foreign-key). "What does orders reference?" → :edge-from("orders", foreign-key). "Which API writes refunds?" → :edge-to("refunds", writes). "Which endpoint writes refunds?" → arrow[channel=writes]:ends-at("refunds"). "Which tables does the orders API read?" → table:edge-from("orders API", reads). "What calls the billing API?" → :edge-to("billing API", calls). "Which tables are in the shop database?" → "shop" table
 
 ## Rules

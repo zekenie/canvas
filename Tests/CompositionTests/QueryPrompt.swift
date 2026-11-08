@@ -62,7 +62,7 @@ enum QueryPrompt {
         ":end-of(arrow[channel=note-link])",
         // Tables and APIs (the story has none: each answers nothing).
         #"table[columns.name="email"]"#, #"[columns.type="uuid"]"#, "[columns.unique=true]", #"enum-type[values="paid"]"#,
-        #":route("POST /orders/{id}/refunds")"#, "arrow[channel=writes]", #"arrow[channel=writes]:ends-at("refunds")"#,
+        #":route("POST /orders/{id}/refunds")"#, "arrow[channel=writes]",
         // Combining.
         #"sticky-note[locked]:mentions("Checkout")"#, "sticky-note, subboard", "sticky-note:not(:mentions(*))",
         #""Payments" sticky-note[locked]:mentions("Checkout")"#,
@@ -100,7 +100,7 @@ enum QueryPrompt {
         (#"sticky-note:is-a("Order"):not([schema]):not(:start-of(arrow:is-a("Placed by")))"#, .unknownTitle),
         // Tables and APIs: the story has no table or API, so each that names one is refused for its title.
         (#"table:edge-to("customers", foreign-key)"#, .unknownTitle), (#":edge-from("orders", foreign-key)"#, .unknownTitle),
-        (#":edge-to("refunds", writes)"#, .unknownTitle), (#"table:edge-from("orders API", reads)"#, .unknownTitle),
+        (#":edge-to("refunds", writes)"#, .unknownTitle), (#"arrow[channel=writes]:ends-at("refunds")"#, .unknownTitle), (#"table:edge-from("orders API", reads)"#, .unknownTitle),
         (#":edge-to("billing API", calls)"#, .unknownTitle), (#""shop" table"#, .unknownTitle),
         // Combining.
         (":not(S)", .unknownKind), (":is(S1, S2)", .unknownKind),
