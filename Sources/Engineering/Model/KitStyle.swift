@@ -24,6 +24,8 @@ public enum KitStyle {
     public static let trailingInset: CGFloat = 14
     /// Between a name and the type after it, at least: a type that would come closer is cut short.
     public static let nameGap: CGFloat = 10
+    /// What ends a fold's "+N ›" line.
+    public static let moreChevron = "›"
 
     /// A row's name, 15 points, in the paper's ink.
     public static let nameFont = NSFont.systemFont(ofSize: 15)

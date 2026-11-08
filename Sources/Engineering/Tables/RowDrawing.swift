@@ -13,13 +13,13 @@ import Palette
 /// The lines a kit shape draws, kept by text and role.
 @MainActor
 enum RowText {
-    /// How a line is set: a row's name, a type, a nullable's `?`, an enum's value.
+    /// How a line is set: a row's name, a type, a nullable's `?`, an enum's value, a fold's "+N ›".
     enum Role: Hashable {
-        case name, type, null, value
+        case name, type, null, value, more
 
         @MainActor var font: NSFont {
             switch self {
-            case .name, .null: KitStyle.nameFont
+            case .name, .null, .more: KitStyle.nameFont
             case .type: KitStyle.typeFont
             case .value: KitStyle.valueFont
             }
@@ -28,7 +28,7 @@ enum RowText {
         @MainActor var ink: CGColor {
             switch self {
             case .name, .null, .value: KitStyle.ink.cgColor
-            case .type: KitStyle.secondaryInk.cgColor
+            case .type, .more: KitStyle.secondaryInk.cgColor
             }
         }
     }
@@ -150,29 +150,61 @@ enum KitPaper {
     }
 }
 
-/// Where a shape's rows go while it's edited (LineRows' layout inputs, set only on the shape being edited): a line left for
-/// the waiting line, the rows after it a line down, and the row the field draws, which the shape doesn't. Neither, at rest.
+/// Where a shape's rows go: while it's edited (LineRows' layout inputs, set only on the shape being edited), a line left for
+/// the waiting line, the rows after it a line down, the row the field draws, which the shape doesn't, and a width as wide
+/// as the typed line needs; folded (`LineRowsLayout.shown`), the lines it shows, a hidden row standing at the "+N ›" line.
+/// None of it at rest.
 @MainActor
 struct KitRows {
     /// The waiting line's line, nil at rest.
     let waiting: Int?
     /// The row the field has.
     let focused: PartID?
+    /// The lines a folded shape shows; nil for every row.
+    let shown: RowsShown?
+    /// How wide it's laid out while a line typed in it is wider than it stores.
+    let width: CGFloat?
 
     init<P: ShapeProps>(_ shape: ShapeRecord<P>, in context: ShapeContext) {
         waiting = context.layoutInput(LineRowsLayout.waiting, of: shape)
         focused = context.layoutInput(LineRowsLayout.focused, of: shape)
+        shown = context.layoutInput(LineRowsLayout.shown, of: shape)
+        width = context.layoutInput(LineRowsLayout.width, of: shape)
     }
 
-    /// How many lines `rows` rows take: one more while the waiting line is drawn.
-    func lines(_ rows: Int) -> Int { rows + (waiting == nil ? 0 : 1) }
+    /// How many lines `rows` rows take: the fold's, else one more while the waiting line is drawn.
+    func lines(_ rows: Int) -> Int { shown?.count ?? rows + (waiting == nil ? 0 : 1) }
 
-    /// The line row `index` is drawn on.
-    func line(of index: Int) -> Int { LineRowsLayout.line(of: index, waiting: waiting) }
+    /// The line row `index` is drawn on, or stands at, folded.
+    func line(of index: Int) -> Int { shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting) }
 
-    /// The row drawn on `line`; nil for the waiting line.
+    /// The row drawn on `line`; nil for the waiting line and the "+N ›" line.
     func row(atLine line: Int) -> Int? {
+        if let shown { return shown.row(atLine: line) }
         guard let waiting else { return line }
         return line == waiting ? nil : line < waiting ? line : line - 1
+    }
+
+    /// The "+N ›" line a fold draws, and how many rows it stands for.
+    var more: (line: Int, count: Int)? { shown?.more }
+
+    /// How wide a shape that stores `stored` is laid out.
+    func width(stored: CGFloat) -> CGFloat { max(stored, width ?? 0) }
+}
+
+/// The "+N ›" line of a folded shape: grey, at the names' inset, in the names' font; zoomed out, a short bar.
+@MainActor
+enum MoreLine {
+    static func text(_ count: Int) -> String { "+\(count) \(KitStyle.moreChevron)" }
+
+    static func draw(_ count: Int, in row: CGRect, _ context: RenderContext) {
+        let start = row.minX + KitStyle.nameInset
+        RowText.draw(RowText.line(text(count), .more), at: start, middle: row.midY, room: row.maxX - KitStyle.trailingInset - start, in: context.cg)
+    }
+
+    static func bar(_ count: Int, in row: CGRect) -> CGRect? {
+        let start = row.minX + KitStyle.nameInset
+        return KitPaper.bar(columns: SkeletonText.columns(of: text(count), upTo: TableStyle.skeletonMostColumns), column: TableStyle.skeletonNameColumn,
+                            at: start, in: row, room: row.maxX - KitStyle.trailingInset - start)
     }
 }

@@ -196,6 +196,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
     // MARK: Starting
 
     override func start() {
+        // A folded shape shows every row while it's edited: laid out so before a press finds its row.
+        editor.rowFolds?.editingWillBegin(id)
         let untitled = shape?[TitleProperty.self] == nil
         // Before the press is placed: the rows are where the kind drew them, the waiting line last.
         waitingAt = rows.count
@@ -374,6 +376,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             shown = nil
             reading = nil
             field.closeOffers()
+            fitWidth()
         case .waiting:
             held = nil
             shown = nil
@@ -437,11 +440,27 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let read = grammar.read(field.line, id: rowID, in: lineContext(focus == .waiting ? nil : rowID))
         reading = read
         field.show(read, style: model.style)
+        fitWidth()
         if reportingChange {
             place()
             keepCaretInClip()
         }
         needsDisplay = true
+    }
+
+    /// The shape laid out as wide as the line being typed needs (its text, the row's insets and gutter), never narrower
+    /// than it stores, nor past the kind's widest (`widestLine`), where the line slides in its clip as before; nothing
+    /// written, no step. As stored again on the title and as editing ends.
+    private func fitWidth() {
+        guard let stored = editor.document[id]?.box?.width else { return }
+        var wanted: CGFloat?
+        if focus != .title {
+            let style = model.style
+            let needed = ceil(style.textInset + textWidth + LineFieldStyle.textSlack + LineFieldStyle.caretMargin + style.trailingInset)
+            if needed > stored { wanted = model.widestLine.map { min(needed, max($0, stored)) } ?? needed }
+            if wanted == stored { wanted = nil }
+        }
+        service.setWidth(wanted, of: id)
     }
 
     private func offers() -> LineOffers? {

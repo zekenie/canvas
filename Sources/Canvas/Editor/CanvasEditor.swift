@@ -357,6 +357,8 @@ public final class CanvasEditor {
     /// Where the camera was on boards of this file in an earlier session (the host remembers them):
     /// where a board shown for the first time this session starts.
     @_spi(Host) @ObservationIgnored public var rememberedCameras: [BoardID: Camera] = [:]
+    /// What plugins keep of how the file is viewed on this Mac (`setViewValue`), by key, encoded.
+    @ObservationIgnored var viewValueStore: [String: Data] = [:]
     /// Pictures of the boards the shapes drawn own (`RenderContext.drawBoardPreview`), built a
     /// frame's worth at a time while `draw(in:)` asks for the next frame (`nextPreviewFrame`).
     @_spi(Host) @ObservationIgnored public let boardPreviews: BoardPreviews
@@ -865,6 +867,11 @@ public final class CanvasEditor {
     public func shapeTintsDidChange() {
         boardPreviews.tintsDidChange()
         for service in serviceOrder { service.shapeTintsDidChange(in: self) }
+    }
+
+    /// Services hear that the host put back the view values an earlier session saved (`restoreViewValues`).
+    func tellViewValuesRestored() {
+        for service in serviceOrder { service.viewValuesDidChange(in: self) }
     }
 
     /// Services hear that a view kept while the view settled moved the camera (`keepViewAfterViewChange`).

@@ -273,10 +273,11 @@ let parts: KeyValuePairs<String, [String]> = [
     "Types/Form": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA"],
     "Types/Rows": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form"],
     "Types/Engines": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form", "Rows"],
-    // LineRows: the line a row is typed in and the grammar its lines are read and printed in; the session of a shape
-    // being edited, its stops, keys and commits.
+    // LineRows: the line a row is typed in and the grammar its lines are read and printed in; the kinds written as lines
+    // and the lines a shape shows (folds, peeks); the session of a shape being edited, its stops, keys and commits.
     "LineRows/Field": [],
-    "LineRows/Session": ["Field"],
+    "LineRows/Folds": [],
+    "LineRows/Session": ["Field", "Folds"],
     // Engineering: the kinds' props and looks' constants; the line grammars a column and an enum's values are
     // written in, read and printed (pure); the table, the enum and the database, drawn, placed and written.
     "Engineering/Model": [],
@@ -346,8 +347,10 @@ let package = Package(
         // Rows written as lines (LineRows): a kind's rows typed a line each, one field moved to the row with the caret, a
         // grammar a role read and printed (TextEditing's caret list offering what fits, ranked by FuzzyMatching), each row
         // committed as the caret leaves it, one step the kind names; Titles' field for the title stop, Selection for Tab's
-        // hops to the next shape of the kind. Its parts: Field, the line and its grammar; Session, the stops, keys and commits.
-        .target(name: "LineRows", dependencies: ["Canvas", "FuzzyMatching", "Selection", "TextEditing", "Titles"]), // layer: platform
+        // hops to the next shape of the kind; Keyboard for ⌃⌘↑ and ⌃⌘↓, which fold and unfold, and Find for the rows a fold
+        // shows while they hold its hits. Its parts: Field, the line and its grammar; Folds, the lines a shape shows; Session,
+        // the stops, keys and commits.
+        .target(name: "LineRows", dependencies: ["Canvas", "Find", "FuzzyMatching", "Keyboard", "Selection", "TextEditing", "Titles"]), // layer: platform
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard", "SlashCommands"], path: "Examples/Reordering"), // layer: platform
         // Engines: what any plugin may run or ask.

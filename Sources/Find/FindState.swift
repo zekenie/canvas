@@ -38,6 +38,8 @@ public final class FindState {
     /// The shapes with hits, in order, each once.
     public private(set) var results: [FindResult] = []
     @ObservationIgnored private var labelStems: [Int: String] = [:]
+    /// What `whenResultsChange` asked to be told.
+    @ObservationIgnored private var resultListeners: [@MainActor () -> Void] = []
     /// How many hits, exact and typos alike.
     public private(set) var total = 0
     /// The current hit: a result, and which of its hits (the walk's place).
@@ -147,6 +149,23 @@ public final class FindState {
     /// Whether a shape has hits.
     public func hasHits(_ id: ShapeID) -> Bool { places[id] != nil }
 
+    /// The fields of a shape's texts that hold hits (`FindableText.field`: a row's id, for a kind whose rows are found a
+    /// text a row), worked out from its hits when asked: what a plugin that hides some of a shape's texts shows while Find
+    /// is open (a folded table's rows). Empty while Find is closed, and for a shape with none.
+    public func fieldsHit(of id: ShapeID) -> Set<String> {
+        guard isActive, places[id] != nil, let entry = index.entries[id] else { return [] }
+        var fields: Set<String> = []
+        for (text, hits) in zip(entry.texts, hits(of: id)) where !hits.isEmpty { fields.insert(text.field) }
+        return fields
+    }
+
+    /// Runs `body` each time what `fieldsHit(of:)` answers may have changed: new results, a commit's patch of them, Find
+    /// opened or closed. Called after the change, never during a search; a plugin that lays shapes out by the answer says
+    /// so then (`shapesDidChangeLayout`).
+    public func whenResultsChange(_ body: @escaping @MainActor () -> Void) {
+        resultListeners.append(body)
+    }
+
     /// Where a hit is drawn on the board shown, world units, where its shape is: its line rects, as
     /// its contribution lays its text out now (empty for a shape that isn't there).
     public func rects(of hit: FindHit, in id: ShapeID) -> [CGRect] {
@@ -204,6 +223,7 @@ public final class FindState {
         pendingStep = nil
         walk.end()
         laidOut = [:]
+        tellResultListeners()
         editor.setNeedsDisplay()
     }
 
@@ -291,6 +311,11 @@ public final class FindState {
         self.offsets = offsets
         self.total = total
         walk.rowsDidChange()
+        tellResultListeners()
+    }
+
+    private func tellResultListeners() {
+        for listener in resultListeners { listener() }
     }
 
     /// Typing's current hit: the first on the board shown that's in view, else the first on the

@@ -1,0 +1,83 @@
+import Canvas
+import CoreGraphics
+
+// The kinds written as lines, as the rest of the module reads them whatever their props are: what their rows are called,
+// each row's id and whether it heads a group, the rows a fold keeps (the kind's marks), and where line n is drawn. A kind
+// says it once, with `lineRows(_:)` (the module's own source makes the contribution from the kind's `LineModel`).
+
+/// What a kind's rows are called, for VoiceOver and the steps: "column", "columns".
+public struct LineNoun: Hashable, Sendable {
+    public var singular: String
+    public var plural: String
+
+    public init(_ singular: String, plural: String? = nil) {
+        self.singular = singular
+        self.plural = plural ?? singular + "s"
+    }
+
+    /// "Column", "Columns".
+    public var title: String { singular.prefix(1).uppercased() + singular.dropFirst() }
+    public var pluralTitle: String { plural.prefix(1).uppercased() + plural.dropFirst() }
+
+    /// "1 column", "37 columns".
+    public func counted(_ count: Int) -> String { "\(count) \(count == 1 ? singular : plural)" }
+}
+
+/// A row as a fold reads it: its id, and whether it heads the rows after it (a path prefix's header, later).
+public struct FoldRow: Hashable, Sendable {
+    public let id: PartID
+    public let isHeader: Bool
+
+    public init(id: PartID, isHeader: Bool = false) {
+        self.id = id
+        self.isHeader = isHeader
+    }
+}
+
+/// The kinds written as lines: one contribution a kind (`lineRows(_:)`). Owner LineRows.
+public enum LineRowsKinds {}
+
+extension LineRowsKinds: KeyedExtensionPoint {
+    public typealias Contribution = LineRowsContribution
+    public static var owner: PluginID { .lineRows }
+    public static func uniqueKeys(of _: LineRowsContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
+    public static func summary(of contribution: LineRowsContribution, for target: ShapeTarget) -> String {
+        "line rows (\(contribution.noun.plural)) → \(target)"
+    }
+}
+
+/// One kind's rows as lines, erased: what they're called, each row's id in order, the rows its kind marks (what a fold
+/// keeps) and where a line is drawn. Only the sugar makes one.
+@MainActor
+public struct LineRowsContribution {
+    public let noun: LineNoun
+    /// The shape's rows, in order; nil for a record of another kind.
+    let rows: @MainActor (AnyShapeRecord) -> [FoldRow]?
+    /// The rows the kind marks (a table's keys and unique columns), as a layout reads the file.
+    let marked: @MainActor (AnyShapeRecord, LayoutReading) -> Set<PartID>
+    /// Line n of a shape laid out at a frame, world units.
+    let lineRect: @MainActor (Int, CGRect) -> CGRect
+
+    public init(noun: LineNoun, rows: @escaping @MainActor (AnyShapeRecord) -> [FoldRow]?,
+                marked: @escaping @MainActor (AnyShapeRecord, LayoutReading) -> Set<PartID>,
+                lineRect: @escaping @MainActor (Int, CGRect) -> CGRect) {
+        self.noun = noun
+        self.rows = rows
+        self.marked = marked
+        self.lineRect = lineRect
+    }
+}
+
+extension ShapeCapability {
+    /// The kinds whose rows are written as lines (`lineRows(_:)`).
+    public static let lineRows = ShapeCapability("written as lines") { kind in
+        !kind.registry.contributions(to: LineRowsKinds.self, for: kind.kind).isEmpty
+    }
+}
+
+extension Registry {
+    /// What a kind's rows are called, when they're written as lines; nil for a kind whose aren't.
+    public func lineRows(of kind: ShapeKind) -> LineRowsContribution? {
+        contributions(to: LineRowsKinds.self, for: kind).first
+    }
+}

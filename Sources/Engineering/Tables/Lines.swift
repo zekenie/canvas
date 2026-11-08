@@ -187,6 +187,13 @@ struct TableLines: LineModel {
         }
     }
 
+    /// What a fold keeps (⌃⌘↑): its keys (a primary key, a column that starts a key, read from the key index) and its
+    /// unique columns, as T6 folds products to `id` and `sku`.
+    func marked(_ shape: ShapeRecord<DatabaseTable>, in reading: LayoutReading) -> Set<PartID> {
+        let keys = reading.service(KeyIndex.self)?.keys(of: shape.id) ?? [:]
+        return Set(shape.props.columns.lazy.filter { $0.primaryKey || $0.unique || keys[$0.id] != nil }.map(\.id))
+    }
+
     /// Whether `to` is `from` with only its name changed.
     static func onlyRenamed(_ from: Column, _ to: Column) -> Bool {
         var renamed = from

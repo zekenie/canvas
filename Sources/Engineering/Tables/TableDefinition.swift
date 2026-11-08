@@ -23,7 +23,12 @@ extension TableDefinition: ShapeDefinition {
         let lines = KitPaper.rowsInView(rows.lines(columns.count), in: frame, context)
         // The table's keys, read once a frame and only for a table with rows in view.
         let keys = lines.isEmpty ? [:] : context.shapes.keys?.keys(of: shape.id) ?? [:]
+        let more = rows.more
         for line in lines {
+            if line == more?.line, let more {
+                MoreLine.draw(more.count, in: KitStyle.rowRect(line, in: frame), context)
+                continue
+            }
             guard let index = rows.row(atLine: line), columns[index].id != rows.focused else { continue }
             drawColumn(columns[index], isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
         }
@@ -87,7 +92,8 @@ extension TableDefinition: ShapeDefinition {
 /// As wide as it stores, as tall as its rows.
 extension TableDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGSize {
-        CGSize(width: shape.frame.width, height: KitStyle.height(rows: KitRows(shape, in: context).lines(shape.props.columns.count)))
+        let rows = KitRows(shape, in: context)
+        return CGSize(width: rows.width(stored: shape.frame.width), height: KitStyle.height(rows: rows.lines(shape.props.columns.count)))
     }
 }
 
@@ -133,7 +139,12 @@ extension TableDefinition: CustomSkeleton {
         KitPaper.drawSkeleton(frame, in: context)
         let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
         var text: [CGRect] = [], pills: [CGRect] = []
+        let more = rows.more
         for line in KitPaper.skeletonRowsInView(rows.lines(columns.count), in: frame, context) {
+            if line == more?.line, let more {
+                if let bar = MoreLine.bar(more.count, in: KitStyle.rowRect(line, in: frame)) { text.append(bar) }
+                continue
+            }
             guard let index = rows.row(atLine: line) else { continue }
             let column = columns[index], row = KitStyle.rowRect(line, in: frame)
             let start = row.minX + KitStyle.nameInset, end = row.maxX - KitStyle.trailingInset
