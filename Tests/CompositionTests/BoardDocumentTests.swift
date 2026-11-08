@@ -367,6 +367,28 @@ let boardType = "com.example.InfiniteCanvas.board"
         board.close()
         expectEqual(memory.recall(for: a), .init(x: 7, y: 8, zoom: 2, showsDetails: false, showsMinimap: true), "closing remembers it")
     },
+    test("the view values plugins keep are saved with the file's view as its window closes, and handed back before the next window's canvas is made") {
+        try configureBoards()
+        let suite = "BoardDocumentTests-\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let memory = BoardViewMemory(defaults: defaults)
+        let url = URL(fileURLWithPath: "/tmp/values.canvasboard")
+        let key = ViewValueKey<[String]>("test.values")
+        let first = BoardDocument()
+        first.viewMemory = memory
+        first.fileURL = url
+        first.makeWindowControllers()
+        first.editor.setViewValue(key, ["kept"])
+        first.close()
+        expectEqual(memory.recall(for: url)?.values?.keys.sorted(), ["test.values"])
+        let second = BoardDocument()
+        second.viewMemory = memory
+        second.fileURL = url
+        second.makeWindowControllers()
+        expectEqual(second.editor.viewValue(key), ["kept"], "handed back")
+        second.close()
+    },
     test("a view remembered before boards had a minimap or a sidebar still reads, with both showing") {
         let suite = "BoardDocumentTests-\(UUID().uuidString)"
         let defaults = try require(UserDefaults(suiteName: suite))
