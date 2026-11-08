@@ -98,7 +98,8 @@ enum ArrowParts {
     }
 
     /// ↑ ↓ on an end bound to a row: bound to the shown row above or below it on its shape, at its side as before (the side is
-    /// worked out from the far end when drawn), and VoiceOver told which. ← →, or no row that way, leave it as it is.
+    /// worked out from the far end when drawn), and VoiceOver told which. ← →, no row that way, or the row the other end is at,
+    /// leave it as it is.
     private static func stepRow(_ end: ArrowEnd, of id: ShapeID, _ binding: ArrowBinding, by step: PartStep, targeting: ArrowTargeting) {
         guard step.direction.y != 0, let part = binding.part, let shape = targeting.connectables[binding.shapeID] else { return }
         let shown = shape.parts.filter(\.isShown)
@@ -106,6 +107,8 @@ enum ArrowParts {
         let next = at + (step.direction.y < 0 ? -1 : 1)
         guard shown.indices.contains(next) else { return }
         let row = shown[next]
+        // Never onto the row the other end is at: a key is not a loop on one row (connect refuses it too).
+        if targeting.arrow(id)?[end.opposite].binding?.address == PartAddress(binding.shapeID, part: row.id) { return }
         var moved = binding
         moved.part = row.id
         if shape.bounds.width > 0, shape.bounds.height > 0 {

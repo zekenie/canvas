@@ -12,6 +12,7 @@ import LanguageModels
 import LineRows
 import References
 import Selection
+import StickyNotes
 import Subboards
 import TableOfContents
 import ShippedTesting
@@ -181,6 +182,21 @@ private let shop = #"""
         expectEqual(editor.file.board(containing: customers.id), .root)
         expectEqual(keys(editor).count, 3)
     },
+    test("⌘L's picker opens on a table, as it did before its rows had ports: the other tables, enums and databases, and a pick draws a plain arrow") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        _ = try drawnInProcess(shop, on: w.editor)
+        let orders = try require(table(w.editor, "orders"))
+        expect(w.editor.connectPicker?.canOpen(on: orders.id) == true, "a table with ports only on its rows can still be picked from")
+        let picker = try require(ConnectPicker(editor: w.editor, source: orders.id))
+        expect(picker.kinds.contains(DatabaseTable.kind) && picker.kinds.contains(DatabaseEnum.kind), "\(picker.kinds)")
+        expect(!picker.kinds.contains(StickyNote.kind), "a note has side ports, a table none")
+        let target = try require(table(w.editor, "customers"))
+        let before = arrows(w.editor).count
+        w.editor.connect(ConnectEnd(orders.id), to: ConnectEnd(target.id))
+        expectEqual(arrows(w.editor).count, before + 1)
+    },
     test("T5, panel 1: in customers, ⌘⌫ then ⌫ on id: the column and its key go in one step, Undo Delete Column and 1 Arrow; orders.customer_id is plain") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -344,6 +360,22 @@ let t3Panel2 = #"""
         expectEqual(geometry.startHandle.x, w.editor.camera.toWorld(CGPoint(x: paymentID.maxX, y: 0)).x, "leaving payment_id's right side")
         expectEqual(geometry.endHandle.x, w.editor.camera.toWorld(CGPoint(x: target.minX, y: 0)).x, "into payments.id's left side")
         expectEqual(w.editor.hintedPart, nil)
+    },
+    test("a drag from payment_id's dot back over payment_id lights nothing and makes nothing; over another row of its table, that row is lit") {
+        let w = try KeyDragWindow(t3Panel2)
+        let paymentID = try w.row("refunds", 1), reason = try w.row("refunds", 3)
+        w.move(to: CGPoint(x: paymentID.midX, y: paymentID.midY))
+        w.move(to: CGPoint(x: paymentID.maxX + 12, y: paymentID.midY))
+        w.press()
+        w.drag(to: CGPoint(x: paymentID.midX, y: paymentID.midY))
+        expectEqual(w.editor.hintedPart, nil, "the row it started from is no place to land")
+        w.drag(to: CGPoint(x: reason.midX, y: reason.midY))
+        let refunds = try require(table(w.editor, "refunds"))
+        expectEqual(w.editor.hintedPart, refunds.props.columns[3].id, "another row of the same table is")
+        w.drag(to: CGPoint(x: paymentID.midX, y: paymentID.midY))
+        expectEqual(w.editor.hintedPart, nil)
+        w.release()
+        expectEqual(arrows(w.editor).count, 1, "let go on its own row: no key drawn")
     },
     test("while it's drawn, payments and orders are outlined, the enum isn't; the dots show at the hovered row's ends only") {
         let w = try KeyDragWindow(t3Panel2)

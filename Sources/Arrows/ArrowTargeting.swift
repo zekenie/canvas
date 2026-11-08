@@ -140,10 +140,19 @@ final class ArrowTargeting {
     }
 
     /// Binds `end` to the row of `target` nearest `point` across, at its side facing the other end (the stored anchor, where
-    /// it's drawn while the row is gone), and lights it; with no row shown, the end is free at `point`.
+    /// it's drawn while the row is gone), and lights it; with no row shown, or the row the other end is at, the end is free at `point`.
     private func bindPart(of arrowID: ShapeID, _ end: ArrowEnd, on target: ConnectableShape, near point: CGPoint, arrow: Arrow,
                           then reshape: ((inout Arrow) -> Void)?) {
         guard let frame = target.parts.frame(nearestY: point.y) else {
+            updateArrow(arrowID) {
+                $0[end] = .free(point)
+                reshape?(&$0)
+            }
+            editor.hintedShapeID = nil
+            return
+        }
+        // Not the row the other end is at: a key from a row to itself joins nothing, so nothing is lit where a release would make it.
+        if arrow[end.opposite].binding?.address == PartAddress(target.id, part: frame.id) {
             updateArrow(arrowID) {
                 $0[end] = .free(point)
                 reshape?(&$0)

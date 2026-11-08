@@ -168,6 +168,19 @@ private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
         b.h.editor.undo()
         expectEqual(b.arrow(id)?.end.binding?.part, b.rightRows[1].id)
     },
+    test("↑ ↓ never step an end onto the row the other end is at: a key is not a loop on one row") {
+        let b = try RosterBoard()
+        let id = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.left, 1)))
+        b.h.editor.selection = id
+        _ = b.h.key(Chord.optionBackTab)
+        expectEqual(b.h.editor.focusedPart?.title, "End")
+        let steps = b.h.editor.undoHistory.undoName
+        _ = b.h.key(Chord.up)
+        expectEqual(b.arrow(id)?.end.binding?.part, b.leftRows[1].id, "row one is where the start is: the end stays")
+        expectEqual(b.h.editor.undoHistory.undoName, steps, "and no step is made")
+        _ = b.h.key(Chord.down)
+        expectEqual(b.arrow(id)?.end.binding?.part, b.leftRows[2].id, "the other way is free")
+    },
     test("VoiceOver says where a row's arrow runs by its rows") {
         let b = try RosterBoard()
         let id = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.right, 1)))
