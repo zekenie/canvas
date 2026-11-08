@@ -30,7 +30,7 @@ extension PluginID {
 
 /// The kit's plugin: the `table`, `enum-type` and `database` kinds; the Table, Enum and Database tools, each a new shape
 /// whose name is typed in its pill as it lands (a database's tab), "Add Table"; `/table NAME`, `/database NAME` and Create
-/// Database; and `canvas draw`'s `columns:` and `values:`, lines in their grammars. Its kinds opt into Titles (the name in
+/// Database; ⌘V of SQL ("Paste SQL"); and `canvas draw`'s `columns:` and `values:`, lines in their grammars. Its kinds opt into Titles (the name in
 /// the pill, bars zoomed out), Mentions, the table of contents and the detail panel's header; Locking, Publishing and
 /// Grouping are every shape's.
 public struct EngineeringPlugin: ListedPlugin {
@@ -104,5 +104,7 @@ public struct EngineeringPlugin: ListedPlugin {
         }
         if let editedTable { registrar.tableCommands(placing: editedTable) }
         registrar.rowsDraw()
+        // ⌘V of SQL: its tables and enums put down by names, the kit's (gone with it off).
+        registrar.sqlPaste()
     }
 }

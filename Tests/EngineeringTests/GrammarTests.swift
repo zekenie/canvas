@@ -62,13 +62,15 @@ private func ownWords(_ line: String) -> [String] {
         expect(columns[0].id != columns[1].id)
         expectEqual(ColumnGrammar.print(lines: columns), "id uuid pk\ncustomer_id uuid")
     },
-    test("what a statement writes joins what the table holds by name: a column it names takes its line and keeps its id and on delete; a new one goes last; one it leaves out stays") {
+    test("what a statement writes joins what the table holds by name: a column it names takes its line and keeps its id and on delete; a new one goes after the one written before it, else last; one it leaves out stays") {
         let enumID = ShapeID()
         let held = [Column(name: "id", type: TypeRef("uuid"), primaryKey: true),
                     Column(name: "status", type: TypeRef("order_status", shape: enumID), onDelete: "cascade"),
                     Column(name: "note", type: TypeRef("text"))]
         let merged = ColumnGrammar.merge(ColumnGrammar.read(lines: "status order_status null\nplaced_at timestamptz"), onto: held)
-        expectEqual(merged.map(\.name), ["id", "status", "note", "placed_at"])
+        expectEqual(merged.map(\.name), ["id", "status", "placed_at", "note"], "placed_at after status, written before it")
+        expectEqual(ColumnGrammar.merge(ColumnGrammar.read(lines: "first int\nid uuid pk"), onto: held).map(\.name), ["id", "status", "note", "first"],
+                    "written before every column it has: last")
         expectEqual(merged[1].id, held[1].id, "its id kept")
         expectEqual(merged[1].onDelete, "cascade", "what no line says, kept")
         expectEqual(merged[1].type.shape, enumID, "its type's words still say the same, so still bound")
@@ -81,12 +83,12 @@ private func ownWords(_ line: String) -> [String] {
         let bound = ColumnGrammar.merge([Column(name: "note", type: TypeRef("text", shape: later))], onto: held)
         expectEqual(bound[2].type.shape, later, "words that name an enum now are bound, though they named none before")
     },
-    test("an enum's values are a line each, trimmed, blank lines passed over; joined by text, a value it has keeping its id") {
+    test("an enum's values are a line each, trimmed, blank lines passed over; joined by text, a value it has keeping its id, a new one after the one written before it") {
         let values = EnumGrammar.read(lines: " pending \npaid\n\nrefunded")
         expectEqual(values.map(\.text), ["pending", "paid", "refunded"])
         expectEqual(EnumGrammar.print(lines: values), "pending\npaid\nrefunded")
         let merged = EnumGrammar.merge(EnumGrammar.read(lines: "paid\nvoid"), onto: values)
-        expectEqual(merged.map(\.text), ["pending", "paid", "refunded", "void"])
+        expectEqual(merged.map(\.text), ["pending", "paid", "void", "refunded"])
         expectEqual(merged[1].id, values[1].id)
     },
 ])

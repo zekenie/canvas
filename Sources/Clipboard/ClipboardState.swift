@@ -45,8 +45,9 @@ final class ClipboardState {
     /// for none this app can read, and whether the pasteboard holds this app's data at all (then nothing else is read).
     private var content: (changeCount: Int, file: CanvasFile, source: PasteSource, isApps: Bool)?
     /// What the readers (`PasteReaders`) have read of the pasteboard, as of its change count and the kits the file had on (whose readers
-    /// are asked) when it was first asked: each reader's reading once, by its place among them.
-    private var readings: (changeCount: Int, kits: Set<KitID>, content: PasteContent, results: [Int: PasteResult?])?
+    /// are asked) when it was first asked: each reader's reading once, by its place among them, as of the file's revision (a reader is
+    /// handed the editor, and what it reads may say what the file has: a key's table's primary key).
+    private var readings: (changeCount: Int, kits: Set<KitID>, content: PasteContent, revision: Int, results: [Int: PasteResult?])?
 
     /// Where what a paste puts down came from.
     enum PasteSource {
@@ -276,9 +277,15 @@ final class ClipboardState {
     /// What the pasteboard holds besides this app's shapes, read once a change of it (or of the kits on, which pick the readers).
     private func pasteContent() -> PasteContent {
         let changeCount = pasteboard.changeCount, kits = editor.kits
-        if let readings, readings.changeCount == changeCount, readings.kits == kits { return readings.content }
+        if let readings, readings.changeCount == changeCount, readings.kits == kits {
+            if readings.revision != editor.revision {
+                self.readings?.revision = editor.revision
+                self.readings?.results = [:]
+            }
+            return readings.content
+        }
         let content = PasteContent.reading(pasteboard)
-        readings = (changeCount, kits, content, [:])
+        readings = (changeCount, kits, content, editor.revision, [:])
         return content
     }
 

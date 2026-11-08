@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Clipboard
 import Connections
 import ContextMenus
 import DetailPanel
@@ -19,12 +20,16 @@ import Titles
 import Topology
 import Transform
 
+/// A pasteboard of the tests' own: the kit reads SQL from Clipboard's, and no test touches the person's.
+@MainActor let kitPasteboard = NSPasteboard.withUniqueName()
+
 /// Every plugin the kit's kinds contribute to (Selection's resizing; Titles, and through it Adornments and slash commands;
 /// Mentions, and through it the panel, the context menu and Topology; the table of contents; Draw, whose writers it gives;
-/// the keys), the kit's own plugin, CanvasTesting's fixtures (boxes) and its freezing (a locked shape, without Locking).
-/// With `find`, Find and the kit's rows as its texts too.
+/// Clipboard, whose paste readers it gives, on the tests' own pasteboard; the keys), the kit's own plugin, CanvasTesting's
+/// fixtures (boxes) and its freezing (a locked shape, without Locking). With `find`, Find and the kit's rows as its texts too.
 @MainActor func kitPlugins(_ refusals: RefusalLog = RefusalLog(), find: Bool = false) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), DrawPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
+     ClipboardPlugin(pasteboard: kitPasteboard),
      SlashCommandsPlugin(), TableOfContentsPlugin()] + (find ? [FindPlugin()] : []) + [TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TransformPlugin(), LineRowsPlugin(),
      EngineeringPlugin()] + (find ? [EngineeringFindPlugin()] : []) + [FreezingPlugin(log: refusals)]
 }

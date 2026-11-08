@@ -105,19 +105,21 @@ enum RowsDraw {
     }
 
     /// The columns `written` says joined onto `held`: each item is read over the held column of its name, so a member it
-    /// leaves out stays (a null puts one back to its default), then joined as the grammar joins (`ColumnGrammar.merge`),
-    /// except that an `onDelete` or `onUpdate` it gives is the column's. A new column whose id another holds, or another
-    /// written one has, is given one of its own.
+    /// leaves out stays (a null puts one back to its default), then joined as the grammar joins (`ColumnGrammar.merge`: a new
+    /// one after the column written before it, else last), except that an `onDelete` or `onUpdate` it gives is the column's. A
+    /// new column whose id another holds, or another written one has, is given one of its own.
     static func mergedColumns(_ written: JSONValue, onto held: JSONValue?) -> JSONValue {
         guard case .array(let items) = written else { return written }
         var merged = held.flatMap { try? $0.decode([Column].self) } ?? []
+        var previous: String?
         for case .object(let given) in items {
             let old = merged.first { $0.name == given["name"]?.stringValue ?? "" }
             var members = old.flatMap { try? JSONValue(encoding: $0).objectValue } ?? [:]
             for (key, member) in given where key != "id" || member != .null { members[key] = member == .null ? nil : member }
             guard var column = try? JSONValue.object(members).decode(Column.self) else { continue }
             if old == nil, merged.contains(where: { $0.id == column.id }) { column.id = PartID() }
-            merged = ColumnGrammar.merge([column], onto: merged)
+            merged = ColumnGrammar.merge([column], onto: merged, after: previous)
+            previous = column.name
             guard let at = merged.firstIndex(where: { $0.name == column.name }) else { continue }
             if let onDelete = given["onDelete"] { merged[at].onDelete = onDelete.stringValue }
             if let onUpdate = given["onUpdate"] { merged[at].onUpdate = onUpdate.stringValue }
@@ -129,9 +131,11 @@ enum RowsDraw {
     static func mergedValues(_ written: JSONValue, onto held: JSONValue?) -> JSONValue {
         guard let values = try? written.decode([EnumValue].self) else { return written }
         var merged = held.flatMap { try? $0.decode([EnumValue].self) } ?? []
+        var previous: String?
         for var value in values {
             if !merged.contains(where: { $0.text == value.text }), merged.contains(where: { $0.id == value.id }) { value.id = PartID() }
-            merged = EnumGrammar.merge([value], onto: merged)
+            merged = EnumGrammar.merge([value], onto: merged, after: previous)
+            previous = value.text
         }
         return (try? JSONValue(encoding: merged)) ?? written
     }

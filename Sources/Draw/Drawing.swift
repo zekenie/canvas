@@ -325,7 +325,8 @@ struct Drawing {
         let formats = registry.drawTextFormats
         if !formats.isEmpty || !registry.drawValueWriters.isEmpty {
             let lookup = DrawTextLookup(editor: namesBeyond ?? editor, target: target, naming: naming, items: items, itemsByTitle: itemsByTitle,
-                                        unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames, keys: options.keys)
+                                        unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames, keys: options.keys,
+                                        nearest: options.naming == .nearest)
             textWriter = DrawTextWriter(registry: registry, formats: formats, lookup: lookup)
         }
         // A `delete edge` that says which arrow (`is: "T"`) names a type by its title, which only a text
@@ -353,14 +354,23 @@ struct Drawing {
         }
         // The edges the values a script writes imply (a column's line's `→`), on their statements' lines, after the script's own: one
         // the same as an edge the script writes is that edge, drawn once.
-        if registry.drawValueWriters.values.contains(where: \.impliesEdges) {
+        if registry.drawValueWriters.values.contains(where: \.impliesEdges) || !options.implied.isEmpty {
+            // A person's put is never refused for an edge its values imply: one that can't be drawn (a row the far shape hasn't, a
+            // shape on another board) is left out, as is a statement's whose writer can't say its edges.
+            let leavingOut = options.naming == .nearest
             for statement in script.statements {
                 guard case .shape(let shape) = statement.body else { continue }
                 do throws(DrawError) {
                     for (edge, implied) in try impliedEdges(of: shape, statement) {
-                        try resolve(edge, Statement(line: statement.line, text: statement.text, body: .edge(edge)), implied: implied)
+                        let written = Statement(line: statement.line, text: statement.text, body: .edge(edge))
+                        if leavingOut {
+                            do throws(DrawError) { try resolve(edge, written, implied: implied) } catch { continue }
+                        } else {
+                            try resolve(edge, written, implied: implied)
+                        }
                     }
                 } catch {
+                    if leavingOut { continue }
                     if measuring, error.fromNameLookup {
                         measureWarnings.append((statement.line, error.message + "; measured without it"))
                     } else {
@@ -1534,18 +1544,22 @@ struct Drawing {
         guard let lookup = textWriter?.lookup else { return [] }
         let writers = registry.drawValueWriters
         var implied: [(EdgeStatement, DrawImpliedEdge)] = []
+        // What each value's writer says it implies, then what a put says its statement implies (`DrawOptions.implied`).
+        var said: [(key: String, edges: [DrawImpliedEdge])] = []
         for attribute in shape.attributes {
             guard let writer = writers[attribute.key], writer.impliesEdges, case .quoted(let text) = attribute.value else { continue }
-            let found: [DrawImpliedEdge]
             do throws(DrawError) {
-                found = try writer.edges(.string(text), DrawTextContext(registry: registry, schema: [:], owner: nil, lookup: lookup))
+                said.append((attribute.key, try writer.edges(.string(text), DrawTextContext(registry: registry, schema: [:], owner: nil, lookup: lookup))))
             } catch {
                 throw error.said(error.message, on: statement)
             }
+        }
+        if let put = options.implied[statement.line] { said.append((shape.word, put)) }
+        for (key, found) in said {
             guard !found.isEmpty else { continue }
             guard let name = shape.name else {
-                throw DrawError(statement, .unsupported, "\(attribute.key): draws an edge from the \(shape.word) this line draws, and it has no title to start from",
-                                hint: "give the \(shape.word) a title: \(shape.word) \"orders\" \(attribute.key): …")
+                throw DrawError(statement, .unsupported, "\(key): draws an edge from the \(shape.word) this line draws, and it has no title to start from",
+                                hint: "give the \(shape.word) a title: \(shape.word) \"orders\" \(key): …")
             }
             for edge in found {
                 // The far shape as a text finds it, by its id where the run draws it or the file has it (a program's run keys its shapes, and
