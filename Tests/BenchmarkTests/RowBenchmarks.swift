@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+@_spi(Host) import CanvasUI
 import CoreGraphics
 import Engineering
 import Foundation
@@ -27,9 +28,14 @@ extension Budget {
     /// 21 to 29 ms on a busy machine on 2026-11-07, the fold itself 3, the rest the frame that lays the 1,000 out again,
     /// which costs 16 to 18 ms with no fold at all (the core's relayout of 1,000 tables, the floor); the budget two frames.
     static let foldMany = 2 * frame
-    /// ⌥↑ on a row selected as an item of a 500-row table (K8: `moveRows`, one step, the item selected again): within a keystroke
-    /// in a field, as the plan holds it.
-    static let rowMoveCommit = fieldKeystroke
+    /// ⌥↑ on a row selected as an item of a 500-row table (K8: the key through the window, Selection's `moveItems`, `moveRows`, one
+    /// step, the item selected again). The plan holds it within a keystroke in a field (1 ms): first measured 86 ms (every commit
+    /// listed the shape's items and worked out all 500 rows' words), 0.5 ms for `moveRows` alone once the words were lazy, and
+    /// through the key 1.25 ms until `moveItems` stopped listing the items it never reads, then 0.89 ms on a quiet machine
+    /// (2026-11-08, debug build the bench makes, load average 3.7); two keystrokes of headroom for a loaded one.
+    static let rowMoveCommit = 2 * fieldKeystroke
+    /// The frame after that key, its table in view with the row selected: a frame (the items' outline reads the kept list).
+    static let rowMoveFrame = frame
 }
 
 /// `count` shapes in a grid 280 apart, each tenth a 12-row titled table, each hundredth a 60-row one, the rest notes.
@@ -97,23 +103,37 @@ extension Budget {
                       cost, folding, frame, relaid, Budget.foldMany))
         if holdsToBudgets { expect(cost < Budget.foldMany, "folding 1,000 tables took \(cost) ms") }
     },
-    test("rowMoveCommit: ⌥↑ on a row selected as an item of a 500-row table, on a board of 4,000 shapes, within a keystroke") {
+    test("rowMoveCommit: ⌥↑ (the key, through the window) on a row selected as an item of a 500-row table, on a board of 4,000 shapes, within a keystroke, and the frame after within a frame") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let context = try bitmapContext(viewport)
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let columns = (0..<500).map { Column(name: "column_\($0)", type: TypeRef("text"), primaryKey: $0 == 0) }
         var big = ShapeRecord(DatabaseTable(frame: CGRect(x: -2000, y: -2000, width: 300, height: KitStyle.height(rows: columns.count)), columns: columns))
         big[TitleProperty.self] = "big"
         let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: rowsBoard(4_000) + [AnyShapeRecord(big)]), scheduler: $0) }
-        h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
-        var cost = Double.infinity
+        let window = NSWindow(contentRect: CGRect(origin: .zero, size: viewport), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let canvas = CanvasView(editor: h.editor)
+        window.contentView = canvas
+        h.editor.viewportDidResize(to: viewport)
+        h.editor.camera = camera(centering: CGRect(x: -2000, y: -2000, width: 300, height: 600), at: 1, in: viewport)
+        var cost = Double.infinity, frameAfter = Double.infinity
         for run in 0..<measuredRuns(9) {
             // A row in the middle, a step of its own each time (sealed), so every move is a commit of its own.
             h.editor.selectItems([AnyHashable(columns[250 + run % 2].id)], of: big.id)
             h.editor.undoHistory.seal()
-            let ids = h.editor.selectedItems?.ids.compactMap { $0.base as? PartID } ?? []
-            let move = threadCPUTime { h.editor.moveRows(ids, of: big.id, by: -1) }.milliseconds
+            let before = h.editor.document[big.id]?.typed(as: DatabaseTable.self)?.props.columns.map(\.id)
+            let move = threadCPUTime { _ = window.press(Chord(Key.up, .option)) }.milliseconds
+            expect(h.editor.document[big.id]?.typed(as: DatabaseTable.self)?.props.columns.map(\.id) != before, "⌥↑ moved the row")
+            let frame = threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds
             cost = min(cost, move)
+            frameAfter = min(frameAfter, frame)
         }
-        report(String(format: "⌥↑ on a row of a 500-row table over 4,000 shapes: %.3f ms (budget %.0f)", cost, Budget.rowMoveCommit))
-        if holdsToBudgets { expect(cost < Budget.rowMoveCommit, "moving a row of a 500-row table took \(cost) ms") }
+        report(String(format: "⌥↑ on a row of a 500-row table over 4,000 shapes: the key %.3f ms (budget %.0f), the frame after %.1f ms (budget %.0f)",
+                      cost, Budget.rowMoveCommit, frameAfter, Budget.rowMoveFrame))
+        if holdsToBudgets {
+            expect(cost < Budget.rowMoveCommit, "moving a row of a 500-row table took \(cost) ms")
+            expect(frameAfter < Budget.rowMoveFrame, "the frame after moving a row of a 500-row table took \(frameAfter) ms")
+        }
     },
 ])
