@@ -2344,8 +2344,8 @@ switched point; EngineeringTests' `kitTests` and CompositionTests' `kitsShippedT
 
 The first real kit ([`Sources/Engineering`](../Sources/Engineering), product): database tables, their
 enums and the databases that hold them. One module in parts, `Model` (the kinds' props, `TypeRef`,
-`KitStyle`), `Grammar` (the line grammars, pure) and `Tables` (the kinds drawn, placed and written), since
-the APIs that come later name tables and two products could not see each other. Its plugin joins the kit
+`KitStyle`), `Grammar` (the line grammars, pure), `Tables` (the kinds drawn, placed and written) and `Readers`
+(what's pasted: SQL), since the APIs that come later name tables and two products could not see each other. Its plugin joins the kit
 and gives:
 
 ```swift
@@ -2358,6 +2358,7 @@ registrar.shape(TableDefinition()) { table in
 }
 registrar.tableCommands(placing: editedTable)                            // /table, /database, Create Database
 registrar.rowsDraw()                                                     // canvas draw's columns: and values:
+registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
 ```
 
 A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
@@ -2453,6 +2454,23 @@ a focused line prints it from the key index by the far names now, so a rename fo
 that names nothing stays words (a key to a table with no name yet prints with the pill's placeholder, so editing the column keeps it; a locked table takes no key). `canvas draw`'s `columns:` says the same with an implied edge (`implies:` on its
 value writer, [draw](#draw)), and ⌘L's picker on a table makes a key column (`table.connectPicks(admitting:_:)`:
 `customer_id`, typed as customers' primary key, "Add Key Column").
+
+**Paste SQL.** ⌘V of `CREATE TABLE` (or `AS ENUM`, or a `.sql` file) is a paste reader of the kit's, so it's gone
+with the kit off ([the clipboard](#the-clipboard)). The reader parses SQL itself (`SQLReader`, pure: Postgres DDL into
+tables, columns, enums and keys) and writes a draw program for Draw to put down (`DrawPut`), knowing nothing of how
+shapes are found or made:
+
+```swift
+registrar.pasteReader("SQL", sniff: { SQLPaste.sniffs($0) }) { content, editor in
+    SQLPaste.read(content, in: editor, keys: SQLPaste.foreignKeys)   // a table a statement, its columns as JSON,
+}                                                                   // its keys the edges it implies
+```
+
+A table is found by its title, nearest first and file-wide (`billing.payments` the payments in the database
+billing first, `DrawPut.Shape.within`), and its columns are joined by name as `columns:` joins them, so their ids
+stay and so do the keys bound to them; a new column goes after the column pasted before it. A key is an edge the
+statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `→` is; one whose table or row is found
+nowhere is left out, and the paste lands anyway.
 
 ## Rows written as lines
 
@@ -6499,7 +6517,8 @@ giving a shape back the id it had.
   so otherwise ⌘V's key goes on, Edit › Paste is dimmed and the context menu has none; on a locked
   subboard's board nothing is pasted, and nothing refused, since there's nothing to try. Copy and
   Cut work there as they do for a locked shape: copies, and a cut deletes nothing and shakes. The pasteboard is
-  read again only when it's changed. `ClipboardPlugin(pasteboard:)` takes the pasteboard, the
+  read again only when it's changed, and a reader's reading again when the file has too (a reader is handed the
+  editor: SQL's key to a table named alone reads that table's primary key). `ClipboardPlugin(pasteboard:)` takes the pasteboard, the
   system's by default.
 - **Where the keys work.** ⌘X, ⌘C, ⌘V and ⌘D are Keyboard's while the canvas has the keyboard.
   Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste
