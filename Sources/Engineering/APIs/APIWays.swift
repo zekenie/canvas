@@ -47,6 +47,9 @@ enum APIWords {
     static let endpointLines = "lines (METHOD /whole/path/{param} [(Body)] [→ [status] [Response]]; a path alone a header)"
     static let reason = "invalid_value"
     static let ambiguousReason = "ambiguous_title"
+    /// A JSON item's member that says its `responses` are all the endpoint has, so one the held endpoint has that they leave out is
+    /// taken away (`true`), where draw's lines and items without it leave the rest as they are.
+    static let wholeResponses = "wholeResponses"
 
     /// The server a script wrote: its line read, or its JSON as given.
     static func server(written value: JSONValue) throws(DrawError) -> JSONValue {
@@ -116,8 +119,11 @@ enum APIWords {
     private static func bound(_ type: [String: JSONValue], _ context: DrawTextContext) throws(DrawError) -> [String: JSONValue] {
         guard type["shape"] == nil, let words = type["words"]?.stringValue, !words.isEmpty else { return type }
         do throws(DrawError) {
-            // A type is a note that holds a schema: one the same script draws is one, though the file's index hasn't heard of it yet.
-            let found = try context.shape(called: words, admitting: { $0[TypeSchemaProperty.self] != nil ? nil : "which isn't a type" })
+            // A type is a note that holds a schema: one the same script draws with `schema:` is one, though its record has none yet
+            // and the file's index hasn't heard of it.
+            let found = try context.shape(called: words, admitting: { record, writing in
+                record[TypeSchemaProperty.self] != nil || writing.contains(TypeSchemaProperty.key.rawValue) ? nil : "which isn't a type"
+            })
             var bound = type
             bound["shape"] = .string(found.id.description)
             return bound
@@ -129,7 +135,7 @@ enum APIWords {
 
     /// The rows `written` says (paths whole) joined onto `held` (paths under their headers): a header by its prefix, kept where it
     /// is; an endpoint by its method and full path, read over the one held (a member it leaves out stays; its responses replace the
-    /// held ones in order, the rest kept), or put under the longest header its path starts with, at the end of that group, its path
+    /// held ones in order, the rest kept, unless the item says `wholeResponses`), or put under the longest header its path starts with, at the end of that group, its path
     /// written relative to it, else at the top. A new row whose id another holds is given one of its own.
     static func mergedEndpoints(_ written: JSONValue, onto held: JSONValue?) -> JSONValue {
         guard case .array(let items) = written else { return written }
@@ -145,10 +151,12 @@ enum APIWords {
             let method = given["method"]?.stringValue ?? "", path = given["path"]?.stringValue ?? ""
             if let at = APIGroups.index(of: method, path, in: rows), let old = rows[at].endpoint {
                 var members = (try? JSONValue(encoding: old).objectValue) ?? [:]
-                for (key, member) in given where key != "id" && key != "path" && key != "responses" { members[key] = member == .null ? nil : member }
+                for (key, member) in given where !["id", "path", "responses", wholeResponses].contains(key) { members[key] = member == .null ? nil : member }
                 guard var endpoint = try? JSONValue.object(members).decode(Endpoint.self) else { continue }
                 if let responses = given["responses"].flatMap({ try? $0.decode([EndpointResponse].self) }) {
-                    endpoint.responses = responses + old.responses.dropFirst(responses.count)
+                    // Its responses replace the held ones in order and the rest are kept, unless the item says its list is the whole
+                    // of them (a paste of a document, which says every response there is).
+                    endpoint.responses = responses + (given[wholeResponses] == .bool(true) ? [] : old.responses.dropFirst(responses.count))
                 }
                 rows[at] = .endpoint(endpoint)
                 continue

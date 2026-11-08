@@ -290,8 +290,9 @@ let parts: KeyValuePairs<String, [String]> = [
     "Engineering/Grammar": ["Model"],
     "Engineering/Tables": ["Model", "Grammar"],
     "Engineering/APIs": ["Model", "Grammar"],
-    // The readers of what's pasted: SQL's tables and enums, read and put down by Draw as a draw program.
-    "Engineering/Readers": ["Model"],
+    // The readers of what's pasted, each put down by Draw as a draw program: SQL's tables and enums; YAML (a subset, into Types'
+    // ordered values) and OpenAPI's API and types, grouped by the Grammar part's one rule, the API as wide as its rows (APIs').
+    "Engineering/Readers": ["Model", "Grammar", "APIs"],
 ]
 
 let package = Package(
@@ -464,7 +465,7 @@ let package = Package(
         .executableTarget(name: "PortEdgesTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Connections", "Draw", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortEdgesTests"), // layer: test of Connections
         .executableTarget(name: "MentionTextsTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Keyboard", "Mentions", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Validation"], path: "Tests/MentionTextsTests"), // layer: test of Mentions
         .executableTarget(name: "ValidationChecksTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Draw", "TestKit", "Validation"], path: "Tests/ValidationChecksTests"), // layer: test of Validation
-        .executableTarget(name: "EngineeringTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Engineering", "Find", "Geometry", "Keyboard", "LineRows", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Transform"], path: "Tests/EngineeringTests"), // layer: test
+        .executableTarget(name: "EngineeringTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Engineering", "Find", "Geometry", "Keyboard", "LineRows", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Transform", "Types"], path: "Tests/EngineeringTests"), // layer: test
         .executableTarget(name: "ExamplesTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "ContextMenus", "Keyboard", "LanguageRules", "Mentions", "Reordering", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ExamplesTests"), // layer: test
         // The skills' tools where no app is needed: the canvas-digest tool's unit tests under jsc and the canvas-ingest tests that start no app.
         .executableTarget(name: "SkillToolsTests", dependencies: ["CanvasRPC", "SkillTesting", "TestKit"], path: "Tests/SkillToolsTests"), // layer: test

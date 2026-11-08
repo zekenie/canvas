@@ -2368,6 +2368,7 @@ registrar.apiCommands(placing: placedAPI)                                // /api
 registrar.rowsDraw()                                                     // canvas draw's columns: and values:
 registrar.apiDraw()                                                      // canvas draw's server: and endpoints:
 registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
+registrar.openAPIPaste()                                                 // ⌘V of OpenAPI, "Paste OpenAPI"
 ```
 
 A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
@@ -2511,6 +2512,28 @@ statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `�
 nowhere is left out (a key the column had stays), and the paste lands anyway. The reading holds only the text: a key to a
 table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
 brought into it, and VoiceOver hears what was made and what updated; SQL that reads as nothing says "Nothing to paste".
+
+**Paste OpenAPI.** ⌘V of an OpenAPI 3 file (`.yaml`, `.yml` or `.json`) or its text is the kit's second reader. YAML is
+read by a subset reader of the kit's own (`YAMLReader`) into Types' ordered `SchemaValue`, JSON by Types' reader, so
+endpoints and fields keep the file's order; `OpenAPIReader` (pure) makes the API (title, server line, endpoints grouped
+by `APIGroups.byPrefix`, Group by Prefix's rule) and its types (components' schemas, inline objects named for their
+operation) in JSON Schema 2020-12. The program it writes needs what only the put knows, so its type statements carry late
+values and say which shapes they may find:
+
+```swift
+var type = DrawPut.Shape(kind: editor.newTypeKind()!.rawValue, title: "Refund")   // the kind New Type makes, never a literal
+type.late = [DrawPut.LateValue(key: TypeSchemaProperty.key.rawValue) { names in
+    // `$ref: #/components/schemas/Money` points at Money's note, made or found by this same put:
+    OpenAPIPaste.pointed(schema) { names.shape(kind, called: $0) }.pretty           // and, where names.found, joined
+}]                                                                                  // with what the type holds
+type.admits = { $0[TypeSchemaProperty.self] != nil }                                // a type finds only a type
+```
+
+The API is found by its title and its endpoints by method and full path (`endpoints:`'s writer), a body's words bind to
+the put's type notes by their ids, a late value of the API's (a pill, never an arrow; a title may be another shape's too),
+and a type pasted again keeps its id, its properties joined by name in the order it holds, so the same file pasted again
+changes nothing. A statement may also say the size its new shape is drawn at (`DrawPut.Shape.size`) and what the kind it
+makes is called when the paste is announced (`DrawPut.labels`: "Type", not "Note").
 
 ## Rows written as lines
 
@@ -6667,7 +6690,9 @@ giving a shape back the id it had.
   (`registrar.pasteReader("SQL", sniff: { … }) { content, editor in DrawPut? }`, `content` the text,
   or the local files with their small text, files before text): the shapes the file already has by kind
   and title are restated, the nearest first, never refused, the rest made and laid out in rows, landing
-  beside the selection (centered on a click or the pointer), selected, one step, "Paste SQL". A reader
+  beside the selection (centered on a click or the pointer), selected, one step, "Paste SQL". What only
+  the put can know a statement writes as a late value, and it may say which shapes it finds (Paste
+  OpenAPI's type notes: [The engineering kit](#the-engineering-kit)). A reader
   is `.recognizing` (⌘V's, with a cheap `sniff` menus ask) or `.plain` (⌥⇧⌘V, Edit › Paste as Note:
   StickyNotes' makes any text one note). Anything else on the pasteboard (an image, text no reader reads) is left alone. ⌘V, Edit › Paste and
   Paste are there only when something would paste, and the board shown takes shapes (`canPaste`),
@@ -16334,7 +16359,7 @@ neighbor-details     service NeighborList · ShapeDetails in Connections → eve
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 

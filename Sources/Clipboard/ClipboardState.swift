@@ -429,12 +429,12 @@ final class ClipboardState {
         editor.selectedShapeIDs = landed.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
         // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone.
         editor.revealIfOffscreen(landed)
-        editor.announce(pastedSummary(landed, existing: existing), priority: .low)
+        editor.announce(pastedSummary(landed, existing: existing, labels: program.labels), priority: .low)
     }
 
     /// What a put did, for VoiceOver: the kinds it made and the kinds it restated, by their labels ("Pasted 2 Tables and Enum,
-    /// updated Table").
-    private func pastedSummary(_ landed: [ShapeID], existing: CanvasDocument) -> String {
+    /// updated Table"), a kind the put names itself (`DrawPut.labels`) by that.
+    private func pastedSummary(_ landed: [ShapeID], existing: CanvasDocument, labels: [String: String]) -> String {
         let registry = editor.registry
         func counts(_ ids: [ShapeID]) -> String {
             var order: [ShapeKind] = [], counts: [ShapeKind: Int] = [:]
@@ -443,7 +443,7 @@ final class ClipboardState {
                 counts[kind, default: 0] += 1
             }
             return DeleteSteps.list(order.map { kind in
-                let label = registry.label(of: kind).name
+                let label = labels[kind.rawValue] ?? registry.label(of: kind).name
                 return counts[kind] == 1 ? label : "\(counts[kind]!) \(DeleteSteps.plural(label))"
             })
         }

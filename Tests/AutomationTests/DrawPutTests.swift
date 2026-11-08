@@ -278,4 +278,68 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         _ = try put(program, at: .beside([]), in: editor)
         expectEqual(links(in: editor).sorted(), ["A -> Far"], "B's was asked and had no row to give")
     },
+    test("a late value is written once every name is found: told the statement's shape, whether the file had it, and the shape another statement found or made; nil writes none") {
+        let editor = try drawEditor()
+        let hub = tile("Hub", CGRect(x: 0, y: 0, width: 100, height: 60), in: editor)
+        final class Seen: @unchecked Sendable { var told: [(shape: ShapeID, found: Bool, other: ShapeID?)] = []; var nowhere: [ShapeID?] = [] }
+        let seen = Seen()
+        func late(_ other: String) -> DrawPut.LateValue {
+            DrawPut.LateValue(key: "finish") { names in
+                seen.told.append((names.shape, names.found, names.shape(Tile.kind, called: other)))
+                seen.nowhere.append(names.shape(Tile.kind, called: "Nowhere"))
+                return names.found ? "glossy" : nil
+            }
+        }
+        let program = DrawPut(rows: [[
+            DrawPut.Shape(kind: "tile", title: "Hub", late: [late("New")]),
+            DrawPut.Shape(kind: "tile", title: "New", late: [late("Hub")]),
+        ]])
+        let landed = try put(program, at: .beside([]), in: editor)
+        expectEqual(landed.count, 2)
+        let made = try require(landed.first { $0 != hub.id })
+        expectEqual(seen.told.count, 2)
+        expectEqual(seen.told.first?.shape, hub.id)
+        expectEqual(seen.told.first?.found, true)
+        expectEqual(seen.told.first?.other, made, "the shape the other statement makes, before it is made")
+        expectEqual(seen.told.last?.shape, made)
+        expectEqual(seen.told.last?.found, false)
+        expectEqual(seen.told.last?.other, hub.id, "the file's, found")
+        expectEqual(finish(of: hub.id, in: editor), .glossy, "found: written")
+        expectEqual(finish(of: made, in: editor), .matte, "made: nil wrote nothing, the default")
+        expectEqual(seen.nowhere, [nil, nil], "a title none of the put's statements names: none")
+    },
+    test("a statement finds only a shape it admits: one it doesn't is no match and a new one is made, never a refusal; a late value counts as a value, so a locked match is none") {
+        let editor = try drawEditor([FreezingPlugin()])
+        let matte = tile("Hub", CGRect(x: 0, y: 0, width: 100, height: 60), in: editor)
+        let glossy: @MainActor @Sendable (AnyShapeRecord) -> Bool = { $0.typed(as: Tile.self)?.props.finish == .glossy }
+        let landed = try put(DrawPut(rows: [[DrawPut.Shape(kind: "tile", title: "Hub", values: [(key: "finish", text: "glossy")], admits: glossy)]]),
+                             at: .beside([]), in: editor)
+        expectEqual(landed.count, 1)
+        expect(landed != [matte.id], "the matte Hub isn't admitted: a glossy one made beside it")
+        expectEqual(finish(of: matte.id, in: editor), .matte)
+        let again = try put(DrawPut(rows: [[DrawPut.Shape(kind: "tile", title: "Hub", admits: glossy)]]), at: .beside([]), in: editor)
+        expectEqual(again, landed, "the glossy one is the match now")
+        expectEqual(tileCount(editor), 2)
+        editor.freeze(landed, true)
+        let late = DrawPut.LateValue(key: "finish") { _ in "glossy" }
+        let third = try put(DrawPut(rows: [[DrawPut.Shape(kind: "tile", title: "Hub", late: [late], admits: glossy)]]), at: .beside([]), in: editor)
+        expect(third != landed, "locked, and the statement writes: a new one")
+        expectEqual(tileCount(editor), 3)
+    },
+    test("a name written twice with late values for one key keeps the first's, as it does a plain value's; a key only the later one writes joins") {
+        let editor = try drawEditor()
+        let program = DrawPut(rows: [[
+            DrawPut.Shape(kind: "tile", title: "Twin", late: [DrawPut.LateValue(key: "finish") { _ in "glossy" }]),
+            DrawPut.Shape(kind: "tile", title: "Twin", late: [DrawPut.LateValue(key: "finish") { _ in "matte" }]),
+        ]])
+        let landed = try put(program, at: .beside([]), in: editor)
+        expectEqual(landed.count, 1, "one shape")
+        expectEqual(finish(of: landed[0], in: editor), .glossy, "the first file's, not the last's")
+        let plain = DrawPut(rows: [[
+            DrawPut.Shape(kind: "tile", title: "Pair", values: [(key: "finish", text: "glossy")]),
+            DrawPut.Shape(kind: "tile", title: "Pair", late: [DrawPut.LateValue(key: "finish") { _ in "matte" }]),
+        ]])
+        let pair = try put(plain, at: .beside([]), in: editor)
+        expectEqual(finish(of: pair[0], in: editor), .glossy, "a plain value of the earlier is kept over a later late one")
+    },
 ])

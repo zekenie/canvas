@@ -2,15 +2,25 @@ import Canvas
 import Clipboard
 import Connections
 import Draw
+import Types
 
 // What the kit reads from the pasteboard (Clipboard's paste readers, which go with the kit: a file with it off reads none): SQL's
-// tables and enums (the Readers part), put down by Draw with their keys on the kit's channel (the Tables part's).
+// tables and enums (the Readers part), put down by Draw with their keys on the kit's channel (the Tables part's); and OpenAPI's API
+// and its types, the types notes of the kind New Type makes (Types').
 
 extension PluginRegistrar {
     /// ⌘V of SQL ("Paste SQL"): a text with `CREATE TABLE` or `AS ENUM`, or a `.sql` file, read when one table or enum reads.
     mutating func sqlPaste() {
         pasteReader(SQLPaste.name, sniff: { SQLPaste.sniffs($0) }, read: { content, _ in
             SQLPaste.read(content, keys: SQLPaste.foreignKeys)
+        })
+    }
+
+    /// ⌘V of OpenAPI ("Paste OpenAPI"): a text, or a `.yaml`, `.yml` or `.json` file, that says `openapi`, read when it is OpenAPI 3
+    /// with `paths`. Its types are notes of the kind a new type is (`newTypeKind`); with none, the API alone.
+    mutating func openAPIPaste() {
+        pasteReader(OpenAPIPaste.name, sniff: { OpenAPIPaste.sniffs($0) }, read: { content, editor in
+            OpenAPIPaste.read(content, typeKind: editor.newTypeKind())
         })
     }
 }
