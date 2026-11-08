@@ -138,17 +138,18 @@ extension ConnectionGroup {
         let enumType = editor.add(DatabaseEnum(frame: CGRect(x: 900, y: 400, width: 220, height: 44)))
         let database = editor.add(Database(frame: CGRect(x: 1200, y: 300, width: 400, height: 300)))
         let api = editor.add(API(frame: CGRect(x: 1700, y: 300, width: 420, height: 78)))
+        let endpoint = editor.add(StandaloneEndpoint(frame: CGRect(x: 2200, y: 300, width: 420, height: 44), endpoint: Endpoint(method: "GET", path: "/a")))
         let panel = try require(editor.detailPanel)
         var kinds: Set<ShapeKind> = []
         var tabs: [[String]] = []
-        for id in [note, subboard, frame, arrow, reference, type, table, enumType, database, api] {
+        for id in [note, subboard, frame, arrow, reference, type, table, enumType, database, api, endpoint] {
             let record = try require(editor.document[id])
             kinds.insert(record.kind)
             tabs.append(panel.layout(for: record).tabs.map(\.title))
         }
         expectEqual(kinds, Set(editor.registry.kinds), "every kind there is")
         expectEqual(tabs, [["Connections", "Style"], ["Description", "Connections", "Style"], ["Connections", "Style"], ["Connections", "Style"], ["Connections"],
-                           ["Connections", "Schema", "Rules", "Style"], ["Connections"], ["Connections"], ["Connections"], ["Connections"]])
+                           ["Connections", "Schema", "Rules", "Style"], ["Connections"], ["Connections"], ["Connections"], ["Connections"], ["Connections"]])
     },
 
     test("a note with an arrow out and an arrow in lists the notes at the other ends under Points To and Pointed To By, and no arrow, with a count each") {

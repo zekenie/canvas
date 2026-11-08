@@ -397,7 +397,7 @@ private func frame(_ i: Int) -> CGRect { CGRect(x: i * 150, y: 0, width: 120, he
         expectEqual(Set(found), Set(given), "\"t\" is in every label: the given alone")
         let plain = r.candidates("t").matches.map(\.id)
         expectEqual(found, plain.filter { given.contains($0) }, "ranked as without it, less the rest")
-        expectEqual(r.state.candidates(matching: "endpoint", in: AnyMentionable.self, for: r.owner, among: given).matches, [], "what matches but isn't given is no match")
+        expectEqual(r.state.candidates(matching: "handler", in: AnyMentionable.self, for: r.owner, among: given).matches, [], "what matches but isn't given is no match")
         expectEqual(r.state.candidates(matching: "token 0", in: AnyMentionable.self, for: r.owner, among: [r.plates[0]]).matches, [], "the token itself, not given")
         expectEqual(r.state.candidates(matching: "t", in: AnyMentionable.self, for: r.owner, among: []), MentionCandidates(words: 1), "none given, none listed")
         expectEqual(r.state.candidates(matching: "", in: AnyMentionable.self, for: r.owner, among: []), MentionCandidates())

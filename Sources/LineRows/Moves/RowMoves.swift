@@ -41,10 +41,15 @@ public struct LineRowsMoving {
     let inserting: @MainActor (AnyShapeRecord, AnyShapeRecord, Int, [PartID: PartID]) -> AnyShapeRecord?
     /// The shape with these rows, in their order, put at an index among the rest.
     let reordering: @MainActor (AnyShapeRecord, [PartID], Int) -> AnyShapeRecord?
-    /// A carrier's rows in a shape of their own, under a new id (the kind's take-out: a table's `id uuid pk` first).
+    /// A carrier's rows in a shape of their own, under a new id (the kind's take-out: a table's `id uuid pk` first; one endpoint, an
+    /// endpoint of its own).
     let takeOut: @MainActor (AnyShapeRecord) -> AnyShapeRecord?
-    /// Whether a shape taken out has its name typed at once.
+    /// What taking a carrier's rows out is called, where the kind names it ("Take Out Endpoint"); nil for the noun's.
+    let takeOutStep: @MainActor (AnyShapeRecord) -> String?
+    /// Whether a shape taken out has its name typed at once (one of the kind's own: a take-out of another kind is that kind's to name).
     let editsTitle: Bool
+    /// Whether a shape of the kind is its rows (an endpoint of its own): it goes as the last of them goes, and has no take-out.
+    public let goesWithItsRows: Bool
     /// What a block of only headers is called in steps (an API's "path prefix"); nil for the noun.
     let headerNoun: LineNoun?
     /// A carrier's rows as their lines print, one a line: what goes on the pasteboard as text beside them.
@@ -55,7 +60,8 @@ public struct LineRowsMoving {
                 removing: @escaping @MainActor (AnyShapeRecord, Set<PartID>) -> AnyShapeRecord?,
                 inserting: @escaping @MainActor (AnyShapeRecord, AnyShapeRecord, Int, [PartID: PartID]) -> AnyShapeRecord?,
                 reordering: @escaping @MainActor (AnyShapeRecord, [PartID], Int) -> AnyShapeRecord?,
-                takeOut: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord?, editsTitle: Bool, headerNoun: LineNoun? = nil,
+                takeOut: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord?, takeOutStep: @escaping @MainActor (AnyShapeRecord) -> String? = { _ in nil },
+                editsTitle: Bool, goesWithItsRows: Bool = false, headerNoun: LineNoun? = nil,
                 lines: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> [String]) {
         self.noun = noun
         self.takes = takes
@@ -65,7 +71,9 @@ public struct LineRowsMoving {
         self.inserting = inserting
         self.reordering = reordering
         self.takeOut = takeOut
+        self.takeOutStep = takeOutStep
         self.editsTitle = editsTitle
+        self.goesWithItsRows = goesWithItsRows
         self.headerNoun = headerNoun
         self.lines = lines
     }
@@ -157,7 +165,7 @@ extension CanvasEditor {
         guard let carrier = moving.carrier(record, ids) else { return nil }
         let noun = stepNoun(of: ids, in: record, moving)
         let step: String = if case .into = place { RowSteps.move(noun, count: ids.count) } else {
-            RowSteps.takeOut(noun, count: ids.count, into: record.kind, in: registry)
+            takeOutStep(of: carrier, noun: noun, count: ids.count, moving)
         }
         return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key)?.shape
     }
@@ -245,7 +253,7 @@ extension CanvasEditor {
         let landing: Landing
         switch place {
         case .into(let target, let before):
-            guard let held = document[target], let into = registry.rowMoving(of: held.kind), into.takes(carrier.kind), held.kind == carrier.kind else { return nil }
+            guard let held = document[target], let into = registry.rowMoving(of: held.kind), into.takes(carrier.kind) else { return nil }
             let order = (into.rows(held) ?? []).filter { target != source || !rows.contains($0) }
             let taken = Set(order)
             var renaming: [PartID: PartID] = [:]
@@ -277,9 +285,16 @@ extension CanvasEditor {
         let body = { [self] () -> [ShapeID: CGPoint]? in
             left = []
             return transactWhole(step, coalescing: key) { transaction -> [ShapeID: CGPoint] in
+                // A source that is its rows (an endpoint of its own) goes once what's bound to them has followed them.
+                var emptied: ShapeID?
                 if let source, let fresh = transaction.document[source], let from = registry.rowMoving(of: fresh.kind) {
-                    guard let without = from.removing(fresh, Set(rows)) else { throw Transaction.Refused([source]) }
-                    transaction.update(source) { $0 = without }
+                    if from.goesWithItsRows, Set(from.rows(fresh) ?? []).isSubset(of: Set(rows)) {
+                        guard !transaction.isReadOnly(fresh) else { throw Transaction.Refused([source]) }
+                        emptied = source
+                    } else {
+                        guard let without = from.removing(fresh, Set(rows)) else { throw Transaction.Refused([source]) }
+                        transaction.update(source) { $0 = without }
+                    }
                 }
                 switch landing {
                 case .into(let target, let index, let renaming):
@@ -332,6 +347,7 @@ extension CanvasEditor {
                     }
                     transaction.moveParts(moved)
                 }
+                if let emptied { transaction.delete([emptied]) }
                 guard case .out = landing else { return [:] }
                 switch transaction.settle([destination] + put) {
                 case .settled(let nudges): return nudges
@@ -339,9 +355,13 @@ extension CanvasEditor {
                 }
             }
         }
-        var out = false
-        if case .out = landing { out = true }
-        let editsTitle = out && moving.editsTitle
+        var out = false, madeOwnKind = true
+        if case .out(let made) = landing {
+            out = true
+            madeOwnKind = made.kind == carrier.kind
+        }
+        // A take-out of another kind (an endpoint of its own) is named by that kind (its title derived): nothing to type.
+        let editsTitle = out && moving.editsTitle && madeOwnKind
         var nudges: [ShapeID: CGPoint]?
         if editsTitle {
             // The name typed into the new shape is the same step.
@@ -359,7 +379,7 @@ extension CanvasEditor {
     }
 
     /// What a landing leaves: the new shape selected and brought into view, its name typed where the kind says so; else the
-    /// rows selected as items of their shape.
+    /// rows selected as items of their shape. A shape that is its rows (an endpoint of its own) is selected whole: its row is it.
     private func finishLanding(_ shape: ShapeID, landed: [PartID], out: Bool, editsTitle: Bool, nudges: [ShapeID: CGPoint]) {
         if out {
             // A shape whose name is typed at once is laid out where it is, under its editing view.
@@ -372,6 +392,7 @@ extension CanvasEditor {
                 beginEditing(shape)
                 return
             }
+            if let kind = document[shape]?.kind, registry.rowMoving(of: kind)?.goesWithItsRows == true { return }
         }
         if editingShapeID != shape { selectItems(landed.map(AnyHashable.init), of: shape) }
     }
@@ -402,6 +423,12 @@ extension CanvasEditor {
         let wanted = Set(ids)
         let chosen = rows.filter { wanted.contains($0.id) }
         return !chosen.isEmpty && chosen.allSatisfy(\.isHeader) ? header : moving.noun
+    }
+
+    /// What taking a carrier's rows out is called: the kind's own name for it ("Take Out Endpoint"), else the noun's ("Move Columns
+    /// to New Table").
+    func takeOutStep(of carrier: AnyShapeRecord, noun: LineNoun, count: Int, _ moving: LineRowsMoving) -> String {
+        moving.takeOutStep(carrier) ?? RowSteps.takeOut(noun, count: count, into: carrier.kind, in: registry)
     }
 
     /// How big `record` is laid out, as a shape of its own.

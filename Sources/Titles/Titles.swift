@@ -293,11 +293,11 @@ extension ShapeRegistrar {
     /// Gives this kind a title derived from what it keeps itself: what `make` says a shape is
     /// called, if anything (nil or blank is none), as `label.title { $0.props.text }`. It follows
     /// what it's made from, and isn't in the kind's schema; one that someone names is `title()`.
-    /// The pill and the row are as there.
+    /// The pill, the row and `bars` (a bar where the pill is, zoomed out) are as there.
     public mutating func title(pill: Bool = true, symbolInPill: Bool = false, placeholderInPill: String? = nil, contents: Bool = true,
-                               coverSurface: NSColor? = nil, _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
+                               coverSurface: NSColor? = nil, bars: Bool = false, _ make: @escaping @MainActor (ShapeRecord<Definition.Props>) -> String?) {
         title(pill: pill, symbolInPill: symbolInPill, placeholderInPill: placeholderInPill, contents: contents, isDerived: true,
-              coverSurface: coverSurface, make)
+              coverSurface: coverSurface, bars: bars, make)
     }
 
     private mutating func title(pill: Bool, symbolInPill: Bool, placeholderInPill: String?, contents: Bool, isDerived: Bool,

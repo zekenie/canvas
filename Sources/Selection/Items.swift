@@ -112,6 +112,15 @@ public struct ShapeItemActions {
     /// What VoiceOver hears as the run of selected items grows or shrinks by key or click, from how many there are now:
     /// "3 columns selected". Nil: nothing is said.
     public var selectedWords: (@MainActor (Int) -> String)?
+    /// Space on the one item selected that hides nothing, and VoiceOver's press on its lead: what the item's lead does besides
+    /// selecting it (an endpoint's method chip: its method menu). Whether it had one to do.
+    public var pressLead: (@MainActor (CanvasEditor, ShapeID, AnyHashable) -> Bool)?
+    /// What VoiceOver calls each item's lead that does something (`pressLead`), a button after the item ("Method, PATCH"), by
+    /// item: asked only when an assistive app asks for the shape's parts.
+    public var leadTitles: (@MainActor (CanvasEditor, AnyShapeRecord) -> [AnyHashable: String])?
+    /// Space on a shape of the kind selected whole, with no item selected: what it does when the shape is its one item (an endpoint
+    /// standing alone: its method menu, as its chip's click). Whether it had one to do.
+    public var pressWhole: (@MainActor (CanvasEditor, ShapeID) -> Bool)?
 
     public init(delete: @escaping @MainActor (CanvasEditor, ShapeID, [AnyHashable]) -> Void,
                 move: @escaping @MainActor (CanvasEditor, ShapeID, [AnyHashable], Int) -> Void,
@@ -119,8 +128,14 @@ public struct ShapeItemActions {
                 setOpen: (@MainActor (CanvasEditor, ShapeID, AnyHashable, Bool) -> Void)? = nil,
                 drag: (@MainActor (CanvasEditor, ShapeID, [AnyHashable], CGPoint) -> (any Session)?)? = nil,
                 lead: (@MainActor (CanvasEditor, AnyShapeRecord, CGPoint) -> ItemLead?)? = nil,
-                selectedWords: (@MainActor (Int) -> String)? = nil) {
+                selectedWords: (@MainActor (Int) -> String)? = nil,
+                pressLead: (@MainActor (CanvasEditor, ShapeID, AnyHashable) -> Bool)? = nil,
+                leadTitles: (@MainActor (CanvasEditor, AnyShapeRecord) -> [AnyHashable: String])? = nil,
+                pressWhole: (@MainActor (CanvasEditor, ShapeID) -> Bool)? = nil) {
+        self.pressWhole = pressWhole
         self.selectedWords = selectedWords
+        self.pressLead = pressLead
+        self.leadTitles = leadTitles
         self.delete = delete
         self.move = move
         self.open = open
@@ -370,10 +385,22 @@ extension CanvasEditor {
         return true
     }
 
-    /// Space with one item selected that hides others: opened or closed. Whether it took the key.
+    /// Space with one shape selected whole and no item: what a shape that is its one item does for it (`ShapeItemActions.pressWhole`).
+    private func pressWholeShape() -> Bool {
+        guard session == nil, editingShapeID == nil, selectedItems == nil, selectedShapeIDs.count == 1, let id = selectedShapeIDs.first,
+              let record = document[id], let press = itemSource(of: record.kind)?.actions.pressWhole else { return false }
+        return press(self, id)
+    }
+
+    /// Space with one item selected: one that hides others opened or closed; one that hides nothing, its lead pressed where the kind
+    /// gives its lead more than selecting (an endpoint's method chip: its menu). Whether it took the key.
     func toggleSelectedItem() -> Bool {
         guard let (selection, source, listed) = itemContext(), selection.ids.count == 1,
-              let item = listed.first(where: { $0.id == selection.ids[0] }), let outline = item.outline, let setOpen = source.actions.setOpen else { return false }
+              let item = listed.first(where: { $0.id == selection.ids[0] }) else { return pressWholeShape() }
+        guard let outline = item.outline else {
+            return source.actions.pressLead?(self, selection.shape, item.id) ?? false
+        }
+        guard let setOpen = source.actions.setOpen else { return false }
         setOpen(self, selection.shape, item.id, outline == .closed)
         return true
     }

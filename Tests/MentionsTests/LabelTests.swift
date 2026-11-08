@@ -36,7 +36,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
         h.editor.transact { $0.update(endpoint, as: Endpoint.self) { $0.props.path = "  \n " } }
         expectEqual(appearance(endpoint)?.label, "Users API", "a blank label is none")
         h.editor.rename(endpoint, nil)
-        expectEqual(appearance(endpoint)?.label, "Untitled Endpoint")
+        expectEqual(appearance(endpoint)?.label, "Untitled Handler")
         expectEqual(appearance(endpoint)?.isPlaceholder, true)
 
         let plate = h.editor.add(Plate(frame), titled: "Groceries")
@@ -162,7 +162,7 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
         let registry = try Registry(plugins: mentionPlugins())
         let line = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("mention-fixtures") })
         for item in ["mention scope Blockers", "mentionable → plate", "mention scope Blockers → plate", "mentionable → token",
-                     "mention scope Blockers → token", "mentionable → endpoint", "mentionable → jot", "mention text → jot"] {
+                     "mention scope Blockers → token", "mentionable → handler", "mentionable → jot", "mention text → jot"] {
             expect(line.contains(item), "\(item) in \(line)")
         }
         let mentions = try require(registry.report.split(separator: "\n").first { $0.hasPrefix("mentions ") })

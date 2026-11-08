@@ -86,6 +86,9 @@ final class CensusBoard {
         var api = ShapeRecord(API(frame: CGRect(x: 1960, y: 1460, width: 380, height: 102), server: APIServer(host: "api.shop.dev/v1", auth: "bearer"),
                                   endpoints: ["/orders", "POST /{id}/refunds (NewRefund) → 201 Refund"].compactMap { EndpointGrammar.read($0) }))
         api[TitleProperty.self] = "orders API"
+        // An endpoint taken out of an API, standing alone: titled by its name.
+        let endpoint = ShapeRecord(StandaloneEndpoint(frame: CGRect(x: 2400, y: 1460, width: 380, height: 44),
+                                                      endpoint: Endpoint(method: "POST", path: "/orders/{id}/cancel", name: "cancelOrder")))
         editor.turn(EngineeringKit.self, on: true)
         // A note of more types than its chips have room for: a "+N" chip.
         let account = editor.addTypeNote(#"{"type": "object", "properties": {}}"#, title: "Customer Account",
@@ -107,6 +110,7 @@ final class CensusBoard {
             t.insert(values)
             t.insert(database)
             t.insert(api)
+            t.insert(endpoint)
             t.insert(arrow)
             t.insert(gig)
         }
@@ -115,7 +119,7 @@ final class CensusBoard {
         var names = [m.feature: "Feature", m.layer: "Layer", m.featureNote: "the Feature note", m.layerNote: "the Layer note", made: "in",
                  budget.id: "Budget", ask.id: "Ask", pill.id: "the reference", frame.id: "Plans", subboard.id: "Ship",
                      account: "Customer Account", gig.id: "Gig", table.id: "orders", values.id: "order_status",
-                     database.id: "shop", api.id: "orders API"]
+                     database.id: "shop", api.id: "orders API", endpoint.id: "cancelOrder"]
         for arrow in m.arrows {
             let from = arrow.props.start.binding.flatMap { names[$0.shapeID] } ?? "?", to = arrow.props.end.binding.flatMap { names[$0.shapeID] } ?? "?"
             names[arrow.id] = "the arrow from \(from) to \(to)"

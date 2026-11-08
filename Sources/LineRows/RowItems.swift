@@ -28,9 +28,17 @@ extension ShapeRegistrar {
             model.setRows(rows, in: &shape.props)
             return AnyShapeRecord(shape)
         }
+        // A shape that is its row: Space on it selected whole is a click on its row's lead.
+        let pressWhole: @MainActor (CanvasEditor, ShapeID) -> Bool = { editor, shape in
+            guard let record = editor.document[shape], let held = typed(record), let row = model.rows(of: held.props).first,
+                  let (action, rect) = RowItems.leadAction(of: model.id(of: row), in: held, record, model, editor) else { return false }
+            action.press(editor, rect)
+            return true
+        }
         contribute(LineRowsMoving(
             noun: model.noun,
-            takes: { $0 == kind },
+            // A shape that is its rows takes none; another takes its own kind's, and those the kind says (an API an endpoint's).
+            takes: { ($0 == kind && !model.goesWithItsRows) || model.takesRows(of: $0) },
             rows: { record in typed(record).map { model.rows(of: $0.props).map(model.id(of:)) } },
             // Each change through the kind's own (`applying`, `placing`, `reordering`), so what a row says by its neighbors
             // stays said wherever it goes (an API's endpoint its full path).
@@ -45,15 +53,19 @@ extension ShapeRegistrar {
             },
             removing: { record, ids in with(record, rows: model.removing(ids, from: rows(record))) },
             inserting: { record, carrier, index, renaming in
-                let added = rows(carrier).map { row in renaming[model.id(of: row)].map { model.renaming(row, to: $0) } ?? row }
+                let carried = carrier.kind == kind ? rows(carrier) : model.rows(taken: carrier) ?? []
+                let added = carried.map { row in renaming[model.id(of: row)].map { model.renaming(row, to: $0) } ?? row }
                 return model.inserting(added, at: index, into: rows(record)).flatMap { with(record, rows: $0) }
             },
             reordering: { record, ids, index in with(record, rows: model.reordering(Set(ids), to: index, in: rows(record))) },
             takeOut: { carrier in
                 guard let shape = typed(carrier) else { return nil }
-                return AnyShapeRecord(ShapeRecord(model.takeOut(model.rows(of: shape.props), from: shape)))
+                let all = model.rows(of: shape.props)
+                return model.takeOutShape(all, from: shape) ?? AnyShapeRecord(ShapeRecord(model.takeOut(all, from: shape)))
             },
+            takeOutStep: { carrier in model.takeOutStep(of: rows(carrier)) },
             editsTitle: model.takeOutEditsTitle,
+            goesWithItsRows: model.goesWithItsRows,
             headerNoun: model.headerNoun,
             lines: { carrier, editor in
                 rows(carrier).map { row in
@@ -101,9 +113,33 @@ extension ShapeRegistrar {
                       let rect = model.lead(of: all[index], at: index, among: all, line: item.rect,
                                             in: LineContext(editor: editor, shape: record.id, row: id)),
                       rect.contains(point) else { return nil }
-                return ItemLead(item: id) { editor, wasSelected in RowItems.clickLead(id, of: record.id, wasSelected: wasSelected, in: editor) }
+                // What the kind's lead does besides (an endpoint's chip: its method menu), after the click's level at a time.
+                let action = model.leadAction(of: all[index], at: index, among: all, in: LineContext(editor: editor, shape: record.id, row: id))
+                return ItemLead(item: id) { editor, wasSelected in
+                    RowItems.clickLead(id, of: record.id, wasSelected: wasSelected, in: editor)
+                    action?.press(editor, rect)
+                }
             },
-            selectedWords: { LineFieldStyle.selected(model.noun.counted($0)) }))
+            selectedWords: { LineFieldStyle.selected(model.noun.counted($0)) },
+            pressLead: { editor, shape, item in
+                guard let id = item.base as? PartID, let record = editor.document[shape], let held = typed(record),
+                      let (action, rect) = RowItems.leadAction(of: id, in: held, record, model, editor) else { return false }
+                action.press(editor, rect)
+                return true
+            },
+            leadTitles: { editor, record in
+                guard let shape = typed(record) else { return [:] }
+                let all = model.rows(of: shape.props)
+                var titles: [AnyHashable: String] = [:]
+                for (index, row) in all.enumerated() {
+                    let id = model.id(of: row)
+                    if let action = model.leadAction(of: row, at: index, among: all, in: LineContext(editor: editor, shape: record.id, row: id)) {
+                        titles[AnyHashable(id)] = action.title
+                    }
+                }
+                return titles
+            },
+            pressWhole: model.goesWithItsRows ? pressWhole : nil))
     }
 }
 
@@ -156,6 +192,17 @@ enum RowItems {
         if wasSelected { editor.selectItems([AnyHashable(row)], of: shape) }
     }
 
+    /// Row `id`'s lead's action (`LineModel.leadAction`), with where its lead is drawn: what Space on the row and VoiceOver press.
+    static func leadAction<Model: LineModel>(of id: PartID, in shape: ShapeRecord<Model.Props>, _ record: AnyShapeRecord, _ model: Model,
+                                             _ editor: CanvasEditor) -> (LineLeadAction, CGRect)? {
+        let all = model.rows(of: shape.props)
+        guard let index = all.firstIndex(where: { model.id(of: $0) == id }),
+              let item = items(of: record, in: editor, title: { _ in "" }).first(where: { $0.id == AnyHashable(id) }) else { return nil }
+        let context = LineContext(editor: editor, shape: record.id, row: id)
+        guard let action = model.leadAction(of: all[index], at: index, among: all, in: context) else { return nil }
+        return (action, model.lead(of: all[index], at: index, among: all, line: item.rect, in: context) ?? item.rect)
+    }
+
     /// → ← Space on a header or the "+N ›" line: opened or closed; the selection stays on it.
     static func setOpen(_ id: AnyHashable, of shape: ShapeID, _ open: Bool, in editor: CanvasEditor) {
         guard let folds = editor.rowFolds else { return }
@@ -175,8 +222,11 @@ enum RowItems {
         guard let selection = editor.selectedItems, subject.shapes == [selection.shape], let record = editor.document[selection.shape],
               let moving = editor.registry.rowMoving(of: record.kind) else { return nil }
         let rows = selection.acting.compactMap { $0.base as? PartID }
-        guard !rows.isEmpty else { return nil }
-        let title = RowSteps.takeOut(editor.stepNoun(of: rows, in: record, moving), count: rows.count, into: record.kind, in: editor.registry)
+        // A shape that is its rows has no take-out: it stands alone already.
+        guard !rows.isEmpty, !moving.goesWithItsRows else { return nil }
+        let wanted = editor.withGroups(Set(rows), of: record)
+        guard let carrier = moving.carrier(record, (moving.rows(record) ?? []).filter(wanted.contains)) else { return nil }
+        let title = editor.takeOutStep(of: carrier, noun: editor.stepNoun(of: rows, in: record, moving), count: rows.count, moving)
         return MenuItem(title, in: RowsMenuGroup.self, id: "take-out-rows", stepName: title) { ids, editor in
             editor.moveRows(rows, of: selection.shape, to: .beside(ids))
         }

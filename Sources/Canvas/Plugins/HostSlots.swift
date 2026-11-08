@@ -274,6 +274,8 @@ public enum KeyHintPlace: Sendable {
     case pointer
     /// While text is being edited.
     case text
+    /// On the canvas, with a shape or rows selected, besides the keys it registers.
+    case canvas
 }
 
 // MARK: The menu bar
@@ -475,7 +477,12 @@ extension PluginRegistrar {
     ///
     ///     registrar.keyHint("⌥ Drag", "Drag a Copy", while: .pointer)
     public mutating func keyHint(_ keys: String, _ title: String, while place: KeyHintPlace) {
-        contribute(KeyboardHelpRow(keys: [keys], title: title, place: place == .pointer ? .pointer : .text), to: KeyHints.self)
+        let row: KeyboardHelpRow.Place = switch place {
+        case .pointer: .pointer
+        case .text: .text
+        case .canvas: .canvas
+        }
+        contribute(KeyboardHelpRow(keys: [keys], title: title, place: row), to: KeyHints.self)
     }
 
     /// The keys that run each command, given the command and the registry, the one a menu item shows

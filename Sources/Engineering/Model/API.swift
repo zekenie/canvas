@@ -233,3 +233,24 @@ public struct EndpointResponse: SchemaDefined, Hashable, Sendable {
 }
 
 extension EndpointResponse: ShapeNaming {}
+
+/// One endpoint taken out of an API, standing alone (E3 panel 4: createRefund): its whole path, and its row's id kept, so what was
+/// bound to the row (a call, a write, a pill for it on another board) is bound to it here. Its name is its endpoint's (a title
+/// derived from it: its name, else its method and path), never typed into a pill; only its frame's width is its own, its height laid
+/// out from what its card shows. Complete at version 0.
+public struct StandaloneEndpoint: BoxShapeProps {
+    public static let kind: ShapeKind = "endpoint"
+    public static let properties = Properties<StandaloneEndpoint>(title: "Endpoint") {
+        Property("frame", \.frame).required()
+        Property("endpoint", \.endpoint).description("The endpoint: its id the row's it was taken out as, its path whole.")
+    }
+    public var frame: CGRect
+    public var endpoint: Endpoint
+
+    public init(frame: CGRect = .zero, endpoint: Endpoint = Endpoint()) {
+        self.frame = frame
+        self.endpoint = endpoint
+    }
+
+    public init() { self.init(frame: .zero) }
+}

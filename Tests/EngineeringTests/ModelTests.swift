@@ -27,7 +27,7 @@ import Titles
         expectEqual(registry.kits.map(\.title), ["Engineering"])
         expectEqual(registry.tools.filter { registry.kit(ofTool: $0.id) == EngineeringKit.id }.map(\.label), ["Table", "Enum", "API", "Database"])
         expectEqual(registry.containingKinds.contains(Database.kind), true)
-        expectEqual(Set(registry.partedKinds), [DatabaseTable.kind, DatabaseEnum.kind, API.kind])
+        expectEqual(Set(registry.partedKinds), [DatabaseTable.kind, DatabaseEnum.kind, API.kind, StandaloneEndpoint.kind])
         expectEqual(registry.label(of: DatabaseTable.kind).systemImage, "tablecells")
     },
     test("each kind's props round-trip through a board, every member kept, a column's enum by its id") {

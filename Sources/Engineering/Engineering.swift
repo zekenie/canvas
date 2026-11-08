@@ -28,7 +28,7 @@ extension PluginID {
     public static let engineering: PluginID = "engineering"
 }
 
-/// The kit's plugin: the `table`, `enum-type`, `api` and `database` kinds; the Table, Enum, API and Database tools, each a new
+/// The kit's plugin: the `table`, `enum-type`, `api`, `endpoint` (one endpoint taken out of an API) and `database` kinds; the Table, Enum, API and Database tools, each a new
 /// shape whose name is typed in its pill as it lands (a database's tab), "Add Table"; `/table NAME`, `/api [NAME]`, `/database
 /// NAME` and Create Database; ⌘V of SQL ("Paste SQL") and of OpenAPI ("Paste OpenAPI"); and `canvas draw`'s `columns:`, `values:`, `server:` and `endpoints:`,
 /// lines in their grammars. Its kinds opt into Titles (the name in
@@ -49,6 +49,7 @@ public struct EngineeringPlugin: ListedPlugin {
         registrar.keyHint("⌘L in a Row", "Connect the Row", while: .text)
         registrar.keyHint("⌘↓ in a Column", "Show the Column's Details", while: .text)
         registrar.keyHint("⌘↓ in an Endpoint", "Show the Endpoint's Details", while: .text)
+        registrar.keyHint("Space on an Endpoint", "Change the Endpoint's Method", while: .canvas)
         // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
         registrar.channel(ForeignKey.self)
         // What an API does: an endpoint writes or reads a table, and something calls an endpoint; each a pill on its line.
@@ -111,7 +112,8 @@ public struct EngineeringPlugin: ListedPlugin {
             api.resizable(minimumSize: CGSize(width: APIStyle.minimumWidth, height: APIRows.height(lines: 1)))
             api.contentsRow { _, _ in ContentsLabel("", placeholder: APIStyle.placeholder, systemImage: APIStyle.symbol) }
             api.details(header: { $api in TitleHeader($api, placeholder: APIStyle.placeholder, systemImage: APIStyle.symbol) }) {}
-            api.accessibility { api, _ in AccessibleTraits(value: APIStyle.accessibleRows(api.props.endpoints.count { $0.endpoint != nil })) }
+            api.accessibility { api, _ in AccessibleTraits(value: APIStyle.accessibleRows(api.props.endpoints.count { $0.endpoint != nil }),
+                                                         states: api.props.deprecated ? [APIStyle.deprecatedState] : []) }
             // Its server and rows written as lines; an endpoint's card (⌘↓, or the "›" on its row).
             api.lineRows(APILines())
             // An endpoint's row has a dot at each end: it calls another endpoint (or is called, by anything with dots), writes and
@@ -124,6 +126,27 @@ public struct EngineeringPlugin: ListedPlugin {
             // An endpoint selected as the panel's subject (E6): its own tab, what its card holds, beside its Connections. A path
             // prefix has no card, so none.
             api.rowDetails(in: EndpointTab.self, id: "endpoint", when: \.isConnectable) { RowCardDetails(row: $0) }
+        }
+        // One endpoint taken out of an API, standing alone (E3 panel 4): no tool (a row taken out makes one), titled by its name.
+        registrar.shape(EndpointDefinition()) { endpoint in
+            endpoint.label(EndpointStyle.label, systemImage: APIStyle.symbol)
+            endpoint.tint(NSColor(KitStyle.secondaryInk))
+            endpoint.title(symbolInPill: true, placeholderInPill: EndpointStyle.label, bars: true) { EndpointStyle.title(of: $0.props.endpoint) }
+            endpoint.mentionable()
+            endpoint.resizable(minimumSize: CGSize(width: APIStyle.minimumWidth, height: KitStyle.height(rows: 1)))
+            endpoint.contentsRow { _, _ in ContentsLabel("", placeholder: EndpointStyle.placeholder, systemImage: APIStyle.symbol) }
+            endpoint.details(header: { $endpoint in
+                TitleHeader($endpoint.endpoint.name, placeholder: EndpointStyle.title(of: endpoint.endpoint), systemImage: APIStyle.symbol)
+            }) {}
+            endpoint.accessibility { endpoint, _ in AccessibleTraits(value: EndpointStyle.accessibleValue(of: endpoint.props.endpoint),
+                                                              states: endpoint.props.endpoint.deprecated ? [APIStyle.deprecatedState] : []) }
+            // Its one row, as LineRows moves rows: an item of it, its chip its lead (the method menu, a drag into an API).
+            endpoint.lineRows(EndpointLines())
+            // Its row's dots, as an API's row's: it calls, writes and reads, and is called.
+            endpoint.partPorts(Calls.self)
+            endpoint.partPorts(Writes.self, role: .source)
+            endpoint.partPorts(Reads.self, role: .source)
+            endpoint.connectPicks(admitting: EndpointPicks.admits, EndpointPicks.plan)
         }
         registrar.shape(DatabaseDefinition()) { database in
             database.label(DatabaseStyle.label, systemImage: DatabaseStyle.symbol)
@@ -143,6 +166,8 @@ public struct EngineeringPlugin: ListedPlugin {
         }
         if let editedTable { registrar.tableCommands(placing: editedTable) }
         if let placedAPI { registrar.apiCommands(placing: placedAPI) }
+        // New Version, Group by Prefix and Change Method ▸, the selection's menu's and the command bar's.
+        registrar.apiChanges()
         registrar.rowsDraw()
         registrar.apiDraw()
         // ⌘V of SQL, and of OpenAPI: tables and enums, an API and its types, put down by names, the kit's (gone with it off).

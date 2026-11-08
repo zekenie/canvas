@@ -69,6 +69,7 @@ public struct LineRowsPlugin: ListedPlugin {
             return service
         }
         registrar.service { RowFolds(editor: $0) }
+        registrar.service { RowCuts(editor: $0) }
         registrar.outlines { editor in editor.service(LineRowsService.self)?.outlines() ?? Outlines() }
         // What a folded shape shows, asked as it's laid out, and how wide one is while a line typed in it is wider.
         registrar.layoutInput(LineRowsLayout.shown) { record, reading in reading.service(RowFolds.self)?.shown(of: record, in: reading) }

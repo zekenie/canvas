@@ -71,9 +71,9 @@ extension TokenDefinition: ShapeDefinition {
     }
 }
 
-/// A kind called by `label:`, before its title: an endpoint is its path ("GET /users").
+/// A kind called by `label:`, before its title: a handler is its path ("GET /users").
 struct Endpoint: BoxShapeProps {
-    static let kind: ShapeKind = "endpoint"
+    static let kind: ShapeKind = "handler"
     static let properties = Properties<Endpoint> {
         Property("frame", \.frame).required()
         Property("path", \.path)
@@ -242,7 +242,7 @@ struct MentionFixturesPlugin: CanvasPlugin {
         }
         registrar.mentionable(Token.self, in: Blockers.self)
         registrar.shape(EndpointDefinition()) { endpoint in
-            endpoint.tool(label: "Endpoint", systemImage: "network",
+            endpoint.tool(label: "Handler", systemImage: "network",
                           placing: endpoint.placement(size: CGSize(width: 160, height: 60)) { Endpoint() })
             endpoint.title()
             endpoint.mentionable(label: { $0.props.path })

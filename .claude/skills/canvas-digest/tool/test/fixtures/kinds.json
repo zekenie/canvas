@@ -2,6 +2,7 @@
  {"kind":"api","drawable":true,"via":[{"kind":"reference"}]},
  {"kind":"arrow","drawable":false,"why":"it joins two shapes: write edge \"A\" -> \"B\""},
  {"kind":"database","drawable":true,"holds":"shapes","via":[{"kind":"reference"}]},
+ {"kind":"endpoint","drawable":false,"why":"no tool places one"},
  {"kind":"enum-type","drawable":true,"via":[{"kind":"reference"}]},
  {"kind":"frame","drawable":true,"holds":"shapes","via":[{"kind":"reference"}]},
  {"kind":"reference","drawable":true},

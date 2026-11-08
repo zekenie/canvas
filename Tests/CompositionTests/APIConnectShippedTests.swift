@@ -446,7 +446,7 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.row, orders.props.endpoints[0].id, "a pill for POST /orders itself")
         expect(!undoTitle(w.window).contains("left out"))
     },
-    test("an endpoint cut on the root and pasted on its own (nothing selected) on another board becomes an API there with its calls arrow through a pill, nothing left out") {
+    test("an endpoint cut on the root and pasted on its own (nothing selected) on another board stands alone there (K16: an endpoint of its own) with its calls arrow through a pill, nothing left out") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         let editor = w.editor
@@ -470,7 +470,8 @@ private let stripeAPI = #"""
         w.window.makeFirstResponder(w.canvas)
         editor.selectedShapeIDs = []
         walk.press(Chord("v", .command))
-        let made = try require(editor.document.shapes.first { $0.typed(as: API.self) != nil }, "the endpoint landed as an API of its own")
+        let made = try require(editor.document.shapes.first { $0.typed(as: StandaloneEndpoint.self) != nil }, "the endpoint landed as an endpoint of its own")
+        expectEqual(undoTitle(w.window), "Undo Take Out Endpoint")
         let call = try require(arrows(editor).first { $0[ChannelProperty.self] == Calls.id }, "the call came back")
         expectEqual(call.props.start.binding?.shapeID, made.id)
         let pill = try require(editor.document[try require(call.props.end.binding?.shapeID)]?.typed(as: Reference.self))

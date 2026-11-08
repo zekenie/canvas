@@ -212,9 +212,18 @@ private let groupedAPI = ["GET /health", "/orders", "GET /{id}", "POST /{id}/ref
         b.editor.pasteRows(try require(b.editor.pasteboardRows), to: .into(other, before: b.rows(other)[4].id))
         expectEqual(b.fullNames(other).first, "GET /health", "under none of its headers: at the top")
         expect(b.editor.cutRows([rows[5].id], of: api))
+        // One endpoint out on its own is an endpoint standing alone (K16), its path whole; several are a new API.
         let made = try require(b.editor.pasteRows(try require(b.editor.pasteboardRows), to: .beside([])))
-        expectEqual(b.fullNames(made), ["GET /customers/{id}/orders"])
-        expectEqual(b.undoName, "Move Endpoint to New API")
+        let alone = try require(b.editor.document[made]?.typed(as: StandaloneEndpoint.self))
+        expectEqual(APIGroups.fullName(method: alone.props.endpoint.method, path: alone.props.endpoint.path), "GET /customers/{id}/orders")
+        expectEqual(alone.props.endpoint.id, rows[5].id, "under the row's id")
+        expectEqual(b.undoName, "Take Out Endpoint")
+        let third = b.api("orders", ["/orders", "GET /{id}", "POST /{id}/refunds"], at: CGPoint(x: 700, y: 500))
+        expect(b.editor.cutRows(b.rows(third).dropFirst().map(\.id), of: third))
+        let both = try require(b.editor.pasteRows(try require(b.editor.pasteboardRows), to: .beside([])))
+        expectEqual(b.editor.document[both]?.kind, API.kind)
+        expectEqual(b.fullNames(both), ["GET /orders/{id}", "POST /orders/{id}/refunds"])
+        expectEqual(b.undoName, "Move Endpoints to New API")
     },
     test("an endpoint dragged by its method chip into another API lands under that API's header, the line drawn where it lands, not where the pointer is") {
         let b = try KitBench()

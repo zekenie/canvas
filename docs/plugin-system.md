@@ -2517,6 +2517,27 @@ their own steps (LineRows' `list(_:grammar:get:writing:)`), and ⌘L from an end
 and endpoints on any board (through a pill for the endpoint, drawing its method's chip); a call ends on an endpoint's row alone
 (`Calls.isOnEveryChannel` is false).
 
+**Changing and retiring an API.** The method chip is a row's lead whose click pops the method menu (the current checked
+and highlighted); the card's method line, Change Method ▸ in the selection's menu and Space on the row are its keys, each
+"Change Method". The card's deprecated is "Deprecate Endpoint" (the chip hollow, the words faint); `/new-version` marks
+the API deprecated and puts a copy beside it, its title's and server's version bumped, its rows under their ids and the
+arrows its rows start copied; `/group-by-prefix` runs `APIGroups.byPrefix`, the paste's rule, on the API's full paths.
+One endpoint taken out is the `endpoint` kind, the row's card drawn open, under the row's id so its arrows follow; it is
+written as lines for moves alone, so its chip drags it back into an API:
+
+```swift
+struct EndpointLines: LineModel {                    // Props == StandaloneEndpoint, Row == APIRow
+    func rows(of props: StandaloneEndpoint) -> [APIRow] { [.endpoint(props.endpoint)] }
+    var goesWithItsRows: Bool { true }               // its row moved, cut or deleted, the shape goes
+    …
+}
+extension APILines {
+    func takeOutShape(_ rows: [APIRow], from shape: ShapeRecord<API>) -> AnyShapeRecord? { /* one endpoint: an endpoint */ }
+    func takesRows(of kind: ShapeKind) -> Bool { kind == StandaloneEndpoint.kind }
+}
+extension APIDefinition: TakesBoundShapes {}         // "Delete Endpoint and 3 Arrows"
+```
+
 **Paste SQL.** ⌘V of `CREATE TABLE` (or `AS ENUM`, or a `.sql` file) is a paste reader of the kit's, so it's gone
 with the kit off ([the clipboard](#the-clipboard)). The reader parses SQL itself (`SQLReader`, pure: Postgres DDL into
 tables, columns, enums and keys) and writes a draw program for Draw to put down (`DrawPut`), knowing nothing of how
@@ -2675,7 +2696,7 @@ target shaking; a row keeps its id (a new one only where the target holds it), a
 through the core's `moveParts` (`PartsMoved` hears it). On the pasteboard (the editor's: Clipboard's) rows are a
 board file of the source holding only them, their lines as text beside it: `copyRows` carries the arrows they start,
 `cutRows` every arrow bound to them, counted in its step ("Cut Columns and 2 Arrows"), and `pasteRows` lands them
-as `moveRows` does, a cut's paste a move (its arrows back under their ids) while no shape on the board holds them.
+as `moveRows` does, a cut's paste a move (its arrows back under their ids) while neither the shape they were cut from nor the one a first paste put them in holds them.
 While a shape is edited, ⇧↑ ⇧↓ select rows whole (the first the caret's row), which ⌫, ⌥↑ ⌥↓, ⌘C ⌘X ⌘V act on,
 and Escape leaves selected as items. The selection's menu offers the take-out of rows selected.
 
@@ -2697,6 +2718,21 @@ func lead(of row: ColumnLine, at index: Int, among rows: [ColumnLine], line: CGR
     row.column.primaryKey ? CGRect(x: line.minX + 7, y: line.minY, width: 24, height: line.height) : nil
 }
 ```
+
+A lead may also act: `leadAction` gives what its click does after the click's level at a time, which Space on the row
+selected does too, and VoiceOver hears as a button after the row. An endpoint's chip pops its method menu:
+
+```swift
+func leadAction(of row: APIRow, at index: Int, among rows: [APIRow], in context: LineContext) -> LineLeadAction? {
+    guard case .endpoint(let endpoint) = row else { return nil }
+    return LineLeadAction(title: "Method, \(endpoint.method)") { editor, chip in /* popUpMenu(…, below: chip, highlighting: current) */ }
+}
+```
+
+A take-out may be a shape of another kind, named by the kind (one endpoint out of an API is an `endpoint` of its own,
+"Take Out Endpoint": `takeOutShape`, `takeOutStep`), and a kind may be one row standing alone (`goesWithItsRows`: it takes
+no rows and has no take-out, and goes as its row goes, after what's bound to the row has followed it) whose row another
+kind takes (`takesRows(of:)`, `rows(taken:)`: an API takes an endpoint dropped on it, or its row pasted in).
 
 ## Selection
 
@@ -3436,8 +3472,10 @@ registrar.forShapes(adopting: .lineRows) { kinds in
   faces, on the shape selected or not: dragged, that item at once; its click told whether the shape was the only one
   selected before the press) are optional actions; LineRows gives both for rows.
 - **The keys.** ↑ ↓ step them, ⇧↑ ⇧↓ draw the run, ⌥↑ ⌥↓ move them (the chord resizes a shape with none), ← →
-  and Space open and close an item that hides others (`ItemOutline`), ⌫ deletes them, Return opens the first, ⌘A
-  selects every item, Escape goes back to the shape. Clipboard cuts, copies and pastes them before the shape.
+  and Space open and close an item that hides others (`ItemOutline`), and Space presses the lead of one that hides
+  nothing where its kind gives `pressLead` (an endpoint's chip: its method menu; VoiceOver hears it as a button after the
+  item, `leadTitles`; Space on a shape selected whole that is its one item (an endpoint of its own) does the same, `pressWhole`), ⌫ deletes them, Return opens the first, ⌘A selects every item, Escape goes back to the shape.
+  Clipboard cuts, copies and pastes them before the shape.
 - **Hidden items.** An item that stands for hidden ones (`stands`: a fold's "+N ›" line) shows selected while one
   of those is, and gives it back as it shows again.
 - **Read it** as `editor.selectedItems` (the shape, the ids in its order, the anchor, and `acting`: what the keys
@@ -16424,8 +16462,8 @@ engineering-lights   neighbor light · neighbor light · neighbor light · neigh
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape · RowDetails in Connections → every shape with parts
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · RowDetails in Column first → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · RowDetails in Endpoint first → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
+line-rows            service LineRowsService · service RowFolds · service RowCuts · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · key hint Space on an Endpoint Change the Endpoint's Method · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · RowDetails in Column first → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · RowDetails in Endpoint first → api · shape endpoint · label Endpoint → endpoint · tint → endpoint · ShapeTitles → endpoint · ContentsTitles → endpoint · mentionable → endpoint · ShapeResizing → endpoint · parts resize handles → endpoint · ContentsRows → endpoint · ShapeDetails → endpoint · accessibility → endpoint · line rows (endpoints) → endpoint · row moves (endpoints) → endpoint · items rows → endpoint · ports calls on rows → endpoint · ports writes on rows → endpoint · ports reads on rows → endpoint · connect picks → endpoint · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · command newVersion · command groupByPrefix · CanvasContextMenu in APIMenuGroup after TransformMenuGroup, RowsMenuGroup after ShapeMenuGroup · /new-version → the command bar's target · /group-by-prefix → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 
