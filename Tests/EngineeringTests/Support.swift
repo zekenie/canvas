@@ -2,7 +2,6 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
-import CanvasUI
 import ContextMenus
 import DetailPanel
 import Draw

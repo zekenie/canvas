@@ -4,6 +4,7 @@ paths:
   - "Sources/Canvas/Editor/CanvasEditor+Undo.swift"
   - "Sources/Canvas/Model/DocumentDelta.swift"
   - "Sources/CanvasUI/BoardWindow.swift"
+  - "Sources/Canvas/Editor/TextUndo.swift"
   - "Tests/CanvasTests/Undo*.swift"
   - "Tests/CanvasTests/DocumentDeltaTests.swift"
   - "Tests/CanvasTests/WritesAcrossBoardsTests.swift"
@@ -32,6 +33,7 @@ In the guide, `docs/plugin-system.md`: [Undo](../../docs/plugin-system.md#undo).
 
 ## Testing
 
+- While text has the keyboard, Edit › Undo and Redo are the text's own (`BoardWindow.validateMenuItem`, `undo(_:)`), but for text that says the board's are its while it has nothing of its own that way (Canvas's `UndoesBoardWhenEmpty`, a marker): a row's line ([line rows](line-rows.md)), whose draft commits as the caret leaves it and whose typing is forgotten then, and a title's field, which has no undo (each change is a step's), so ⌘Z after a row's commit or a title typed is "Undo Add Column", "Undo Add Table", and ends editing as any undo does. CompositionTests' T7 walk (`engineeringShippedTests`) holds each step's title so.
 - CanvasTests' `takingTests` hold `stepName` (the step takes it in place of the transaction's name, a group's name wins, none leaves the name, on a board that is not shown too), the cascade's undo and redo as whole files and `BoardCodec` bytes, and CompositionTests' `undoTests` Edit › Undo's title through `BoardWindow.validateMenuItem` ("Undo Delete Note and 2 Arrows" for a relationship type, "Undo Delete" for a note).
 
 - CanvasTests' `CardTests` hold the card's step (`CardProbe`, CanvasTesting's, is the card's view): three commits under the key are one step named by the card, `seal()` between them changes nothing, a commit from elsewhere (no key, another key) ends it and the card's next commit starts another by the same name, a card with no step name holds nothing, `setCardStep`, `breakStep`, a group, a card shown inside a press, a card that adopts the press (one step for the press and the card after the release, named for the press; one Undo after the card closes, or an Undo that closes it; a group is an action too; `breakStep`, a commit from elsewhere and a new press split it as they split a kept step; a press that changed nothing holds nothing; not adopting, shown outside a press, or closed before the release, as without it), a commit on another board, an editing session's typing around the card's commits.

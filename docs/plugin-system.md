@@ -2353,9 +2353,10 @@ registrar.join(EngineeringKit.self)
 registrar.shape(TableDefinition()) { table in
     table.tool(label: "Table", systemImage: "tablecells", placing: table.editingPlacement(size: …) { DatabaseTable.starter() })
     table.title(symbolInPill: true, placeholderInPill: "Table", bars: true)   // named in its pill; a bar zoomed out
+    table.lineRows(TableLines())                                       // its columns written a line each (LineRows)
     …
 }
-registrar.tableCommands(placing: plainTable)                             // /table, /database, Create Database
+registrar.tableCommands(placing: editedTable)                            // /table, /database, Create Database
 registrar.rowsDraw()                                                     // canvas draw's columns: and values:
 ```
 
@@ -2378,8 +2379,62 @@ extension TableDefinition: PartedShape {
 
 and where each is in its geometry (`ShapeGeometry(outline:…, parts: PartFrames(…))`, each a `PartFrame`: its
 id, its rect as wide as the shape at the row, and whether it's shown), worked out with the rest of it.
-`registry.parts(of:)` reads them; a `PartAddress` is a shape and maybe one of its parts. Nothing binds a
-part yet.
+`registry.parts(of:)` reads them; a `PartAddress` is a shape and maybe one of its parts. A kind that binds a
+part says so in `ShapeReferencing` (`boundParts(of:)`, `movingParts(of:_:)`), and the one writer of a kind's
+parts tells the transaction when they go or move, so nothing stays bound to a row that's gone:
+
+```swift
+transaction.removeParts([PartAddress(table, part: column.id)])   // what's bound to it goes with it, or binds the table
+transaction.moveParts([PartAddress(orders, part: id): PartAddress(items, part: id)])   // bindings follow; partsMoved runs
+registrar.partsMoved { moves, transaction in … }                  // a name of a row renamed where it went
+```
+
+**Columns written as lines.** Edited, a table is LineRows' editing view ([rows written as
+lines](#rows-written-as-lines)): its name in its pill, then a line a column. `ColumnLineGrammar` reads a line
+through `ColumnGrammar.scan` (each word's role and range) into spans the field draws (the type as code, an
+enum's name as its purple pill, standing for the enum), offers SQL's types and the file's enums after a name
+and null, unique, default, pk and → after a type, and `TableLines` names each commit's step ("Rename Column"
+when only the name changed). A column's type that names an enum binds it, the nearest by name, so its pill
+says the enum's name as it's called now.
+
+## Rows written as lines
+
+LineRows ([`Sources/LineRows`](../Sources/LineRows), platform) writes a kind's rows a line each: one line field
+moved to the row with the caret, the kind's grammar reading the line as it's typed (its words' looks, what
+fits at the caret) and printing a row back, and each row committed as the caret leaves it, one step the kind
+names. A kind gives a model and opts in:
+
+```swift
+struct TallyLines: LineModel {
+    var noun: LineNoun { LineNoun("entry", plural: "entries") }       // "Entries of …", "Entry 2 of 5"
+    var style: LineStyle { … }                                         // the kind's fonts and inks at rest
+    func rows(of props: Tally) -> [TallyRow] { props.rows }
+    func setRows(_ rows: [TallyRow], in props: inout Tally) { props.rows = rows }
+    func id(of row: TallyRow) -> PartID { row.id }
+    func grammar(for role: LineRole) -> any LineGrammar<TallyRow> { TallyGrammar() }
+    func lineRect(_ line: Int, in frame: CGRect) -> CGRect { … }      // where line n is drawn
+    func stepName(of change: LineChange<TallyRow>) -> String { … }    // "Add Entry", "Rename Entry", "Move Entry"
+    …
+}
+
+registrar.shape(TallyDefinition()) { $0.lineRows(TallyLines()) }    // LineRowsKinds; ShapeCapability.lineRows
+extension TallyDefinition: Editable {
+    func makeEditingView(for shape: ShapeRecord<Tally>, context: EditContext<Tally>) -> EditingView {
+        LineRowsView.make(shape, context: context, model: TallyLines(), title: nil)   // or a LineTitle making a TitleField
+    }
+}
+```
+
+The grammar (`LineGrammar`) reads a `LineText` (the string and the runs that stand for a shape by id) into a
+`LineReading` (the row, `LineSpan`s with their `LineLook`, a gutter `LineMark`), prints a row back (a
+shape's name as it's called now, carrying its reference), offers `LineOffers` at the caret (each a
+`CaretCompletion` and what it lights), splits a pasted block, substitutes `->` as `→` and says a row for
+VoiceOver; `losses(in:unread:in:)` is the law its tests hold a corpus to (what's read prints back as the same
+row, unread words in order). While a shape is edited the session sets `LineRowsLayout.waiting` and `.focused` on
+it alone, so its kind lays itself out a line taller and draws no row the field has. The keys are rows-editing's:
+↩ commits and opens a line below (on an empty one ends), ↑ ↓ and Tab walk the stops (past the ends, the next
+shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes one (one step), a pasted block is a row a
+line, ⇧↩ puts a shape beside. [line rows](../.claude/rules/line-rows.md) is the whole of it.
 
 ## Selection
 
@@ -3603,6 +3658,25 @@ correction, text replacement, smart quotes and smart dashes, `CaretListSubstitut
 four off, and `apply(to:)` sets a view's, so its owner puts them back as they were when the list
 closes.
 
+What can be typed at a caret, in a host's own language, is `CaretCompletions`: the `range` a pick replaces
+(holding the caret), what's typed (`query`) and every candidate as offered, a `CaretCompletion` each (its
+`label`, `detail`, the `insert` a pick puts in, the `selection` it leaves, `reopens`, `isRelevant`,
+`isAction` and a `chip` color). The panel's code editor and a row written as a line offer in these terms
+(DetailPanel's `DetailCodeCompletions` is a name for them), and `listed(isBlank:scoring:)` ranks them by the
+matcher the host passes in:
+
+```swift
+let listed = offers.listed(isBlank: { FuzzyMatcher.Query($0).isEmpty }) { query, labels in
+    FuzzyMatcher.matches(query, in: labels).map { $0.map { (score: $0.score, matched: $0.matched) } }
+}
+list.returnPicks = .actionsOnly        // a line's list: Return commits the line, or does an action row; Tab picks
+```
+
+A list picks on Return (`returnPicks`, `.always`) unless it says `.actionsOnly`, where Return on a row of words
+isn't taken (the text gets it) and on an action row (`CaretListItem.isAction`, "New type Problem") picks it.
+A highlight can be a pill's line too: `TextHighlight(range:fill:stroke:isDashed:)`, a line round the fill,
+dashed for a name that stands for nothing yet.
+
 ### Where string drawing puts text
 
 The canvas draws text with string drawing (`NSAttributedString.draw(with:options:
@@ -3997,7 +4071,7 @@ Sections are stock SwiftUI plus a few primitives, and get the look by following 
   a name, a string, a number, a keyword, or what doesn't belong, red and underlined), asked for
   the whole text at every keystroke, so a scan, not a parse. `completions: { text, caret in … }`
   (a `DetailCodeCompleting`, the caret in UTF-16) says what can be typed at the caret, or nil: a
-  `DetailCodeCompletions`, the `range` a pick replaces (it holds the caret), what's typed so far
+  `DetailCodeCompletions` (TextEditing's `CaretCompletions`, by another name: [a list at the caret](#a-list-at-the-caret)), the `range` a pick replaces (it holds the caret), what's typed so far
   (`query`), and every candidate, as offered and unfiltered, each a `DetailCodeCompletion` (its
   `label`, a `detail`, the `insert` that replaces the range, the `selection` within it a pick
   leaves, the caret or what's to be typed over, `reopens` where that has completions of its own,

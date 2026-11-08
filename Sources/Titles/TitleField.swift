@@ -160,8 +160,9 @@ public final class TitleField: NSView, NSTextViewDelegate {
     }
 }
 
-/// The text view the title is typed in: one line, nothing substituted, no undo of its own (each change is a step's).
-private final class TitleTextView: EditingTextView {
+/// The text view the title is typed in: one line, nothing substituted, no undo of its own (each change is a step's), so
+/// Edit ▸ Undo is the board's while it has the keyboard ("Undo Add Table").
+private final class TitleTextView: EditingTextView, UndoesBoardWhenEmpty {
     override init(frame: NSRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         isRichText = false

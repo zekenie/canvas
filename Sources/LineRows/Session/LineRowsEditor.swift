@@ -319,8 +319,15 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     /// Presses on the title's chip and on the paper's lines are the session's; anywhere else they go on to the canvas.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = superview.map { convert(point, from: $0) } ?? point
-        if let titleField, let hit = titleField.hitTest(convert(local, to: titleField.superview)) { return hit }
+        let local: CGPoint
+        if let superview {
+            local = convert(point, from: superview)
+        } else {
+            guard frame.width > 0, frame.height > 0 else { return nil }
+            local = CGPoint(x: bounds.minX + (point.x - frame.minX) * bounds.width / frame.width,
+                            y: bounds.minY + (point.y - frame.minY) * bounds.height / frame.height)
+        }
+        if let titleField, let hit = titleField.hitTest(local) { return hit }
         guard let paper, bounds.contains(local) else { return nil }
         let inPaper = paper.offsetBy(dx: -origin.x, dy: -origin.y)
         guard inPaper.contains(local) else { return nil }
@@ -561,13 +568,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     private func go(to stop: LineStop, at caret: Caret) {
         guard stop != focus else { return }
-        let committed = commitDraft()
+        commitDraft()
         switch stop {
-        case .waiting: show(.waiting, at: caret, waitingAt: rows.count)
-        case .row(let row) where index(of: row) == nil:
-            // An emptied row it left went: the line where it was.
-            show(committed == .waiting ? .waiting : .waiting, at: caret, waitingAt: rows.count)
-        default: show(stop, at: caret)
+        case .title: show(.title, at: caret)
+        case .row(let row) where index(of: row) != nil: show(stop, at: caret)
+        // The waiting line, or a row that went with the line it was (emptied and left): the waiting line, last.
+        default: show(.waiting, at: caret, waitingAt: rows.count)
         }
     }
 

@@ -188,3 +188,24 @@ extension LineGrammar {
 
     public var substitutions: [LineSubstitution] { [] }
 }
+
+extension LineGrammar where Row: Equatable {
+    /// The law every grammar keeps, for its tests to hold over a corpus of lines: printing what was read loses nothing. The
+    /// printed line reads back as the same row, and the words nothing read (`unread`: the words the row keeps as written)
+    /// come out as they went in, in order. Each line that breaks it, and how; empty where every line keeps it.
+    public func losses(in lines: [String], unread: (Row) -> [String], in context: LineContext) -> [(line: String, lost: String)] {
+        lines.compactMap { line in
+            let id = PartID()
+            guard let row = read(LineText(line), id: id, in: context).row else { return nil }
+            let printed = print(row, in: context)
+            guard read(printed, id: id, in: context).row == row else { return (line, "\(printed.string) reads back otherwise") }
+            let words = printed.string.split(whereSeparator: \.isWhitespace).map(String.init)
+            var from = words.startIndex
+            for word in unread(row) {
+                guard let at = words[from...].firstIndex(of: word) else { return (line, "\(word), unread, isn't in \(printed.string) in order") }
+                from = words.index(after: at)
+            }
+            return nil
+        }
+    }
+}

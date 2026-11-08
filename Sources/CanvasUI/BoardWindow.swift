@@ -80,6 +80,14 @@ public final class BoardWindow: NSWindow {
     /// The undo manager of the text with the keyboard: its own, or this window's.
     private var textUndoInUse: UndoManager? { textWithKeyboard.map { $0.undoManager ?? textUndo } }
 
+    /// The text's undo manager for Undo (`redoing` false) or Redo: nil, the board's, where the text has nothing that way
+    /// and says the board's is its then (`UndoesBoardWhenEmpty`: a row's line).
+    private func textUndo(redoing: Bool) -> UndoManager? {
+        guard let manager = textUndoInUse else { return nil }
+        if textWithKeyboard is UndoesBoardWhenEmpty, !(redoing ? manager.canRedo : manager.canUndo) { return nil }
+        return manager
+    }
+
     /// What has the keyboard, as someone sees it: for a field, whose window's field editor has the
     /// keyboard, the field itself.
     private var keyboardOwner: AnyObject? {
@@ -89,12 +97,12 @@ public final class BoardWindow: NSWindow {
 
     /// Edit › Undo. (`undo:` is NSWindow's, undeclared: this takes its place.)
     @objc(undo:) public func undo(_ sender: Any?) {
-        if let text = textWithKeyboard { changeText(text) { $0.undo() } } else { editor?.perform(answering: .undo) }
+        if let text = textWithKeyboard, textUndo(redoing: false) != nil { changeText(text) { $0.undo() } } else { editor?.perform(answering: .undo) }
     }
 
     /// Edit › Redo.
     @objc(redo:) public func redo(_ sender: Any?) {
-        if let text = textWithKeyboard { changeText(text) { $0.redo() } } else { editor?.perform(answering: .redo) }
+        if let text = textWithKeyboard, textUndo(redoing: true) != nil { changeText(text) { $0.redo() } } else { editor?.perform(answering: .redo) }
     }
 
     /// Undoes or redoes in `text`, then tells whoever listens that its text changed, as typing does:
@@ -108,14 +116,14 @@ public final class BoardWindow: NSWindow {
     public override func validateMenuItem(_ item: NSMenuItem) -> Bool {
         switch item.action {
         case #selector(undo(_:)):
-            if let text = textUndoInUse {
+            if let text = textUndo(redoing: false) {
                 item.title = text.undoMenuItemTitle
                 return text.canUndo
             }
             item.title = editor?.undoHistory.undoName.map(Self.titles.undoMenuTitle(forUndoActionName:)) ?? Self.titles.undoMenuItemTitle
             return editor?.canPerform(answering: .undo) == true
         case #selector(redo(_:)):
-            if let text = textUndoInUse {
+            if let text = textUndo(redoing: true) {
                 item.title = text.redoMenuItemTitle
                 return text.canRedo
             }

@@ -235,6 +235,15 @@ struct EnumLines: LineModel {
     }
 }
 
+/// The kit's line grammars, for what reads a line as typing does (a test's corpus).
+@MainActor
+public enum EngineeringLines {
+    /// A column's line.
+    public static var columns: any LineGrammar<Column> { ColumnLineGrammar() }
+    /// An enum's value's line.
+    public static var values: any LineGrammar<EnumValue> { EnumLineGrammar() }
+}
+
 // MARK: Looks
 
 /// How the kit's lines look while typed, and what they offer: the kit's fonts and inks at rest, so nothing moves as editing

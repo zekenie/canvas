@@ -2,6 +2,8 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import DetailPanel
+import Engineering
+import LineRows
 @_spi(Host) import CanvasUI
 import Foundation
 import Locking
@@ -277,5 +279,43 @@ extension SampleBoardWindow {
             }
             rowsBefore = w.rows
         })
+    },
+    test("a table's row being typed in: every key means what the table says, but Return (line-return), on a row of a table of three") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        var record = ShapeRecord(DatabaseTable(frame: CGRect(x: 200, y: 200, width: 300, height: 100),
+                                               columns: ["id uuid pk", "email text unique", "name text"].compactMap { ColumnGrammar.read($0) }))
+        record[TitleProperty.self] = "customers"
+        let table = AnyShapeRecord(record)
+        editor.transact { $0.insert(table) }
+        editor.undoHistory.seal()
+        let start = editor.file
+        let walk = KeyWalk(w.window, editor: editor, readers: [.custom("row") { window in
+            guard let view = w.lineRows, editor.editingShapeID != nil, let responder = window.firstResponder as? NSView, responder.isDescendant(of: view) else { return nil }
+            let name: String = switch view.focus {
+            case .title: "title"
+            case .waiting: "waiting"
+            case .row(_): view.line(of: view.focus).flatMap { ColumnGrammar.read($0)?.name } ?? "?"
+            }
+            return Focus.of(window, surface: "row", element: name)
+        }, .canvas(w.canvas, editor: editor, names: [table.id: "customers"])], settle: .runLoop)
+        walk.pending = meaningsPending
+        let reset = { @MainActor in
+            editor.endEditing()
+            while editor.file != start, editor.canUndo { editor.undo() }
+            editor.selectedShapeIDs = [table.id]
+            editor.beginEditing(table.id)
+            w.window.settle()
+            w.lineRows?.go(to: .row(record.props.columns[1].id))
+            w.window.settle()
+        }
+        reset()
+        let surface = KeySurface("A table's row", axes: .vertical, overrides: [
+            .init(.return, [.forward, .elsewhere, .acted], exception: "line-return"),
+        ])
+        walk.expectMeanings(of: surface, stops: ["row/title", "row/id", "row/email", "row/name", "row/waiting"], at: 2,
+                            depth: { _ in editor.editingShapeID != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1 }, reset: reset)
     },
 ])

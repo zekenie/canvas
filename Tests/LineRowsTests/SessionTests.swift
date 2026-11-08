@@ -264,6 +264,17 @@ import TextEditing
 ])
 
 @MainActor let offerTests = Suite("What fits at a line's caret", [
+    test("the law: a line read and printed reads back as the same row, its unread words in order; a grammar that drops one is caught") {
+        let b = try Bench()
+        let a = b.tally("a", ["x"])
+        b.tally("berries", [], at: CGPoint(x: 400, y: 100))
+        let context = LineContext(editor: b.editor, shape: a)
+        let corpus = ["red", "red 3", "red berries", "red 3 berries ! and more", "red !"]
+        let kept = TallyGrammar().losses(in: corpus, unread: { $0.unread.split(separator: " ").map(String.init) }, in: context)
+        expect(kept.isEmpty, "\(kept)")
+        let lossy = DroppingGrammar().losses(in: ["red 3 and more"], unread: { $0.unread.split(separator: " ").map(String.init) }, in: context)
+        expectEqual(lossy.map(\.line), ["red 3 and more"])
+    },
     test("after a label the list offers numbers and the other tallies, ranked by what's typed; Tab picks; Return never picks a word and commits") {
         let b = try Bench()
         let a = b.tally("a", ["x"])
@@ -272,6 +283,10 @@ import TextEditing
         b.type("y ")
         expectEqual(b.field.listedOffers, ["1", "2", "10", "berries"], "everything, as offered, before anything's typed")
         b.type("be")
+        expectEqual(b.field.listedOffers, ["berries"])
+        b.type("rries")
+        expect(b.field.offerList == nil, "typed whole, nothing's left to offer")
+        for _ in 0..<5 { b.press(.delete) }
         expectEqual(b.field.listedOffers, ["berries"])
         expectEqual(b.field.offerList?.returnPicks, .actionsOnly)
         b.press(.tab)
@@ -293,12 +308,12 @@ import TextEditing
         let b = try Bench()
         let a = b.tally("a", ["x"])
         b.begin(a)
-        b.type("y 1")
+        b.type("y ")
         expect(b.field.offerList != nil)
         b.press(.escape)
         expect(b.field.offerList == nil)
         expectEqual(b.editor.editingShapeID, a, "the first Escape closes the list")
-        b.type("0")
+        b.type("10")
         expect(b.field.offerList == nil, "not open again in the same place")
         b.press(.escape)
         expectEqual(b.editor.editingShapeID, nil, "the next ends editing")
@@ -342,13 +357,13 @@ import TextEditing
         b.press(.up)
         b.field.setSelectedRange(NSRange(location: 6, length: 0))
         b.press(.delete)
-        b.type("n")
-        expect(b.field.line.references.isEmpty, "typed into, it's words again")
-        expect(b.field.offerList != nil, "the name typed is offered")
+        expect(b.field.offerList != nil, "a name part typed is offered")
         b.press(.down)
         expectEqual(b.field.listedOffers, ["twin", "twin"])
         expectEqual(b.field.offerList?.highlighted, 1, "↓ moves in the list while it's open")
-        b.press(.escape)
+        b.type("n")
+        expect(b.field.line.references.isEmpty, "typed into, it's words again")
+        expect(b.field.offerList == nil, "typed whole, it's offered no more")
         b.press(.down)
         expectEqual(b.rows(a).first?.ref, first, "and found by name: the first so called")
     },
@@ -378,27 +393,76 @@ import TextEditing
     },
 ])
 
+/// A walk of a tally being edited: its stops "tally/row <label>" and "tally/waiting"; the canvas's selection by tally name.
+@MainActor private func walk(_ b: Bench) -> KeyWalk {
+    KeyWalk(b.window, editor: b.editor, readers: [
+        .custom("tally") { [unowned b] window in
+            guard let focus = b.focus, let view = b.view, let responder = window.firstResponder as? NSView, responder.isDescendant(of: view) else { return nil }
+            return Focus.of(window, surface: "tally", element: focus)
+        },
+        .canvas(b.canvas, selection: { [unowned b] in
+            b.editor.selectedShapeIDs.compactMap { b.editor.document[$0]?.typed(as: Tally.self)?.props.name }
+        }),
+    ], settle: .runLoop)
+}
+
 @MainActor let keyWalkTests = Suite("Rows written as lines, walked by keys", [
-    test("Tab walks every stop and comes round; ⇧Tab undoes each; ↑ ↓ are a column; Escape out once; focus shown and named; the keys mean what the table says") {
+    test("Tab walks every stop and comes round, ⇧Tab undoing each; ↑ ↓ are a column, staying at its ends") {
         let b = try Bench()
         let a = b.tally("a", ["x", "y"])
         b.begin(a)
-        b.press(.up, times: 2)
-        let walk = KeyWalk(b.window, editor: b.editor, readers: [.custom("tally") { [unowned b] window in
-            guard let focus = b.focus, let view = b.view else { return nil }
-            var read = Focus.of(window, surface: "tally", element: focus)
-            if let element = window.firstResponder as? NSView, element.isDescendant(of: view) {
-                read.frame = view.convert(view.bounds, to: nil)
-            }
-            return read
-        }], settle: .runLoop)
+        let walk = walk(b)
+        walk.go("tally/row x")
         walk.expectCycle(["tally/row x", "tally/row y", "tally/waiting"], wraps: .closed)
         walk.go("tally/row x")
         walk.expectAxis(down: .down, up: .up, over: ["tally/row x", "tally/row y", "tally/waiting"])
-        walk.go("tally/row x", by: .up)
-        walk.expectShows([walk.focus])
-        print("ESCAPE", walk.press(.escape).id)
-        expectEqual(b.editor.editingShapeID, nil)
-        expectEqual(b.editor.selectedShapeIDs, [a], "out one level: the tally selected")
+    },
+    test("each stop shows its caret, in view, a text field named Entry n of 2 or New entry; Escape is one level out, to the tally selected, what was typed kept") {
+        let b = try Bench()
+        let a = b.tally("a", ["x", "y"])
+        b.begin(a)
+        let walk = walk(b)
+        walk.go("tally/row x")
+        let stops = (0..<3).map { _ -> Focus in
+            let focus = walk.focus
+            walk.press(.tab)
+            return focus
+        }
+        expectEqual(stops.map(\.label), ["Entry 1 of 2", "Entry 2 of 2", "New entry"])
+        walk.expectShows(stops)
+        walk.go("tally/waiting")
+        b.type("z")
+        walk.expectEscapeLadder(["canvas/a"], keepsTyped: nil)
+        expectEqual(b.labels(a), ["x", "y", "z"], "what was typed is kept")
+    },
+    test("every key means what the table says on a row, but Return, the named exception line-return") {
+        let b = try Bench()
+        let a = b.tally("a", ["x", "y"])
+        let start = b.editor.file
+        let walk = walk(b)
+        let reset = { @MainActor in
+            b.editor.endEditing()
+            while b.editor.file != start, b.editor.canUndo { b.editor.undo() }
+            b.begin(a)
+            b.press(.up)
+            b.window.settle()
+        }
+        reset()
+        let surface = KeySurface("A row written as a line", axes: .vertical, overrides: [
+            .init(.return, [.forward, .elsewhere, .acted], exception: "line-return"),
+        ])
+        walk.expectMeanings(of: surface, stops: ["tally/row x", "tally/row y", "tally/waiting"], at: 1,
+                            depth: { _ in b.editor.editingShapeID != nil ? 2 : b.editor.selectedShapeIDs.isEmpty ? 0 : 1 }, reset: reset)
     },
 ])
+
+/// A tally's grammar that prints a row without its unread words: what the law catches.
+private struct DroppingGrammar: LineGrammar {
+    func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<TallyRow> { TallyGrammar().read(line, id: id, in: context) }
+    func print(_ row: TallyRow, in context: LineContext) -> LineText {
+        var row = row
+        row.unread = ""
+        return TallyGrammar().print(row, in: context)
+    }
+    func spoken(_ row: TallyRow, in context: LineContext) -> String { row.label }
+}

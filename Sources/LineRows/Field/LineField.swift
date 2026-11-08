@@ -30,7 +30,7 @@ public enum LineKey: Equatable, Sendable {
 }
 
 @MainActor
-public final class LineField: EditingTextView {
+public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     /// The attribute of a run that stands for a shape: a `LineField.Reference`.
     public static let referenceKey = NSAttributedString.Key("LineRows.reference")
 
@@ -259,7 +259,7 @@ public final class LineField: EditingTextView {
     }
 
     /// The list's keys first (↑ ↓ and the page keys move it, Tab picks, Return does an action and otherwise goes on to the
-    /// line, ⇧Tab and Escape close it); then the line's: Return, ↑ ↓, Tab ⇧Tab, Escape, and ⌫ on an empty line. Never a
+    /// line, ⇧Tab and Escape close it; it isn't open over a word typed whole); then the line's: Return, ↑ ↓, Tab ⇧Tab, Escape, and ⌫ on an empty line. Never a
     /// line break (⌥↩ and ⌃↩ do nothing).
     public override func doCommand(by selector: Selector) {
         if let list = open?.list {
@@ -359,7 +359,9 @@ public final class LineField: EditingTextView {
         let listed = offers.completions.listed(isBlank: { FuzzyMatcher.Query($0).isEmpty }) { query, labels in
             FuzzyMatcher.matches(query, in: labels).map { $0.map { (score: $0.score, matched: $0.matched) } }
         }
-        guard !listed.isEmpty else { return closeOffers() }
+        // Nothing to list, or the word typed whole: what's typed is what it would pick, so the arrows go on to the rows
+        // (T4: `uuid` typed over as `int`, then ↓, is the next row).
+        guard !listed.isEmpty, !listed.contains(where: { $0.item.label == offers.query }) else { return closeOffers() }
         if let current = open, current.offers.range.location != offers.range.location { closeOffers() }
         if open == nil {
             let list = CaretList(metrics: LineFieldStyle.listMetrics)
