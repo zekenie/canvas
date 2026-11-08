@@ -28,6 +28,13 @@ extension ShapeRegistrar {
             model.setRows(rows, in: &shape.props)
             return AnyShapeRecord(shape)
         }
+        // A shape that is its row: Space on it selected whole is a click on its row's lead.
+        let pressWhole: @MainActor (CanvasEditor, ShapeID) -> Bool = { editor, shape in
+            guard let record = editor.document[shape], let held = typed(record), let row = model.rows(of: held.props).first,
+                  let (action, rect) = RowItems.leadAction(of: model.id(of: row), in: held, record, model, editor) else { return false }
+            action.press(editor, rect)
+            return true
+        }
         contribute(LineRowsMoving(
             noun: model.noun,
             // A shape that is its rows takes none; another takes its own kind's, and those the kind says (an API an endpoint's).
@@ -131,7 +138,8 @@ extension ShapeRegistrar {
                     }
                 }
                 return titles
-            }))
+            },
+            pressWhole: model.goesWithItsRows ? pressWhole : nil))
     }
 }
 

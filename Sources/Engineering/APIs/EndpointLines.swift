@@ -29,8 +29,10 @@ struct EndpointLines: LineModel {
     func stepName(of change: LineChange<APIRow>) -> String { APILines().stepName(of: change) }
     var goesWithItsRows: Bool { true }
 
-    /// "Endpoint": it is the one.
-    func accessibleLabel(of row: APIRow, at index: Int, among rows: [APIRow]) -> String { noun.title }
+    /// "Endpoint": it is the one ("Endpoint, deprecated" once retired).
+    func accessibleLabel(of row: APIRow, at index: Int, among rows: [APIRow]) -> String {
+        row.endpoint?.deprecated == true ? "\(noun.title), \(APIStyle.deprecatedState)" : noun.title
+    }
 
     /// Its chip, on its first line, as an API's row's.
     func lead(of row: APIRow, at index: Int, among rows: [APIRow], line: CGRect, in context: LineContext) -> CGRect? {

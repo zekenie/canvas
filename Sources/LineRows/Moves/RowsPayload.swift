@@ -8,8 +8,9 @@ import Topology
 // own, with the rows' lines as text beside it for other apps. What a row says goes with it: a copy carries the arrows the
 // rows start (a column's keys) and lets go of those that end at them; a cut carries every arrow bound to them on the board
 // and deletes them with the rows, its step counted ("Cut Columns and 2 Arrows"). A paste of cut rows is a move (the rows the
-// same rows: what names them follows, `PartsMoved`, and the arrows come back under their ids) while no shape on the board
-// holds those rows; pasted again, they're copies. The pasteboard is the editor's (the core's `pasteboard`, Clipboard's): the line
+// same rows: what names them follows, `PartsMoved`, and the arrows come back under their ids) while neither the shape they
+// were cut from nor the shape a first paste put them in holds them; pasted again, they're copies (a twin of the source that
+// holds rows of the same ids, as `/new-version` makes, changes nothing). The pasteboard is the editor's (the core's `pasteboard`, Clipboard's): the line
 // editor writes and reads rows itself while a row is typed in, Clipboard on the canvas.
 
 /// A key a cut took with its rows from another board: the board it was on (it reached a row through a pill for the table
@@ -24,13 +25,23 @@ public struct FarArrow {
     }
 }
 
+/// Where each cut's rows first landed, by the cut's token: a second paste of the same cut is a copy while that shape holds them,
+/// and a move again once it doesn't (the paste undone).
+@MainActor
+final class RowCuts {
+    var landings: [UUID: ShapeID] = [:]
+    init(editor: CanvasEditor) {}
+}
+
+extension RowCuts: EditorService {}
+
 /// Rows on the pasteboard.
 public struct RowsPayload {
     /// The source's record, holding only these rows, untitled, under the source's id.
     public let carrier: AnyShapeRecord
     /// The arrows that go with them: a copy's, the arrows the rows start; a cut's, every arrow that was bound to them.
     public let bound: [AnyShapeRecord]
-    /// A cut's mark: its paste moves the rows, while no shape on the board holds them.
+    /// A cut's mark: its paste moves the rows, while neither the shape they were cut from nor the one a first paste put them in holds them.
     public let cut: UUID?
     /// A cut's keys from other boards (through a pill for the shape), each with its board: put back there by a paste that moves
     /// the rows, while that board still holds what they were bound to.
@@ -203,7 +214,7 @@ extension CanvasEditor {
 
     /// Rows put down at `place`, as one step: into a shape ("Paste Columns"), or out on their own,
     /// beside the selection or at a point ("Paste Columns", "Move Columns to New Table" for a cut's). A cut's paste moves them
-    /// while no shape on the board holds them: what names them follows (`PartsMoved`) and their arrows come back under their
+    /// while neither the shape they were cut from nor the one a first paste put them in holds them: what names them follows (`PartsMoved`) and their arrows come back under their
     /// ids; otherwise they're copies, their arrows under new ids. A row keeps its id where the target doesn't hold it. An
     /// arrow whose other end isn't on the board is left out. Returns the shape they're in; nil where nothing landed (a
     /// read-only target, which shakes, or a shape that takes no rows of their kind).
@@ -219,23 +230,31 @@ extension CanvasEditor {
         guard let moving = registry.rowMoving(of: payload.carrier.kind) else { return nil }
         let rows = moving.rows(payload.carrier) ?? []
         guard !rows.isEmpty else { return nil }
-        let moves = payload.cut != nil && !boardHolds(rows, of: payload.carrier.kind)
+        let moves = payload.cut != nil && !isPastedAlready(payload, rows: rows)
         let noun = stepNoun(of: rows, in: payload.carrier, moving)
         let step: String = if case .into = place { RowSteps.paste(noun, count: rows.count) } else if moves, !moving.goesWithItsRows {
             takeOutStep(of: payload.carrier, noun: noun, count: rows.count, moving)
         } else {
             RowSteps.paste(noun, count: rows.count)
         }
-        return landRows(payload.carrier, source: nil, arrows: payload.bound, far: payload.far, moves: moves, at: place, step: step)
+        let landed = landRows(payload.carrier, source: nil, arrows: payload.bound, far: payload.far, moves: moves, at: place, step: step)
+        if moves, let cut = payload.cut, let landed { service(RowCuts.self)?.landings[cut] = landed.shape }
+        return landed
     }
 
-    /// Whether a shape of `kind` on the board holds one of `rows`: a cut's rows pasted once already.
-    private func boardHolds(_ rows: [PartID], of kind: ShapeKind) -> Bool {
-        guard let moving = registry.rowMoving(of: kind) else { return false }
+    /// Whether a cut's rows have been pasted already, or were never gone: the shape it took them from holds them again (the cut
+    /// undone), or the shape its first paste put them in does. Not whether some shape holds rows of those ids: `/new-version`
+    /// copies an API under the same row ids, and its twin holding them is no paste. Each shape's rows are read as its own kind
+    /// reads them (a cut API row pasted on the board is an endpoint).
+    private func isPastedAlready(_ payload: RowsPayload, rows: [PartID]) -> Bool {
         let wanted = Set(rows)
-        return document.shapes.contains { record in
-            registry.rowMoving(of: record.kind) != nil && (moving.rows(record) ?? []).contains(where: wanted.contains)
+        func holds(_ id: ShapeID) -> Bool {
+            guard let record = document[id], let moving = registry.rowMoving(of: record.kind) else { return false }
+            return (moving.rows(record) ?? []).contains(where: wanted.contains)
         }
+        if holds(payload.carrier.id) { return true }
+        guard let cut = payload.cut, let landed = service(RowCuts.self)?.landings[cut] else { return false }
+        return holds(landed)
     }
 
     /// The items a cut took are gone: the shape stays selected.

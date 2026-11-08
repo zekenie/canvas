@@ -79,7 +79,7 @@ extension EndpointDefinition: ShapeDefinition {
             APIDrawing.drawChip(endpoint.method, deprecated: endpoint.deprecated, in: chip, cg)
             x = chip.maxX + APIStyle.gap
         }
-        APIDrawing.fading(endpoint.deprecated, in: cg) { drawLines(endpoint, from: x, in: frame, types: types, cg) }
+        APIDrawing.fading(endpoint.deprecated, in: cg, over: frame) { drawLines(endpoint, from: x, in: frame, types: types, cg) }
     }
 
     /// All but the chip: the path and scope, the details and the responses.
@@ -209,7 +209,7 @@ extension EndpointDefinition: CustomSkeleton {
                 bars.append(bar)
             }
         }
-        context.fillSkeletonText(bars)
+        APIDrawing.fading(endpoint.deprecated, in: context.cg, over: frame) { context.fillSkeletonText(bars) }
     }
 }
 

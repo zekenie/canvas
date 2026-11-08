@@ -193,7 +193,7 @@ struct APILineGrammar: LineGrammar {
 
     var substitutions: [LineSubstitution] { [LineSubstitution(EndpointGrammar.typedArrow, becomes: EndpointGrammar.arrow)] }
 
-    /// "POST /orders/{id}/refunds, createRefund": its full name, then its name; a header "/orders, path prefix, 4 endpoints".
+    /// "POST /orders/{id}/refunds, createRefund, deprecated": its full name, then its name, then whether it is retired; a header "/orders, path prefix, 4 endpoints".
     func spoken(_ row: APIRow, in context: LineContext) -> String {
         let rows = context.editor.document[context.shape]?.typed(as: API.self)?.props.endpoints ?? []
         let index = rows.firstIndex { $0.id == row.id }
@@ -203,7 +203,7 @@ struct APILineGrammar: LineGrammar {
             return [header.prefix, APIStyle.prefixWord.lowercased(), APIStyle.accessibleRows(count)].joined(separator: ", ")
         case .endpoint(let endpoint):
             let full = index.map { APIGroups.fullName(of: $0, in: rows) } ?? APIGroups.fullName(method: endpoint.method, path: endpoint.path)
-            return [full, endpoint.name].filter { !$0.isEmpty }.joined(separator: ", ")
+            return [full, endpoint.name, endpoint.deprecated ? APIStyle.deprecatedState : ""].filter { !$0.isEmpty }.joined(separator: ", ")
         }
     }
 }
@@ -445,7 +445,8 @@ struct APILines: LineModel {
         let isHeader = row.header != nil
         let place = rows[..<min(index, rows.count)].filter { ($0.header != nil) == isHeader }.count + 1
         let total = rows.filter { ($0.header != nil) == isHeader }.count
-        return "\(isHeader ? APIStyle.prefixWord : noun.title) \(place) of \(total)"
+        let said = "\(isHeader ? APIStyle.prefixWord : noun.title) \(place) of \(total)"
+        return row.endpoint?.deprecated == true ? "\(said), \(APIStyle.deprecatedState)" : said
     }
 
     /// Add Endpoint (Add Path Prefix for a header), Paste Endpoints, Change Method (the method alone changed), Rename Path Prefix (a

@@ -4,6 +4,7 @@ import CanvasTesting
 @_spi(Host) import CanvasUI
 import Connections
 import Engineering
+import Geometry
 import LineRows
 import Selection
 import TestKit
@@ -469,7 +470,7 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
         b.editor.undo()
         expectEqual(b.straps().count, 4)
     },
-    test("an endpoint standing alone at rest: the paper, its chip, its path, a hairline, {id} and its type, its body, its responses; deprecated, its chip hollow; zoomed out, bars; the endpoint fixture's members") {
+    test("an endpoint standing alone at rest: the paper, its chip, its path, a hairline, {id} and its type, its body, its responses; deprecated, its chip hollow; its parts (its fixture, endpoint.v0.json, is held to every member by the persistence tests)") {
         let b = try APIBench()
         let alone = ShapeRecord(StandaloneEndpoint(frame: CGRect(x: 40, y: 40, width: 420, height: 200),
                                                    endpoint: Endpoint(method: "POST", path: "/orders/{id}/refunds", name: "createRefund", authScope: "orders:write",
@@ -491,6 +492,198 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
         expectColor(Array(pixel(hollow, at: CGPoint(x: chip.x + 6, y: chip.y - 5)).prefix(3)), paper, "hollow", within: 8)
         expectEqual(b.editor.registry.parts(of: try require(b.editor.document[alone.id]))?.map(\.name), ["POST /orders/{id}/refunds"])
         expectEqual(b.editor.registry.parts(of: try require(b.editor.document[alone.id]))?.first?.standsAlone, true)
+    },
+    test("a deprecated row's words are fainter in bitmaps, as is a standalone endpoint's; the arrow into it as it was") {
+        let b = try APIBench()
+        let api = b.api("orders API", ["GET /orders/{id}", "DELETE /orders/{id}/items/{itemId}"], at: CGPoint(x: 40, y: 40))
+        let rows = b.rows(api)
+        let caller = b.h.add(Box(CGRect(x: 700, y: 40, width: 100, height: 60)), titled: "storefront")
+        b.strap(PartAddress(caller), PartAddress(api, part: rows[1].id), on: Calls.id)
+        let size = CGSize(width: 600, height: 200)
+        let row = b.rect(ofRow: 1, in: api)
+        // The path's glyphs: after the chip, the darkest pixel there.
+        let path = CGRect(x: row.minX + 14 + 60, y: row.minY + 4, width: 160, height: row.height - 8)
+        @MainActor func darkest(_ rep: NSBitmapImageRep, _ rect: CGRect) -> Int {
+            var least = 255
+            for y in Int(rect.minY)..<Int(rect.maxY) { for x in Int(rect.minX)..<Int(rect.maxX) { least = min(least, gray(pixel(rep, at: CGPoint(x: x, y: y)))) } }
+            return least
+        }
+        let live = render(b.editor, size: size)
+        b.editor.transact { $0.update(api, as: API.self) { api in
+            if case .endpoint(var endpoint) = api.props.endpoints[1] {
+                endpoint.deprecated = true
+                api.props.endpoints[1] = .endpoint(endpoint)
+            }
+        } }
+        let faded = render(b.editor, size: size)
+        expect(darkest(live, path) < 120, "the path in ink: \(darkest(live, path))")
+        expect(darkest(faded, path) > darkest(live, path) + 50, "the path faint: \(darkest(live, path)) → \(darkest(faded, path))")
+        // The first row, not deprecated, as it was; the call into the second as it was (no mark on it).
+        let first = b.rect(ofRow: 0, in: api)
+        let firstPath = CGRect(x: first.minX + 14 + 50, y: first.minY + 4, width: 120, height: first.height - 8)
+        expectEqual(darkest(faded, firstPath), darkest(live, firstPath), "the other row untouched")
+        expectEqual(b.straps().count, 1)
+        // Retired inside an old version, the row isn't faded twice: its path is as faint as its neighbour's, not fainter.
+        b.editor.transact { $0.update(api, as: API.self) { $0.props.deprecated = true } }
+        let old = render(b.editor, size: size)
+        expect(abs(darkest(old, path) - darkest(old, firstPath)) < 50, "once, by the version: \(darkest(old, path)) and \(darkest(old, firstPath))")
+    },
+    test("an endpoint standing alone zoomed out to 30%: its paper, a bar for its chip, its path and each line, its title a bar above it and no cover printed; retired, its bars faint; light and dark") {
+        let b = try APIBench()
+        let alone = ShapeRecord(StandaloneEndpoint(frame: CGRect(x: 100, y: 100, width: 420, height: 200),
+                                                   endpoint: Endpoint(method: "POST", path: "/orders/{id}/refunds", name: "createRefund", authScope: "orders:write",
+                                                                      parameters: [PathParameter(name: "id", type: "uuid")], body: TypeRef("NewRefund"),
+                                                                      responses: [EndpointResponse(status: "201", type: TypeRef("Refund"))])))
+        b.editor.transact { $0.insert(alone) }
+        b.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        expect(b.editor.drawsSkeleton(of: alone.id))
+        let header = b.rect(ofRow: 0, in: alone.id).applying(CGAffineTransform(scaleX: 0.3, y: 0.3))
+        let bar = CGRect(x: header.minX + 4, y: header.minY + 1, width: 16, height: max(2, header.height - 2))
+        @MainActor func darkest(_ rep: NSBitmapImageRep, _ rect: CGRect) -> Int {
+            var least = 255
+            for y in Int(rect.minY)..<Int(rect.maxY) { for x in Int(rect.minX)..<Int(rect.maxX) { least = min(least, pixel(rep, at: CGPoint(x: x, y: y))[0]) } }
+            return least
+        }
+        var live = 255
+        for dark in [false, true] {
+            let drawn = render(b.editor, size: CGSize(width: 300, height: 200), dark: dark)
+            expectColor(pixel(drawn, at: CGPoint(x: 100 * 0.3 + 118, y: 100 * 0.3 + 18)), paper, "\(dark): its paper", within: 6)
+            expect(some(drawn, in: bar) { $0[0] < 200 }, "\(dark): its chip's bar")
+            expect(some(drawn, in: CGRect(x: 32, y: 6, width: 30, height: 12)) { dark ? $0[0] > 90 : $0[0] < 120 }, "\(dark): its title, a bar above it")
+            if !dark { live = darkest(drawn, bar) }
+        }
+        expectEqual(b.editor.titleCover(of: alone.id), nil, "no cover printed over its card")
+        b.editor.transact { $0.update(alone.id, as: StandaloneEndpoint.self) { $0.props.endpoint.deprecated = true } }
+        let faded = render(b.editor, size: CGSize(width: 300, height: 200))
+        expect(darkest(faded, bar) > live + 15, "retired, its bars faint: \(live) → \(darkest(faded, bar))")
+    },
+    test("an API zoomed out draws a deprecated row's bars faint, the others as they were") {
+        let b = try APIBench()
+        let api = b.api("orders API", ["GET /orders/{id}", "DELETE /orders/{id}/items/{itemId}"], at: CGPoint(x: 100, y: 100))
+        b.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        expect(b.editor.drawsSkeleton(of: api))
+        @MainActor func bars(_ index: Int) -> CGRect {
+            let r = b.rect(ofRow: index, in: api).applying(CGAffineTransform(scaleX: 0.3, y: 0.3))
+            return CGRect(x: r.minX + 4, y: r.minY + 1, width: 20, height: max(2, r.height - 2))
+        }
+        @MainActor func darkest(_ rep: NSBitmapImageRep, _ rect: CGRect) -> Int {
+            var least = 255
+            for y in Int(rect.minY)..<Int(rect.maxY) { for x in Int(rect.minX)..<Int(rect.maxX) { least = min(least, pixel(rep, at: CGPoint(x: x, y: y))[0]) } }
+            return least
+        }
+        let live = render(b.editor, size: CGSize(width: 300, height: 200))
+        b.editor.transact { $0.update(api, as: API.self) { api in
+            if case .endpoint(var endpoint) = api.props.endpoints[1] {
+                endpoint.deprecated = true
+                api.props.endpoints[1] = .endpoint(endpoint)
+            }
+        } }
+        let after = render(b.editor, size: CGSize(width: 300, height: 200))
+        expect(darkest(after, bars(1)) > darkest(live, bars(1)) + 15, "the retired row's bars faint: \(darkest(live, bars(1))) → \(darkest(after, bars(1)))")
+        expectEqual(darkest(after, bars(0)), darkest(live, bars(0)), "the other row's as they were")
+    },
+    test("VoiceOver hears an old version, a retired row and a retired endpoint standing alone as deprecated") {
+        let b = try APIBench()
+        let api = b.api("orders API", ["GET /orders/{id}", "DELETE /orders/{id}"], at: CGPoint(x: 40, y: 40))
+        expect(b.editor.accessibleDescription(of: api)?.label == "orders API, API", "\(String(describing: b.editor.accessibleDescription(of: api)?.label))")
+        b.editor.transact { $0.update(api, as: API.self) { api in
+            if case .endpoint(var endpoint) = api.props.endpoints[1] {
+                endpoint.deprecated = true
+                api.props.endpoints[1] = .endpoint(endpoint)
+            }
+        } }
+        let labels = b.editor.accessibleParts(of: api).map(\.title)
+        expect(labels.contains("DELETE /orders/{id}, deprecated"), "\(labels)")
+        expect(labels.contains("GET /orders/{id}"), "the live one as it was: \(labels)")
+        b.editor.transact { $0.update(api, as: API.self) { $0.props.deprecated = true } }
+        expectEqual(b.editor.accessibleDescription(of: api)?.label, "orders API, API, deprecated")
+        let alone = ShapeRecord(StandaloneEndpoint(frame: CGRect(x: 600, y: 40, width: 420, height: 100),
+                                                   endpoint: Endpoint(method: "GET", path: "/orders", name: "listOrders", deprecated: true)))
+        b.editor.transact { $0.insert(alone) }
+        expectEqual(b.editor.accessibleDescription(of: alone.id)?.label, "listOrders, Endpoint, deprecated")
+    },
+    test("Space on an endpoint standing alone, selected whole, pops its method menu; the key is in the Keyboard Shortcuts window's hints") {
+        let b = try APIBench()
+        let alone = ShapeRecord(StandaloneEndpoint(frame: CGRect(x: 100, y: 100, width: 420, height: 100),
+                                                   endpoint: Endpoint(method: "PATCH", path: "/orders/{id}", name: "patchOrder")))
+        b.editor.transact { $0.insert(alone) }
+        b.editor.selectedShapeIDs = [alone.id]
+        expectEqual(b.editor.selectedItems, nil, "the shape whole, no item")
+        expect(b.h.key(" "), "Space is the endpoint's")
+        let (menu, _) = try require(b.editor.menuToPopUp)
+        expectEqual(menu.outline, ["GET", "POST", "PUT", "✓ PATCH", "DELETE"])
+        b.editor.menuDidPopUp()
+        try menu.choose("DELETE")
+        expectEqual(b.editor.document[alone.id]?.typed(as: StandaloneEndpoint.self)?.props.endpoint.method, "DELETE")
+        expectEqual(b.undoName, "Change Method")
+        let hint = b.editor.registry.keyboardHelp.first { $0.keys == ["Space on an Endpoint"] }
+        expectEqual(hint?.place, .canvas)
+        // A table's selection whole has no lead to press: Space is not taken.
+        let api = b.api("orders API", ["GET /orders"], at: CGPoint(x: 100, y: 400))
+        b.editor.selectedShapeIDs = [api]
+        expect(b.editor.menuToPopUp == nil, "no menu from an API selected whole")
+    },
+    test("New Version of two neighbouring APIs at once: their copies are clear of each other and of everything") {
+        let b = try APIBench()
+        let first = b.api("orders API", ["GET /orders"], at: CGPoint(x: 40, y: 40))
+        let second = b.api("billing API", ["GET /invoices"], at: CGPoint(x: 40, y: 160))
+        let made = b.editor.newVersion(of: [first, second])
+        expectEqual(made.count, 2)
+        var frames: [CGRect] = []
+        for id in [first, second] + made { frames.append(try require(b.editor.shapeContext.frame(of: try require(b.editor.document[id])))) }
+        for (i, one) in frames.enumerated() {
+            for (j, other) in frames.enumerated() where j > i { expect(!one.intersects(other), "\(i) and \(j) overlap: \(one) \(other)") }
+        }
+        expectEqual(b.undoName, "New Version")
+    },
+    test("after New Version the twins hold the same row ids, and a cut of one's row is still a move: ⌘X then ⌘V on the board takes it out as an endpoint keeping its arrows' ids, named Take Out Endpoint; pasted again it is a copy, named Paste Endpoint") {
+        let b = try APIBench()
+        let api = b.api("orders API", e5Rows, at: CGPoint(x: 40, y: 40))
+        let rows = b.rows(api)
+        let refunds = b.h.add(DatabaseTable(frame: CGRect(x: 900, y: 40, width: 200, height: 44), columns: [Column(name: "id", type: TypeRef("uuid"))]),
+                              titled: "refunds")
+        b.strap(PartAddress(api, part: rows[3].id), PartAddress(refunds), on: Writes.id)
+        let v2 = try require(b.editor.newVersion(of: [api]).first)
+        b.editor.undoHistory.seal()
+        let write = try require(b.editor.document.shapes.first { $0.typed(as: Strap.self)?.props.from == PartAddress(v2, part: rows[3].id) })
+        b.editor.selectedShapeIDs = [v2]
+        b.editor.selectItems([AnyHashable(rows[3].id)], of: v2)
+        expect(b.editor.cutRows([rows[3].id], of: v2))
+        b.editor.selectedShapeIDs = []
+        let payload = try require(b.editor.pasteboardRows)
+        let made = try require(b.editor.pasteRows(payload, to: .beside([])))
+        expectEqual(b.editor.document[made]?.kind, StandaloneEndpoint.kind)
+        expectEqual(b.undoName, "Take Out Endpoint", "a move, though the old version holds a row of that id")
+        expectEqual(b.editor.document[write.id]?.typed(as: Strap.self)?.props.from, PartAddress(made, part: rows[3].id), "the arrow came back under its id, on the endpoint")
+        // The same cut pasted again, on the board: copies, the first left as it is.
+        let again = try require(b.editor.pasteRows(payload, to: .beside([made])))
+        expect(again != made)
+        expectEqual(b.undoName, "Paste Endpoint", "the endpoint holds the row already")
+        expectEqual(b.editor.document[write.id]?.typed(as: Strap.self)?.props.from, PartAddress(made, part: rows[3].id), "the first endpoint keeps its arrow")
+        expectEqual(b.straps().count, 3, "the second's arrow is a copy")
+        // Undone, the paste moves again.
+        b.editor.undo()
+        b.editor.undo()
+        let third = try require(b.editor.pasteRows(payload, to: .beside([])))
+        expectEqual(b.undoName, "Take Out Endpoint", "the first paste undone, the rows are free again")
+        expectEqual(b.editor.document[write.id]?.typed(as: Strap.self)?.props.from, PartAddress(third, part: rows[3].id))
+    },
+    test("a cut API row pasted on the board is an endpoint, and pasted there again is a copy: the shape that holds the row is read as its own kind reads it, not as the API's") {
+        let b = try APIBench()
+        let api = b.api("orders API", ["GET /orders/{id}", "POST /orders/{id}/refunds"], at: CGPoint(x: 40, y: 40))
+        let rows = b.rows(api)
+        b.editor.selectedShapeIDs = [api]
+        b.editor.selectItems([AnyHashable(rows[1].id)], of: api)
+        expect(b.editor.cutRows([rows[1].id], of: api))
+        let payload = try require(b.editor.pasteboardRows)
+        let made = try require(b.editor.pasteRows(payload, to: .beside([])))
+        expectEqual(b.undoName, "Take Out Endpoint")
+        expectEqual(b.editor.document[made]?.typed(as: StandaloneEndpoint.self)?.props.endpoint.id, rows[1].id)
+        // A second paste of the same cut: the endpoint holds the row, so it is a copy.
+        let copy = try require(b.editor.pasteRows(payload, to: .beside([made])))
+        expectEqual(b.undoName, "Paste Endpoint")
+        expectEqual(b.editor.document[made]?.typed(as: StandaloneEndpoint.self)?.props.endpoint.id, rows[1].id, "the first stands")
+        expect(copy != made)
     },
 ])
 

@@ -110,7 +110,7 @@ extension KitBench {
         expect(fill.contrast(with: .white) >= Swatch.textContrast, "the chip's white word reads on its color, as the row draws it")
         expect(parts[1].standsAlone && !parts[0].standsAlone)
         expectEqual(h.editor.accessibleName(of: PartAddress(api.id, part: parts[1].id)), "POST /orders/{id}/refunds")
-        expectEqual(h.editor.accessibleDescription(of: try require(h.editor.document[api.id])).label, "orders API, API")
+        expectEqual(h.editor.accessibleDescription(of: try require(h.editor.document[api.id])).label, "orders API, API, deprecated", "the fixture is an old version")
         expectEqual(h.editor.accessibleDescription(of: try require(h.editor.document[api.id])).value, "1 endpoint")
     },
     test("/api on a board named shop: shop API, edited at its empty row, the server faint above it; /api orders API, so titled; each one step, Add API") {

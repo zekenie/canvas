@@ -89,6 +89,9 @@ enum APIStyle {
     /// The card's deprecated toggled on, and off.
     static let deprecateStep = "Deprecate Endpoint"
     static let undeprecateStep = "Undeprecate Endpoint"
+    /// What VoiceOver says of an old version, a retired endpoint (its row, or one standing alone).
+    static let deprecatedState = "deprecated"
+
     /// What VoiceOver calls an endpoint's chip, a button after its row: "Method, PATCH".
     static func methodButton(_ method: String) -> String { method.isEmpty ? methodWord : "\(methodWord), \(method)" }
     static let methodWord = "Method"
@@ -100,6 +103,8 @@ enum APIStyle {
     static let firstNewVersion = "v2"
     /// Group by Prefix, the step and the command's name.
     static let groupByPrefixStep = "Group by Prefix"
+    /// What Group by Prefix says it did to VoiceOver: the step, and how many groups the endpoints are under.
+    static func groupedWords(_ groups: Int) -> String { "\(groupByPrefixStep), \(groups) \(groups == 1 ? "group" : "groups")" }
     static let groupByPrefixCommand = "group-by-prefix"
 
     /// From the paper's left to where a top row's text (the server, a chip, a header's chevron) starts.

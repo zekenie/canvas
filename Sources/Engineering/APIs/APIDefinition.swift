@@ -22,7 +22,7 @@ extension APIDefinition: ShapeDefinition {
         let frame = context.shapes.frame(of: shape)
         KitPaper.draw(frame, in: context)
         // An old version (deprecated, E5 panel 4): everything on its paper faint, the paper as ever.
-        APIDrawing.fading(shape.props.deprecated, in: context.cg) { drawContent(shape, in: frame, context) }
+        APIDrawing.fading(shape.props.deprecated, in: context.cg, over: frame) { drawContent(shape, in: frame, context) }
     }
 
     /// Its server line, the hairline under it, and its rows in view.
@@ -137,7 +137,7 @@ extension APIDefinition: CustomSkeleton {
         KitPaper.drawSkeleton(frame, in: context)
         let api = shape.props, rows = KitRows(shape, in: context.shapes)
         guard KitStyle.rowHeight * context.zoom >= KitStyle.skeletonLeastRow else { return }
-        var bars: [CGRect] = [], faded: [CGRect] = []
+        var bars: [CGRect] = [], faded: [CGRect] = [], retired: [CGRect] = []
         let server = APIRows.serverRect(in: frame)
         let start = frame.minX + APIStyle.inset, end = frame.maxX - KitStyle.trailingInset
         if let bar = KitPaper.bar(columns: SkeletonText.columns(of: api.server.host, upTo: KitStyle.skeletonMostColumns), column: APIStyle.skeletonColumn,
@@ -154,9 +154,13 @@ extension APIDefinition: CustomSkeleton {
             }
             guard let index = rows.row(atLine: line) else { continue }
             let x = start + (index >= firstHeader ? APIStyle.memberIndent : 0)
-            // The rows a drag takes, as bars faded where they are.
+            // The rows a drag takes, as bars faded where they are; a deprecated endpoint's, faint.
             let taken = rows.faded?.contains(api.endpoints[index].id) == true, kept = bars.count
-            defer { if taken { faded.append(contentsOf: bars[kept...]); bars.removeSubrange(kept...) } }
+            let gone = api.endpoints[index].endpoint?.deprecated == true
+            defer {
+                if taken { faded.append(contentsOf: bars[kept...]); bars.removeSubrange(kept...) }
+                else if gone { retired.append(contentsOf: bars[kept...]); bars.removeSubrange(kept...) }
+            }
             switch api.endpoints[index] {
             case .header(let header):
                 if let bar = KitPaper.bar(columns: SkeletonText.columns(of: header.prefix, upTo: KitStyle.skeletonMostColumns), column: APIStyle.skeletonColumn,
@@ -169,7 +173,8 @@ extension APIDefinition: CustomSkeleton {
                                           at: path, in: rect, room: end - path) { bars.append(bar) }
             }
         }
-        APIDrawing.fading(api.deprecated, in: context.cg) { context.fillSkeletonText(bars) }
+        APIDrawing.fading(api.deprecated, in: context.cg, over: frame) { context.fillSkeletonText(bars) }
+        if !retired.isEmpty { APIDrawing.fading(true, in: context.cg, over: frame) { context.fillSkeletonText(retired) } }
         rows.fillFaded(text: faded, in: context) {}
     }
 }
@@ -312,7 +317,7 @@ enum APIDrawing {
             let size = label.contentSize
             place(width: size.width) { at in label.draw(at: CGPoint(x: at, y: middle - size.height / 2), in: cg) }
         }
-        fading(endpoint.deprecated, in: cg) {
+        fading(endpoint.deprecated, in: cg, over: rect) {
             for draw in drawn { draw() }
             drawPath(endpoint, from: x, room: right + APIStyle.pillGap - APIStyle.gap - x, middle: middle, cg)
         }
@@ -332,8 +337,9 @@ enum APIDrawing {
         }
         let text = RowText.line(method, .hollowChip(APIStyle.chipHex(method)))
         cg.saveGState()
-        cg.setAlpha(APIStyle.deprecatedChipAlpha)
-        cg.beginTransparencyLayer(auxiliaryInfo: nil)
+        // Inside a faded old version the chip is only hollow: its fade is the version's.
+        if fadeDepth == 0 { cg.setAlpha(APIStyle.deprecatedChipAlpha) }
+        cg.beginTransparencyLayer(in: chip.insetBy(dx: -1, dy: -1), auxiliaryInfo: nil)
         let width = APIStyle.hollowChipEdge
         cg.addPath(CGPath(roundedRect: chip.insetBy(dx: width / 2, dy: width / 2), cornerWidth: APIStyle.chipRadius, cornerHeight: APIStyle.chipRadius, transform: nil))
         cg.setStrokeColor(APIStyle.chipFill(method).cgColor)
@@ -344,13 +350,19 @@ enum APIDrawing {
         cg.restoreGState()
     }
 
-    /// Draws `body` faint (`APIStyle.deprecatedAlpha`, as one layer) where `faded`, else as it is: a deprecated endpoint's words, an
-    /// old version's content.
-    static func fading(_ faded: Bool, in cg: CGContext, _ body: () -> Void) {
-        guard faded else { return body() }
+    /// How many fades are open: a deprecated endpoint in an old version is faded once, by the version, not again by itself (the
+    /// words would end at a fifth of their strength, the retired row all but gone).
+    private static var fadeDepth = 0
+
+    /// Draws `body`, which stays within `rect`, faint (`APIStyle.deprecatedAlpha`, as one layer the size of `rect`) where `faded`,
+    /// else as it is: a deprecated endpoint's words, an old version's content. Inside a fade already, as it is.
+    static func fading(_ faded: Bool, in cg: CGContext, over rect: CGRect, _ body: () -> Void) {
+        guard faded, fadeDepth == 0 else { return body() }
+        fadeDepth += 1
+        defer { fadeDepth -= 1 }
         cg.saveGState()
         cg.setAlpha(APIStyle.deprecatedAlpha)
-        cg.beginTransparencyLayer(auxiliaryInfo: nil)
+        cg.beginTransparencyLayer(in: rect, auxiliaryInfo: nil)
         body()
         cg.endTransparencyLayer()
         cg.restoreGState()

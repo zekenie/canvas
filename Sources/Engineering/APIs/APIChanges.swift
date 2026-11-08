@@ -1,6 +1,7 @@
 import AppKit
 import Canvas
 import ContextMenus
+import Draw
 import LineRows
 import Selection
 import SlashCommands
@@ -185,9 +186,11 @@ extension CanvasEditor {
         guard !apis.isEmpty else { return [] }
         // Where each copy goes and the arrows it takes, worked out before the step from the board as it is.
         var plans: [(old: ShapeID, copy: AnyShapeRecord, arrows: [AnyShapeRecord])] = []
+        var chosen: [CGRect] = []
         for id in apis {
             guard let record = document[id], let api = record.typed(as: API.self), let size = shapeContext.frame(of: record)?.size,
-                  let frame = insertionFrame(of: size, beside: [id]) else { continue }
+                  let frame = copyFrame(of: id, size: size, avoiding: chosen) else { continue }
+            chosen.append(frame)
             var next = api
             next.props.deprecated = false
             next.props.server.host = APIVersions.bumpedHost(next.props.server.host)
@@ -223,6 +226,17 @@ extension CanvasEditor {
         return made
     }
 
+    /// Where the copy of API `id` goes: beside it as Insert puts one, and clear of the frames chosen for the copies before it (they
+    /// are not on the board yet, so the board alone would put two on the same spot).
+    private func copyFrame(of id: ShapeID, size: CGSize, avoiding chosen: [CGRect]) -> CGRect? {
+        guard !chosen.isEmpty else { return insertionFrame(of: size, beside: [id]) }
+        guard let surroundings = Surroundings(on: board, moving: size, in: self), let bounds = surroundings.reading.shapes.geometry(of: id)?.bounds,
+              let landing = surroundings.near(bounds, avoiding: chosen, within: shapeContext.container(of: id)) else {
+            return insertionFrame(of: size, beside: [id])
+        }
+        return landing.rect
+    }
+
     /// Group by Prefix on each API of `ids` (`/group-by-prefix`, Shape ▸ Group by Prefix), one step: its endpoints by their full
     /// paths, in order, under a header for each first path segment two or more of them share (`APIGroups.byPrefix`), a header of
     /// a prefix it had keeping its id; an API it changes nothing in is left as it is, and none changed makes no step. A read-only
@@ -247,7 +261,7 @@ extension CanvasEditor {
             return true
         }
         guard done == true else { return false }
-        announce(APIStyle.groupByPrefixStep)
+        announce(APIStyle.groupedWords(changes.reduce(0) { $0 + $1.rows.count { $0.header != nil } }))
         return true
     }
 }
