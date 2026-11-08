@@ -178,6 +178,9 @@ struct KitRows {
     /// The line row `index` is drawn on, or stands at, folded.
     func line(of index: Int) -> Int { shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting) }
 
+    /// Whether row `index` is drawn on a line of its own: false for a row a fold hides, which stands at the "+N ›" line.
+    func isShown(_ index: Int) -> Bool { shown?.isShown(index) ?? true }
+
     /// The row drawn on `line`; nil for the waiting line and the "+N ›" line.
     func row(atLine line: Int) -> Int? {
         if let shown { return shown.row(atLine: line) }

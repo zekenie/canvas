@@ -52,8 +52,7 @@ import TextEditing
         expectEqual(folded.width, before.width)
         expectEqual(b.editor.undoHistory.undoName, nil, "a fold is no step")
         expect(b.editor.file == file, "nothing written")
-        expect(b.editor.announcements.contains("apples folded, 2 of 5 entries shown") || b.editor.announcements.last?.hasPrefix("Folded") == true,
-               "VoiceOver hears it: \(b.editor.announcements)")
+        expectEqual(b.editor.announcements.last, "Folded, 2 of 5 entries shown", "VoiceOver hears it, the shape having no title here")
         let parts = try require(b.editor.shapeContext.geometry(of: id)?.parts)
         let green = b.rows(id)[1].id, blue = b.rows(id)[2].id
         expectEqual(parts.frame(green)?.rect, TallyLines.line(2, in: folded), "a hidden row's rect is the +N line")
@@ -163,6 +162,90 @@ import TextEditing
         expectEqual(other.drawn(), ["a", "+2"], "laid out folded")
         b.editor.undo()
         expect(b.editor.rowFolds?.isFolded(gone) == true, "an undo brings it back folded in this session")
+    },
+    test("Fold Rows announces what changed: the shapes that now hide a row, one by its counts, several by their number, none as nothing to fold") {
+        let b = try Bench()
+        let a = b.tally("a", ["one", "two", "three", "four"])
+        let c = b.tally("c", ["x 1", "y 2", "z 3"], at: CGPoint(x: 400, y: 100))
+        let d = b.tally("d", ["p", "q", "r"], at: CGPoint(x: 700, y: 100))
+        b.editor.selectedShapeIDs = [c]
+        b.press(.controlCommandUp)
+        expectEqual(b.editor.announcements.last, "Nothing to fold", "every entry has a count: a fold hides none")
+        b.editor.rowFolds?.unfold([c])
+        b.editor.selectedShapeIDs = [a, d]
+        b.press(.controlCommandUp)
+        expectEqual(b.editor.announcements.last, "2 shapes folded")
+        b.editor.rowFolds?.unfold([a, d])
+        b.editor.rowFolds?.fold([a])
+        b.editor.selectedShapeIDs = [a, d]
+        b.press(.controlCommandUp)
+        expectEqual(b.editor.announcements.last, "Folded, 2 of 3 entries shown", "a was folded already: only d changed, and is said by its counts")
+    },
+    test("A press on a folded tally edits the row pressed, not the row the unfolded layout has at that line; the +N line is the waiting line") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 3", "green", "blue 2", "pink", "gold"])
+        b.editor.rowFolds?.fold([id])
+        let folded = try require(b.frame(id))
+        let blue = TallyLines.line(1, in: folded), more = TallyLines.line(2, in: folded)
+        b.begin(id, at: CGPoint(x: blue.midX, y: blue.midY))
+        expectEqual(b.focus, "row blue", "the second line of the fold is blue's, the unfolded layout's second is green")
+        b.press(.escape)
+        b.editor.selectedShapeIDs = [id]
+        b.begin(id, at: CGPoint(x: more.midX, y: more.midY))
+        expectEqual(b.focus, "waiting", "a press on +N edits no row")
+    },
+    test("Opening +N by keys lets its focus go: folding again draws a new +N, which has no ring, and Return edits") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 3", "green", "blue"])
+        b.editor.rowFolds?.fold([id])
+        b.editor.selectedShapeIDs = [id]
+        b.press(.optionTab)
+        expectEqual(b.editor.focusedPart?.title, "2 more entries")
+        b.press(.return)
+        expect(b.editor.rowFolds?.isFolded(id) != true, "Return opened it")
+        b.editor.rowFolds?.fold([id])
+        expectEqual(b.editor.focusedPart?.title, nil, "the new +N line is not the one the focus was on")
+        b.press(.return)
+        expectEqual(b.editor.editingShapeID, id, "Return opens the selection for editing, not the new +N line")
+    },
+    test("The folds a file saves are the latest 2,000; the oldest are let go") {
+        let b = try Bench()
+        let ids = (0..<(RowFolds.savedLimit + 1)).map { index in ShapeRecord(Tally(CGRect(x: CGFloat(index % 50) * 260, y: CGFloat(index / 50) * 80, width: 240, height: 40),
+                                                                                    name: "t\(index)", rows: ["a 1", "b", "c"].map { TallyRow($0.split(separator: " ")[0].description) })) }
+        b.editor.transact("Add") { tx in for record in ids { tx.insert(record) } }
+        b.editor.rowFolds?.fold(ids.map(\.id))
+        let other = try Bench()
+        other.editor.replaceFile(with: b.editor.file, showing: .root)
+        other.editor.restoreViewValues(b.editor.viewValues)
+        expectEqual(other.editor.rowFolds?.folded.count, RowFolds.savedLimit)
+        expect(other.editor.rowFolds?.isFolded(ids[0].id) != true, "the first folded is the one let go")
+        expect(other.editor.rowFolds?.isFolded(ids[RowFolds.savedLimit].id) == true, "the latest is kept")
+    },
+    test("Keys walk a fold's lines: ⌥Tab visits a closed header and +N in reading order, ⌥⇧Tab undoes each, Escape goes back to the shape; each shows, named") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["fruit/", "red 3", "green", "veg/", "kale 2", "plum"])
+        b.editor.rowFolds?.fold([id])
+        b.editor.rowFolds?.setClosed(true, header: b.rows(id)[0].id, of: id)
+        b.editor.selectedShapeIDs = [id]
+        let titles = b.editor.shapeParts(of: id).map(\.title)
+        expect(titles.count >= 2, "a closed header and +N are parts: \(titles)")
+        let walk = KeyWalk(b.window, editor: b.editor, readers: [.canvas(b.canvas, selection: { [b] in b.editor.selectedShapeIDs.isEmpty ? [] : ["T"] },
+                                                                          part: { [b] in b.editor.focusedPart?.title },
+                                                                          frame: { [b] in
+                                                                              guard let rect = b.editor.focusedPart?.rect ?? b.editor.selectionBounds else { return nil }
+                                                                              return b.editor.shownFrame(ofWorld: rect, in: b.canvas)
+                                                                          })],
+                           settle: .both(b.h.scheduler))
+        let ids = titles.map { "canvas/T/\($0)" }
+        walk.go(ids[0], by: .optionTab)
+        let cycle = walk.expectCycle(ids, wraps: .closed, forward: .optionTab, back: .optionBackTab)
+        expectEqual(cycle.ids.count, ids.count)
+        walk.expectShows(cycle.stops, by: .optionTab)
+        walk.go(ids[0], by: .optionTab)
+        expectEqual(walk.press(.escape).id, "canvas/T", "Escape goes back to the shape")
+        expectEqual(b.editor.selectedShapeIDs, [id], "still selected")
+        expect(titles.contains { $0.hasSuffix("more entry") || $0.contains("more entries") }, "+N is named: \(titles)")
+        expect(titles.contains { $0.contains("hidden") }, "the closed header says how many it hides: \(titles)")
     },
     test("A line typed wider than the tally lays it out as wide as the line needs, nothing written; as stored again as editing ends") {
         let b = try Bench()

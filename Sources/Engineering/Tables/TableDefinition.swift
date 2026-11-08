@@ -67,7 +67,7 @@ extension TableDefinition: ShapeDefinition {
     /// Its laid-out frame, and a part a row.
     func geometry(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape), rows = KitRows(shape, in: context)
-        let parts = shape.props.columns.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame)) }
+        let parts = shape.props.columns.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame), isShown: rows.isShown($0)) }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
 

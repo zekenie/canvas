@@ -22,14 +22,87 @@ public struct EngineeringFindPlugin: ListedPlugin {
     public var id: PluginID { .engineeringFind }
 
     public func register(into registrar: inout PluginRegistrar) {
+        registrar.service { EnumUsers(editor: $0) }
         RowFind.register(into: &registrar)
+    }
+}
+
+/// Which tables of the file name which shapes in a column's type (an enum, whether it is in the file or not), so a commit
+/// that reaches a shape reads again the tables that name it, wherever they are, at the cost of what the commit touched.
+/// Built from the file when Find first asks, and followed on every commit after; a file put in place is read afresh.
+@MainActor
+final class EnumUsers {
+    private unowned let editor: CanvasEditor
+    private var built = false
+    /// For each shape named in a column's type, the tables that name it.
+    private var users: [ShapeID: Set<ShapeID>] = [:]
+    /// For each table, the shapes its columns name.
+    private var named: [ShapeID: Set<ShapeID>] = [:]
+
+    init(editor: CanvasEditor) {
+        self.editor = editor
+    }
+
+    /// The tables that name a shape `changes` reaches: an enum renamed, deleted, restored or created, on any board.
+    func tablesNaming(_ changes: ChangeSet) -> Set<ShapeID> {
+        build()
+        var tables = Set<ShapeID>()
+        for id in touched(by: changes) { tables.formUnion(users[id] ?? []) }
+        return tables
+    }
+
+    /// What a commit reached other than by moving it.
+    private func touched(by changes: ChangeSet) -> Set<ShapeID> {
+        changes.added.union(changes.removed).union(changes.elsewhere).union(changes.changed.subtracting(changes.moved))
+    }
+
+    private func build() {
+        guard !built else { return }
+        built = true
+        users = [:]
+        named = [:]
+        let file = editor.file
+        for board in file.everyBoard {
+            for record in file[board].shapes { read(record) }
+        }
+    }
+
+    /// Takes `record` into the index, or, not a table, out of it.
+    private func read(_ record: AnyShapeRecord?, id: ShapeID? = nil) {
+        guard let id = record?.id ?? id else { return }
+        for shape in named.removeValue(forKey: id) ?? [] {
+            users[shape]?.remove(id)
+            if users[shape]?.isEmpty == true { users[shape] = nil }
+        }
+        guard let table = record?.typed(as: DatabaseTable.self) else { return }
+        let shapes = Set(table.props.columns.compactMap(\.type.shape))
+        guard !shapes.isEmpty else { return }
+        named[id] = shapes
+        for shape in shapes { users[shape, default: []].insert(id) }
+    }
+}
+
+extension EnumUsers: EditorService {
+    func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
+        guard built else { return }
+        if changes.replacedDocument {
+            built = false
+            return
+        }
+        for id in touched(by: changes) { read(editor.shape(inFile: id), id: id) }
+    }
+
+    func boardDidChange(_ change: BoardChange, in editor: CanvasEditor) {
+        if change.isFileReplaced { built = false }
     }
 }
 
 @MainActor
 enum RowFind {
     static func register(into registrar: inout PluginRegistrar) {
-        registrar.findableTexts("rows", of: DatabaseTable.self, texts: { shape, context in
+        registrar.findableTexts("rows", of: DatabaseTable.self, affected: { changes, context in
+            context.service(EnumUsers.self)?.tablesNaming(changes) ?? []
+        }, texts: { shape, context in
             shape.props.columns.map { column in
                 let pill = TableDefinition.enumName(of: column, registry: context.registry, inFile: context.editor.shape(inFile:)) != nil
                 return FindableText(field: column.id.description, text: pill || column.type.words.isEmpty ? column.name : column.name + " " + column.type.words)
@@ -50,14 +123,11 @@ enum RowFind {
                 return rects.map { $0.offsetBy(dx: -bounds.minX, dy: -bounds.minY) }
             }
         })
-        // An enum's name in a column's pill: renamed with no commit to the table, so a commit to an enum reads again the
-        // tables of the board shown that name it.
+        // An enum's name in a column's pill, and whether a column's type is a pill at all: an enum renamed, deleted, brought
+        // back (an undo) or made changes both with no commit to the table, so a commit that reaches an enum reads again the
+        // tables of the file that name it.
         registrar.findableTexts("row pills", of: DatabaseTable.self, look: .ring, affected: { changes, context in
-            let editor = context.editor
-            let enums = changes.changed.filter { editor.document[$0]?.kind == DatabaseEnum.kind }
-            guard !enums.isEmpty else { return [] }
-            return Set(editor.document.shapes.lazy.compactMap { $0.typed(as: DatabaseTable.self) }
-                .filter { $0.props.columns.contains { $0.type.shape.map(enums.contains) ?? false } }.map(\.id))
+            context.service(EnumUsers.self)?.tablesNaming(changes) ?? []
         }, texts: { shape, context in
             shape.props.columns.compactMap { column in
                 TableDefinition.enumName(of: column, registry: context.registry, inFile: context.editor.shape(inFile:))

@@ -94,7 +94,8 @@ struct TallyDefinition: ShapeDefinition, LaidOutBox {
         let frame = context.frame(of: shape), waiting = context.layoutInput(LineRowsLayout.waiting, of: shape)
         let shown = context.layoutInput(LineRowsLayout.shown, of: shape)
         let parts = shape.props.rows.enumerated().map { index, row in
-            PartFrame(id: row.id, rect: TallyLines.line(shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting), in: frame))
+            PartFrame(id: row.id, rect: TallyLines.line(shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting), in: frame),
+                      isShown: shown?.isShown(index) ?? true)
         }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }

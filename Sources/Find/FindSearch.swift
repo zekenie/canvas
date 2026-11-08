@@ -25,6 +25,9 @@ public struct FindResult: Hashable, Sendable, Identifiable {
     public let board: BoardID
     public let hitCount: Int
     public let first: FindHit
+    /// Which of its texts (by their place in the index's list for the shape) hold hits, in order: what `fieldsHit(of:)`
+    /// answers from, worked out where the search ran.
+    let textsHit: [Int]
     let rank: Int
 }
 
@@ -111,14 +114,16 @@ enum FindSearch {
             guard let entry = request.entries[id] else { continue }
             var count = 0
             var first: FindHit?
+            var textsHit: [Int] = []
             for (index, text) in entry.texts.enumerated() {
                 let hits = query.hits(in: text.folded, isCancelled: isCancelled)
                 guard let hit = hits.first else { continue }
                 if first == nil { first = FindHit(text: index, range: hit.range, isExact: hit.isExact) }
+                textsHit.append(index)
                 count += hits.count
             }
             if let first {
-                results.append(FindResult(id: id, board: entry.board, hitCount: count, first: first, rank: rank))
+                results.append(FindResult(id: id, board: entry.board, hitCount: count, first: first, textsHit: textsHit, rank: rank))
             }
         }
         guard !isCancelled() else { return nil }

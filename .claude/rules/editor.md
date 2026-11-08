@@ -7,6 +7,7 @@ paths:
   - "Sources/Canvas/Shapes/LayoutInputs.swift"
   - "Tests/CanvasTests/ShapeIndexTests.swift"
   - "Tests/CanvasTests/LaidOutTests.swift"
+  - "Tests/CanvasTests/ViewValueTests.swift"
   - "Tests/CanvasTesting/Stretches.swift"
   - "Sources/Canvas/Model/Transaction.swift"
   - "Sources/Canvas/Model/CanvasDocument.swift"

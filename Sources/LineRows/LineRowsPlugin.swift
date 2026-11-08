@@ -86,6 +86,8 @@ enum Folding {
         let shape: ShapeID
         /// The header, nil for "+N ›".
         let header: PartID?
+        /// The fold the line was drawn by (`RowFolds.epoch`): a line the keys had focus on and opened is not the next one.
+        let epoch: Int
     }
 
     /// What ⌃⌘↑ and ⌃⌘↓ act on: the selection's shapes written as lines, or, with nothing selected, every one on the board
@@ -100,13 +102,18 @@ enum Folding {
 
     static func fold(_ ids: [ShapeID], in editor: CanvasEditor) {
         guard let folds = editor.rowFolds, !ids.isEmpty else { return }
-        folds.fold(ids)
-        if ids.count == 1, let id = ids.first, let record = editor.document[id], let kind = editor.registry.lineRows(of: record.kind) {
+        // VoiceOver hears what changed: the shapes that were not folded and now hide a row.
+        let hiding = folds.fold(ids).compactMap { id -> (record: AnyShapeRecord, shown: RowsShown)? in
+            guard let record = editor.document[id], let shown = editor.shapeContext.layoutInput(LineRowsLayout.shown, of: record) else { return nil }
+            return (record, shown)
+        }
+        if hiding.count == 1, let (record, shown) = hiding.first, let kind = editor.registry.lineRows(of: record.kind) {
             let total = kind.rows(record)?.count ?? 0
-            let shown = editor.shapeContext.layoutInput(LineRowsLayout.shown, of: record).map(\.shownRows) ?? total
-            editor.announce(LineFoldStyle.folded(editor.registry.title(of: record), shown: shown, of: total, noun: kind.noun))
+            editor.announce(LineFoldStyle.folded(editor.registry.title(of: record), shown: shown.shownRows, of: total, noun: kind.noun))
+        } else if hiding.isEmpty {
+            editor.announce(LineFoldStyle.nothingToFold)
         } else {
-            editor.announce(LineFoldStyle.foldedMany(ids.count))
+            editor.announce(LineFoldStyle.foldedMany(hiding.count))
         }
     }
 
@@ -118,13 +125,13 @@ enum Folding {
 
     /// The fold's line of `record` under `point` (world units): its "+N ›" line or a closed header.
     static func line(at point: CGPoint, on record: AnyShapeRecord, in editor: CanvasEditor) -> Line? {
-        guard editor.rowFolds?.isFolded(record.id) == true, let kind = editor.registry.lineRows(of: record.kind) else { return nil }
-        let shapes = editor.shapeContext
+        guard let folds = editor.rowFolds, folds.isFolded(record.id), let kind = editor.registry.lineRows(of: record.kind) else { return nil }
+        let epoch = folds.epoch, shapes = editor.shapeContext
         guard let shown = shapes.layoutInput(LineRowsLayout.shown, of: record), let frame = shapes.frame(of: record) else { return nil }
         for (index, line) in shown.lines.enumerated() where kind.lineRect(index, frame).contains(point) {
             switch line {
-            case .more: return Line(shape: record.id, header: nil)
-            case .header(let row, _): return Line(shape: record.id, header: shown.ids[row])
+            case .more: return Line(shape: record.id, header: nil, epoch: epoch)
+            case .header(let row, _): return Line(shape: record.id, header: shown.ids[row], epoch: epoch)
             case .row: return nil
             }
         }
@@ -144,18 +151,18 @@ enum Folding {
     /// A folded shape's lines a click opens, as parts the keys reach (⌥Tab, then Return or Space): its closed headers and
     /// its "+N ›" line, in reading order.
     static func parts(of record: AnyShapeRecord, in editor: CanvasEditor) -> [ShapePart] {
-        guard editor.rowFolds?.isFolded(record.id) == true, let kind = editor.registry.lineRows(of: record.kind) else { return [] }
-        let shapes = editor.shapeContext
+        guard let folds = editor.rowFolds, folds.isFolded(record.id), let kind = editor.registry.lineRows(of: record.kind) else { return [] }
+        let epoch = folds.epoch, shapes = editor.shapeContext
         guard let shown = shapes.layoutInput(LineRowsLayout.shown, of: record), let frame = shapes.frame(of: record) else { return [] }
         var parts: [ShapePart] = []
         for (index, line) in shown.lines.enumerated() {
             let rect = kind.lineRect(index, frame)
             switch line {
             case .more(let count):
-                let opened = Line(shape: record.id, header: nil)
+                let opened = Line(shape: record.id, header: nil, epoch: epoch)
                 parts.append(ShapePart(id: opened, title: LineFoldStyle.more(count, noun: kind.noun), rect: rect) { open(opened, in: $0) })
             case .header(let row, let hiding):
-                let opened = Line(shape: record.id, header: shown.ids[row])
+                let opened = Line(shape: record.id, header: shown.ids[row], epoch: epoch)
                 let name = editor.accessibleName(of: PartAddress(record.id, part: shown.ids[row])) ?? ""
                 parts.append(ShapePart(id: opened, title: LineFoldStyle.header(name, hiding: hiding, noun: kind.noun), rect: rect) { open(opened, in: $0) })
             case .row:
@@ -172,6 +179,8 @@ enum LineFoldStyle {
     static let foldTitle = "Fold Rows"
     static let unfoldTitle = "Unfold Rows"
     static let unfolded = "Unfolded"
+    /// Folded, and every row is one its kind keeps (or it was folded already).
+    static let nothingToFold = "Nothing to fold"
 
     /// "products folded, 3 of 40 columns shown".
     static func folded(_ name: String?, shown: Int, of total: Int, noun: LineNoun) -> String {

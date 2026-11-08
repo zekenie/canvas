@@ -150,12 +150,13 @@ public final class FindState {
     public func hasHits(_ id: ShapeID) -> Bool { places[id] != nil }
 
     /// The fields of a shape's texts that hold hits (`FindableText.field`: a row's id, for a kind whose rows are found a
-    /// text a row), worked out from its hits when asked: what a plugin that hides some of a shape's texts shows while Find
-    /// is open (a folded table's rows). Empty while Find is closed, and for a shape with none.
+    /// text a row), read from its result, which the search (off the main actor) and a commit's patch keep: what a plugin
+    /// that hides some of a shape's texts shows while Find is open (a folded table's rows). Costs the texts that hold hits,
+    /// never a search again. Empty while Find is closed, and for a shape with none.
     public func fieldsHit(of id: ShapeID) -> Set<String> {
-        guard isActive, places[id] != nil, let entry = index.entries[id] else { return [] }
+        guard isActive, let place = places[id], results.indices.contains(place), let entry = index.entries[id] else { return [] }
         var fields: Set<String> = []
-        for (text, hits) in zip(entry.texts, hits(of: id)) where !hits.isEmpty { fields.insert(text.field) }
+        for text in results[place].textsHit where entry.texts.indices.contains(text) { fields.insert(entry.texts[text].field) }
         return fields
     }
 
@@ -497,10 +498,11 @@ public final class FindState {
                 if count == 0 {
                     removed.insert(id)
                 } else if let entry = index.entries[id], entry.board == list[i].board {
-                    let first = entry.texts.enumerated().lazy.compactMap { index, text in
-                        search.hits(in: text.folded).first.map { FindHit(text: index, range: $0.range, isExact: $0.isExact) }
-                    }.first ?? list[i].first
-                    list[i] = FindResult(id: id, board: entry.board, hitCount: count, first: first, rank: list[i].rank)
+                    let found = entry.texts.enumerated().compactMap { index, text in
+                        search.hits(in: text.folded).first.map { (text: index, hit: FindHit(text: index, range: $0.range, isExact: $0.isExact)) }
+                    }
+                    list[i] = FindResult(id: id, board: entry.board, hitCount: count, first: found.first?.hit ?? list[i].first,
+                                         textsHit: found.map(\.text), rank: list[i].rank)
                 } else {
                     needsSearch = true
                 }

@@ -196,7 +196,9 @@ final class LineSession<Model: LineModel>: LineRowsView {
     // MARK: Starting
 
     override func start() {
-        // A folded shape shows every row while it's edited: laid out so before a press finds its row.
+        // A folded shape shows every row while it's edited: laid out so before a press finds its row. The press itself was
+        // made against the fold, so its row is found there.
+        let folded = editor.rowFolds?.foldedLines(of: id)
         editor.rowFolds?.editingWillBegin(id)
         let untitled = shape?[TitleProperty.self] == nil
         // Before the press is placed: the rows are where the kind drew them, the waiting line last.
@@ -206,7 +208,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             show(.waiting, at: .end, waitingAt: rows.count)
         } else if hopped == .first, let first = stops.first {
             show(first, at: .end, waitingAt: rows.count)
-        } else if let point = context.startPoint, let stop = stop(at: point) {
+        } else if let point = context.startPoint, let stop = stop(at: point, folded: folded) {
             show(stop, at: .point(point, clicks: context.startClickCount), waitingAt: rows.count)
         } else if untitled, titleField != nil {
             show(.title, at: .end, waitingAt: rows.count)
@@ -216,10 +218,19 @@ final class LineSession<Model: LineModel>: LineRowsView {
     }
 
     /// The stop a press at a world point is on: the pill's row is the title, a row's line the row, any other the waiting
-    /// line.
-    private func stop(at point: CGPoint) -> LineStop? {
+    /// line. A press on a folded shape was made against the lines it showed (`folded`): the row on its line, and the waiting
+    /// line for the "+N ›" line.
+    private func stop(at point: CGPoint, folded: RowsShown? = nil) -> LineStop? {
         guard let paper else { return nil }
         if titleField != nil, point.y < paper.minY { return .title }
+        if let folded {
+            for line in 0..<folded.count {
+                let rect = model.lineRect(line, in: paper)
+                guard point.y >= rect.minY, point.y < rect.maxY else { continue }
+                return folded.row(atLine: line).flatMap { rows.indices.contains($0) ? .row(model.id(of: rows[$0])) : nil } ?? .waiting
+            }
+            return .waiting
+        }
         for (index, row) in rows.enumerated() {
             let rect = model.lineRect(LineRowsLayout.line(of: index, waiting: waitingLine), in: paper)
             if point.y >= rect.minY, point.y < rect.maxY { return .row(model.id(of: row)) }
@@ -273,7 +284,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private func place() {
         if let titleField, let paper, frame.width > 0, bounds.width > 0 {
             let zoom = frame.width / bounds.width, origin = origin
-            let row = TitleField.pillRow(above: paper, zoom: zoom).offsetBy(dx: -origin.x, dy: -origin.y)
+            let row = TitleField.pillRow(of: id, above: paper, zoom: zoom, in: editor).offsetBy(dx: -origin.x, dy: -origin.y)
             if titleField.frame != row { titleField.frame = row }
         }
         guard let line = rect(of: focus) else {

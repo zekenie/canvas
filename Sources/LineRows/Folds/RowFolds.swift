@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Foundation
 import Find
 
 // Folds: what the person asked each shape written as lines to show (⌃⌘↑ to its marked rows, ⌃⌘↓ back to every row), kept
@@ -25,6 +26,9 @@ public final class RowFolds {
     private var findPeeks: [ShapeID: Set<PartID>] = [:]
     /// +1 for every change to what a shape shows, so what's kept of a shape's lines is let go.
     private var generation = 0
+    /// +1 for every fold, unfold, "+N ›" opened and header closed or opened: a line a fold drew is one of an epoch, so the
+    /// keys' focus on a line that was opened does not come back on the next "+N ›" the same shape draws.
+    public private(set) var epoch = 0
     /// Each folded shape's lines, as the editor's own reading lays it out, while the file (`editor.revision`) and the folds
     /// (`generation`) are as they were.
     private var kept: [ShapeID: (revision: Int, generation: Int, shown: RowsShown?)] = [:]
@@ -65,8 +69,19 @@ public final class RowFolds {
     /// The lines `record` shows, as `reading` lays it out: nil for a shape showing every row (unfolded, edited, of a kind
     /// not written as lines). What `LineRowsLayout.shown` is provided from; kept for the editor's own reading.
     public func shown(of record: AnyShapeRecord, in reading: LayoutReading) -> RowsShown? {
-        guard let fold = folds[record.id], editor.editingShapeID != record.id,
-              let kind = reading.registry.lineRows(of: record.kind) else { return nil }
+        guard editor.editingShapeID != record.id else { return nil }
+        return lines(of: record, in: reading)
+    }
+
+    /// The lines `id` shows folded, though it's being edited (and so laid out showing every row): what a press that began
+    /// the editing was made against. Nil for a shape that is not folded.
+    public func foldedLines(of id: ShapeID) -> RowsShown? {
+        guard let record = editor.document[id], let reading = editor.shapeContext.reading else { return nil }
+        return lines(of: record, in: reading)
+    }
+
+    private func lines(of record: AnyShapeRecord, in reading: LayoutReading) -> RowsShown? {
+        guard let fold = folds[record.id], let kind = reading.registry.lineRows(of: record.kind) else { return nil }
         let committed = reading.isCommitted
         if committed, let known = kept[record.id], known.revision == editor.revision, known.generation == generation { return known.shown }
         guard let rows = kind.rows(record) else { return nil }
@@ -78,8 +93,10 @@ public final class RowFolds {
 
     // MARK: Folding
 
-    /// Folds `ids` to their marked rows (⌃⌘↑): laid out again at once, and saved with the file's view. No step.
-    public func fold(_ ids: some Sequence<ShapeID>) {
+    /// Folds `ids` to their marked rows (⌃⌘↑): laid out again at once, and saved with the file's view. No step. Returns those
+    /// it folded: not the ones already folded to their marks.
+    @discardableResult
+    public func fold(_ ids: some Sequence<ShapeID>) -> [ShapeID] {
         var changed: [ShapeID] = []
         for id in ids {
             var fold = folds[id] ?? RowFold()
@@ -88,12 +105,13 @@ public final class RowFolds {
             folds[id] = fold
             changed.append(id)
         }
-        guard !changed.isEmpty else { return }
+        guard !changed.isEmpty else { return [] }
         // The latest folded last, once each: one pass however many are folded.
         let moved = Set(changed)
         order.removeAll { moved.contains($0) }
         order += changed
         didChange(changed)
+        return changed
     }
 
     /// Shows every row of `ids` again (⌃⌘↓): its marks' fold and its closed headers let go.
@@ -157,6 +175,7 @@ public final class RowFolds {
 
     private func didChange(_ ids: [ShapeID]) {
         guard !ids.isEmpty else { return }
+        epoch += 1
         let peeking = editor.find?.isActive == true ? findDidChange(relayingOut: false) : []
         relayOut(ids + peeking)
         save()
@@ -183,10 +202,8 @@ public final class RowFolds {
         for id in Set(folds.keys).union(findPeeks.keys) {
             var hit: Set<PartID> = []
             if isOpen, let find, folds[id] != nil, find.hasHits(id) {
-                let fields = find.fieldsHit(of: id)
-                if !fields.isEmpty, let record = editor.shape(inFile: id), let rows = editor.registry.lineRows(of: record.kind)?.rows(record) {
-                    hit = Set(rows.lazy.map(\.id).filter { fields.contains($0.description) })
-                }
+                // The field of a row's text is its id's UUID: read as it is, with no look at the shape's rows.
+                hit = Set(find.fieldsHit(of: id).compactMap { UUID(uuidString: $0).map(PartID.init) })
             }
             guard hit != (findPeeks[id] ?? []) else { continue }
             findPeeks[id] = hit.isEmpty ? nil : hit

@@ -41,6 +41,7 @@ import Topology
         let stored = try laidOut(h.editor, id)
         h.editor.selectedShapeIDs = [id]
         expect(h.editor.perform(.foldRows))
+        expectEqual(h.editor.announcements.last, "products folded, 2 of 40 columns shown", "VoiceOver hears the title and the counts")
         let folded = try require(try shown(h.editor, id))
         expectEqual(folded.lines, [.row(0), .row(1), .more(38)])
         let frame = try laidOut(h.editor, id)
@@ -139,6 +140,87 @@ import Topology
         _ = try awaitResult { await find.settled() }
         expect(find.texts(of: table).contains("state"), "a rename of the enum reads the table's pill again: \(find.texts(of: table))")
     },
+    test("a folded table's hidden columns are not shown parts: they stand at +N; the shown ones, out of order beside them, keep their dots; +N has none") {
+        let k = try KeyBoard()
+        let people = k.h.add(DatabaseTable(frame: CGRect(x: 100, y: 400, width: 260, height: 0),
+                                           columns: ["id uuid pk", "a text", "b text", "email text unique"].compactMap { ColumnGrammar.read($0) }), titled: "people")
+        k.editor.rowFolds?.fold([people])
+        expectEqual(try shown(k.editor, people)?.lines, [.row(0), .row(3), .more(2)])
+        let columns = try require(k.editor.document[people]?.typed(as: DatabaseTable.self)?.props.columns).map(\.id)
+        let frame = try laidOut(k.editor, people)
+        let parts = try require(k.editor.shapeContext.geometry(of: people)).parts
+        expectEqual(parts.map(\.isShown), [true, false, false, true], "a and b are folded away")
+        expectEqual(parts.shownFrames.map(\.id), [columns[0], columns[3]], "shown ones, top to bottom")
+        let more = KitStyle.rowRect(2, in: frame), email = KitStyle.rowRect(1, in: frame)
+        expectEqual(parts.frame(columns[1])?.rect, more, "a hidden column's rect is still +N's")
+        expectEqual(parts.frame(nearestY: more.midY)?.id, columns[3], "a drop at +N binds a column that shows, never a hidden one")
+        // The pointer on the shown column after a hidden one: its dot is reached.
+        k.h.move(to: CGPoint(x: frame.midX, y: email.midY))
+        k.h.move(to: CGPoint(x: frame.minX - 12, y: email.midY))
+        expectEqual((k.editor.hoveredButton?.base as? PortDot)?.part, columns[3], "email's dot, though a and b stand below it")
+        k.h.move(to: CGPoint(x: frame.midX, y: more.midY))
+        k.h.move(to: CGPoint(x: frame.minX - 12, y: more.midY))
+        expectEqual(k.editor.hoveredButton, nil, "+N offers no dot")
+    },
+    test("Find follows an enum deleted and brought back: the column's type is plain words without it and a pill with it") {
+        let h = try EditorHarness(plugins: kitPlugins(find: true))
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
+        h.editor.turn(EngineeringKit.self, on: true)
+        let status = h.add(DatabaseEnum(frame: CGRect(x: 500, y: 100, width: 200, height: 0), values: [EnumValue(text: "pending")]), titled: "order_status")
+        let table = h.add(orders(status: status), titled: "orders")
+        let find = try require(h.editor.find)
+        find.open()
+        find.query = "order_status"
+        var turns = 0
+        while find.isIndexing, turns < 10_000 {
+            h.wait(0)
+            turns += 1
+        }
+        _ = try awaitResult { await find.settled() }
+        expect(find.texts(of: table).contains("order_status") && find.texts(of: table).contains("status"), "a pill: \(find.texts(of: table))")
+        h.editor.transact("Delete Enum") { $0.delete([status]) }
+        _ = try awaitResult { await find.settled() }
+        expect(!find.texts(of: table).contains("order_status"), "no pill without the enum: \(find.texts(of: table))")
+        expect(find.texts(of: table).contains("status order_status"), "its type is plain words again: \(find.texts(of: table))")
+        expectEqual(find.results.map(\.id).contains(table), true, "found by its type words")
+        h.editor.undo()
+        _ = try awaitResult { await find.settled() }
+        expect(find.texts(of: table).contains("order_status") && !find.texts(of: table).contains("status order_status"), "a pill again: \(find.texts(of: table))")
+    },
+    test("The +38 › line of a real folded table opens with a click; ⌥Tab reaches it among the table's other parts, ⌥⇧Tab undoes each step, Return and Space open it") {
+        let b = try KitBench()
+        let id = b.h.add(products(), titled: "products")
+        b.editor.rowFolds?.fold([id])
+        let frame = try laidOut(b.editor, id), more = KitStyle.rowRect(2, in: frame)
+        b.editor.selectedShapeIDs = []
+        b.h.click(at: b.h.view(CGPoint(x: more.midX, y: more.midY)))
+        expect(b.editor.rowFolds?.isFolded(id) != true, "a click on +N shows every column")
+        expect(b.editor.editingShapeID == nil, "and starts no editing")
+        b.editor.rowFolds?.fold([id])
+        b.editor.selectedShapeIDs = [id]
+        let titles = b.editor.shapeParts(of: id).map(\.title)
+        expect(titles.contains("38 more columns"), "+N is a part with a name: \(titles)")
+        let names = [id: "T"]
+        let walk = KeyWalk(b.window, editor: b.editor, readers: [.canvas(b.canvas, selection: { [b] in b.editor.selectedShapeIDs.map { names[$0] ?? "?" } },
+                                                                          part: { [b] in b.editor.focusedPart?.title },
+                                                                          frame: { [b] in
+                                                                              guard let rect = b.editor.focusedPart?.rect ?? b.editor.selectionBounds else { return nil }
+                                                                              return b.editor.shownFrame(ofWorld: rect, in: b.canvas)
+                                                                          })],
+                           settle: .both(b.h.scheduler))
+        let ids = titles.map { "canvas/T/\($0)" }
+        walk.go(ids[0], by: .optionTab)
+        let cycle = walk.expectCycle(ids, wraps: .closed, forward: .optionTab, back: .optionBackTab)
+        walk.expectShows(cycle.stops, by: .optionTab)
+        walk.go("canvas/T/38 more columns", by: .optionTab)
+        walk.press(.return)
+        expect(b.editor.rowFolds?.isFolded(id) != true, "Return opens it")
+        b.editor.rowFolds?.fold([id])
+        walk.go("canvas/T/38 more columns", by: .optionTab)
+        walk.press(.space)
+        expect(b.editor.rowFolds?.isFolded(id) != true, "Space opens it")
+        expect(b.editor.editingShapeID == nil, "neither starts editing")
+    },
     test("zoomed out at 30%, a folded table draws a bar a shown line, its +N line's short bar, and nothing below; light and dark") {
         let h = try kitHarness()
         let id = h.add(products(at: CGPoint(x: 100, y: 100)), titled: "products")
@@ -170,6 +252,14 @@ import Topology
         let text = ("updated_at timestamptz default now()" as NSString).size(withAttributes: [.font: KitStyle.nameFont]).width
         expect(wide >= KitStyle.nameInset + text * 0.8 + KitStyle.trailingInset, "the whole line has room: \(wide)")
         expectEqual(b.editor.document[id]?.box?.width, 260, "nothing written")
+        // Drawn: the paper reaches past the stored width, to hold the whole line (T2 panel 3).
+        for dark in [false, true] {
+            let drawn = render(b.editor, size: CGSize(width: 900, height: 300), dark: dark)
+            let rowMiddle = KitStyle.rowRect(0, in: try laidOut(b.editor, id)).midY
+            expect(some(drawn, in: CGRect(x: 100 + wide - 6, y: rowMiddle - 1, width: 2, height: 2)) { abs($0[0] - 235) < 4 }, "\(dark): paper under the line's end")
+            expect(some(drawn, in: CGRect(x: 100 + 260 + 20, y: rowMiddle - 1, width: 2, height: 2)) { abs($0[0] - 235) < 4 }, "\(dark): and past the stored width")
+            expect(!some(drawn, in: CGRect(x: 100 + wide + 8, y: rowMiddle - 1, width: 2, height: 2)) { abs($0[0] - 235) < 4 }, "\(dark): and none past the line")
+        }
         b.press(.escape)
         expectEqual(try laidOut(b.editor, id).width, 260, "as stored again")
     },

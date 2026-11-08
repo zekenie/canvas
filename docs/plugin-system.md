@@ -2471,7 +2471,8 @@ func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSi
     let lines = shown?.count ?? shape.props.rows.count
     …
 }
-// a hidden row's rect is the line standing for it: shown.line(standingFor: index)
+// a hidden row's rect is the line standing for it: shown.line(standingFor: index), its PartFrame not shown:
+// PartFrame(id: row.id, rect: …, isShown: shown?.isShown(index) ?? true)
 ```
 
 Editing a folded shape shows every row; Find's hits show in place while Find is open
@@ -16083,7 +16084,7 @@ moving               /move-to /move-near → every shape with a box · CanvasCon
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines
 engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · channel foreign-key · edge type foreign-key · service KeyIndex · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
-engineering-find     findable rows → table · findable row pills → table · findable rows → enum-type
+engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as

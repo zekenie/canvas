@@ -29,7 +29,7 @@ extension EnumDefinition: ShapeDefinition {
 
     func geometry(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape), rows = KitRows(shape, in: context)
-        let parts = shape.props.values.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame)) }
+        let parts = shape.props.values.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame), isShown: rows.isShown($0)) }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
 

@@ -38,15 +38,30 @@ import Titles
         expectEqual(clear.minX, 116, "a note far enough below the tab keeps its pill at its edge")
         h.editor.camera = Camera(origin: .zero, zoom: 0.6)
         for dark in [false, true] {
+            let size = CGSize(width: 800, height: 600)
+            var drawn: NSBitmapImageRep?
             if dark {
-                NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { _ = renderBitmap(h.editor, size: CGSize(width: 800, height: 600)) }
+                NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { drawn = renderBitmap(h.editor, size: size) }
             } else {
-                _ = renderBitmap(h.editor, size: CGSize(width: 800, height: 600))
+                drawn = renderBitmap(h.editor, size: size)
             }
+            let bitmap = try require(drawn)
             let tab = try require(h.editor.adornmentFrames(of: frame.id).first { $0.adornment.placement == .onTopEdge }?.rect, "f1's tab")
             let pill = try require(h.editor.adornmentFrames(of: note.id).first { $0.adornment.placement == .aboveTopLeft }?.rect, "n1's pill")
             expect(!pill.intersects(tab), "\(dark ? "dark" : "light"): n1's pill \(pill) clear of f1's tab \(tab)")
             expect(pill.minX >= tab.maxX, "past the tab's end")
+            // Both are drawn where they were placed: their middles are not the ground's, and the pill's middle is no longer under the tab.
+            @MainActor func pixel(_ rect: CGRect) -> [Int] {
+                var value = [Int](repeating: 0, count: 4)
+                let point = h.editor.camera.toView(CGPoint(x: rect.midX, y: rect.midY))
+                bitmap.getPixel(&value, atX: Int(point.x), y: Int(point.y))
+                return value
+            }
+            var ground = [Int](repeating: 0, count: 4)
+            bitmap.getPixel(&ground, atX: 790, y: 590)
+            let differs = { (a: [Int]) in zip(a, ground).prefix(3).contains { abs($0 - $1) > 8 } }
+            expect(differs(pixel(tab)), "\(dark ? "dark" : "light"): f1's tab is drawn: \(pixel(tab)) on \(ground)")
+            expect(differs(pixel(pill)), "\(dark ? "dark" : "light"): n1's pill is drawn: \(pixel(pill)) on \(ground)")
         }
     },
 ])

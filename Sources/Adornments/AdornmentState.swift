@@ -231,6 +231,20 @@ final class AdornmentState {
         return rect
     }
 
+    /// `tabRegion` for a row's give-way: a shape just past the view's edge, within the margin the view's tabs are placed
+    /// with, goes by the view's tabs too, not by a region of its own, which would fill the four kept placements with one-shape
+    /// regions and push the view's out (Titles asks the row of every bar just past the edge).
+    private func rowRegion(around rect: CGRect) -> CGRect {
+        let region = tabRegion(around: rect)
+        guard region == rect else { return region }
+        let reach = Self.tabMargin / editor.camera.zoom
+        if let drawn = drawnTabRegion, drawn.insetBy(dx: -reach, dy: -reach).intersects(rect) { return drawn }
+        let size = editor.viewportSize
+        guard size.width > 0, size.height > 0 else { return rect }
+        let visible = editor.camera.toWorld(CGRect(origin: .zero, size: size))
+        return visible.insetBy(dx: -reach, dy: -reach).intersects(rect) ? visible : rect
+    }
+
     /// A shape's tab into its slot, where it was placed (`tabs(in:)`).
     private func placeTab(of laidOut: LaidOutAdornments, id: ShapeID, tabs: PlacedTabs?, into slots: inout [AdornmentLayout.Slot?]) {
         guard let tabs, let tab = tabs.tabs[id], let index = laidOut.shown.firstIndex(where: { $0.id.placement == .onTopEdge }) else { return }
@@ -443,7 +457,7 @@ final class AdornmentState {
         guard editor.document.container(of: id, containingKinds: editor.registry.containingKinds) != nil else { return 0 }
         let zoom = editor.camera.zoom, scale = AdornmentLayout.scale(atZoom: zoom)
         guard let anchored = Self.anchored(of: id, in: editor.shapeContext, zoom: zoom) else { return 0 }
-        let tabs = tabs(in: tabRegion(around: anchored.rect))
+        let tabs = tabs(in: rowRegion(around: anchored.rect))
         return giveWay(of: id, anchor: anchored, scale: scale, overTab: tabs.tabs[id] != nil, tabs: tabs) * scale
     }
 
@@ -484,7 +498,7 @@ final class AdornmentState {
         let anchor = anchored.rect, scale = AdornmentLayout.scale(atZoom: zoom)
         // Every placed tab, not only its own: its row gives way to a container's (asked only of a shape in one).
         let inContainer = editor.document.container(of: record.id, containingKinds: editor.registry.containingKinds) != nil
-        let tabs = laidOut.hasTab || (hasTabs && inContainer) ? self.tabs(in: tabRegion(around: anchor)) : nil
+        let tabs = laidOut.hasTab || (hasTabs && inContainer) ? self.tabs(in: rowRegion(around: anchor)) : nil
         var slots: [AdornmentLayout.Slot?] = []
         self.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: tabs, into: &slots)
         return laidOut.shown.indices.compactMap { index in

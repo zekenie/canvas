@@ -9,6 +9,7 @@ paths:
   - "Tests/CanvasTests/FileValueCodecTests.swift"
   - "Tests/CanvasTests/MetaTests.swift"
   - "Tests/CanvasTests/StackingKeyTests.swift"
+  - "Tests/CanvasUITests/ViewMemoryTests.swift"
   - "Tests/CompositionTests/Fixtures/**"
   - "Tests/CompositionTests/BoardDocumentTests.swift"
   - "Tests/CompositionTests/PersistenceTests.swift"

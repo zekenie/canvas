@@ -160,6 +160,13 @@ public final class TitleField: NSView, NSTextViewDelegate {
                       width: frame.width + TitleFieldStyle.reach * scale, height: AdornmentLayout.rowHeight * scale)
     }
 
+    /// The same for shape `id`, as it is drawn at rest: the row starts right of any container's tab it would meet (Adornments'
+    /// `adornmentRowStart`), so the field is where the pill was and nothing moves as typing starts. The row's right end stays.
+    public static func pillRow(of id: ShapeID, above frame: CGRect, zoom: CGFloat, in editor: CanvasEditor) -> CGRect {
+        let row = pillRow(above: frame, zoom: zoom), start = min(editor.adornmentRowStart(of: id), max(0, row.width - 1))
+        return CGRect(x: row.minX + start, y: row.minY, width: row.width - start, height: row.height)
+    }
+
     /// The editing frame of a shape whose title is typed in its pill: its frame and the row above it.
     public static func editingFrame(around frame: CGRect, zoom: CGFloat) -> CGRect {
         frame.union(pillRow(above: frame, zoom: zoom))

@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+@_spi(Host) import CanvasUI
 import Engineering
 import Geometry
 import TestKit
@@ -39,6 +40,28 @@ import Titles
             let bar = (dark ? NSColor(white: 0.5, alpha: 1) : NSColor(white: 0.25, alpha: 1)).usingColorSpace(.deviceRGB)!
             let barValue = Int(bar.redComponent * 255)
             expect(abs(pixel[0] - barValue) > 20 || abs(pixel[1] - barValue) > 20, "\(dark ? "dark" : "light"): the tab's end isn't under a bar: \(pixel)")
+            // The tab itself was drawn there: its middle is not the canvas.
+            var ground = [Int](repeating: 0, count: 4), middle = [Int](repeating: 0, count: 4)
+            let inside = h.editor.camera.toView(CGPoint(x: tab.midX, y: tab.midY))
+            bitmap.getPixel(&ground, atX: 395, y: 295)
+            bitmap.getPixel(&middle, atX: Int(inside.x), y: Int(inside.y))
+            expect(zip(ground, middle).prefix(3).contains { abs($0 - $1) > 8 }, "\(dark ? "dark" : "light"): the tab is drawn: \(middle) on \(ground)")
         }
+    },
+    test("a table's name typed in its pill starts where the pill was, past the database's tab, and the pill didn't move as typing began") {
+        let b = try KitBench()
+        let shop = b.h.add(Database(frame: CGRect(x: 100, y: 100, width: 800, height: 500)), titled: "shop")
+        let orders = b.h.add(DatabaseTable(frame: CGRect(x: 132, y: 132, width: 260, height: 0), columns: [ColumnGrammar.read("id uuid pk")!]), titled: "orders")
+        b.editor.put([orders], in: shop)
+        b.editor.camera = Camera(origin: .zero, zoom: 1)
+        _ = render(b.editor, size: CGSize(width: 1000, height: 800))
+        let tab = try require(b.editor.adornmentFrames(of: shop).first { $0.adornment.placement == .onTopEdge }?.rect, "shop's tab")
+        let pill = try require(b.editor.adornmentFrames(of: orders).first { $0.adornment.placement == .aboveTopLeft }?.rect, "orders' pill")
+        expect(pill.minX >= tab.maxX, "at rest the pill is past the tab")
+        b.begin(orders)
+        let field = try require(b.canvas.descendants(TitleField.self).first, "the title's field")
+        let typed = field.convert(field.bounds, to: b.canvas)
+        expect(typed.minX >= tab.maxX - 0.5, "the field starts past the tab: \(typed) vs \(tab)")
+        expect(abs(typed.minX - pill.minX) < 1, "where the pill was: \(typed.minX) vs \(pill.minX)")
     },
 ])
