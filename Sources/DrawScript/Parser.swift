@@ -488,13 +488,9 @@ struct LineParser {
             if let placed = edge.placementWritten {
                 throw error("deleting takes no placement (\(placed))", hint: "write delete edge \(edge.written)")
             }
-            if edge.fromRow != nil || edge.toRow != nil {
-                let whole = EdgeStatement(from: edge.from, to: edge.to, arrow: edge.arrow).written
-                throw error(.unsupported, "delete edge names the shapes an edge joins, not their rows",
-                            hint: "write delete edge \(whole), which takes every edge between them, keys too")
-            }
             subject = "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(edge.written)"
-            statement = .edges(from: edge.from, to: edge.to, eitherWay: edge.arrow == .both, attributes: edge.attributes)
+            statement = .edges(from: edge.from, to: edge.to, eitherWay: edge.arrow == .both, attributes: edge.attributes,
+                               fromRow: edge.fromRow, toRow: edge.toRow)
         } else if let (name, row) = try nameAndRow() {
             statement = row.map { .row(name, row: $0) } ?? .shape(name)
             subject = "\(Keyword.delete.rawValue) \(name.written)\(row.map(ShapeName.writtenRow) ?? "")"

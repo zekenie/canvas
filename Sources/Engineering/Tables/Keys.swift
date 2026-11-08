@@ -130,6 +130,8 @@ enum KeyArrows {
 /// keys, with its key drawn, one step, "Add Key Column".
 @MainActor
 enum KeyPicks {
+    /// A table on the board shown (a key reaches a table on its own board until pills stand for rows), and from a row, a column of
+    /// one or a table with a primary key; from a table, a table with one.
     static func admits(_ pick: ConnectPick, _ editor: CanvasEditor) -> Bool {
         guard let far = editor.document[pick.to.shape]?.typed(as: DatabaseTable.self) else { return false }
         if pick.from.part != nil { return pick.to.part != nil || ColumnLineGrammar.primaryKey(of: far.props) != nil }

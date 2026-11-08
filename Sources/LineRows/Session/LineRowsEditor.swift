@@ -79,6 +79,9 @@ public class LineRowsView: NSView {
 
     /// Starts the session where its shape's first or last stop is, or a press at a world point puts it.
     func start() {}
+
+    /// Prints the row with the caret again as it's stored, where the line holds nothing of the person's.
+    func reprint() {}
 }
 
 extension LineRowsView {
@@ -592,11 +595,16 @@ final class LineSession<Model: LineModel>: LineRowsView {
         return true
     }
 
-    /// The keyboard back on the line from the picker: the row printed again as it's stored now, a key the pick drew in it.
+    /// The keyboard back on the line from the picker: the pick is made as it closes, after the keyboard is back, so the row is
+    /// printed again once its commit settles (the service tells), with the key it drew.
     private func focused() {
         guard awaitsPicker, !isMoving else { return }
         awaitsPicker = false
-        guard case .row(let row) = focus, !hasDraft, let stored = rows.first(where: { model.id(of: $0) == row }) else { return }
+        service.awaitingReprint = self
+    }
+
+    override func reprint() {
+        guard editor.editingShapeID == id, case .row(let row) = focus, !hasDraft, let stored = rows.first(where: { model.id(of: $0) == row }) else { return }
         held = stored
         field.show(grammar.print(stored, in: lineContext(row)))
         lineChanged(reportingChange: false)

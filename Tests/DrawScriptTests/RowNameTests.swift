@@ -3,7 +3,7 @@ import TestKit
 
 // A row of a shape, named with a dot outside the quotes (titles hold dots): `"orders".customer_id` in an edge's ends and in
 // `delete`, `."POST /orders"` quoted, an id's row in one word (`#…​.id`), a path's last shape's row (`"shop" > "orders".id`);
-// a dot with nothing after it refused; and `delete edge` names whole shapes.
+// a dot with nothing after it refused; and `delete edge`'s ends may name rows too, narrowing the pair's edges to those rows'.
 
 @MainActor let rowNameTests = Suite("Rows by name", [
     test("an edge's ends may name rows: bare, quoted, after an id and after a path, and are written back so") {
@@ -48,12 +48,13 @@ import TestKit
         expectEqual(try parse("delete #\(id).\"POST /x\""), .delete(.row(.id(id), row: "POST /x")))
         expectEqual(parseError("delete #\(id).")?.reason, .syntax)
     },
-    test("a dot with no row after it is refused, saying how to write one; delete edge takes no rows") {
+    test("a dot with no row after it is refused, saying how to write one; delete edge's ends may name rows, one end or both") {
         let dangling = parseError(#"edge "orders". -> "customers""#)
         expectEqual(dangling?.reason, .syntax)
         expectEqual(dangling?.hint, #"write "orders".id"#)
-        let rows = parseError(#"delete edge "orders".customer_id -> "customers".id"#)
-        expectEqual(rows?.reason, .unsupported)
-        expectEqual(rows?.hint, #"write delete edge "orders" -> "customers", which takes every edge between them, keys too"#)
+        expectEqual(try parse(#"delete edge "orders".shipping_customer_id -> "customers".id"#),
+                    .delete(.edges(from: .title("orders"), to: .title("customers"), eitherWay: false, fromRow: "shipping_customer_id", toRow: "id")))
+        expectEqual(try parse(#"delete edge "customers" <- "orders".customer_id"#),
+                    .delete(.edges(from: .title("orders"), to: .title("customers"), eitherWay: false, fromRow: "customer_id")))
     },
 ])

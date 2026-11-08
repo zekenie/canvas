@@ -1,6 +1,7 @@
 import Adornments
 import AppKit
 import Canvas
+import Draw
 import LineRows
 import Mentions
 import Palette
@@ -159,6 +160,8 @@ struct ColumnLineGrammar: LineGrammar {
     /// column, or its primary key for a table alone. Nil where it names no row.
     static func target(_ word: String, at range: NSRange, in line: LineText, _ context: LineContext) -> (table: ShapeID, row: PartAddress)? {
         let editor = context.editor
+        // Where nothing draws connections, a key can't be drawn: its words stay words.
+        guard editor.registry.drawsConnections else { return nil }
         func row(_ address: PartAddress?) -> (table: ShapeID, row: PartAddress)? {
             guard let address, address.part != nil, let record = editor.document[address.shape], record.kind == DatabaseTable.kind,
                   editor.registry.parts(of: record)?.contains(where: { $0.id == address.part }) == true else { return nil }

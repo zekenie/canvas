@@ -151,7 +151,7 @@ struct DeleteItem {
 extension DeleteStatement {
     /// Whether it is a `delete edge` that writes attributes, which Draw reads as the identity of the arrows to remove.
     var writesIdentity: Bool {
-        if case .edges(_, _, _, let attributes) = self { !attributes.isEmpty } else { false }
+        if case .edges(_, _, _, let attributes, _, _) = self { !attributes.isEmpty } else { false }
     }
 }
 
@@ -230,7 +230,12 @@ struct Drawing {
     /// asks (`standInIndex`).
     var standInIndex: StandInRoute.Index?
     /// Each `delete edge`'s ends, for telling one written twice.
-    private var edgeDeletes: [(from: ShapeID, to: ShapeID, eitherWay: Bool, line: Int, identity: EdgeIdentity?)] = []
+    private var edgeDeletes: [(from: ShapeID, to: ShapeID, eitherWay: Bool, line: Int, identity: EdgeIdentity?, rows: EdgeRows)] = []
+    /// The rows a `delete edge` names at its ends.
+    private struct EdgeRows: Equatable {
+        let from: PartID?
+        let to: PartID?
+    }
     /// The stand-ins a delete took an arrow from (`delete edge`'s, or X's, which `delete "X"` takes),
     /// with the statement that did last, as a message says it: each goes too, once no arrow is left
     /// on it.
@@ -343,6 +348,24 @@ struct Drawing {
                     measureWarnings.append((statement.line, error.message + "; measured without it"))
                 } else {
                     keep(error)
+                }
+            }
+        }
+        // The edges the values a script writes imply (a column's line's `→`), on their statements' lines, after the script's own: one
+        // the same as an edge the script writes is that edge, drawn once.
+        if registry.drawValueWriters.values.contains(where: \.impliesEdges) {
+            for statement in script.statements {
+                guard case .shape(let shape) = statement.body else { continue }
+                do throws(DrawError) {
+                    for edge in try impliedEdges(of: shape, statement) {
+                        try resolve(edge, Statement(line: statement.line, text: statement.text, body: .edge(edge)), implied: true)
+                    }
+                } catch {
+                    if measuring, error.fromNameLookup {
+                        measureWarnings.append((statement.line, error.message + "; measured without it"))
+                    } else {
+                        keep(error)
+                    }
                 }
             }
         }
@@ -688,8 +711,9 @@ struct Drawing {
                     standInsEmptied[other] = (statement, deleting)
                 }
             }
-        case .edges(let fromWritten, let toWritten, let eitherWay, let attributes):
-            let pair = "\(fromWritten.written) \(eitherWay ? EdgeArrow.both.rawValue : EdgeArrow.forward.rawValue) \(toWritten.written)"
+        case .edges(let fromWritten, let toWritten, let eitherWay, let attributes, let fromRow, let toRow):
+            let pair = "\(fromWritten.written)\(fromRow.map(ShapeName.writtenRow) ?? "") \(eitherWay ? EdgeArrow.both.rawValue : EdgeArrow.forward.rawValue) "
+                + "\(toWritten.written)\(toRow.map(ShapeName.writtenRow) ?? "")"
             let written = ([pair] + attributes.map { "\($0.key): \($0.value.written)" }).joined(separator: " ")
             guard let edgeKind else { throw noEdges(statement) }
             // Only what tells edges apart: `delete edge "A" -> "B" is: "T"` takes that one.
@@ -757,21 +781,40 @@ struct Drawing {
                 }
             }
             let (a, fromSaid) = try end(fromWritten)
-            let (b, _) = try end(toWritten)
+            let (b, toSaid) = try end(toWritten)
             if case .away(let far) = a, case .away = b {
                 throw severalBoards(said: fromSaid, on: far.board, statement, for: "\(Keyword.delete.rawValue) \(Keyword.edge.rawValue) \(written) names")
             }
+            // A row at an end narrows the pair's arrows to those bound to it there (a key out of several between two tables), as
+            // `is:` narrows them by type; an end with none takes any.
+            func row(_ name: String?, at found: EdgeEndFound, said: String) throws(DrawError) -> PartID? {
+                guard let name else { return nil }
+                guard case .here(let id, _) = found, let record = target.document[id] else {
+                    throw DrawError(statement, .unsupported, "\(said)\(ShapeName.writtenRow(name)) is on another board, and delete edge reaches a row only on its own",
+                                    hint: "write delete edge \(fromWritten.written) -> \(toWritten.written), which takes every edge between them")
+                }
+                return try part(named: name, of: record, said: said, statement)
+            }
+            let rows = EdgeRows(from: try row(fromRow, at: a, said: fromSaid), to: try row(toRow, at: b, said: toSaid))
             let pairs = eitherWay ? [(a.id, b.id), (b.id, a.id)] : [(a.id, b.id)]
             if let earlier = edgeDeletes.first(where: { other in
                 if let identity, let theirs = other.identity, identity.differs(from: theirs) { return false }
+                // Two rows' keys between one pair are two edges.
+                if (other.rows.from != nil || rows.from != nil || other.rows.to != nil || rows.to != nil), other.rows != rows { return false }
                 return pairs.contains { $0 == (other.from, other.to) || other.eitherWay && $0 == (other.to, other.from) }
             }) {
                 throw DrawError(statement, .duplicate, "delete edge \(written) is written twice, here and on line \(earlier.line)", hint: "keep one")
             }
-            edgeDeletes.append((a.id, b.id, eitherWay, statement.line, identity))
+            edgeDeletes.append((a.id, b.id, eitherWay, statement.line, identity, rows))
             // Drawn straight between them, or, as an edge to a shape on another board is, into a
-            // stand-in for it beside the other. With an identity, those that hold what it writes.
-            let found = edgeMatches(from: a.id, to: b.id, bothHeads: eitherWay, among: connections, in: target.document, identity: identity)
+            // stand-in for it beside the other. With an identity, those that hold what it writes; with a row at an end, those bound
+            // to it there.
+            let found = edgeMatches(from: a.id, to: b.id, bothHeads: eitherWay, among: connections, in: target.document, identity: identity).filter { match in
+                guard rows.from != nil || rows.to != nil else { return true }
+                let held = registry.edges(of: match.connection.record).first(where: \.isConnection)?.parts ?? .none
+                let parts = match.reversed ? (from: held.target, to: held.source) : (from: held.source, to: held.target)
+                return (rows.from == nil || rows.from == parts.from) && (rows.to == nil || rows.to == parts.to)
+            }
             guard !found.isEmpty else { throw nothingToDelete(statement, written) }
             for match in found {
                 try writable(match.connection.record, statement, "one of the connections delete edge \(written) removes", so: "it can't be deleted")
@@ -1483,7 +1526,41 @@ struct Drawing {
 
     // MARK: Edges
 
-    private mutating func resolve(_ edge: EdgeStatement, _ statement: Statement) throws(DrawError) {
+    /// The edges a shape statement's values imply (`DrawValueWriting.edges`), from the shape it draws, as edge statements: none for a
+    /// statement that couldn't be resolved, or one whose values imply none. A shape with no name can't be an edge's end, so a value
+    /// of one that implies an edge is refused.
+    private func impliedEdges(of shape: ShapeStatement, _ statement: Statement) throws(DrawError) -> [EdgeStatement] {
+        if let title = shape.title, unresolved.contains(fold(title) ?? title) { return [] }
+        guard let lookup = textWriter?.lookup else { return [] }
+        let writers = registry.drawValueWriters
+        var implied: [EdgeStatement] = []
+        for attribute in shape.attributes {
+            guard let writer = writers[attribute.key], writer.impliesEdges, case .quoted(let text) = attribute.value else { continue }
+            let found: [DrawImpliedEdge]
+            do throws(DrawError) {
+                found = try writer.edges(.string(text), DrawTextContext(registry: registry, schema: [:], owner: nil, lookup: lookup))
+            } catch {
+                throw error.said(error.message, on: statement)
+            }
+            guard !found.isEmpty else { continue }
+            guard let name = shape.newTitle.map(ShapeName.title) ?? shape.name else {
+                throw DrawError(statement, .unsupported, "\(attribute.key): draws an edge from the \(shape.word) this line draws, and it has no title to start from",
+                                hint: "give the \(shape.word) a title: \(shape.word) \"orders\" \(attribute.key): …")
+            }
+            for edge in found {
+                var made = EdgeStatement(from: name, to: .title(edge.to),
+                                         attributes: edge.attributes.sorted { $0.key < $1.key }.map { Attribute(key: $0.key, value: .word($0.value)) })
+                made.fromRow = edge.fromRow
+                made.toRow = edge.toRow
+                implied.append(made)
+            }
+        }
+        return implied
+    }
+
+    /// An edge statement resolved: its ends, their rows, its attributes, the stand-in it goes through. `implied`: an edge a value
+    /// implies (`impliedEdges`), which an edge the script writes between the same rows is already, and is then dropped.
+    private mutating func resolve(_ edge: EdgeStatement, _ statement: Statement, implied: Bool = false) throws(DrawError) {
         guard let edging, let edgeKind else { throw noEdges(statement) }
         let written = "\(Keyword.edge.rawValue) \(edge.written)"
         // An end is a shape the script draws, or the board has, or, elsewhere in the file, the shape
@@ -1565,6 +1642,7 @@ struct Drawing {
             let same = other.from == from ? (other.fromPart, other.toPart) == (fromPart, toPart) : (other.fromPart, other.toPart) == (toPart, fromPart)
             return same
         }) {
+            if implied { return }
             throw DrawError(statement, .duplicate, "\(written) is written twice, here and on line \(edges[place].statement.line)",
                             hint: "say everything about one edge in one statement")
         }
