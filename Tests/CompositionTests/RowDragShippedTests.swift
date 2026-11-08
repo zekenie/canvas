@@ -135,6 +135,8 @@ private let shopAPI = #"""
         expectEqual(editor.document[made]?.typed(as: DatabaseTable.self)?.props.columns.map(ColumnGrammar.print),
                     ["id uuid pk", "street text", "city text", "postcode text", "country char(2)"])
         expectEqual(table(editor, "customers")?.props.columns.map(\.name), ["id", "email", "name", "created_at"])
+        expectEqual(editor.shapeContext.frame(of: editor.document[customers.id]!)?.height, KitStyle.height(rows: 4),
+                    "customers as tall as its rows: the ended session lays no waiting line out as its band's rows go")
         expect(try require(editor.shapeContext.frame(of: editor.document[made]!)).contains(drop), "where it was dropped")
         w.type("addresses", with: walk)
         walk.press(.escape)
