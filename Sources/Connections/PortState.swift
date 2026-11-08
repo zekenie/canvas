@@ -155,20 +155,20 @@ final class PortState {
 
     /// The row of `id` whose dots a view point is in reach of (`partPorts`): the shown row whose band across holds it, the
     /// band as wide as the shape and a dot's reach on each side; nil for a shape with no dots on its rows, or none there.
-    /// Found by halving the rows (`PartFrames` are in reading order, top to bottom), so a long table costs a few looks.
+    /// Found by halving the rows shown (`PartFrames.shownFrames` are in reading order, top to bottom), so a long table costs a few looks.
     func part(of id: ShapeID, atViewPoint point: CGPoint) -> PartID? {
         guard let record = editor.document[id], ports(of: record)?.partDots.isEmpty == false,
               let geometry = editor.shapeContext.geometry(of: id) else { return nil }
         let camera = editor.camera, world = camera.toWorld(point)
         let reach = (PortStyle.offset + PortStyle.hitRadius) / camera.zoom
         guard world.x >= geometry.bounds.minX - reach, world.x <= geometry.bounds.maxX + reach else { return nil }
-        let frames = geometry.parts
+        let frames = geometry.parts.shownFrames
         var low = 0, high = frames.count
         while low < high {
             let middle = (low + high) / 2
             if frames[middle].rect.maxY <= world.y { low = middle + 1 } else { high = middle }
         }
-        guard low < frames.count, frames[low].rect.minY <= world.y, frames[low].isShown else { return nil }
+        guard low < frames.count, frames[low].rect.minY <= world.y else { return nil }
         return frames[low].id
     }
 

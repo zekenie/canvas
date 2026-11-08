@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Connections
 import Draw
+import LineRows
 import Palette
 import Titles
 import Topology
@@ -33,6 +34,8 @@ extension ForeignKey: Channel {
 final class KeyIndex {
     private unowned let editor: CanvasEditor
     private var following: TopologyFollowing?
+    /// The file's folds, which show a table's keys when it's folded to its marks.
+    private weak var rowFolds: RowFolds?
     /// A table's keys: the far row of each column that starts one (the first, should a column start several), and the arrows that
     /// start at it.
     private var kept: [ShapeID: [PartID: Key]] = [:]
@@ -44,14 +47,23 @@ final class KeyIndex {
 
     init(editor: CanvasEditor) {
         self.editor = editor
+        rowFolds = editor.rowFolds
         following = editor.topology?.follow { [weak self] change in self?.heard(change) }
     }
 
     private func heard(_ change: TopologyChange) {
-        guard !kept.isEmpty else { return }
-        if change.cause == .rebuild { return kept.removeAll() }
+        let folds = rowFolds.flatMap { $0.folded.isEmpty ? nil : $0 }
+        guard !kept.isEmpty || folds != nil else { return }
+        if change.cause == .rebuild {
+            kept.removeAll()
+            folds?.marksMayHaveChanged(folds?.folded ?? [])
+            return
+        }
         guard let topology = editor.topology else { return }
-        for id in change.touched(types: .only(type), in: topology.types) { kept[id] = nil }
+        let touched = change.touched(types: .only(type), in: topology.types)
+        for id in touched { kept[id] = nil }
+        // A key drawn or deleted is a mark of its table's: a table folded to its marks shows it, or hides it, at once.
+        folds?.marksMayHaveChanged(touched)
     }
 
     /// The columns of `table` that start a key, each with the row it goes to and its arrows.

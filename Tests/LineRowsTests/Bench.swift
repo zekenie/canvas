@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 @_spi(Host) import CanvasUI
+import Find
 import Keyboard
 import LineRows
 import Selection
@@ -19,8 +20,10 @@ final class Bench {
     let window: NSWindow
     let canvas: CanvasView
 
-    init() throws {
-        h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), LineRowsPlugin(), TalliesPlugin(log: log), FreezingPlugin(log: refusals)])
+    /// With `find`, Find and the tallies' entries as its texts, a text an entry by its id.
+    init(find: Bool = false) throws {
+        let finding: [any CanvasPlugin] = find ? [FindPlugin(), TallyFindPlugin()] : []
+        h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin()] + finding + [LineRowsPlugin(), TalliesPlugin(log: log), FreezingPlugin(log: refusals)])
         window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         canvas = CanvasView(editor: h.editor)

@@ -83,6 +83,9 @@ public protocol EditorService: AnyObject {
     /// `new`: no move of the person's. A service that keeps where the person is (Selection's Back)
     /// follows it.
     func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor)
+    /// The host put back the view values an earlier session saved (`editor.restoreViewValues`), before the canvas was
+    /// made: a service that keeps one reads it again, and says what it lays out differently (`shapesDidChangeLayout`).
+    func viewValuesDidChange(in editor: CanvasEditor)
 }
 
 extension EditorService {
@@ -98,4 +101,5 @@ extension EditorService {
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {}
     public func shapeTintsDidChange(in editor: CanvasEditor) {}
     public func viewWasKept(from old: Camera, to new: Camera, in editor: CanvasEditor) {}
+    public func viewValuesDidChange(in editor: CanvasEditor) {}
 }

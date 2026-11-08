@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Find
 import Geometry
 @_spi(Host) import CanvasUI
 import Keyboard
@@ -77,18 +78,24 @@ struct TallyDefinition: ShapeDefinition, LaidOutBox {
         context.cg.setFillColor(NSColor.white.cgColor)
         context.cg.fill(context.shapes.frame(of: shape))
         let focused = context.shapes.layoutInput(LineRowsLayout.focused, of: shape)
-        for row in shape.props.rows where row.id != focused { log.drawn.append(row.label) }
+        let shown = context.shapes.layoutInput(LineRowsLayout.shown, of: shape)
+        for (index, row) in shape.props.rows.enumerated() where row.id != focused && shown?.isShown(index) != false { log.drawn.append(row.label) }
+        if let more = shown?.more { log.drawn.append("+\(more.count)") }
     }
 
     func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSize {
-        let lines = shape.props.rows.count + (context.layoutInput(LineRowsLayout.waiting, of: shape) == nil ? 0 : 1)
-        return CGSize(width: shape.frame.width, height: Tally.head * 2 + Tally.rowHeight * CGFloat(max(lines, 1)))
+        let shown = context.layoutInput(LineRowsLayout.shown, of: shape)
+        let lines = shown?.count ?? shape.props.rows.count + (context.layoutInput(LineRowsLayout.waiting, of: shape) == nil ? 0 : 1)
+        let width = max(shape.frame.width, context.layoutInput(LineRowsLayout.width, of: shape) ?? 0)
+        return CGSize(width: width, height: Tally.head * 2 + Tally.rowHeight * CGFloat(max(lines, 1)))
     }
 
     func geometry(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape), waiting = context.layoutInput(LineRowsLayout.waiting, of: shape)
+        let shown = context.layoutInput(LineRowsLayout.shown, of: shape)
         let parts = shape.props.rows.enumerated().map { index, row in
-            PartFrame(id: row.id, rect: TallyLines.line(LineRowsLayout.line(of: index, waiting: waiting), in: frame))
+            PartFrame(id: row.id, rect: TallyLines.line(shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting), in: frame),
+                      isShown: shown?.isShown(index) ?? true)
         }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
@@ -205,6 +212,11 @@ struct TallyLines: LineModel {
     func roleOfNewRow(at index: Int, in props: Tally) -> LineRole { "entry" }
     func grammar(for role: LineRole) -> any LineGrammar<TallyRow> { TallyGrammar() }
     func lineRect(_ line: Int, in frame: CGRect) -> CGRect { Self.line(line, in: frame) }
+    /// A fold keeps the entries that have a count; a header is an entry whose label ends in "/".
+    func marked(_ shape: ShapeRecord<Tally>, in reading: LayoutReading) -> Set<PartID> {
+        Set(shape.props.rows.filter { $0.count != nil }.map(\.id))
+    }
+    func isHeader(_ row: TallyRow) -> Bool { row.label.hasSuffix("/") }
 
     static func line(_ line: Int, in frame: CGRect) -> CGRect {
         CGRect(x: frame.minX, y: frame.minY + Tally.head + CGFloat(line) * Tally.rowHeight, width: frame.width, height: Tally.rowHeight)
@@ -231,5 +243,16 @@ struct TalliesPlugin: CanvasPlugin {
             tally.tool(label: "Tally", systemImage: "number", placing: tally.editingPlacement(size: CGSize(width: 240, height: 40)) { Tally() })
             tally.lineRows(TallyLines())
         }
+    }
+}
+
+/// A tally's entries, for Find: a text an entry, its label, by its id.
+struct TallyFindPlugin: CanvasPlugin {
+    var id: PluginID { "tally-find" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.findableTexts("entries", of: Tally.self, texts: { shape, _ in
+            shape.props.rows.map { FindableText(field: $0.id.description, text: $0.label) }
+        }, rects: { _, _, ranges, _ in ranges.map { _ in [] } })
     }
 }

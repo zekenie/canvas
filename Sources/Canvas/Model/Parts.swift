@@ -129,10 +129,14 @@ public struct PartFrame: Hashable, Sendable {
 /// part's rect is worked out once with it. A part the list doesn't have is gone.
 public struct PartFrames: Sendable, Equatable, RandomAccessCollection {
     public let frames: [PartFrame]
+    /// The parts shown, in the order of `frames`: top to bottom, whatever a part folded away stands at. What a search by
+    /// height halves, since a hidden part's rect is a line another part has.
+    public let shownFrames: [PartFrame]
     private let index: [PartID: Int]
 
     public init(_ frames: [PartFrame] = []) {
         self.frames = frames
+        shownFrames = frames.allSatisfy(\.isShown) ? frames : frames.filter(\.isShown)
         var index: [PartID: Int] = [:]
         index.reserveCapacity(frames.count)
         for (offset, frame) in frames.enumerated() where index[frame.id] == nil { index[frame.id] = offset }

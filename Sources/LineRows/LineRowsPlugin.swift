@@ -1,66 +1,199 @@
 import Canvas
+import CoreGraphics
+import Keyboard
 import Selection
+import Titles
 
 // Rows written as lines, any kind's: a horizontal a kind opts into with `lineRows(_:)`, whose shapes' rows are written a
-// line each (a table's columns, an enum's values). Two parts: Field (the line field and the grammar a role's lines are
-// read and printed in) and Session (the stops, keys and commits of a shape being edited, which its kind's editing view
-// is). The module knows no table: a kind gives its model (`LineModel`) and its grammars.
-
-extension PluginID {
-    public static let lineRows: PluginID = "line-rows"
-}
-
-/// The kinds written as lines: one contribution a kind (`lineRows(_:)`). Owner LineRows.
-public enum LineRowsKinds {}
-
-extension LineRowsKinds: KeyedExtensionPoint {
-    public typealias Contribution = LineRowsContribution
-    public static var owner: PluginID { .lineRows }
-    public static func uniqueKeys(of _: LineRowsContribution, for target: ShapeTarget) -> [AnyHashable] { [target] }
-    public static func summary(of contribution: LineRowsContribution, for target: ShapeTarget) -> String {
-        "line rows (\(contribution.noun.plural)) → \(target)"
-    }
-}
-
-/// One kind's rows as lines: what they're called. Only the sugar makes one.
-@MainActor
-public struct LineRowsContribution {
-    public let noun: LineNoun
-}
+// line each (a table's columns, an enum's values). Three parts: Field (the line field and the grammar a role's lines are
+// read and printed in), Folds (the kinds written as lines, and the lines a shape shows: folded to its marked rows, a header
+// closed, Find's hits peeking) and Session (the stops, keys and commits of a shape being edited, which its kind's editing
+// view is). The module knows no table: a kind gives its model (`LineModel`) and its grammars.
 
 extension ShapeRegistrar {
     /// This kind's rows are written as lines, as `model` says (`LineModel`): its editing view is
-    /// `LineRowsView.make(_:context:model:title:)`, and LineRows' faces reach its shapes (`.lineRows`).
+    /// `LineRowsView.make(_:context:model:title:)`, LineRows' faces reach its shapes (`.lineRows`), and it folds (⌃⌘↑) to
+    /// the rows the model marks. Its layout reads `LineRowsLayout`'s inputs.
     ///
     ///     table.lineRows(TableLines())
     public mutating func lineRows<Model: LineModel>(_ model: Model) where Model.Props == Definition.Props {
-        contribute(LineRowsContribution(noun: model.noun), to: LineRowsKinds.self)
+        contribute(LineRowsContribution(
+            noun: model.noun,
+            rows: { record in
+                record.typed(as: Model.Props.self).map { shape in
+                    model.rows(of: shape.props).map { FoldRow(id: model.id(of: $0), isHeader: model.isHeader($0)) }
+                }
+            },
+            marked: { record, reading in record.typed(as: Model.Props.self).map { model.marked($0, in: reading) } ?? [] },
+            lineRect: { line, frame in model.lineRect(line, in: frame) }), to: LineRowsKinds.self)
     }
 }
 
-extension ShapeCapability {
-    /// The kinds whose rows are written as lines (`lineRows(_:)`).
-    public static let lineRows = ShapeCapability("written as lines") { kind in
-        !kind.registry.contributions(to: LineRowsKinds.self, for: kind.kind).isEmpty
-    }
+extension CanvasCommand {
+    /// View › Fold Rows (⌃⌘↑): the selection's shapes written as lines, or every one on the board shown with nothing
+    /// selected, folded to the rows their kinds mark.
+    public static let foldRows: CanvasCommand = "foldRows"
+    /// View › Unfold Rows (⌃⌘↓): every row shown again.
+    public static let unfoldRows: CanvasCommand = "unfoldRows"
 }
 
-extension Registry {
-    /// What a kind's rows are called, when they're written as lines; nil for a kind whose aren't.
-    public func lineRows(of kind: ShapeKind) -> LineRowsContribution? {
-        contributions(to: LineRowsKinds.self, for: kind).first
-    }
+/// View's section of Fold Rows and Unfold Rows.
+public enum RowFoldsSection {}
+extension RowFoldsSection: MenuBarSection {
+    public static var menu: MenuBarMenu { "View" }
 }
 
 /// Rows written as lines: the sessions' service (the light an offer puts on the board, Tab's hops to the next shape of a
-/// kind, the layout inputs taken back as editing ends) and the light's outline. The keys a row has are listed by the kind
-/// that opts in (the Keyboard Shortcuts window leaves out those of a kit that's off).
+/// kind, the layout inputs taken back as editing ends) and the light's outline; folds (`RowFolds`), the lines a folded
+/// shape shows provided to its layout, ⌃⌘↑ and ⌃⌘↓, and the "+N ›" line a click, Return or Space opens. The keys a row has
+/// are listed by the kind that opts in (the Keyboard Shortcuts window leaves out those of a kit that's off).
 public struct LineRowsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .lineRows }
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { LineRowsService(editor: $0) }
+        registrar.service { RowFolds(editor: $0) }
         registrar.outlines { editor in editor.service(LineRowsService.self)?.outlines() ?? Outlines() }
+        // What a folded shape shows, asked as it's laid out, and how wide one is while a line typed in it is wider.
+        registrar.layoutInput(LineRowsLayout.shown) { record, reading in reading.service(RowFolds.self)?.shown(of: record, in: reading) }
+        registrar.layoutInput(LineRowsLayout.width) { record, reading in reading.service(LineRowsService.self)?.width(of: record.id) }
+        // ⌃⌘↑ ⌃⌘↓: a view, no step; never while a shape is edited (it shows every row then), so the text keeps the keys.
+        registrar.command(.foldRows, title: LineFoldStyle.foldTitle, in: RowFoldsSection.self,
+                          shortcut: KeyChord(KeyChord.upArrow.key, [.control, .command]), runs: .whenIdle,
+                          isEnabled: { subject in Folding.targets(subject).contains { subject.editor.rowFolds?.fold(of: $0)?.toMarked != true } }) { subject in
+            Folding.fold(Folding.targets(subject), in: subject.editor)
+        }
+        registrar.command(.unfoldRows, title: LineFoldStyle.unfoldTitle, in: RowFoldsSection.self,
+                          shortcut: KeyChord(KeyChord.downArrow.key, [.control, .command]), runs: .whenIdle,
+                          isEnabled: { subject in Folding.targets(subject).contains { subject.editor.rowFolds?.isFolded($0) == true } }) { subject in
+            Folding.unfold(Folding.targets(subject), in: subject.editor)
+        }
+        // The "+N ›" line and a closed header: a click opens it; reached with ⌥Tab, Return or Space opens it.
+        registrar.shapeFaces(at: { editor, record, point in Folding.line(at: point, on: record, in: editor) },
+                             click: { line, editor in Folding.open(line, in: editor) })
+        registrar.forShapes(adopting: .lineRows) { kinds in
+            kinds.shapeParts(named: "FoldLines") { editor, record in Folding.parts(of: record, in: editor) }
+        }
     }
+}
+
+/// What the fold commands and the "+N ›" line do, over the editor.
+@MainActor
+enum Folding {
+    /// A line a fold drew that a click opens: the "+N ›" line, or a closed header.
+    struct Line: Hashable, Sendable {
+        let shape: ShapeID
+        /// The header, nil for "+N ›".
+        let header: PartID?
+        /// The fold the line was drawn by (`RowFolds.epoch`): a line the keys had focus on and opened is not the next one.
+        let epoch: Int
+    }
+
+    /// What ⌃⌘↑ and ⌃⌘↓ act on: the selection's shapes written as lines, or, with nothing selected, every one on the board
+    /// shown.
+    static func targets(_ subject: CommandSubject) -> [ShapeID] {
+        let editor = subject.editor, registry = editor.registry
+        if subject.shapes.isEmpty {
+            return editor.document.shapes.compactMap { registry.lineRows(of: $0.kind) == nil ? nil : $0.id }
+        }
+        return subject.shapes.filter { id in editor.document[id].map { registry.lineRows(of: $0.kind) != nil } ?? false }
+    }
+
+    static func fold(_ ids: [ShapeID], in editor: CanvasEditor) {
+        guard let folds = editor.rowFolds, !ids.isEmpty else { return }
+        // VoiceOver hears what changed: the shapes that were not folded and now hide a row.
+        let hiding = folds.fold(ids).compactMap { id -> (record: AnyShapeRecord, shown: RowsShown)? in
+            guard let record = editor.document[id], let shown = editor.shapeContext.layoutInput(LineRowsLayout.shown, of: record) else { return nil }
+            return (record, shown)
+        }
+        if hiding.count == 1, let (record, shown) = hiding.first, let kind = editor.registry.lineRows(of: record.kind) {
+            let total = kind.rows(record)?.count ?? 0
+            editor.announce(LineFoldStyle.folded(editor.registry.title(of: record), shown: shown.shownRows, of: total, noun: kind.noun))
+        } else if hiding.isEmpty {
+            editor.announce(LineFoldStyle.nothingToFold)
+        } else {
+            editor.announce(LineFoldStyle.foldedMany(hiding.count))
+        }
+    }
+
+    static func unfold(_ ids: [ShapeID], in editor: CanvasEditor) {
+        guard let folds = editor.rowFolds else { return }
+        folds.unfold(ids)
+        editor.announce(LineFoldStyle.unfolded)
+    }
+
+    /// The fold's line of `record` under `point` (world units): its "+N ›" line or a closed header.
+    static func line(at point: CGPoint, on record: AnyShapeRecord, in editor: CanvasEditor) -> Line? {
+        guard let folds = editor.rowFolds, folds.isFolded(record.id), let kind = editor.registry.lineRows(of: record.kind) else { return nil }
+        let epoch = folds.epoch, shapes = editor.shapeContext
+        guard let shown = shapes.layoutInput(LineRowsLayout.shown, of: record), let frame = shapes.frame(of: record) else { return nil }
+        for (index, line) in shown.lines.enumerated() where kind.lineRect(index, frame).contains(point) {
+            switch line {
+            case .more: return Line(shape: record.id, header: nil, epoch: epoch)
+            case .header(let row, _): return Line(shape: record.id, header: shown.ids[row], epoch: epoch)
+            case .row: return nil
+            }
+        }
+        return nil
+    }
+
+    static func open(_ line: Line, in editor: CanvasEditor) {
+        guard let folds = editor.rowFolds else { return }
+        if let header = line.header {
+            folds.setClosed(false, header: header, of: line.shape)
+        } else {
+            folds.openMore(of: line.shape)
+        }
+        editor.announce(LineFoldStyle.unfolded)
+    }
+
+    /// A folded shape's lines a click opens, as parts the keys reach (⌥Tab, then Return or Space): its closed headers and
+    /// its "+N ›" line, in reading order.
+    static func parts(of record: AnyShapeRecord, in editor: CanvasEditor) -> [ShapePart] {
+        guard let folds = editor.rowFolds, folds.isFolded(record.id), let kind = editor.registry.lineRows(of: record.kind) else { return [] }
+        let epoch = folds.epoch, shapes = editor.shapeContext
+        guard let shown = shapes.layoutInput(LineRowsLayout.shown, of: record), let frame = shapes.frame(of: record) else { return [] }
+        var parts: [ShapePart] = []
+        for (index, line) in shown.lines.enumerated() {
+            let rect = kind.lineRect(index, frame)
+            switch line {
+            case .more(let count):
+                let opened = Line(shape: record.id, header: nil, epoch: epoch)
+                parts.append(ShapePart(id: opened, title: LineFoldStyle.more(count, noun: kind.noun), rect: rect) { open(opened, in: $0) })
+            case .header(let row, let hiding):
+                let opened = Line(shape: record.id, header: shown.ids[row], epoch: epoch)
+                let name = editor.accessibleName(of: PartAddress(record.id, part: shown.ids[row])) ?? ""
+                parts.append(ShapePart(id: opened, title: LineFoldStyle.header(name, hiding: hiding, noun: kind.noun), rect: rect) { open(opened, in: $0) })
+            case .row:
+                continue
+            }
+        }
+        return parts
+    }
+}
+
+/// What folds say: their items' titles and what VoiceOver hears.
+@MainActor
+enum LineFoldStyle {
+    static let foldTitle = "Fold Rows"
+    static let unfoldTitle = "Unfold Rows"
+    static let unfolded = "Unfolded"
+    /// Folded, and every row is one its kind keeps (or it was folded already).
+    static let nothingToFold = "Nothing to fold"
+
+    /// "products folded, 3 of 40 columns shown".
+    static func folded(_ name: String?, shown: Int, of total: Int, noun: LineNoun) -> String {
+        let what = "\(shown) of \(noun.counted(total)) shown"
+        return name.map { "\($0) folded, \(what)" } ?? "Folded, \(what)"
+    }
+
+    /// "12 shapes folded".
+    static func foldedMany(_ count: Int) -> String { "\(count) shapes folded" }
+
+    /// The "+N ›" line, as VoiceOver reads it: "37 more columns".
+    static func more(_ count: Int, noun: LineNoun) -> String { "\(count) more \(count == 1 ? noun.singular : noun.plural)" }
+
+    /// A closed header: "/orders, 4 endpoints hidden".
+    static func header(_ name: String, hiding: Int, noun: LineNoun) -> String { "\(name), \(noun.counted(hiding)) hidden" }
 }

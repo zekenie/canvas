@@ -665,6 +665,14 @@ extension CanvasEditor {
         return state.frames(of: record)
     }
 
+    /// How far right of a closed shape's left edge its row above the top-left starts, at the earliest, in world units at
+    /// the zoom now, to keep clear of a container's tab (a table's pill, or its bar zoomed out, at a database's top-left
+    /// inset): 0 where no container's tab meets the row. What Titles' bars zoomed out go by, as the row does.
+    public func adornmentRowStart(of id: ShapeID) -> CGFloat {
+        guard let state = adornmentState, state.hasTabs, document[id] != nil else { return 0 }
+        return state.rowStart(of: id)
+    }
+
     /// The rect a shape's adornment row is laid out against, in world units, at the zoom now: a closed
     /// shape's bounds (a note's top-left is the row's), an open shape's label's if it has one, else a zero-size
     /// rect at the middle of its outline, either widened about its center to what a row needs. What

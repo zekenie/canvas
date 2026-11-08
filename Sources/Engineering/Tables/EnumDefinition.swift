@@ -15,7 +15,12 @@ extension EnumDefinition: ShapeDefinition {
         let frame = context.shapes.frame(of: shape)
         KitPaper.draw(frame, in: context)
         let values = shape.props.values, rows = KitRows(shape, in: context.shapes)
+        let more = rows.more
         for line in KitPaper.rowsInView(rows.lines(values.count), in: frame, context) {
+            if line == more?.line, let more {
+                MoreLine.draw(more.count, in: KitStyle.rowRect(line, in: frame), context)
+                continue
+            }
             guard let index = rows.row(atLine: line), values[index].id != rows.focused else { continue }
             let row = KitStyle.rowRect(line, in: frame), start = row.minX + KitStyle.nameInset
             RowText.draw(RowText.line(values[index].text, .value), at: start, middle: row.midY, room: row.maxX - KitStyle.trailingInset - start, in: context.cg)
@@ -24,7 +29,7 @@ extension EnumDefinition: ShapeDefinition {
 
     func geometry(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape), rows = KitRows(shape, in: context)
-        let parts = shape.props.values.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame)) }
+        let parts = shape.props.values.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame), isShown: rows.isShown($0)) }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
 
@@ -35,7 +40,8 @@ extension EnumDefinition: ShapeDefinition {
 
 extension EnumDefinition: LaidOutBox {
     func laidOutSize(of shape: ShapeRecord<DatabaseEnum>, in context: ShapeContext) -> CGSize {
-        CGSize(width: shape.frame.width, height: KitStyle.height(rows: KitRows(shape, in: context).lines(shape.props.values.count)))
+        let rows = KitRows(shape, in: context)
+        return CGSize(width: rows.width(stored: shape.frame.width), height: KitStyle.height(rows: rows.lines(shape.props.values.count)))
     }
 }
 
@@ -72,8 +78,9 @@ extension EnumDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<DatabaseEnum>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
         KitPaper.drawSkeleton(frame, in: context)
-        let values = shape.props.values, rows = KitRows(shape, in: context.shapes)
+        let values = shape.props.values, rows = KitRows(shape, in: context.shapes), more = rows.more
         context.fillSkeletonText(KitPaper.skeletonRowsInView(rows.lines(values.count), in: frame, context).compactMap { line in
+            if line == more?.line, let more { return MoreLine.bar(more.count, in: KitStyle.rowRect(line, in: frame)) }
             guard let index = rows.row(atLine: line) else { return nil }
             let row = KitStyle.rowRect(line, in: frame), start = row.minX + KitStyle.nameInset
             return KitPaper.bar(columns: SkeletonText.columns(of: values[index].text, upTo: TableStyle.skeletonMostColumns), column: EnumStyle.skeletonColumn,

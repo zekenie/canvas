@@ -2,22 +2,6 @@ import AppKit
 import Canvas
 import Selection
 
-/// What the session sets on the shape it edits, for its kind's render and layout: nothing on any other shape, and
-/// nothing once editing ends, so a frame pays nothing more.
-public enum LineRowsLayout {
-    /// Where the waiting line is while it has the caret, an index among the rows (its count: last): the kind lays itself
-    /// out a line taller and leaves that line empty, the field's to draw. Nil while a row or the title has the caret.
-    public static let waiting = LayoutInputKey<Int>("line-rows-waiting")
-    /// The row the caret is in: the kind draws it not at all, since the field draws it as it's typed.
-    public static let focused = LayoutInputKey<PartID>("line-rows-focused")
-
-    /// The line row `index` is drawn on while the waiting line is at `waiting` (nil: none): the rows after it a line down.
-    public static func line(of index: Int, waiting: Int?) -> Int {
-        guard let waiting, index >= waiting else { return index }
-        return index + 1
-    }
-}
-
 /// The editor's part in the sessions: the light an offer puts on a shape, the hops Tab and ⇧Tab make past a shape's ends
 /// to the next shape of its kind, and the layout inputs a session set, taken back as editing ends.
 @MainActor
@@ -32,9 +16,22 @@ public final class LineRowsService {
     /// A session whose row's line is printed again once the commit it waits for settles: ⌘L's pick, made as the picker closes
     /// and the keyboard is back on the line.
     weak var awaitingReprint: LineRowsView?
+    /// How wide the shape being edited is laid out while its typed line is wider than it stores (`LineRowsLayout.width`).
+    private var widths: [ShapeID: CGFloat] = [:]
 
     init(editor: CanvasEditor) {
         self.editor = editor
+    }
+
+    /// How wide `id` is laid out while a line typed in it is wider than it is: nil at rest (`LineRowsLayout.width`'s
+    /// provider).
+    func width(of id: ShapeID) -> CGFloat? { widths[id] }
+
+    /// Lays `id` out `width` wide while it's edited (nil: as stored), the arrows bound to it and its frame following.
+    func setWidth(_ width: CGFloat?, of id: ShapeID) {
+        guard widths[id] != width else { return }
+        widths[id] = width
+        editor.shapesDidChangeLayout([id])
     }
 
     /// Lights a shape or a row (nil: none), outlined as the selection is.
@@ -90,5 +87,6 @@ extension LineRowsService: EditorService {
         setLight(nil)
         editor.setLayoutInput(LineRowsLayout.waiting, nil, for: id)
         editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)
+        setWidth(nil, of: id)
     }
 }

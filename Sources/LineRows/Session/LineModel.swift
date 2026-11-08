@@ -6,21 +6,6 @@ import Selection
 // grammar a role, where each line is drawn, how a change is written (the props and whatever goes with them, in one
 // transaction) and what a change is called, which names its step ("Rename Column" exactly when only the name changed).
 
-/// What a kind's rows are called, for VoiceOver and the steps: "column", "columns".
-public struct LineNoun: Hashable, Sendable {
-    public var singular: String
-    public var plural: String
-
-    public init(_ singular: String, plural: String? = nil) {
-        self.singular = singular
-        self.plural = plural ?? singular + "s"
-    }
-
-    /// "Column", "Columns".
-    public var title: String { singular.prefix(1).uppercased() + singular.dropFirst() }
-    public var pluralTitle: String { plural.prefix(1).uppercased() + plural.dropFirst() }
-}
-
 /// A change to a kind's rows, as a commit makes it.
 public enum LineChange<Row> {
     /// Rows put in at an index: one typed ("Add Column"), or a block pasted ("Paste Columns").
@@ -66,10 +51,22 @@ public protocol LineModel {
     func apply(_ changes: [LineChange<Row>], to id: ShapeID, in transaction: inout Transaction) -> Bool
     /// What a change is called, as its step is.
     func stepName(of change: LineChange<Row>) -> String
+    /// The rows a fold to its marks keeps (⌃⌘↑: a table's keys and unique columns), as `reading` lays the shape out. By
+    /// default none, so a fold keeps the first two rows.
+    func marked(_ shape: ShapeRecord<Props>, in reading: LayoutReading) -> Set<PartID>
+    /// Whether a row heads the rows after it, up to the next that does (a path prefix's header): a fold can close it. By
+    /// default none does.
+    func isHeader(_ row: Row) -> Bool
+    /// The widest the shape is laid out while a line typed in it is wider than it is (world units), past which the line
+    /// slides in its field; nil, by default, for no limit.
+    var widestLine: CGFloat? { get }
 }
 
 extension LineModel {
     public func merged(_ read: Row, onto held: Row) -> Row { read }
+    public func marked(_ shape: ShapeRecord<Props>, in reading: LayoutReading) -> Set<PartID> { [] }
+    public func isHeader(_ row: Row) -> Bool { false }
+    public var widestLine: CGFloat? { nil }
 
     public func apply(_ changes: [LineChange<Row>], to id: ShapeID, in transaction: inout Transaction) -> Bool {
         guard let record = transaction.document[id]?.typed(as: Props.self) else { return false }

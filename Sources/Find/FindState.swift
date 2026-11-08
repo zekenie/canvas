@@ -38,6 +38,8 @@ public final class FindState {
     /// The shapes with hits, in order, each once.
     public private(set) var results: [FindResult] = []
     @ObservationIgnored private var labelStems: [Int: String] = [:]
+    /// What `whenResultsChange` asked to be told.
+    @ObservationIgnored private var resultListeners: [@MainActor () -> Void] = []
     /// How many hits, exact and typos alike.
     public private(set) var total = 0
     /// The current hit: a result, and which of its hits (the walk's place).
@@ -147,6 +149,24 @@ public final class FindState {
     /// Whether a shape has hits.
     public func hasHits(_ id: ShapeID) -> Bool { places[id] != nil }
 
+    /// The fields of a shape's texts that hold hits (`FindableText.field`: a row's id, for a kind whose rows are found a
+    /// text a row), read from its result, which the search (off the main actor) and a commit's patch keep: what a plugin
+    /// that hides some of a shape's texts shows while Find is open (a folded table's rows). Costs the texts that hold hits,
+    /// never a search again. Empty while Find is closed, and for a shape with none.
+    public func fieldsHit(of id: ShapeID) -> Set<String> {
+        guard isActive, let place = places[id], results.indices.contains(place), let entry = index.entries[id] else { return [] }
+        var fields: Set<String> = []
+        for text in results[place].textsHit where entry.texts.indices.contains(text) { fields.insert(entry.texts[text].field) }
+        return fields
+    }
+
+    /// Runs `body` each time what `fieldsHit(of:)` answers may have changed: new results, a commit's patch of them, Find
+    /// opened or closed. Called after the change, never during a search; a plugin that lays shapes out by the answer says
+    /// so then (`shapesDidChangeLayout`).
+    public func whenResultsChange(_ body: @escaping @MainActor () -> Void) {
+        resultListeners.append(body)
+    }
+
     /// Where a hit is drawn on the board shown, world units, where its shape is: its line rects, as
     /// its contribution lays its text out now (empty for a shape that isn't there).
     public func rects(of hit: FindHit, in id: ShapeID) -> [CGRect] {
@@ -204,6 +224,7 @@ public final class FindState {
         pendingStep = nil
         walk.end()
         laidOut = [:]
+        tellResultListeners()
         editor.setNeedsDisplay()
     }
 
@@ -291,6 +312,11 @@ public final class FindState {
         self.offsets = offsets
         self.total = total
         walk.rowsDidChange()
+        tellResultListeners()
+    }
+
+    private func tellResultListeners() {
+        for listener in resultListeners { listener() }
     }
 
     /// Typing's current hit: the first on the board shown that's in view, else the first on the
@@ -472,10 +498,11 @@ public final class FindState {
                 if count == 0 {
                     removed.insert(id)
                 } else if let entry = index.entries[id], entry.board == list[i].board {
-                    let first = entry.texts.enumerated().lazy.compactMap { index, text in
-                        search.hits(in: text.folded).first.map { FindHit(text: index, range: $0.range, isExact: $0.isExact) }
-                    }.first ?? list[i].first
-                    list[i] = FindResult(id: id, board: entry.board, hitCount: count, first: first, rank: list[i].rank)
+                    let found = entry.texts.enumerated().compactMap { index, text in
+                        search.hits(in: text.folded).first.map { (text: index, hit: FindHit(text: index, range: $0.range, isExact: $0.isExact)) }
+                    }
+                    list[i] = FindResult(id: id, board: entry.board, hitCount: count, first: found.first?.hit ?? list[i].first,
+                                         textsHit: found.map(\.text), rank: list[i].rank)
                 } else {
                     needsSearch = true
                 }

@@ -231,6 +231,20 @@ final class AdornmentState {
         return rect
     }
 
+    /// `tabRegion` for a row's give-way: a shape just past the view's edge, within the margin the view's tabs are placed
+    /// with, goes by the view's tabs too, not by a region of its own, which would fill the four kept placements with one-shape
+    /// regions and push the view's out (Titles asks the row of every bar just past the edge).
+    private func rowRegion(around rect: CGRect) -> CGRect {
+        let region = tabRegion(around: rect)
+        guard region == rect else { return region }
+        let reach = Self.tabMargin / editor.camera.zoom
+        if let drawn = drawnTabRegion, drawn.insetBy(dx: -reach, dy: -reach).intersects(rect) { return drawn }
+        let size = editor.viewportSize
+        guard size.width > 0, size.height > 0 else { return rect }
+        let visible = editor.camera.toWorld(CGRect(origin: .zero, size: size))
+        return visible.insetBy(dx: -reach, dy: -reach).intersects(rect) ? visible : rect
+    }
+
     /// A shape's tab into its slot, where it was placed (`tabs(in:)`).
     private func placeTab(of laidOut: LaidOutAdornments, id: ShapeID, tabs: PlacedTabs?, into slots: inout [AdornmentLayout.Slot?]) {
         guard let tabs, let tab = tabs.tabs[id], let index = laidOut.shown.firstIndex(where: { $0.id.placement == .onTopEdge }) else { return }
@@ -406,10 +420,45 @@ final class AdornmentState {
             AdornmentLayout.Slant(anchorHeight: anchored.rect.height / scale, slope: $0, maxSlide: AdornmentLayout.slideLimit(atScale: scale),
                                   centersRow: anchored.isPoint)
         }
-        let shift = AdornmentLayout.slots(of: laidOut.items, width: anchored.rect.width / scale, slant: slant, into: &slots)
+        let start = tabs.map { giveWay(of: id, anchor: anchored, scale: scale, overTab: laidOut.hasTab, tabs: $0) } ?? 0
+        let shift = AdornmentLayout.slots(of: laidOut.items, width: anchored.rect.width / scale, slant: slant, leftStart: start, into: &slots)
         placeLeads(of: laidOut, in: anchored, into: &slots)
         if laidOut.hasTab { placeTab(of: laidOut, id: id, tabs: tabs, into: &slots) }
         return shift
+    }
+
+    /// Where a closed shape's row above its top-left starts, at the earliest, to keep clear of a container's tab placed in
+    /// `tabs` (view points from its left edge; 0 where no tab meets it): a table at a database's top-left inset, a note at a
+    /// frame's, zoomed out, where the tab keeps its size on screen and the inset doesn't. Past the tab's right end by
+    /// `spacing`, as tabs give way to each other; any kind's row, in any container with a tab.
+    func giveWay(of id: ShapeID, anchor anchored: Anchored, scale: CGFloat, overTab: Bool, tabs: PlacedTabs) -> CGFloat {
+        guard anchored.slope == nil, !tabs.tabs.isEmpty else { return 0 }
+        let document = editor.document, kinds = editor.registry.containingKinds
+        // Most shapes are in no container: a lookup, and nothing more.
+        guard document.container(of: id, containingKinds: kinds) != nil else { return 0 }
+        let shapes = editor.shapeContext, anchor = anchored.rect
+        var start: CGFloat = 0
+        let rowTop = anchor.minY - AdornmentLayout.rowReach * scale
+        let rowBottom = anchor.minY - (AdornmentLayout.rowGap + (overTab ? AdornmentLayout.tabRowLift : 0)) * scale
+        let gap = AdornmentLayout.spacing * scale
+        for container in document.containers(of: id, containingKinds: kinds) {
+            guard let tab = tabs.tabs[container], let bounds = shapes.geometry(of: container)?.bounds, !bounds.isNull else { continue }
+            let unit = tabs.unit
+            let rect = CGRect(x: bounds.minX + tab.frame.minX * unit, y: bounds.minY + tab.frame.minY * unit,
+                              width: tab.frame.width * unit, height: tab.frame.height * unit)
+            guard rect.maxY > rowTop, rect.minY < rowBottom, rect.maxX + gap > anchor.minX, rect.minX < anchor.maxX else { continue }
+            start = max(start, (rect.maxX + gap - anchor.minX) / scale)
+        }
+        return start
+    }
+
+    /// `giveWay` for a shape on the board shown, at the zoom now, against the tabs placed around it: world units.
+    func rowStart(of id: ShapeID) -> CGFloat {
+        guard editor.document.container(of: id, containingKinds: editor.registry.containingKinds) != nil else { return 0 }
+        let zoom = editor.camera.zoom, scale = AdornmentLayout.scale(atZoom: zoom)
+        guard let anchored = Self.anchored(of: id, in: editor.shapeContext, zoom: zoom) else { return 0 }
+        let tabs = tabs(in: rowRegion(around: anchored.rect))
+        return giveWay(of: id, anchor: anchored, scale: scale, overTab: tabs.tabs[id] != nil, tabs: tabs) * scale
     }
 
     /// The lead of the shape's label, where its geometry kept room for it, in the face that room is the size of;
@@ -447,7 +496,9 @@ final class AdornmentState {
         guard !skeleton || hasTabs, let laidOut = laidOut(record, tabsOnly: skeleton),
               let anchored = Self.anchored(of: record.id, in: shapes, zoom: zoom) else { return [] }
         let anchor = anchored.rect, scale = AdornmentLayout.scale(atZoom: zoom)
-        let tabs = laidOut.hasTab ? self.tabs(in: tabRegion(around: anchor)) : nil
+        // Every placed tab, not only its own: its row gives way to a container's (asked only of a shape in one).
+        let inContainer = editor.document.container(of: record.id, containingKinds: editor.registry.containingKinds) != nil
+        let tabs = laidOut.hasTab || (hasTabs && inContainer) ? self.tabs(in: tabRegion(around: anchor)) : nil
         var slots: [AdornmentLayout.Slot?] = []
         self.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: tabs, into: &slots)
         return laidOut.shown.indices.compactMap { index in

@@ -244,7 +244,8 @@ struct TitleCoverOverlay: CanvasOverlay {
         let visible = context.visibleRect.insetBy(dx: -reach, dy: -reach)
         var bars = TitleBars()
         for record in editor.paintOrder(in: visible) where context.drawsSkeleton(of: record.id) {
-            if let bar = TitleBar.bar(of: record, in: context.shapes, offset: context.worldDrawingOffset(of: record.id)) {
+            if let bar = TitleBar.bar(of: record, in: context.shapes, offset: context.worldDrawingOffset(of: record.id),
+                                      start: { editor.adornmentRowStart(of: record.id) }) {
                 bars.add(bar)
                 continue
             }
@@ -294,15 +295,18 @@ enum TitleBar {
 
     /// A titled shape's bar, world units, where its shape is drawn (moved by `offset`); nil for a kind that draws a
     /// cover, an untitled shape, and one too small on screen to say anything (`TitleCoverStyle.smallestShape`).
-    static func bar(of record: AnyShapeRecord, in shapes: ShapeContext, offset: CGPoint) -> (rect: CGRect, color: NSColor?)? {
+    /// `start`: how far right of the shape's left edge the bar starts, world units (Adornments' `adornmentRowStart`, clear
+    /// of a container's tab, as the pill's row is).
+    static func bar(of record: AnyShapeRecord, in shapes: ShapeContext, offset: CGPoint, start: () -> CGFloat = { 0 }) -> (rect: CGRect, color: NSColor?)? {
         guard !record.isOpaque, let found = shapes.registry.titleBar(of: record), let geometry = shapes.geometry(of: record.id),
               !geometry.bounds.isNull else { return nil }
         let bounds = geometry.bounds.offsetBy(dx: offset.x, dy: offset.y), zoom = shapes.zoom
         guard bounds.width * zoom >= TitleCoverStyle.smallestShape.width else { return nil }
-        let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction
+        let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction, start = start()
         let points = lead + column * CGFloat(SkeletonText.columns(of: found.title, upTo: 80))
-        let width = min(bounds.width, points * row.height / AdornmentLayout.rowHeight)
-        return (CGRect(x: row.minX, y: row.midY - height / 2, width: width, height: height), found.color)
+        let width = min(bounds.width - start, points * row.height / AdornmentLayout.rowHeight)
+        guard width > 0 else { return nil }
+        return (CGRect(x: row.minX + start, y: row.midY - height / 2, width: width, height: height), found.color)
     }
 }
 

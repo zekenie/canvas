@@ -11,6 +11,7 @@ import Foundation
 import Geometry
 import Grouping
 import JumpTo
+import LineRows
 import LanguageModels
 import Mentions
 import Reordering
@@ -367,6 +368,28 @@ let boardType = "com.example.InfiniteCanvas.board"
         board.close()
         expectEqual(memory.recall(for: a), .init(x: 7, y: 8, zoom: 2, showsDetails: false, showsMinimap: true), "closing remembers it")
     },
+    test("the view values plugins keep are saved with the file's view as its window closes, and handed back before the next window's canvas is made") {
+        try configureBoards()
+        let suite = "BoardDocumentTests-\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let memory = BoardViewMemory(defaults: defaults)
+        let url = URL(fileURLWithPath: "/tmp/values.canvasboard")
+        let key = ViewValueKey<[String]>("test.values")
+        let first = BoardDocument()
+        first.viewMemory = memory
+        first.fileURL = url
+        first.makeWindowControllers()
+        first.editor.setViewValue(key, ["kept"])
+        first.close()
+        expectEqual(memory.recall(for: url)?.values?.keys.sorted(), ["test.values"])
+        let second = BoardDocument()
+        second.viewMemory = memory
+        second.fileURL = url
+        second.makeWindowControllers()
+        expectEqual(second.editor.viewValue(key), ["kept"], "handed back")
+        second.close()
+    },
     test("a view remembered before boards had a minimap or a sidebar still reads, with both showing") {
         let suite = "BoardDocumentTests-\(UUID().uuidString)"
         let defaults = try require(UserDefaults(suiteName: suite))
@@ -464,9 +487,11 @@ let boardType = "com.example.InfiniteCanvas.board"
         try command("View", "Actual Size", .zoomToActualSize, "0")
         try command("View", "Zoom to Fit", .zoomToFit, "1", .shift)
         try command("View", "Zoom to Selection", .zoomToSelection, "2", .shift)
+        try command("View", "Fold Rows", .foldRows, "\u{F700}", [.command, .control])
+        try command("View", "Unfold Rows", .unfoldRows, "\u{F701}", [.command, .control])
         let view = try require(menus.main.item(withTitle: "View")?.submenu)
         expectEqual(view.items.map(\.title), ["Show Toolbar", "Show Sidebar", "Focus Sidebar", "Show Inspector", "Focus Inspector", "Next Inspector Tab", "Previous Inspector Tab", "Focus Next Pane", "Focus Previous Pane", "Show Minimap", "", "Zoom In", "Zoom Out", "Actual Size",
-                                              "Zoom to Fit", "Zoom to Selection", "", "Enter Full Screen"])
+                                              "Zoom to Fit", "Zoom to Selection", "", "Fold Rows", "Unfold Rows", "", "Enter Full Screen"])
         expectEqual(menus.main.items.map(\.title), ["Infinite Canvas", "File", "Edit", "Insert", "Shape", "Arrange", "View", "Go", "Window", "Help"])
         expect(try require(menus.main.item(withTitle: "Shape")?.submenu).items.isEmpty, "Shape fills itself as it opens")
         try command("Arrange", "Group", .group, "g", [.command, .option])

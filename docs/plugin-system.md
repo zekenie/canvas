@@ -2491,7 +2491,29 @@ row, unread words in order). While a shape is edited the session sets `LineRowsL
 it alone, so its kind lays itself out a line taller and draws no row the field has. The keys are rows-editing's:
 ↩ commits and opens a line below (on an empty one ends), ↑ ↓ and Tab walk the stops (past the ends, the next
 shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes one (one step), a pasted block is a row a
-line, ⇧↩ puts a shape beside. [line rows](../.claude/rules/line-rows.md) is the whole of it.
+line, ⇧↩ puts a shape beside. A line typed wider than the shape lays it out as wide as the line needs
+(`LineRowsLayout.width`, provided), nothing written. [line rows](../.claude/rules/line-rows.md) is the whole of it.
+
+**Folds.** ⌃⌘↑ (View › Fold Rows) folds the selection's shapes written as lines, or every one on the board with
+nothing selected, to the rows their model marks (`marked(_:in:)`; the first two where it marks none), with a
+"+N ›" line for the rest; ⌃⌘↓ unfolds. A fold is a view: `RowFolds` keeps what was asked for per shape, and the
+lines shown are a provided layout input, so a commit keeps the fold and the kind's frame, render and row rects
+follow it:
+
+```swift
+func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSize {
+    let shown = context.layoutInput(LineRowsLayout.shown, of: shape)        // RowsShown: nil for every row
+    let lines = shown?.count ?? shape.props.rows.count
+    …
+}
+// a hidden row's rect is the line standing for it: shown.line(standingFor: index), its PartFrame not shown:
+// PartFrame(id: row.id, rect: …, isShown: shown?.isShown(index) ?? true)
+```
+
+Editing a folded shape shows every row; Find's hits show in place while Find is open
+(`FindState.fieldsHit(of:)`); the "+N ›" line opens with a click, or ⌥Tab then Return or Space. Folds are
+remembered with the file's view on this Mac, a core view value (`ViewValueKey`, `editor.setViewValue`, no
+step), which `BoardDocument` saves and hands back before the canvas is made.
 
 ## Selection
 
@@ -6027,6 +6049,14 @@ layout slides the slots against the anchor and `editor.adornmentAnchor(of:)` is 
 from where the row is. The slide reasons from the chord, so a straight shape is never crossed; a bent arrow's arc leaves the chord's direction away from the anchor
 (more as it bends), and its chip may still be crossed (measured against the arc itself, with a chip centred: touched in one cell of the 150-long grid at +34, nearer than the margin in a few more, clear in the rest). A plugin does nothing for this.
 
+### Clear of a container's tab
+
+A closed shape's row above its top-left starts past any container's tab it meets
+(`AdornmentLayout.frames(of:width:leftStart:)`, the left end from there and the right end where it was), at every
+zoom: a tab keeps its size on screen and a shape's inset in its container doesn't, so zoomed out a note at its
+frame's top-left would have its pill over the frame's tab. Titles' bars zoomed out start where the row does
+(`editor.adornmentRowStart(of:)`). No kind is named.
+
 ### Plain text and a number
 
 `AdornmentLabel.line(_:ink:)` is plain text with no capsule, in the row as a chip of its width is: a word
@@ -9024,6 +9054,10 @@ a list without Find leaves them out:
 | Titles' `TitleFindPlugin` | each title, named or derived (`registry.title(of:)`), on the kinds that hold `TitleProperty` or derive one | the pill's whole capsule, ringed (it may cut the title short); zoomed out, the cover |
 | Mentions' `MentionFindPlugin` | each `MentionTexts` placement's text (a  note's, an arrow's label), each mention its live name | from the render's own layout, which Find's asking keeps with the drawn text (`MentionTextMemo`; drawing keeps none); a hit in a name is the whole pill; `affected`: `rowsAffected(by:)`. Two contributions, one a look: the placements on a shape's surface, marked, and those `overCanvas` (an arrow's label), washed |
 | Types' `FieldFindPlugin` | each value a note that is one holds, as its row shows it (a row with more in it: every text under it, a line each) | the row's value as it hugs it, the fold's words for a folded field; its `affected` is `RowBook.reached(by:)`, asked once every service has the commit |
+
+A kind whose texts are its rows gives one a row, its field the row's id (the engineering kit's
+`EngineeringFindPlugin`): `find.fieldsHit(of:)` then says which rows hold hits, and `find.whenResultsChange`
+tells a plugin that hides rows (LineRows' folds) to show them while Find is open. Results stay one a shape.
 
 ### The index, and the search off the main actor
 
@@ -15757,7 +15791,8 @@ property's (`kinds` and `added`). A shape's `props` are its kind's own propertie
 the properties plugins add to its kind are beside them, in `added`, by key. What a shape doesn't
 have is left out. The camera, the selection and whether the sidebar, the details and the minimap
 show aren't in it: they're remembered per file on this Mac (a view remembered before there was a
-sidebar shows it), so panning never marks a board edited. So are the
+sidebar shows it), so panning never marks a board edited. So are the view values plugins keep
+(`editor.setViewValue`: LineRows' folds), in the view's `values`, handed back before the canvas is made. So are the
 camera on each of a file's boards and the board left open (`BoardViewMemory.View`'s `board` and
 `boards`, read with `decodeIfPresent`, so a view remembered before files had boards is the root's;
 saved for the boards the file can still show: the one shown and those above it, then those shown
@@ -16099,8 +16134,9 @@ type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Ty
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-line-rows            service LineRowsService · outlines
+line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines
 engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
+engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as
