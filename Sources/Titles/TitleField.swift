@@ -25,6 +25,8 @@ public final class TitleField: NSView, NSTextViewDelegate {
     public var typed: ((String) -> Void)?
     /// Return, Escape, Tab or ⇧Tab.
     public var finished: ((Ending) -> Void)?
+    /// ↓, for a host with stops under the title (a table's rows): true takes it. Unset, ↓ is the text's.
+    public var onDown: (() -> Bool)?
     /// The pill as it's drawn with no text: its symbol and tint.
     private let chip: AdornmentLabel
     /// The pill as it's drawn while nothing is typed: its placeholder, dimmed, where the kind gives one.
@@ -135,6 +137,7 @@ public final class TitleField: NSView, NSTextViewDelegate {
         case .back: finished?(.escape)
         case .next: finished?(.tab)
         case .previous: finished?(.backTab)
+        case .down: return onDown?() ?? false
         default: return false
         }
         return true
@@ -157,8 +160,9 @@ public final class TitleField: NSView, NSTextViewDelegate {
     }
 }
 
-/// The text view the title is typed in: one line, nothing substituted, no undo of its own (each change is a step's).
-private final class TitleTextView: EditingTextView {
+/// The text view the title is typed in: one line, nothing substituted, no undo of its own (each change is a step's), so
+/// Edit ▸ Undo is the board's while it has the keyboard ("Undo Add Table").
+private final class TitleTextView: EditingTextView, UndoesBoardWhenEmpty {
     override init(frame: NSRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         isRichText = false

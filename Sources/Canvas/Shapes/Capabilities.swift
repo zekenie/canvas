@@ -308,6 +308,18 @@ public protocol ShapeReferencing: ShapeDefinition {
     /// do without (an arrow can't tell where that end is drawn). A deletion then leaves the props
     /// as they were, and a copy leaves the shape out.
     func remappingReferences(of shape: ShapeRecord<Props>, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> Props?
+    /// The parts of shapes it's bound to (an arrow's end at a row), each with its shape: what a part taken out or moved
+    /// reaches (`Transaction.removeParts`, `moveParts`). None unless the kind binds parts.
+    func boundParts(of shape: ShapeRecord<Props>) -> [PartAddress]
+    /// The props with every part it's bound to passed through `move`: bound to where `move` says instead (a part of
+    /// another shape on the board, or a shape as a whole, part nil). Nil when nothing changed, as for a kind that binds
+    /// no part.
+    func movingParts(of shape: ShapeRecord<Props>, _ move: (PartAddress) -> PartAddress) -> Props?
+}
+
+extension ShapeReferencing {
+    public func boundParts(of shape: ShapeRecord<Props>) -> [PartAddress] { [] }
+    public func movingParts(of shape: ShapeRecord<Props>, _ move: (PartAddress) -> PartAddress) -> Props? { nil }
 }
 
 /// Each shape of this kind takes the shapes bound to it (`ShapeReferencing`: an arrow's ends) along: deleting it

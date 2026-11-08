@@ -150,6 +150,20 @@ private final class ListingTextView: EditingTextView {
 }
 
 @MainActor let caretListTests = Suite("Caret lists", [
+    test("a list that picks only actions on Return passes Return on a word to the text, does an action's row, and Tab picks either") {
+        let list = CaretList(metrics: CaretListMetrics(width: 200, rowHeight: 20, rowsShown: 5, offset: 2),
+                             rows: [.item(CaretListItem("int")), .item(CaretListItem("New type Problem", isAction: true))])
+        expectEqual(list.returnPicks, .always, "every list picks on Return unless it says")
+        let newline = #selector(NSResponder.insertNewline(_:)), tab = #selector(NSResponder.insertTab(_:))
+        expectEqual(list.perform(newline).action, .pick)
+        list.returnPicks = .actionsOnly
+        expectEqual(list.perform(newline).taken, false, "Return on a word goes on to the text")
+        expectEqual(list.perform(tab).action, .pick, "Tab picks a word")
+        list.moveHighlight(by: 1)
+        expectEqual(list.highlightedItem?.title, "New type Problem")
+        expectEqual(list.perform(newline).action, .pick, "Return does an action")
+        expectEqual(list.perform(tab).action, .pick, "and so does Tab")
+    },
     // MARK: The model
 
     test("rows: the first item is highlighted; headers and empty states never are; each change is heard") {

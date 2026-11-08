@@ -2,6 +2,7 @@ import Adornments
 import AppKit
 import Canvas
 import CoreText
+import LineRows
 import Palette
 
 // Drawing a kit shape's rows on its paper: a row's name, its type, its marks and its pill, in world units, the rows in view
@@ -138,5 +139,32 @@ enum KitPaper {
         let width = min(room, CGFloat(min(columns, TableStyle.skeletonMostColumns)) * column)
         guard width > 0 else { return nil }
         return CGRect(x: trailing ? x - width : x, y: row.midY - TableStyle.skeletonBarHeight / 2, width: width, height: TableStyle.skeletonBarHeight)
+    }
+}
+
+/// Where a shape's rows go while it's edited (LineRows' layout inputs, set only on the shape being edited): a line left for
+/// the waiting line, the rows after it a line down, and the row the field draws, which the shape doesn't. Neither, at rest.
+@MainActor
+struct KitRows {
+    /// The waiting line's line, nil at rest.
+    let waiting: Int?
+    /// The row the field has.
+    let focused: PartID?
+
+    init<P: ShapeProps>(_ shape: ShapeRecord<P>, in context: ShapeContext) {
+        waiting = context.layoutInput(LineRowsLayout.waiting, of: shape)
+        focused = context.layoutInput(LineRowsLayout.focused, of: shape)
+    }
+
+    /// How many lines `rows` rows take: one more while the waiting line is drawn.
+    func lines(_ rows: Int) -> Int { rows + (waiting == nil ? 0 : 1) }
+
+    /// The line row `index` is drawn on.
+    func line(of index: Int) -> Int { LineRowsLayout.line(of: index, waiting: waiting) }
+
+    /// The row drawn on `line`; nil for the waiting line.
+    func row(atLine line: Int) -> Int? {
+        guard let waiting else { return line }
+        return line == waiting ? nil : line < waiting ? line : line - 1
     }
 }

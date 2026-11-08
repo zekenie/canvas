@@ -1324,6 +1324,60 @@ public struct Transaction {
         for record in released { update(record.id) { $0 = record } }
     }
 
+    // MARK: Parts taken out and moved
+
+    /// Parts just taken out of their shapes on this board (rows deleted by the writer that writes them): every shape
+    /// bound to one of them goes, counted in `deletedAlong`, when the part's shape is of a kind that takes bound shapes
+    /// (`TakesBoundShapes`); else it's bound to that shape as a whole. A read-only one stays as it is, still naming the
+    /// part, drawn where the part was. One pass over the board's binding shapes; none for a list of no parts. The writer of
+    /// a kind's parts calls it whenever parts go, so nothing is left bound to a part that's gone. Returns what it deleted.
+    @discardableResult
+    public mutating func removeParts(_ parts: Set<PartAddress>) -> Set<ShapeID> {
+        let parts = parts.filter { $0.part != nil }
+        let kinds = registry.referencingKinds
+        guard !parts.isEmpty, !kinds.isEmpty else { return [] }
+        let taking = registry.takingBoundKinds
+        var taken: Set<ShapeID> = [], rebound: [AnyShapeRecord] = []
+        document.shapes.forEach { record in
+            guard kinds.contains(record.kind), !deleting.contains(record.id), !isReadOnly(record) else { return }
+            let bound = record.boundParts(in: registry).filter(parts.contains)
+            guard !bound.isEmpty else { return }
+            if bound.contains(where: { document[$0.shape].map { taking.contains($0.kind) } ?? false }) {
+                taken.insert(record.id)
+            } else if let whole = record.movingParts(in: registry, { parts.contains($0) ? PartAddress($0.shape) : $0 }) {
+                rebound.append(whole)
+            }
+        }
+        for record in rebound { update(record.id) { $0 = record } }
+        guard !taken.isEmpty else { return [] }
+        let wasCascading = isCascading
+        isCascading = true
+        delete(taken)
+        isCascading = wasCascading
+        return taken
+    }
+
+    /// Parts moved to other places on this board (a row into another table, out into a new one): every shape bound to one
+    /// is bound to where it went (`moves`: a part of another shape, or a shape as a whole, part nil), but a read-only one,
+    /// left as it was; then every `partsMoved` handler hears the moves, so what names a part as a value renames it. A part
+    /// that moves within its shape keeps its address and needs nothing.
+    public mutating func moveParts(_ moves: [PartAddress: PartAddress]) {
+        let moves = moves.filter { $0.key != $0.value }
+        guard !moves.isEmpty else { return }
+        let kinds = registry.referencingKinds
+        if !kinds.isEmpty {
+            var moved: [AnyShapeRecord] = []
+            document.shapes.forEach { record in
+                guard kinds.contains(record.kind), !deleting.contains(record.id), !isReadOnly(record),
+                      record.boundParts(in: registry).contains(where: { moves[$0] != nil }),
+                      let rebound = record.movingParts(in: registry, { moves[$0] ?? $0 }) else { return }
+                moved.append(rebound)
+            }
+            for record in moved { update(record.id) { $0 = record } }
+        }
+        for handler in registry.partsMovedHandlers { handler(moves, &self) }
+    }
+
     // MARK: Turning, and moving to another board
 
     /// Turns a shape into another kind: `record`'s kind and props in place of its own, the same shape

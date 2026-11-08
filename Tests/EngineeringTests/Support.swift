@@ -7,6 +7,7 @@ import DetailPanel
 import Draw
 import Engineering
 import Keyboard
+import LineRows
 import Mentions
 import Selection
 import SlashCommands
@@ -20,7 +21,7 @@ import Topology
 /// the keys), the kit's own plugin, CanvasTesting's fixtures (boxes) and its freezing (a locked shape, without Locking).
 @MainActor func kitPlugins(_ refusals: RefusalLog = RefusalLog()) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), DrawPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), EngineeringPlugin(), FreezingPlugin(log: refusals)]
+     SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), LineRowsPlugin(), EngineeringPlugin(), FreezingPlugin(log: refusals)]
 }
 
 /// An empty board of `kitPlugins`, its view 1000 × 800 at 100% (view points are world units), the kit on unless `on` is false.

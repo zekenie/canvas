@@ -4,6 +4,7 @@ import CanvasTesting
 import ContextMenus
 import Engineering
 import Keyboard
+import LineRows
 import Selection
 import SlashCommands
 import TestKit
@@ -14,7 +15,7 @@ import Titles
 // empty one on an empty board, refused round a locked shape) and Create Database in a table's menu; and ⇧↩ beside a table.
 
 @MainActor let commandTests = Suite("Tables' commands", [
-    test("/table orders on an empty board: a new table, id uuid pk, titled orders, in view, selected, not edited; one step, Add Table") {
+    test("/table orders on an empty board: a new table, id uuid pk, titled orders, in view, selected, edited at its empty line; one step, Add Table") {
         let h = try kitHarness()
         expect(h.offered.contains("table") && h.offered.contains("database"))
         expect(h.slash("table", "orders"))
@@ -22,7 +23,8 @@ import Titles
         expectEqual(table[TitleProperty.self], "orders")
         expectEqual(table.typed(as: DatabaseTable.self)?.props.columns.map(ColumnGrammar.print), ["id uuid pk"])
         expectEqual(h.editor.selectedShapeIDs, [table.id])
-        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.editingShapeID, table.id, "the caret on its empty row (T1, panel 2)")
+        expectEqual((h.editor.makeEditingView()?.view as? LineRowsView)?.focus, .waiting)
         expectEqual(h.editor.undoHistory.undoName, "Add Table")
         expect(h.editor.unobscuredViewport.contains(try require(h.editor.shapeContext.geometry(of: table.id)?.bounds)), "in view")
         h.editor.undo()
@@ -119,10 +121,14 @@ import Titles
         let made = try require(h.shapes(DatabaseTable.kind).last)
         expect(made.id != orders)
         expectEqual(h.editor.editingShapeID, made.id, "the caret in its name")
-        let field = try require(h.editor.makeEditingView()?.view as? TitleFieldHost).titleField
+        let view = try require(h.editor.makeEditingView()?.view as? LineRowsView)
+        expectEqual(view.focus, .title, "an untitled table starts in its name")
+        let field = try require(view.titleField)
         field.field.insertText("payments", replacementRange: NSRange(location: 0, length: 0))
         field.field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
-        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(view.focus, .waiting, "Return in the name goes to the empty line")
+        view.field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        expectEqual(h.editor.editingShapeID, nil, "and Return there ends it")
         expectEqual(h.editor.document[made.id]?[TitleProperty.self], "payments")
         expectEqual(h.editor.undoHistory.undoName, "Add Table", "placed and named, one step")
         h.editor.undo()

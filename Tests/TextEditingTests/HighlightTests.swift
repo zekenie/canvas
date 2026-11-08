@@ -179,3 +179,34 @@ private func mark(_ location: Int, _ length: Int) -> TextHighlight {
         expectEqual(heard, [.selectingPrevious, .selectingNext])
     },
 ])
+
+/// A highlight's line, drawn in an appearance: the color at the fill's left edge, a point in (the line), and a third of the
+/// way along its top (the line, or the gap of a dash).
+@MainActor private func strokeSamples(_ highlight: TextHighlight, dark: Bool) throws -> (edge: NSColor, inside: NSColor, along: [NSColor]) {
+    let (window, view) = highlightedText()
+    window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+    view.highlights = [highlight]
+    let frame = try require(view.frames(of: highlight).first)
+    let rep = try require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+    NSAppearance(named: dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance { view.cacheDisplay(in: view.bounds, to: rep) }
+    let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+    func color(_ x: CGFloat, _ y: CGFloat) -> NSColor? { rep.colorAt(x: Int(x * scale), y: Int(y * scale))?.usingColorSpace(.deviceRGB) }
+    let along = stride(from: frame.minX + 6, to: frame.maxX - 6, by: 0.5).compactMap { color($0, frame.minY + 0.5) }
+    return (try require(color(frame.minX + 0.5, frame.midY)), try require(color(frame.minX + 1.6, frame.midY)), along)
+}
+
+@MainActor let highlightStrokeTests = Suite("Highlights' lines", [
+    test("a stroked highlight draws its line round the fill, in both appearances; a dashed one breaks it, solid one doesn't") {
+        let line = NSColor(red: 0.6, green: 0.1, blue: 0.8, alpha: 1)
+        for dark in [false, true] {
+            let solid = try strokeSamples(TextHighlight(range: NSRange(location: 6, length: 6), fill: .clear, stroke: line), dark: dark)
+            expect(solid.edge.blueComponent > 0.5 && solid.edge.greenComponent < 0.5, "the line at the edge (dark \(dark)): \(solid.edge)")
+            expect(solid.along.allSatisfy { $0.greenComponent < 0.5 }, "unbroken along its top (dark \(dark))")
+            let dashed = try strokeSamples(TextHighlight(range: NSRange(location: 6, length: 6), fill: .clear, stroke: line, isDashed: true), dark: dark)
+            expect(dashed.along.contains { $0.greenComponent < 0.5 }, "dashes (dark \(dark))")
+            expect(dashed.along.contains { abs($0.greenComponent - $0.blueComponent) < 0.1 }, "and gaps, the background (dark \(dark))")
+            let plain = try strokeSamples(TextHighlight(range: NSRange(location: 6, length: 6), fill: .clear), dark: dark)
+            expect(abs(plain.edge.greenComponent - plain.edge.blueComponent) < 0.1, "no line without one (dark \(dark)): \(plain.edge)")
+        }
+    },
+])

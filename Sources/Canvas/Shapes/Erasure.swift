@@ -122,6 +122,12 @@ extension ShapeReferencing {
     func erasedRemappingReferences(of record: AnyShapeRecord, _ map: (ShapeID) -> ShapeID?, in context: ShapeContext) -> (any ShapeProps)?? {
         record.typed(as: Props.self).map { remappingReferences(of: $0, map, in: context) }
     }
+    func erasedBoundParts(of record: AnyShapeRecord) -> [PartAddress] {
+        record.typed(as: Props.self).map { boundParts(of: $0) } ?? []
+    }
+    func erasedMovingParts(of record: AnyShapeRecord, _ move: (PartAddress) -> PartAddress) -> (any ShapeProps)? {
+        record.typed(as: Props.self).flatMap { movingParts(of: $0, move) }
+    }
 }
 
 extension AnyShapeRecord {
@@ -167,6 +173,24 @@ extension AnyShapeRecord {
             return id
         }, in: context)
         return bound
+    }
+
+    /// The parts of shapes it's bound to (`ShapeReferencing.boundParts`): an arrow's end at a row. None for a kind that
+    /// binds no part, or a shape kept aside.
+    @MainActor
+    public func boundParts(in registry: Registry) -> [PartAddress] {
+        guard !isOpaque, let definition = registry.definition(for: kind) as? any ShapeReferencing else { return [] }
+        return definition.erasedBoundParts(of: self)
+    }
+
+    /// It, with every part it's bound to passed through `move` (`ShapeReferencing.movingParts`); nil when nothing changed.
+    @MainActor
+    public func movingParts(in registry: Registry, _ move: (PartAddress) -> PartAddress) -> AnyShapeRecord? {
+        guard !isOpaque, let definition = registry.definition(for: kind) as? any ShapeReferencing,
+              let props = definition.erasedMovingParts(of: self, move) else { return nil }
+        var record = self
+        record.props = props
+        return record
     }
 
     /// Whether it's bound to some of `shapes` and to nothing else (`boundShapes(in:)`): what goes with

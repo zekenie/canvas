@@ -20,6 +20,9 @@ enum TextEditingStyle {
     static let highlightSymbolRoom: CGFloat = 15.0 / 16
     static let highlightSymbolSize: CGFloat = 10.0 / 16
     static let highlightSymbolStrength: CGFloat = 0.7
+    /// A highlight's line round it (`TextHighlight.stroke`), in the text's units, and its dash where it's dashed.
+    static let highlightStrokeWidth: CGFloat = 1
+    static let highlightDash: [CGFloat] = [3, 2]
 
     // MARK: Caret lists (`CaretListWindow`)
 

@@ -22,6 +22,14 @@ enum TableStyle {
     static let titleFieldName = "Table name"
     static let addStep = "Add Table"
     static let renameStep = "Rename Table"
+    /// A column's steps, each a commit of its line.
+    static let addColumnStep = "Add Column"
+    static let pasteColumnsStep = "Paste Columns"
+    static let renameColumnStep = "Rename Column"
+    static let changeColumnStep = "Change Column"
+    static let deleteColumnStep = "Delete Column"
+    static let deleteColumnsStep = "Delete Columns"
+    static let moveColumnStep = "Move Column"
 
     /// The gutter's marks: a primary key's key, in the frames' gold made to read on the paper (it measured 2.9), and a
     /// unique column's "1" in a rounded square, in the types' grey.
@@ -37,6 +45,8 @@ enum TableStyle {
         let roles = KitStyle.onPaper(KitStyle.enumPurple)
         return AdornmentTint(NSColor(roles.solid), ink: NSColor(roles.ink), style: .light)
     }()
+    /// How strong the purple is behind an enum's name typed in a line, as a light pill's is.
+    static let enumPillFill: CGFloat = 0.14
     /// The nullable's `?` after a type, in the names' ink.
     static let nullMark = "?"
 
@@ -61,6 +71,13 @@ enum EnumStyle {
     static let titleFieldName = "Enum name"
     static let addStep = "Add Enum"
     static let renameStep = "Rename Enum"
+    /// A value's steps, each a commit of its line.
+    static let addValueStep = "Add Value"
+    static let pasteValuesStep = "Paste Values"
+    static let renameValueStep = "Rename Value"
+    static let deleteValueStep = "Delete Value"
+    static let deleteValuesStep = "Delete Values"
+    static let moveValueStep = "Move Value"
     /// What a new enum holds: none. Its height keeps one row's room.
     static let skeletonColumn: CGFloat = 0.6 * 14
 

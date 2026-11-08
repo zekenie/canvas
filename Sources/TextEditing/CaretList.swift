@@ -86,12 +86,15 @@ public struct CaretListItem: Equatable {
     public var chipInk: NSColor?
     /// What VoiceOver says for the row.
     public var spoken: String
+    /// An action rather than words to put in ("New type Problem"): what Return picks in a list that picks only actions
+    /// on Return (`CaretList.returnPicks`, `.actionsOnly`).
+    public var isAction: Bool
 
     /// `spoken` nil: the title, then the detail ("type, keyword").
     public init(_ title: String, matched: [Range<Int>] = [], font: NSFont? = nil, symbol: String? = nil, tint: NSColor? = nil,
                 detail: String? = nil, detailMatched: [Range<Int>] = [], detailDimmed: [Range<Int>] = [], detailTruncatesHead: Bool = false, place: CaretPlace? = nil,
                 trailingSymbol: String? = nil, separated: Bool = false,
-                chip: NSColor? = nil, chipInk: NSColor? = nil, spoken: String? = nil) {
+                chip: NSColor? = nil, chipInk: NSColor? = nil, spoken: String? = nil, isAction: Bool = false) {
         self.title = title
         self.matched = matched
         self.font = font
@@ -107,6 +110,7 @@ public struct CaretListItem: Equatable {
         self.chip = chip
         self.chipInk = chipInk
         self.spoken = spoken ?? detail.map { "\(title), \($0)" } ?? title
+        self.isAction = isAction
     }
 }
 
@@ -143,7 +147,14 @@ public final class CaretList {
         case closeAndPass
     }
 
+    /// What Return does with the highlighted row: picks it, whatever it is (every list's, `.always`), or only an action
+    /// (`.actionsOnly`: a row written as a line, where Return after a word commits the line, so it never picks words, and
+    /// does "New type Problem"); Tab picks either way.
+    public enum ReturnPicks: Hashable, Sendable { case always, actionsOnly }
+
     public let metrics: CaretListMetrics
+    /// What Return picks: every row unless set.
+    public var returnPicks: ReturnPicks = .always
     /// What it lists.
     public private(set) var rows: [CaretListRow] = []
     /// The index in `rows` of the highlighted row, always an item's; nil when none can be picked.
@@ -193,7 +204,8 @@ public final class CaretList {
     // MARK: Keys
 
     /// What a text view command does while the list is open, if it takes it: ↑/↓ (and ⌃P/⌃N)
-    /// move the highlight, Page Up/Down (and ⌥) by a page, Return and Tab pick (⇧Tab closes and passes), Escape, ⌥⎋ and F5
+    /// move the highlight, Page Up/Down (and ⌥) by a page, Return and Tab pick (Return only an action in a list that picks
+    /// only actions on Return, `returnPicks`; ⇧Tab closes and passes), Escape, ⌥⎋ and F5
     /// (`complete:`) close. Every other command (←/→ among them) is the text view's.
     public static func action(for command: Selector) -> Action? {
         switch command {
@@ -221,8 +233,11 @@ public final class CaretList {
         case .pageUp: moveHighlight(by: -metrics.rowsShown)
         case .pageDown: moveHighlight(by: metrics.rowsShown)
         case .pick:
+            let isTab = command == #selector(NSResponder.insertTab(_:))
+            // Return in a list that picks only actions passes a row of words on to the text, as though nothing were listed.
+            if !isTab, returnPicks == .actionsOnly, highlightedItem?.isAction != true { return (false, nil) }
             if highlightedItem != nil { return (true, .pick) }
-            return command == #selector(NSResponder.insertTab(_:)) ? (true, .closeAndPass) : (false, nil)
+            return isTab ? (true, .closeAndPass) : (false, nil)
         case .closeAndPass: return (true, .closeAndPass)
         case .close: return (true, .close)
         }

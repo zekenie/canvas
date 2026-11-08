@@ -143,6 +143,14 @@ public struct PluginRegistrar {
         contribute(handler, to: CorePoints.WillDelete.self)
     }
 
+    /// Runs inside the transaction that moves parts of shapes to other places (`Transaction.moveParts`: a row into
+    /// another table, out into a new one), after every shape bound to one is bound to where it went: what names a part
+    /// as a value (a mention of a row, a pill for one) renames it there, on any board, in the same step. `moves` says
+    /// where each part went (a part of another shape, or a shape as a whole, part nil).
+    public mutating func partsMoved(_ handler: @escaping @MainActor ([PartAddress: PartAddress], inout Transaction) -> Void) {
+        contribute(handler, to: CorePoints.PartsMoved.self)
+    }
+
     /// `ShapeRegistrar.keepsInStep` for another plugin's kind.
     public mutating func keepsInStep<P: ShapeProps>(_: P.Type, _ rule: @escaping StepRule) {
         contribute(rule, to: CorePoints.KeepsInStep.self, for: .kind(P.kind))

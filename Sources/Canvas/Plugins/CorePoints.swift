@@ -53,6 +53,12 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
+    /// What hears parts moved from one shape to another (`Transaction.moveParts`, `registrar.partsMoved`).
+    enum PartsMoved: ExtensionPoint {
+        typealias Contribution = @MainActor ([PartAddress: PartAddress], inout Transaction) -> Void
+        static var owner: PluginID { .core }
+    }
+
     /// What a kind keeps in step as its shapes are written (`ShapeRegistrar.keepsInStep`).
     enum KeepsInStep: ExtensionPoint {
         typealias Contribution = StepRule

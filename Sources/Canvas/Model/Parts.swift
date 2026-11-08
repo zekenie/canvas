@@ -65,6 +65,19 @@ public struct PartAddress: Hashable, Sendable, Codable, CustomStringConvertible 
     public var description: String { part.map { "\(shape)/\($0)" } ?? shape.description }
 }
 
+extension PartAddress: SchemaDescribed {
+    public static func schema(in definitions: inout SchemaDefinitions) -> JSONObject {
+        definitions.core("part-address", of: Self.self) { definitions in
+            let shape = ShapeID.schema(in: &definitions), part = PartID.schema(in: &definitions)
+            return ["type": "object",
+             "properties": ["shape": .object(shape), "part": .object(part)],
+             "required": ["shape"],
+             "additionalProperties": false,
+             "description": "A shape, or one part of it (a row)."]
+        }
+    }
+}
+
 /// What a part is called and what kind of part it is, from its shape's record (`PartedShape.parts(of:)`): the one
 /// source every reader of rows goes by (a picker, a pill, Find, VoiceOver).
 public struct PartName: Hashable, Sendable {

@@ -5,6 +5,7 @@ import CanvasTesting
 import CanvasUI
 import Engineering
 import LanguageModels
+import LineRows
 import Selection
 import ShippedTesting
 import TestKit
@@ -21,7 +22,133 @@ import Titles
 
 @MainActor private func changes(_ json: JSON) -> [JSON?] { json["changes"]?.arrayValue?.map { $0["did"] } ?? [] }
 
+/// Edit › Undo as the board's window validates it now: "Undo Add Column".
+@MainActor func undoTitle(_ window: NSWindow) -> String {
+    let item = NSMenuItem(title: "", action: NSSelectorFromString("undo:"), keyEquivalent: "")
+    _ = window.validateMenuItem(item)
+    return item.title
+}
+
+extension EmptyBoardWindow {
+    /// File ▸ Kits ▸ Engineering, the canvas with the keyboard after.
+    func turnKitOn() throws {
+        let controller = try require(board.windowControllers.first as? BoardWindowController)
+        controller.runCommand(commandItem(.kit(EngineeringKit.id), title: "Engineering"))
+        window.makeFirstResponder(canvas)
+    }
+
+    /// The table being edited's session, and its focused stop.
+    var lineRows: LineRowsView? { canvas.descendants(LineRowsView.self).first }
+}
+
 @MainActor let engineeringShippedTests = Suite("The engineering kit, shipped", [
+    test("T7, panels 1 to 3, by the keys alone: /table customers ↩, email text unique ↩, name text ↩, ↩ on the empty row, ⇧↩ beside, orders ↩; each step its Undo") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        let walk = w.walk()
+        walk.press(Chord("/"))
+        w.type("table customers", with: walk)
+        walk.press(.return)
+        let customers = try require(tables(editor).first)
+        expectEqual(customers.props.columns.map(ColumnGrammar.print), ["id uuid pk"])
+        expectEqual(editor.editingShapeID, customers.id, "edited")
+        expectEqual(w.lineRows?.focus, .waiting, "at its empty row")
+        expect(w.window.firstResponder is LineField, "the line has the keys: \(String(describing: w.window.firstResponder))")
+        expectEqual(undoTitle(w.window), "Undo Add Table")
+        w.type("email text unique", with: walk)
+        walk.press(.return)
+        expectEqual(undoTitle(w.window), "Undo Add Column")
+        w.type("name text", with: walk)
+        walk.press(.return)
+        expectEqual(undoTitle(w.window), "Undo Add Column")
+        expectEqual(tables(editor).first?.props.columns.map(ColumnGrammar.print), ["id uuid pk", "email text unique", "name text"])
+        walk.press(.return)
+        expectEqual(editor.editingShapeID, nil, "↩ on the empty row ends editing")
+        expectEqual(editor.selectedShapeIDs, [customers.id])
+        walk.press(Chord(Key.return, .shift))
+        let orders = try require(tables(editor).last)
+        expect(orders.id != customers.id)
+        expectEqual(w.lineRows?.focus, .title, "the new table edited in its name")
+        expectEqual(undoTitle(w.window), "Undo Add Table")
+        w.type("orders", with: walk)
+        walk.press(.return)
+        expectEqual(w.lineRows?.focus, .waiting, "↩ in the name: the empty row after id")
+        expectEqual(editor.document[orders.id]?[TitleProperty.self], "orders")
+        expectEqual(undoTitle(w.window), "Undo Add Table", "named as it was put down: one step")
+        w.type("customer_id uuid", with: walk)
+        walk.press(.return)
+        expectEqual(undoTitle(w.window), "Undo Add Column")
+        walk.press(.escape)
+        expectEqual(tables(editor).last?.props.columns.map(ColumnGrammar.print), ["id uuid pk", "customer_id uuid"])
+    },
+    test("Edit ▸ Undo and Redo in a line: the board's step once the line has nothing of its own; an uncommitted draft is not written back by the undo that ends editing") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        let walk = w.walk()
+        walk.press(Chord("/"))
+        w.type("table customers", with: walk)
+        walk.press(.return)
+        let id = try require(tables(editor).first).id
+        let columns = { @MainActor in tables(editor).first?.props.columns.map(ColumnGrammar.print) }
+        let board = try require(w.window as? BoardWindow)
+        w.type("email text unique", with: walk)
+        walk.press(.return)
+        expectEqual(columns(), ["id uuid pk", "email text unique"])
+        board.undo(nil)
+        expectEqual(columns(), ["id uuid pk"], "the column's step taken back")
+        expect(editor.document[id] != nil)
+        expectEqual(undoTitle(w.window), "Undo Add Table", "the next step back")
+        board.redo(nil)
+        expectEqual(columns(), ["id uuid pk", "email text unique"], "and put again")
+        // A rename, then Undo: the line shown is not written back as the editing ends.
+        editor.endEditing()
+        editor.beginEditing(id)
+        w.window.settle()
+        w.lineRows?.go(to: .row(try require(tables(editor).first?.props.columns.last?.id)))
+        w.lineRows?.field.setSelectedRange(NSRange(location: 5, length: 0))
+        w.type("2", with: walk)
+        walk.press(.down)
+        expectEqual(columns(), ["id uuid pk", "email2 text unique"])
+        expectEqual(undoTitle(w.window), "Undo Rename Column")
+        board.undo(nil)
+        expectEqual(columns(), ["id uuid pk", "email text unique"], "the rename taken back, not written again by the line's teardown")
+        board.redo(nil)
+        expectEqual(columns(), ["id uuid pk", "email2 text unique"], "redo has it")
+    },
+    test("the first minute by the keys (P12): a table (T1) and its columns (T2) take no more presses than clicks, typing aside") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        let walk = w.walk()
+        var said: [String] = []
+        @MainActor func task(_ name: String, clicks: Int, _ keys: @MainActor () -> Void) {
+            let before = walk.presses.count
+            keys()
+            let presses = walk.presses.count - before
+            said.append("\(name): \(presses) presses, \(clicks) clicks")
+            expect(presses <= clicks, "\(name): \(presses) presses to \(clicks) clicks")
+        }
+        // By the pointer: the Table cell of the kit's strip and a click on the board, then its name typed.
+        task("a table", clicks: 2) {
+            walk.press(Chord("/"))
+            w.type("table orders", with: walk)
+            walk.press(.return)
+        }
+        // By the pointer: a click on the empty row, then each line typed and a click on the next.
+        task("its columns", clicks: 3) {
+            for line in ["customer_id uuid", "total_cents int", "placed_at timestamptz"] {
+                w.type(line, with: walk)
+                walk.press(.return)
+            }
+        }
+        expectEqual(tables(editor).first?.props.columns.map(ColumnGrammar.print), ["id uuid pk", "customer_id uuid", "total_cents int", "placed_at timestamptz"],
+                    "\(said)")
+    },
     test("the first minute (T1): a new board has no table tool; File ▸ Kits ▸ Engineering turns its segment on; Insert ▸ Table puts one down with the caret in its name; ⇧↩ beside it, another") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -43,7 +170,9 @@ import Titles
         expectEqual(orders.props.columns.map(ColumnGrammar.print), ["id uuid pk"])
         w.type("orders", with: walk)
         walk.press(.return)
-        expectEqual(editor.editingShapeID, nil)
+        expectEqual((w.canvas.descendants(LineRowsView.self).first)?.focus, .waiting, "Return in the name: the caret on its empty row (T1, panel 2)")
+        walk.press(.return)
+        expectEqual(editor.editingShapeID, nil, "Return on the empty row ends it")
         expectEqual(editor.document[orders.id]?[TitleProperty.self], "orders")
         expectEqual(editor.undoHistory.undoName, "Add Table", "put down and named: one step")
         expectEqual(editor.selectedShapeIDs, [orders.id])
