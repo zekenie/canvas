@@ -37,6 +37,10 @@ struct Tally: BoxShapeProps {
 
     static let head: CGFloat = 10
     static let rowHeight: CGFloat = 20
+
+    /// The bar a render draws at the left of an entry's line, and its lead (an entry with a count drags from it).
+    static func bar(in line: CGRect) -> CGRect { CGRect(x: line.minX + 4, y: line.midY - 2, width: 10, height: 4) }
+    static func lead(in line: CGRect) -> CGRect { CGRect(x: line.minX, y: line.minY, width: 20, height: line.height) }
 }
 
 /// An entry: its label, its count, the tally it names, and the words nothing read; and what only its card shows: whether it's
@@ -81,12 +85,21 @@ final class TallyLog {
 struct TallyDefinition: ShapeDefinition, LaidOutBox {
     let log: TallyLog
 
+    /// White, and a black bar at the left of each entry's line (faded while a drag takes it: logged "~label").
     func render(_ shape: ShapeRecord<Tally>, in context: RenderContext) {
-        context.cg.setFillColor(NSColor.white.cgColor)
-        context.cg.fill(context.shapes.frame(of: shape))
+        let cg = context.cg, frame = context.shapes.frame(of: shape)
+        cg.setFillColor(NSColor.white.cgColor)
+        cg.fill(frame)
         let focused = context.shapes.layoutInput(LineRowsLayout.focused, of: shape)
         let shown = context.shapes.layoutInput(LineRowsLayout.shown, of: shape)
-        for (index, row) in shape.props.rows.enumerated() where row.id != focused && shown?.isShown(index) != false { log.drawn.append(row.label) }
+        let faded = context.shapes.layoutInput(LineRowsLayout.faded, of: shape) ?? []
+        let waiting = context.shapes.layoutInput(LineRowsLayout.waiting, of: shape)
+        for (index, row) in shape.props.rows.enumerated() where row.id != focused && shown?.isShown(index) != false {
+            log.drawn.append(faded.contains(row.id) ? "~" + row.label : row.label)
+            let line = TallyLines.line(shown?.line(standingFor: index) ?? LineRowsLayout.line(of: index, waiting: waiting), in: frame)
+            cg.setFillColor(NSColor.black.withAlphaComponent(faded.contains(row.id) ? RowDragStyle.fadedOpacity : 1).cgColor)
+            cg.fill(Tally.bar(in: line))
+        }
         if let more = shown?.more { log.drawn.append("+\(more.count)") }
     }
 
@@ -233,6 +246,10 @@ struct TallyLines: LineModel {
         Set(shape.props.rows.filter { $0.count != nil }.map(\.id))
     }
     func isHeader(_ row: TallyRow) -> Bool { row.label.hasSuffix("/") }
+    /// An entry with a count drags from its line's left (its lead).
+    func lead(of row: TallyRow, at index: Int, among rows: [TallyRow], line: CGRect, in context: LineContext) -> CGRect? {
+        row.count == nil ? nil : Tally.lead(in: line)
+    }
 
     /// What a line doesn't say stays: the card's.
     func merged(_ read: TallyRow, onto held: TallyRow) -> TallyRow {

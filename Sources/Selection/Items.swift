@@ -82,12 +82,13 @@ public struct ItemSelection: Equatable {
 }
 
 /// Where a press on a kind's item takes it before anything else (its lead: an endpoint's method chip), and what a click
-/// there does.
+/// there does, told whether the item's shape was the only one selected before the press (the press selects it, so a click
+/// that goes a level at a time goes on to the item only then).
 public struct ItemLead {
     public var item: AnyHashable
-    public var click: @MainActor (CanvasEditor) -> Void
+    public var click: @MainActor (CanvasEditor, _ wasSelected: Bool) -> Void
 
-    public init<ID: Hashable & Sendable>(item: ID, click: @escaping @MainActor (CanvasEditor) -> Void) {
+    public init<ID: Hashable & Sendable>(item: ID, click: @escaping @MainActor (CanvasEditor, _ wasSelected: Bool) -> Void) {
         self.item = AnyHashable(item)
         self.click = click
     }
@@ -466,11 +467,14 @@ final class PointingLeadSession {
     let shape: ShapeID
     let lead: ItemLead
     let press: CGPoint
+    /// Whether the shape was the only one selected before the press.
+    let wasSelected: Bool
 
-    init(shape: ShapeID, lead: ItemLead, press: CGPoint) {
+    init(shape: ShapeID, lead: ItemLead, press: CGPoint, wasSelected: Bool) {
         self.shape = shape
         self.lead = lead
         self.press = press
+        self.wasSelected = wasSelected
     }
 }
 
@@ -478,15 +482,22 @@ extension PointingLeadSession: Session {
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         guard pointer.view.distance(to: press) > Style.dragThreshold, let record = editor.document[shape],
               let drag = editor.itemSource(of: record.kind)?.actions.drag else { return }
-        editor.selectItems([lead.item], of: shape)
-        guard let session = drag(editor, shape, [lead.item], editor.camera.toWorld(press)) else { return }
-        editor.session = session
-        session.drag(pointer, in: editor)
+        let origin = editor.camera.toWorld(press)
+        // A read-only shape (or one whose kind starts no drag) is dragged as a press on it would, which refuses a locked one: the
+        // row isn't selected, and the release isn't the lead's click.
+        var session: (any Session)?
+        if !editor.isReadOnly(shape) {
+            editor.selectItems([lead.item], of: shape)
+            session = drag(editor, shape, [lead.item], origin)
+        }
+        let next = session ?? editor.translationSession(from: origin, pointer: pointer)
+        editor.session = next
+        next.drag(pointer, in: editor)
     }
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         editor.session = nil
-        lead.click(editor)
+        lead.click(editor, wasSelected)
     }
 
     func cancel(in editor: CanvasEditor) -> Bool { true }

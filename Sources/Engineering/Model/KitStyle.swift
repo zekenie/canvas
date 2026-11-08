@@ -65,6 +65,8 @@ public enum KitStyle {
 
     /// A gutter mark's size (a primary key's key, a unique column's "1").
     public static let markSize: CGFloat = 13
+    /// How far round a gutter mark a press drags its row (its lead): a square this wide on the mark's middle, a row tall.
+    public static let leadSide: CGFloat = 24
 
     /// Zoomed out: a bar where a name is, the names' 15-point text greeked (0.52 em a column), each bar where the text's
     /// x-height is, 8 tall.

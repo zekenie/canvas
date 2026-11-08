@@ -90,6 +90,19 @@ public protocol LineModel {
     func placing(pasted made: [Row], at index: Int, among rows: [Row]) -> [LineChange<Row>]
     /// What VoiceOver calls the row at `index` of `rows`: by default "Column 2 of 5", the noun and its place.
     func accessibleLabel(of row: Row, at index: Int, among rows: [Row]) -> String
+    /// `rows` with those `moved` names taken out and put back as one block at `index` among the rest, in their order: what ⌥↑
+    /// ⌥↓ on rows selected as items and a drag within the shape write (a header moved comes with the rows it heads, in `moved`
+    /// already). By default the block there, plainly; a kind whose rows mean something by their neighbors keeps what they mean,
+    /// as `applying` does for one row (an API: an endpoint that leaves every group takes its prefix along, one moved under
+    /// another header keeps its own path, and those a header lands among or leaves keep their full paths).
+    func reordering(_ moved: Set<PartID>, to index: Int, in rows: [Row]) -> [Row]
+    /// What a block of only headers is called in the steps of moving it, cutting it or taking it out (an API's "path prefix": "Move
+    /// Path Prefix"). Nil, by default, for the kind's noun.
+    var headerNoun: LineNoun? { get }
+    /// Where the lead of row `index` of `rows` is drawn, world units, its line at `line` (a column's key mark, an endpoint's
+    /// method chip): a press there drags the row at once, selected or not, and a click selects it as a click on the shape
+    /// would. Nil, by default, for none.
+    func lead(of row: Row, at index: Int, among rows: [Row], line: CGRect, in context: LineContext) -> CGRect?
 }
 
 extension LineModel {
@@ -104,11 +117,40 @@ extension LineModel {
         return props
     }
     public var takeOutEditsTitle: Bool { false }
+    public var headerNoun: LineNoun? { nil }
     public var showsCardChevron: Bool { false }
     public var fixedLine: LineFixedLine<Props>? { nil }
     public func indent(at index: Int, of rows: [Row], isNew: Bool) -> CGFloat { 0 }
     public func placing(pasted made: [Row], at index: Int, among rows: [Row]) -> [LineChange<Row>] { [.add(made, at: index)] }
     public func accessibleLabel(of row: Row, at index: Int, among rows: [Row]) -> String { "\(noun.title) \(index + 1) of \(rows.count)" }
+    public func lead(of row: Row, at index: Int, among rows: [Row], line: CGRect, in context: LineContext) -> CGRect? { nil }
+
+    public func reordering(_ moved: Set<PartID>, to index: Int, in rows: [Row]) -> [Row] {
+        var rest = rows.filter { !moved.contains(id(of: $0)) }
+        rest.insert(contentsOf: rows.filter { moved.contains(id(of: $0)) }, at: min(max(0, index), rest.count))
+        return rest
+    }
+
+    /// `rows` with `gone` taken out as `applying` takes rows out (an API's endpoints keeping their full paths): what's left of a
+    /// shape whose rows move away, and, the rest taken out, what moves (a copy's, a cut's, a take-out's rows, each saying what
+    /// it said where it was).
+    func removing(_ gone: Set<PartID>, from rows: [Row]) -> [Row] {
+        let taken = rows.filter { gone.contains(id(of: $0)) }
+        guard !taken.isEmpty else { return rows }
+        var left = rows
+        guard applying(.delete(taken), to: &left) else { return rows.filter { !gone.contains(id(of: $0)) } }
+        return left
+    }
+
+    /// `rows` with `added` put in, the block wanted at `index`, as a paste puts rows in (`placing`, then `applying`): nil where the
+    /// kind refuses a change.
+    func inserting(_ added: [Row], at index: Int, into rows: [Row]) -> [Row]? {
+        var held = rows
+        for change in placing(pasted: added, at: min(max(0, index), rows.count), among: rows) {
+            guard applying(change, to: &held) else { return nil }
+        }
+        return held
+    }
 
     public func applying(_ change: LineChange<Row>, to rows: inout [Row]) -> Bool {
         switch change {

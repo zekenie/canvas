@@ -241,6 +241,7 @@ struct APILines: LineModel {
     typealias Row = APIRow
 
     var noun: LineNoun { LineNoun("endpoint") }
+    var headerNoun: LineNoun? { LineNoun("path prefix", plural: "path prefixes") }
     var style: LineStyle { APILooks.line }
     func rows(of props: API) -> [APIRow] { props.endpoints }
     func setRows(_ rows: [APIRow], in props: inout API) { props.endpoints = rows }
@@ -297,7 +298,8 @@ struct APILines: LineModel {
     /// What a change does to the rows, keeping each endpoint's full path where the change isn't about it: a header taken out (or
     /// retyped as an endpoint) leaves its members holding the full paths they had, a header moved takes its group with it, and an
     /// endpoint that leaves every group takes its prefix along. A header retyped as a header is the rename, which every member's
-    /// full path follows, as it is typed; an endpoint moved across headers keeps its path under the new one.
+    /// full path follows, as it is typed; an endpoint moved under a header that covers its full path keeps it (so a move back is
+    /// exact), and one moved across to another keeps its own path under the new one.
     func applying(_ change: LineChange<APIRow>, to rows: inout [APIRow]) -> Bool {
         let old = rows
         switch change {
@@ -322,29 +324,92 @@ struct APILines: LineModel {
             let held = rows.remove(at: at)
             let to = min(max(0, index), rows.count)
             rows.insert(held, at: to)
-            // Under a header now it keeps its own path, as a file moved between folders; under none, it keeps its whole path.
-            if case .endpoint(var endpoint) = held, APIGroups.header(of: to, in: rows) == nil, APIGroups.header(of: at, in: old) != nil {
-                endpoint.path = was
+            if case .endpoint(var endpoint) = held, let path = Self.path(of: endpoint, was: was, from: APIGroups.header(of: at, in: old),
+                                                                            to: APIGroups.header(of: to, in: rows)) {
+                endpoint.path = path
                 rows[to] = .endpoint(endpoint)
             }
         }
         return true
     }
 
-    /// A full path pasted goes under the longest header it starts with, its path as written under it, else at the top, in an API
-    /// that has headers; a block with a header in it, or an API without, goes where the caret is.
+    /// Rows pasted, dropped or moved in (a paste in a line, ⌘V of rows, a drag of them from another API), each endpoint's full path
+    /// kept: in an API that has headers, an endpoint goes under the longest header its full path starts with, its path as written
+    /// under it, else at the top; in one without, where it was wanted. A header that comes with them (its endpoints after it, as
+    /// they were under it) goes in whole where a group can stand without taking another's endpoints under it: at the first header
+    /// from where it was wanted on, else at the end.
     func placing(pasted made: [APIRow], at index: Int, among rows: [APIRow]) -> [LineChange<APIRow>] {
-        guard rows.contains(where: { $0.header != nil }), made.allSatisfy({ $0.header == nil }) else { return [.add(made, at: index)] }
+        let hasHeaders = rows.contains { $0.header != nil }
+        let split = made.firstIndex { $0.header != nil } ?? made.count
+        guard hasHeaders || split < made.count else { return [.add(made, at: index)] }
+        let loose = Array(made[..<split]), group = Array(made[split...])
+        let wanted = index < rows.count ? rows[index].id : nil
         var working = rows
         var changes: [LineChange<APIRow>] = []
-        for row in made {
-            guard case .endpoint(var endpoint) = row else { continue }
-            let spot = APIGroups.place(endpoint.path, in: working)
-            endpoint.path = spot.path
-            working.insert(.endpoint(endpoint), at: spot.index)
-            changes.append(.add([.endpoint(endpoint)], at: spot.index))
+        if hasHeaders {
+            for row in loose {
+                guard case .endpoint(var endpoint) = row else { continue }
+                let spot = APIGroups.place(endpoint.path, in: working)
+                endpoint.path = spot.path
+                working.insert(.endpoint(endpoint), at: spot.index)
+                changes.append(.add([.endpoint(endpoint)], at: spot.index))
+            }
+        } else if !loose.isEmpty {
+            working.insert(contentsOf: loose, at: min(max(0, index), working.count))
+            changes.append(.add(loose, at: min(max(0, index), rows.count)))
+        }
+        if !group.isEmpty {
+            let from = wanted.flatMap { id in working.firstIndex { $0.id == id } } ?? working.count
+            let at = working[from...].firstIndex { $0.header != nil } ?? working.count
+            changes.append(.add(group, at: at))
         }
         return changes
+    }
+
+    /// Rows moved within the API as a block (⌥↑ ⌥↓ on rows selected as items, a drag), each endpoint's path as the line's move
+    /// leaves it (`path(of:was:from:to:)`), and one a header landed among or left keeping the full path it had, put back where
+    /// its header is if the header it falls under now doesn't cover it.
+    func reordering(_ moved: Set<PartID>, to index: Int, in rows: [APIRow]) -> [APIRow] {
+        var rest = rows.filter { !moved.contains($0.id) }
+        rest.insert(contentsOf: rows.filter { moved.contains($0.id) }, at: min(max(0, index), rest.count))
+        var full: [PartID: (path: String, header: PathHeader?)] = [:]
+        for (at, row) in rows.enumerated() where moved.contains(row.id) && row.header == nil {
+            full[row.id] = (APIGroups.fullPath(of: at, in: rows), APIGroups.header(of: at, in: rows))
+        }
+        var kept: Set<PartID> = []
+        for (at, row) in rest.enumerated() {
+            guard case .endpoint(var endpoint) = row, let was = full[row.id] else { continue }
+            if let path = Self.path(of: endpoint, was: was.path, from: was.header, to: APIGroups.header(of: at, in: rest)) {
+                endpoint.path = path
+                rest[at] = .endpoint(endpoint)
+            }
+            kept.insert(row.id)
+        }
+        return APIGroups.regrouped(rest, from: rows, except: kept)
+    }
+
+    /// The path an endpoint moved from under `from` to under `to` is written with, its full path `was` before; nil to keep it as it
+    /// is. Under none now, its whole path (it takes its prefix along); under a header that covers its full path, the rest of it, so
+    /// its full path is what it was and a move back is exact; under another header, its own path, as a file moved between folders.
+    static func path(of endpoint: Endpoint, was: String, from: PathHeader?, to: PathHeader?) -> String? {
+        guard from?.id != to?.id else { return nil }
+        guard let to else { return was }
+        return APIGroups.isUnder(was, to.prefix) ? APIGroups.relative(was, under: to.prefix) : nil
+    }
+
+    /// Endpoints taken out are a new API (⌘X then ⌘V on the board, Move Endpoints to New API, a drag onto the board): served where
+    /// this one is, as wide, each endpoint its full path and a header taken with its endpoints still theirs; its name typed at once.
+    func takeOut(_ rows: [APIRow], from shape: ShapeRecord<API>) -> API {
+        let frame = shape.props.frame
+        return API(frame: CGRect(origin: frame.origin, size: CGSize(width: frame.width, height: APIRows.height(lines: rows.count))),
+                   server: shape.props.server, endpoints: rows)
+    }
+    var takeOutEditsTitle: Bool { true }
+
+    /// An endpoint's lead is its method chip (decided 21): a press there drags the row, selected or not. A header has none.
+    func lead(of row: APIRow, at index: Int, among rows: [APIRow], line: CGRect, in context: LineContext) -> CGRect? {
+        guard case .endpoint(let endpoint) = row else { return nil }
+        return APIDrawing.chipRect(endpoint.method, member: APIGroups.isMember(index, in: rows), in: line)
     }
 
     /// "Endpoint 3 of 7", "Path prefix 1 of 2": each counted among its own.

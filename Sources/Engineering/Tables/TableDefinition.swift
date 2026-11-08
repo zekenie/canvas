@@ -30,7 +30,9 @@ extension TableDefinition: ShapeDefinition {
                 continue
             }
             guard let index = rows.row(atLine: line), columns[index].id != rows.focused else { continue }
-            drawColumn(columns[index], isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
+            rows.drawing(columns[index].id, in: context.cg) {
+                drawColumn(columns[index], isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
+            }
         }
     }
 
@@ -127,7 +129,7 @@ extension TableDefinition: CustomSkeleton {
         let frame = context.shapes.frame(of: shape)
         KitPaper.drawSkeleton(frame, in: context)
         let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
-        var text: [CGRect] = [], pills: [CGRect] = []
+        var text: [CGRect] = [], pills: [CGRect] = [], fadedText: [CGRect] = [], fadedPills: [CGRect] = []
         let more = rows.more
         for line in KitPaper.skeletonRowsInView(rows.lines(columns.count), in: frame, context) {
             if line == more?.line, let more {
@@ -137,21 +139,33 @@ extension TableDefinition: CustomSkeleton {
             guard let index = rows.row(atLine: line) else { continue }
             let column = columns[index], row = KitStyle.rowRect(line, in: frame)
             let start = row.minX + KitStyle.nameInset, end = row.maxX - KitStyle.trailingInset
+            // The rows a drag takes, as bars faded where they are.
+            let taken = rows.faded?.contains(column.id) == true
             let type = KitPaper.bar(columns: SkeletonText.columns(of: column.type.words, upTo: TableStyle.skeletonMostColumns),
                                     column: TableStyle.skeletonTypeColumn, at: end, trailing: true, in: row, room: (end - start) / 2)
             if let type {
-                if Self.enumName(of: column, registry: context.shapes.registry, inFile: context.shape(inFile:)) != nil { pills.append(type) } else { text.append(type) }
+                if Self.enumName(of: column, registry: context.shapes.registry, inFile: context.shape(inFile:)) != nil {
+                    if taken { fadedPills.append(type) } else { pills.append(type) }
+                } else if taken { fadedText.append(type) } else { text.append(type) }
             }
             if let name = KitPaper.bar(columns: SkeletonText.columns(of: column.name, upTo: TableStyle.skeletonMostColumns), column: TableStyle.skeletonNameColumn,
                                        at: start, in: row, room: max(0, (type?.minX ?? end) - KitStyle.nameGap - start)) {
-                text.append(name)
+                if taken { fadedText.append(name) } else { text.append(name) }
             }
         }
         context.fillSkeletonText(text)
+        Self.fillPills(pills, in: context)
+        rows.fillFaded(text: fadedText, in: context) { Self.fillPills(fadedPills, in: context) }
+    }
+
+    /// The enum pills' bars, one fill.
+    private static func fillPills(_ pills: [CGRect], in context: RenderContext) {
         guard !pills.isEmpty else { return }
+        context.cg.saveGState()
         for pill in pills { context.cg.addPath(CGPath(roundedRect: pill, cornerWidth: pill.height / 2, cornerHeight: pill.height / 2, transform: nil)) }
         context.cg.setFillColor(TableStyle.enumPill.color.cgColor)
         context.cg.fillPath()
+        context.cg.restoreGState()
     }
 }
 

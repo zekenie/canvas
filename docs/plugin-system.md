@@ -1021,7 +1021,9 @@ The details:
   `[]` unless it answers: an arrow whose end a drag is moving, which a service that counts arrows
   leaves out until the drag is over; `editor.session` is still the drag's session when `end` and
   `cancel` run and for the commits they make, so it names them then too, and is nil once the press
-  has ended). A session can hand over to another by
+  has ended), `ghosts` (shapes not on the board it shows under the pointer, drawn as one layer,
+  opaque, laid out where they are, bare of overlays, each under an id of its own:
+  rows dragged, as a card of their own). A session can hand over to another by
   setting `editor.session` (pressing an arrow handle becomes dragging it). A session that sets
   `editor.hintedShapeID` clears it when it ends.
 - **Scrolling at the edges** is tldraw's (its EdgeScrollManager and options), for a session that
@@ -2631,6 +2633,25 @@ as `moveRows` does, a cut's paste a move (its arrows back under their ids) while
 While a shape is edited, ⇧↑ ⇧↓ select rows whole (the first the caret's row), which ⌫, ⌥↑ ⌥↓, ⌘C ⌘X ⌘V act on,
 and Escape leaves selected as items. The selection's menu offers the take-out of rows selected.
 
+Every move goes through the kind's own changes, so a row keeps what it means by its neighbors (an API's endpoint its
+full path): what moves and what's left are the rows with the rest taken out as `applying(.delete)` takes them, rows
+put in go as `placing(pasted:)` places a paste, and a reorder is `reordering(_:to:in:)`, a plain block by default. A
+header moves with the rows it heads (cut and copied with them too), and ⌥↑ ⌥↓ with one passes a whole group; a block of only headers is named by `headerNoun` (nil by default: the noun).
+
+Rows are dragged too: a press on rows selected as items, past the threshold, or on a row's lead at any time
+(`lead(of:at:among:line:in:)`, nil by default: a column's key mark, an endpoint's method chip). Nothing is written
+until the release; meanwhile the rows are drawn faded where they are (the kind reads `LineRowsLayout.faded`), a drop
+line marks the gap among the target's lines where they would land (worked out through the kind's own move), the
+target is hinted, and a ghost of the rows, a card at the pointer's right, follows it (`Session.ghosts`; the drop line ends where it begins). Released, it's `moveRows`: into
+the target, which unfolds if folded, or onto the board as the take-out; over a read-only shape it shakes it.
+
+```swift
+// Optional: where a row drags from at once, in its line's rect.
+func lead(of row: ColumnLine, at index: Int, among rows: [ColumnLine], line: CGRect, in context: LineContext) -> CGRect? {
+    row.column.primaryKey ? CGRect(x: line.minX + 7, y: line.minY, width: 24, height: line.height) : nil
+}
+```
+
 ## Selection
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
@@ -3366,7 +3387,8 @@ registrar.forShapes(adopting: .lineRows) { kinds in
 - **The ladder.** A press on an item of a shape not selected is the shape's. On the only selected shape, a click
   on an item selects it, ⇧ the run from the anchor, ⌘ toggles one, and a click on the only selected item opens it
   where it was clicked; a press anywhere else drops them. A `drag` and a `lead` (an item's chip pressed before
-  faces) are optional actions.
+  faces, on the shape selected or not: dragged, that item at once; its click told whether the shape was the only one
+  selected before the press) are optional actions; LineRows gives both for rows.
 - **The keys.** ↑ ↓ step them, ⇧↑ ⇧↓ draw the run, ⌥↑ ⌥↓ move them (the chord resizes a shape with none), ← →
   and Space open and close an item that hides others (`ItemOutline`), ⌫ deletes them, Return opens the first, ⌘A
   selects every item, Escape goes back to the shape. Clipboard cuts, copies and pastes them before the shape.

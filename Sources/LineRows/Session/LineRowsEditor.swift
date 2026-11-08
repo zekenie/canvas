@@ -760,9 +760,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     // MARK: Rows selected whole
 
-    /// The rows selected whole went (another writer took them out): the line is the caret's again, shown and typed in.
+    /// The rows selected whole went (another writer took them out): the line is the caret's again, shown and typed in. Not once
+    /// editing has ended: a press on the band that drags the rows away ends it, and the view, not yet taken down, would lay the
+    /// shape out again with a waiting line.
     override func documentDidSettle() {
-        guard !isMoving, let band, index(of: band.anchor) == nil || index(of: band.head) == nil else { return }
+        guard !isMoving, editor.editingShapeID == id, let band, index(of: band.anchor) == nil || index(of: band.head) == nil else { return }
         self.band = nil
         reanchor()
         setInputs()
