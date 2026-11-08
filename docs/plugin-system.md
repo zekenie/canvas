@@ -1022,7 +1022,7 @@ The details:
   leaves out until the drag is over; `editor.session` is still the drag's session when `end` and
   `cancel` run and for the commits they make, so it names them then too, and is nil once the press
   has ended), `ghosts` (shapes not on the board it shows under the pointer, drawn as one layer,
-  nearly opaque, laid out where they are, bare of overlays, each under an id of its own:
+  opaque, laid out where they are, bare of overlays, each under an id of its own:
   rows dragged, as a card of their own). A session can hand over to another by
   setting `editor.session` (pressing an arrow handle becomes dragging it). A session that sets
   `editor.hintedShapeID` clears it when it ends.
@@ -2636,13 +2636,13 @@ and Escape leaves selected as items. The selection's menu offers the take-out of
 Every move goes through the kind's own changes, so a row keeps what it means by its neighbors (an API's endpoint its
 full path): what moves and what's left are the rows with the rest taken out as `applying(.delete)` takes them, rows
 put in go as `placing(pasted:)` places a paste, and a reorder is `reordering(_:to:in:)`, a plain block by default. A
-header moves with the rows it heads, and ⌥↑ ⌥↓ with one passes a whole group.
+header moves with the rows it heads (cut and copied with them too), and ⌥↑ ⌥↓ with one passes a whole group; a block of only headers is named by `headerNoun` (nil by default: the noun).
 
 Rows are dragged too: a press on rows selected as items, past the threshold, or on a row's lead at any time
 (`lead(of:at:among:line:in:)`, nil by default: a column's key mark, an endpoint's method chip). Nothing is written
 until the release; meanwhile the rows are drawn faded where they are (the kind reads `LineRowsLayout.faded`), a drop
 line marks the gap among the target's lines where they would land (worked out through the kind's own move), the
-target is hinted, and a ghost of the rows follows the pointer (`Session.ghosts`). Released, it's `moveRows`: into
+target is hinted, and a ghost of the rows, a card at the pointer's right, follows it (`Session.ghosts`; the drop line ends where it begins). Released, it's `moveRows`: into
 the target, which unfolds if folded, or onto the board as the take-out; over a read-only shape it shakes it.
 
 ```swift

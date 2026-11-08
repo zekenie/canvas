@@ -81,13 +81,21 @@ extension EnumDefinition: CustomSkeleton {
         let frame = context.shapes.frame(of: shape)
         KitPaper.drawSkeleton(frame, in: context)
         let values = shape.props.values, rows = KitRows(shape, in: context.shapes), more = rows.more
-        context.fillSkeletonText(KitPaper.skeletonRowsInView(rows.lines(values.count), in: frame, context).compactMap { line in
-            if line == more?.line, let more { return MoreLine.bar(more.count, in: KitStyle.rowRect(line, in: frame)) }
-            guard let index = rows.row(atLine: line) else { return nil }
+        var bars: [CGRect] = [], faded: [CGRect] = []
+        for line in KitPaper.skeletonRowsInView(rows.lines(values.count), in: frame, context) {
+            if line == more?.line, let more {
+                if let bar = MoreLine.bar(more.count, in: KitStyle.rowRect(line, in: frame)) { bars.append(bar) }
+                continue
+            }
+            guard let index = rows.row(atLine: line) else { continue }
             let row = KitStyle.rowRect(line, in: frame), start = row.minX + KitStyle.nameInset
-            return KitPaper.bar(columns: SkeletonText.columns(of: values[index].text, upTo: TableStyle.skeletonMostColumns), column: EnumStyle.skeletonColumn,
-                                at: start, in: row, room: row.maxX - KitStyle.trailingInset - start)
-        })
+            guard let bar = KitPaper.bar(columns: SkeletonText.columns(of: values[index].text, upTo: TableStyle.skeletonMostColumns), column: EnumStyle.skeletonColumn,
+                                         at: start, in: row, room: row.maxX - KitStyle.trailingInset - start) else { continue }
+            // The rows a drag takes, as bars faded where they are.
+            if rows.faded?.contains(values[index].id) == true { faded.append(bar) } else { bars.append(bar) }
+        }
+        context.fillSkeletonText(bars)
+        rows.fillFaded(text: faded, in: context) {}
     }
 }
 

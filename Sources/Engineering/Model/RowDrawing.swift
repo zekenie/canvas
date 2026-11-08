@@ -195,6 +195,17 @@ struct KitRows {
         cg.restoreGState()
     }
 
+    /// Zoomed out, the bars of the rows a drag takes (`faded`) and what else of theirs is filled (`more`), drawn at
+    /// `RowDragStyle.fadedOpacity`: one fill, so what overlaps in it isn't darkened twice.
+    func fillFaded(text bars: [CGRect], in context: RenderContext, _ more: () -> Void) {
+        guard !bars.isEmpty else { return }
+        context.cg.saveGState()
+        context.cg.setAlpha(RowDragStyle.fadedOpacity)
+        context.fillSkeletonText(bars)
+        more()
+        context.cg.restoreGState()
+    }
+
     /// How many lines `rows` rows take: the fold's, else one more while the waiting line is drawn.
     func lines(_ rows: Int) -> Int { shown?.count ?? rows + (waiting == nil ? 0 : 1) }
 

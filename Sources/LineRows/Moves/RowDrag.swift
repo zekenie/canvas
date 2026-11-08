@@ -9,8 +9,8 @@ import Selection
 // spatial grid) and the gap among its lines nearest the pointer, and works out where the rows would land there through the
 // kind's own move, so the line is drawn where they go (an API places an endpoint under its header); a gap inside the block is
 // no move. Nothing is written until the release: the rows stay where they are, drawn faded (`LineRowsLayout.faded`), the drop
-// line at the gap, the target outlined as a hint, and a ghost of the rows, a card of their own, under the pointer as they were
-// grabbed. It scrolls at the edges; Escape changes nothing. The release is `moveRows`: into the target before the gap (a folded
+// line at the gap (ending where the ghost begins), the target outlined as a hint, and a ghost of the rows, a card of their own, at
+// the pointer's right, level with it. It scrolls at the edges; Escape changes nothing. The release is `moveRows`: into the target before the gap (a folded
 // one unfolded, so the rows stay in sight), or onto the board, the kind's take-out where the ghost is. Over a read-only shape
 // that would take them, nothing shows and the release shakes it.
 
@@ -23,6 +23,9 @@ public enum RowDragStyle {
     static let lineWidth: CGFloat = 2
     /// How far in from the target's sides the drop line starts and ends, world units.
     static let lineInset: CGFloat = 8
+    /// How far right of the pointer the ghost's card starts, view points: the pointer is at its leading edge, as the frames
+    /// draw it, so the drop line (which ends where the card begins) stays clear of the rows in it.
+    public static let ghostGap: CGFloat = 6
 }
 
 /// A drag of rows, from the press to the release.
@@ -46,8 +49,8 @@ final class RowDragSession {
     let moving: LineRowsMoving
     /// The rows as a shape of their own, under an id no shape has: the ghost, moved with the pointer.
     private var ghost: AnyShapeRecord
-    /// The press, from the ghost's top-left, world units.
-    private let grab: CGPoint
+    /// The middle of the ghost's first line, from its top: the pointer is level with it.
+    private let firstLineMiddle: CGFloat
     private(set) var drop: Drop = .none
     /// The last place worked out, and where they'd land there: one event at the same gap costs no landing.
     private var landed: (target: ShapeID, revision: Int, gap: Int, drop: Drop)?
@@ -63,11 +66,12 @@ final class RowDragSession {
         source = shape
         self.rows = ids
         self.moving = moving
-        // The ghost's first line over the first row dragged, so the rows leave from where they are.
+        // The ghost's first line over the first row dragged, so the rows leave from where they are; once the pointer moves, the
+        // ghost stands at its right, level with it.
         let first = editor.shapeContext.geometry(of: shape)?.parts.frame(ids[0])?.rect ?? CGRect(origin: press, size: .zero)
         let line = kind.lineRect(0, CGRect(origin: .zero, size: size))
         let origin = CGPoint(x: first.minX - line.minX, y: first.minY - line.minY)
-        grab = CGPoint(x: press.x - origin.x, y: press.y - origin.y)
+        firstLineMiddle = line.midY
         var ghost = carrier.copy(as: ShapeID())
         ghost.box = CGRect(origin: origin, size: size)
         self.ghost = ghost
@@ -76,7 +80,10 @@ final class RowDragSession {
 
     /// Where the drop would be with the pointer at `point`, world units.
     private func update(at point: CGPoint, in editor: CanvasEditor) {
-        if let box = ghost.box { ghost.box = CGRect(origin: CGPoint(x: point.x - grab.x, y: point.y - grab.y), size: box.size) }
+        if let box = ghost.box {
+            let origin = CGPoint(x: point.x + RowDragStyle.ghostGap / editor.shapeContext.zoom, y: point.y - firstLineMiddle)
+            ghost.box = CGRect(origin: origin, size: box.size)
+        }
         let registry = editor.registry
         let kind = ghost.kind
         let target = editor.shape(at: point) { record in
@@ -206,7 +213,10 @@ extension RowDragSession: Session {
     }
 
     func draw(in context: OverlayContext) {
-        guard case .into(_, _, let line) = drop else { return }
+        guard case .into(_, _, var line) = drop else { return }
+        // It ends where the ghost's card begins: never struck through the rows in it.
+        if let edge = ghost.box?.minX { line.size.width = min(line.width, edge - line.minX) }
+        guard line.width > 0 else { return }
         let cg = context.cg
         cg.setStrokeColor((context.editor.selectionOutlineColor ?? .controlAccentColor).cgColor)
         cg.setLineWidth(RowDragStyle.lineWidth / context.zoom)

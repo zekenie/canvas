@@ -40,9 +40,9 @@ public enum Style {
     /// Shapes waiting to be placed (`editor.placeLater`) are drawn at this opacity, the overlays'
     /// decorations of them too (`OverlayContext.drawingPending`): there, but not yet put down.
     static let pendingOpacity: CGFloat = 0.45
-    /// A drag's ghosts (`Session.ghosts`: rows dragged, as a card of their own) are drawn at this opacity: a card under the
-    /// pointer as the frames draw it, its rows read over what it passes, a touch of the board through it.
-    static let ghostOpacity: CGFloat = 0.9
+    /// A drag's ghosts (`Session.ghosts`: rows dragged, as a card of their own) are drawn at this opacity: a card at the
+    /// pointer as the frames draw it, opaque, so the rows it passes over don't show through its own.
+    static let ghostOpacity: CGFloat = 1
 
     // Skeletons: shapes as they show zoomed out (`CustomSkeleton`).
     /// Below this zoom a frame draws shapes as skeletons (`CanvasEditor.skeletonZoom`): a note's

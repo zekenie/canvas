@@ -128,7 +128,7 @@ extension APIDefinition: CustomSkeleton {
         KitPaper.drawSkeleton(frame, in: context)
         let api = shape.props, rows = KitRows(shape, in: context.shapes)
         guard KitStyle.rowHeight * context.zoom >= KitStyle.skeletonLeastRow else { return }
-        var bars: [CGRect] = []
+        var bars: [CGRect] = [], faded: [CGRect] = []
         let server = APIRows.serverRect(in: frame)
         let start = frame.minX + APIStyle.inset, end = frame.maxX - KitStyle.trailingInset
         if let bar = KitPaper.bar(columns: SkeletonText.columns(of: api.server.host, upTo: KitStyle.skeletonMostColumns), column: APIStyle.skeletonColumn,
@@ -145,6 +145,9 @@ extension APIDefinition: CustomSkeleton {
             }
             guard let index = rows.row(atLine: line) else { continue }
             let x = start + (index >= firstHeader ? APIStyle.memberIndent : 0)
+            // The rows a drag takes, as bars faded where they are.
+            let taken = rows.faded?.contains(api.endpoints[index].id) == true, kept = bars.count
+            defer { if taken { faded.append(contentsOf: bars[kept...]); bars.removeSubrange(kept...) } }
             switch api.endpoints[index] {
             case .header(let header):
                 if let bar = KitPaper.bar(columns: SkeletonText.columns(of: header.prefix, upTo: KitStyle.skeletonMostColumns), column: APIStyle.skeletonColumn,
@@ -158,6 +161,7 @@ extension APIDefinition: CustomSkeleton {
             }
         }
         context.fillSkeletonText(bars)
+        rows.fillFaded(text: faded, in: context) {}
     }
 }
 
@@ -213,8 +217,6 @@ enum APIDrawing {
         RowText.draw(RowText.line(prefix, .code), at: x, middle: middle, room: end - counted.width - APIStyle.gap - x, in: cg)
     }
 
-    /// An endpoint: its chip, its path (its parameters in the chip's color, its unread words after it), and at the right its body,
-    /// an arrow, its first response's status and type; the path cut short first.
     /// Where an endpoint's method chip is drawn on its row at `rect` (a member's indented): its lead, a press there dragging the
     /// row. Nil for an endpoint with no method.
     static func chipRect(_ method: String, member: Bool, in rect: CGRect) -> CGRect? {
@@ -224,6 +226,8 @@ enum APIDrawing {
                       width: width, height: APIStyle.chipHeight)
     }
 
+    /// An endpoint: its chip, its path (its parameters in the chip's color, its unread words after it), and at the right its body,
+    /// an arrow, its first response's status and type; the path cut short first.
     static func drawEndpoint(_ endpoint: Endpoint, member: Bool, types: TypeIndex?, in rect: CGRect, _ cg: CGContext) {
         let start = rect.minX + APIStyle.inset + (member ? APIStyle.memberIndent : 0), end = rect.maxX - KitStyle.trailingInset
         let middle = rect.midY

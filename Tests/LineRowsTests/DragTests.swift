@@ -87,11 +87,13 @@ extension Bench {
         let one = pixel(during, at: b.middle(of: "one", in: a) + CGPoint(x: -111, y: 0))
         let two = pixel(during, at: b.middle(of: "two", in: a) + CGPoint(x: -111, y: 0))
         expect(one[0] < 30 && two[0] > 120 && two[0] < 230, "one \(one), two \(two) faded")
-        // The ghost: its bar where the press grabbed it, moved with the pointer (grabbed 111 right of its bar's middle).
+        // The ghost: a card at the pointer's right, level with it, its first bar 9 in from its left; the drop line ends where it begins
+        // and never strikes through its rows.
         let pointer = b.gap(1, of: c, dy: 2)
-        let ghostBar = pixel(during, at: CGPoint(x: pointer.x - 111, y: pointer.y))
-        expect(ghostBar[0] < 200, "the ghost's bar, faint: \(ghostBar)")
-        expect(pixel(before, at: CGPoint(x: pointer.x - 111, y: pointer.y))[0] > 200)
+        let ghostBar = pixel(during, at: CGPoint(x: pointer.x + RowDragStyle.ghostGap + 9, y: pointer.y))
+        expect(ghostBar[0] < 200, "the ghost's bar: \(ghostBar)")
+        expect(pixel(before, at: CGPoint(x: pointer.x + RowDragStyle.ghostGap + 9, y: pointer.y))[0] > 200)
+        expect(!isAccent(pixel(during, at: CGPoint(x: pointer.x + RowDragStyle.ghostGap + 30, y: lineY))), "the line stops at the ghost")
         // Over its own gap: nothing hinted, and the release moves nothing.
         b.h.drag(to: b.h.view(b.gap(1, of: a, dy: 2)))
         expectEqual(b.editor.hintedShapeID, nil)
@@ -239,5 +241,49 @@ extension Bench {
         b.startDrag(at: b.middle(of: "g/", in: id), to: b.gap(6, of: id))
         b.h.release()
         expectEqual(b.labels(id), ["top", "h/", "three", "g/", "one", "two"], "dragged to the end, its entries with it")
+    },
+    test("A read-only source gives no session: a press on its selected entry or its lead is a press on a locked shape, which shakes, and no row is selected or faded, no step made") {
+        let b = try Bench()
+        let a = b.tally("a", ["one 1", "two 2"])
+        let c = b.tally("c", ["x"], at: CGPoint(x: 450, y: 100))
+        b.selectItems(a, "two")
+        b.editor.freeze([a])
+        b.editor.undoHistory.seal()
+        let steps = b.undoName
+        b.startDrag(at: b.middle(of: "two", in: a), to: b.gap(1, of: c))
+        expectEqual(b.editor.hintedShapeID, nil, "no drag of rows")
+        expectEqual(b.drawn().filter { $0.hasPrefix("~") }, [], "nothing faded")
+        b.h.release()
+        expectEqual(b.labels(a), ["one", "two"])
+        expectEqual(b.labels(c), ["x"])
+        expectEqual(b.undoName, steps)
+        // Its lead, the shape not selected: the drag is no click on release, selecting no entry.
+        b.editor.selectedShapeIDs = []
+        b.h.wait(1000)
+        b.startDrag(at: CGPoint(x: 105, y: b.middle(of: "one", in: a).y), to: b.gap(1, of: c))
+        b.h.release()
+        expectEqual(b.itemLabels, [], "no entry selected by the drag")
+        expectEqual(b.labels(a), ["one", "two"])
+        expectEqual(b.labels(c), ["x"])
+        expectEqual(b.undoName, steps)
+        expectEqual(b.editor.session == nil, true)
+    },
+    test("Zoomed out to skeletons a lead is no lead: a press there moves the tally, not an entry") {
+        let b = try Bench()
+        let a = b.tally("a", ["one 1", "two 2"])
+        b.editor.camera.zoom = 0.1
+        b.editor.camera.origin = .zero
+        expectEqual(b.editor.drawsSkeletons, true)
+        b.editor.selectedShapeIDs = []
+        let box = try require(b.editor.document[a]?.box)
+        let lead = CGPoint(x: 105, y: b.middle(of: "one", in: a).y)
+        b.h.wait(1000)
+        b.h.press(at: b.h.view(lead))
+        b.h.drag(to: b.h.view(CGPoint(x: lead.x, y: lead.y + 60)))
+        b.h.drag(to: b.h.view(CGPoint(x: lead.x + 100, y: lead.y + 400)))
+        b.h.release()
+        expect(b.editor.document[a]?.box != box, "the tally moved")
+        expectEqual(b.labels(a), ["one", "two"])
+        _ = box
     },
 ])
