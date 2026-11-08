@@ -3194,6 +3194,9 @@ registrar.shape(PatchDefinition()) { patch in
   (`registry.label(of:)`, always), every plugin's `labelParts`, then every plugin's `states`, joined
   with ", " ("Checkout, Note, Person, locked"), and the first `value` and `help`. With none, a shape is
   its kind ("Note").
+- **A part's name** is `editor.accessibleName(of: PartAddress)`: the shape's name for a shape as a
+  whole, a part's name read with its shape's ("id in customers") or alone for a part that stands
+  alone; nil for what isn't there. A list of rows and an arrow's end at a row use it.
 - **Asked, never kept.** It runs only when an assistive app asks for a shape, never per frame, and
   is worked out afresh each time, so a description reads the record and services as they are.
 - **The order and the parts** are two claims, each one plugin's: `registrar.accessibleOrder` (the Tab
@@ -14563,7 +14566,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   flat; none for one kept aside): what shapes placed among others keep clear of, as
   [`canvas draw`](#draw)'s obstacles.
 - **The hint** (`hintedShapeID`, a target outlined whatever the tool) always names a shape that
-  exists, and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
+  exists, and `hintedPart` (set after it, which clears it when the hint changes) lights one of its
+  parts, a row (`PartedShape`) a connection would end on, in the hint's color, while the shape's
+  geometry lists it; and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
   selected in its editing view, if that's text: the host says, `CanvasEditorDelegate`, so headless
   it's nil; [Find](#find)'s ⌘F types it; an attachment that adopts the core's `ReadsAsText`, a
   mention's pill, reads as its text in it and any other is dropped). After every transaction that
