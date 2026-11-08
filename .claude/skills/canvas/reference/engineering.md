@@ -4,7 +4,7 @@ The engineering kit draws a database's tables the way an engineer sketches them:
 
 ## A table and its columns
 
-`columns:` takes the columns as lines in quotes, one a column, `\n` between them, each `name type [null] [unique] [default …] [pk]`: its name, its type as SQL writes it, then any of `null` (it may be null; a `?` after the type says it too), `unique`, `default` and the word after it, and `pk` (part of the primary key), in any order. Words a line can't place stay in the column as written (a key's `→ customers.id` among them, until keys are drawn), shown plain. A new table drawn with no `columns:` has one, `id uuid pk`.
+`columns:` takes the columns as lines in quotes, one a column, `\n` between them, each `name type [null] [unique] [default …] [pk]`: its name, its type as SQL writes it, then any of `null` (it may be null; a `?` after the type says it too), `unique`, `default` and the word after it, and `pk` (part of the primary key), in any order. Words a line can't place stay in the column as written (a `→ customers.id` typed in a line among them: a key is drawn as an edge, below), shown plain. A new table drawn with no `columns:` has one, `id uuid pk`.
 
 ```draw
 table "customers" columns: "id uuid pk\nemail text unique\nname text\ncreated_at timestamptz default now()"
@@ -18,6 +18,27 @@ table "orders" columns: "placed_at timestamptz null\ntotal_cents int"
 ```
 
 The table is as wide as it's drawn (`size: 320x`) and as tall as its rows; a height in `size:` is its rows' anyway.
+
+## Keys
+
+A key is an arrow from a column to the column it references, bound to both rows, on the `foreign-key` channel. Draw it as an edge between rows, each named with a dot outside the quotes: the column that holds the key first.
+
+```draw
+edge "orders".customer_id -> "customers".id
+```
+
+The channel is the one the columns take, so `channel: foreign-key` can be written or left out; only a table's columns take it (an enum, a database, a note or a subboard takes none). The column shows a link in its gutter, and the arrow leaves its row's side facing the other table. Drawn again, the same rows are the same key (`unchanged`); two other rows of the same tables are another key. A row the table doesn't have is `unknown_row`, with the ones like it:
+
+```draw-error
+// reason: unknown_row
+edge "orders".custmer_id -> "customers".id
+```
+
+Deleting a table deletes its keys, either way; deleting a column deletes the keys at it. `delete "orders".placed_at` takes the column out:
+
+```draw
+delete "orders".placed_at
+```
 
 ## An enum
 
@@ -53,6 +74,18 @@ The tables in a database, and how many tables there are:
 ```query
 /* count: 4 */
 table
+```
+
+Its keys are arrows on `foreign-key`: the tables a table's keys go to, and every key:
+
+```query
+/* matches: "orders" */
+table:edge-to("customers", foreign-key)
+```
+
+```query
+/* count: 1 */
+arrow[channel=foreign-key]
 ```
 
 A table's columns, each its id and what its line said, are its `columns` attribute, as a row of `canvas query` gives them; a test inside the list (`[columns.name=…]`) isn't built yet.

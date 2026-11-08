@@ -743,6 +743,7 @@ The edge types this app has. A type takes in those under it.
 | `note-link` | `arrow` | an arrow drawn on the note-link channel |
 | `subboard-link` | `arrow` | an arrow drawn on the subboard-link channel |
 | `frame-link` | `arrow` | an arrow drawn on the frame-link channel |
+| `foreign-key` | `arrow` | a key: an arrow from a column to the column it references, bound to both rows |
 
 `stands-for` is the app's own, from a shape that stands for others to each of them. A `reference` that names a shape stands for it while it's public, so an arrow into the reference is an arrow into that shape ([references.md](references.md) runs on a file that has one).
 

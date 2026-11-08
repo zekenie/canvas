@@ -2389,6 +2389,28 @@ transaction.moveParts([PartAddress(orders, part: id): PartAddress(items, part: i
 registrar.partsMoved { moves, transaction in … }                  // a name of a row renamed where it went
 ```
 
+**Keys.** A key is an arrow bound to two rows, on the kit's channel. The kit declares the channel, gives
+a table's rows ports on it both ways, and keeps an index of each table's keys that its render reads:
+
+```swift
+public enum ForeignKey {}
+extension ForeignKey: Channel {
+    public static let id: ChannelID = "foreign-key"
+    public static var isOnEveryChannel: Bool { false }    // a subboard, open to every channel, takes no keys
+}
+registrar.channel(ForeignKey.self)
+registrar.service { KeyIndex(editor: $0) }               // per table, from Topology's edges with their parts
+table.partPorts(ForeignKey.self)                         // a dot at each end of the hovered row; a key ends on a row
+extension TableDefinition: TakesBoundShapes {}           // a table or a column deleted takes its keys
+```
+
+An arrow's end binds a row (`ArrowBinding.part`) and is drawn at the row's side facing the other end
+([the connector](#the-connector-arrows)); its edge carries both rows (`Edge.parts`, [Topology](#topology)).
+`KeyIndex` reads them (`edges(of: table, .outgoing, types: .only(foreign-key))`), redoes only the tables a
+change to those edges touched, and the column that starts a key shows a link in its gutter. `canvas draw`
+names a row with a dot outside the quotes: `edge "orders".customer_id -> "customers".id`, `delete
+"orders".legacy_note`; a kind takes a row out by id through `PartedShape.removing(_:from:)`.
+
 **Columns written as lines.** Edited, a table is LineRows' editing view ([rows written as
 lines](#rows-written-as-lines)): its name in its pill, then a line a column. `ColumnLineGrammar` reads a line
 through `ColumnGrammar.scan` (each word's role and range) into spans the field draws (the type as code, an
@@ -6944,6 +6966,18 @@ shape's bounds than a dot's reach, only where the shape is under the pointer), a
 on a container (its edge, its tab) a dot takes it only on its disc, while the nearest dot within
 reach still keeps its shape's dots showing as the pointer crosses the edge to it.
 
+### Ports on rows
+
+A kind whose shapes have rows (`PartedShape`) may have ports on its rows instead of its sides:
+`x.partPorts(C.self, role:)` (`registrar.partPorts(K.self, on: C.self)` for another plugin's kind). The
+row the pointer is on shows a dot just outside each end (`PortDot.part`), a drag from one is a
+`Connection` with `part`, and a connection on that channel ending on such a shape binds the row under its
+end (the arrow ports' `ArrowPartRules`). Which kinds may be at a channel's ends is the channel's data:
+`static var isOnEveryChannel: Bool { false }` keeps it off kinds with ports on every channel (a subboard),
+while a stand-in still takes it. By name, `ConnectEnd(shape, part:)`, `ConnectionRequest(fromPart:toPart:)`
+and Draw's `EdgeRequest.fromPart`/`toPart` carry rows; `registry.takesOnParts(kind, channel, as:)` and
+`partDotChannels(of:)` read the table.
+
 ### Ports at a stand-in
 
 A [stand-in](#stand-ins-forwarding) (a [reference](#references): a pill that stands for another
@@ -7081,7 +7115,8 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   the shape's to grab.
 - **While a connection is drawn** the dots are gone, and each shape in view it could end on is
   outlined faintly, as a hovered shape is (2.5 points, the accent at 60%); the shape it would end
-  on now gets the full outline, the hint.
+  on now gets the full outline, the hint, and, ending on a row, that row is lit (the core's
+  `editor.hintedPart`, its rect from the shape's kept geometry, in the hint's color).
 - **Locked shapes keep their ports.** A connection to or from one changes an arrow, never the
   shape.
 - **What it costs.** `PortState` finds every kind's ports once, as the registry is frozen. The
@@ -7094,8 +7129,13 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 
 ### The connector: arrows
 
+An arrow's end may bind a row (`ArrowBinding.part`, arrow version 3): drawn at the middle of the row's
+side facing the other end, unclipped, kept by an arrow moved alone, stepped a row by ↑ ↓ on its ⌥Tab
+part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`); an end with
+no part is drawn as it always was.
+
 The ports code never learns what a connection is. One plugin draws them, the connector
-(`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:begin:)`, the `Connectors`
+(`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:parts:begin:)`, the `Connectors`
 point, at most one). `K` is what connections are, and opts into `ChannelProperty`; `F` is the
 family of edges they are in Topology's graph (an `EdgeType`, which this declares, and every
 channel's type is under); `canConnect` says which shapes one
@@ -9066,6 +9106,12 @@ topology.edges(of: note, .incoming, types: .only(MentionEdge.id))       // who m
 topology.edges(ofType: .within(ArrowEdge.id))                           // every arrow bound at both ends, on any channel
 topology.isInside(note, subboard)                                       // on its board, in a frame there, or on a board under it
 ```
+
+**Edges at rows.** An edge keeps whole shapes at its ends and carries the row each end reaches
+(`edge.parts`, `.none` or a boxed `.some(source:target:)`; `sourcePart`, `targetPart`), part of its
+identity, so a key moved to another row is another edge. A source says them with
+`sink.emit(type, from:to:fromPart:toPart:)`, and `topology.edges(of: table, part: column, .outgoing)` is a
+row's edges.
 
 ### The shapes are the system of record
 
