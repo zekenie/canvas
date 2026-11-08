@@ -102,15 +102,43 @@ public struct LineReading<Row> {
 }
 
 /// One thing that fits at the caret: what the list shows and a pick puts in, and the shape or row it stands for, which
-/// is lit on the board while it's highlighted (an enum offered by name).
+/// is lit on the board while it's highlighted (an enum offered by name). Or an action ("New type Problem"), done by Return
+/// or a click, never by Tab's pick (`action(_:_:)`).
 public struct LineOffer: Equatable {
     public var completion: CaretCompletion
     public var light: PartAddress?
+    /// What the row does, for an action row; nil for words a pick puts in.
+    public var action: LineAction?
 
     public init(_ completion: CaretCompletion, light: PartAddress? = nil) {
         self.completion = completion
         self.light = light
     }
+
+    /// An action row, listed last by the grammar that offers it: `label` what it says ("New type Problem"), `action` what it does.
+    /// Done, the words it was offered for (the offers' range) stand for what it made, and the line is written with them in the
+    /// action's step, the caret staying where it is.
+    public static func action(_ label: String, _ action: LineAction) -> LineOffer {
+        var offer = LineOffer(CaretCompletion(label: label, insert: "", isRelevant: false, isAction: true))
+        offer.action = action
+        return offer
+    }
+}
+
+/// What an action row does: makes a shape (a type note named by the words typed), whose address the words then stand for, in
+/// a step of its own name that the line's commit joins ("New Type"). Nil from `perform`: nothing made, nothing written.
+public struct LineAction: Equatable, Sendable {
+    private let id = UUID()
+    /// The step it and the line's commit are, together.
+    public let stepName: String
+    let perform: @MainActor @Sendable (LineContext) -> PartAddress?
+
+    public init(step: String, perform: @escaping @MainActor @Sendable (LineContext) -> PartAddress?) {
+        stepName = step
+        self.perform = perform
+    }
+
+    public static func == (a: LineAction, b: LineAction) -> Bool { a.id == b.id }
 }
 
 /// What fits at the caret: the range a pick replaces (UTF-16, holding the caret), what's typed of it, and the offers in

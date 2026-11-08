@@ -19,14 +19,15 @@ import Titles
         for said in ["kit engineering", "shape table", "label Table → table", "tool table", "command insert:table in KitShapes<EngineeringKit>",
                      "shape enum-type", "title pill look → enum-type", "shape database", "title tab → database", "command createDatabase",
                      "CanvasContextMenu in DatabaseMenuGroup", "/database → the command bar's target", "/table → the command bar's target",
-                     "draw value columns", "draw value values"] {
+                     "draw value columns", "draw value values", "shape api", "tool api", "/api → the command bar's target",
+                     "draw value server", "draw value endpoints", "line rows (endpoints) → api"] {
             expect(line.contains(said), "the report says \(said): \(line)")
         }
         expectEqual(registry.kits.map(\.id), [EngineeringKit.id])
         expectEqual(registry.kits.map(\.title), ["Engineering"])
-        expectEqual(registry.tools.filter { registry.kit(ofTool: $0.id) == EngineeringKit.id }.map(\.label), ["Table", "Enum", "Database"])
+        expectEqual(registry.tools.filter { registry.kit(ofTool: $0.id) == EngineeringKit.id }.map(\.label), ["Table", "Enum", "API", "Database"])
         expectEqual(registry.containingKinds.contains(Database.kind), true)
-        expectEqual(registry.partedKinds, [DatabaseTable.kind, DatabaseEnum.kind])
+        expectEqual(Set(registry.partedKinds), [DatabaseTable.kind, DatabaseEnum.kind, API.kind])
         expectEqual(registry.label(of: DatabaseTable.kind).systemImage, "tablecells")
     },
     test("each kind's props round-trip through a board, every member kept, a column's enum by its id") {

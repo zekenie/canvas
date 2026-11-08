@@ -201,6 +201,10 @@ final class LineCardSession<Model: LineModel>: LineCardView {
                 return index < line.shown.count && field.line != line.shown[index]
             }
             field.onLight = { [weak self] light in self?.session?.service.setLight(light) }
+            field.onAction = { [weak self, weak field] action, range in
+                guard let self, let field, let stop = self.stop(of: field) else { return }
+                self.act(action, at: range, in: field, stop: stop)
+            }
             line.fields.append(field)
             line.clips.append(clip)
         }
@@ -340,6 +344,25 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         isMoving = keep
         editor.cardDidResize()
         return result
+    }
+
+    /// An action row done in a line of the card ("New type Problem"): what it makes, the line's words standing for it, and the line
+    /// written with them, in one step of the action's name, heard by VoiceOver; the caret stays at the end of that line.
+    private func act(_ action: LineAction, at range: NSRange, in field: LineField, stop: CardStop) {
+        guard session != nil, editor.canTransact else { return }
+        let context = context
+        var result = CardCommit.unchanged
+        editor.undoHistory.group(action.stepName) {
+            guard let made = action.perform(context) else { return }
+            field.stand(for: made, at: range)
+            result = commit(stop.line)
+        }
+        guard result == .written else { return }
+        editor.announce(action.stepName)
+        if let kept = responder(of: stop) as? LineField, let window, window.firstResponder !== kept {
+            window.makeFirstResponder(kept)
+        }
+        if let kept = responder(of: stop) as? LineField { kept.setSelectedRange(NSRange(location: (kept.string as NSString).length, length: 0)) }
     }
 
     /// A commit the file couldn't take while it was delivering one: made a turn later, if the line still has words to write.

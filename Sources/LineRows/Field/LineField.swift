@@ -66,6 +66,9 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     public var offering: (() -> LineOffers?)?
     /// The offer highlighted in the list (nil: none, or no list), as it changes: what's lit on the board.
     public var onLight: ((PartAddress?) -> Void)?
+    /// An action row done (Return on it, or a click), and the range of the words it was offered for: the host does it, then
+    /// those words stand for what it made (`stand(for:at:)`) and the line is written, in the action's step.
+    public var onAction: ((LineAction, NSRange) -> Void)?
     /// What's typed that becomes something else as it's typed.
     public var substitutions: [LineSubstitution] = []
     /// What VoiceOver calls the list.
@@ -487,8 +490,15 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     private func pick(row: Int) {
         guard let current = open, current.listed.indices.contains(row) else { return }
         let item = current.listed[row].item, range = current.offers.range
-        let light = current.offers.items.first { $0.completion == item }?.light
+        let offer = current.offers.items.first { $0.completion == item }
+        let light = offer?.light
         closeOffers()
+        if item.isAction {
+            // An action is the host's to do; the list stays closed there until the caret or the offers move.
+            closedAt = range.location
+            if let action = offer?.action, isEditable { onAction?(action, range) }
+            return
+        }
         guard isEditable, NSMaxRange(range) <= (string as NSString).length else { return }
         isPicking = true
         defer { isPicking = false }
@@ -514,6 +524,25 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
             isPicking = false
             refreshOffers()
         }
+    }
+
+    /// The words at `range` stand for `target` (what an action made), as a picked name does: the line is read again, the caret
+    /// where it was. Nothing for a range past the text.
+    public func stand(for target: PartAddress, at range: NSRange) {
+        guard let storage = textStorage, range.length > 0, NSMaxRange(range) <= storage.length else { return }
+        let caret = selectedRange()
+        storage.addAttribute(Self.referenceKey, value: Reference(target), range: range)
+        onChange?()
+        setSelectedRange(caret)
+    }
+
+    /// The action row highlighted in the list, done as Return does it (for tests and VoiceOver's sake): false where the list
+    /// isn't open or what's highlighted is no action.
+    @discardableResult
+    public func doHighlightedAction() -> Bool {
+        guard let open, let row = open.list.highlighted, open.listed.indices.contains(row), open.listed[row].item.isAction else { return false }
+        pick(row: row)
+        return true
     }
 
     /// Closes the list, if it's open, and puts the light out.

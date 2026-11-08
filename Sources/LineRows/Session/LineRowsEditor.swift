@@ -12,15 +12,17 @@ import Titles
 // caret leaves it, when it commits as one step the kind names ("Add Column", "Rename Column", "Delete Column"); ⌥↑ ⌥↓
 // move a row, repeats one step; a pasted block is a row a line, one step. VoiceOver hears it as a group of rows.
 
-/// A stop of a row-written shape's editing: its title, a row, or the waiting line.
+/// A stop of a row-written shape's editing: its title, its fixed line (an API's server), a row, or the waiting line.
 public enum LineStop: Hashable, Sendable, CustomStringConvertible {
     case title
+    case fixed
     case row(PartID)
     case waiting
 
     public var description: String {
         switch self {
         case .title: "title"
+        case .fixed: "fixed"
         case .row(let id): "row \(id)"
         case .waiting: "waiting"
         }
@@ -76,6 +78,9 @@ public class LineRowsView: NSView {
 
     /// The line a row is printed as now (the focused one as typed).
     public func line(of stop: LineStop) -> String? { nil }
+
+    /// Where a stop's line is, in the view's coordinates (nil for the title, and a stop the shape doesn't have).
+    public func rect(of stop: LineStop) -> CGRect? { nil }
 
     /// Starts the session where its shape's first or last stop is, or a press at a world point puts it.
     func start() {}
@@ -133,6 +138,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private var elements: [LineStop: LineRowElement] = [:]
     /// ⌘L opened the picker on the row with the caret: its line is printed again as the keyboard comes back, with what the pick made.
     private var awaitsPicker = false
+    /// The fixed line as the field was given it: what a draft of it is measured against.
+    private var fixedShown: LineText?
+    /// Whether the row with the caret has a card, so the "›" the kind asks for shows (`showsCardChevron`).
+    private var hasCard = false
+    /// VoiceOver's button for the "›".
+    private let chevronElement = LineRowElement()
 
     init(shape: ShapeRecord<Model.Props>, context: EditContext<Model.Props>, model: Model, title: LineTitle?, service: LineRowsService) {
         id = shape.id
@@ -152,6 +163,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         field.offering = { [weak self] in self?.offers() }
         field.draft = { [weak self] in self?.hasDraft ?? false }
         field.onLight = { [weak service] light in service?.setLight(light) }
+        field.onAction = { [weak self] action, range in self?.act(action, at: range) }
         if let title {
             let titleField = title.make(shape[TitleProperty.self])
             titleField.typed = { [context, id] text in
@@ -184,6 +196,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     override var stops: [LineStop] {
         var stops: [LineStop] = titleField == nil ? [] : [.title]
+        if model.fixedLine != nil { stops.append(.fixed) }
         var lines = rows.map { LineStop.row(model.id(of: $0)) }
         lines.insert(.waiting, at: waitingLine)
         stops += lines
@@ -202,6 +215,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     override func line(of stop: LineStop) -> String? {
         if stop == focus { return field.string }
+        if stop == .fixed, let fixed = model.fixedLine, let shape { return fixed.print(shape.props, lineContext()).string }
         guard case .row(let row) = stop, let held = rows.first(where: { model.id(of: $0) == row }) else { return stop == .waiting ? "" : nil }
         return model.grammar(for: model.role(of: held)).print(held, in: lineContext(row)).string
     }
@@ -237,6 +251,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private func stop(at point: CGPoint, folded: RowsShown? = nil) -> LineStop? {
         guard let paper else { return nil }
         if titleField != nil, point.y < paper.minY { return .title }
+        if let fixed = model.fixedLine, point.y < fixed.rect(paper).maxY { return .fixed }
         if let folded {
             for line in 0..<folded.count {
                 let rect = model.lineRect(line, in: paper)
@@ -271,9 +286,13 @@ final class LineSession<Model: LineModel>: LineRowsView {
     }
 
     /// The rect of a stop's line, in the view's coordinates (nil for the title).
-    func rect(of stop: LineStop) -> CGRect? {
+    override func rect(of stop: LineStop) -> CGRect? {
         switch stop {
         case .title: return nil
+        case .fixed:
+            guard let paper, let fixed = model.fixedLine else { return nil }
+            let origin = origin
+            return fixed.rect(paper).offsetBy(dx: -origin.x, dy: -origin.y)
         case .waiting: return rect(ofLine: waitingLine)
         case .row(let row): return index(of: row).flatMap { rect(ofLine: LineRowsLayout.line(of: $0, waiting: waitingLine)) }
         }
@@ -307,13 +326,40 @@ final class LineSession<Model: LineModel>: LineRowsView {
         }
         clip.isHidden = false
         let style = model.style
-        let clipFrame = CGRect(x: line.minX + style.textInset, y: line.minY, width: max(1, line.width - style.textInset - style.trailingInset), height: line.height)
+        let inset = style.textInset + indent(of: focus)
+        let clipFrame = CGRect(x: line.minX + inset, y: line.minY, width: max(1, line.width - inset - style.trailingInset - chevronRoom), height: line.height)
         if clip.frame != clipFrame { clip.frame = clipFrame }
         let height = ceil(field.layoutManagerLineHeight(style))
         let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(), width: max(textWidth + LineFieldStyle.textSlack, clipFrame.width + slide), height: height)
         if field.frame != fieldFrame { field.frame = fieldFrame }
         keepCaretInClip()
         needsDisplay = true
+    }
+
+    /// How far in a stop's text starts past the line's inset: the kind's indent of a row, or of a new row where the waiting line is.
+    private func indent(of stop: LineStop) -> CGFloat {
+        let rows = rows
+        switch stop {
+        case .row(let row): return index(of: row).map { model.indent(at: $0, of: rows, isNew: false) } ?? 0
+        case .waiting: return model.indent(at: waitingLine, of: rows, isNew: true)
+        case .title, .fixed: return 0
+        }
+    }
+
+    /// Room kept at the line's right for the "›" while it shows.
+    private var chevronRoom: CGFloat { showsChevron ? LineRowsStyle.chevronRoom : 0 }
+
+    /// Whether the "›" shows: on a row with a card, of a kind that asks for it.
+    private var showsChevron: Bool {
+        guard model.showsCardChevron, hasCard, case .row = focus else { return false }
+        return true
+    }
+
+    /// The "›" on the row with the caret, in the view's coordinates; nil where it doesn't show.
+    private var chevronRect: CGRect? {
+        guard showsChevron, let line = rect(of: focus) else { return nil }
+        return CGRect(x: line.maxX - model.style.trailingInset - LineRowsStyle.chevronRoom + LineRowsStyle.chevronGap, y: line.minY,
+                      width: LineRowsStyle.chevronRoom - LineRowsStyle.chevronGap, height: line.height)
     }
 
     private var textWidth: CGFloat {
@@ -335,13 +381,24 @@ final class LineSession<Model: LineModel>: LineRowsView {
         field.frame.origin.x = -slide
     }
 
-    /// The band behind the line with the caret, and its gutter's mark as it reads now.
+    /// The band behind the line with the caret, its gutter's mark as it reads now, the fixed line's placeholder while it's empty,
+    /// and the "›" of a row with a card, where the kind asks for one.
     override func draw(_ dirtyRect: NSRect) {
         guard let line = rect(of: focus) else { return }
         let style = model.style
         let band = line.insetBy(dx: style.bandInset, dy: 0)
         style.band.setFill()
         NSBezierPath(roundedRect: band, xRadius: LineFieldStyle.bandRadius, yRadius: LineFieldStyle.bandRadius).fill()
+        if focus == .fixed, field.string.isEmpty, let fixed = model.fixedLine {
+            let text = NSAttributedString(string: fixed.placeholder, attributes: LineRowsStyle.placeholder(style))
+            let size = text.size()
+            text.draw(at: CGPoint(x: line.minX + style.textInset, y: line.midY - size.height / 2))
+        }
+        if let chevron = chevronRect {
+            let text = NSAttributedString(string: LineRowsStyle.chevron, attributes: [.font: style.font, .foregroundColor: style.secondaryInk])
+            let size = text.size()
+            text.draw(at: CGPoint(x: chevron.midX - size.width / 2, y: chevron.midY - size.height / 2))
+        }
         guard let mark = reading?.mark,
               let image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: nil)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: style.markSize, weight: .semibold)
@@ -369,9 +426,13 @@ final class LineSession<Model: LineModel>: LineRowsView {
         return self
     }
 
-    /// A press on another line goes to it, the caret where it was.
+    /// A press on another line goes to it, the caret where it was; on the "›", the row's card opens.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil), origin = origin
+        if let chevron = chevronRect, chevron.contains(point) {
+            openCard()
+            return
+        }
         guard let stop = stop(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y)), stop != focus else { return }
         go(to: stop, at: .point(CGPoint(x: point.x + origin.x, y: point.y + origin.y), clicks: event.clickCount))
     }
@@ -395,6 +456,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         focus = stop
         if let waitingAt { self.waitingAt = waitingAt }
         slide = 0
+        hasCard = false
         switch stop {
         case .title:
             held = nil
@@ -402,6 +464,14 @@ final class LineSession<Model: LineModel>: LineRowsView {
             reading = nil
             field.closeOffers()
             fitWidth()
+        case .fixed:
+            held = nil
+            shown = nil
+            let fixed = model.fixedLine
+            field.substitutions = fixed?.substitutions ?? []
+            field.show(shape.flatMap { shape in fixed.map { $0.print(shape.props, lineContext()) } } ?? LineText(""))
+            lineChanged(reportingChange: false)
+            fixedShown = field.line
         case .waiting:
             held = nil
             shown = nil
@@ -415,6 +485,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             field.show(stored.map { grammar.print($0, in: lineContext(row)) } ?? LineText(""))
             lineChanged(reportingChange: false)
             shown = stored.map { stored in (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored) }
+            hasCard = model.showsCardChevron && stored.map { model.card(of: $0, in: lineContext(row)) != nil } == true
         }
         setInputs()
         place()
@@ -431,6 +502,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
             keepCaretInClip()
             if case .row(let row) = stop, let index = index(of: row) {
                 field.setAccessibilityLabel("\(model.noun.title) \(index + 1) of \(rows.count)")
+            } else if stop == .fixed, let fixed = model.fixedLine {
+                field.setAccessibilityLabel(fixed.name)
             } else {
                 field.setAccessibilityLabel("New \(model.noun.singular)")
             }
@@ -455,6 +528,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         } else {
             editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)
         }
+        editor.setLayoutInput(LineRowsLayout.fixed, focus == .fixed ? true : nil, for: id)
         // A waiting line opened between rows moves the ones below it with nothing committed: a card under one goes with it.
         service.cards?.follow(nil)
     }
@@ -462,6 +536,19 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// The line was typed in: read again, its looks and mark shown, the clip slid to the caret.
     private func lineChanged(reportingChange: Bool = true) {
         guard focus != .title else { return }
+        if focus == .fixed {
+            let look = model.fixedLine.map { $0.look(field.line, lineContext()) } ?? (spans: [], mark: nil)
+            let read = LineReading<Row>(row: nil, spans: look.spans, mark: look.mark)
+            reading = read
+            field.show(read, style: model.style)
+            fitWidth()
+            if reportingChange {
+                place()
+                keepCaretInClip()
+            }
+            needsDisplay = true
+            return
+        }
         let rowID: PartID
         if case .row(let row) = focus { rowID = row } else { rowID = PartID() }
         let read = grammar.read(field.line, id: rowID, in: lineContext(focus == .waiting ? nil : rowID))
@@ -492,6 +579,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     private func offers() -> LineOffers? {
         guard focus != .title, let reading else { return nil }
+        if focus == .fixed { return model.fixedLine?.offers(field.selectedRange().location, field.line, lineContext()) }
         let row: PartID? = if case .row(let row) = focus { row } else { nil }
         return grammar.offers(at: field.selectedRange().location, in: field.line, reading: reading, context: lineContext(row))
     }
@@ -507,6 +595,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let line = field.line
         let blank = line.string.trimmingCharacters(in: .whitespaces).isEmpty
         switch focus {
+        case .fixed:
+            return commitFixed() ? .fixed : nil
         case .waiting:
             guard !blank, let row = grammar.read(line, id: PartID(), in: lineContext()).row else { return nil }
             let at = min(waitingAt, rows.count)
@@ -545,6 +635,28 @@ final class LineSession<Model: LineModel>: LineRowsView {
         }
     }
 
+    /// The fixed line, if it changed from what it was shown as: written in one step the kind names ("Change Server"), heard by
+    /// VoiceOver. False where it wasn't written: unchanged, or refused (a locked shape shakes).
+    private func commitFixed() -> Bool {
+        guard let fixed = model.fixedLine, let fixedShown, field.line != fixedShown else { return false }
+        let line = field.line, id = id, context = lineContext()
+        let written: Bool? = editor.transactWhole(nil, shaking: [id]) { transaction in
+            guard let record = transaction.document[id]?.typed(as: Model.Props.self) else { throw Transaction.Refused([id]) }
+            var props = record.props
+            fixed.write(line, &props, context)
+            transaction.update(id, as: Model.Props.self) { $0.props = props }
+            // A shape that refuses writes (locked) is left as it was: refused, and it shakes.
+            guard let after = transaction.document[id]?.typed(as: Model.Props.self),
+                  fixed.print(after.props, context) == fixed.print(props, context) else { throw Transaction.Refused([id]) }
+            transaction.stepName = fixed.stepName
+            return true
+        }
+        guard written == true else { return false }
+        editor.announce(fixed.stepName)
+        self.fixedShown = field.line
+        return true
+    }
+
     /// A commit changed the stop with the caret (a waiting line became its row, an emptied row went): what the kind lays
     /// out and the field's place follow, for a caller that goes on without showing a stop.
     private func refreshStop() {
@@ -558,6 +670,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private var hasDraft: Bool {
         switch focus {
         case .title: false
+        case .fixed: fixedShown.map { field.line != $0 } ?? false
         case .waiting: !field.string.trimmingCharacters(in: .whitespaces).isEmpty
         case .row: shown.map { field.line != $0.line } ?? false
         }
@@ -673,6 +786,9 @@ final class LineSession<Model: LineModel>: LineRowsView {
         switch focus {
         case .title:
             show(.waiting, at: .end, waitingAt: rows.count)
+        case .fixed:
+            commitDraft()
+            show(.waiting, at: .end, waitingAt: rows.count)
         case .waiting where blank:
             end()
         case .row where blank:
@@ -721,6 +837,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         commitDraft()
         switch stop {
         case .title: show(.title, at: caret)
+        case .fixed: show(.fixed, at: caret)
         case .row(let row) where index(of: row) != nil: show(stop, at: caret)
         // The waiting line, or a row that went with the line it was (emptied and left): the waiting line, last.
         default: show(.waiting, at: caret, waitingAt: rows.count)
@@ -760,7 +877,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// the one below), and a held ⌫ stops there; on the waiting line, the caret goes to the row above, nothing written.
     private func deleteEmpty() -> Bool {
         switch focus {
-        case .title:
+        case .title, .fixed:
             return false
         case .waiting:
             let stops = stops
@@ -786,7 +903,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// A block of lines pasted: a row a line, where the caret's line is (in place of it when it's empty, after it
     /// otherwise), one step ("Paste Columns"); the caret at the end of the last. One line is typed.
     private func paste(_ text: String) -> Bool {
-        guard focus != .title else { return false }
+        guard focus != .title, focus != .fixed else { return false }
         reanchor()
         let lines = grammar.lines(fromPasted: text)
         guard lines.count > 1 else {
@@ -813,7 +930,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
                 commitDraft()
                 at = (self.index(of: row) ?? index) + 1
             }
-        case .title:
+        case .title, .fixed:
             return false
         }
         let grammar = model.grammar(for: shape.map { model.roleOfNewRow(at: at, in: $0.props) } ?? "")
@@ -844,6 +961,29 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .tab: tab(by: 1)
         case .backTab: tab(by: -1)
         }
+    }
+
+    // MARK: Actions
+
+    /// An action row done in the line (Return on it, or a click): what it makes, the words it was offered for standing for that, and
+    /// the line written with them, in one step of the action's name ("New Type"), heard by VoiceOver; the caret stays in the line.
+    private func act(_ action: LineAction, at range: NSRange) {
+        guard focus != .title, focus != .fixed, editor.canTransact, editor.document[id] != nil else { return }
+        let row: PartID? = if case .row(let row) = focus { row } else { nil }
+        let context = lineContext(row), field = field
+        var written = false
+        editor.undoHistory.group(action.stepName) {
+            guard let made = action.perform(context) else { return }
+            field.stand(for: made, at: range)
+            written = commitDraft() != nil
+        }
+        guard written else { return }
+        // The line is the row now: shown again where the caret was, so Undo is the board's ("Undo New Type"), not the typing's.
+        field.show(field.line, caret: field.selectedRange().location)
+        lineChanged(reportingChange: false)
+        if case .row(let row) = focus, let stored = storedRow(row) { shown = (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored) }
+        editor.announce(action.stepName)
+        place()
     }
 
     // MARK: The row's card
@@ -900,6 +1040,15 @@ final class LineSession<Model: LineModel>: LineRowsView {
         for stop in stops where stop != .title {
             if stop == focus {
                 children.append(field)
+                // The "›", a button after the line it opens the card of.
+                if let chevron = chevronRect, let window {
+                    chevronElement.setAccessibilityRole(.button)
+                    chevronElement.setAccessibilityParent(self)
+                    chevronElement.setAccessibilityLabel(LineRowsStyle.chevronName)
+                    chevronElement.setAccessibilityFrame(window.convertToScreen(convert(chevron, to: nil)))
+                    chevronElement.press = { [weak self] in self?.openCard() }
+                    children.append(chevronElement)
+                }
                 continue
             }
             let element = elements[stop] ?? LineRowElement()
@@ -907,6 +1056,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
             element.setAccessibilityRole(.textField)
             element.setAccessibilityParent(self)
             switch stop {
+            case .fixed:
+                guard let fixed = model.fixedLine else { continue }
+                element.setAccessibilityLabel(fixed.name)
+                element.setAccessibilityValue(line(of: .fixed) ?? "")
+                element.setAccessibilityPlaceholderValue(fixed.placeholder)
             case .row(let row):
                 guard let at = index(of: row) else { continue }
                 let held = rows[at]
@@ -945,5 +1099,23 @@ extension LineField {
     /// How tall its line is in the kind's fonts: what it's centered in a row by.
     func layoutManagerLineHeight(_ style: LineStyle) -> CGFloat {
         max(style.font.ascender - style.font.descender + style.font.leading, style.codeFont.ascender - style.codeFont.descender + style.codeFont.leading)
+    }
+}
+
+/// What the session draws beside a row's line: the "›" of a row with a card, and a fixed line's placeholder. World units.
+@MainActor
+enum LineRowsStyle {
+    /// What a click opens a row's card by.
+    static let chevron = "›"
+    /// What VoiceOver calls it.
+    static let chevronName = "Show Details"
+    /// The room it takes at a line's right, and the gap before it.
+    static let chevronRoom: CGFloat = 22
+    static let chevronGap: CGFloat = 6
+
+    /// A fixed line's placeholder: the line's font, slanted, in its secondary ink (E1, E7: a faint "server").
+    static func placeholder(_ style: LineStyle) -> [NSAttributedString.Key: Any] {
+        let slanted = NSFontManager.shared.convert(style.font, toHaveTrait: .italicFontMask)
+        return [.font: slanted, .foregroundColor: style.secondaryInk]
     }
 }

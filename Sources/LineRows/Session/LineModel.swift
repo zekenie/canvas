@@ -63,6 +63,15 @@ public protocol LineModel {
     /// A row's card, ⌘↓ in its line: what more it holds than the line says (a column's on delete), a line each. Nil, by
     /// default, for a row with nothing more (an enum's value): ⌘↓ does nothing there.
     func card(of row: Row, in context: LineContext) -> LineCard<Row>?
+    /// Whether the row with the caret shows a "›" at its right that a click opens its card by (an endpoint's, E3 panel 1);
+    /// false by default (a column's card is ⌘↓'s alone, as the frames draw a table).
+    var showsCardChevron: Bool { get }
+    /// The line every shape of the kind has above its rows, never a row (an API's server, `LineFixedLine`): a stop after the
+    /// title, typed as a row's line is in a grammar of its own and written as its stop is left. Nil, by default, for none.
+    var fixedLine: LineFixedLine<Props>? { get }
+    /// How far in from the line's text inset the text of the row at `index` of `rows` starts (a header's members are
+    /// indented under it); `isNew` for a new line put in at `index` (the waiting line). 0 by default.
+    func indent(at index: Int, of rows: [Row], isNew: Bool) -> CGFloat
 }
 
 extension LineModel {
@@ -71,6 +80,9 @@ extension LineModel {
     public func isHeader(_ row: Row) -> Bool { false }
     public var widestLine: CGFloat? { nil }
     public func card(of row: Row, in context: LineContext) -> LineCard<Row>? { nil }
+    public var showsCardChevron: Bool { false }
+    public var fixedLine: LineFixedLine<Props>? { nil }
+    public func indent(at index: Int, of rows: [Row], isNew: Bool) -> CGFloat { 0 }
 
     public func apply(_ changes: [LineChange<Row>], to id: ShapeID, in transaction: inout Transaction) -> Bool {
         guard let record = transaction.document[id]?.typed(as: Props.self) else { return false }
@@ -112,5 +124,49 @@ extension LineModel {
             return "\(item.count) \(item.count == 1 ? label : DeleteSteps.plural(label))"
         }
         return "\(name) and \(DeleteSteps.list(parts))"
+    }
+}
+
+/// A kind's fixed first line (an API's server, `host[/path] [bearer]`): above its rows, never a row, always there, so nothing
+/// adds or takes it out. Typed as a row's line is, in a grammar of its own (looks, offers, `->` as `→`), with a faint
+/// placeholder while it's empty; a stop after the title (↑ from the first row comes to it, Return goes on to the waiting line);
+/// written as its stop is left, if it changed, one step the kind names ("Change Server"). The kind draws it at rest and leaves
+/// it to the field while it has the caret (`LineRowsLayout.fixed`).
+@MainActor
+public struct LineFixedLine<Props: ShapeProps> {
+    /// What VoiceOver calls it: "Server".
+    public let name: String
+    /// What it shows, faint, while it's empty: "server".
+    public let placeholder: String
+    /// Its step: "Change Server".
+    public let stepName: String
+    /// Where it's drawn on a shape laid out at a frame, world units.
+    let rect: @MainActor (CGRect) -> CGRect
+    let print: @MainActor (Props, LineContext) -> LineText
+    let look: @MainActor (LineText, LineContext) -> (spans: [LineSpan], mark: LineMark?)
+    let offers: @MainActor (Int, LineText, LineContext) -> LineOffers?
+    let write: @MainActor (LineText, inout Props, LineContext) -> Void
+    let substitutions: [LineSubstitution]
+
+    /// The line, in `grammar`: `get` the value the shape holds (nil: none, an empty line), `set` the shape holding the line's
+    /// value (nil for an empty line); `rect` where it's drawn in a frame.
+    public init<Grammar: LineGrammar>(name: String, placeholder: String, stepName: String, grammar: Grammar,
+                                      rect: @escaping @MainActor (CGRect) -> CGRect,
+                                      get: @escaping @MainActor (Props) -> Grammar.Row?,
+                                      set: @escaping @MainActor (inout Props, Grammar.Row?) -> Void) {
+        self.name = name
+        self.placeholder = placeholder
+        self.stepName = stepName
+        self.rect = rect
+        print = { props, context in get(props).map { grammar.print($0, in: context) } ?? LineText("") }
+        look = { line, context in
+            let reading = grammar.read(line, id: context.row ?? PartID(), in: context)
+            return (reading.spans, reading.mark)
+        }
+        offers = { caret, line, context in
+            grammar.offers(at: caret, in: line, reading: grammar.read(line, id: context.row ?? PartID(), in: context), context: context)
+        }
+        write = { line, props, context in set(&props, grammar.read(line, id: context.row ?? PartID(), in: context).row) }
+        substitutions = grammar.substitutions
     }
 }

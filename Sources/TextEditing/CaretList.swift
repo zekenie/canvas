@@ -234,8 +234,10 @@ public final class CaretList {
         case .pageDown: moveHighlight(by: metrics.rowsShown)
         case .pick:
             let isTab = command == #selector(NSResponder.insertTab(_:))
-            // Return in a list that picks only actions passes a row of words on to the text, as though nothing were listed.
+            // Return in a list that picks only actions passes a row of words on to the text, as though nothing were listed;
+            // Tab there picks only words, so on an action it closes the list and goes on.
             if !isTab, returnPicks == .actionsOnly, highlightedItem?.isAction != true { return (false, nil) }
+            if isTab, returnPicks == .actionsOnly, highlightedItem?.isAction == true { return (true, .closeAndPass) }
             if highlightedItem != nil { return (true, .pick) }
             return isTab ? (true, .closeAndPass) : (false, nil)
         case .closeAndPass: return (true, .closeAndPass)

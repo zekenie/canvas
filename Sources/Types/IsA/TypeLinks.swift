@@ -203,14 +203,23 @@ extension CanvasEditor {
     /// and as for one owner. One owner is the case of one: beside that shape itself.
     @discardableResult
     public func newType(named name: String, besides owners: [ShapeID]) -> ShapeID? {
+        newType(named: name, besides: owners, givingType: true, editing: true)
+    }
+
+    /// The same, with what goes with it said: `givingType` false makes no owner an instance of it (what names the new type is
+    /// the caller's: an endpoint's body), and `editing` false puts it down settled, nothing selected and nothing edited, so the
+    /// keyboard stays where it is (the core's `Placement.settled()`). Either way one step, "New Type", into which the caller
+    /// may write what names it, in a group of its own of that name.
+    @discardableResult
+    public func newType(named name: String, besides owners: [ShapeID], givingType: Bool, editing: Bool) -> ShapeID? {
         var seen = Set<ShapeID>()
         let owners = owners.filter { seen.insert($0).inserted && file.board(containing: $0) == board }
         guard !owners.isEmpty, let kind = newTypeKind(for: owners), let base = registry.placement(for: kind) else { return nil }
         // Told which shape it made by the transform each record goes through.
         final class Made { var id: ShapeID? }
         let made = Made()
-        let marks = owners.allSatisfy(ownerRelates) && registry.canBeRelationshipType(kind)
-        var placement = base.setting(TitleProperty.self, to: name)
+        let marks = givingType && owners.allSatisfy(ownerRelates) && registry.canBeRelationshipType(kind)
+        var placement = (editing ? base : base.settled()).setting(TitleProperty.self, to: name)
             .setting(TypeSchemaProperty.self, to: SchemaText(TypeSchemaProperty.starter))
         if marks { placement = placement.setting(RelationshipProperty.self, to: true) }
         placement = placement.mapping { record in made.id = record.id; return record }
@@ -227,7 +236,7 @@ extension CanvasEditor {
         return undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) {
             place(placement, in: landing.rect)
             guard let id = made.id, document[id] != nil else { return nil }
-            giveType(id, to: owners)
+            if givingType { giveType(id, to: owners) }
             return id
         }
     }

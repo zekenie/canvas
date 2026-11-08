@@ -419,7 +419,7 @@ extension EditorHarness {
         let standIns = h.editor.registry.standIns
         // Short names and places, some of which come to 120, the width the tool places a pill at: the kind's derive takes a
         // pill that wide for one placed, not one fitted to a place, so a seat that derived it again would lose the place.
-        for name in ["ui", "db", "x", "io", "api", "app", "lib", "web", "auth", "core"] {
+        for name in ["ui", "db", "x", "io", "rpc", "app", "lib", "web", "auth", "core"] {
             for place in ["Billing", "Cart", "Items", "Ops", "Payments", "Sync", "Admin", "Search"] {
                 var record = try require(standIns.make(Reference.kind, standingFor: note, label: name))
                 standIns.seat(&record, at: .written(shape: [place], seat: []), in: h.editor.shapeContext)

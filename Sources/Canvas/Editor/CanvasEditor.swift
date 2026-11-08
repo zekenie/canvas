@@ -1540,7 +1540,8 @@ public final class CanvasEditor {
         }
         let tool = ToolID(placing: placement.kind)
         let label = registry.tools.first { $0.id == tool }?.label
-        let follows = point != nil
+        let settled = placement.completion == .settled
+        let follows = point != nil && !settled
         let before = follows ? undoHistory.snapshots() : [:]
         var nudges: [ShapeID: CGPoint] = [:]
         if follows || registry.containingKinds.isEmpty {
@@ -1553,6 +1554,8 @@ public final class CanvasEditor {
             }) else { return }
             nudges = landed.nudges
         }
+        // Settled: put down and left at that, the selection, the tool and the keyboard where they are.
+        if settled { return glide(nudges) }
         if !isToolLocked { setTool(registry.defaultTool) }
         for service in serviceOrder { service.didPlace([record.id], in: self) }
         let edits = placement.completion == .edit
