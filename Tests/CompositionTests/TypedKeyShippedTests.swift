@@ -20,7 +20,7 @@ import Titles
 import Topology
 
 // Keys typed (K5), as shipped, on a board's window with real presses: T7 panels 4 to 7 (`customer_id uuid -> cus`, Tab, ↩, ↩ on
-// the empty row, ⌥⇧Tab to the key), T3 panel 1 (`→ customers.` offering its columns, the row lit), a line's key re-aimed,
+// the empty row, one ⌥⇧Tab to the key), T3 panel 1 (`→ customers.` offering its columns, the row lit), a line's key re-aimed,
 // taken out and left as words where it names nothing, each its own step; a rename followed by the line; ⌘L on a row (the
 // picker listing tables and their columns, never an enum or a note) and on a table (T5 panel 4, Add Key Column; T3 panel 3,
 // tables listed by where they are); `canvas draw`'s `columns:` lines drawing their keys, and `delete edge` with row ends.
@@ -126,14 +126,13 @@ private let shop = #"""
         walk.press(.return)
         expectEqual(editor.editingShapeID, nil, "↩ on the empty row ends editing")
         expectEqual(editor.selectedShapeIDs, [orders.id])
-        // ⌥⇧Tab walks orders' parts back from the last in reading order, the resize handles' bottom corners after the key, to it.
-        var presses = 0
-        repeat {
-            walk.press(.optionBackTab)
-            presses += 1
-        } while editor.focusedPart?.title.contains("id in customers") != true && presses < 8
+        // A shape's own parts come first and its arrows after them (keyboard navigation's principle 3): ⌥⇧Tab from orders is its
+        // key at once, its last part; ⌥Tab still starts at its own first.
+        walk.press(.optionBackTab)
         let part = try require(editor.focusedPart)
-        expectEqual(part.title, "Arrow to id in customers", "its key, named by the row it goes to")
+        expectEqual(part.title, "Arrow to id in customers", "its key at one press, named by the row it goes to")
+        expectEqual(editor.shapeParts(of: orders.id).last?.role, .connection, "the arrows last")
+        expect(editor.shapeParts(of: orders.id).first?.role != .connection, "the shape's own first")
         // One Undo takes the column and its key.
         let board = try require(w.window as? BoardWindow)
         walk.press(.escape)
