@@ -90,7 +90,8 @@ public final class ConnectPickerHost {
             self.pick(row: row)
         }
         field.closeByList = { [weak self, weak field] in self?.close(ifFieldIs: field) }
-        let name = editor.accessibleDescription(of: shape)?.name ?? ""
+        // "Connect from order_items", "Connect from customer_id in orders".
+        let name = (source.part != nil ? editor.accessibleName(of: source.address) : nil) ?? editor.accessibleDescription(of: shape)?.name ?? ""
         let view = ConnectPickerView(field: field)
         let card = CanvasCard(id: ConnectPickerCard(), about: shape, anchor: anchor, view: view, firstResponder: field,
                               returnsKeyboardTo: returningKeyboardTo, showsZoomedOut: true,

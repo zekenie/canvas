@@ -142,7 +142,7 @@ sticky-note "Move billing" in "Sprint 3" text: "Invoices go to the new API"
 sticky-note "Index search" in "Sprint 3" right of "Fix the login" text: "Search the archive too"
 ```
 
-A database's tables are the engineering kit's kinds: a `table` takes its `columns:` as lines in quotes, a column a line (`name type [null] [unique] [default …] [pk]`, `\n` between them), an `enum-type` its `values:` a value a line, and a `database` holds them as a frame does. A statement joins its lines onto what the shape holds by name, so it names only what it changes. A row is named with a dot outside the quotes: a key is `edge "orders".customer_id -> "customers".id` (on `foreign-key`), and `delete "orders".note` takes a column and its keys. [reference/engineering.md](reference/engineering.md) has the rest.
+A database's tables are the engineering kit's kinds: a `table` takes its `columns:` as lines in quotes, a column a line (`name type [null] [unique] [default …] [pk]`, `\n` between them), an `enum-type` its `values:` a value a line, and a `database` holds them as a frame does. A statement joins its lines onto what the shape holds by name, so it names only what it changes. A row is named with a dot outside the quotes: a key is `edge "orders".customer_id -> "customers".id` (on `foreign-key`), or `→ customers.id` at the end of the column's line, which draws that edge; `delete edge "orders".customer_id -> "customers".id` takes that key alone, and `delete "orders".note` a column and its keys. [reference/engineering.md](reference/engineering.md) has the rest.
 
 ```draw
 table "accounts" below "Sprint 3" columns: "id uuid pk\nemail text unique\ncreated_at timestamptz?"
