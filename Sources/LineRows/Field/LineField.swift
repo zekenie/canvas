@@ -456,6 +456,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
 
     /// The offers listed now, in the list's order (for tests and VoiceOver's sake): their labels.
     public var listedOffers: [String] { open?.listed.map(\.item.label) ?? [] }
+    /// The lines about them (a column's type, and the board a table on another board is on), in the same order.
+    public var listedDetails: [String] { open?.listed.map(\.item.detail) ?? [] }
     /// The offer highlighted, if a list is open.
     public var highlightedOffer: String? {
         guard let open, let row = open.list.highlighted, open.listed.indices.contains(row) else { return nil }

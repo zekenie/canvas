@@ -149,6 +149,9 @@ enum KeyArrows {
         case .stored:
             return true
         case .none:
+            // A key the line couldn't print (its table is gone: the pill stands for nothing, or the row is) isn't one the person took
+            // out: the line never showed it, so editing the column leaves it, as it leaves the pill.
+            if let current, let editor = keys?.editor, ColumnLineGrammar.written(current, editor) == nil { return true }
             if !held.isEmpty { transaction.delete(Set(held)) }
             return true
         case .to(let target):
@@ -179,16 +182,20 @@ enum KeyArrows {
         // Planned against the board shown as the editor has it, which is the transaction's: a row is written on the board shown.
         guard let editor = keys?.editor, editor.board == transaction.board else { return nil }
         let verdicts = FarVerdicts(editor)
+        // What an earlier key of this step put down isn't on the board yet as the editor has it: a pill for the same table is reused,
+        // and a new one lands clear of those already put down.
+        let document = transaction.document, put = document.shapes.compactMap { editor.document[$0.id] == nil ? $0.box : nil }
         guard verdicts.verdict(of: target.shape) == .reads, let route = verdicts.route, let far = editor.shape(inFile: target.shape),
               let placed = route.placePill(standingFor: target.shape, label: editor.registry.mentionAppearance(of: far)?.label ?? "",
-                                           beside: table, edgeIs: .from, sharing: .any, verdicts: verdicts, in: editor) else { return nil }
+                                           beside: table, edgeIs: .from, sharing: .any, avoiding: put, reading: document, verdicts: verdicts,
+                                           in: editor) else { return nil }
         guard (try? placed.claim(in: &transaction, registry: editor.registry)) != nil, let pill = try? placed.put(in: &transaction) else { return nil }
         return (PartAddress(pill, part: target.part), [placed.farKind])
     }
 }
 
-/// What ⌘L's picker means on a table (`ConnectPicks`). Opened on a row being edited (a column), it lists the tables on the board and
-/// their columns, never an enum or any other shape: a column picked is the key's far row, a table its primary key's, and the pick
+/// What ⌘L's picker means on a table (`ConnectPicks`). Opened on a row being edited (a column), it lists the tables of the file a pill can
+/// reach, nearest first, and their columns, never an enum or any other shape: a column picked is the key's far row, a table its primary key's, and the pick
 /// draws the key in place of any the column had ("Connect"). Opened on the table, it lists the tables: one picked makes a key column
 /// for it, named for it (`customer_id` for customers: the name, singular, and `_id`), typed as its primary key, after the table's own
 /// keys, with its key drawn, one step, "Add Key Column".

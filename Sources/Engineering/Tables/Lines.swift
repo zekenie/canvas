@@ -61,16 +61,25 @@ final class KitNames {
         enums.first { $0.id == id }?.name
     }
 
-    /// The table called `name` nearest `shape`: on its board, else anywhere in the file (the board shown's, then the others'), as an
-    /// enum's name is found; what a key's `→` names, a table on another board reached through a pill for it. The first in its board's
-    /// order of two alike.
+    /// The table called `name` nearest `shape`: on its board, else on another board a pill can stand for as it is (`FarVerdicts`: a
+    /// public one, not a private one, which typing never makes public), as an enum's name is found; what a key's `→` names. The first
+    /// in the board order of two alike on other boards, a reachable one over one that is not. Nil where none can be reached, so a
+    /// key to it stays plain words and the row commits.
     func tableNamed(_ name: String, besides shape: ShapeID) -> ShapeID? {
         read()
         let board = editor.file.board(containing: shape)
         // As `canvas draw` finds a table by its title: with its whitespace folded.
         let folded = TitleProperty.folded(name) ?? name
         let named = keptTables.filter { $0.name == folded }
-        return (named.first { $0.board == board } ?? named.first)?.id
+        if let here = named.first(where: { $0.board == board }) { return here.id }
+        guard !named.isEmpty else { return nil }
+        let verdicts = FarVerdicts(editor)
+        return named.first { found in
+            switch verdicts.verdict(of: found.id) {
+            case .here, .reads: true
+            case .fulfils, .cannot: false
+            }
+        }?.id
     }
 }
 
@@ -130,7 +139,7 @@ struct ColumnLineGrammar: LineGrammar {
             case .keyword: spans.append(LineSpan(word.range, .keyword))
             case .arrow:
                 spans.append(LineSpan(word.range, .keyword))
-                // The first `→` only: the word after it is its target, a key once it names a table's row on the board.
+                // The first `→` only: the word after it is its target, a key once it names a table's row on the board or one a pill can reach.
                 guard key == .none, scan.words.indices.contains(index + 1), scan.words[index + 1].role == .unread else { continue }
                 let target = scan.words[index + 1]
                 if let found = Self.target(target.text, at: target.range, in: line, from: id, context) {
@@ -161,7 +170,7 @@ struct ColumnLineGrammar: LineGrammar {
 
     /// The row a key's target names, at `range` in the line: the run's reference (printed or picked: the row it stood for, whatever
     /// else is called so), on the whole target or on its column after the dot; else by name, the table nearest the shape (its board's,
-    /// else another's, reached through a pill) and its column, or its primary key for a table alone. Nil where it names no row, or the line's own (`own`: a column is not its own key).
+    /// else another's that a pill can stand for) and its column, or its primary key for a table alone. Nil where it names no row, or the line's own (`own`: a column is not its own key).
     static func target(_ word: String, at range: NSRange, in line: LineText, from own: PartID, _ context: LineContext) -> (table: ShapeID, row: PartAddress)? {
         let editor = context.editor
         // Where nothing draws connections, a key can't be drawn: its words stay words.
@@ -184,7 +193,7 @@ struct ColumnLineGrammar: LineGrammar {
         return picked.flatMap { $0.id == own && id == context.shape ? nil : (id, PartAddress(id, part: $0.id)) }
     }
 
-    /// Whether a key's target as typed names a table on the board (`customers.`, `customers.i`): its pill forms.
+    /// Whether a key's target as typed names a table the key can reach (`customers.`, `customers.i`): its pill forms.
     private static func names(_ word: String, at range: NSRange, in line: LineText, from own: PartID, _ context: LineContext) -> Bool {
         if target(word, at: range, in: line, from: own, context) != nil { return true }
         guard let (table, _) = ColumnGrammar.target(word) else { return false }
@@ -258,8 +267,8 @@ struct ColumnLineGrammar: LineGrammar {
         return items.isEmpty ? nil : LineOffers(range: range, query: typed, items: items)
     }
 
-    /// After `→`: the tables on the shape's board that `typed` finds (Mentions' search with the table kind, nearest and recent first
-    /// with nothing typed), each table's key columns as `customers.id`; after `customers.`, that table's key columns by name. A key
+    /// After `→`: the tables of the file that `typed` finds and a pill can reach (Mentions' search with the table kind, nearest and recent
+    /// first with nothing typed; one on another board says which), each table's key columns as `customers.id`; after `customers.`, that table's key columns by name. A key
     /// column is one of its primary key or a unique one (all of a table's, where it has none of those). Each with its type, lit while
     /// it's highlighted, and standing for its row once picked.
     private func keyOffers(_ typed: String, range: NSRange, _ context: LineContext) -> LineOffers? {
@@ -269,8 +278,10 @@ struct ColumnLineGrammar: LineGrammar {
             let keys = table.columns.filter { $0.primaryKey || $0.unique }
             return keys.isEmpty ? table.columns : keys
         }
+        // A table on another board says which: two alike on two boards are told apart by it, as Mentions' rows are.
         func offer(_ table: ShapeID, _ column: Column, label: String) -> LineOffer {
-            LineOffer(CaretCompletion(label: label, detail: column.type.words, insert: label), light: PartAddress(table, part: column.id))
+            let detail = [column.type.words, editor.mentions?.boardName(ofShape: table)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            return LineOffer(CaretCompletion(label: label, detail: detail, insert: label), light: PartAddress(table, part: column.id))
         }
         if let dot = typed.lastIndex(of: "."), let (name, _) = ColumnGrammar.target(String(typed[...dot])),
            let table = editor.service(KitNames.self)?.tableNamed(name, besides: context.shape) {
@@ -425,7 +436,13 @@ struct TableLines: LineModel {
     /// The row the key of the column `line` was read from goes to on the board: what the column has, whatever its printed line said
     /// (a key's words kept before their table existed read as a key that no arrow is yet).
     private func held(_ line: ColumnLine) -> PartAddress? {
-        table.flatMap { keys?.target(of: line.column.id, in: $0) }
+        printable(table.flatMap { keys?.target(of: line.column.id, in: $0) })
+    }
+
+    /// The row a key goes to, but where the line couldn't say it (its table or row is gone): that key is no part of the line.
+    private func printable(_ target: PartAddress?) -> PartAddress? {
+        guard let target, let editor = keys?.editor, ColumnLineGrammar.written(target, editor) != nil else { return nil }
+        return target
     }
 
     /// The row a line's key goes to, the board's for one as stored.
@@ -433,7 +450,7 @@ struct TableLines: LineModel {
         switch line.key {
         case .none: nil
         case .to(let target): target
-        case .stored: table.flatMap { keys?.target(of: line.column.id, in: $0) }
+        case .stored: held(line)
         }
     }
 

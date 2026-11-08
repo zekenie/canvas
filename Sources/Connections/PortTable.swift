@@ -100,7 +100,12 @@ struct KindPorts {
             }
             if let role { shared.append(Entry(channel: lead.channel, role: role, sides: own.sides, onParts: lead.onParts && !asRow)) }
         }
-        return shared.isEmpty ? nil : KindPorts(entries: shared)
+        guard !shared.isEmpty else { return nil }
+        var ports = KindPorts(entries: shared)
+        // A stand-in has no rows for a drag to be let go on to name one: what its shapes take on their rows is taken by name only
+        // (Connect, `canvas draw`, a typed key), never by a drop on the pill, which would end a key at no row.
+        for entry in shared where entry.onParts { ports.roles[entry.channel] = nil }
+        return ports
     }
 
     /// Every installed kind's ports, by kind: what an editor keeps (the registry never changes).

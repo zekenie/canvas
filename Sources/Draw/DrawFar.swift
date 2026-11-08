@@ -133,13 +133,17 @@ extension StandInRoute {
     /// `row`: a pill for that row of `far` (a row that stands alone: an endpoint), reused only where one stands for the same row,
     /// made by the kind's row maker (`standsIn(makesRow:)`); a pill for `far` where the kind makes none. A row that doesn't stand alone (a
     /// column) is reached through a pill for its shape, `row` nil, its name on the arrow's binding.
+    ///
+    /// `reading`: the board as a transaction in progress leaves it, where a pill is looked for to reuse (one an earlier pick of the
+    /// same step put down); the editor's board as it is, without. A caller in such a step passes the boxes it has put down as `avoiding`.
     public func placePill(standingFor far: ShapeID, row: PartID? = nil, label: String, beside near: ShapeID, edgeIs place: EdgePlace,
-                          sharing: Sharing, avoiding: [CGRect] = [], verdicts: FarVerdicts, in editor: CanvasEditor) -> PlacedPill? {
+                          sharing: Sharing, avoiding: [CGRect] = [], reading: CanvasDocument? = nil, verdicts: FarVerdicts,
+                          in editor: CanvasEditor) -> PlacedPill? {
         guard let record = editor.shape(inFile: far), let found = verdicts.kind(for: record) else { return nil }
         let standIns = editor.registry.standIns
         // A kind that makes no pill for a row stands for the row's shape, the row on the binding.
         let row = row.flatMap { standIns.makesRows(found.kind) ? $0 : nil }
-        if let existing = existing(for: far, row: row, kind: found.kind, sharing: sharing, near: near, in: editor.document) {
+        if let existing = existing(for: far, row: row, kind: found.kind, sharing: sharing, near: near, in: reading ?? editor.document) {
             return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: existing, made: nil, above: [])
         }
         guard var made = row.map({ standIns.make(found.kind, standingFor: far, row: $0, label: label) }) ?? standIns.make(found.kind, standingFor: far, label: label)
