@@ -56,9 +56,7 @@ extension CanvasEditor {
     public func insert(_ placement: Placement, named step: String, beside shapes: [ShapeID]) -> ShapeID? {
         guard session == nil, !isPlacingLater else { return nil }
         var placement = placement
-        let view = unobscuredViewport
-        guard let frame = registry.insertionSpot?(self, placement.size, shapes)
-                ?? (view.isEmpty ? nil : CGRect(center: CGPoint(x: view.midX, y: view.midY), size: placement.size)) else { return nil }
+        guard let frame = insertionFrame(of: placement.size, beside: shapes) else { return nil }
         if shapes.count == 1, let neighbor = document[shapes[0]], let made = registry.madeBeside(placement.kind) {
             placement = placement.mapping { made($0, neighbor) }
         }
@@ -70,6 +68,15 @@ extension CanvasEditor {
             placed = place(placement, in: frame)
         }
         return placed
+    }
+
+    /// Where Insert puts a shape of `size` beside `shapes` (world units): the frame the insertion spot gives
+    /// (`registrar.insertionSpot`), else, with none, one centered in the view's clear part (`unobscuredViewport`). Nil for
+    /// nowhere (no view, and no spot given). For a plugin that puts its own shape down where Insert would (rows taken out
+    /// into a new table).
+    public func insertionFrame(of size: CGSize, beside shapes: [ShapeID]) -> CGRect? {
+        let view = unobscuredViewport
+        return registry.insertionSpot?(self, size, shapes) ?? (view.isEmpty ? nil : CGRect(center: CGPoint(x: view.midX, y: view.midY), size: size))
     }
 
     /// The tool ⇧↩ puts a shape down with, beside these shapes: the placing tool of the kind they all are (the

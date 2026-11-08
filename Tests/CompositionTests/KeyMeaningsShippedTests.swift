@@ -280,6 +280,39 @@ extension SampleBoardWindow {
             rowsBefore = w.rows
         })
     },
+    test("a table's rows selected on the canvas: from the second of three each key means what the table says, the rows a column; Tab the next table, Space the Hand") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw("""
+            table "customers" columns: "id uuid pk\\nemail text unique\\nname text"
+            table "orders" right of "customers" columns: "id uuid pk"
+            """)
+        let table = try require(editor.document.shapes.first { $0[TitleProperty.self] == "customers" }?.typed(as: DatabaseTable.self))
+        let start = editor.file
+        let names = ["id", "email", "name"]
+        let walk = KeyWalk(w.window, editor: editor, readers: [.custom("rows") { window in
+            guard let selection = editor.selectedItems, editor.editingShapeID == nil, window.firstResponder === w.canvas else { return nil }
+            let said = selection.ids.compactMap { id in table.props.columns.first { AnyHashable($0.id) == id }?.name }.joined(separator: "+")
+            return Focus.of(window, surface: "rows", element: said)
+        }, .canvas(w.canvas, editor: editor, names: [table.id: "customers"], part: { editor.focusedPart?.title })], settle: .runLoop)
+        walk.pending = meaningsPending
+        let surface = KeySurface("A table's rows on the canvas", axes: .vertical, overrides: [
+            .init(.tab, [.shallower], exception: "canvas-tab"), .init(.backTab, [.shallower], exception: "canvas-tab"),
+            .init(.space, [.acted, .none], exception: "canvas-space"),
+        ])
+        walk.expectMeanings(of: surface, stops: names.map { "rows/\($0)" }, at: 1, depth: { _ in
+            editor.editingShapeID != nil ? 4 : editor.hasFocusedPart ? 3 : editor.selectedItems != nil ? 2 : editor.selectedShapeIDs.isEmpty ? 0 : 1
+        }, reset: {
+            editor.endEditing()
+            while editor.file != start, editor.canUndo { editor.undo() }
+            editor.selection = nil
+            editor.selectItems([AnyHashable(table.props.columns[1].id)], of: table.id)
+            w.window.makeFirstResponder(w.canvas)
+            w.window.settle()
+        })
+    },
     test("a table's row being typed in: every key means what the table says, but Return (line-return), on a row of a table of three; ⌘↓ into its card") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

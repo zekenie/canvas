@@ -1,4 +1,5 @@
 import Canvas
+import ContextMenus
 import CoreGraphics
 import Keyboard
 import Selection
@@ -26,6 +27,8 @@ extension ShapeRegistrar {
             },
             marked: { record, reading in record.typed(as: Model.Props.self).map { model.marked($0, in: reading) } ?? [] },
             lineRect: { line, frame in model.lineRect(line, in: frame) }), to: LineRowsKinds.self)
+        // Its rows selected on the canvas (Selection's items) and moved as wholes.
+        lineRowItems(model)
     }
 }
 
@@ -79,6 +82,12 @@ public struct LineRowsPlugin: ListedPlugin {
                              click: { line, editor in Folding.open(line, in: editor) })
         registrar.forShapes(adopting: .lineRows) { kinds in
             kinds.shapeParts(named: "FoldLines") { editor, record in Folding.parts(of: record, in: editor) }
+        }
+        // With rows selected on the canvas, the selection's menu takes them out into a shape of their own, one step.
+        registrar.contextMenuForCanvas {
+            MenuItems(in: RowsMenuGroup.self, id: "take-out-rows") { subject in
+                if let item = RowItems.takeOutItem(subject) { item }
+            }
         }
     }
 }
@@ -184,6 +193,8 @@ enum LineFoldStyle {
     static let foldTitle = "Fold Rows"
     static let unfoldTitle = "Unfold Rows"
     static let unfolded = "Unfolded"
+    /// A header closed with ←.
+    static let closed = "Closed"
     /// Folded, and every row is one its kind keeps (or it was folded already).
     static let nothingToFold = "Nothing to fold"
 

@@ -22,6 +22,9 @@ public final class LineRowsService {
     var cards: (any LineCardShowing)?
     /// The session of the shape being edited, as it started.
     weak var session: LineRowsView?
+    /// The rows its session has selected whole (⇧↑ ⇧↓), and their shape: what's selected as items on the canvas as editing
+    /// ends.
+    var band: (shape: ShapeID, rows: [PartID])?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -84,6 +87,18 @@ public final class LineRowsService {
         return session.openCard()
     }
 
+    /// A row edited, as Return on it selected on the canvas, or a click on it once it's the only row selected, edits it: the
+    /// shape edited from `point` (the row under it, the caret there), else at the row's line's end. False where it can't be
+    /// (a read-only shape, which shakes).
+    @discardableResult
+    public func edit(_ row: PartID, of shape: ShapeID, at point: CGPoint?) -> Bool {
+        if editor.selectedShapeIDs != [shape] { editor.selectedShapeIDs = [shape] }
+        if let point { return editor.beginEditing(shape, at: point) }
+        guard editor.beginEditing(shape), let session, editor.editingShapeID == shape else { return false }
+        session.go(to: .row(row))
+        return true
+    }
+
     /// Where `id`'s session starts when Tab or ⇧Tab hopped to it, as its editing view is made: asked once.
     func startingStop(_ id: ShapeID) -> End? {
         guard let hopped, hopped.id == id else { return nil }
@@ -96,6 +111,7 @@ extension LineRowsService: EditorService {
     /// A pick that a session's line waits for is in: the line printed again, with what it drew.
     public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
         cards?.follow(changes)
+        session?.documentDidSettle()
         guard let session = awaitingReprint else { return }
         awaitingReprint = nil
         session.reprint()
@@ -104,6 +120,11 @@ extension LineRowsService: EditorService {
     /// Editing's end takes back what the session set and puts the light out.
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {
         if hopped?.id == id { hopped = nil }
+        // Rows selected whole stay selected, as items of their shape on the canvas (Escape, ⌘↑, a press on them).
+        if let band, band.shape == id {
+            self.band = nil
+            if editor.document[id] != nil { editor.selectItems(band.rows.map(AnyHashable.init), of: id) }
+        }
         setLight(nil)
         editor.setLayoutInput(LineRowsLayout.waiting, nil, for: id)
         editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)

@@ -431,6 +431,9 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             return deleteEmpty(at: stop)
         case .moveUp, .moveDown, .addBeside, .connect, .card:
             break
+        case .extendUp, .extendDown, .deleteRows:
+            // No rows to select whole in a card: ⇧↑ ⇧↓ select the line's text, as in any field.
+            return false
         }
         return true
     }

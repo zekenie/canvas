@@ -55,24 +55,30 @@ public enum AnnouncementPriority: Sendable {
 public struct AccessiblePart {
     /// Stable from frame to frame (the part's own key).
     public var id: AnyHashable
-    /// What VoiceOver calls it: "Locked", "Go to Original", "Arrow to Payment".
-    public var title: String
+    /// What VoiceOver calls it: "Locked", "Go to Original", "Arrow to Payment". Worked out when asked, so listing a
+    /// shape's many parts (a table's rows) costs their rects alone.
+    @MainActor public var title: String { titled() }
+    private let titled: @MainActor () -> String
     public var role: Role
     /// Where it is, in world units.
     public var rect: CGRect
     /// What pressing it does, as its click does.
     public var press: @MainActor (CanvasEditor) -> Void
+    /// Whether it is selected: a row of its shape selected as an item (Selection's).
+    public var isSelected: Bool
 
-    /// What kind of control it is, as the host gives it a role.
+    /// What kind of control it is, as the host gives it a role: `row` is a row of the shape (a table's column), selectable.
     public enum Role: Sendable {
-        case button, menuButton, link, checkbox, handle, connection
+        case button, menuButton, link, checkbox, handle, connection, row
     }
 
-    public init(id: AnyHashable, title: String, role: Role, rect: CGRect, press: @escaping @MainActor (CanvasEditor) -> Void) {
+    public init(id: AnyHashable, title: @autoclosure @escaping @MainActor () -> String, role: Role, rect: CGRect, isSelected: Bool = false,
+                press: @escaping @MainActor (CanvasEditor) -> Void) {
         self.id = id
-        self.title = title
+        self.titled = title
         self.role = role
         self.rect = rect
+        self.isSelected = isSelected
         self.press = press
     }
 }

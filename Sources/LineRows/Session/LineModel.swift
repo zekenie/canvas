@@ -63,6 +63,14 @@ public protocol LineModel {
     /// A row's card, ⌘↓ in its line: what more it holds than the line says (a column's on delete), a line each. Nil, by
     /// default, for a row with nothing more (an enum's value): ⌘↓ does nothing there.
     func card(of row: Row, in context: LineContext) -> LineCard<Row>?
+    /// `row` under another id: a row moved into a shape that already holds its id.
+    func renaming(_ row: Row, to id: PartID) -> Row
+    /// The props of a new shape holding `rows` taken out of `shape` (⌘X then ⌘V on the board, the take-out in the selection's
+    /// menu): by default the shape's own props holding only them, so a new shape of its kind, untitled. A table's has its
+    /// `id uuid pk` first.
+    func takeOut(_ rows: [Row], from shape: ShapeRecord<Props>) -> Props
+    /// Whether a shape taken out has its name typed at once (T5: "Name it addresses"). False by default.
+    var takeOutEditsTitle: Bool { get }
 }
 
 extension LineModel {
@@ -71,6 +79,12 @@ extension LineModel {
     public func isHeader(_ row: Row) -> Bool { false }
     public var widestLine: CGFloat? { nil }
     public func card(of row: Row, in context: LineContext) -> LineCard<Row>? { nil }
+    public func takeOut(_ rows: [Row], from shape: ShapeRecord<Props>) -> Props {
+        var props = shape.props
+        setRows(rows, in: &props)
+        return props
+    }
+    public var takeOutEditsTitle: Bool { false }
 
     public func apply(_ changes: [LineChange<Row>], to id: ShapeID, in transaction: inout Transaction) -> Bool {
         guard let record = transaction.document[id]?.typed(as: Props.self) else { return false }
@@ -101,16 +115,26 @@ extension LineModel {
         return true
     }
 
-    /// The step of `changes`, named by the first, and by what a delete took along: "Delete Column and 1 Arrow".
+    /// The step of `changes`, named by the first, and by what a delete took along, counted even for one ("Delete Column
+    /// and 1 Arrow": the row is the step's noun, what went is how many).
     func stepName(of changes: [LineChange<Row>], along: [KindCount], in registry: Registry) -> String {
-        let name = changes.first.map(stepName(of:)) ?? noun.title
-        let counted = along.filter { $0.count > 0 }
-        guard !counted.isEmpty else { return name }
-        let parts = counted.map { item in
-            let label = registry.label(of: item.kind).name
-            // Counted even for one ("Delete Column and 1 Arrow"): the row is the step's noun, what went is how many.
-            return "\(item.count) \(item.count == 1 ? label : DeleteSteps.plural(label))"
+        RowSteps.counted(changes.first.map(stepName(of:)) ?? noun.title, along: along, in: registry)
+    }
+
+    /// One step of `changes` to shape `id`, named as `stepName(of:along:in:)` names it, and heard by VoiceOver: what a row's
+    /// line, a row's card and rows selected on the canvas write. A refusal (a locked shape) writes nothing and shakes it.
+    @discardableResult
+    func write(_ changes: [LineChange<Row>], to id: ShapeID, in editor: CanvasEditor, coalescing key: AnyHashable? = nil) -> Bool {
+        var name = ""
+        let registry = editor.registry
+        let written: Bool? = editor.transactWhole(nil, coalescing: key, shaking: [id]) { transaction in
+            guard apply(changes, to: id, in: &transaction) else { throw Transaction.Refused([id]) }
+            name = stepName(of: changes, along: transaction.deletedAlong, in: registry)
+            transaction.stepName = name
+            return true
         }
-        return "\(name) and \(DeleteSteps.list(parts))"
+        guard written == true else { return false }
+        editor.announce(name)
+        return true
     }
 }

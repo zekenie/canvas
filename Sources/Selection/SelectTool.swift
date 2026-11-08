@@ -134,12 +134,26 @@ extension SelectTool: Tool {
         // On a label (`LabeledShape`), a click edits and a drag moves the label: both wait for the
         // threshold.
         let onLabel = isReached && hit.isOnShape && editor.isOnLabel(id, at: pointer.world)
+        // An item's lead (an endpoint's method chip) is pressed before faces: a click runs it, a drag drags its item.
+        if isPlain, pointer.clickCount == 1, isReached, hit.isOnShape, let lead = editor.itemLead(on: id, at: pointer.world) {
+            editor.session = PointingLeadSession(shape: id, lead: lead, press: pointer.view)
+            return
+        }
         // A face waits for the drag threshold, even on a lone box: released within it, it clicks.
         if let face {
             editor.session = PointingShapeSession(shapeID: id, press: pointer.view, didSelectOnPress: !keepsSelection,
                                                   brushesOnDrag: false, face: face)
             return
         }
+        // Its items, one level in (`ShapeItems`: a table's rows), as a group's parts are: on the only selected shape, a press on
+        // one waits for the threshold, and its release selects it (⇧ the run to it, ⌘ it toggled), or, the only one selected,
+        // opens it. A press anywhere else on the shape drops them.
+        if wasOnlySelection, isReached, hit.isOnShape, pointer.clickCount == 1, !pointer.modifiers.contains(.option),
+           let item = editor.item(at: pointer.world, of: id) {
+            editor.session = PointingItemSession(shape: id, item: item, press: pointer.view, modifiers: pointer.modifiers, in: editor)
+            return
+        }
+        editor.selectionState?.clearItems()
         // A click on the only selected shape edits it, if its kind is edited in place and it can
         // be (a locked one is only selected: a click isn't a try), on its label if it has one
         // (tldraw's: a click on an arrow's body only selects it); a drag past the threshold moves it.

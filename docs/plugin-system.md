@@ -2571,6 +2571,29 @@ Editing a folded shape shows every row; Find's hits show in place while Find is 
 remembered with the file's view on this Mac, a core view value (`ViewValueKey`, `editor.setViewValue`, no
 step), which `BoardDocument` saves and hands back before the canvas is made.
 
+**Rows as items and wholes.** A kind written as lines gets its rows selected on the canvas, as Selection's items of
+its shape ([Items inside a shape](#items-inside-a-shape)), and moved as wholes, with no code of its own beyond two
+members of its model:
+
+```swift
+func renaming(_ row: TallyRow, to id: PartID) -> TallyRow { var row = row; row.id = id; return row }
+// Optional: what rows taken out are (by default a new shape of the kind holding only them), and whether its name is
+// typed at once.
+func takeOut(_ rows: [ColumnLine], from shape: ShapeRecord<DatabaseTable>) -> DatabaseTable { … }   // `id uuid pk` first
+var takeOutEditsTitle: Bool { true }
+```
+
+One function moves them, `editor.moveRows(_:of:to:)`: `.into(shape, before:)` (the same shape reorders; another
+of its kind takes them), `.board(origin:)` or `.beside(shapes)` (the take-out, where Insert would put one). One
+step named from the noun ("Move Column", "Move Columns to New Table"), all or nothing, a read-only source or
+target shaking; a row keeps its id (a new one only where the target holds it), and what's bound to it follows
+through the core's `moveParts` (`PartsMoved` hears it). On the pasteboard (the editor's: Clipboard's) rows are a
+board file of the source holding only them, their lines as text beside it: `copyRows` carries the arrows they start,
+`cutRows` every arrow bound to them, counted in its step ("Cut Columns and 2 Arrows"), and `pasteRows` lands them
+as `moveRows` does, a cut's paste a move (its arrows back under their ids) while no shape on the board holds them.
+While a shape is edited, ⇧↑ ⇧↓ select rows whole (the first the caret's row), which ⌫, ⌥↑ ⌥↓, ⌘C ⌘X ⌘V act on,
+and Escape leaves selected as items. The selection's menu offers the take-out of rows selected.
+
 ## Selection
 
 Selecting is a horizontal ([`Sources/Selection`](../Sources/Selection)), and the one most others
@@ -3256,11 +3279,12 @@ registrar.forShapes(holding: LinkProperty.self) { link in
   shape). An arrow's ends, bend and label are handles of this kind (Arrows' `ArrowParts`): an end bound
   with ⌥⌘ goes to `editor.nearestShape(to:toward:among:)`, the nearest shape that way by the rule ⌥⌘
   steps by.
-- **Order.** `editor.shapeParts(of:)` lists every plugin's in reading order of their rects' middles
-  (`StopOrder.reading`, as Tab reads shapes, a row being parts within half the shortest one's height,
-  so a note's rows read top to bottom), parts level with one another by `order`, then plugin
-  order; a part two lists give (the same id) once. None for the shape being edited, whose parts are
-  its editor's.
+- **Order.** `editor.shapeParts(of:)` lists the shape's own parts first and its arrows (`.connection`)
+  after them, each in reading order of their rects' middles (`StopOrder.reading`, as Tab reads shapes,
+  a row being parts within half the shortest one's height, so a note's rows read top to bottom), parts
+  level with one another by `order`, then plugin order; a part two lists give (the same id) once. So
+  ⌥⇧Tab from a shape is its last arrow at once. None for the shape being edited, whose parts are its
+  editor's.
 - **Listed when a key asks**, never on every frame: a list may lay out what it needs. The ring's place
   is kept from the last listing until the board, the layout or the zoom changes.
 - **The focus** is Selection's (`editor.focusedPart`, `hasFocusedPart`): it goes with any other change
@@ -3282,6 +3306,42 @@ registrar.forShapes(holding: LinkProperty.self) { link in
 - **Adornments lists every clickable adornment** by itself, in the scope it is registered in
   ([Adornments](#adornments)): the lock, private and type chips, "+N", the relationship pill and its offer
   are parts with no code of their own.
+
+### Items inside a shape
+
+What is selected inside a shape, one level in as a group's parts are: its items (a table's rows, which LineRows
+lists for every kind written as lines). A plugin lists a kind's items and says what the keys do to them; Selection
+does the rest (the click ladder, the keys, the outline, Escape, Undo, VoiceOver), and the plugin writes no key code:
+
+```swift
+registrar.forShapes(adopting: .lineRows) { kinds in
+    kinds.shapeItems(named: "rows", { editor, shape in
+        rows(of: shape).map { ShapeItem(id: $0.id, title: spoken($0), rect: rect(of: $0)) }    // title asked lazily
+    }, at: { editor, shape, point in row(at: point, of: shape)?.id },
+    actions: ShapeItemActions(
+        delete: { editor, shape, ids in … },            // ⌫ ⌦, one step the kind names
+        move: { editor, shape, ids, delta in … },       // ⌥↑ (-1) ⌥↓ (+1)
+        open: { editor, shape, id, point in … },        // Return, a click on the only selected item
+        setOpen: { editor, shape, id, open in … }))     // → ← Space on an item that hides others
+}
+```
+
+- **The ladder.** A press on an item of a shape not selected is the shape's. On the only selected shape, a click
+  on an item selects it, ⇧ the run from the anchor, ⌘ toggles one, and a click on the only selected item opens it
+  where it was clicked; a press anywhere else drops them. A `drag` and a `lead` (an item's chip pressed before
+  faces) are optional actions.
+- **The keys.** ↑ ↓ step them, ⇧↑ ⇧↓ draw the run, ⌥↑ ⌥↓ move them (the chord resizes a shape with none), ← →
+  and Space open and close an item that hides others (`ItemOutline`), ⌫ deletes them, Return opens the first, ⌘A
+  selects every item, Escape goes back to the shape. Clipboard cuts, copies and pastes them before the shape.
+- **Hidden items.** An item that stands for hidden ones (`stands`: a fold's "+N ›" line) shows selected while one
+  of those is, and gives it back as it shows again.
+- **Read it** as `editor.selectedItems` (the shape, the ids in its order, the anchor, and `acting`: what the keys
+  delete, move, cut and copy, which for a line standing for selected hidden items is those items) and set it with
+  `editor.selectItems(_:of:)`. The shape stays selected; its outline and handles give way to the items', drawn inside it,
+  and come back if the shape lists none of what is held (another writer deleted them). A ⌘ press on an item still
+  brushes when dragged. VoiceOver hears them as rows (`AccessiblePart.Role.row`; a part's `title` is worked out when
+  asked, so listing a big shape's rows costs their rects), before the shape's parts, said selected, and a run drawn
+  out or toggled is counted aloud through the actions' `selectedWords`.
 ## Describing a shape for VoiceOver
 
 VoiceOver sees the canvas as a layout area named for its board, whose children are its shapes, each
@@ -6585,6 +6645,12 @@ A selection's uncopyable shapes are left out of a copy, and stay when it's cut. 
 shapes selected, ⌘C and ⌘X pass the key on, and the menu has no Cut or Copy. Everything
 else treats them as usual: they're selected, moved, deleted and erased. The rule is
 `ShapeCopyability`: at most one per kind, plus one for every kind, which a kind's own overrides.
+
+**Rows.** With rows selected inside a shape (Selection's items), ⌘C and ⌘X act on the rows, and ⌘V with rows on
+the pasteboard puts them after the last row selected, or out on their own beside the selection
+([Rows written as lines](#rows-written-as-lines)). Clipboard gives the editor its pasteboard
+(`registrar.pasteboard`, a host slot), so what another plugin writes there (the line editor's rows) is on the
+same one, and a test's is its own.
 
 ### Metadata
 
@@ -14678,7 +14744,8 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   another kind under its id ([Containers](#containers)), `move(_:to:)`, which takes shapes onto
   another board of the file, `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns,
   `move(_:from:to:)` off any board onto any other, `translate(_:by:on:)`, which moves them there,
-  and `move(_:above:on:)` and `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, and
+  and `move(_:above:on:)` and `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, `insert(_:on:)`, which puts one back there
+  (a key a cut took from a board that holds a pill for the table; on top, nothing held of it, a read-only board refusing it), and
   `delete(_:on:)` and `delete(inFile:)`, which delete one there, `board(containing:)`, which says where a shape is ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers),
   `setContainer(_:to:)` and `settle(_:)` (`settle(_:on:)` on another board). A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
@@ -16119,7 +16186,7 @@ and a test checks it loads and registers.
 ```
 core                 tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:engineering in FileMenu.KitList
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⇧↩ → command insertBeside · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
-selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
+selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · overlay ItemsOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge, Pan or Step Rows · shortcut ⇧← → Nudge, Pan or Step Rows · shortcut → → Nudge, Pan or Step Rows · shortcut ⇧→ → Nudge, Pan or Step Rows · shortcut ↑ → Nudge, Pan or Step Rows · shortcut ⇧↑ → Nudge, Pan or Step Rows · shortcut ↓ → Nudge, Pan or Step Rows · shortcut ⇧↓ → Nudge, Pan or Step Rows · shortcut ⌥← → Resize or Move Rows · shortcut ⌥⇧← → Resize or Move Rows · shortcut ⌥→ → Resize or Move Rows · shortcut ⌥⇧→ → Resize or Move Rows · shortcut ⌥↑ → Resize or Move Rows · shortcut ⌥⇧↑ → Resize or Move Rows · shortcut ⌥↓ → Resize or Move Rows · shortcut ⌥⇧↓ → Resize or Move Rows · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for · stand-in lookup
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v3 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · insert beside by default sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · paste reader Note · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
@@ -16152,7 +16219,7 @@ validation-contents  ContentsMarks → every shape
 mention-validation   ValidationRules → every shape naming shapes
 path-validation      service PathIndex · ValidationRules → every shape with a title
 grouping             property groups · property groups → every shape · service GroupIndex · SelectionGroups · command group in GroupingSection · shortcut ⌥⌘G → command group · command ungroup in GroupingSection · shortcut ⌥⇧⌘G → command ungroup · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup
-clipboard            service ClipboardState · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command pasteAsNote after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌥⇧⌘V → command pasteAsNote · command duplicate after pasteAsNote in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
+clipboard            service ClipboardState · pasteboard · command cut · shortcut ⌘X → command cut · command copy · shortcut ⌘C → command copy · command paste · shortcut ⌘V → command paste · command pasteAtPointer after paste in EditMenu.CutCopyPaste · shortcut ⇧⌘V → command pasteAtPointer · image source · command pasteAsNote after pasteAtPointer in EditMenu.CutCopyPaste · shortcut ⌥⇧⌘V → command pasteAsNote · command duplicate after pasteAsNote in EditMenu.CutCopyPaste · shortcut ⌘D → command duplicate · DragCopies · CanvasContextMenu in ClipboardMenuGroup
 locking              property locked · property locked → every shape · read-only shapes · service LockState · command lock · command unlock · shortcut ⇧L → command lock or unlock · adornment LockChip last → every shape holding locked · parts LockChip → every shape holding locked · ContentsMarks → every shape holding locked · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding locked · accessibility → every shape holding locked · /lock /unlock → every shape holding locked
 publishing           property private · property private → every shape · public dials · service PublishingState · command makePublic · command makePrivate · CanvasContextMenu in PublishMenuGroup after StateMenuGroup · adornment PrivateChip last → every shape holding private · parts PrivateChip → every shape holding private · ContentsMarks → every shape holding private · /public /private → every shape holding private
 types                property schema · key hint ⇥ or ⇧⇥ Next or Previous Field · property is · property fieldValues · property autofill · property relationship · property endRule · edge type is-a · edges → every shape holding is · service TypeIndex · service RelationshipIndex · service FieldBook · service TypeSync<TypeSchemaProperty> · service FieldWriter · service FieldFill · service FieldDefiner · service FieldChecks · service FieldCards · service DefinitionCards · service RelationshipHooks · service RowBook · layout input type-rows · layout input type-pill · service EndArrows · layout input end-arrow · CanvasContextMenu in ShapeMenuGroup first · DecorationHits · outlines · parts RowFace → every shape holding schema · parts RowFace → every shape holding is · ShapeFaces · parts DefinitionFace → every shape holding relationship · ShapeFaces · command openFields · CanvasContextMenu in ShapeMenuGroup first · command retryTypeSync · CanvasContextMenu in ShapeMenuGroup first → every shape holding schema · accessibility → every shape holding is · accessibility → every shape holding schema · ShapeFaces · parts RelateFace → every shape holding schema · willDelete · ShapePopovers · /is-a → every shape holding is · CanvasContextMenu in ShapeMenuGroup first · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup → every shape holding is · CanvasContextMenu in StateMenuGroup before SelectionMenuGroup · adornment TypeChips after TitlePill → every shape holding is · parts TypeChips → every shape holding is · service RelationshipOffers · SelectionObservers · adornment RelationshipPill → every shape holding is · parts RelationshipPill → every shape holding is · adornment RelationshipOfferPill after RelationshipPill → every shape holding is · parts RelationshipOfferPill → every shape holding is · title pill look → every shape holding schema · title pill look → every shape holding is
@@ -16207,8 +16274,8 @@ type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Ty
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values · paste reader SQL
+line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values · paste reader SQL
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 

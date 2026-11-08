@@ -3,6 +3,7 @@ import Canvas
 import ContextMenus
 import Geometry
 import Keyboard
+import LineRows
 import Selection
 
 /// Cut, copy and paste, as a plugin: ⌘X, ⌘C and ⌘V (registered with Keyboard), Edit › Cut, Copy
@@ -122,15 +123,25 @@ public struct ClipboardPlugin: OutwardPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         let pasteboard = pasteboard
         registrar.service { ClipboardState(editor: $0, pasteboard: pasteboard) }
+        // The editor's pasteboard: what another plugin writes and reads goes there too (rows, from the line editor while a row is
+        // typed in, as from the canvas).
+        registrar.pasteboard { _ in pasteboard }
         // ⌘X, ⌘C and ⌘V on the canvas, Edit › Cut, Copy and Paste (AppKit's own items, which text
         // answers first; the board's window runs these where nothing else took them) and the context
         // menu's items do one thing, on the shapes they're for: some can be copied. Paste lands where
         // ⌘V's rule says (where it was copied from, if that's in view), or, from a context menu,
         // centered on its click.
+        // With rows selected inside the shape (Selection's items), a key or the menu bar cuts and copies them, not the shape.
         registrar.command(.cut, title: "Cut", answering: .cut, shortcut: KeyChord("x", .command), runs: .betweenPresses,
-                          isEnabled: { $0.editor.canCopy($0.shapes) }) { $0.editor.cut($0.shapes) }
+                          isEnabled: { $0.editor.canCopy($0.shapes) }) { subject in
+            if subject.editor.cutSelectedRows(for: subject) { return }
+            subject.editor.cut(subject.shapes)
+        }
         registrar.command(.copy, title: "Copy", answering: .copy, shortcut: KeyChord("c", .command),
-                          isEnabled: { $0.editor.canCopy($0.shapes) }) { _ = $0.editor.copy($0.shapes) }
+                          isEnabled: { $0.editor.canCopy($0.shapes) }) { subject in
+            if subject.editor.copySelectedRows(for: subject) { return }
+            _ = subject.editor.copy(subject.shapes)
+        }
         registrar.command(.paste, title: "Paste", answering: .paste, shortcut: KeyChord("v", .command), runs: .betweenPresses,
                           isEnabled: { $0.editor.canPaste }) { subject in
             if let point = subject.point { subject.editor.paste(centeredAt: point) } else { subject.editor.paste() }

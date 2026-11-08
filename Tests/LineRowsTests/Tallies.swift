@@ -219,6 +219,11 @@ struct TallyLines: LineModel {
         props.rows = rows
     }
     func id(of row: TallyRow) -> PartID { row.id }
+    func renaming(_ row: TallyRow, to id: PartID) -> TallyRow {
+        var row = row
+        row.id = id
+        return row
+    }
     func role(of row: TallyRow) -> LineRole { "entry" }
     func roleOfNewRow(at index: Int, in props: Tally) -> LineRole { "entry" }
     func grammar(for role: LineRole) -> any LineGrammar<TallyRow> { TallyGrammar() }

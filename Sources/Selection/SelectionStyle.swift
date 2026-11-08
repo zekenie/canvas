@@ -68,11 +68,19 @@ enum SelectionStyle {
     /// the part's rect by this much.
     static let partRingWidth: CGFloat = 2
     static let partRingStandoff: CGFloat = 3
+    /// The outline of a run of selected items (`ItemsOverlay`): this wide, its corners this round, this far inside its
+    /// shape's sides, in view points.
+    static let itemOutlineWidth: CGFloat = 2
+    static let itemRadius: CGFloat = 5
+    static let itemInset: CGFloat = 4
     /// How far an arrow key nudges the selection, and with ⇧, in world units (tldraw's 1 and 10).
     static let nudge: CGFloat = 1
     static let shiftNudge: CGFloat = 10
     /// What the Keyboard Shortcuts window calls the arrow keys: they nudge the selection, or with none pan the view.
     static let nudgeOrPan = "Nudge or Pan"
+    /// With a shape's rows selected (its items), the arrows step through them, and ⌥ and an arrow moves them.
+    static let nudgePanOrStep = "Nudge, Pan or Step Rows"
+    static let resizeOrMove = "Resize or Move Rows"
     // Stepping from shape to shape (`StopOrder`), with tldraw's numbers (`Editor.selectAdjacentShape`).
     /// Reading order: a shape joins a row when its center is less than this far, in world units, above or
     /// below the row's last.

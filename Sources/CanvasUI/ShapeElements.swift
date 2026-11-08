@@ -86,6 +86,7 @@ final class PartElement: NSAccessibilityElement {
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { onPart(NSAccessibility.Role.unknown) { _, part in part.role.accessibilityRole } }
     override func accessibilityLabel() -> String? { onPart(nil) { _, part in part.title } }
+    override func isAccessibilitySelected() -> Bool { onPart(false) { _, part in part.isSelected } }
     override func accessibilityFrame() -> NSRect {
         onPart(.zero) { canvas, part in NSAccessibility.screenRect(fromView: canvas, rect: canvas.editor.camera.toView(part.rect)) }
     }
@@ -122,6 +123,7 @@ extension AccessiblePart.Role {
         case .link, .connection: .link
         case .checkbox: .checkBox
         case .handle: .handle
+        case .row: .row
         }
     }
 }
