@@ -7,6 +7,7 @@ import Clipboard
 import Connections
 import Engineering
 import Geometry
+import References
 import Selection
 import ShippedTesting
 import TestKit
@@ -17,7 +18,7 @@ import Titles
 // updating payments in place (its columns' ids and its key's arrow kept, a new column after the one pasted before it, a column
 // the paste doesn't say kept); a key re-aimed where the paste names another target and kept where it names none; an enum and the
 // column it types; a key to a table that isn't there yet drawn by the same pasteboard once it is (the reading holds only the text);
-// a key that names nothing the file has leaving the column's key; a `.sql` file or two, before their names as text; SQL that reads
+// a key that names nothing the file has leaving the column's key; a key to a table on another board through its pill; a `.sql` file or two, before their names as text; SQL that reads
 // nothing saying so; a schema wider than the view brought into it, and what the paste says it did; and the kit off, where ⌘V does
 // nothing.
 
@@ -180,6 +181,39 @@ private let payments = """
         _ = try drawnInProcess(#"table "currencies" below "refunds" columns: "id int\ncode text pk""#, on: editor)
         expect(commandV(w), "the same pasteboard, as it was")
         expectEqual(Set(keys(editor).keys), ["refunds.paid_by -> charges.ref", "refunds.currency -> currencies.code"], "each table's primary key, as the file has it now")
+    },
+    test("a key to a table on another board reaches it through that table's pill, the column on the binding; the same paste again keeps the pill and the arrow") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        _ = try drawnInProcess(#"""
+            table "customers" columns: "id uuid pk\nemail text unique"
+            subboard "billing" below "customers"
+            """#, on: editor)
+        let customers = try require(table(editor, "customers"))
+        let billing = BoardID(owner: try require(editor.document.shapes.first { $0[TitleProperty.self] == "billing" }).id)
+        expect(editor.showBoard(billing))
+        w.window.makeFirstResponder(w.canvas)
+        @MainActor func pills() -> [ShapeRecord<Reference>] { editor.contents(of: billing).shapes.compactMap { $0.typed(as: Reference.self) } }
+        @MainActor func keyArrows() -> [ShapeRecord<Arrow>] {
+            editor.contents(of: billing).shapes.compactMap { $0.typed(as: Arrow.self) }.filter { $0[ChannelProperty.self] == ForeignKey.id }
+        }
+        pasteboardHolds("CREATE TABLE statements (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers (id));")
+        expect(commandV(w))
+        let statements = try require(editor.contents(of: billing).shapes.first { $0[TitleProperty.self] == "statements" })
+        let pill = try require(pills().first)
+        expectEqual(pills().count, 1, "one pill, customers', on billing's board")
+        expectEqual(pill.props.target?.id, customers.id)
+        let arrow = try require(keyArrows().first)
+        expectEqual(keyArrows().count, 1)
+        expectEqual(arrow.props.start.binding?.shapeID, statements.id)
+        expectEqual(arrow.props.end.binding?.shapeID, pill.id, "the key ends at the pill")
+        expectEqual(arrow.props.end.binding?.part, customers.props.columns.first { $0.name == "id" }?.id, "the column on the binding")
+        expectEqual(undoTitle(w.window), "Undo Paste SQL")
+        expect(commandV(w), "the same paste again")
+        expectEqual(pills().map(\.id), [pill.id], "the same pill")
+        expectEqual(keyArrows().map(\.id), [arrow.id], "the same arrow")
     },
     test("a column that has a key keeps it where the paste's REFERENCES names nothing the file has") {
         let w = try shopWindow()
