@@ -27,7 +27,7 @@ The engineering kit (`Sources/Engineering`, product): database tables, their enu
 
 Related: [kits](kits.md), [line rows](line-rows.md), [types](types.md), [plugins and kinds](plugins-and-kinds.md), [titles](titles.md), [containers](containers.md), [frames](frames.md), [slash commands](slash-commands.md), [context menus](context-menus.md), [command line](command-line.md), [boards on disk](boards-on-disk.md), [palette](palette.md) ([every topic](../../CLAUDE.md#map)).
 
-In the guide, `docs/plugin-system.md`: [Kits](../../docs/plugin-system.md#kits), [The engineering kit](../../docs/plugin-system.md#the-engineering-kit). The plan is the owner's doc "Engineering kit" (https://claude.ai/artifact/7bkKR1idCbPUmrZT8FVXBf); its K1, "Tables at rest", K2, "Write columns", K3, "Draw a key", K4, "Keys look right", K5, "Type a key", K6, "Paste SQL", K7, "Change in place", K8, "Rows as items", K9, "Drag rows", K10, "Across boards", K11, "Fold and find", K12, "Write an API", K13, "Paste OpenAPI", K14, "Connect an API", and K16, "Change and retire an API", have landed.
+In the guide, `docs/plugin-system.md`: [Kits](../../docs/plugin-system.md#kits), [The engineering kit](../../docs/plugin-system.md#the-engineering-kit). The plan is the owner's doc "Engineering kit" (https://claude.ai/artifact/7bkKR1idCbPUmrZT8FVXBf); its K1, "Tables at rest", K2, "Write columns", K3, "Draw a key", K4, "Keys look right", K5, "Type a key", K6, "Paste SQL", K7, "Change in place", K8, "Rows as items", K9, "Drag rows", K10, "Across boards", K11, "Fold and find", K12, "Write an API", K13, "Paste OpenAPI", K14, "Connect an API", K15, "A row's Connections tab, and mentions of a row", K16, "Change and retire an API", and K18, "Asking", have landed.
 
 ## Architecture
 
