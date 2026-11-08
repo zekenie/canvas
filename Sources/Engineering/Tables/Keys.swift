@@ -129,7 +129,7 @@ enum KeyArrows {
 /// for it, named for it (`customer_id` for customers: the name, singular, and `_id`), typed as its primary key, after the table's own
 /// keys, with its key drawn, one step, "Add Key Column".
 @MainActor
-enum KeyPicks {
+public enum KeyPicks {
     /// A table on the board shown (a key reaches a table on its own board until pills stand for rows), and from a row, a column of
     /// one or a table with a primary key; from a table, a table with one.
     static func admits(_ pick: ConnectPick, _ editor: CanvasEditor) -> Bool {
@@ -171,7 +171,7 @@ enum KeyPicks {
 
     /// A key column's name for a table: its name, singular, and `_id` (`customers` → `customer_id`, `categories` → `category_id`,
     /// `addresses` → `address_id`), its spaces underscores, lowercased; `_2`, `_3` after it where the table has the name already.
-    static func keyColumnName(for table: String, among taken: [String]) -> String {
+    public static func keyColumnName(for table: String, among taken: [String]) -> String {
         var name = table.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: "_")
         if name.hasSuffix("ies"), name.count > 3 {
             name = String(name.dropLast(3)) + "y"
@@ -190,7 +190,7 @@ enum KeyPicks {
     }
 
     /// The type a key to a column of this type is: its own, but a serial's integer.
-    static func keyType(of type: String) -> String {
+    public static func keyType(of type: String) -> String {
         switch type.lowercased() {
         case "serial", "serial4": "int"
         case "bigserial", "serial8": "bigint"
