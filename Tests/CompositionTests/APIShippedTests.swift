@@ -126,6 +126,7 @@ private let models = #"""
         expectEqual(Set(field.listedOffers.dropLast()), ["NewRefund", "NewOrder"])
         expectEqual(field.listedOffers.last, "New type New", "the action last")
         let first = try require(field.listedOffers.first)
+        expectEqual(first, "NewRefund", "a path that speaks of refunds: the type with its word in it first (E2 panel 2)")
         walk.press(.tab)
         expectEqual(field.string, "POST /orders/{id}/refunds (\(first)")
         let picked = try require(titled(editor, first)).id
@@ -198,6 +199,94 @@ private let models = #"""
         editor.undo()
         expect(editor.document[made.id] == nil, "one undo takes the note")
         expectEqual(apis(editor).first?.props.endpoints.last?.endpoint?.responses.map(\.status), ["201", "404"], "and the words that named it")
+    },
+    test("a type named in several words: a body in brackets and a response quoted bind to the one note, through a line, the card and a reprint, and the picks stand for it") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(models + #"\#nsticky-note "Refund Request" below "Order" (gap: 40) schema: "{\"type\": \"object\"}"\#napi "orders API" right of "NewRefund" (gap: 80) endpoints: "GET /orders/{id}""#)
+        let api = try require(apis(editor).first)
+        let note = try require(titled(editor, "Refund Request")).id
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.type(#"POST /refunds (Refund Request) -> 201 "Refund Request""#, with: walk)
+        let field = try require(w.line)
+        expect(field.highlights.allSatisfy { !$0.isDashed }, "both name the note: no dashed pill")
+        walk.press(.return)
+        let row = try require(apis(editor).first?.props.endpoints.last?.endpoint)
+        expectEqual(row.body, TypeRef("Refund Request", shape: note))
+        expectEqual(row.responses, [EndpointResponse(status: "201", type: TypeRef("Refund Request", shape: note))])
+        // A pick of the name's offers, in a bracket and quoted after the status, each standing for the note.
+        w.type("PUT /refunds (Refund Re", with: walk)
+        expect(field.listedOffers.contains("Refund Request"), "\(field.listedOffers)")
+        w.type("quest) -> 200 Ref", with: walk)
+        expect(field.listedOffers.contains("Refund Request"), "\(field.listedOffers)")
+        let offers = field.listedOffers
+        expectEqual(offers.firstIndex(of: "Refund Request").map { $0 < offers.count - 1 }, true)
+        for _ in offers where field.highlightedOffer != "Refund Request" { walk.press(.down) }
+        expectEqual(field.highlightedOffer, "Refund Request")
+        walk.press(.tab)
+        expectEqual(field.string, #"PUT /refunds (Refund Request) → 200 "Refund Request""#, "the name quoted where it's words")
+        expect(field.line.references.contains { $0.target == PartAddress(note) }, "the pick stands for its note")
+        walk.press(.return)
+        let put = try require(apis(editor).first?.props.endpoints.last?.endpoint)
+        expectEqual(put.responses.first?.type, TypeRef("Refund Request", shape: note))
+        // The card prints the body with its arrow and the whole name, and reads it back whole.
+        walk.press(.up)
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.canvas.cardView as? LineCardView)
+        expectEqual(card.value(of: "body"), "→ Refund Request")
+        expectEqual(card.value(of: "responses 1"), "200 → Refund Request")
+        walk.press(.escape)
+        walk.press(.escape)
+        expectEqual(apis(editor).first?.props.endpoints.last?.endpoint?.body, TypeRef("Refund Request", shape: note), "left as it was")
+    },
+    test("words written before their type: an endpoint drawn naming Later, and the note made afterwards, is bound at rest: its line carries the note, a pill not dashed") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"api "orders API" endpoints: "GET /x (Later) → 200 Later""#)
+        let api = try require(apis(editor).first)
+        expectEqual(api.props.endpoints.last?.endpoint?.body, TypeRef("Later"), "no type of that name yet")
+        try w.draw(#"sticky-note "Later" schema: "{\"type\": \"object\"}""#)
+        let note = try require(titled(editor, "Later")).id
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.lineRows?.go(to: .row(try require(api.props.endpoints.last?.id)))
+        w.window.settle()
+        let field = try require(w.line)
+        expectEqual(field.line.references.map(\.target), [PartAddress(note), PartAddress(note)], "the body's and the response's, stood for at rest")
+        expect(field.highlights.allSatisfy { !$0.isDashed })
+        walk.press(.escape)
+        expectEqual(editor.undoHistory.undoName, "Draw", "nothing written by looking at it")
+    },
+    test("a response's status typed (2, 20, 201) offers no type and no New type 2; a type alone after the arrow (→ Order) is offered types") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(models + #"\#napi "orders API" right of "NewRefund" (gap: 80) endpoints: "GET /orders/{id}""#)
+        let api = try require(apis(editor).first)
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        let field = try require(w.line)
+        w.type("GET /x -> ", with: walk)
+        expect(field.listedOffers.contains("Order"), "after the arrow, a type alone")
+        for digit in ["2", "0", "1"] {
+            w.type(digit, with: walk)
+            expectEqual(field.listedOffers, [], "the status so far, \(field.string): nothing to offer")
+        }
+        w.type(" Or", with: walk)
+        expect(field.listedOffers.contains("Order"), "past the status, types: \(field.listedOffers)")
+        walk.press(.escape)
     },
     test("New type in a row's line: GET /x -> 200 Problem, Return does the action, the type made and the row written with it, the caret kept in the line; Undo New Type takes both") {
         let w = try EmptyBoardWindow()

@@ -111,7 +111,8 @@ extension APIDefinition: PartedShape {
 
     func removing(_ parts: Set<PartID>, from shape: ShapeRecord<API>) -> API? {
         var api = shape.props
-        api.endpoints.removeAll { parts.contains($0.id) }
+        // A header taken out alone leaves its endpoints their full paths (they take the prefix back).
+        api.endpoints = APIGroups.regrouped(shape.props.endpoints.filter { !parts.contains($0.id) }, from: shape.props.endpoints)
         guard api.endpoints.count < shape.props.endpoints.count else { return nil }
         derive(&api)
         return api

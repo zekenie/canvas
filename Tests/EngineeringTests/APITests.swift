@@ -21,7 +21,8 @@ let endpointCorpus = [
     "GET /orders/{id}", "POST /orders", "post /orders/{id}/refunds (NewRefund) → 201 Refund", "PATCH /orders/{id} -> 200 Order",
     "DELETE /orders/{id}/items/{itemId}", "GET /customers/{id}/orders → Order", "POST /webhooks/stripe (StripeEvent) → 200",
     "/orders", "/customers", "GET /x (A) → 404 Problem and some words", "PUT /y (Two Words) → default", "OPTIONS", "GET", "nonsense words here",
-    "GET /a (Body → 201", "HEAD /h → → 200", "TRACE /t (B) (C)",
+    "GET /a (Body → 201", "HEAD /h → → 200", "TRACE /t (B) (C)", #"POST /r (Refund Request) → 201 "Refund Result""#, #"GET /q → "Two Words" tail"#,
+    "GET /a (Two Words → 201", "GET /o → Order", "GET /s → 4XX",
 ]
 
 extension KitBench {
@@ -261,7 +262,7 @@ extension KitBench {
         b.press(Chord(Key.down, .command))
         let card = try require(b.canvas.cardView as? LineCardView)
         expectEqual(card.stopNames, ["name", "summary", "auth", "{id}", "body", "responses 1", "deprecated"])
-        expectEqual(card.value(of: "body"), "NewRefund")
+        expectEqual(card.value(of: "body"), "→ NewRefund")
         expectEqual(card.value(of: "responses 1"), "201 → Refund")
         expectEqual(card.focusedStop, "name")
         b.type("createRefund")

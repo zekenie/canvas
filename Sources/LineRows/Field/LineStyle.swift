@@ -24,6 +24,8 @@ public struct LineStyle {
     /// The band behind the row with the caret, and how far in from the paper's sides it is.
     public var band: NSColor
     public var bandInset: CGFloat
+    /// The font a chip's word is in (a method's, small and bold); the code font where nil.
+    public var chipFont: NSFont?
 
     public init(font: NSFont, codeFont: NSFont, ink: NSColor, secondaryInk: NSColor, textInset: CGFloat, trailingInset: CGFloat,
                 gutterMiddle: CGFloat, markSize: CGFloat, band: NSColor = LineStyle.defaultBand, bandInset: CGFloat = 8) {
@@ -51,7 +53,9 @@ public struct LineStyle {
         case .name, .plain: plain
         case .code: [.font: codeFont, .foregroundColor: ink]
         case .keyword: [.font: codeFont, .foregroundColor: secondaryInk]
-        case .pill(_, let ink), .dashedPill(_, let ink), .chip(_, let ink): [.font: codeFont, .foregroundColor: ink]
+        case .pill(_, let ink), .dashedPill(_, let ink): [.font: codeFont, .foregroundColor: ink]
+        case .chip(_, let ink): [.font: chipFont ?? codeFont, .foregroundColor: ink]
+        case .spacing(let kern): [.kern: kern]
         case .tinted(let color): [.font: font, .foregroundColor: color]
         }
     }

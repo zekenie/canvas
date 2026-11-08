@@ -72,6 +72,16 @@ public protocol LineModel {
     /// How far in from the line's text inset the text of the row at `index` of `rows` starts (a header's members are
     /// indented under it); `isNew` for a new line put in at `index` (the waiting line). 0 by default.
     func indent(at index: Int, of rows: [Row], isNew: Bool) -> CGFloat
+    /// One change made to `rows`, as `apply` makes each: false refuses it (nothing is written, the shape shakes). By default
+    /// a row put in, written over, taken out or moved plainly; a kind whose rows mean something by their neighbors (an API's
+    /// path prefixes: a row's full path is its header's and its own) overrides it, so what a change leaves under another
+    /// neighbor still says what it did.
+    func applying(_ change: LineChange<Row>, to rows: inout [Row]) -> Bool
+    /// The changes that put the pasted rows `made` in, the block wanted at `index` of `rows`: by default the block itself, there.
+    /// A kind whose rows say where they go (a full path under its header) places each where it belongs.
+    func placing(pasted made: [Row], at index: Int, among rows: [Row]) -> [LineChange<Row>]
+    /// What VoiceOver calls the row at `index` of `rows`: by default "Column 2 of 5", the noun and its place.
+    func accessibleLabel(of row: Row, at index: Int, among rows: [Row]) -> String
 }
 
 extension LineModel {
@@ -83,27 +93,34 @@ extension LineModel {
     public var showsCardChevron: Bool { false }
     public var fixedLine: LineFixedLine<Props>? { nil }
     public func indent(at index: Int, of rows: [Row], isNew: Bool) -> CGFloat { 0 }
+    public func placing(pasted made: [Row], at index: Int, among rows: [Row]) -> [LineChange<Row>] { [.add(made, at: index)] }
+    public func accessibleLabel(of row: Row, at index: Int, among rows: [Row]) -> String { "\(noun.title) \(index + 1) of \(rows.count)" }
+
+    public func applying(_ change: LineChange<Row>, to rows: inout [Row]) -> Bool {
+        switch change {
+        case .add(let added, let index):
+            rows.insert(contentsOf: added, at: min(max(0, index), rows.count))
+        case .change(let from, let to):
+            guard let at = rows.firstIndex(where: { self.id(of: $0) == self.id(of: from) }) else { return false }
+            rows[at] = to
+        case .delete(let gone):
+            let ids = Set(gone.map(self.id(of:)))
+            rows.removeAll { ids.contains(self.id(of: $0)) }
+        case .move(let row, let index):
+            guard let at = rows.firstIndex(where: { self.id(of: $0) == self.id(of: row) }) else { return false }
+            let moved = rows.remove(at: at)
+            rows.insert(moved, at: min(max(0, index), rows.count))
+        }
+        return true
+    }
 
     public func apply(_ changes: [LineChange<Row>], to id: ShapeID, in transaction: inout Transaction) -> Bool {
         guard let record = transaction.document[id]?.typed(as: Props.self) else { return false }
         var rows = rows(of: record.props)
         var removed: Set<PartAddress> = []
         for change in changes {
-            switch change {
-            case .add(let added, let index):
-                rows.insert(contentsOf: added, at: min(max(0, index), rows.count))
-            case .change(let from, let to):
-                guard let at = rows.firstIndex(where: { self.id(of: $0) == self.id(of: from) }) else { return false }
-                rows[at] = to
-            case .delete(let gone):
-                let ids = Set(gone.map(self.id(of:)))
-                rows.removeAll { ids.contains(self.id(of: $0)) }
-                removed.formUnion(ids.map { PartAddress(id, part: $0) })
-            case .move(let row, let index):
-                guard let at = rows.firstIndex(where: { self.id(of: $0) == self.id(of: row) }) else { return false }
-                let moved = rows.remove(at: at)
-                rows.insert(moved, at: min(max(0, index), rows.count))
-            }
+            guard applying(change, to: &rows) else { return false }
+            if case .delete(let gone) = change { removed.formUnion(gone.map { PartAddress(id, part: self.id(of: $0)) }) }
         }
         var refused = false
         transaction.update(id, as: Props.self) { setRows(rows, in: &$0.props) }

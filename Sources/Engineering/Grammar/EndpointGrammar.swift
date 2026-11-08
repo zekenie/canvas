@@ -68,6 +68,15 @@ public enum EndpointGrammar {
         return characters.dropFirst().allSatisfy { $0.isASCII && ($0.isNumber || $0 == "X") }
     }
 
+    /// Whether a word typed after a response's arrow is, so far, a status (`2`, `20`, `201`, `4X`, `de`): what isn't yet a type's.
+    public static func isStatusPrefix(_ word: String) -> Bool {
+        let characters = Array(word.uppercased())
+        if let first = characters.first, ("1"..."5").contains(first), characters.count <= 3 {
+            return characters.dropFirst().allSatisfy { $0.isASCII && ($0.isNumber || $0 == "X") }
+        }
+        return characters.count >= 2 && "default".hasPrefix(word.lowercased())
+    }
+
     /// Reads a line as `read` does, saying too what each word is and where.
     public static func scan(_ line: String, id: PartID = PartID()) -> Scan {
         let words = ColumnGrammar.placedWords(of: line).map { (text: $0.text, range: $0.range) }
@@ -92,8 +101,10 @@ public enum EndpointGrammar {
             index += 1
         }
         // A body: from a word that opens a bracket to the one that closes it.
-        if index < words.count, words[index].text.hasPrefix("("),
-           let close = Optional(words[index...].firstIndex(where: { $0.text.hasSuffix(")") }) ?? index) {
+        if index < words.count, words[index].text.hasPrefix("(") {
+            // A bracket left open runs to the arrow (or the line's end): a type's name of several words, typed so far.
+            let arrowAt = words[(index + 1)...].firstIndex { $0.text == arrow || $0.text == typedArrow }
+            let close = words[index...].firstIndex(where: { $0.text.hasSuffix(")") }) ?? arrowAt.map { $0 - 1 } ?? words.count - 1
             let run = words[index...close]
             let text = run.map(\.text).joined(separator: " ")
             let inner = String(text.dropFirst().dropLast(text.hasSuffix(")") && text.count > 1 ? 1 : 0)).trimmingCharacters(in: .whitespaces)
@@ -115,8 +126,10 @@ public enum EndpointGrammar {
                 index += 1
             }
             if index < words.count, words[index].text != arrow, words[index].text != typedArrow, !words[index].text.hasPrefix("(") {
-                response.type = TypeRef(words[index].text)
-                roles.append(Word(role: .response, range: words[index].range, text: words[index].text))
+                // A type's name of several words is quoted; the quotes aren't its name's.
+                let (name, range) = unquoted(words[index])
+                response.type = TypeRef(name)
+                roles.append(Word(role: .response, range: range, text: name))
                 index += 1
             }
             endpoint.responses = [response]
@@ -125,6 +138,19 @@ public enum EndpointGrammar {
         endpoint.unread = rest.map { $0.text == typedArrow ? arrow : $0.text }.joined(separator: " ")
         roles += rest.map { Word(role: .unread, range: $0.range, text: $0.text) }
         return Scan(row: .endpoint(endpoint), words: roles, parameters: parameterRanges)
+    }
+
+    /// A word without the quotes round it, and where what's left is; the word as it is without them.
+    static func unquoted(_ word: (text: String, range: NSRange)) -> (text: String, range: NSRange) {
+        guard word.text.count > 2, let quote = word.text.first, quote == "\"" || quote == "'", word.text.last == quote else { return word }
+        return (String(word.text.dropFirst().dropLast()), NSRange(location: word.range.location + 1, length: word.range.length - 2))
+    }
+
+    /// A type's name as a line writes it: quoted where it's more than one word, so the line reads back the name whole.
+    static func written(_ type: String) -> String {
+        guard type.contains(where: \.isWhitespace) else { return type }
+        let quote = type.contains("\"") ? "'" : "\""
+        return quote + type + quote
     }
 
     /// A body's words: its brackets and the type between them, each where it is.
@@ -189,7 +215,7 @@ public enum EndpointGrammar {
         if let response = endpoint.responses.first, !response.status.isEmpty || response.type.map({ !$0.words.isEmpty }) == true {
             words.append(arrow)
             if !response.status.isEmpty { words.append(response.status) }
-            if let type = response.type, !type.words.isEmpty { words.append(type.words) }
+            if let type = response.type, !type.words.isEmpty { words.append(written(type.words)) }
         }
         if !endpoint.unread.isEmpty { words.append(endpoint.unread) }
         return words.joined(separator: " ")
@@ -299,9 +325,74 @@ public enum APIGroups {
         return (rows.firstIndex { $0.header != nil } ?? rows.count, path)
     }
 
-    /// The index of the endpoint of `method` and full path `path`; nil for none. What a writer of full paths joins by.
+    /// The index of the endpoint of `method` and full path `path`; nil for none. What a writer of full paths joins by. One pass: each
+    /// header's prefix carried along, never found again for each row.
     public static func index(of method: String, _ path: String, in rows: [APIRow]) -> Int? {
-        rows.indices.first { rows[$0].endpoint?.method == method && fullPath(of: $0, in: rows) == path }
+        var prefix = ""
+        for (index, row) in rows.enumerated() {
+            switch row {
+            case .header(let header): prefix = header.prefix
+            case .endpoint(let endpoint): if endpoint.method == method, joined(prefix, endpoint.path) == path { return index }
+            }
+        }
+        return nil
+    }
+
+    /// `rows`, after a change to what were `old`, with each endpoint whose header the change took away, or put another in its
+    /// place, holding the full path it had: written relative to the header it's under now where that covers it (its place kept),
+    /// whole where it's under none, and, where the header it fell under doesn't cover it, put where a full path of its own goes
+    /// (`place`). An endpoint in `kept` is as the change wrote it. What deleting a header, or leaving every group, asks: only
+    /// retyping a header moves its members' full paths with it.
+    public static func regrouped(_ rows: [APIRow], from old: [APIRow], except kept: Set<PartID> = []) -> [APIRow] {
+        var was: [PartID: (header: PartID?, full: String)] = [:]
+        var header: PathHeader?
+        for (index, row) in old.enumerated() {
+            switch row {
+            case .header(let found): header = found
+            case .endpoint(let endpoint): was[endpoint.id] = (header?.id, fullPath(of: index, in: old))
+            }
+        }
+        var result: [APIRow] = []
+        var strays: [(endpoint: Endpoint, full: String)] = []
+        var current: PathHeader?
+        for row in rows {
+            switch row {
+            case .header(let found):
+                current = found
+                result.append(row)
+            case .endpoint(var endpoint):
+                guard !kept.contains(endpoint.id), let before = was[endpoint.id], before.header != current?.id else { result.append(row); continue }
+                if let current {
+                    guard isUnder(before.full, current.prefix) else { strays.append((endpoint, before.full)); continue }
+                    endpoint.path = relative(before.full, under: current.prefix)
+                } else {
+                    endpoint.path = before.full
+                }
+                result.append(.endpoint(endpoint))
+            }
+        }
+        for stray in strays {
+            var endpoint = stray.endpoint
+            let spot = place(stray.full, in: result)
+            endpoint.path = spot.path
+            result.insert(.endpoint(endpoint), at: spot.index)
+        }
+        return result
+    }
+
+    /// `rows` with the group of the header at `index` (it and the endpoints after it) moved past the group after it (`down`), or
+    /// above the one before it; nil where there is none to pass (the first group, the top endpoints' above it, never goes under a
+    /// header).
+    public static func movingGroup(at index: Int, down: Bool, in rows: [APIRow]) -> [APIRow]? {
+        guard rows.indices.contains(index), rows[index].header != nil else { return nil }
+        let end = rows[(index + 1)...].firstIndex { $0.header != nil } ?? rows.count
+        if down {
+            guard end < rows.count else { return nil }
+            let after = rows[(end + 1)...].firstIndex { $0.header != nil } ?? rows.count
+            return Array(rows[..<index] + rows[end..<after] + rows[index..<end] + rows[after...])
+        }
+        guard let before = rows[..<index].lastIndex(where: { $0.header != nil }) else { return nil }
+        return Array(rows[..<before] + rows[index..<end] + rows[before..<index] + rows[end...])
     }
 
     /// How many endpoints a header heads: those after it, up to the next header.

@@ -64,6 +64,9 @@ public enum LineLook: Equatable {
     case chip(NSColor, ink: NSColor)
     /// Text in a color of its own.
     case tinted(NSColor)
+    /// Room after its characters, over the text's own: a kern (view points) that lays what follows out as the kind draws it at
+    /// rest (a method's chip, wider than its glyphs, and the path after it). Draws nothing.
+    case spacing(CGFloat)
 }
 
 /// A span of a line and how it looks.

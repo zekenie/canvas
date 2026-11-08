@@ -567,6 +567,19 @@ private func eased(_ t: CGFloat) -> CGFloat {
         expectEqual(h.editor.document.shapes.count, count)
         expectEqual(log.refusals, [[held]])
     },
+    test("a settled placement settles into the container it lands in as any does, edits nothing and keeps the tool") {
+        let h = try EditorHarness(plugins: [CorralsPlugin(), discTools(), FreezingPlugin()])
+        let held = h.add(Corral(pen))
+        h.editor.setTool("disc")
+        let placement = try require(h.editor.registry.placement(for: Disc.kind)).settled()
+        h.editor.place(placement, at: CGPoint(x: 490, y: 200))
+        let disc = try require(h.editor.document.shapes.last?.id)
+        expectEqual(h.editor.holder(of: disc), held, "into the corral, as a placement with no press settles")
+        expectEqual(h.editor.document[disc]?.box?.origin, CGPoint(x: 444, y: 180), "nudged in")
+        expectEqual(h.editor.editingShapeID, nil)
+        expectEqual(h.editor.currentToolID, ToolID(placing: Disc.kind), "the tool stays")
+        expectEqual(h.editor.undoHistory.undoName, "Add Disc")
+    },
     test("a shape placed to be edited isn't glided: its editing view is laid out where it is") {
         let h = try EditorHarness(plugins: [CardsPlugin(), CorralsPlugin()])
         let held = h.add(Corral(pen))

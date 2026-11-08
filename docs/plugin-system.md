@@ -2479,10 +2479,12 @@ flat list of rows (`APIRow`): a path-prefix header (`{"header": "/orders"}`) or 
 the header above it, name, summary, scope, path parameters' types, a body and responses whose types are `TypeRef`s
 to type notes, deprecated, unread words). A group is a header and the endpoints after it, so retyping `/orders` is one
 row's edit and every full path follows (`APIGroups`, which every writer of whole paths shares: a whole path goes under
-the longest header it starts with). An endpoint is written `METHOD /path/{param} [(Body)] [→ [status] [Response]]`
+the longest header it starts with; a header taken out or moved leaves each endpoint's full path as it was, `APIGroups.regrouped`,
+by `LineModel.applying`). An endpoint is written `METHOD /path/{param} [(Body)] [→ [status] [Response]]`
 (`EndpointGrammar`); its part's name is its method and full path. A body names a type note and is drawn as that type's
 pill, live, dashed while it names none; "New type Problem", last in the caret list, makes the note through Types,
-which puts it down settled and makes nothing an instance of it:
+which puts it down settled (`Placement.settled()`) and makes nothing an instance of it. Words written before their type was made are bound
+at rest, a name of several words is quoted after a status:
 
 ```swift
 editor.newType(named: "Problem", besides: typesTheAPINames, givingType: false, editing: false)   // in the line's "New Type" step

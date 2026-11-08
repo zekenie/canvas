@@ -59,6 +59,8 @@ enum APIStyle {
     /// The server line: its placeholder, faint and slanted, while it says nothing (E1 panel 2), and what VoiceOver calls it.
     static let serverPlaceholder = "server"
     static let serverName = "Server"
+    /// An endpoint's card is wider than the usual: a summary is a sentence, a response a status and a type's pill.
+    static let cardWidth: CGFloat = 360
     /// The lines of an endpoint's card.
     static let nameLine = "name", summaryLine = "summary", authLine = "auth", bodyLine = "body", responsesLine = "responses"
     static let deprecatedLine = "deprecated"
@@ -115,11 +117,30 @@ enum APIStyle {
     /// A chip's text.
     static let chipInk = NSColor.white
 
-    /// A path parameter's color at rest, as the kit's row text keys it: its RGB as a hex number.
-    static func parameterHex(_ method: String) -> UInt32 {
-        let rgb = Swatch.reading(hues[method] ?? otherHue, against: [KitStyle.paper], atLeast: Swatch.textContrast)
-        return UInt32(rgb.hexString.dropFirst(), radix: 16) ?? 0
+    /// A chip as the field lays a method out, so nothing moves as editing starts: its glyphs `chipPadding` in from where the chip
+    /// is at rest (the row's indent), the chip behind them reaching `fieldChipPad` past each end (TextEditing's highlight) and the
+    /// share of a kern a range's last character takes (`kernShare`; TextKit 2 splits it with the next character), so it is as wide
+    /// as the chip drawn at rest, and the kern after the space past it so the path starts where the rest's does.
+    static let fieldChipPad: CGFloat = 2
+    static let kernShare: CGFloat = 0.5
+    /// The kerns that lay out a line's `method` as typed (its glyphs `textWidth` wide in the chip's font) with a space of
+    /// `spaceWidth` after it: after its last character, and after the space.
+    static func chipKerns(textWidth: CGFloat, spaceWidth: CGFloat) -> (afterMethod: CGFloat, afterSpace: CGFloat) {
+        let chip = max(chipLeast, textWidth + 2 * chipPadding)
+        let after = max(0, (chip - chipPadding - textWidth - fieldChipPad) / kernShare)
+        return (after, chip + gap - chipPadding - textWidth - after - spaceWidth)
     }
+
+    /// A path parameter's color at rest, as the kit's row text keys it: its RGB as a hex number. Kept per method, as a frame asks
+    /// it of every endpoint in view.
+    static func parameterHex(_ method: String) -> UInt32 {
+        if let kept = parameterHexes[method] { return kept }
+        let rgb = Swatch.reading(hues[method] ?? otherHue, against: [KitStyle.paper], atLeast: Swatch.textContrast)
+        let hex = UInt32(rgb.hexString.dropFirst(), radix: 16) ?? 0
+        parameterHexes[method] = hex
+        return hex
+    }
+    private static var parameterHexes: [String: UInt32] = [:]
 
     /// Zoomed out: a bar where a path is (the code's 0.6 em a column), and a method's chip a bar of its own.
     static let skeletonColumn: CGFloat = 0.6 * 14

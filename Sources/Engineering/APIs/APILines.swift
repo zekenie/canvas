@@ -26,14 +26,19 @@ struct APILineGrammar: LineGrammar {
         let method = row.endpoint?.method ?? ""
         var spans: [LineSpan] = []
         var body: ShapeID?, response: ShapeID?
+        // A body's type may be words (an unclosed bracket's): one run, bound as one.
+        let bodyWords = scan.words.filter { $0.role == .body }
+        if let first = bodyWords.first, let last = bodyWords.last {
+            let range = NSRange(location: first.range.location, length: NSMaxRange(last.range) - first.range.location)
+            body = APITypes.bound((line.string as NSString).substring(with: range), at: range, in: line, near: context.shape, editor)
+            spans.append(LineSpan(range, APITypes.look(of: body, editor, onPaper: true)))
+        }
         for word in scan.words {
             switch word.role {
-            case .method: spans.append(LineSpan(word.range, .chip(APIStyle.chipFill(method), ink: APIStyle.chipInk)))
+            case .method: spans += Self.methodSpans(word.range, typed: word.text, method: method, in: line)
             case .path: spans += Self.pathSpans(word.range, parameters: scan.parameters, method: method, isHeader: row.header != nil)
             case .bracket, .arrow, .status: spans.append(LineSpan(word.range, .keyword))
-            case .body:
-                body = APITypes.bound(word.text, at: word.range, in: line, near: context.shape, editor)
-                spans.append(LineSpan(word.range, APITypes.look(of: body, editor, onPaper: true)))
+            case .body: break
             case .response:
                 response = APITypes.bound(word.text, at: word.range, in: line, near: context.shape, editor)
                 spans.append(LineSpan(word.range, APITypes.look(of: response, editor, onPaper: true)))
@@ -46,6 +51,21 @@ struct APILineGrammar: LineGrammar {
             row = .endpoint(endpoint)
         }
         return LineReading(row: row, spans: spans)
+    }
+
+    /// A method's spans: its chip, and the room after it (and after the space that follows) that lays the path out where the
+    /// rest draws it (`APIStyle.chipKerns`).
+    static func methodSpans(_ range: NSRange, typed: String, method: String, in line: LineText) -> [LineSpan] {
+        var spans = [LineSpan(range, .chip(APIStyle.chipFill(method), ink: APIStyle.chipInk))]
+        let text = line.string as NSString
+        let end = NSMaxRange(range)
+        guard end < text.length, text.character(at: end) == 0x20 else { return spans }
+        let width = (typed as NSString).size(withAttributes: [.font: KitStyle.chipFont]).width
+        let space = (" " as NSString).size(withAttributes: [.font: KitStyle.codeFont]).width
+        let kerns = APIStyle.chipKerns(textWidth: width, spaceWidth: space)
+        spans.append(LineSpan(NSRange(location: end - 1, length: 1), .spacing(kerns.afterMethod)))
+        spans.append(LineSpan(NSRange(location: end, length: 1), .spacing(kerns.afterSpace)))
+        return spans
     }
 
     /// A path's spans: code, its parameters in the method's color (a header's in the ink).
@@ -65,17 +85,25 @@ struct APILineGrammar: LineGrammar {
     func print(_ row: APIRow, in context: LineContext) -> LineText {
         guard case .endpoint(var endpoint) = row else { return LineText(EndpointGrammar.print(row)) }
         let editor = context.editor
-        if let body = endpoint.body { endpoint.body?.words = APITypes.printed(body, editor) }
-        if let type = endpoint.responses.first?.type { endpoint.responses[0].type?.words = APITypes.printed(type, editor) }
+        // What a type is called now, and the note its words name (written before one was, or made another way since).
+        if let body = endpoint.body {
+            endpoint.body?.words = APITypes.printed(body, editor)
+            endpoint.body?.shape = APITypes.resolved(body, types: editor.types)
+        }
+        if let type = endpoint.responses.first?.type {
+            endpoint.responses[0].type?.words = APITypes.printed(type, editor)
+            endpoint.responses[0].type?.shape = APITypes.resolved(type, types: editor.types)
+        }
         let string = EndpointGrammar.print(endpoint)
         var references: [LineReference] = []
-        for word in EndpointGrammar.scan(string).words {
-            let shape: ShapeID? = switch word.role {
-            case .body: endpoint.body?.shape
-            case .response: endpoint.responses.first?.type?.shape
-            default: nil
-            }
-            if let shape { references.append(LineReference(range: word.range, target: PartAddress(shape))) }
+        let words = EndpointGrammar.scan(string).words
+        // A body's words, one run; a response's type, the name without its quotes.
+        let bodyWords = words.filter { $0.role == .body }
+        if let shape = endpoint.body?.shape, let first = bodyWords.first, let last = bodyWords.last {
+            references.append(LineReference(range: NSRange(location: first.range.location, length: NSMaxRange(last.range) - first.range.location), target: PartAddress(shape)))
+        }
+        if let shape = endpoint.responses.first?.type?.shape, let word = words.first(where: { $0.role == .response }) {
+            references.append(LineReference(range: word.range, target: PartAddress(shape)))
         }
         return LineText(string, references: references)
     }
@@ -93,28 +121,42 @@ struct APILineGrammar: LineGrammar {
                 LineOffer(CaretCompletion(label: method, insert: method + " ", chip: APIStyle.chipFill(method)))
             })
         }
-        guard let at else { return nil }
-        let word = words[at]
+        let word = at.map { words[$0] }
         // A path's segment: the file's tables, and what the API's other paths go on with.
-        if word.text.hasPrefix("/"), index == 1, EndpointGrammar.method(words[0].text) != nil {
+        if let word, word.text.hasPrefix("/"), index == 1, EndpointGrammar.method(words[0].text) != nil {
             return pathOffers(typed, word: word, context)
         }
-        // A body's type, after its bracket.
-        if word.text.hasPrefix("(") {
+        let stems = APITypes.stems(ofPath: reading.row?.endpoint?.path ?? "")
+        let scan = EndpointGrammar.scan(line.string)
+        // A body's type, after its bracket: its words, as far as they're typed.
+        let bodyWords = scan.words.filter { $0.role == .body }
+        if let first = bodyWords.first, let last = bodyWords.last, caret >= first.range.location, caret <= NSMaxRange(last.range) {
+            let range = NSRange(location: first.range.location, length: NSMaxRange(last.range) - first.range.location)
+            let typed = (line.string as NSString).substring(with: NSRange(location: range.location, length: caret - range.location))
+            return APITypes.offers(typed, range: range, stems: stems, context)
+        }
+        if let word, word.text.hasPrefix("(") {
             let inner = String(typed.dropFirst())
             let start = word.range.location + 1
             let end = word.text.hasSuffix(")") && word.text.count > 1 ? NSMaxRange(word.range) - 1 : NSMaxRange(word.range)
             guard caret >= start, caret <= end else { return nil }
-            return APITypes.offers(inner, range: NSRange(location: start, length: end - start), context)
+            return APITypes.offers(inner, range: NSRange(location: start, length: end - start), stems: stems, context)
         }
-        // A response's type: after the arrow, past a status.
-        let before = words.prefix(index).map(\.text)
-        if let arrow = before.lastIndex(where: { $0 == EndpointGrammar.arrow || $0 == EndpointGrammar.typedArrow }) {
-            let after = before[(arrow + 1)...]
-            guard after.isEmpty || (after.count == 1 && EndpointGrammar.isStatus(after.first!)), !EndpointGrammar.isStatus(typed) else { return nil }
-            return APITypes.offers(typed, range: range, context)
+        // A response's type: after the arrow, past a status; its words, as far as they're typed, quoted where they're several.
+        guard let arrow = words.firstIndex(where: { $0.text == EndpointGrammar.arrow || $0.text == EndpointGrammar.typedArrow }),
+              caret > NSMaxRange(words[arrow].range) else { return nil }
+        var first = arrow + 1
+        if first < words.count, EndpointGrammar.isStatus(words[first].text), caret > NSMaxRange(words[first].range) { first += 1 }
+        if first >= words.count || caret < words[first].range.location {
+            return APITypes.offers("", range: NSRange(location: caret, length: 0), quoting: true, stems: stems, context)
         }
-        return nil
+        // The type is one word, or a quoted run: past it, words are no type's.
+        let begin = words[first].range.location
+        guard caret <= NSMaxRange(words[first].range) else { return nil }
+        var query = (line.string as NSString).substring(with: NSRange(location: begin, length: caret - begin))
+        if let quote = query.first, quote == "\"" || quote == "'" { query.removeFirst() }
+        guard !EndpointGrammar.isStatusPrefix(query) else { return nil }
+        return APITypes.offers(query, range: words[first].range, quoting: true, stems: stems, context)
     }
 
     /// What a path's last segment may be, typed so far over `word`: the file's tables by name (each lit while highlighted), then what
@@ -221,7 +263,8 @@ struct APILines: LineModel {
     func indent(at index: Int, of rows: [APIRow], isNew: Bool) -> CGFloat {
         if !isNew, rows.indices.contains(index), rows[index].header != nil { return APIStyle.memberIndent }
         let above = rows[..<min(max(0, index), rows.count)]
-        return above.contains { $0.header != nil } ? APIStyle.memberIndent : 0
+        // An endpoint's method starts where its chip's glyphs do at rest, in from the chip's edge.
+        return (above.contains { $0.header != nil } ? APIStyle.memberIndent : 0) + APIStyle.chipPadding
     }
 
     /// What a line doesn't say stays: an endpoint's name, summary, scope, parameters' types, its responses past the first, deprecated.
@@ -238,6 +281,67 @@ struct APILines: LineModel {
         line.deprecated = kept.deprecated
         line.responses = Array(line.responses.prefix(1)) + kept.responses.dropFirst()
         return .endpoint(line)
+    }
+
+    /// What a change does to the rows, keeping each endpoint's full path where the change isn't about it: a header taken out (or
+    /// retyped as an endpoint) leaves its members holding the full paths they had, a header moved takes its group with it, and an
+    /// endpoint that leaves every group takes its prefix along. A header retyped as a header is the rename, which every member's
+    /// full path follows, as it is typed; an endpoint moved across headers keeps its path under the new one.
+    func applying(_ change: LineChange<APIRow>, to rows: inout [APIRow]) -> Bool {
+        let old = rows
+        switch change {
+        case .add(let added, let index):
+            rows.insert(contentsOf: added, at: min(max(0, index), rows.count))
+        case .change(let from, let to):
+            guard let at = rows.firstIndex(where: { $0.id == from.id }) else { return false }
+            rows[at] = to
+            if from.header != nil, to.header == nil { rows = APIGroups.regrouped(rows, from: old, except: [to.id]) }
+        case .delete(let gone):
+            let ids = Set(gone.map(\.id))
+            rows.removeAll { ids.contains($0.id) }
+            rows = APIGroups.regrouped(rows, from: old)
+        case .move(let row, let index):
+            guard let at = rows.firstIndex(where: { $0.id == row.id }) else { return false }
+            if row.header != nil {
+                // Its group goes with it, past the one it passes; at the first or last, nowhere (written as it was).
+                if index != at, let moved = APIGroups.movingGroup(at: at, down: index > at, in: rows) { rows = moved }
+                return true
+            }
+            let was = APIGroups.fullPath(of: at, in: rows)
+            let held = rows.remove(at: at)
+            let to = min(max(0, index), rows.count)
+            rows.insert(held, at: to)
+            // Under a header now it keeps its own path, as a file moved between folders; under none, it keeps its whole path.
+            if case .endpoint(var endpoint) = held, APIGroups.header(of: to, in: rows) == nil, APIGroups.header(of: at, in: old) != nil {
+                endpoint.path = was
+                rows[to] = .endpoint(endpoint)
+            }
+        }
+        return true
+    }
+
+    /// A full path pasted goes under the longest header it starts with, its path as written under it, else at the top, in an API
+    /// that has headers; a block with a header in it, or an API without, goes where the caret is.
+    func placing(pasted made: [APIRow], at index: Int, among rows: [APIRow]) -> [LineChange<APIRow>] {
+        guard rows.contains(where: { $0.header != nil }), made.allSatisfy({ $0.header == nil }) else { return [.add(made, at: index)] }
+        var working = rows
+        var changes: [LineChange<APIRow>] = []
+        for row in made {
+            guard case .endpoint(var endpoint) = row else { continue }
+            let spot = APIGroups.place(endpoint.path, in: working)
+            endpoint.path = spot.path
+            working.insert(.endpoint(endpoint), at: spot.index)
+            changes.append(.add([.endpoint(endpoint)], at: spot.index))
+        }
+        return changes
+    }
+
+    /// "Endpoint 3 of 7", "Path prefix 1 of 2": each counted among its own.
+    func accessibleLabel(of row: APIRow, at index: Int, among rows: [APIRow]) -> String {
+        let isHeader = row.header != nil
+        let place = rows[..<min(index, rows.count)].filter { ($0.header != nil) == isHeader }.count + 1
+        let total = rows.filter { ($0.header != nil) == isHeader }.count
+        return "\(isHeader ? APIStyle.prefixWord : noun.title) \(place) of \(total)"
     }
 
     /// Add Endpoint (Add Path Prefix for a header), Paste Endpoints, Change Method (the method alone changed), Rename Path Prefix (a
@@ -292,7 +396,7 @@ struct APILines: LineModel {
                   set: { row, value, _ in row = Self.changing(row) { $0.responses = value } }),
             .toggle(APIStyle.deprecatedLine, get: { $0.endpoint?.deprecated ?? false }, set: { row, on in row = Self.changing(row) { $0.deprecated = on } }),
         ]
-        return LineCard(header: LineCardHeader(name: full), lines: lines)
+        return LineCard(header: LineCardHeader(name: full), lines: lines, width: APIStyle.cardWidth)
     }
 
     /// `row`, an endpoint, changed by `change`; a header as it is.
@@ -340,10 +444,14 @@ enum APILooks {
 
     /// The band behind the row with the caret lets the paper's drawing under it through: a header keeps its chevron and count
     /// while its prefix is typed (E5 panel 1).
-    static let line = LineStyle(font: KitStyle.codeFont, codeFont: KitStyle.codeFont, ink: NSColor(KitStyle.ink),
-                                secondaryInk: NSColor(KitStyle.secondaryInk), textInset: APIStyle.inset,
-                                trailingInset: KitStyle.trailingInset, gutterMiddle: APIStyle.inset / 2, markSize: KitStyle.markSize,
-                                band: LineStyle.defaultBand.withAlphaComponent(APIStyle.bandAlpha))
+    static let line: LineStyle = {
+        var style = LineStyle(font: KitStyle.codeFont, codeFont: KitStyle.codeFont, ink: NSColor(KitStyle.ink),
+                              secondaryInk: NSColor(KitStyle.secondaryInk), textInset: APIStyle.inset,
+                              trailingInset: KitStyle.trailingInset, gutterMiddle: APIStyle.inset / 2, markSize: KitStyle.markSize,
+                              band: LineStyle.defaultBand.withAlphaComponent(APIStyle.bandAlpha))
+        style.chipFont = KitStyle.chipFont
+        return style
+    }()
 }
 
 /// The kit's API grammars, for what reads a line as typing does (a test's corpus).

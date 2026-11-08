@@ -43,22 +43,40 @@ enum APITypes {
         return .pill(tint.color.withAlphaComponent(APIStyle.pillFill), ink: tint.ink)
     }
 
+    /// The type note a ref stands for: the one it holds; else, where its words were written before any type of that name was made
+    /// (or made by another route since), the type called so, the same one wherever it's asked (the first by id).
+    static func resolved(_ ref: TypeRef, types: TypeIndex?) -> ShapeID? {
+        if let shape = ref.shape { return shape }
+        guard let types, !ref.words.isEmpty else { return nil }
+        return types.types(named: ref.words).min { $0.description < $1.description }
+    }
+
     /// A type's pill at rest, on the paper: its name now in its color, or the words in a dashed pill while they name none.
     static func pill(_ ref: TypeRef, types: TypeIndex?) -> AdornmentLabel {
-        TypeChips.label(forType: ref.shape, named: ref.words, in: types, onPaper: true)
+        TypeChips.label(forType: resolved(ref, types: types), named: ref.words, in: types, onPaper: true)
     }
 
     /// A type's name as it's called now, where its words name one; else the words.
     static func printed(_ ref: TypeRef, _ editor: CanvasEditor) -> String {
-        guard let shape = ref.shape, let types = editor.types, types.isType(shape), let name = types.name(of: shape) else { return ref.words }
+        guard let types = editor.types, let shape = resolved(ref, types: types), types.isType(shape), let name = types.name(of: shape) else { return ref.words }
         return name
+    }
+
+    /// The words of a path's last segment that isn't a parameter, in the singular (`refunds` is `refund`): a type whose name has
+    /// one in it is the likelier of the types offered, and comes first among those a typed word matches alike.
+    static func stems(ofPath path: String) -> [String] {
+        let segments = path.split(separator: "/").filter { !$0.hasPrefix("{") }
+        guard let last = segments.last else { return [] }
+        let word = last.lowercased().filter { $0.isLetter }
+        return word.count > 3 && word.hasSuffix("s") ? [String(word.dropLast())] : word.isEmpty ? [] : [word]
     }
 
     /// What fits where a type goes, `typed` so far over `range`: the file's types (each in its color's chip, its board said
     /// when it's on another, lit while highlighted), then, while what's typed names none, "New type X", an action that makes it.
-    static func offers(_ typed: String, range: NSRange, _ context: LineContext) -> LineOffers? {
+    static func offers(_ typed: String, range: NSRange, quoting: Bool = false, stems: [String] = [], _ context: LineContext) -> LineOffers? {
         let editor = context.editor
         guard let types = editor.types else { return nil }
+        let named = namedByAPI(context.shape, editor, types)
         let board = editor.file.board(containing: context.shape)
         var items: [LineOffer] = []
         var names: Set<String> = []
@@ -71,7 +89,11 @@ enum APITypes {
         for type in sorted where names.insert(type.name).inserted {
             let elsewhere = editor.file.board(containing: type.id) != board
             let detail = elsewhere ? editor.mentions?.boardName(ofShape: type.id) ?? "" : ""
-            items.append(LineOffer(CaretCompletion(label: type.name, detail: detail, insert: type.name, chip: TypeChips.tint(of: type.id, in: types).color),
+            // What the API names already, or what its path speaks of, is likelier than the rest.
+            let lowered = type.name.lowercased()
+            let likely = named.contains(type.id) || stems.contains { lowered.contains($0) }
+            items.append(LineOffer(CaretCompletion(label: type.name, detail: detail, insert: quoting ? EndpointGrammar.written(type.name) : type.name,
+                                                   isRelevant: likely, chip: TypeChips.tint(of: type.id, in: types).color),
                                    light: PartAddress(type.id)))
         }
         let name = typed.trimmingCharacters(in: .whitespaces)
@@ -82,6 +104,24 @@ enum APITypes {
             }))
         }
         return items.isEmpty ? nil : LineOffers(range: range, query: typed, items: items)
+    }
+
+    /// The path of the endpoint a line is of, as it's held; "" for a row not held yet.
+    static func path(of context: LineContext) -> String {
+        guard let row = context.row else { return "" }
+        return context.editor.document[context.shape]?.typed(as: API.self)?.props.endpoints.first { $0.id == row }?.endpoint?.path ?? ""
+    }
+
+    /// The types the API names already (a body's, a response's), as it holds them now.
+    static func namedByAPI(_ api: ShapeID, _ editor: CanvasEditor, _ types: TypeIndex) -> Set<ShapeID> {
+        guard let record = editor.document[api]?.typed(as: API.self) else { return [] }
+        var found: Set<ShapeID> = []
+        for case .endpoint(let endpoint) in record.props.endpoints {
+            for ref in [endpoint.body] + endpoint.responses.map(\.type) {
+                if let ref, let shape = resolved(ref, types: types) { found.insert(shape) }
+            }
+        }
+        return found
     }
 
     /// A type note called `name`, made for the API `api`: beside the types it names already that are on the board shown (else
@@ -112,28 +152,49 @@ struct TypeNameGrammar: LineGrammar {
     var onPaper = false
 
     func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<TypeRef> {
-        let words = ColumnGrammar.placedWords(of: line.string)
-        guard let first = words.first else { return LineReading(row: nil) }
-        let shape = APITypes.bound(first.text, at: first.range, in: line, near: context.shape, context.editor)
-        var spans = [LineSpan(first.range, APITypes.look(of: shape, context.editor, onPaper: onPaper))]
-        spans += words.dropFirst().map { LineSpan($0.range, .plain) }
-        return LineReading(row: TypeRef(words.map(\.text).joined(separator: " "), shape: shape), spans: spans)
+        // The whole line is the type's name: it may be more than one word.
+        let text = line.string as NSString
+        var start = 0, end = text.length
+        while start < end, CharacterSet.whitespaces.contains(Unicode.Scalar(text.character(at: start)) ?? " ") { start += 1 }
+        while end > start, CharacterSet.whitespaces.contains(Unicode.Scalar(text.character(at: end - 1)) ?? " ") { end -= 1 }
+        guard end > start else { return LineReading(row: nil) }
+        var range = NSRange(location: start, length: end - start)
+        var name = text.substring(with: range)
+        // A leading arrow, as the card prints it, isn't part of it.
+        if name.hasPrefix(EndpointGrammar.arrow) || name.hasPrefix(EndpointGrammar.typedArrow) {
+            let words = ColumnGrammar.placedWords(of: line.string)
+            guard words.count > 1 else { return LineReading(row: nil, spans: words.map { LineSpan($0.range, .keyword) }) }
+            range = NSRange(location: words[1].range.location, length: end - words[1].range.location)
+            name = text.substring(with: range)
+        }
+        let shape = APITypes.bound(name, at: range, in: line, near: context.shape, context.editor)
+        var spans = [LineSpan(range, APITypes.look(of: shape, context.editor, onPaper: onPaper))]
+        if range.location > start { spans.append(LineSpan(NSRange(location: start, length: range.location - start), .keyword)) }
+        return LineReading(row: TypeRef(name, shape: shape), spans: spans)
     }
 
     func print(_ ref: TypeRef, in context: LineContext) -> LineText {
         let name = APITypes.printed(ref, context.editor)
-        guard let shape = ref.shape else { return LineText(name) }
-        return LineText(name, references: [LineReference(range: NSRange(location: 0, length: (name as NSString).length), target: PartAddress(shape))])
+        let head = onPaper ? "" : "\(EndpointGrammar.arrow) "
+        let start = (head as NSString).length
+        guard let shape = APITypes.resolved(ref, types: context.editor.types) else { return LineText(head + name) }
+        return LineText(head + name, references: [LineReference(range: NSRange(location: start, length: (name as NSString).length), target: PartAddress(shape))])
     }
 
     func offers(at caret: Int, in line: LineText, reading: LineReading<TypeRef>, context: LineContext) -> LineOffers? {
-        let words = ColumnGrammar.placedWords(of: line.string)
-        let at = words.firstIndex { caret >= $0.range.location && caret <= NSMaxRange($0.range) }
-        guard (at ?? words.filter { NSMaxRange($0.range) < caret }.count) == 0 else { return nil }
-        let range = at.map { words[$0].range } ?? NSRange(location: caret, length: 0)
-        let typed = at.map { String(words[$0].text.utf16.prefix(caret - words[$0].range.location)) ?? "" } ?? ""
-        return APITypes.offers(typed, range: range, context)
+        let words = ColumnGrammar.placedWords(of: line.string).filter { $0.text != EndpointGrammar.arrow && $0.text != EndpointGrammar.typedArrow }
+        // The name, as far as it's typed: from its first word to the caret, over every word it has.
+        guard let first = words.first, caret >= first.range.location else {
+            return APITypes.offers("", range: NSRange(location: caret, length: 0), stems: stems(context), context)
+        }
+        let end = max(caret, NSMaxRange(words[words.count - 1].range))
+        let range = NSRange(location: first.range.location, length: end - first.range.location)
+        let typed = (line.string as NSString).substring(with: NSRange(location: first.range.location, length: min(caret, end) - first.range.location))
+        return APITypes.offers(typed, range: range, stems: stems(context), context)
     }
+
+    /// What its endpoint's path speaks of.
+    private func stems(_ context: LineContext) -> [String] { APITypes.stems(ofPath: APITypes.path(of: context)) }
 
     func spoken(_ ref: TypeRef, in context: LineContext) -> String { APITypes.printed(ref, context.editor) }
 }
@@ -147,22 +208,30 @@ struct ResponseGrammar: LineGrammar {
         var response = EndpointResponse(status: "")
         var spans: [LineSpan] = []
         var index = 0
-        if EndpointGrammar.isStatus(words[0].text) || words.count == 1 {
+        func isArrow(_ word: String) -> Bool { word == EndpointGrammar.arrow || word == EndpointGrammar.typedArrow }
+        // A status, first, unless the arrow is (a type alone, `→ Order`); a lone word is a status.
+        // Each head word's span runs on over the space after it, so the gap is the code's, as wide as a character, not the text's.
+        func headed(_ at: Int) -> NSRange {
+            let end = at + 1 < words.count ? words[at + 1].range.location : NSMaxRange(words[at].range)
+            return NSRange(location: words[at].range.location, length: end - words[at].range.location)
+        }
+        if !isArrow(words[0].text), EndpointGrammar.isStatus(words[0].text) || words.count == 1 {
             response.status = words[0].text
-            spans.append(LineSpan(words[0].range, .code))
+            spans.append(LineSpan(headed(0), .code))
             index = 1
         }
-        if index < words.count, words[index].text == EndpointGrammar.arrow || words[index].text == EndpointGrammar.typedArrow {
-            spans.append(LineSpan(words[index].range, .keyword))
+        if index < words.count, isArrow(words[index].text) {
+            spans.append(LineSpan(headed(index), .keyword))
             index += 1
         }
         if index < words.count {
-            let rest = words[index...]
-            let typeWords = rest.map(\.text).joined(separator: " ")
-            let shape = APITypes.bound(rest.first!.text, at: rest.first!.range, in: line, near: context.shape, context.editor)
-            response.type = TypeRef(typeWords, shape: rest.count == 1 ? shape : nil)
-            spans.append(LineSpan(rest.first!.range, APITypes.look(of: rest.count == 1 ? shape : nil, context.editor, onPaper: false)))
-            spans += rest.dropFirst().map { LineSpan($0.range, .plain) }
+            // What's left is the type's name, all of it, whatever words it has.
+            let first = words[index], last = words[words.count - 1]
+            let range = NSRange(location: first.range.location, length: NSMaxRange(last.range) - first.range.location)
+            let name = (line.string as NSString).substring(with: range)
+            let shape = APITypes.bound(name, at: range, in: line, near: context.shape, context.editor)
+            response.type = TypeRef(name, shape: shape)
+            spans.append(LineSpan(range, APITypes.look(of: shape, context.editor, onPaper: false)))
         }
         return LineReading(row: response, spans: spans)
     }
@@ -170,22 +239,35 @@ struct ResponseGrammar: LineGrammar {
     func print(_ response: EndpointResponse, in context: LineContext) -> LineText {
         guard let type = response.type, !type.words.isEmpty else { return LineText(response.status) }
         let name = APITypes.printed(type, context.editor)
-        let head = response.status.isEmpty ? "" : "\(response.status) \(EndpointGrammar.arrow) "
+        // The arrow is there with a status or without (`→ Order` is a type alone), so it reads back as it was.
+        let head = response.status.isEmpty ? "\(EndpointGrammar.arrow) " : "\(response.status) \(EndpointGrammar.arrow) "
         let start = (head as NSString).length
-        let references = type.shape.map { [LineReference(range: NSRange(location: start, length: (name as NSString).length), target: PartAddress($0))] } ?? []
+        let references = APITypes.resolved(type, types: context.editor.types).map { [LineReference(range: NSRange(location: start, length: (name as NSString).length), target: PartAddress($0))] } ?? []
         return LineText(head + name, references: references)
     }
 
     func offers(at caret: Int, in line: LineText, reading: LineReading<EndpointResponse>, context: LineContext) -> LineOffers? {
         let words = ColumnGrammar.placedWords(of: line.string)
-        let at = words.firstIndex { caret >= $0.range.location && caret <= NSMaxRange($0.range) }
-        let index = at ?? words.filter { NSMaxRange($0.range) < caret }.count
-        // After the status (and its arrow, if typed): where a type goes.
-        let before = words.prefix(index).map(\.text).filter { $0 != EndpointGrammar.arrow && $0 != EndpointGrammar.typedArrow }
-        guard before.count == 1, EndpointGrammar.isStatus(before[0]) else { return nil }
-        let range = at.map { words[$0].range } ?? NSRange(location: caret, length: 0)
-        let typed = at.map { String(words[$0].text.utf16.prefix(caret - words[$0].range.location)) ?? "" } ?? ""
-        return APITypes.offers(typed, range: range, context)
+        func isArrow(_ word: String) -> Bool { word == EndpointGrammar.arrow || word == EndpointGrammar.typedArrow }
+        // Where a type goes: past the status (the arrow typed or not), or past the arrow alone.
+        var head = 0
+        if let first = words.first {
+            if isArrow(first.text) {
+                head = 1
+            } else if EndpointGrammar.isStatus(first.text) {
+                head = words.count > 1 && isArrow(words[1].text) ? 2 : 1
+            }
+        }
+        guard head > 0, caret > NSMaxRange(words[head - 1].range) else { return nil }
+        let stems = APITypes.stems(ofPath: APITypes.path(of: context))
+        guard let first = words.dropFirst(head).first, caret >= first.range.location else {
+            return APITypes.offers("", range: NSRange(location: caret, length: 0), stems: stems, context)
+        }
+        let end = max(caret, NSMaxRange(words[words.count - 1].range))
+        let range = NSRange(location: first.range.location, length: end - first.range.location)
+        let typed = (line.string as NSString).substring(with: NSRange(location: first.range.location, length: min(caret, end) - first.range.location))
+        guard !EndpointGrammar.isStatusPrefix(typed) else { return nil }
+        return APITypes.offers(typed, range: range, stems: stems, context)
     }
 
     var substitutions: [LineSubstitution] { [LineSubstitution(EndpointGrammar.typedArrow, becomes: EndpointGrammar.arrow)] }

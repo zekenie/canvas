@@ -187,6 +187,8 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             field.onBlur = { [weak self, weak field] in
                 guard let self, let field, !self.isMoving, let stop = self.stop(of: field) else { return }
                 self.commit(stop.line, leaving: stop.item)
+                // The field slid to its caret slides back, now another has the keyboard.
+                self.needsLayout = true
             }
             field.onFocus = { [weak self, weak field] in
                 guard let self, let field, let stop = self.stop(of: field) else { return }
@@ -280,6 +282,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     private func focused(_ stop: CardStop) {
         focus = stop
         needsDisplay = true
+        needsLayout = true
         if let responder = responder(of: stop) { NSAccessibility.post(element: responder, notification: .focusedUIElementChanged) }
     }
 
@@ -540,7 +543,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     func size(in room: CGSize) -> CGSize {
         let count = card.lines.indices.reduce(0) { $0 + max(texts[$1]?.fields.count ?? 1, 1) }
         let height = LineCardStyle.padding * 2 + LineCardStyle.headerHeight + LineCardStyle.headerGap + CGFloat(count) * LineCardStyle.lineHeight
-        return CGSize(width: min(LineCardStyle.width, room.width), height: min(height, room.height))
+        return CGSize(width: min(card.width ?? LineCardStyle.width, room.width), height: min(height, room.height))
     }
 
     /// The rect of a stop's line, view points.
@@ -585,7 +588,8 @@ final class LineCardSession<Model: LineModel>: LineCardView {
                     width = max(width, layout.usageBoundsForTextContainer.width + LineCardStyle.textSlack)
                 }
                 var x: CGFloat = 0
-                if let caret = field.caretFrame, caret.maxX > clipFrame.width - 1 { x = -(caret.maxX - clipFrame.width + 1) }
+                // Only the field with the keyboard slides to its caret; another shows its text from the start.
+                if window?.firstResponder === field, let caret = field.caretFrame, caret.maxX > clipFrame.width - 1 { x = -(caret.maxX - clipFrame.width + 1) }
                 let frame = CGRect(x: x, y: ((rect.height - height) / 2).rounded(), width: width, height: height)
                 if field.frame != frame { field.frame = frame }
             }

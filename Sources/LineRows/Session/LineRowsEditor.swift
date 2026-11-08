@@ -502,7 +502,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             }
             keepCaretInClip()
             if case .row(let row) = stop, let index = index(of: row) {
-                field.setAccessibilityLabel("\(model.noun.title) \(index + 1) of \(rows.count)")
+                field.setAccessibilityLabel(model.accessibleLabel(of: rows[index], at: index, among: rows))
             } else if stop == .fixed, let fixed = model.fixedLine {
                 field.setAccessibilityLabel(fixed.name)
             } else {
@@ -691,12 +691,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// One step of `changes`, named as the kind names the first (and what a delete took along); heard by VoiceOver. A
     /// refusal (a locked shape) writes nothing and shakes the shape.
     @discardableResult
-    func write(_ changes: [LineChange<Row>], coalescing key: AnyHashable? = nil) -> Bool {
+    func write(_ changes: [LineChange<Row>], coalescing key: AnyHashable? = nil, named naming: LineChange<Row>? = nil) -> Bool {
         var name = ""
         let model = model, id = id, registry = editor.registry
         let written: Bool? = editor.transactWhole(nil, coalescing: key, shaking: [id]) { transaction in
             guard model.apply(changes, to: id, in: &transaction) else { throw Transaction.Refused([id]) }
-            name = model.stepName(of: changes, along: transaction.deletedAlong, in: registry)
+            name = model.stepName(of: naming.map { [$0] } ?? changes, along: transaction.deletedAlong, in: registry)
             transaction.stepName = name
             return true
         }
@@ -938,11 +938,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let grammar = model.grammar(for: shape.map { model.roleOfNewRow(at: at, in: $0.props) } ?? "")
         let made = lines.compactMap { grammar.read(LineText($0), id: PartID(), in: lineContext()).row }
         guard !made.isEmpty else { return true }
-        var changes: [LineChange<Row>] = [.add(made, at: at)]
+        var changes = model.placing(pasted: made, at: at, among: rows)
         if let gone { changes.append(.delete([gone])) }
         isMoving = true
         defer { isMoving = false }
-        guard write(changes) else { return true }
+        // Named for the block as pasted, wherever each row went.
+        guard write(changes, named: .add(made, at: at)) else { return true }
         show(.row(model.id(of: made[made.count - 1])), at: .end)
         return true
     }
@@ -1067,7 +1068,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
                 guard let at = index(of: row) else { continue }
                 let held = rows[at]
                 let grammar = model.grammar(for: model.role(of: held))
-                element.setAccessibilityLabel("\(model.noun.title) \(at + 1) of \(rows.count)")
+                element.setAccessibilityLabel(model.accessibleLabel(of: held, at: at, among: rows))
                 element.setAccessibilityValue(grammar.print(held, in: lineContext(row)).string)
                 element.setAccessibilityHelp(grammar.spoken(held, in: lineContext(row)))
             default:
