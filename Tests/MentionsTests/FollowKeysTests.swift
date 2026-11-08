@@ -15,7 +15,7 @@ import TestKit
 // sent to a stand-in for the window controller that runs them as it does.
 
 /// The window controller's `runCommand:` and its validation, for an unshown window.
-@MainActor private final class CommandItems: NSObject, NSMenuItemValidation {
+@MainActor final class CommandItems: NSObject, NSMenuItemValidation {
     let editor: CanvasEditor
     let menu: NSMenu
 
@@ -57,7 +57,7 @@ import TestKit
     }
 }
 
-private let goToMentionChord = Chord(Key.return, [.command, .option])
+let goToMentionChord = Chord(Key.return, [.command, .option])
 
 /// "Ask Groceries and Grocery List", the two pills at 4 and 14.
 @MainActor private let twoPills = MentionText([.text("Ask "), .mention(idA, label: "Groceries"), .text(" and "), .mention(idB, label: "Grocery List")])

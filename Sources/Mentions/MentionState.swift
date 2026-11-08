@@ -108,10 +108,13 @@ public final class MentionState {
 
     /// Resolves every shape and row that's mentioned anywhere in the file.
     private func trackMentioned() {
+        var rows: [ShapeID: Set<PartID>] = [:]
         for edge in topology?.edges(ofType: mentionEdges) ?? [] {
             track(edge.target)
-            if let part = edge.targetPart { trackRow(PartAddress(edge.target, part: part)) }
+            if let part = edge.targetPart { rows[edge.target, default: []].insert(part) }
         }
+        // A shape's rows read once for all the rows of it that are mentioned, not once for each.
+        for (shape, parts) in rows { trackRows(parts, of: shape) }
     }
 
     /// Lays out every shape that mentions anything, as the names show now: what a file put in place
@@ -1088,7 +1091,8 @@ public final class MentionState {
         let mentioned = mentionedRows(of: shape)
         var rows = rowResolutions[shape] ?? [:]
         for part in rows.keys where !mentioned.contains(part) && observedRows[PartAddress(shape, part: part)] == nil { rows[part] = nil }
-        for part in mentioned where rows[part] == nil { rows[part] = resolve(PartAddress(shape, part: part)) }
+        let fresh = mentioned.filter { rows[$0] == nil }
+        if !fresh.isEmpty { rows.merge(resolveRows(Array(fresh), of: shape)) { _, new in new } }
         rowResolutions[shape] = rows.isEmpty ? nil : rows
     }
 
@@ -1137,8 +1141,15 @@ public final class MentionState {
     /// Resolves a row, kept with its shape's (which is tracked too).
     private func trackRow(_ target: PartAddress) {
         guard let part = target.part else { return track(target.shape) }
-        track(target.shape)
-        if rowResolutions[target.shape]?[part] == nil { rowResolutions[target.shape, default: [:]][part] = resolve(target) }
+        trackRows([part], of: target.shape)
+    }
+
+    /// Resolves rows of one shape, those not yet kept, with its parts read once.
+    private func trackRows(_ parts: Set<PartID>, of shape: ShapeID) {
+        track(shape)
+        let fresh = parts.filter { rowResolutions[shape]?[$0] == nil }
+        guard !fresh.isEmpty else { return }
+        rowResolutions[shape, default: [:]].merge(resolveRows(Array(fresh), of: shape)) { _, new in new }
     }
 
     private func untrackRowIfUnused(_ target: PartAddress) {
@@ -1273,7 +1284,9 @@ extension MentionState: EditorService {
         forgetLayout(of: Array(laidOutByNames))
         trackMentioned()
         for target in observersByTarget.keys { track(target) }
-        for row in observedRows.keys { trackRow(row) }
+        var observed: [ShapeID: Set<PartID>] = [:]
+        for row in observedRows.keys { if let part = row.part { observed[row.shape, default: []].insert(part) } }
+        for (shape, parts) in observed { trackRows(parts, of: shape) }
         readCatalog()
         layOutMentioners()
     }

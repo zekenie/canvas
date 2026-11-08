@@ -14,7 +14,7 @@ import Topology
 // where it went; and the `@` picker listing rows. Rosters (CanvasTesting's), titled, beside jots.
 
 /// Rosters named by their titles, and mentionable.
-@MainActor private var rosterNames: Contributor {
+@MainActor var rosterNames: Contributor {
     Contributor(id: "roster-names") {
         $0.title(Roster.self, contents: false)
         $0.mentionable(Roster.self)
@@ -22,7 +22,7 @@ import Topology
 }
 
 /// Rosters' rows as Selection's items, by their ids: what following a row's mention selects.
-@MainActor private var rosterItems: Contributor {
+@MainActor var rosterItems: Contributor {
     Contributor(id: "roster-items") { registrar in
         registrar.forShapes(adopting: .parts) { parted in
             parted.shapeItems({ editor, shape in
@@ -165,5 +165,82 @@ import Topology
         b.h.wait(10)
         expectEqual(b.editor.selectedShapeIDs, [b.orders])
         expectEqual(b.editor.selectedItems?.ids, [AnyHashable(b.customerID.id)], "the row selected, an item of its shape")
+    },
+    test("a frame's row pills read their shape's parts once for them all, and again once the shape changes") {
+        let b = try RowBoard()
+        let many = MentionText((0..<20).flatMap { _ in [MentionRun.text(" "), .mention(b.row, label: "orders.customer_id")] })
+        let busy = b.editor.add(Jot(CGRect(x: 300, y: 300, width: 400, height: 300), text: many), titled: nil)
+        let before = MentionDrawingCounts.partsRead
+        expectEqual(b.editor.mentionPills(of: busy).count, 20)
+        expectEqual(MentionDrawingCounts.partsRead, before + 1, "twenty pills of one row, one read of the shape's parts")
+        _ = b.editor.mentionPills(of: busy)
+        _ = b.editor.mentionPills(of: b.jot)
+        expectEqual(MentionDrawingCounts.partsRead, before + 1, "and the next sweep, of these or others, none")
+        b.editor.transact("Rename") { $0.update(b.orders, as: Roster.self) { $0.props.rows[1].name = "buyer_id" } }
+        _ = b.editor.mentionPills(of: busy)
+        expectEqual(MentionDrawingCounts.partsRead, before + 2, "the shape changed: read again, once")
+        expectEqual(b.state.resolve(b.row).appearance?.label, "orders.buyer_id")
+    },
+])
+
+// MARK: Across boards
+
+/// The orders and customers rosters on the root, a pocket, and on the pocket's board a jot mentioning orders' `customer_id`.
+@MainActor private final class RowPocket {
+    let h: EditorHarness
+    let orders = ShapeID(), customers = ShapeID(), pocket = ShapeID(), jot = ShapeID()
+    let id = RosterRow(name: "id"), customerID = RosterRow(name: "customer_id")
+    var editor: CanvasEditor { h.editor }
+    var state: MentionState { h.editor.mentionState }
+    var row: PartAddress { PartAddress(orders, part: customerID.id) }
+    var pocketBoard: BoardID { BoardID(owner: pocket) }
+    var text: MentionText? { editor.file.record(jot)?.typed(as: Jot.self)?.props.text }
+
+    init() throws {
+        func titled(_ props: some ShapeProps, _ id: ShapeID, _ title: String) -> AnyShapeRecord {
+            var record = AnyShapeRecord(ShapeRecord(id: id, props))
+            record[TitleProperty.self] = title
+            return record
+        }
+        let root = [titled(Roster(CGRect(x: 0, y: 0, width: 160, height: 80), rows: [id, customerID]), orders, "orders"),
+                    titled(Roster(CGRect(x: 300, y: 0, width: 160, height: 60), rows: []), customers, "customers"),
+                    AnyShapeRecord(ShapeRecord(id: pocket, Pocket(CGRect(x: 1200, y: 1200, width: 100, height: 100))))]
+        let text = MentionText([.text("Ask "), .mention(PartAddress(orders, part: customerID.id), label: "orders.customer_id")])
+        let inside = [AnyShapeRecord(ShapeRecord(id: jot, Jot(CGRect(x: 20, y: 20, width: 220, height: 100), text: text)))]
+        h = try EditorHarness(plugins: mentionPlugins([PocketsPlugin(), RostersPlugin(), rosterNames, rosterItems, FreezingPlugin()]),
+                              file: CanvasFile(root: CanvasDocument(shapes: root), children: [pocket: CanvasDocument(shapes: inside)]))
+        editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+    }
+
+    /// The column moved from "orders" to "customers", as a step.
+    func move() -> PartAddress {
+        let moved = PartAddress(customers, part: customerID.id)
+        editor.transact("Move Column") { tx in
+            tx.update(orders, as: Roster.self) { $0.props.rows.remove(at: 1) }
+            tx.update(customers, as: Roster.self) { $0.props.rows.append(customerID) }
+            tx.moveParts([row: moved])
+        }
+        return moved
+    }
+}
+
+@MainActor let rowCrossBoardTests = Suite("Mentions of a row, across boards", [
+    test("a row moved to another shape renames the mentions on another board in the same step, Undo gives them back, and a locked one there keeps its text") {
+        let b = try RowPocket()
+        expectEqual(b.state.labels.label(of: b.row), "orders.customer_id", "kept from the file's open, read for all of a shape's rows at once")
+        expectEqual(b.state.resolve(b.row).appearance?.label, "orders.customer_id", "live from the pocket's board")
+        let moved = b.move()
+        expectEqual(b.editor.board, .root, "written from the root; the pocket's board was never shown")
+        expectEqual(b.text?.mentionedTargets, [moved], "the mention on the other board names where the row went")
+        expectEqual(b.state.resolve(moved).appearance?.label, "customers.customer_id")
+        expectEqual(b.state.mentioners(of: moved), [b.jot])
+        b.editor.undo()
+        expectEqual(b.text?.mentionedTargets, [b.row], "one step gives it back")
+        expect(b.state.resolve(b.row).isLive)
+
+        b.editor.transact(on: b.pocketBoard, "Lock") { $0.update(b.jot) { $0[Frozen.self] = true } }
+        _ = b.move()
+        expectEqual(b.text?.mentionedTargets, [b.row], "a locked mention's text is left as it was")
+        expectEqual(b.state.resolve(b.row), .missing, "its pill naming a row that's gone")
     },
 ])
