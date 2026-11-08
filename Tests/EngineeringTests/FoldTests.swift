@@ -4,6 +4,7 @@ import CanvasTesting
 import Connections
 import Engineering
 import Find
+import Geometry
 import LineRows
 import Selection
 import TestKit
@@ -137,6 +138,26 @@ import Topology
         h.editor.transact("Rename") { $0.update(status) { $0[TitleProperty.self] = "state" } }
         _ = try awaitResult { await find.settled() }
         expect(find.texts(of: table).contains("state"), "a rename of the enum reads the table's pill again: \(find.texts(of: table))")
+    },
+    test("zoomed out at 30%, a folded table draws a bar a shown line, its +N line's short bar, and nothing below; light and dark") {
+        let h = try kitHarness()
+        let id = h.add(products(at: CGPoint(x: 100, y: 100)), titled: "products")
+        h.editor.rowFolds?.fold([id])
+        h.editor.camera = Camera(origin: .zero, zoom: 0.3)
+        expect(h.editor.drawsSkeleton(of: id))
+        let frame = try laidOut(h.editor, id)
+        expectEqual(frame.height, KitStyle.height(rows: 3))
+        for dark in [false, true] {
+            let drawn = render(h.editor, size: CGSize(width: 300, height: 300), dark: dark)
+            // In view points: the paper from (30, 30), 90 wide; rows 7.2 apart from 32.4 down.
+            @MainActor func row(_ line: Int) -> CGRect { KitStyle.rowRect(line, in: frame).applying(CGAffineTransform(scaleX: 0.3, y: 0.3)) }
+            let name = { (r: CGRect) in CGRect(x: r.minX + KitStyle.nameInset * 0.3, y: r.minY + 1, width: 12, height: r.height - 2) }
+            expect(some(drawn, in: name(row(0))) { $0[0] < 200 }, "\(dark): id's bar")
+            expect(some(drawn, in: name(row(2))) { $0[0] < 200 }, "\(dark): the +N line's bar")
+            let below = CGRect(x: 30, y: frame.maxY * 0.3 + 3, width: 90, height: 20)
+            // The card ends there: no paper below it (the canvas is white or dark, never the paper's grey).
+            expect(!some(drawn, in: below) { abs($0[0] - 235) < 4 && abs($0[2] - 235) < 4 }, "\(dark): no paper below the folded card")
+        }
     },
     test("T2 panel 3: a line typed wider than products lays it out as wide as the line needs, nothing written; as stored as editing ends") {
         let b = try KitBench()
