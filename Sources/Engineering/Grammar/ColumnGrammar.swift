@@ -63,29 +63,35 @@ public enum ColumnGrammar {
             }
         }
         var unread: [String] = []
+        // A word the grammar reads once: said again, it is kept as written with the rest, so printing loses none.
+        var said: Set<String> = []
+        func first(_ word: String) -> Bool { said.insert(word).inserted }
         while let word = rest.first {
             rest = rest.dropFirst()
             switch word.text.lowercased() {
-            case null:
+            case null where !said.contains(null):
+                said.insert(null)
                 column.nullable = true
                 roles.append((.keyword, word.range, word.text))
-            case not where rest.first?.text.lowercased() == null:
+            case not where rest.first?.text.lowercased() == null && !said.contains(null):
+                said.insert(null)
                 roles.append((.keyword, word.range, word.text))
                 roles.append((.keyword, rest.first!.range, rest.first!.text))
                 rest = rest.dropFirst()
                 column.nullable = false
-            case unique:
+            case unique where first(unique):
                 column.unique = true
                 roles.append((.keyword, word.range, word.text))
-            case primaryKey:
+            case primaryKey where first(primaryKey):
                 column.primaryKey = true
                 roles.append((.keyword, word.range, word.text))
-            case primary where rest.first?.text.lowercased() == key:
+            case primary where rest.first?.text.lowercased() == key && !said.contains(primaryKey):
+                said.insert(primaryKey)
                 roles.append((.keyword, word.range, word.text))
                 roles.append((.keyword, rest.first!.range, rest.first!.text))
                 rest = rest.dropFirst()
                 column.primaryKey = true
-            case Self.default where rest.first != nil:
+            case Self.default where rest.first != nil && first(Self.default):
                 roles.append((.keyword, word.range, word.text))
                 roles.append((.defaultValue, rest.first!.range, rest.first!.text))
                 column.default = rest.first!.text
@@ -158,10 +164,22 @@ public enum ColumnGrammar {
     /// (`numeric(10, 2)`) are one word with what's in them, as SQL writes a type and a default.
     static func words(of line: String) -> [String] { placedWords(of: line).map(\.text) }
 
-    /// The words of a line and where each is in it (UTF-16, as `NSRange` counts).
+    /// The words of a line and where each is in it (UTF-16, as `NSRange` counts). A quote opens a quoted run only where
+    /// a word starts (or inside parentheses), as SQL's literals do, so an apostrophe in a name is a letter; a quote or
+    /// a parenthesis never closed is a letter too, and the line's other words stay words.
     public static func placedWords(of line: String) -> [(text: String, range: NSRange)] {
+        var plain: Set<Int> = []
+        while true {
+            let (words, unclosed) = scannedWords(of: line, plain: plain)
+            guard let unclosed else { return words }
+            plain.insert(unclosed)
+        }
+    }
+
+    /// The words of a line, and where the quote or parenthesis left open begins, if one is; those `plain` mark are letters.
+    private static func scannedWords(of line: String, plain: Set<Int>) -> (words: [(text: String, range: NSRange)], unclosed: Int?) {
         var words: [(text: String, range: NSRange)] = [], word = "", start = 0, offset = 0
-        var quote: Character?, depth = 0
+        var quote: Character?, quoteAt = 0, depth = 0, groupAt = 0
         func flush() {
             if !word.isEmpty { words.append((word, NSRange(location: start, length: offset - start))) }
             word = ""
@@ -176,10 +194,12 @@ public enum ColumnGrammar {
             }
             if word.isEmpty { start = offset }
             switch character {
-            case "'", "\"":
+            case _ where (character == "'" || character == "\"") && (word.isEmpty || depth > 0) && !plain.contains(offset):
                 quote = character
+                quoteAt = offset
                 word.append(character)
-            case "(":
+            case "(" where !plain.contains(offset):
+                if depth == 0 { groupAt = offset }
                 depth += 1
                 word.append(character)
             case ")":
@@ -192,7 +212,7 @@ public enum ColumnGrammar {
             }
         }
         flush()
-        return words
+        return (words, quote != nil ? quoteAt : depth > 0 ? groupAt : nil)
     }
 }
 
