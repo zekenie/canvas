@@ -37,11 +37,14 @@ public enum ItemOutline: Hashable, Sendable {
 }
 
 /// One item of a shape, as a plugin lists it, in the order the keys walk them (top to bottom).
+@MainActor
 public struct ShapeItem {
     /// Stable while it is the same item (a row's id): the selection holds it.
     public var id: AnyHashable
-    /// What VoiceOver says of it: "customer_id, uuid, references accounts.id".
-    public var title: String
+    /// What VoiceOver says of it: "customer_id, uuid, references accounts.id". Worked out when asked, so listing a shape's
+    /// many items to find one costs their rects alone.
+    public var title: String { titled() }
+    private let titled: @MainActor () -> String
     /// Where it is drawn, world units: the outline goes inside it.
     public var rect: CGRect
     /// Nil for an item that hides nothing.
@@ -50,9 +53,10 @@ public struct ShapeItem {
     /// as this one selected, and comes back as itself once it shows again.
     public var stands: [AnyHashable]
 
-    public init<ID: Hashable & Sendable>(id: ID, title: String, rect: CGRect, outline: ItemOutline? = nil, stands: [AnyHashable] = []) {
+    public init<ID: Hashable & Sendable>(id: ID, title: @autoclosure @escaping @MainActor () -> String, rect: CGRect, outline: ItemOutline? = nil,
+                                         stands: [AnyHashable] = []) {
         self.id = AnyHashable(id)
-        self.title = title
+        titled = title
         self.rect = rect
         self.outline = outline
         self.stands = stands
@@ -177,6 +181,8 @@ extension CanvasEditor {
         guard let state = selectionState else { return }
         if selectedShapeIDs != [shape] { selectedShapeIDs = [shape] }
         guard selectedShapeIDs == [shape] else { return }
+        // What's selected already: nothing to list (a shape of many rows lists them all to check).
+        if let held = state.items, held.shape == shape, held.ids == ids, anchor == nil || anchor == held.anchor { return }
         state.setItems(ids, of: shape, anchor: anchor)
     }
 
@@ -196,8 +202,17 @@ struct HeldItems: Equatable {
 
 extension SelectionState {
     /// The items `held` is, as the shape lists them now: each item selected or standing for one selected, in the shape's order;
-    /// nil when none is left.
+    /// nil when none is left. Kept while the board, its layout and what's held stay as they were, so the keys, the outline
+    /// and VoiceOver read it once between changes.
     func shown(_ held: HeldItems) -> ItemSelection? {
+        let revision = editor.revision, layout = editor.layoutRevision, editing = editor.editingShapeID
+        if let kept = keptItems, kept.held == held, kept.revision == revision, kept.layout == layout, kept.editing == editing { return kept.shown }
+        let shown = listedShown(held)
+        keptItems = KeptItems(held: held, revision: revision, layout: layout, editing: editing, shown: shown)
+        return shown
+    }
+
+    private func listedShown(_ held: HeldItems) -> ItemSelection? {
         let listed = editor.shapeItems(of: held.shape)
         let wanted = Set(held.ids)
         let ids = listed.filter { wanted.contains($0.id) || $0.stands.contains(where: wanted.contains) }.map(\.id)
@@ -230,24 +245,22 @@ extension SelectionState {
         return true
     }
 
-    /// A commit or a layout may take items away (a row deleted by another writer): those its shape no longer lists, shown or
-    /// hidden, go; none left, the items go.
+    /// A commit took the items' shape away, or it's no longer the only one selected: the items go. One that took some items
+    /// away (a row deleted by another writer) leaves them held, as a fold leaves a hidden one: what shows is what the shape
+    /// lists (`shown`), and none listed is none selected.
     func pruneItems() {
         guard let held = items else { return }
-        guard selectedIDs == [held.shape], editor.document[held.shape] != nil else {
-            items = nil
-            return
-        }
-        guard editor.editingShapeID != held.shape else { return }
-        let listed = editor.shapeItems(of: held.shape)
-        let known = Set(listed.flatMap { [$0.id] + $0.stands })
-        let ids = held.ids.filter(known.contains)
-        guard !ids.isEmpty else {
-            items = nil
-            return
-        }
-        if ids != held.ids { items = HeldItems(shape: held.shape, ids: ids, anchor: known.contains(held.anchor) ? held.anchor : ids[0]) }
+        if selectedIDs != [held.shape] || editor.document[held.shape] == nil { items = nil }
     }
+}
+
+/// The items selected as the shape lists them, as last worked out, and what from.
+struct KeptItems {
+    let held: HeldItems
+    let revision: Int
+    let layout: Int
+    let editing: ShapeID?
+    let shown: ItemSelection?
 }
 
 // MARK: The keys

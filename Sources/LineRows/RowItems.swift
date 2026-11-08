@@ -64,8 +64,11 @@ extension ShapeRegistrar {
                 }
             }), to: LineRowsMoves.self)
         shapeItems(named: "rows", { editor, record in
-            RowItems.items(of: record, in: editor) { id in
-                guard let row = rows(record).first(where: { model.id(of: $0) == id }) else { return "" }
+            // Each row's words are worked out only when an item's title is asked (VoiceOver), so listing them costs their rects.
+            let all = rows(record)
+            let byID = Dictionary(all.map { (model.id(of: $0), $0) }) { first, _ in first }
+            return RowItems.items(of: record, in: editor) { [weak editor] id in
+                guard let editor, let row = byID[id] else { return "" }
                 return model.grammar(for: model.role(of: row)).spoken(row, in: LineContext(editor: editor, shape: record.id, row: id))
             }
         }, at: { editor, record, point in
@@ -95,7 +98,7 @@ extension ShapeRegistrar {
 enum RowItems {
     /// The lines `record` shows as items, top to bottom: a row each, or, folded, the rows shown, its closed headers and its
     /// "+N ›" line, each of those standing for the rows it hides. `title` says a row.
-    static func items(of record: AnyShapeRecord, in editor: CanvasEditor, title: (PartID) -> String) -> [ShapeItem] {
+    static func items(of record: AnyShapeRecord, in editor: CanvasEditor, title: @escaping @MainActor (PartID) -> String) -> [ShapeItem] {
         let shapes = editor.shapeContext
         guard let kind = editor.registry.lineRows(of: record.kind), let rows = kind.rows(record), !rows.isEmpty,
               let frame = shapes.frame(of: record) else { return [] }

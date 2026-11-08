@@ -175,8 +175,10 @@ import TestKit
         w.editor.selectItems(["h1"], of: w.a)
         expectEqual(w.items, ["r3"], "h1 is hidden behind r3")
         w.log.r3Open = true
+        w.editor.shapesDidChangeLayout([w.a])
         expectEqual(w.items, [], "shown again, h1 is no item of the fixture's: gone from what shows")
         w.log.r3Open = false
+        w.editor.shapesDidChangeLayout([w.a])
         expectEqual(w.items, ["r3"])
     },
     test("Items are outlined inside their shape in the accent, a run at a time, and the shape's own outline gives way; nothing while another shape is selected") {

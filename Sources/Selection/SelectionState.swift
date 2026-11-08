@@ -123,6 +123,8 @@ final class SelectionState {
     /// The items selected inside the only selected shape (`ShapeItems`: a table's rows), as they were selected: let go with
     /// any other change of the selection, a part focused, another tool or board, and the shape's editing ending. VoiceOver's
     /// focus follows them.
+    /// What `items` shows as, kept between changes (`shown`).
+    @ObservationIgnored var keptItems: KeptItems?
     @ObservationIgnored var items: HeldItems? {
         didSet {
             guard items != oldValue else { return }
