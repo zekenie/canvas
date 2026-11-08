@@ -48,6 +48,8 @@ enum APIStyle {
     /// What a path segment's offers say after them: a table's name, another path's rest.
     static let tableDetail = "table"
     static let pathDetail = "path"
+    /// How strong the band behind the row with the caret is, so a header's chevron and count show through it.
+    static let bandAlpha: CGFloat = 0.7
     /// How strong a type's color is behind its name in a line, as a light pill's is.
     static let pillFill: CGFloat = 0.14
     /// A row's kind words, in Mentions' catalog, the picker, VoiceOver.

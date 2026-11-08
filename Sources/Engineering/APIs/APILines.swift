@@ -338,9 +338,12 @@ enum APILooks {
     static let endpoint: LineRole = "endpoint"
     static let header: LineRole = "header"
 
+    /// The band behind the row with the caret lets the paper's drawing under it through: a header keeps its chevron and count
+    /// while its prefix is typed (E5 panel 1).
     static let line = LineStyle(font: KitStyle.codeFont, codeFont: KitStyle.codeFont, ink: NSColor(KitStyle.ink),
                                 secondaryInk: NSColor(KitStyle.secondaryInk), textInset: APIStyle.inset,
-                                trailingInset: KitStyle.trailingInset, gutterMiddle: APIStyle.inset / 2, markSize: KitStyle.markSize)
+                                trailingInset: KitStyle.trailingInset, gutterMiddle: APIStyle.inset / 2, markSize: KitStyle.markSize,
+                                band: LineStyle.defaultBand.withAlphaComponent(APIStyle.bandAlpha))
 }
 
 /// The kit's API grammars, for what reads a line as typing does (a test's corpus).

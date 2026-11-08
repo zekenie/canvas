@@ -38,11 +38,15 @@ extension APIDefinition: ShapeDefinition {
                 MoreLine.draw(more.count, in: rect, context)
                 continue
             }
-            guard let index = rows.row(atLine: line), api.endpoints[index].id != rows.focused else { continue }
+            guard let index = rows.row(atLine: line) else { continue }
+            let focused = api.endpoints[index].id == rows.focused
             switch api.endpoints[index] {
             case .header(let header):
+                // Its chevron and count stay while the field has its prefix (E5 panel 1).
                 let closed: Bool = if case .header? = rows.shown?.lines[line] { true } else { false }
-                APIDrawing.drawHeader(header.prefix, count: APIGroups.members(of: index, in: api.endpoints), closed: closed, in: rect, cg)
+                APIDrawing.drawHeader(focused ? nil : header.prefix, count: APIGroups.members(of: index, in: api.endpoints), closed: closed, in: rect, cg)
+            case .endpoint where focused:
+                continue
             case .endpoint(let endpoint):
                 APIDrawing.drawEndpoint(endpoint, member: APIGroups.isMember(index, in: api.endpoints), types: types, in: rect, cg)
             }
@@ -188,14 +192,16 @@ enum APIDrawing {
         }
     }
 
-    /// A path-prefix header: its chevron (down while open, right while closed), its prefix, its endpoints' count at the right.
-    static func drawHeader(_ prefix: String, count: Int, closed: Bool, in rect: CGRect, _ cg: CGContext) {
+    /// A path-prefix header: its chevron (down while open, right while closed), its prefix (none while the field has it), its
+    /// endpoints' count at the right.
+    static func drawHeader(_ prefix: String?, count: Int, closed: Bool, in rect: CGRect, _ cg: CGContext) {
         let start = rect.minX + APIStyle.inset, end = rect.maxX - KitStyle.trailingInset, middle = rect.midY
         RowMarks.draw(closed ? APIStyle.closedChevron : APIStyle.openChevron, color: KitStyle.secondaryInk, size: APIStyle.chevronSize,
                       centeredAt: CGPoint(x: start + APIStyle.memberIndent / 2 - 2, y: middle))
         let counted = RowText.line(count.formatted(), .faintCode)
         RowText.draw(counted, at: end - counted.width, middle: middle, in: cg)
         let x = start + APIStyle.memberIndent
+        guard let prefix else { return }
         RowText.draw(RowText.line(prefix, .code), at: x, middle: middle, room: end - counted.width - APIStyle.gap - x, in: cg)
     }
 

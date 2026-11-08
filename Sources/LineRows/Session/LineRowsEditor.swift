@@ -481,11 +481,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .row(let row):
             let stored = rows.first { model.id(of: $0) == row }
             held = stored
+            // Before the line is shown: the room the "›" takes is counted in the width the shape is laid out at.
+            hasCard = model.showsCardChevron && stored.map { model.card(of: $0, in: lineContext(row)) != nil } == true
             field.substitutions = grammar.substitutions
             field.show(stored.map { grammar.print($0, in: lineContext(row)) } ?? LineText(""))
             lineChanged(reportingChange: false)
             shown = stored.map { stored in (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored) }
-            hasCard = model.showsCardChevron && stored.map { model.card(of: $0, in: lineContext(row)) != nil } == true
         }
         setInputs()
         place()
