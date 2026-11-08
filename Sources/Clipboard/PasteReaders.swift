@@ -18,13 +18,22 @@ public struct PasteContent: Sendable {
         public let url: URL
         /// Its name, with its extension.
         public let name: String
-        /// Its text, when it is a small file that reads as UTF-8.
-        public let text: String?
+        private let contents: FileText
+
+        /// Its text, when it is a small file that reads as UTF-8: read when first asked, once, since most pastes never ask.
+        public var text: String? { contents.text }
 
         public init(url: URL, text: String?) {
             self.url = url
             name = url.lastPathComponent
-            self.text = text
+            contents = FileText(text)
+        }
+
+        /// A file whose text is read when asked.
+        init(url: URL, reading read: @escaping @Sendable () -> String?) {
+            self.url = url
+            name = url.lastPathComponent
+            contents = FileText(reading: read)
         }
 
         public var fileExtension: String { url.pathExtension.lowercased() }
@@ -54,15 +63,41 @@ public struct PasteContent: Sendable {
         var files: [File] = []
         for url in urls.prefix(fileLimit) {
             let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-            var text: String?
             if values?.isRegularFile == true, let size = values?.fileSize, size <= textLimit {
-                text = try? String(contentsOf: url, encoding: .utf8)
+                files.append(File(url: url, reading: { try? String(contentsOf: url, encoding: .utf8) }))
+            } else {
+                files.append(File(url: url, text: nil))
             }
-            files.append(File(url: url, text: text))
         }
         var text = pasteboard.string(forType: .string)
         if let found = text, found.isEmpty || found.utf8.count > textLimit { text = nil }
         return PasteContent(text: text, files: files)
+    }
+}
+
+/// A file's text, read the first time it is asked for (a copied folder of large files costs nothing to a paste that no reader
+/// reads files for).
+private final class FileText: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String??
+    private let read: (@Sendable () -> String?)?
+
+    init(_ text: String?) {
+        value = .some(text)
+        read = nil
+    }
+
+    init(reading read: @escaping @Sendable () -> String?) {
+        self.read = read
+    }
+
+    var text: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let value { return value }
+        let found = read?()
+        value = .some(found)
+        return found
     }
 }
 

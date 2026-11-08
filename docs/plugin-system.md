@@ -437,7 +437,7 @@ Horizontals are part of the **platform**: what every shape gets, whatever its ki
 holds three more groups, which are not interfaces a kind plugs into but are still every shape's:
 
 - **Things you do**: a palette, a command or a gesture the person uses, that no kind opts into and
-  nothing builds on. Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
+  nothing builds on (but Clipboard, which plugins import to read the pasteboard: [the clipboard](#the-clipboard)). Jump To (⌘K) is a palette over every titled shape, Moving is two slash commands
   and the table of contents' drops, Snapping is what a drag lines up with, the clipboard is cut, copy
   and paste, and [Reordering](#many-kinds-reordering) is the Arrange menu of the kinds painted in document order: each works on the
   shapes its rule covers (Snapping: those with a frame) and no kind opts in. Jump To reaches into
@@ -642,7 +642,7 @@ Ask in this order, and the first yes is the rung:
 3. Is it a shape that holds something of its own, which no other plugin need build on? Then product.
 4. Otherwise, platform: what every shape gets, whatever its kind. Under which heading: an interface
    a kind plugs into, something a shape shows up on or has, is a horizontal; a palette, a command or
-   a gesture nothing builds on is a thing you do; what any plugin runs or asks is an engine; what
+   a gesture nothing builds on (but Clipboard, for its paste readers) is a thing you do; what any plugin runs or asks is an engine; what
    speaks the wire to an agent is for agents.
 
 A kind other plugins must build on is platform, as References is: a product can't be imported.
@@ -2091,10 +2091,10 @@ concern, references between shapes. The first is bindings, the `ShapeReferencing
 | Adopted by | a kind's definition | a value, wherever a shape keeps it |
 | For | an arrow's bound ends | a mention |
 | The shape it's bound to, or names | must be on the board | may be on any board of the file, or gone |
-| Deleting it | lets go of it, in the deleting transaction | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
-| Copying without it | lets go of it (an arrow's end stays where it's drawn) | keeps naming the original |
+| Deleting it | lets go of it, in the deleting transaction (deletes it, for a kind that takes bound shapes: `TakesBoundShapes`) | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
+| Copying without it | lets go of it (an arrow's end stays where it's drawn), unless the copy takes it along (a kind that takes bound shapes copies the arrows bound only to shapes copied) | keeps naming the original |
 | Copying with it | is bound to its copy | names its copy, on whatever board of the copied tree it is |
-| Cutting it, then pasting it (a move: [the clipboard](#the-clipboard)) | lets go of it at the cut, as a delete does; the paste doesn't bind it again | names it again once it's pasted, on whatever board, since it keeps its id |
+| Cutting it, then pasting it (a move: [the clipboard](#the-clipboard)) | lets go of it at the cut, as a delete does (deleted, for a kind that takes bound shapes); the paste doesn't bind it again | names it again once it's pasted, on whatever board, since it keeps its id |
 | `canvas draw` with one that isn't there | refused (`invalid_value`: `the pin on line 1 is bound to a shape that isn't on this board`, or `… on another board of the file`) | made, with a warning if it's in no board of the file (or the script deletes it), or on a board the app can't show |
 
 ```swift
@@ -3218,8 +3218,8 @@ Something a person can ask for in more than one way (a key, the menu bar, a righ
 in a shape's text, a chip, a button in the panel) is a command, declared once by the plugin it
 belongs to, and every way in runs that declaration
 ([`Sources/Canvas/Plugins/Commands.swift`](../Sources/Canvas/Plugins/Commands.swift)). The core
-knows what a command is and never which exist, as it knows kinds and tools: its own are undo, redo
-and the four zooms, and the window and the app name no plugin's command.
+knows what a command is and never which exist, as it knows kinds and tools: its own are undo, redo,
+the four zooms and Insert beside (⇧↩), and the window and the app name no plugin's command.
 
 ```swift
 extension CanvasCommand { public static let group: CanvasCommand = "group" }
@@ -6378,7 +6378,7 @@ giving a shape back the id it had.
   of the shapes left out of the copy, and pasting asks it to bind the copies of those copied with it. So
   two notes and the arrow between them paste as two notes and an arrow between the copies, and an
   arrow copied alone pastes free, ending where it was drawn, as it would if its notes were deleted.
-  tldraw's copy does the same. A shape that can't let go of one it can't find (an arrow bound to a
+  tldraw's copy does the same, except for a kind that takes bound shapes (`TakesBoundShapes`: a table), whose copy takes along the arrows bound only to shapes copied, selected or not, and whose cut deletes the arrows bound to it: a departure from tldraw. A shape that can't let go of one it can't find (an arrow bound to a
   shape its board keeps aside, or one a paste can't read) is left out, rather than copied wrong.
 - **Shapes that only name shapes** ([`ShapeNaming`](#values-that-name-shapes), a mention) go through
   the same call, `record.remappingReferences`, which renames their names too: a copy names the
@@ -6437,7 +6437,7 @@ giving a shape back the id it had.
   Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste
   wherever the keyboard is, the table of contents' list included, except in text (a note being
   edited, a panel's field), which takes them first. Cut and Paste don't run mid-gesture; Copy does.
-- **Undo.** Cut and Paste are one step each, "Cut" and "Paste" (a duplicate's is "Duplicate", a ⌥-drag's copy and its move together), by key, menu or context menu.
+- **Undo.** Cut and Paste are one step each, "Cut" and "Paste" (a paste a reader reads is "Paste" and its name, "Paste SQL", and ⌥⇧⌘V's is "Paste as Note"; a duplicate's is "Duplicate", a ⌥-drag's copy and its move together), by key, menu or context menu.
   Undoing a cut brings the shapes back selected; undoing a paste selects what was before it, and
   redoing it brings back the same copies (the same ids, `copiedFrom` and all). Undoing a move's
   paste takes the shapes out and frees their ids (a paste after it moves them again), redoing it
@@ -7307,7 +7307,8 @@ picker is installed; a list without ContextMenus leaves them out and keeps the k
 about no shape's content, `showsZoomedOut`) holding a one-line field with a faint `→` and a caret list under it
 (`CaretListWindow`, as Jump To and References show theirs). It ranks Mentions' catalog, so the lines, their places
 (two shapes called alike say where each is) and the recent picks are the `@` picker's, over the kinds the port
-table can join the source to (`registry.connectionChannel`), on every board of the file, and **Itself** is last: the loop.
+table can join the source to (`registry.connectionChannel`), on every board of the file, and **Itself** is last while anything is listed or nothing is typed (a word that finds nothing
+leaves the list empty, so a Return there makes no loop): the loop.
 Return and Tab pick, ↑ ↓ ⌃P ⌃N and the page keys move, Escape and ⌘. give the keyboard back to the canvas with the
 selection as it was. A pick on another board is reached through a reference pill on the board shown, reused
 or made and landed as `canvas draw` lands one (`StandInRoute.placePill`), with the arrow, in one step; a private far
@@ -11276,10 +11277,15 @@ the start (ending at a reference pill for the shape that stays, landed beside th
 or staying (ending at a pill for the shape that moved, beside its start); a pill for the same shape the board
 has already is reused, and so is the shape itself where it is there. That is Draw's `CrossingArrows`
 (`init?(moving:from:to:by:label:in:)` plans from the editor, `rebind(in:)` writes before `Transaction.move` and
-`Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly), which asks
-the registry only for the connector kind (`drawEdges`) and the pill kind (`standsIn`): a read-only arrow and an end no
-kind stands for as it is (a private shape: a move never makes a shape public) let go as before. tldraw leaves such an
-arrow unbound; this is a departure ([arrows](../.claude/rules/arrows.md)). `between` is for a shape two arrows will join
+`Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly; a pill
+that stays on the origin is put down by the in-or-out rule in `finish`, once the shapes have gone, so a container that
+moves cannot take it with it), which asks the registry only for the connector kind (`drawEdges`) and the pill kind
+(`standsIn`): a read-only arrow and an end no kind stands for as it is (a private shape: a move never makes a shape
+public) let go as before. tldraw leaves such an arrow unbound; this is a departure ([arrows](../.claude/rules/arrows.md)).
+Its pills land as a pick's do (the same spot, `StandInRoute.spot` and `landing`), but are not made by `placePill`: that
+one is for the board shown and a start that is on it, and a move's pill is for a board the shapes have not reached yet.
+
+`between` is for a shape two arrows will join
 to the two: in the gap the pair leaves along the axis they are further apart on, centered in it and
 on their middle across, with `room` (default `PlacingStyle.arrowRoom`, 80; a caller whose arrows carry
 names asks for more) kept clear on each side so each arrow shows a body, the two read `growing`
@@ -11380,10 +11386,11 @@ registrar.forShapes(adopting: .box) { boxes in
   commit uses them. On the board shown: `translate` (what a frame holds goes along),
   `move(_:above:)` over what it sits on that paints above it, and `settle` (the in-or-out rule: in
   the frame it's mostly over, out of the one it left, [Containers](#containers)). Onto another
-  board: `move(_:to:)` first, so an arrow bound to it lets go where it was drawn, as after a cut,
-  then `translate(_:by:on:)` there of the shapes and of what the move took along (an arrow bound
-  only to them rides along, and its free end goes as far as they do: the core says what rode,
-  `rodeAlong`, so Moving writes the rule for none of it) and `settle(_:on:)`
+  board: the arrows that cross are kept through pills (`CrossingArrows.rebind`), then `move(_:to:)`, so an
+  arrow still bound across the edge lets go where it was drawn, as after a cut, then `finish`, then `translate(_:by:on:)`
+  there of the shapes and of what the move took along (an arrow bound only to them rides along, and its free end goes
+  as far as they do: the core says what rode, `rodeAlong`, so Moving writes the rule for none of it) and `settle(_:on:)`
+  of the shapes, then of the new pills on their own, so they never decide where the shapes belong
   ([Boards in a file](#the-editor-and-the-file)). `/move-to` commits as a drop does (`Drop.commit()`),
   in the same step: then every shape moved is put in front within the place (`ContentsPlace.restack`).
   A read-only shape in the way (a locked frame it would land in, the owner of a board that takes no
@@ -11429,7 +11436,10 @@ box left out, `1 of 2`, and the places the menu lists taken and no others), and 
 contents' drops: what each takes, every landing, the step and refusals; CompositionTests'
 `movingShippedTests` type both into a note's editor in the app (the picker's list, a pick and the
 run, a subboard's board, Undo Move) and run both for notes selected, and `contentsDragShippedTests`
-drop notes' rows on a frame's, a subboard's and each other's.
+drop notes' rows on a frame's, a subboard's and each other's; `crossingTests` hold the arrows a move keeps over
+relays and links (the start moves, the end moves, a relay reused or the shape itself, a read-only arrow or a private
+end letting go, `/move-near` and a drop from a board not shown, a corral that moves and a relay it must not take along,
+several pills never changing where the shapes land, Undo exact on both boards).
 
 ## Neighbors
 
@@ -11996,12 +12006,12 @@ The modules, one job each:
 | CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own seven, `draw`, `apply`, `rehearse`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` or `DocumentError` as the wire's `AutomationError`; `apply` draws a program's document by key on every board in one step, drawn on a rehearsal of the editor and taken in with `editor.adopt`; `rehearse` draws several scripts in turn on a copy of the file, Draw's `Rehearsal`, a turn of the main actor each; `measure` takes a script or a document), `show` and `capture`, which borrow Draw's naming (`capture` draws with the core's `BoardPicture`). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
-| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings), and `CrossingArrows`, the arrows a move of shapes to another board keeps through pills (Moving's): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
 | Drawings | platform | What a program drew, kept by name in the file (`DrawingsProperty`, Draw's `DrawingRecord`: the board its top went on and each shape it made by id, with the program's key and what it last wrote), through Draw's `DrawRecords`, which `canvas apply` and `canvas draw --drawing` write in the step that draws; nothing on the shapes. |
 | DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | platform | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
-| Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shapes typed for (a shape's text, or the shapes selected, as one block) moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
+| Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shapes typed for (a shape's text, or the shapes selected, as one block) moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape, the arrows that cross to another board kept through reference pills (Draw's `CrossingArrows`); no kind opts into it, and nothing imports it. |
 | Neighbors | platform | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Arrows' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`, Types' `TypeLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
 | Palette | core | The color math ([Palette](#palette)): a color as sRGB and OKLCH (`RGB`, `OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance: pure, it knows no canvas, registry, plugin or named color. |
 | QueryCommands | platform | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |
@@ -12696,7 +12706,7 @@ Draw knows no title, port, validity, mention or group. `draw` takes each from a 
 | `DrawEdgeIdentities` | `registrar.drawEdgeIdentity(IsAProperty.key)` | A property of the edge kind that tells two edges of one pair apart, named by the plugin that owns it (one a key) | The pair alone: two connections of one pair are `ambiguous_edge` | TypeNamesPlugin (`is`) |
 | `DrawChecks` | `registrar.drawChecks(touched: { changes, shapes in … }, rest: "canvas query …") { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, its level: a warning, an error, or `incomplete`, that the shape still needs something; the property it's about). And `touched`: of what the run wrote (`transaction.pending`, with its shapes), the other shapes to look at, on any board; the run checks each as it found it and as it leaves it and warns of each issue it brought (`rest` is the command that lists them all, an error, a warning or what a shape still needs, said after the twentieth shape) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`); with no `touched`, a run says only what's wrong with the shapes it wrote | ValidationChecksPlugin |
 | `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds`. A list whose schema is `uniqueItems` is written with each once, the first, after its strings are written (two titles of one shape are one id) | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
-| `DrawValueWriters` | `registrar.drawValueWriter(for:write:merge:)` | The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin |
+| `DrawValueWriters` | `registrar.drawValueWriter(for:describes:write:merge:)` | The value a script writes for a property, as `write` gets it (JSON, strings still as written, with the same `DrawTextContext`) and returns what the property stores, or a refusal said on the statement's line; a writer that gives `describes` (what its text says, `lines (name type …)`) takes a quoted value too, handed to `write` as a string, and `canvas kinds` shows the words before the property's own type (a blank one is a registry error); a writer that takes rows as JSON gets them as written, and joins only the members a row gives; then `merge(written, held)`, with what the shape holds now (nil for a new one; for an edge, the connection as its maker left it), is what the shape is set to, so a script run again changes nothing. One writer a property key | A value replaces what the shape holds | FieldValuesPlugin, EngineeringPlugin (a table's `columns`, an enum's `values`) |
 | `DrawReports` | `registrar.drawReports(members: ["is"]) { record, written, shapes, bothHeads in … }` | Each shape and edge row of the run, once every statement is in the transaction, with what its statement wrote for each property that has a value writer (nil for an `unchanged` row) and the board as the script leaves it: a `DrawShapeReport` of warnings (`DrawIssue`s, said with the statement's line) and `problems` (Queries' `ShapeProblem`: `field`, `path`, `class`, `message`) that go on the shape's row, and `members` (a `[String: JSONValue]`) that go flat beside the row's own, only the keys it declared in `members:` (the registry refuses one that is a row's own key, an edge attribute, blank or declared twice); `bothHeads` is whether the statement of a connection wrote `<->`; it is asked of each connection the run deletes too, with the record as it was (gone from `shapes`, `written` nil for a `delete edge` that names no identity key, `[:]` for any other), for its members and warnings only | No `problems`, no warnings, no members from it | FieldValuesPlugin |
 | `DrawGroups` | `registrar.drawGroups(group:ungroup:)` | For a `group` or `ungroup` statement, the shapes it names (resolved: each once, on the board the run draws on, in the order written) and the run's transaction, once every shape and edge the script draws is in it: `group` puts exactly those shapes in one group of their own, `ungroup` leaves each in none. Each writes through the transaction (a read-only shape refuses the write, and the run says `read_only`) and answers whether it changed anything, else the statement's row is `unchanged` | No groups: `group` and `ungroup` are `no_groups` | GroupDrawPlugin |
 
@@ -16032,8 +16042,8 @@ type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Ty
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-line-rows            service LineRowsService · outlines · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It
-engineering          kit engineering · service KitNames · channel foreign-key · edge type foreign-key · service KeyIndex · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
+line-rows            service LineRowsService · outlines
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · channel foreign-key · edge type foreign-key · service KeyIndex · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as

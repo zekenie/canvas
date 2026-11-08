@@ -74,6 +74,22 @@ public final class ConnectPicker {
 
     /// Lists for `text` again (each keystroke), the first row highlighted. The set is judged again after a commit.
     public func setQuery(_ text: String) {
+        relist(text, keepingHighlight: false)
+    }
+
+    /// Lists for `text` again after a commit: the set is judged anew, and the highlight stays on the shape it was on while that
+    /// shape is still listed (a pick is what the person saw highlighted), else it is the first row.
+    func relistAfterCommit(_ text: String) {
+        relist(text, keepingHighlight: true)
+    }
+
+    private func relist(_ text: String, keepingHighlight: Bool) {
+        let held = keepingHighlight ? list.highlighted.flatMap { target(row: $0) } : nil
+        listFor(text)
+        if let held, let row = rows.indices.first(where: { target(row: $0) == held }) { list.highlight(row: row) }
+    }
+
+    private func listFor(_ text: String) {
         refresh()
         query = text
         guard let mentions = editor.mentions else {
@@ -85,7 +101,7 @@ public final class ConnectPicker {
         let found = mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true) { [self] id in
             admits(id)
         }
-        let choices = mentions.choices(found.all)
+        let choices = mentions.choicesNamingBoardShown(found.all)
         let typed = text.contains { !$0.isWhitespace }
         var rows: [Row] = choices.map { choice in
             if case .fulfils(let needs)? = admitted[choice.candidate.id] { .shape(choice, needs: needs) } else { .shape(choice, needs: nil) }

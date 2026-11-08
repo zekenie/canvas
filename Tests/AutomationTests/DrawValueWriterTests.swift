@@ -155,6 +155,43 @@ func mergedFacts(_ written: JSONValue, _ held: JSONValue?) -> JSONValue {
         expectEqual(facts("A", in: editor), ["y": 3])
     },
 
+    test("a writer that says what its text takes (describes) is handed a quoted value as a string, and kinds shows the words before the type; one that doesn't still refuses a quoted string, and JSON still works for both") {
+        let lines = Contributor(id: "facts") { registrar in
+            registrar.declare(FactsProperty.self)
+            registrar.optIn(Tile.self, to: FactsProperty.self)
+            registrar.drawValueWriter(for: FactsProperty.key, describes: "lines (key=value)", write: { value, _ throws(DrawError) in
+                guard case .string(let text) = value else { return value }
+                var members: JSONObject = [:]
+                for line in text.split(separator: "\n") {
+                    let pair = line.split(separator: "=", maxSplits: 1).map(String.init)
+                    guard pair.count == 2 else { throw DrawError("\(line) isn't key=value", reason: "invalid_value") }
+                    members[pair[0]] = .string(pair[1])
+                }
+                return .object(members)
+            }, merge: { written, held in mergedFacts(written, held) })
+        }
+        let editor = try drawEditor([lines])
+        _ = try drawn(#"tile "A" facts: "x=1\ny=2""#, on: editor)
+        expectEqual(facts("A", in: editor), ["x": "1", "y": "2"], "the string reached the writer")
+        _ = try drawn(#"tile "A" facts: {"z": 3}"#, on: editor)
+        expectEqual(facts("A", in: editor), ["x": "1", "y": "2", "z": 3], "JSON as ever")
+        expectEqual(try refused(#"tile "A" facts: "nothing""#, on: editor).reason, "invalid_value", "the writer's refusal, on the statement")
+        let tile = try require(run(["kinds", "tile"], on: nil, registry: editor.registry).get().arrayValue?.first)
+        expectEqual(tile["attributes"]?["facts"]?.stringValue?.hasPrefix("lines (key=value) or "), true, "\(tile["attributes"]?["facts"] as Any)")
+        // Without `describes` a quoted string is a string where JSON was meant, and refused.
+        let plain = try drawEditor([factsPlugin()])
+        _ = try refused(#"tile "A" facts: "x=1""#, on: plain)
+        let bare = try require(run(["kinds", "tile"], on: nil, registry: plain.registry).get().arrayValue?.first)
+        expectEqual(bare["attributes"]?["facts"]?.stringValue?.contains("lines"), false)
+    },
+
+    test("a writer that takes text and says nothing of it is a registry error: canvas kinds couldn't show what it takes") {
+        let blank = Contributor(id: "facts") { $0.drawValueWriter(for: FactsProperty.key, describes: "", merge: { written, _ in written }) }
+        expectThrows(RegistryError.invalid(point: "DrawValueWriters", reason: "facts takes text and says nothing of it, which canvas kinds shows")) {
+            _ = try Registry(plugins: [DrawPlugin(), AutomationPlugin(), blank])
+        }
+    },
+
     test("two plugins writing one property's values refuse the plugin list, and the report names the property") {
         let twice = { (id: PluginID) in Contributor(id: id) { $0.drawValueWriter(for: FactsProperty.key) { written, _ in written } } }
         expectThrows(RegistryError.conflict(point: "DrawValueWriters", key: "draw value facts", plugins: ["a", "b"])) {

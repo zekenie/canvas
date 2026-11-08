@@ -34,4 +34,10 @@ import Titles
         expect(h.offered.contains("table") && h.offered.contains("database"))
         expect(h.editor.claims(.createDatabase))
     },
+    test("a row's keys are listed in the Keyboard Shortcuts window only while the kit is on") {
+        let h = try kitHarness(on: false)
+        let hints = { @MainActor (on: Set<KitID>) in h.editor.registry.keyboardHelp(kitsOn: on).filter { "\($0)".contains("in a Row") } }
+        expect(hints([]).isEmpty, "off: \(hints([]))")
+        expectEqual(hints([EngineeringKit.id]).count, 4)
+    },
 ])

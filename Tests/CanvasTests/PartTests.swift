@@ -93,7 +93,7 @@ private func uuid(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-
         expectEqual(h.editor.registry.removing([row.id], from: try require(h.editor.document[roster])), nil,
                     "a kind that doesn't take its parts out by id: nothing")
     },
-    test("a copy keeps its parts' ids, so what names a part names it by its shape and the part") {
+    test("a shape's parts' ids are in its props as coded, which is what a copy is made of (the copy itself, with the clipboard, is CompositionTests' engineering suite)") {
         let row = RosterRow(id: PartID(uuid(5)), name: "only")
         let record = AnyShapeRecord(ShapeRecord(Roster(CGRect(x: 0, y: 0, width: 50, height: 30), rows: [row])))
         let data = try JSONEncoder().encode(try require(record.typed(as: Roster.self)?.props))

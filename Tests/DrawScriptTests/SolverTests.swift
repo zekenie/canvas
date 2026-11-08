@@ -203,6 +203,41 @@ let hub = ("Hub", rect(0, 0, 200, 100))
             expectEqual(error.message, #""N" is in "Z", and there's no room left in "Z""#)
         }
     },
+    test("held (in), a box that crosses its holder's edge only on the axis a lone direction centers it on slides along it, keeping its side, and says so; one that does not fit, or has another say on that axis, is no_room") {
+        // F (0, 0, 800 × 600) holds N; B is in it, at its top-left inset, 100 × 100: N right of B is centered on B's middle (y 90).
+        let f = rect(0, 0, 800, 600), b = rect(40, 40, 100, 100), c = rect(300, 400, 100, 40)
+        let held = { (source: String, height: CGFloat) throws -> LayoutProblem in
+            let clauses = try shape(source).clauses
+            let refs: [[LayoutProblem.Ref]] = clauses.map { clause in clause.targets.isEmpty ? [] : [.fixed(1)] }
+            return LayoutProblem(free: [LayoutProblem.Free(line: 1, name: "\"N\"", size: CGSize(width: 100, height: height),
+                                                           clauses: zip(clauses, refs).map { LayoutProblem.ResolvedClause($0, refs: $1) },
+                                                           holder: LayoutProblem.Holder(.fixed(0), written: #"in "F""#))],
+                                 fixed: [LayoutProblem.Fixed(rect: f, obstacle: 0), LayoutProblem.Fixed(rect: b, obstacle: 1), LayoutProblem.Fixed(rect: c, obstacle: 2)],
+                                 obstacles: { area in [LayoutProblem.Obstacle(id: 0, rect: f), LayoutProblem.Obstacle(id: 1, rect: b), LayoutProblem.Obstacle(id: 2, rect: c)].filter { $0.rect.intersects(area) } },
+                                 name: { ref in if case .fixed(0) = ref { "\"F\"" } else { "\"B\"" } })
+        }
+        let slid = try held(#"card right of "B""#, 300).solve()
+        expectRect(slid.rects[0], rect(220, 40, 100, 300))
+        expectEqual(slid.slides, [LayoutSolution.Slide(box: 0, way: .below, inside: .fixed(0))])
+        // Too tall for F on that axis: no room, and F is named.
+        let tooTall = try held(#"card right of "B""#, 560)
+        do throws(ScriptError) {
+            _ = try tooTall.solve()
+            expect(false, "too tall for F")
+        } catch {
+            expectEqual(error.reason, .noRoom)
+        }
+        // Another say on the axis (a corner is two directions) or an alignment: not a slide.
+        for script in [#"card right of "B" above "B""#, #"card right of "B" top level with "B""#] {
+            let problem = try held(script, 100)
+            do throws(ScriptError) {
+                let solved = try problem.solve()
+                expectEqual(solved.slides, [], script)
+            } catch {
+                expectEqual(error.reason, .noRoom, script)
+            }
+        }
+    },
     test("held directly (Holder.direct), a box goes in its holder itself: a shape in the holder that holds another is in its way, not a zone it lands on") {
         // G, in Z at its top-left, holds H: by itself a zone (rule c) for a box landing wholly on it.
         let z = rect(0, 0, 1000, 600), g = rect(20, 20, 400, 300), h = rect(300, 200, 50, 50)

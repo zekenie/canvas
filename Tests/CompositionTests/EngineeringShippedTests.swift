@@ -3,6 +3,7 @@ import AppKit
 import CanvasRPC
 import CanvasTesting
 import CanvasUI
+import Clipboard
 import Engineering
 import LanguageModels
 import LineRows
@@ -119,6 +120,37 @@ extension EmptyBoardWindow {
         board.redo(nil)
         expectEqual(columns(), ["id uuid pk", "email2 text unique"], "redo has it")
     },
+    test("Redo with a draft on the line is the line's, and the line has none: Edit ▸ Redo is off, and the draft isn't written over the step it was to put back") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        let walk = w.walk()
+        walk.press(Chord("/"))
+        w.type("table customers", with: walk)
+        walk.press(.return)
+        let id = try require(tables(editor).first).id
+        let columns = { @MainActor in tables(editor).first?.props.columns.map(ColumnGrammar.print) }
+        let board = try require(w.window as? BoardWindow)
+        w.type("email text", with: walk)
+        walk.press(.return)
+        expectEqual(columns(), ["id uuid pk", "email text"])
+        board.undo(nil)
+        expectEqual(columns(), ["id uuid pk"])
+        expect(editor.canRedo, "a step to put back")
+        editor.beginEditing(id)
+        w.window.settle()
+        w.type("name text", with: walk)
+        expect(w.lineRows?.field.holdsDraft == true, "a draft on the waiting line")
+        let redo = NSMenuItem(title: "", action: NSSelectorFromString("redo:"), keyEquivalent: "")
+        expect(!w.window.validateMenuItem(redo), "Redo is the line's, with nothing to redo")
+        board.redo(nil)
+        expectEqual(w.lineRows?.field.string, "name text", "the draft is where it was")
+        expectEqual(columns(), ["id uuid pk"], "and nothing was written")
+        expect(editor.canRedo, "the step is still there to put back")
+        walk.press(.escape)
+        expectEqual(columns(), ["id uuid pk", "name text"], "the draft is written as it ends, a step of its own")
+    },
     test("the first minute by the keys (P12): a table (T1) and its columns (T2) take no more presses than clicks, typing aside") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -203,6 +235,57 @@ extension EmptyBoardWindow {
         expectEqual(changed.props.columns.map(ColumnGrammar.print), ["id uuid pk", "customer_id uuid unique", "placed_at timestamptz null", "total_cents int"])
         expectEqual(Array(changed.props.columns.map(\.id).prefix(3)), ids, "the columns it had keep their ids")
     },
+    test("columns: as JSON items names only the members it gives: a restated column keeps the rest and its on delete unless one is given, and no two rows share an id") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"table "orders" columns: "id uuid pk\nemail text unique\ncustomer_id uuid""#, on: editor)
+        let made = try require(tables(editor).first)
+        let held = made.props.columns
+        _ = try drawnInProcess(#"table "orders" columns: [{"name":"customer_id","onDelete":"cascade"}]"#, on: editor)
+        _ = try drawnInProcess(#"table "orders" columns: [{"name":"email","nullable":true}]"#, on: editor)
+        var columns = try require(tables(editor).first).props.columns
+        expectEqual(columns.map(\.id), held.map(\.id), "no row new or lost")
+        expectEqual(columns[1].type, TypeRef("text"), "a member it leaves out stays")
+        expect(columns[1].unique && columns[1].nullable, "unique stays, null is added")
+        expectEqual(columns[2].onDelete, "cascade", "an on delete it gives is kept")
+        _ = try drawnInProcess(#"table "orders" columns: "customer_id uuid""#, on: editor)
+        columns = try require(tables(editor).first).props.columns
+        expectEqual(columns[2].onDelete, "cascade", "a line says none of it, so it stays")
+        let taken = held[0].id.description
+        _ = try drawnInProcess(#"table "orders" columns: [{"id":"\#(taken)","name":"a"},{"id":"\#(taken)","name":"b"}]"#, on: editor)
+        columns = try require(tables(editor).first).props.columns
+        expectEqual(columns.map(\.name), ["id", "email", "customer_id", "a", "b"])
+        expectEqual(Set(columns.map(\.id)).count, 5, "an id a row has already is given a new one")
+        expectEqual(columns[0].id, held[0].id)
+    },
+    test("values: as JSON items are joined by text, and a new value's repeated id is given a fresh one") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"enum-type "order_status" values: "pending\npaid""#, on: editor)
+        let status = try require(editor.document.shapes.first { $0.kind == DatabaseEnum.kind })
+        let held = try require(status.typed(as: DatabaseEnum.self)).props.values
+        let taken = held[0].id.description
+        _ = try drawnInProcess(#"enum-type "order_status" values: [{"text":"paid"},{"id":"\#(taken)","text":"void"},{"text":"lost"}]"#, on: editor)
+        let values = try require(editor.document[status.id]?.typed(as: DatabaseEnum.self)).props.values
+        expectEqual(values.map(\.text), ["pending", "paid", "void", "lost"])
+        expectEqual(Array(values.prefix(2)).map(\.id), held.map(\.id))
+        expectEqual(Set(values.map(\.id)).count, 4)
+    },
+    test("a column's type that two enums are called is refused, not left as words; one that names no enum, or a table, stays words") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"enum-type "order_status" values: "paid""#, on: editor)
+        let first = try require(editor.document.shapes.first { $0.kind == DatabaseEnum.kind })
+        var second = ShapeRecord(DatabaseEnum(frame: CGRect(x: 2000, y: 0, width: 200, height: 44), values: []))
+        second[TitleProperty.self] = "order_status"
+        editor.transact { $0.insert(second) }
+        expect(first.id != second.id)
+        let refusal = try refusedInProcess(#"table "orders" columns: "id uuid pk\nstatus order_status""#, on: editor)
+        expectEqual(refusal.reason, "ambiguous_title")
+        expect(tables(editor).isEmpty, "nothing was drawn")
+        _ = try drawnInProcess(#"table "orders" columns: "id uuid pk\nname varchar(20)""#, on: editor)
+        expectEqual(try require(tables(editor).first).props.columns.last?.type, TypeRef("varchar(20)"))
+    },
     test("values: an enum's values a line each; a column whose type is the enum's title is bound to it, and its pill says its name") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
@@ -216,6 +299,35 @@ extension EmptyBoardWindow {
         expectEqual(changes(try drawnInProcess(#"enum-type "order_status" values: "paid\nvoid""#, on: editor)), ["moved"],
                     "its box grew a row, as a note's does with its text")
         expectEqual(editor.document[status.id]?.typed(as: DatabaseEnum.self)?.props.values.map(\.text), ["pending", "paid", "refunded", "void"])
+    },
+    test("Create Database is beside Create Frame in a table's menu, after what turns a shape into another, before Cut") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        editor.turn(EngineeringKit.self, on: true)
+        _ = try drawnInProcess(#"table "orders" columns: "id uuid pk\nname text""#, on: editor)
+        let table = try require(tables(editor).first)
+        editor.selectedShapeIDs = [table.id]
+        let frame = try require(editor.shapeContext.geometry(of: table.id)?.bounds)
+        let menu = try require(editor.menu(for: PointerEvent(location: CGPoint(x: frame.midX, y: frame.midY), timestamp: 0, modifiers: [])))
+        let outline = menu.outline
+        let database = try require(outline.firstIndex(of: "Create Database")), frameItem = try require(outline.firstIndex(of: "Create Frame")), cut = try require(outline.firstIndex(of: "Cut"))
+        expect(frameItem < database && database < cut, "\(outline)")
+    },
+    test("a copy of a table keeps its columns' ids, and one of an enum its values'; a column's enum, copied with it, is the copy's") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"enum-type "order_status" values: "pending\npaid""#, on: editor)
+        _ = try drawnInProcess(#"table "orders" right of "order_status" columns: "id uuid pk\nstatus order_status""#, on: editor)
+        let status = try require(editor.document.shapes.first { $0.kind == DatabaseEnum.kind })
+        let orders = try require(tables(editor).first)
+        let copies = editor.duplicate([orders.id, status.id])
+        expectEqual(copies.count, 2)
+        let copiedTable = try require(copies.compactMap { editor.document[$0]?.typed(as: DatabaseTable.self) }.first)
+        let copiedEnum = try require(copies.compactMap { editor.document[$0]?.typed(as: DatabaseEnum.self) }.first)
+        expect(copiedTable.id != orders.id && copiedEnum.id != status.id, "new shapes")
+        expectEqual(copiedTable.props.columns.map(\.id), orders.props.columns.map(\.id), "the same parts' ids")
+        expectEqual(copiedEnum.props.values.map(\.id), try require(status.typed(as: DatabaseEnum.self)).props.values.map(\.id))
+        expectEqual(copiedTable.props.columns.last?.type.shape, copiedEnum.id, "its type names the enum copied with it")
     },
     test("a table drawn with no columns: has the starter's one, id uuid pk, as the tool puts one down") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

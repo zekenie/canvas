@@ -41,7 +41,9 @@ public struct ConnectPlan {
     public var from: ConnectEnd
     public var to: ConnectEnd
     /// Written in the step before the arrow is made (a key column inserted, say), given the step's transaction, returning the
-    /// ends the arrow then joins. Throws `Transaction.Refused` to refuse the whole pick.
+    /// ends the arrow then joins (what each stands for is read again for an end it changed). It may change the near end; the far end
+    /// of a shape on another board, reached through a pill, stays the pick's, and a plan that changes it refuses the pick. Throws
+    /// `Transaction.Refused` to refuse the whole pick.
     public var prepare: (@MainActor (inout Transaction) throws -> (from: ConnectEnd, to: ConnectEnd))?
 
     public init(step: String = "Connect", from: ConnectEnd, to: ConnectEnd,

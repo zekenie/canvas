@@ -3,6 +3,7 @@ import ContextMenus
 import CoreGraphics
 import SlashCommands
 import Titles
+import Transform
 
 // The ways in to tables that aren't a tool: `/table NAME`, a new table named as it's put down; `/database NAME`, a
 // database around the selection (around every shape on the board with nothing selected, the command bar's rule; an
@@ -14,9 +15,11 @@ extension CanvasCommand {
     public static let createDatabase: CanvasCommand = "createDatabase"
 }
 
-/// Create Database's group in a context menu.
+/// Create Database's group in a context menu: with Create Frame's, after what turns a shape into another.
 public enum DatabaseMenuGroup {}
-extension DatabaseMenuGroup: MenuGroup {}
+extension DatabaseMenuGroup: MenuGroup {
+    public static var order: Order<Self> { .after(TransformMenuGroup.self) }
+}
 
 extension CanvasEditor {
     /// Puts a database called `name` (nil: untitled) down around these shapes in one step, "Create Database": holding
@@ -40,7 +43,8 @@ extension CanvasEditor {
 extension PluginRegistrar {
     /// Create Database, the command and its item in the menu of shapes that hold a table or an enum, run on its shapes,
     /// never mid-press or while a shape is edited; `/database NAME`, which runs it named on the command bar's target; and
-    /// `/table NAME`, which puts `table` (a new table, not edited) down titled NAME beside the selection, or in view.
+    /// `/table NAME`, which puts `table` down titled NAME beside the selection, or in view, edited at its empty row, all
+    /// in one step ("Add Table").
     mutating func tableCommands(placing table: Placement) {
         command(.createDatabase, title: DatabaseStyle.createStep, runs: .whenIdle, isEnabled: { subject in
             let document = subject.editor.document

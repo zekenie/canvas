@@ -16,14 +16,15 @@ import TableOfContents
 import TestKit
 import Titles
 import Topology
+import Transform
 
 /// Every plugin the kit's kinds contribute to (Selection's resizing; Titles, and through it Adornments and slash commands;
 /// Mentions, and through it the panel, the context menu and Topology; the table of contents; Draw, whose writers it gives;
 /// the keys), the kit's own plugin, CanvasTesting's fixtures (boxes) and its freezing (a locked shape, without Locking).
 @MainActor func kitPlugins(_ refusals: RefusalLog = RefusalLog()) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), DrawPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), LineRowsPlugin(), EngineeringPlugin(),
-     FreezingPlugin(log: refusals)]
+     SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TransformPlugin(), LineRowsPlugin(),
+     EngineeringPlugin(), FreezingPlugin(log: refusals)]
 }
 
 /// An empty board of `kitPlugins`, its view 1000 × 800 at 100% (view points are world units), the kit on unless `on` is false.

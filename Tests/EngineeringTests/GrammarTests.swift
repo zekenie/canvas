@@ -35,9 +35,18 @@ private func ownWords(_ line: String) -> [String] {
         expectEqual(said(ColumnGrammar.read("customer_id uuid -> customers.id null")), "customer_id|uuid|true|false|false|-|→ customers.id", "-> typed for →")
         expectEqual(said(ColumnGrammar.read("sku text unique check (sku <> '')")), "sku|text|false|true|false|-|check (sku <> '')")
     },
+    test("a quote opens a quoted run only where a word starts, and one never closed is a letter: no word is swallowed, none lost to a repeat") {
+        expectEqual(said(ColumnGrammar.read("customer's_id uuid pk")), "customer's_id|uuid|false|false|true|-|", "an apostrophe in a name")
+        expectEqual(said(ColumnGrammar.read("f(a text pk")), "f(a|text|false|false|true|-|", "a parenthesis never closed")
+        expectEqual(said(ColumnGrammar.read("g text default 'a pk")), "g|text|false|false|true|'a|", "a quote never closed ends with the word")
+        expectEqual(said(ColumnGrammar.read("x int default 1 default 2")), "x|int|false|false|false|1|default 2", "a second default is kept, not the first's loss")
+        expectEqual(said(ColumnGrammar.read("x int pk pk")), "x|int|false|false|true|-|pk")
+        expectEqual(ColumnGrammar.print(try require(ColumnGrammar.read("x int default 1 default 2"), "x")), "x int default 1 default 2")
+    },
     test("printing what was read reads back as the same column, and loses no word") {
         for line in ["id uuid pk", "placed_at timestamptz?", "email text unique null default ''", "customer_id uuid -> customers.id",
-                     "total numeric(10, 2) default 0 pk", "sku text unique check (sku <> '')", "status order_status", "id PRIMARY KEY", "id"] {
+                     "total numeric(10, 2) default 0 pk", "sku text unique check (sku <> '')", "status order_status", "id PRIMARY KEY", "id",
+                     "customer's_id uuid pk", "x int default 1 default 2", "x int pk pk unique unique null null", "f(a text pk", "g text default 'a pk"] {
             let read = try require(ColumnGrammar.read(line), line)
             let printed = ColumnGrammar.print(read)
             expectEqual(said(ColumnGrammar.read(printed)), said(read), "\(line) → \(printed)")
