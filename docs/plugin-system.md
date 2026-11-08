@@ -1265,7 +1265,7 @@ chevrons, below 35% alone: the POC's transcript and every render at 35% and abov
 A skeleton is this app's own, with nothing of tldraw's to match.
 
 An arrow says how wide its line is, 3.5 world units whatever it holds (`StrokedShape`, `ArrowStyle.strokeWidth`),
-so a tinted outline of it, a light of [Neighbors](#neighbors), covers its body and heads as wide on screen as
+or the width its connection's look gives (a key's 2.5), so a tinted outline of it, a light of [Neighbors](#neighbors), covers its body and heads as wide on screen as
 its line and a point more, instead of a thin stripe down the middle of it.
 
 ## A horizontal plugin
@@ -2410,6 +2410,20 @@ An arrow's end binds a row (`ArrowBinding.part`) and is drawn at the row's side 
 change to those edges touched, and the column that starts a key shows a link in its gutter. `canvas draw`
 names a row with a dot outside the quotes: `edge "orders".customer_id -> "customers".id`, `delete
 "orders".legacy_note`; a kind takes a row out by id through `PartedShape.removing(_:from:)`.
+
+**How a key looks.** What a connection means is its channel's plugin's, so the kit says how a key's ends
+are drawn, from its column, through Connections' `ConnectionLooks`; the arrow asks when it works out its
+geometry and keeps the answer, so a column made nullable redraws its keys with nothing written to them:
+
+```swift
+registrar.connectionLook { query in                       // the first answer wins; nil: not a key
+    guard query.channel == ForeignKey.id else { return nil }
+    let column = …                                        // the column at query.from, read through query.shapes
+    return ConnectionLook(start: unique ? .one : .many,  // a crow's foot, two bars when unique
+                          end: nullable ? .zeroOrOne : .one, lineWidth: KitStyle.keyLineWidth)   // 2.5
+}
+ShapeGeometry(outline: …, parts: …, entries: ShapeEntry.sides(of: firstRow))   // a line to the table meets its first row
+```
 
 **Columns written as lines.** Edited, a table is LineRows' editing view ([rows written as
 lines](#rows-written-as-lines)): its name in its pill, then a line a column. `ColumnLineGrammar` reads a line
@@ -7134,8 +7148,14 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 
 An arrow's end may bind a row (`ArrowBinding.part`, arrow version 3): drawn at the middle of the row's
 side facing the other end, unclipped, kept by an arrow moved alone, stepped a row by ↑ ↓ on its ⌥Tab
-part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`); an end with
-no part is drawn as it always was.
+part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`). Such an arrow
+is a level curve, a cubic (Geometry's `Cubic`) leaving each end along the way out of its side, half the way
+ahead or a C behind, and entering a shape bound as a whole square to the side it meets, or at the entry its
+kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its middle exactly by itself. An
+arrow with no row end is drawn as it always was. How a connection looks, its ends' marks (`EndMark`: a
+crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLooks` when the geometry is
+worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
+head, and Toggle Arrowhead leaves it.
 
 The ports code never learns what a connection is. One plugin draws them, the connector
 (`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:parts:begin:)`, the `Connectors`
