@@ -38,7 +38,9 @@ import TestKit
                 guard let from = query.from, let part = from.part,
                       let roster = query.shapes.shape(from.shape)?.typed(as: Roster.self)?.props else { return nil }
                 let name = roster.rows.first { $0.id == part }?.name ?? ""
-                return ConnectionLook(start: name.hasPrefix("unique") ? .one : .many, end: name.contains("null") ? .zeroOrOne : .one, lineWidth: 2.5)
+                let start: EndMark = name.hasPrefix("unique") ? .one : .many, end: EndMark = name.contains("null") ? .zeroOrOne : .one
+                // A row named "swap…" puts each end's mark at the other, so each mark is seen at each end.
+                return name.hasPrefix("swap") ? ConnectionLook(start: end, end: start, lineWidth: 2.5) : ConnectionLook(start: start, end: end, lineWidth: 2.5)
             }
         }
         h = try EditorHarness(plugins: arrowsPlugins(before: [RostersPlugin()], more: [rule, PortsPlugin()] + (looks ? [look] : []) + more))
@@ -147,6 +149,13 @@ private let scale: CGFloat = 2
         guard case .level(_, _, let endT) = geometry.path else { return expect(false, "level") }
         expectClose(cubic.measured().length - cubic.measured().length(at: endT), ArrowGeometry.boundGap + 1.75, within: 0.05)
         expectClose(geometry.end.y, 180, within: 0.5)
+        // Its head points along the way into the side (its base a head's length back along the curve, which bends a little
+        // there): its wings either side of the line in, its tip at the end.
+        let head = try require(geometry.arrowheads(strokeWidth: 3.5).first)
+        expectEqual(head.tip, geometry.end)
+        expectClose(head.wing.x, head.otherWing.x, within: 1)
+        expectClose((head.wing.y + head.otherWing.y) / 2, head.tip.y, within: 1)
+        expect(head.wing.x < head.tip.x, "the wings behind the tip, going right into R's left side")
         // Above it, the end meets its top.
         b.h.editor.transact { $0.update(b.right, as: Roster.self) { $0.props.frame.origin = CGPoint(x: 150, y: 400) } }
         expectEqual(try curve(b.geometry(id)).end, CGPoint(x: 250, y: 400))
@@ -276,6 +285,22 @@ private let scale: CGFloat = 2
             expect(isInked(rep, geometry.point(36, along: .end).point, dark: dark), "the line goes on past it, dark \(dark)")
             // Bars at the start, 12 and 17.5 out from (300, 140).
             for bar in [CGPoint(x: 312, y: 146), CGPoint(x: 317.5, y: 134)] { expect(isInked(rep, bar, dark: dark), "a start bar at \(bar), dark \(dark)") }
+        }
+    },
+    test("each mark at the other end: a bar and a circle at the start, a crow's foot at the end") {
+        var b = try LevelBoard(looks: true)
+        let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
+        b.rename(1, to: "swap_null")
+        expectEqual(b.h.editor.arrowLook(of: id), ConnectionLook(start: .zeroOrOne, end: .many, lineWidth: 2.5))
+        let geometry = try b.geometry(id), rep = try drawn(b.h.editor)
+        let (centre, inward) = geometry.point(25, along: .start)
+        expect(isInked(rep, centre + inward.perpendicular * 5) && isInked(rep, centre - inward.perpendicular * 5), "the circle's ring at the start")
+        expect(!isInked(rep, centre), "the line cut inside it")
+        expect(isInked(rep, geometry.point(12, along: .start).point + CGPoint(x: 0, y: 6)), "the bar at 12")
+        // Toes from (500, 200 ± 8.5) to 13 in along the line.
+        let meet = geometry.point(13, along: .end).point
+        for toe in [CGPoint(x: 500, y: 208.5), CGPoint(x: 500, y: 191.5)] {
+            expect(isInked(rep, (toe + meet) / 2), "a toe at the end, toward \(toe)")
         }
     },
     test("a marked end keeps its stored head unused: no gap, no head, and Return, Space, a double-click and the Shape menu leave it") {
