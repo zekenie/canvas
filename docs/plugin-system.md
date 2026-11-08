@@ -7155,7 +7155,9 @@ kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its mi
 arrow with no row end is drawn as it always was. How a connection looks, its ends' marks (`EndMark`: a
 crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLooks` when the geometry is
 worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
-head, and Toggle Arrowhead leaves it.
+head, and Toggle Arrowhead leaves it. A curve between ends too near for the marks runs out far enough to turn
+clear of them, VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
+with the channel it will be released on (`registry.connectionLook(…, channel:)`), so its marks show as it is dragged.
 
 The ports code never learns what a connection is. One plugin draws them, the connector
 (`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:parts:begin:)`, the `Connectors`

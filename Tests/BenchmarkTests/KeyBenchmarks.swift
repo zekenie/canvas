@@ -40,6 +40,15 @@ extension Budget {
     /// measured before: 31 ms against 26 to 27, release, under load; Core Graphics rasterizes a short cubic about half again as
     /// slowly as a line (a probe of 450 strokes: 14 to 16 ms against 9 to 10), so the plan's "no worse" is held at 1.3.
     static let levelArrowsSlack = 1.3
+    /// A table with 150 keys (of 450 between four tables, nearly every column nullable: a bar and a circle, the line cut inside
+    /// it) moved a unit and drawn: the commit that lays the 150 out again and the next frame, the thread's CPU time. Never
+    /// measured before: 36 to 40 ms release on 2026-11-07 (46 to 50 under a load of 19), against 20 to 22 for plain arrows and 27
+    /// for level ones with no marks; of it the geometries worked out again are 2.5 ms (below), the rest the frame's rasterizing of
+    /// the marks and link marks, as the pan's frame is. The budget half as much again as the quiet figure.
+    static let keyedTableMove = 60.0
+    /// The same move and the 450 arrows' geometries worked out again, without the frame: the keys' look asked, their marks and
+    /// cut body made. Never measured before: 2.5 ms for keys (1.9 level arrows, 1.3 plain) at both sizes, release, 2026-11-07.
+    static let keyedTableRelay = 10.0
 }
 
 /// `count` tables of `rows` rows each, laid in a row from `origin`, 360 apart, each titled `t<n>`, and `keys` keys between
@@ -73,11 +82,11 @@ private enum Arrows450: CaseIterable { case plain, level, keys }
 
 /// Four 40-row tables in a row from `origin`, 360 apart (100 between them), and 450 arrows between neighbors' rows, from row
 /// `k / 3 % 40` of table `k % 3` to row `k / 7 % 40` of the next, as `kind` says. The arrows' ids besides.
-@MainActor private func arrowsBetween(_ kind: Arrows450, at origin: CGPoint) -> (shapes: [AnyShapeRecord], arrows: [ShapeID]) {
+@MainActor private func arrowsBetween(_ kind: Arrows450, at origin: CGPoint, nullable: Bool = false) -> (shapes: [AnyShapeRecord], arrows: [ShapeID]) {
     let rows = 40
     var tables: [ShapeRecord<DatabaseTable>] = []
     for index in 0..<4 {
-        let columns = (0..<rows).map { Column(name: "c\($0)", type: TypeRef("uuid"), primaryKey: $0 == 0) }
+        let columns = (0..<rows).map { Column(name: "c\($0)", type: TypeRef("uuid"), nullable: nullable && $0 != 0, primaryKey: $0 == 0) }
         var table = ShapeRecord(DatabaseTable(frame: CGRect(x: origin.x + CGFloat(index) * 360, y: origin.y, width: 260, height: KitStyle.height(rows: rows)),
                                               columns: columns))
         table[TitleProperty.self] = "g\(index)"
@@ -136,6 +145,46 @@ private enum Arrows450: CaseIterable { case plain, level, keys }
             if holdsToBudgets {
                 expect(level <= plain * Budget.levelArrowsSlack, "450 level arrows (\(level) ms) cost more than 450 plain arrows (\(plain) ms) over \(size) shapes")
                 expect(keys < Budget.levelArrowsFrame, "a pan's frame over 450 keys took \(keys) ms over \(size) shapes")
+            }
+        }
+    },
+    test("a table with 150 keys moved a unit and drawn: the keys laid out again, within a frame, against plain arrows") {
+        let viewport = CGSize(width: 1600, height: 1000)
+        let context = try require(CGContext(data: nil, width: Int(viewport.width), height: Int(viewport.height), bitsPerComponent: 8,
+                                            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.translateBy(x: 0, y: viewport.height)
+        context.scaleBy(x: 1, y: -1)
+        for size in sizes {
+            var costs: [Arrows450: Double] = [:], lays: [Arrows450: Double] = [:]
+            for kind in Arrows450.allCases {
+                let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+                let origin = CGPoint(x: 0, y: 60_000)
+                let between = arrowsBetween(kind, at: origin, nullable: true)
+                let document = CanvasDocument(shapes: generatedBoard(shapes: size).shapes + between.shapes)
+                let h = EditorHarness { CanvasEditor(registry: registry, document: document, scheduler: $0) }
+                h.editor.turn(EngineeringKit.self, on: true)
+                h.editor.viewportDidResize(to: viewport)
+                h.editor.camera = Camera(origin: CGPoint(x: origin.x - 40, y: origin.y - 40), zoom: 1)
+                draw(h.editor, into: context, size: viewport)
+                let table = try require(between.shapes.first).id
+                var step: CGFloat = 0
+                costs[kind] = median(runs: 11, prepare: { step = step == 0 ? 1 : 0 }, onThread: true) {
+                    h.editor.transact("Move") { tx in tx.update(table, as: DatabaseTable.self) { $0.props.frame.origin.x = origin.x + step } }
+                    draw(h.editor, into: context, size: viewport)
+                }
+                // The move alone, with the geometry of every arrow worked out again (what a frame would otherwise find stale).
+                lays[kind] = median(runs: 11, prepare: { step = step == 0 ? 1 : 0 }, onThread: true) {
+                    h.editor.transact("Move") { tx in tx.update(table, as: DatabaseTable.self) { $0.props.frame.origin.x = origin.x + step } }
+                    for id in between.arrows { _ = h.editor.shapeContext.geometry(of: id) }
+                }
+            }
+            let plain = costs[.plain] ?? 0, level = costs[.level] ?? 0, keys = costs[.keys] ?? 0
+            report(String(format: "%6d shapes, a table with 150 of 450 arrows moved a unit and drawn: %5.2f ms plain, %5.2f ms level, %5.2f ms keys (budget %.0f); the move and the 450 geometries worked out: %5.2f, %5.2f, %5.2f ms (budget %.0f)",
+                          size, plain, level, keys, Budget.keyedTableMove, lays[.plain] ?? 0, lays[.level] ?? 0, lays[.keys] ?? 0, Budget.keyedTableRelay))
+            if holdsToBudgets {
+                expect(keys < Budget.keyedTableMove, "moving a table with 150 keys took \(keys) ms over \(size) shapes")
+                expect((lays[.keys] ?? 0) < Budget.keyedTableRelay, "laying out a table's 150 keys again took \(lays[.keys] ?? 0) ms over \(size) shapes")
             }
         }
     },
