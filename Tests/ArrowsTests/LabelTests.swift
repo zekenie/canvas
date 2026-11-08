@@ -77,7 +77,7 @@ private let size = CGSize(width: 40, height: 26)
         let tallFrame = try require(h.editor.arrowLabelFrame(of: tall))
         expect(tallFrame.width <= 16 * 15 + 8.5, "\(tallFrame)")
         expect(tallFrame.height > 2 * 18, "wraps: \(tallFrame)")
-        let short = h.add(Arrow(start: .free(CGPoint(x: 100, y: 600)), end: .free(CGPoint(x: 500, y: 600)), text: "calls"))
+        let short = h.add(Arrow(start: .free(CGPoint(x: 100, y: 600)), end: .free(CGPoint(x: 500, y: 600)), text: "scall"))
         let shortFrame = try require(h.editor.arrowLabelFrame(of: short))
         expect(shortFrame.width < 60 && shortFrame.height < 30, "one short line, as wide as it is: \(shortFrame)")
         expectClose(shortFrame.center.x, 300, within: 0.5, "halfway, its frame on whole points")
@@ -116,7 +116,7 @@ private let size = CGSize(width: 40, height: 26)
 
 @MainActor let labelEditingTests = Suite("Arrow labels: editing", [
     test("a double-click on the arrow's body edits its label, all its text selected") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         h.click(at: h.view(CGPoint(x: 150, y: 200)))
         h.click(at: h.view(CGPoint(x: 150, y: 200)), clickCount: 2)
         expectEqual(h.editor.editingShapeID, id)
@@ -125,14 +125,14 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(h.editor.editingFrame, h.editor.arrowLabelFrame(of: id), "laid over the label")
     },
     test("Return with the arrow selected edits its label") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         h.editor.selection = id
         expect(h.key("\r"))
         expectEqual(h.editor.editingShapeID, id)
     },
     test("Tab and ⇧Tab in a label end editing, change nothing in its text, type no tab, and leave the arrow selected") {
         for back in [false, true] {
-            let (h, id) = try labelHarness("calls")
+            let (h, id) = try labelHarness("scall")
             h.editor.selection = id
             expect(h.key("\r"))
             let view = try require(h.editor.makeEditingView())
@@ -145,12 +145,12 @@ private let size = CGSize(width: 40, height: 26)
             _ = KeyDriver(window).send(back ? .backTab : .tab)
             expectEqual(h.editor.editingShapeID, nil, "editing ended")
             expectEqual(h.editor.selectedShapeIDs, [id], "the arrow stays selected")
-            expectEqual(textView.string, "calls", "no tab typed")
-            expectEqual(try arrow(h, id).text, "calls")
+            expectEqual(textView.string, "scall", "no tab typed")
+            expectEqual(try arrow(h, id).text, "scall")
         }
     },
     test("the label's editor checks the spelling of what's typed as the app does (Edit › Spelling and Grammar)") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         h.editor.selection = id
         expect(h.key("\r"))
         let textView = try labelTextView(try require(h.editor.makeEditingView()))
@@ -158,7 +158,7 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(textView.isContinuousSpellCheckingEnabled, Spelling.app.checksWhileTyping)
     },
     test("a click on the label of the only selected arrow edits it; on its body, it's only selected") {
-        let (h, id) = try labelHarness("calls", at: 0.3)
+        let (h, id) = try labelHarness("scall", at: 0.3)
         h.editor.selection = id
         h.click(at: h.view(CGPoint(x: 150, y: 200)))
         expectEqual(h.editor.editingShapeID, nil, "the body")
@@ -170,7 +170,7 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(h.editor.editingStartPoint, frame.center, "from where it's clicked")
     },
     test("halfway, the bend handle is on the label and takes a click, as tldraw's does; a double-click on it edits the label") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         h.editor.selection = id
         let middle = h.view(try require(h.editor.arrowGeometry(of: id)).middle)
         h.click(at: middle)
@@ -214,7 +214,7 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(try arrow(h, id).labelPosition, 0.3)
     },
     test("while it's edited, the arrow shows no handles: the editing view is over them") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         h.editor.selection = id
         let middle = h.view(try require(h.editor.arrowGeometry(of: id)).middle)
         expect(h.editor.handle(atViewPoint: middle) != nil)
@@ -223,7 +223,7 @@ private let size = CGSize(width: 40, height: 26)
     },
     test("its editing view's text falls where the canvas draws it, at 1× and 2×") {
         for scale: CGFloat in [1, 2] {
-            let (h, id) = try labelHarness("calls the\nservice", at: 0.3)
+            let (h, id) = try labelHarness("scall the\nservice", at: 0.3)
             let frame = try require(h.editor.arrowLabelFrame(of: id))
             let canvas = CGSize(width: 600, height: 400)
             let drawn = renderBitmap(h.editor, size: canvas, scale: scale)
@@ -239,7 +239,7 @@ private let size = CGSize(width: 40, height: 26)
 
 @MainActor let labelDragTests = Suite("Arrow labels: dragged", [
     test("a drag from an unselected arrow's label slides the label along it, the arrow staying put, selected alone; one step") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         let other = h.add(Box(CGRect(x: 100, y: 400, width: 100, height: 100)))
         h.editor.selection = other
         let before = try arrow(h, id)
@@ -257,7 +257,7 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(try arrow(h, id).labelPosition, 0.5)
     },
     test("it keeps where it was grabbed, snaps to halfway within 10 view points of it, and Escape puts it back") {
-        let (h, id) = try labelHarness("calls", at: 0.25)
+        let (h, id) = try labelHarness("scall", at: 0.25)
         h.press(at: h.view(CGPoint(x: 205, y: 200)))
         h.drag(to: h.view(CGPoint(x: 260, y: 200)))
         expectClose(try arrow(h, id).labelPosition, 0.3875, within: 1e-9, "its center 5 left of the pointer, as grabbed")
@@ -269,7 +269,7 @@ private let size = CGSize(width: 40, height: 26)
     },
     test("a locked arrow's label doesn't move: the drag is the selection's, refused") {
         let h = try EditorHarness(plugins: arrowsPlugins(more: [FreezingPlugin()]))
-        var record = ShapeRecord(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), text: "calls"))
+        var record = ShapeRecord(Arrow(start: .free(CGPoint(x: 100, y: 200)), end: .free(CGPoint(x: 500, y: 200)), text: "scall"))
         record[Frozen.self] = true
         h.editor.transact { $0.insert(record) }
         h.press(at: h.view(CGPoint(x: 300, y: 200)))
@@ -279,7 +279,7 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(try arrow(h, record.id).start, .free(CGPoint(x: 100, y: 200)))
     },
     test("⌘ pressed on a label brushes, as on the arrow: nothing moves") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         h.hold(.command)
         h.press(at: h.view(CGPoint(x: 300, y: 200)))
         h.drag(to: h.view(CGPoint(x: 360, y: 240)))
@@ -290,7 +290,7 @@ private let size = CGSize(width: 40, height: 26)
         expectEqual(try arrow(h, id).start, .free(CGPoint(x: 100, y: 200)))
     },
     test("a drag from its body still moves the arrow") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         h.press(at: h.view(CGPoint(x: 150, y: 200)))
         h.drag(to: h.view(CGPoint(x: 150, y: 260)))
         h.release()
@@ -301,9 +301,9 @@ private let size = CGSize(width: 40, height: 26)
 
 @MainActor let labelRowTests = Suite("Arrow labels: rows", [
     test("an arrow's row is its label's first line that says something, else Arrow, dimmed") {
-        let (h, id) = try labelHarness("\n  calls  \nthe service")
+        let (h, id) = try labelHarness("\n  scall  \nthe service")
         @MainActor func row() -> ContentsLabel? { h.editor.tableOfContents?.entries.first { $0.id == id }?.label }
-        expectEqual(row()?.text, "calls")
+        expectEqual(row()?.text, "scall")
         expectEqual(row()?.isPlaceholder, false)
         h.editor.transact { $0.update(id, as: Arrow.self) { $0.props.text = " " } }
         expectEqual(row()?.text, "Arrow")
@@ -313,7 +313,7 @@ private let size = CGSize(width: 40, height: 26)
 
 @MainActor let labelDrawingTests = Suite("Arrow labels: drawn", [
     test("the body is cut where the label is, and its text drawn there; zoomed out, it runs whole and the label is left off") {
-        let (h, id) = try labelHarness("calls")
+        let (h, id) = try labelHarness("scall")
         let frame = try require(h.editor.arrowLabelFrame(of: id))
         let drawn = renderBitmap(h.editor, size: CGSize(width: 600, height: 400), scale: 2)
         expect(isInked(pixel(drawn, at: CGPoint(x: frame.minX - 6, y: 200), scale: 2)), "the body, before the label")

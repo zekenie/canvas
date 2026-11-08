@@ -255,7 +255,7 @@ extension RelationScene {
         let editor = try bondEditor()
         let type = editor.addSlipType(featureRowsSchema, title: "Service")
         let note = editor.addSlip("a box")
-        let named = editor.addBond(type, note, name: "calls")
+        let named = editor.addBond(type, note, name: "rings")
         let bare = editor.addBond(type, note)
         expectEqual(issues(editor, named), [])
         editor.transact("Delete") { $0.delete([note]) }
@@ -332,7 +332,7 @@ extension RelationScene {
             let editor = try bondEditor()
             let a = editor.addSlip("a"), b = editor.addSlip("b", at: CGPoint(x: 600, y: 400))
             editor.transact { transaction in
-                for _ in 0..<count { transaction.insert(AnyShapeRecord(ShapeRecord(id: ShapeID(), Bond(from: a, to: b, text: MentionText(plain: "calls"))))) }
+                for _ in 0..<count { transaction.insert(AnyShapeRecord(ShapeRecord(id: ShapeID(), Bond(from: a, to: b, text: MentionText(plain: "rings"))))) }
             }
             _ = editor.validation?.results
             expect(editor.relationships?.isActive == false)

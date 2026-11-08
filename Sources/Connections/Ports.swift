@@ -71,12 +71,24 @@ public protocol Channel {
     /// kinds that opt into it are (a key, column to column: a subboard takes no keys). A stand-in's ports on every channel
     /// (a reference's) include it all the same, since what it stands for decides.
     static var isOnEveryChannel: Bool { get }
+    /// Whether every kind with dots on its sides starts connections on it too (`.source`, on its dots' sides, after the channels
+    /// it has ports on), so a note or a frame may start one though nothing about it opted in: the kit's `calls`, which any shape
+    /// may make of an endpoint. False by default.
+    static var anyKindMayStart: Bool { get }
+    /// What a connection on it is called (`writes`): its pill on the line, in `tint`, and its row in the list a release opens
+    /// where several fit. Nil (the default): no pill, and never offered (a key, a note link).
+    static var title: String? { get }
+    /// The pill's capsule, white text on it, the same in both appearances; nil (the default): its dots' `color`.
+    static var tint: NSColor? { get }
 }
 
 extension Channel {
     public static var color: NSColor { .systemGray }
     public static var summary: String? { nil }
     public static var isOnEveryChannel: Bool { true }
+    public static var anyKindMayStart: Bool { false }
+    public static var title: String? { nil }
+    public static var tint: NSColor? { nil }
 }
 
 /// What a connection drawn on a channel knows: which it is. An added property the connector's kind
@@ -96,6 +108,11 @@ public struct ChannelDeclaration {
     let color: NSColor
     /// Whether kinds with ports on every channel have ports on it (`Channel.isOnEveryChannel`).
     let isOnEveryChannel: Bool
+    /// Whether every kind with dots starts connections on it (`Channel.anyKindMayStart`).
+    var anyKindMayStart = false
+    /// What a connection on it is called, and its pill's capsule (`Channel.title`, `tint`).
+    var title: String? = nil
+    var tint: NSColor? = nil
 }
 
 /// The channels plugins declare. Each id once: two declarations of one is `RegistryError.conflict`.
@@ -264,6 +281,8 @@ public struct ConnectorContribution {
     let make: (@MainActor (ConnectionRequest, AnyShapeRecord?, ShapeContext) -> AnyShapeRecord?)?
     let ends: (@MainActor (AnyShapeRecord) -> (from: ShapeID, to: ShapeID)?)?
     let begin: @MainActor (Connection, CanvasEditor) -> (any Session)?
+    /// The parts (rows) a connection's start and end are bound to, nil each for a whole shape.
+    var parts: (@MainActor (AnyShapeRecord) -> (from: PartID?, to: PartID?))? = nil
     /// The family of edges its connections are (Topology's): each channel's edge type is under it.
     let edgeType: EdgeTypeID
 }
@@ -317,7 +336,8 @@ extension PluginRegistrar {
     /// (Topology's, of the same name, with the channel's summary), under the family of edges the
     /// connector draws (a root without a connector): a connection drawn on it is an edge of that type.
     public mutating func channel<C: Channel>(_ channel: C.Type) {
-        contribute(ChannelDeclaration(id: C.id, color: C.color, isOnEveryChannel: C.isOnEveryChannel), to: Channels.self)
+        contribute(ChannelDeclaration(id: C.id, color: C.color, isOnEveryChannel: C.isOnEveryChannel, anyKindMayStart: C.anyKindMayStart,
+                                      title: C.title, tint: C.tint ?? (C.title == nil ? nil : C.color)), to: Channels.self)
         edgeType(EdgeTypeID(C.id), parent: { $0.connector?.edgeType }, summary: C.summary)
     }
 
@@ -362,7 +382,7 @@ extension PluginRegistrar {
                                                               begin: @escaping @MainActor (Connection, CanvasEditor) -> (any Session)?) {
         optIn(K.self, to: ChannelProperty.self)
         edgeType(F.self)
-        contribute(ConnectorContribution(kind: K.kind, canConnect: canConnect, make: make, ends: ends, begin: begin, edgeType: F.id),
+        contribute(ConnectorContribution(kind: K.kind, canConnect: canConnect, make: make, ends: ends, begin: begin, parts: parts, edgeType: F.id),
                    to: Connectors.self, for: .kind(K.kind))
         guard let ends else { return }
         let familyID = F.id
@@ -442,6 +462,8 @@ public struct PortsPlugin: ListedPlugin {
                                 drag: { dot, origin, editor in editor.service(PortState.self)?.connect(from: dot, at: origin) })
         // ⌘L connects two selected shapes, or one to itself: the port's drag from the keyboard (its item: `ConnectMenuPlugin`).
         registrar.connectCommand()
+        // The release of every connection: a titled channel's, the first answer (several fit: drawn plain, and offered).
+        registrar.connectionMade(ChannelRelease.answer)
         // A shape's arrows are its ⌥Tab parts: every shape by its nature can have one bound to it.
         registrar.forEveryShape { shapes in
             shapes.shapeParts(named: "arrows") { editor, shape in editor.connectionParts(of: shape.id) }

@@ -5,6 +5,7 @@ import ContextMenus
 import Draw
 import Keyboard
 import Mentions
+import Selection
 import Topology
 
 extension CanvasCommand {
@@ -54,30 +55,17 @@ extension PluginRegistrar {
                 // A row being edited has the picker on the row, as its key does.
                 if editor.editingShapeID == subject.shapes[0], picker.connectsEditedRow?(subject.shapes[0]) == true { return }
                 editor.endEditing()
+                // One row selected as an item of its shape (an endpoint): the picker on the row.
+                if let items = editor.selectedItems, items.shape == subject.shapes[0], items.ids.count == 1, let row = items.ids[0].base as? PartID,
+                   ConnectPicker(editor: editor, source: ConnectEnd(subject.shapes[0], part: row)) != nil {
+                    picker.open(on: ConnectEnd(subject.shapes[0], part: row))
+                    return
+                }
                 picker.open(on: subject.shapes[0])
             } else {
                 editor.connect(subject.shapes)
             }
         }
-    }
-}
-
-/// What a connection made without a drag (Connect) is told once it is committed, inside the Connect step: the
-/// same word a port's drag gives its connection when released, from whoever owns what the connection then is (a
-/// relationship type, Types'), so Connections names no kind and the key and the pointer give the same document. A
-/// plugin value of its own after the connector; the hook gets the connection and the editor.
-public enum ConnectionMade {}
-
-extension ConnectionMade: ExtensionPoint {
-    public typealias Contribution = @MainActor (ShapeID, CanvasEditor) -> Void
-    public static var owner: PluginID { .ports }
-    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "connection made" }
-}
-
-extension PluginRegistrar {
-    /// Hears of every connection Connect makes, after its commit and inside its step.
-    public mutating func connectionMade(_ hook: @escaping @MainActor (ShapeID, CanvasEditor) -> Void) {
-        contribute(hook, to: ConnectionMade.self)
     }
 }
 
@@ -214,14 +202,15 @@ extension CanvasEditor {
                 return made.id
             }
             guard let made else { return nil }
-            for hook in registry.contributions(to: ConnectionMade.self) { hook.value(made, self) }
+            // The release every connection has (`ConnectionMade`), as a port's drag let go gives it.
+            connectionMade(made)
             return made
         }
     }
 }
 
 @MainActor
-enum ConnectionsStyle {
+public enum ConnectionsStyle {
     static let connect = "Connect"
     /// The picker's item in the Shape menu, on one shape.
     static let connectTo = "Connect To…"

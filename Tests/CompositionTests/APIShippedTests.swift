@@ -167,7 +167,7 @@ private let models = #"""
         w.window.settle()
         walk.press(Chord(Key.down, .command))
         let card = try require(w.canvas.cardView as? LineCardView)
-        expectEqual(card.stopNames, ["name", "summary", "auth", "{id}", "body", "responses 1", "deprecated"])
+        expectEqual(card.stopNames, ["name", "summary", "auth", "{id}", "body", "responses 1", "deprecated", "relations 1"])
         card.go(to: "responses 1")
         w.window.settle()
         walk.press(.return)

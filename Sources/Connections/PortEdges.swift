@@ -33,7 +33,8 @@ public struct PortEdgesPlugin: ListedPlugin {
 /// - `channel: none`: a plain connection, on no channel, from and to any side.
 /// - Unwritten: the first of the start's dot channels (on `from:`'s side, if named; else all its
 ///   dots', in the port table's order) that the end takes as a target (on `to:`'s side, if named).
-///   With none, a plain connection if neither kind has ports on anything, else `no_channel`.
+///   With none, a plain connection if neither end starts connections where it is (no dots there: a table's sides, which only
+///   take writes and reads), else `no_channel`.
 /// - A shape joined to itself takes a channel as any pair does (the connector draws it: arrows, as a
 ///   loop on the side named), and is joined on one side: `from:` and `to:` naming two is `invalid_value`.
 /// - A connection already drawn keeps its channel: a different one written is `invalid_value` (to
@@ -126,6 +127,12 @@ enum EdgeChannels {
 
         func hasPorts(in registry: Registry) -> Bool { registry.hasPorts(kind, standingFor: standsFor, onParts: isPart) }
 
+        /// Whether it starts connections where it is (a dot on a side, or on its rows for a row): ports it only takes (a table's
+        /// sides, which writes and reads end on) start none.
+        func hasDots(in registry: Registry) -> Bool {
+            isPart ? !registry.partDotChannels(of: kind, standingFor: standsFor).isEmpty : !registry.dotChannels(of: kind, standingFor: standsFor).isEmpty
+        }
+
         /// The channels a connection may start on from it, on `side` if one is named: a row's dots', or its sides'.
         func starts(side: PortSide?, in registry: Registry) -> [ChannelID] {
             isPart ? registry.partDotChannels(of: kind, standingFor: standsFor)
@@ -215,7 +222,8 @@ enum EdgeChannels {
                 to.takes($0, as: .target, side: request.toSide?.port, in: registry)
             }) {
                 channel = first
-            } else if !from.hasPorts(in: registry), !to.hasPorts(in: registry) {
+            } else if !from.hasDots(in: registry), !to.hasDots(in: registry) {
+                // Neither starts a connection where it is (a table to a table, an enum): a plain one.
                 return nil
             } else {
                 let sides = [request.fromSide.map { "from: \($0)" }, request.toSide.map { "to: \($0)" }].compactMap { $0 }

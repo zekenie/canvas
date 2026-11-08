@@ -82,6 +82,13 @@ enum ReferenceStyle {
     // MARK: Type and symbols
 
     static let labelFont = NSFont.systemFont(ofSize: 14, weight: .medium)
+    /// A row's lead drawn as its chip (an endpoint's method): bold small text, white on the chip, 16 tall, 5 in, rounded 3, and
+    /// the gap before the rest of the name.
+    static let chipFont = NSFont.systemFont(ofSize: 10, weight: .bold)
+    static let chipHeight: CGFloat = 16
+    static let chipPadding: CGFloat = 5
+    static let chipRadius: CGFloat = 3
+    static let chipGap: CGFloat = 6
     /// What a pill that stands for nothing says, in italic.
     static let missingFont: NSFont = {
         let descriptor = labelFont.fontDescriptor.withSymbolicTraits(.italic)

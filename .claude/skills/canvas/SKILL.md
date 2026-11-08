@@ -148,7 +148,7 @@ A database's tables are the engineering kit's kinds: a `table` takes its `column
 table "accounts" below "Sprint 3" columns: "id uuid pk\nemail text unique\ncreated_at timestamptz?"
 ```
 
-An `api` is the kit's REST API: `server:` its first line (`host[/path] [bearer]`), `endpoints:` its rows as lines, `METHOD /whole/path/{param} [(Body)] [→ [status] [Response]]`, a path alone a header that the endpoints under it are grouped by (each goes under the longest header its path starts with), joined by method and whole path. A body or a response names a type note by its title, a pill and never an arrow.
+An `api` is the kit's REST API: `server:` its first line (`host[/path] [bearer]`), `endpoints:` its rows as lines, `METHOD /whole/path/{param} [(Body)] [→ [status] [Response]]`, a path alone a header that the endpoints under it are grouped by (each goes under the longest header its path starts with), joined by method and whole path. A body or a response names a type note by its title, a pill and never an arrow. An endpoint `writes` or `reads` a table and `calls` an endpoint, each an arrow from its row on that channel: `edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes`.
 
 ```draw
 api "accounts API" below "accounts" server: "api.shop.dev/v1 bearer" endpoints: "/accounts\nGET /accounts/{id} → Account\nPOST /accounts (NewAccount) → 201 Account"

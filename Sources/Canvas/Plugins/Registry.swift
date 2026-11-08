@@ -562,7 +562,11 @@ public struct Registry {
     }
     /// What finds the stand-ins naming a shape, if a plugin gives it (`registrar.standInLookup`).
     var standInLookup: (@MainActor (CanvasEditor, ShapeID) -> [ShapeID])? {
-        contributions(to: CorePoints.StandInLookups.self).first?.value
+        contributions(to: CorePoints.StandInLookups.self).first?.value.lookup
+    }
+    /// What a stand-in's record names, if a plugin says (`registrar.standInLookup(_:names:)`): one shape, nil for any other record.
+    var standInNames: (@MainActor (AnyShapeRecord, Registry) -> ShapeID?)? {
+        contributions(to: CorePoints.StandInLookups.self).first?.value.names
     }
     /// A kind's rules for what its shapes hold (`keepsInStep`), found once a kind: every write of an
     /// added value asks.

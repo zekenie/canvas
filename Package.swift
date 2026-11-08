@@ -185,7 +185,9 @@ let ships = [
     "Snapping.SnappingPlugin",
     // Ports, whose arrows `ArrowPortsPlugin` draws. After Adornments: a shape's dots draw
     // above its adornments (the lock chip among them), and are found before them.
-    "Connections.PortsPlugin", "Connections.ConnectMenuPlugin", "Connections.ConnectPickerPlugin", "Arrows.ArrowPortsPlugin",
+    "Connections.PortsPlugin", "Connections.ConnectMenuPlugin", "Connections.ConnectPickerPlugin", "Connections.ConnectionPillsPlugin", "Arrows.ArrowPortsPlugin",
+    // A connection's release lists relationship types too, after the channels': Types' answer, after Ports, whose point it fills.
+    "Types.TypeReleasePlugin",
     "LanguageModels.LanguageModelsPlugin",
     // Yes-or-no questions asked of a decision model (TypeSafe's Jev): its key's pane goes under the language model's.
     "DecisionModels.DecisionModelsPlugin",
@@ -330,13 +332,13 @@ let package = Package(
         .target(name: "Titles", dependencies: ["Adornments", "Canvas", "DetailPanel", "Draw", "Find", "Palette", "Queries", "SlashCommands", "TableOfContents", "TextEditing"]),  // layer: platform
         .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "SlashCommands", "TableOfContents"]), // layer: platform
         .target(name: "Grouping", dependencies: ["Canvas", "ContextMenus", "Draw", "Keyboard", "Queries", "Selection"]), // layer: platform
-        .target(name: "Connections", dependencies: ["Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Mentions", "Selection", "TextEditing", "Topology"]), // layer: platform
+        .target(name: "Connections", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Mentions", "Selection", "TextEditing", "Topology"]), // layer: platform
         .target(name: "Mentions", dependencies: ["Boards", "Canvas", "CanvasRPC", "Chrome", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Keyboard", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Topology"]), // layer: platform
         .target(name: "Boards", dependencies: ["Canvas", "Chrome", "ContextMenus", "DetailPanel", "FuzzyMatching", "Keyboard", "Queries", "Selection", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: platform
         .target(name: "Colors", dependencies: ["Canvas", "CanvasRPC", "ContextMenus", "DetailPanel", "Draw", "Palette", "Queries", "SlashCommands", "TextEditing", "Validation"]), // layer: platform
-        .target(name: "Types", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Colors", "ContextMenus", "DetailPanel", "Draw", "Find", "LanguageModels", "Mentions", "Neighbors", "Palette", "ProseMaps", "Queries", "Selection", "SlashCommands", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
+        .target(name: "Types", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Colors", "Connections", "ContextMenus", "DetailPanel", "Draw", "Find", "LanguageModels", "Mentions", "Neighbors", "Palette", "ProseMaps", "Queries", "Selection", "SlashCommands", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         // References: a pill that stands for any public shape, of a kind written after it too: what every shape gets, though it is a kind.
         .target(name: "References", dependencies: ["Boards", "Canvas", "CanvasRPC", "Chrome", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Palette", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: platform
         // Things you do: a palette, a command, a gesture, that no kind opts into and nothing builds on (but Clipboard, whose paste readers a plugin may import it for).

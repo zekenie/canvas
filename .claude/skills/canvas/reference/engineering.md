@@ -94,6 +94,20 @@ A body or a response names a type, a note with a `schema:`, by its title: it's d
 api "orders API" endpoints: [{"header": "/customers"}, {"method": "GET", "path": "/customers/{id}/orders", "name": "listCustomerOrders", "responses": [{"status": "200", "type": "Refund"}]}]
 ```
 
+## What an API does
+
+An endpoint **writes** or **reads** a table, and **calls** another endpoint: each is an arrow from the endpoint's row, on its channel (`writes`, `reads`, `calls`), drawn with the channel's word in a pill on its line (writes pink, reads green, calls blue). Name the endpoint as a row, its whole name after the API's title and a dot; a table as itself, since writes and reads go to it as a whole; another endpoint as a row too. Write `channel:`: an endpoint to a table with none written is `writes`.
+
+```draw
+table "refunds" right of "orders API" (gap: wide) columns: "id uuid pk\namount_cents int"
+edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
+edge "orders API"."GET /orders/{id}" -> "refunds" channel: reads
+api "Stripe API" below "orders API" (gap: wide) endpoints: "POST /v1/refunds"
+edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
+```
+
+Only endpoints start writes and reads, and only tables take them (an enum, a database, a note or a subboard takes none); anything with arrows of its own (a note, a frame, a subboard) may call an endpoint, and an endpoint calls one. A path prefix's header is no endpoint, and takes none of them. An endpoint on another board is reached through a reference for that endpoint itself, beside the API, as a key's table is. Drawn again, the same rows on the same channel are `unchanged`; the same rows on another channel are another arrow.
+
 ## Asking
 
 The tables in a database, and how many tables there are:
@@ -104,7 +118,7 @@ The tables in a database, and how many tables there are:
 ```
 
 ```query
-/* count: 4 */
+/* count: 5 */
 table
 ```
 
@@ -123,8 +137,20 @@ arrow[channel=foreign-key]
 An API is found by its kind and its title:
 
 ```query
-/* matches: "orders API" */
+/* matches: "orders API", "Stripe API" */
 api
+```
+
+What an API does is its arrows, by channel: the tables its endpoints write, and every call:
+
+```query
+/* matches: "refunds" */
+table:edge-from("orders API", writes)
+```
+
+```query
+/* count: 1 */
+arrow[channel=calls]
 ```
 
 A table's columns, each its id and what its line said, are its `columns` attribute, as a row of `canvas query` gives them; a test inside the list (`[columns.name=…]`) isn't built yet.

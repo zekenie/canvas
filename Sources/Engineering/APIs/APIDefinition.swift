@@ -58,7 +58,10 @@ extension APIDefinition: ShapeDefinition {
     /// Its laid-out frame, and a part a row.
     func geometry(of shape: ShapeRecord<API>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape), rows = KitRows(shape, in: context)
-        let parts = shape.props.endpoints.enumerated().map { PartFrame(id: $1.id, rect: APIRows.rowRect(rows.line(of: $0), in: frame), isShown: rows.isShown($0)) }
+        // A header heads its endpoints and is no end of a connection: no dots, no arrow bound to it.
+        let parts = shape.props.endpoints.enumerated().map {
+            PartFrame(id: $1.id, rect: APIRows.rowRect(rows.line(of: $0), in: frame), isShown: rows.isShown($0), isConnectable: $1.header == nil)
+        }
         return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
     }
 
@@ -104,7 +107,7 @@ extension APIDefinition: PartedShape {
                 return PartName(id: header.id, name: header.prefix, kindWord: APIStyle.prefixWord)
             case .endpoint(let endpoint):
                 return PartName(id: endpoint.id, name: APIGroups.fullName(method: endpoint.method, path: APIGroups.joined(prefix, endpoint.path)),
-                                kindWord: APIStyle.endpointWord, lead: endpoint.method.isEmpty ? .none : .chip(endpoint.method), standsAlone: true)
+                                kindWord: APIStyle.endpointWord, lead: endpoint.method.isEmpty ? .none : .chip(endpoint.method, fill: APIStyle.chipRGB(endpoint.method)), standsAlone: true)
             }
         }
     }

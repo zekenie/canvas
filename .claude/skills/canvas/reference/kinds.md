@@ -22,7 +22,7 @@ Called API, placed by the API tool
 | `server` | a line (host[/path] [bearer \| basic \| apikey NAME \| oauth2]) or JSON {auth, host} |
 | `version` | text |
 
-**edges**: none
+**edges**: at its rows only (`"T".row`), on `calls`, `writes`, `reads`
 
 **via**: `reference` (needs `public`) can stand for it
 
@@ -80,9 +80,9 @@ Called Frame, placed by the Frame tool
 
 | edges leave by | channels |
 |---|---|
-| right | `frame-link` |
-| bottom | `frame-link` |
-| left | `frame-link` |
+| right | `frame-link`, `calls` |
+| bottom | `frame-link`, `calls` |
+| left | `frame-link`, `calls` |
 
 **via**: `reference` (needs `public`) can stand for it
 
@@ -122,10 +122,10 @@ Called Sticky note, placed by the Note tool
 
 | edges leave by | channels |
 |---|---|
-| top | `note-link` |
-| right | `note-link` |
-| bottom | `note-link` |
-| left | `note-link` |
+| top | `note-link`, `calls` |
+| right | `note-link`, `calls` |
+| bottom | `note-link`, `calls` |
+| left | `note-link`, `calls` |
 
 **via**: `reference` (needs `public`) can stand for it
 
@@ -149,10 +149,10 @@ Called Subboard, placed by the Subboard tool
 
 | edges leave by | channels |
 |---|---|
-| top | `subboard-link`, `note-link`, `frame-link` |
-| right | `subboard-link`, `note-link`, `frame-link` |
-| bottom | `subboard-link`, `note-link`, `frame-link` |
-| left | `subboard-link`, `note-link`, `frame-link` |
+| top | `subboard-link`, `note-link`, `frame-link`, `calls` |
+| right | `subboard-link`, `note-link`, `frame-link`, `calls` |
+| bottom | `subboard-link`, `note-link`, `frame-link`, `calls` |
+| left | `subboard-link`, `note-link`, `frame-link`, `calls` |
 
 **via**: `reference` (needs `public`) can stand for it
 

@@ -168,7 +168,7 @@ import TestKit
     },
     test("an arrow says how wide its line is, 3.5 world units whatever it holds, and a box that it has none") {
         let h = try EditorHarness(plugins: arrowsPlugins())
-        let free = Arrow(start: .free(CGPoint(x: 20, y: 60)), end: .free(CGPoint(x: 140, y: 60)), bend: 30, startArrowhead: true, text: "calls")
+        let free = Arrow(start: .free(CGPoint(x: 20, y: 60)), end: .free(CGPoint(x: 140, y: 60)), bend: 30, startArrowhead: true, text: "scall")
         // The document is a value: read it after the shapes are added, not before.
         let arrowID = h.add(free), boxID = h.add(Box(boxA))
         let arrow = try require(h.editor.document[arrowID]), box = try require(h.editor.document[boxID])

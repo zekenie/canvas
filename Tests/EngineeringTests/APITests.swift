@@ -6,6 +6,7 @@ import Geometry
 @_spi(Host) import CanvasUI
 import Engineering
 import LineRows
+import Palette
 import Selection
 import TestKit
 import TextEditing
@@ -104,7 +105,9 @@ extension KitBench {
         let parts = try require(h.editor.registry.parts(of: try require(h.editor.document[api.id])))
         expectEqual(parts.map(\.name), ["/orders", "POST /orders/{id}/refunds"])
         expectEqual(parts.map(\.kindWord), ["Path Prefix", "Endpoint"])
-        expectEqual(parts[1].lead, .chip("POST"))
+        guard case .chip(let method, let fill) = parts[1].lead else { throw RequireFailed() }
+        expectEqual(method, "POST")
+        expect(fill.contrast(with: .white) >= Swatch.textContrast, "the chip's white word reads on its color, as the row draws it")
         expect(parts[1].standsAlone && !parts[0].standsAlone)
         expectEqual(h.editor.accessibleName(of: PartAddress(api.id, part: parts[1].id)), "POST /orders/{id}/refunds")
         expectEqual(h.editor.accessibleDescription(of: try require(h.editor.document[api.id])).label, "orders API, API")
@@ -254,14 +257,14 @@ extension KitBench {
         b.editor.undo()
         expectEqual(b.editor.document[api]?.typed(as: API.self)?.props.server, APIServer())
     },
-    test("an endpoint's card (⌘↓, and the › on its row): name, summary, auth, each parameter, body, its responses a line each, deprecated; a name typed is Change Endpoint, and a line's commit keeps what only the card says") {
+    test("an endpoint's card (⌘↓, and the › on its row): name, summary, auth, each parameter, body, its responses a line each, deprecated, its relations a line each; a name typed is Change Endpoint, and a line's commit keeps what only the card says") {
         let b = try KitBench()
         let api = b.api("orders API", ["/orders", "POST /{id}/refunds (NewRefund) → 201 Refund"])
         b.begin(api)
         b.press(.up)
         b.press(Chord(Key.down, .command))
         let card = try require(b.canvas.cardView as? LineCardView)
-        expectEqual(card.stopNames, ["name", "summary", "auth", "{id}", "body", "responses 1", "deprecated"])
+        expectEqual(card.stopNames, ["name", "summary", "auth", "{id}", "body", "responses 1", "deprecated", "relations 1"])
         expectEqual(card.value(of: "body"), "→ NewRefund")
         expectEqual(card.value(of: "responses 1"), "201 → Refund")
         expectEqual(card.focusedStop, "name")

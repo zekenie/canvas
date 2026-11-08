@@ -55,7 +55,8 @@ struct PortBoard {
     }
 
     /// What every board here has: the keys, the selection, the fixtures, arrows (whose labels are mention text, so
-    /// Mentions and what it stands on), ports, `ArrowPortsPlugin`, and the tests' channels (boxes on the wire, discs on the pipe), then `more`.
+    /// Mentions and what it stands on), ports, `ArrowPortsPlugin`, Types' answer to a release (`TypeReleasePlugin`), and the tests'
+    /// channels (boxes on the wire, discs on the pipe), then `more`.
     static func plugins(more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
         let channels = Contributor(id: "channels") { registrar in
             registrar.channel(Wire.self)
@@ -65,7 +66,7 @@ struct PortBoard {
         }
         return [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), ArrowsPlugin(), TableOfContentsPlugin(),
                 AdornmentsPlugin(), ContextMenusPlugin(), SlashCommandsPlugin(), ColorsPlugin(), TitlesPlugin(), MentionsPlugin(), TypesPlugin(),
-                LanguageRulesPlugin(), PortsPlugin(), ArrowPortsPlugin(), channels] + more
+                LanguageRulesPlugin(), PortsPlugin(), ArrowPortsPlugin(), TypeReleasePlugin(), channels] + more
     }
 
     var arrows: [ShapeRecord<Arrow>] { h.editor.document.shapes.compactMap { $0.typed(as: Arrow.self) } }

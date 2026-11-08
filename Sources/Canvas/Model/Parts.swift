@@ -1,6 +1,7 @@
 import CanvasRPC
 import CoreGraphics
 import Foundation
+import Palette
 
 // A shape's parts: the rows of a kind made of rows (a table's columns, an enum's values), each with an id of the
 // shape's own that a copy keeps, so another shape can one day name a row of it as it names the shape. The core
@@ -106,8 +107,8 @@ public enum PartLead: Hashable, Sendable {
     case none
     /// An SF Symbol's name: a key for a primary key.
     case symbol(String)
-    /// A word in a chip: a method.
-    case chip(String)
+    /// A word in a chip of a color, white on it: a method in its color (an endpoint's `POST`), the same in both appearances.
+    case chip(String, fill: RGB)
 }
 
 /// Where one part is on the board shown, in world units: what an arrow will meet, and what a ring will go round.
@@ -117,11 +118,15 @@ public struct PartFrame: Hashable, Sendable {
     public var rect: CGRect
     /// False for a part the shape shows none of (a row folded away): `rect` is then what it shows in its place.
     public var isShown: Bool
+    /// False for a part nothing is bound to, which heads rows and is no end of a connection (a path prefix's header): it shows
+    /// no port's dots, and an end let go on it binds the nearest part that is one.
+    public var isConnectable: Bool
 
-    public init(id: PartID, rect: CGRect, isShown: Bool = true) {
+    public init(id: PartID, rect: CGRect, isShown: Bool = true, isConnectable: Bool = true) {
         self.id = id
         self.rect = rect
         self.isShown = isShown
+        self.isConnectable = isConnectable
     }
 }
 
@@ -150,11 +155,11 @@ public struct PartFrames: Sendable, Equatable, RandomAccessCollection {
     /// The part with this id; nil for one the shape doesn't have.
     public func frame(_ id: PartID) -> PartFrame? { index[id].map { frames[$0] } }
 
-    /// The part shown whose rect is nearest `y` across (inside it, or the nearest edge's): what a point dropped on
-    /// the shape meets. Nil with none shown.
+    /// The part shown, of those an end may be bound to (`isConnectable`), whose rect is nearest `y` across (inside it, or the
+    /// nearest edge's): what a point dropped on the shape meets. Nil with none shown.
     public func frame(nearestY y: CGFloat) -> PartFrame? {
         var best: PartFrame?, nearest = CGFloat.infinity
-        for frame in frames where frame.isShown {
+        for frame in frames where frame.isShown && frame.isConnectable {
             let distance = y < frame.rect.minY ? frame.rect.minY - y : y > frame.rect.maxY ? y - frame.rect.maxY : 0
             if distance < nearest { (best, nearest) = (frame, distance) }
         }

@@ -168,7 +168,8 @@ final class PortState {
             let middle = (low + high) / 2
             if frames[middle].rect.maxY <= world.y { low = middle + 1 } else { high = middle }
         }
-        guard low < frames.count, frames[low].rect.minY <= world.y else { return nil }
+        // A part that is no end (a path prefix's header) has no dots.
+        guard low < frames.count, frames[low].rect.minY <= world.y, frames[low].isConnectable else { return nil }
         return frames[low].id
     }
 

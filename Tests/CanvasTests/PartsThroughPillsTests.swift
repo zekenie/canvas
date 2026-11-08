@@ -12,11 +12,13 @@ import TestKit
 /// Which boxes stand for which shapes, as a test says: the stand-in lookup the core reads.
 @MainActor private final class StandingTable {
     var standing: [ShapeID: [ShapeID]] = [:]
+    /// What a box's own record names, for a box no index holds yet (one a transaction put in).
+    var names: [ShapeID: ShapeID] = [:]
 }
 
 @MainActor private func lookupPlugin(_ table: StandingTable) -> Contributor {
     Contributor(id: "lookup") { registrar in
-        registrar.standInLookup { _, shape in table.standing[shape] ?? [] }
+        registrar.standInLookup({ _, shape in table.standing[shape] ?? [] }, names: { record, _ in table.names[record.id] })
     }
 }
 
@@ -56,6 +58,31 @@ import TestKit
 }
 
 @MainActor let partsThroughPillsTests = Suite("A part's lifecycle through a pill", [
+    test("a pill put in earlier in the same step is reached: a strap through it at a row taken out later in that step goes, and one at a row moved follows") {
+        let s = try Far()
+        let fresh = ShapeID(), gone = ShapeID(), moved = ShapeID()
+        s.table.names[fresh] = s.muster
+        s.h.editor.undoHistory.seal()
+        var taken: Set<ShapeID> = []
+        s.h.editor.transact("Connect and Delete") { tx in
+            // A pill for the muster and two straps through it, on the pocket's board, as a far pick or a script puts them down.
+            tx.insert(AnyShapeRecord(ShapeRecord(id: fresh, Box(CGRect(x: 0, y: 200, width: 80, height: 40)))), on: s.board)
+            tx.insert(AnyShapeRecord(ShapeRecord(id: gone, Strap(from: PartAddress(s.local), to: PartAddress(fresh, part: s.bob.id)))), on: s.board)
+            tx.insert(AnyShapeRecord(ShapeRecord(id: moved, Strap(from: PartAddress(s.local), to: PartAddress(fresh, part: s.alice.id)))), on: s.board)
+            expect(tx.standIns(naming: s.muster).contains { $0.id == fresh && $0.board == s.board }, "the step's own pill is among the muster's")
+            // Then, in the same step, bob taken out and alice moved to the other muster.
+            tx.update(s.muster, as: Muster.self) { $0.props.rows = [] }
+            tx.update(s.other, as: Muster.self) { $0.props.rows = [s.alice] }
+            taken = tx.removeParts([PartAddress(s.muster, part: s.bob.id)])
+            tx.moveParts([PartAddress(s.muster, part: s.alice.id): PartAddress(s.other, part: s.alice.id)])
+        }
+        expectEqual(taken, [gone], "the strap through the fresh pill at bob goes in the same step")
+        expectEqual(s.strap(gone), nil)
+        expect(s.strap(moved)?.to != PartAddress(fresh, part: s.alice.id), "alice's strap no longer names the muster's row through the pill: \(String(describing: s.strap(moved)?.to))")
+        s.h.editor.undo()
+        expectEqual(s.strap(gone), nil, "one undo takes the whole step back")
+        expectEqual(s.h.file[s.board][fresh], nil)
+    },
     test("removeParts: a strap on another board bound through a pill to a muster's row goes in the same step, counted along; a roster's is bound to its pill as a whole") {
         let s = try Far()
         let atBob = s.strap(to: PartAddress(s.pill, part: s.bob.id))

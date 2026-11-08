@@ -59,6 +59,20 @@ extension AdornmentLabel {
         AdornmentStyle.draw(self, in: .aboveTopLeft, face: face, in: frame, from: origin, scale: scale, look: .normal, in: cg)
     }
 
+    /// The label as the row above a shape draws it, as an image (a menu's row: the pill a release's list offers), the row's height
+    /// and its face's width in points; drawn when it's shown, in the appearance it's shown in.
+    @MainActor public var image: NSImage {
+        let face = AdornmentStyle.face(of: self, in: .aboveTopLeft)
+        let label = self
+        let image = NSImage(size: CGSize(width: face.width, height: AdornmentLayout.rowHeight), flipped: true) { _ in
+            guard let cg = NSGraphicsContext.current?.cgContext else { return false }
+            MainActor.assumeIsolated { label.draw(at: .zero, scale: 1, in: cg) }
+            return true
+        }
+        image.accessibilityDescription = text
+        return image
+    }
+
     /// Draws the label's chip `width` wide with no text, its top-left at `origin`, in `cg`'s units at `scale` of them a
     /// point: its capsule and its symbol, where a field sets the text over it. Drawn in the appearance being drawn, as
     /// the row above a shape is.

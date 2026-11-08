@@ -86,6 +86,9 @@ public struct Transaction {
     /// there already: what the commit adds, or, if the file held shapes there
     /// (`changes.boardsChanged`; the root always), writes over.
     private(set) var stagedBoards: [BoardID: CanvasDocument] = [:]
+    /// Every shape this transaction put in, on whichever board, in order: what `standIns(naming:)` reads beside the editor's
+    /// index, which doesn't hold them yet.
+    private var inserted: [ShapeID] = []
     /// The shapes inserted or moved onto `stagedBoards` here, each with the board it's on.
     private var stagedIDs: [ShapeID: BoardID] = [:]
     /// The boards shapes were moved onto here, moved on or settled on. None of them goes with a shape
@@ -352,6 +355,7 @@ public struct Transaction {
         writes.append(record.id)
         changes.reordered = true
         didChange = true
+        inserted.append(record.id)
         return true
     }
 
@@ -1336,10 +1340,20 @@ public struct Transaction {
 
     /// The stand-ins whose record names `shape` (a reference pill for a table), with the board each is on as this transaction
     /// leaves the file: the editor's stand-in lookup (`registrar.standInLookup`, Topology's), read as the file was before this
-    /// transaction (a pill put in by it isn't among them). None without a lookup. In order of id, so the same call on the same file
-    /// makes the same file (the lookup itself has no order).
+    /// transaction, and the stand-ins this transaction put in earlier that name it (what the lookup says a record names), which the
+    /// index doesn't hold yet (a pill a ⌘L pick or a script put down, then a row taken out in the same step). None without a
+    /// lookup. In order of id, so the same call on the same file makes the same file (the lookup itself has no order).
     public func standIns(naming shape: ShapeID) -> [(id: ShapeID, board: BoardID)] {
-        file.standIns(shape).compactMap { id in location(of: id).map { (id, $0) } }.sorted { $0.id.description < $1.id.description }
+        var found: [(id: ShapeID, board: BoardID)] = file.standIns(shape).compactMap { id in location(of: id).map { (id, $0) } }
+        if !inserted.isEmpty, let names = registry.standInNames {
+            var seen = Set(found.map(\.id))
+            for id in inserted where !seen.contains(id) {
+                guard let board = location(of: id), let record = contents(of: board)[id], names(record, registry) == shape else { continue }
+                seen.insert(id)
+                found.append((id, board))
+            }
+        }
+        return found.sorted { $0.id.description < $1.id.description }
     }
 
     /// The bindings a part reaches through a pill: for each part of `parts`, each stand-in that names its shape, by the board it
@@ -1784,6 +1798,7 @@ public struct Transaction {
         if there.didChange {
             take(there, reserving: false)
             stagedIDs[record.id] = board
+            inserted.append(record.id)
         } else {
             refused.formUnion(there.refused)
             if wasStaged { stagedBoards[board] = there.document }

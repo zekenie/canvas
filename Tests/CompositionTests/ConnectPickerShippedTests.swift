@@ -123,7 +123,10 @@ extension NestedWindow {
     },
     test("picking Itself is today's loop: one arrow from the shape to itself, one step, Connect, with the connection hooks heard once; the selection stays") {
         var heard = 0
-        let hook = Contributor(id: "heard") { registrar in registrar.connectionMade { _, _ in heard += 1 } }
+        let hook = Contributor(id: "heard") { registrar in registrar.connectionMade { _, _ in
+            heard += 1
+            return .nothing
+        } }
         let w = try NestedWindow(extra: [hook])
         defer { w.board.close() }
         let (a, _) = w.nest.notes(on: 1)
@@ -146,7 +149,10 @@ extension NestedWindow {
     },
     test("a pick on the board shown draws the arrow to that shape: one step, Connect, hooks once; no pill") {
         var heard = 0
-        let hook = Contributor(id: "heard") { registrar in registrar.connectionMade { _, _ in heard += 1 } }
+        let hook = Contributor(id: "heard") { registrar in registrar.connectionMade { _, _ in
+            heard += 1
+            return .nothing
+        } }
         let w = try NestedWindow(extra: [hook])
         defer { w.board.close() }
         let (a, b) = w.nest.notes(on: 1)

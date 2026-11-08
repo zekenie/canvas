@@ -39,6 +39,13 @@ enum APIStyle {
     static let renamePrefixStep = "Rename Path Prefix"
     static let deletePrefixStep = "Delete Path Prefix"
     static let movePrefixStep = "Move Path Prefix"
+    /// An endpoint's connection lines written (its card): one made, one's relation changed alone, one re-aimed, one taken out.
+    static let connectStep = "Connect"
+    static let changeRelationStep = "Change Relation"
+    static let changeConnectionStep = "Change Connection"
+    static let deleteArrowStep = "Delete Arrow"
+    /// What the card's connection lines are called.
+    static let connectionsLine = "relations"
     /// The server line written.
     static let changeServerStep = "Change Server"
     /// A type note made from a line's or a card's list ("New type Problem"), with the words that name it: Types' step's name.
@@ -99,11 +106,16 @@ enum APIStyle {
     /// A method's chip: its hue made dark enough that its white text reads at 4.5, the hue kept.
     static func chipFill(_ method: String) -> NSColor {
         if let kept = chipFills[method] { return kept }
-        let fill = NSColor(Swatch.reading(hues[method] ?? otherHue, against: [.white], atLeast: Swatch.textContrast))
+        let fill = NSColor(chipRGB(method))
         chipFills[method] = fill
         return fill
     }
     private static var chipFills: [String: NSColor] = [:]
+
+    /// A method's chip's color as its components: what an endpoint's row says its lead is (`PartLead.chip`), for a pill to draw.
+    static func chipRGB(_ method: String) -> RGB {
+        Swatch.reading(hues[method] ?? otherHue, against: [.white], atLeast: Swatch.textContrast)
+    }
 
     /// A path parameter in its method's color, as text on the paper at 4.5.
     static func parameterInk(_ method: String) -> NSColor {

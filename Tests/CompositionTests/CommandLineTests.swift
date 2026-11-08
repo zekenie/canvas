@@ -628,7 +628,7 @@ edge "API" -> "Cache" channel: none
         expectEqual(joined["changes"]?.arrayValue?.map { $0["channel"] }, ["frame-link", "frame-link"])
         let apart = try refusedInProcess(#"edge "Login" -> "Sprint 2""#, on: editor)
         expectEqual(apart.reason, "no_channel")
-        expectEqual(apart.message, #""Login" and "Sprint 2" share no channel: a sticky-note connects on note-link, a frame on frame-link"#)
+        expectEqual(apart.message, #""Login" and "Sprint 2" share no channel: a sticky-note connects on note-link and calls, a frame on frame-link and calls"#)
         let holds = try refusedInProcess(#"edge "Sprint 1" -> "Login""#, on: editor)
         expectEqual(holds.reason, "cannot_connect")
         expectEqual(holds.message, #""Sprint 1" can't be connected to "Login", which it holds"#)
