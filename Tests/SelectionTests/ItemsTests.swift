@@ -19,13 +19,30 @@ import TestKit
     var opened: [(String, CGPoint?)] = []
     var setOpen: [(String, Bool)] = []
     var r3Open = false
+    /// What a drag of the selected items asked of the kind, and whether the kind gives a session for it (else the shape is dragged).
+    var dragged: [[String]] = []
+    var givesDrag = false
+    /// The rows' words, as the kind says a run of them is selected.
+    var said: [Int] = []
+    /// Whether the fixture lists any rows at all (another writer deleted them all when not), and whether row 0 has a lead.
+    var listed = true
+    var led: [String] = []
+    var hasLead = false
+}
+
+/// The session the fixture's drag of its items runs: logs that it ran.
+@MainActor final class ItemDrag: Session {
+    static var ran = 0
+    func drag(_ pointer: Pointer, in editor: CanvasEditor) { Self.ran += 1 }
+    func end(_ pointer: Pointer, in editor: CanvasEditor) {}
+    func cancel(in editor: CanvasEditor) -> Bool { true }
 }
 
 @MainActor func fourRows(_ log: ItemLog) -> Contributor {
     Contributor(id: "items") { registrar in
         registrar.forShapes(adopting: .box) { box in
             box.shapeItems(named: "rows", { _, shape in
-                guard let f = shape.box else { return [] }
+                guard log.listed, let f = shape.box else { return [] }
                 return (0..<4).map { index in
                     let rect = CGRect(x: f.minX, y: f.minY + CGFloat(index) * 20, width: f.width, height: 20)
                     return index == 3
@@ -45,6 +62,18 @@ import TestKit
                 setOpen: { _, _, item, open in
                     log.setOpen.append(("\(item)", open))
                     log.r3Open = open
+                },
+                drag: { _, _, ids, _ in
+                    log.dragged.append(ids.map { "\($0)" })
+                    return log.givesDrag ? ItemDrag() : nil
+                },
+                lead: { _, shape, point in
+                    guard log.hasLead, let f = shape.box, point.x >= f.minX, point.x < f.minX + 40, point.y >= f.minY, point.y < f.minY + 20 else { return nil }
+                    return ItemLead(item: "r0") { _ in log.led.append("r0") }
+                },
+                selectedWords: { count in
+                    log.said.append(count)
+                    return "\(count) rows selected"
                 }))
         }
     }
@@ -61,8 +90,8 @@ import TestKit
     let a: ShapeID
     let b: ShapeID
 
-    init() throws {
-        h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin(), fourRows(log), threeParts(parts)])
+    init(resizable: Bool = false) throws {
+        h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), FixturesPlugin()] + (resizable ? [resizableBoxes()] : []) + [fourRows(log), threeParts(parts)])
         canvas = CanvasView(editor: h.editor)
         canvas.frame = CGRect(x: 0, y: 0, width: 800, height: 500)
         window.contentView = canvas
@@ -204,5 +233,89 @@ import TestKit
         expectEqual(w.editor.accessibleFocusedPart?.part, parts[2].id)
         parts[0].press(w.editor)
         expectEqual(w.items, ["r0"], "pressed, an item is selected")
+    },
+    test("A drag from a selected item asks the kind for a session to drag the selected items; with none given the shape is dragged; ⌘ held, the press is a brush as it was on any shape") {
+        let w = try ItemsWindow()
+        w.h.click(at: w.row(1))
+        w.editor.selectItems(["r1", "r2"], of: w.a)
+        w.log.givesDrag = true
+        ItemDrag.ran = 0
+        w.h.press(at: w.row(1))
+        w.h.drag(to: w.h.view(CGPoint(x: 260, y: 140)))
+        expectEqual(w.log.dragged, [["r1", "r2"]], "the selected items, from the press")
+        expect(ItemDrag.ran > 0, "the kind's session runs")
+        w.h.release()
+        expectEqual(w.editor.document[w.a]?.box?.origin, CGPoint(x: 100, y: 100), "the shape stays")
+        w.log.givesDrag = false
+        w.editor.selectItems(["r1", "r2"], of: w.a)
+        w.h.press(at: w.row(1))
+        w.h.drag(to: w.h.view(CGPoint(x: 260, y: 160)))
+        w.h.release()
+        expect(w.editor.document[w.a]?.box?.origin != CGPoint(x: 100, y: 100), "none given: the shape is dragged")
+        // ⌘ held: the brush, not the shape moved, and none of the items' drag.
+        w.editor.undo()
+        w.editor.selectItems(["r1"], of: w.a)
+        w.log.dragged = []
+        let origin = w.editor.document[w.a]?.box?.origin
+        w.h.hold(.command)
+        w.h.wait(200)
+        w.h.press(at: w.row(1))
+        w.h.drag(to: w.h.view(CGPoint(x: 700, y: 400)))
+        expectEqual(w.log.dragged, [], "no drag of items")
+        expect((w.editor.session.map { String(describing: type(of: $0)) } ?? "").contains("Brushing"), "a brush")
+        w.h.release()
+        expectEqual(w.editor.document[w.a]?.box?.origin, origin, "the shape did not move")
+        w.h.hold([])
+    },
+    test("An item's lead is pressed before the faces: released, its click; past the threshold, its item dragged") {
+        let w = try ItemsWindow()
+        w.log.hasLead = true
+        w.h.click(at: w.row(2))
+        w.editor.selectItems(["r2"], of: w.a)
+        let lead = w.h.view(CGPoint(x: 120, y: 110))
+        w.h.click(at: lead)
+        expectEqual(w.log.led, ["r0"], "a click on the lead runs its click")
+        w.log.givesDrag = true
+        ItemDrag.ran = 0
+        w.h.press(at: lead)
+        w.h.drag(to: w.h.view(CGPoint(x: 300, y: 200)))
+        expectEqual(w.log.dragged, [["r0"]], "dragged from the lead: that item, selected")
+        expect(ItemDrag.ran > 0)
+        w.h.release()
+        expectEqual(w.items, ["r0"])
+    },
+    test("Rows another writer took out leave the shape selected with its outline and handles back; a run extended by key or click is said, a single step is not") {
+        let w = try ItemsWindow(resizable: true)
+        let size = CGSize(width: 800, height: 500)
+        let corner = w.h.view(CGPoint(x: 300, y: 260))
+        w.editor.selection = w.a
+        expect(w.editor.handle(atViewPoint: corner) != nil, "the shape's own handles")
+        let shape = renderBitmap(w.editor, size: size)
+        w.editor.selectItems(["r1"], of: w.a)
+        expectEqual(w.editor.handle(atViewPoint: corner) == nil, true, "items selected: the handles give way")
+        w.log.listed = false
+        w.editor.shapesDidChangeLayout([w.a])
+        expectEqual(w.editor.selectedItems == nil, true, "none listed: none selected")
+        expect(w.editor.handle(atViewPoint: corner) != nil, "the handles are back")
+        let after = renderBitmap(w.editor, size: size)
+        let run = w.h.view(CGPoint(x: 100, y: 120))
+        expectEqual(changedPixels(shape, after, in: CGRect(x: run.x - 12, y: run.y + 50, width: 14, height: 40)), 0, "and the shape's own outline")
+        w.log.listed = true
+        w.editor.shapesDidChangeLayout([w.a])
+        // What is said: a run grown or shrunk, not a step to one other.
+        let walk = w.walk()
+        w.editor.selectItems(["r0"], of: w.a)
+        w.log.said = []
+        walk.press(.down)
+        expectEqual(w.log.said, [], "one item to one item: VoiceOver's focus says it")
+        walk.press(Chord(Key.down, .shift))
+        walk.press(Chord(Key.down, .shift))
+        expectEqual(w.log.said, [2, 3], "the run grows, the count said")
+        walk.press(Chord("a", .command))
+        expectEqual(w.log.said.last, 4)
+        w.h.hold(.shift)
+        w.h.click(at: w.row(1))
+        expectEqual(w.log.said.last, 2, "⇧ click: the run from the anchor to it")
+        w.h.hold([])
     },
 ])

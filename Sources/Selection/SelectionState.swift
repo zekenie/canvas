@@ -883,8 +883,8 @@ extension CanvasEditor {
     /// being edited, else in a secondary color (`SelectionStyle.secondary`): keys go elsewhere (P7).
     var selectionOutlines: Outlines {
         let box = selectedShapeIDs.count > 1 ? selectionBounds : nil
-        // A shape whose items are selected is outlined by them (`ItemsOverlay`), inside it.
-        let outlined = selectionState?.items.map { held in selectedShapeIDs.filter { $0 != held.shape || editingShapeID == held.shape } } ?? selectedShapeIDs
+        // A shape whose items are selected (and listed) is outlined by them (`ItemsOverlay`), inside it.
+        let outlined = selectedItems.map { held in selectedShapeIDs.filter { $0 != held.shape || editingShapeID == held.shape } } ?? selectedShapeIDs
         return Outlines(shapes: outlined, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
                         color: selectionOutlineColor)
     }

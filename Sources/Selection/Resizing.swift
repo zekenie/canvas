@@ -376,9 +376,10 @@ extension CanvasEditor {
 
     /// The side of the only selected shape's box a press at a view point takes, as a drag of that side's handle:
     /// anywhere along a side whose handle shows, from just inside it to just past the outline drawn off it
-    /// (`ResizeHandle.side`). Nil off them, and where the shape has no resize handles (`visibleHandles`).
+    /// (`ResizeHandle.side`). Nil off them, and where the shape has no resize handles (`visibleHandles`): one whose items are
+    /// selected has none showing, so a press along its side is the shape's.
     func resizeSide(atViewPoint point: CGPoint) -> ResizeHandle? {
-        guard let id = selection, id != editingShapeID, let record = document[id], let box = resizeFrame(of: record),
+        guard let id = selection, id != editingShapeID, selectedItems == nil, let record = document[id], let box = resizeFrame(of: record),
               !isReadOnly(id) else { return nil }
         return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap)
     }

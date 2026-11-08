@@ -55,8 +55,10 @@ public enum AnnouncementPriority: Sendable {
 public struct AccessiblePart {
     /// Stable from frame to frame (the part's own key).
     public var id: AnyHashable
-    /// What VoiceOver calls it: "Locked", "Go to Original", "Arrow to Payment".
-    public var title: String
+    /// What VoiceOver calls it: "Locked", "Go to Original", "Arrow to Payment". Worked out when asked, so listing a
+    /// shape's many parts (a table's rows) costs their rects alone.
+    @MainActor public var title: String { titled() }
+    private let titled: @MainActor () -> String
     public var role: Role
     /// Where it is, in world units.
     public var rect: CGRect
@@ -70,10 +72,10 @@ public struct AccessiblePart {
         case button, menuButton, link, checkbox, handle, connection, row
     }
 
-    public init(id: AnyHashable, title: String, role: Role, rect: CGRect, isSelected: Bool = false,
+    public init(id: AnyHashable, title: @autoclosure @escaping @MainActor () -> String, role: Role, rect: CGRect, isSelected: Bool = false,
                 press: @escaping @MainActor (CanvasEditor) -> Void) {
         self.id = id
-        self.title = title
+        self.titled = title
         self.role = role
         self.rect = rect
         self.isSelected = isSelected

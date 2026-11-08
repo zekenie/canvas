@@ -69,11 +69,15 @@ public struct ItemSelection: Equatable {
     public let shape: ShapeID
     public let ids: [AnyHashable]
     public let anchor: AnyHashable
+    /// What the keys act on (delete, move, cut, copy): the items selected, and, for a line that stands for selected items a
+    /// fold hides, those items themselves, never the line (a closed header, deleted, would take rows nobody selected).
+    public let acting: [AnyHashable]
 
-    public init(shape: ShapeID, ids: [AnyHashable], anchor: AnyHashable) {
+    public init(shape: ShapeID, ids: [AnyHashable], anchor: AnyHashable, acting: [AnyHashable]? = nil) {
         self.shape = shape
         self.ids = ids
         self.anchor = anchor
+        self.acting = acting ?? ids
     }
 }
 
@@ -104,13 +108,18 @@ public struct ShapeItemActions {
     public var drag: (@MainActor (CanvasEditor, ShapeID, [AnyHashable], CGPoint) -> (any Session)?)?
     /// The item's lead under a world point, pressed before faces: a click runs its click, a drag drags that item.
     public var lead: (@MainActor (CanvasEditor, AnyShapeRecord, CGPoint) -> ItemLead?)?
+    /// What VoiceOver hears as the run of selected items grows or shrinks by key or click, from how many there are now:
+    /// "3 columns selected". Nil: nothing is said.
+    public var selectedWords: (@MainActor (Int) -> String)?
 
     public init(delete: @escaping @MainActor (CanvasEditor, ShapeID, [AnyHashable]) -> Void,
                 move: @escaping @MainActor (CanvasEditor, ShapeID, [AnyHashable], Int) -> Void,
                 open: @escaping @MainActor (CanvasEditor, ShapeID, AnyHashable, CGPoint?) -> Void,
                 setOpen: (@MainActor (CanvasEditor, ShapeID, AnyHashable, Bool) -> Void)? = nil,
                 drag: (@MainActor (CanvasEditor, ShapeID, [AnyHashable], CGPoint) -> (any Session)?)? = nil,
-                lead: (@MainActor (CanvasEditor, AnyShapeRecord, CGPoint) -> ItemLead?)? = nil) {
+                lead: (@MainActor (CanvasEditor, AnyShapeRecord, CGPoint) -> ItemLead?)? = nil,
+                selectedWords: (@MainActor (Int) -> String)? = nil) {
+        self.selectedWords = selectedWords
         self.delete = delete
         self.move = move
         self.open = open
@@ -188,6 +197,14 @@ extension CanvasEditor {
 
     /// Whether the keys go to selected items: there are some, and nothing's under way or edited.
     public var canStepItems: Bool { session == nil && editingShapeID == nil && selectedItems != nil }
+
+    /// Says how many items are selected now (the kind's words) when a key or click changed a run of them: more than one now,
+    /// or fewer than before. VoiceOver's focus change says a single item moved to; a run has no one element to say it.
+    func announceItems(from before: Int) {
+        guard let selection = selectedItems, selection.ids.count > 1 || before > 1, let record = document[selection.shape],
+              let words = itemSource(of: record.kind)?.actions.selectedWords else { return }
+        announce(words(selection.ids.count))
+    }
 }
 
 // MARK: The state
@@ -218,7 +235,13 @@ extension SelectionState {
         let ids = listed.filter { wanted.contains($0.id) || $0.stands.contains(where: wanted.contains) }.map(\.id)
         guard !ids.isEmpty else { return nil }
         let anchor = listed.first { $0.id == held.anchor || $0.stands.contains(held.anchor) }?.id ?? ids[0]
-        return ItemSelection(shape: held.shape, ids: ids, anchor: ids.contains(anchor) ? anchor : ids[0])
+        // A line standing for items held is not what the keys act on: those items are.
+        var acting: [AnyHashable] = []
+        for item in listed where wanted.contains(item.id) || item.stands.contains(where: wanted.contains) {
+            if wanted.contains(item.id) { acting.append(item.id) }
+            acting += item.stands.filter(wanted.contains)
+        }
+        return ItemSelection(shape: held.shape, ids: ids, anchor: ids.contains(anchor) ? anchor : ids[0], acting: acting)
     }
 
     /// Selects items of the only selected shape: those of `ids` it lists (or that one it lists stands for), in its order.
@@ -272,6 +295,13 @@ extension CanvasEditor {
         return (selection, source, source.items(self, record))
     }
 
+    /// The source of the selected items' shape and the selection, without listing the shape's items (a table of 500 rows lists
+    /// them all): for the keys that act on the items selected and need none of the others.
+    private func itemActionContext() -> (selection: ItemSelection, source: ShapeItemSource)? {
+        guard canStepItems, let selection = selectedItems, let record = document[selection.shape], let source = itemSource(of: record.kind) else { return nil }
+        return (selection, source)
+    }
+
     /// An arrow key with items selected: ↑ ↓ the item above or below (with ⇧, the run from the anchor extended or drawn back),
     /// stopping at the ends; → and ← open and close an item that hides others. Whether there were items (the key is theirs
     /// then, whatever it did).
@@ -296,6 +326,7 @@ extension CanvasEditor {
             guard order.indices.contains(next) else { return true }
             let range = min(anchor, next)...max(anchor, next)
             state.setItems(range.map { order[$0] }, of: selection.shape, anchor: selection.anchor)
+            announceItems(from: selection.ids.count)
         } else {
             let indices = selection.ids.compactMap { order.firstIndex(of: $0) }
             // Finder's: the item past the run's end that way; at the end of the shape, the run comes down to that end.
@@ -303,6 +334,7 @@ extension CanvasEditor {
             let next = order.indices.contains(edge + step) ? edge + step : edge
             guard next != edge || indices.count > 1 else { return true }
             state.setItems([order[next]], of: selection.shape, anchor: nil)
+            announceItems(from: selection.ids.count)
         }
         if let rect = listed.first(where: { selectedItems?.ids.last == $0.id })?.rect { revealIfOffscreen(rect: rect) }
         return true
@@ -310,25 +342,26 @@ extension CanvasEditor {
 
     /// ⌥↑ ⌥↓ with items selected: the kind moves them a place (one step a held key). Whether there were items.
     func moveItems(_ direction: CGPoint) -> Bool {
-        guard let (selection, source, _) = itemContext() else { return false }
+        guard let (selection, source) = itemActionContext() else { return false }
         guard direction.x == 0 else { return true }
-        source.actions.move(self, selection.shape, selection.ids, direction.y < 0 ? -1 : 1)
+        source.actions.move(self, selection.shape, selection.acting, direction.y < 0 ? -1 : 1)
         return true
     }
 
-    /// ⌫ ⌦ (and Edit › Delete) on the selected items: the kind deletes them. Whether there were items to take the key, where
-    /// `subject` asks: a key or the menu bar (no point), on the items' shape.
+    /// ⌫ ⌦ (and Edit › Delete, and the selection's menu's Delete) on the selected items: the kind deletes them. Whether there
+    /// were items to take the key, where `subject` asks: a key, the menu bar or a right-click, on the items' shape (the shape's
+    /// own outline is hidden while its items are the selection, so the menu means them as the keys do).
     func deleteItems(for subject: CommandSubject) -> Bool {
-        guard subject.point == nil, let selection = selectedItems, subject.shapes == [selection.shape],
-              let (_, source, _) = itemContext() else { return false }
+        guard let selection = selectedItems, subject.shapes == [selection.shape],
+              let (_, source) = itemActionContext() else { return false }
         revealIfOffscreen([selection.shape])
-        source.actions.delete(self, selection.shape, selection.ids)
+        source.actions.delete(self, selection.shape, selection.acting)
         return true
     }
 
     /// Return with items selected: the first opened (a row edited). Whether there were items.
     func openSelectedItem() -> Bool {
-        guard let (selection, source, _) = itemContext() else { return false }
+        guard let (selection, source) = itemActionContext() else { return false }
         source.actions.open(self, selection.shape, selection.ids[0], nil)
         return true
     }
@@ -345,6 +378,7 @@ extension CanvasEditor {
     func selectAllItems() -> Bool {
         guard let (selection, _, listed) = itemContext(), let state = selectionState else { return false }
         state.setItems(listed.map(\.id), of: selection.shape, anchor: listed.first?.id)
+        announceItems(from: selection.ids.count)
         return true
     }
 }
@@ -382,6 +416,13 @@ extension PointingItemSession: Session {
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         guard pointer.view.distance(to: press) > Style.dragThreshold else { return }
         let origin = editor.camera.toWorld(press)
+        // ⌘ held is the brush from anywhere on a shape (the key hint "⌘ Drag: Select Shapes Wholly in the Box"), a row too.
+        if modifiers.contains(.command) {
+            let brush = BrushingSession(origin: origin, in: editor)
+            editor.session = brush
+            brush.drag(pointer, in: editor)
+            return
+        }
         var next: (any Session)?
         if let selection = editor.selectedItems, selection.ids.contains(item), let record = editor.document[shape],
            let drag = editor.itemSource(of: record.kind)?.actions.drag {
@@ -399,9 +440,11 @@ extension PointingItemSession: Session {
             let order = editor.shapeItems(of: shape).map(\.id)
             guard let from = order.firstIndex(of: selected.anchor), let to = order.firstIndex(of: item) else { return }
             state.setItems((min(from, to)...max(from, to)).map { order[$0] }, of: shape, anchor: selected.anchor)
+            editor.announceItems(from: selected.ids.count)
         } else if modifiers.contains(.command), let selected {
             let ids = selected.ids.contains(item) ? selected.ids.filter { $0 != item } : selected.ids + [item]
             if ids.isEmpty { state.clearItems() } else { state.setItems(ids, of: shape, anchor: selected.anchor) }
+            editor.announceItems(from: selected.ids.count)
         } else if selected?.ids == [item] {
             // A click on the only selected item opens it there (a row edited from the click), as a click on the only
             // selected note edits it; a locked shape's is only selected, as a click on a locked note isn't a try.
