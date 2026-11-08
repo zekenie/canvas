@@ -291,11 +291,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     /// Slides the text so the caret stays in the clip.
     private func keepCaretInClip() {
+        // The caret in the field's own coordinates, which slide with it: in view while it's `slide` to `slide + limit`.
         guard let caret = field.caretFrame else { return }
-        let at = caret.offsetBy(dx: slide, dy: 0), limit = clip.frame.width - 1
+        let limit = clip.frame.width - 1
         var next = slide
-        if at.maxX - next > limit { next = at.maxX - limit }
-        if at.minX - next < 0 { next = max(0, at.minX) }
+        if caret.maxX - next > limit { next = caret.maxX - limit }
+        if caret.minX - next < 0 { next = max(0, caret.minX) }
         guard next != slide else { return }
         slide = next
         field.frame.origin.x = -slide
@@ -407,9 +408,10 @@ final class LineSession<Model: LineModel>: LineRowsView {
         needsDisplay = true
     }
 
-    /// What the kind reads: where the waiting line is, and which row the field draws.
+    /// What the kind reads: where the waiting line is while it has the caret (it takes no room otherwise, as the frames
+    /// draw a table whose row is being typed in), and which row the field draws.
     private func setInputs() {
-        editor.setLayoutInput(LineRowsLayout.waiting, waitingLine, for: id)
+        editor.setLayoutInput(LineRowsLayout.waiting, focus == .waiting ? waitingLine : nil, for: id)
         if case .row(let row) = focus {
             editor.setLayoutInput(LineRowsLayout.focused, row, for: id)
         } else {

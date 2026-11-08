@@ -5,8 +5,8 @@ import Selection
 /// What the session sets on the shape it edits, for its kind's render and layout: nothing on any other shape, and
 /// nothing once editing ends, so a frame pays nothing more.
 public enum LineRowsLayout {
-    /// Where the waiting line is, an index among the rows (its count: last): the kind lays itself out a line taller and
-    /// leaves that line empty, the field's to draw.
+    /// Where the waiting line is while it has the caret, an index among the rows (its count: last): the kind lays itself
+    /// out a line taller and leaves that line empty, the field's to draw. Nil while a row or the title has the caret.
     public static let waiting = LayoutInputKey<Int>("line-rows-waiting")
     /// The row the caret is in: the kind draws it not at all, since the field draws it as it's typed.
     public static let focused = LayoutInputKey<PartID>("line-rows-focused")
