@@ -32,6 +32,8 @@ extension APIDefinition: ShapeDefinition {
         guard !lines.isEmpty else { return }
         let types = context.shapes.service(TypeIndex.self)
         let more = rows.more
+        // A row after the first header is a member (headers aside): found once, not a row at a time.
+        let firstHeader = api.endpoints.firstIndex { $0.header != nil } ?? api.endpoints.count
         for line in lines {
             let rect = KitStyle.rowRect(line, in: rowsFrame)
             if line == more?.line, let more {
@@ -48,7 +50,7 @@ extension APIDefinition: ShapeDefinition {
             case .endpoint where focused:
                 continue
             case .endpoint(let endpoint):
-                APIDrawing.drawEndpoint(endpoint, member: APIGroups.isMember(index, in: api.endpoints), types: types, in: rect, cg)
+                APIDrawing.drawEndpoint(endpoint, member: index > firstHeader, types: types, in: rect, cg)
             }
         }
     }
@@ -93,14 +95,16 @@ extension APIDefinition: CustomSizing {
 /// chip before it), a header by its prefix; taken out by their ids (`canvas draw`'s `delete`).
 extension APIDefinition: PartedShape {
     func parts(of shape: ShapeRecord<API>) -> [PartName] {
-        let rows = shape.props.endpoints
-        return rows.indices.map { index in
-            switch rows[index] {
+        // One pass, the header each endpoint is under carried along.
+        var prefix = ""
+        return shape.props.endpoints.map { row in
+            switch row {
             case .header(let header):
-                PartName(id: header.id, name: header.prefix, kindWord: APIStyle.prefixWord)
+                prefix = header.prefix
+                return PartName(id: header.id, name: header.prefix, kindWord: APIStyle.prefixWord)
             case .endpoint(let endpoint):
-                PartName(id: endpoint.id, name: APIGroups.fullName(of: index, in: rows), kindWord: APIStyle.endpointWord,
-                         lead: endpoint.method.isEmpty ? .none : .chip(endpoint.method), standsAlone: true)
+                return PartName(id: endpoint.id, name: APIGroups.fullName(method: endpoint.method, path: APIGroups.joined(prefix, endpoint.path)),
+                                kindWord: APIStyle.endpointWord, lead: endpoint.method.isEmpty ? .none : .chip(endpoint.method), standsAlone: true)
             }
         }
     }
@@ -129,6 +133,7 @@ extension APIDefinition: CustomSkeleton {
             bars.append(bar)
         }
         let rowsFrame = APIRows.rowsFrame(frame), more = rows.more
+        let firstHeader = api.endpoints.firstIndex { $0.header != nil } ?? api.endpoints.count
         for line in KitPaper.skeletonRowsInView(rows.lines(api.endpoints.count), in: rowsFrame, context) {
             let rect = KitStyle.rowRect(line, in: rowsFrame)
             if line == more?.line, let more {
@@ -136,7 +141,7 @@ extension APIDefinition: CustomSkeleton {
                 continue
             }
             guard let index = rows.row(atLine: line) else { continue }
-            let x = start + (api.endpoints[index].header != nil || APIGroups.isMember(index, in: api.endpoints) ? APIStyle.memberIndent : 0)
+            let x = start + (index >= firstHeader ? APIStyle.memberIndent : 0)
             switch api.endpoints[index] {
             case .header(let header):
                 if let bar = KitPaper.bar(columns: SkeletonText.columns(of: header.prefix, upTo: KitStyle.skeletonMostColumns), column: APIStyle.skeletonColumn,
