@@ -59,7 +59,8 @@ extension ShapeRegistrar {
                 rows(carrier).map { row in
                     model.grammar(for: model.role(of: row)).print(row, in: LineContext(editor: editor, shape: carrier.id, row: model.id(of: row))).string
                 }
-            }), to: LineRowsMoves.self)
+            },
+            widening: { record, editor in model.widening(record, in: editor) }), to: LineRowsMoves.self)
         shapeItems(named: "rows", { editor, record in
             // Each row's words are worked out only when an item's title is asked (VoiceOver), so listing them costs their rects.
             let all = rows(record)

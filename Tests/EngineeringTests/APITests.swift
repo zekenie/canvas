@@ -113,6 +113,20 @@ extension KitBench {
         expectEqual(h.editor.accessibleDescription(of: try require(h.editor.document[api.id])).label, "orders API, API")
         expectEqual(h.editor.accessibleDescription(of: try require(h.editor.document[api.id])).value, "1 endpoint")
     },
+    test("an endpoint committed wider than the API writes the width its path and pills read whole at, in the same step, Add Endpoint") {
+        let b = try KitBench()
+        let api = b.api("orders API", [])
+        let initial = try require(b.editor.document[api]?.box?.width)
+        b.begin(api)
+        b.type("post /orders/{id}/refunds/{refund_id}/disputes/{dispute_id}/evidence (NewEvidence) -> 201 Evidence")
+        b.press(.return)
+        let width = try require(b.editor.document[api]?.box?.width)
+        expect(width > initial && width <= 760, "the path whole at rest, at most the widest a row makes one: \(width)")
+        expectEqual(b.undoName, "Add Endpoint")
+        b.press(.escape)
+        b.editor.undo()
+        expectEqual(b.editor.document[api]?.box?.width, initial, "undone with its row")
+    },
     test("/api on a board named shop: shop API, edited at its empty row, the server faint above it; /api orders API, so titled; each one step, Add API") {
         let h = try kitHarness()
         h.editor.nameRoot("shop")

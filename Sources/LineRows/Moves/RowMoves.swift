@@ -49,6 +49,8 @@ public struct LineRowsMoving {
     let headerNoun: LineNoun?
     /// A carrier's rows as their lines print, one a line: what goes on the pasteboard as text beside them.
     let lines: @MainActor (AnyShapeRecord, CanvasEditor) -> [String]
+    /// The shape as wide as its rows read whole at rest, where it's narrower (`LineModel.widening`); nil where it's wide enough.
+    let widening: @MainActor (AnyShapeRecord, CanvasEditor) -> AnyShapeRecord?
 
     public init(noun: LineNoun, takes: @escaping @MainActor (ShapeKind) -> Bool, rows: @escaping @MainActor (AnyShapeRecord) -> [PartID]?,
                 carrier: @escaping @MainActor (AnyShapeRecord, [PartID]) -> AnyShapeRecord?,
@@ -56,7 +58,9 @@ public struct LineRowsMoving {
                 inserting: @escaping @MainActor (AnyShapeRecord, AnyShapeRecord, Int, [PartID: PartID]) -> AnyShapeRecord?,
                 reordering: @escaping @MainActor (AnyShapeRecord, [PartID], Int) -> AnyShapeRecord?,
                 takeOut: @escaping @MainActor (AnyShapeRecord) -> AnyShapeRecord?, editsTitle: Bool, headerNoun: LineNoun? = nil,
-                lines: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> [String]) {
+                lines: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> [String],
+                widening: @escaping @MainActor (AnyShapeRecord, CanvasEditor) -> AnyShapeRecord? = { _, _ in nil }) {
+        self.widening = widening
         self.noun = noun
         self.takes = takes
         self.rows = rows
@@ -254,11 +258,15 @@ extension CanvasEditor {
             landing = .into(target, index: before.flatMap { order.firstIndex(of: $0) } ?? order.count, renaming: renaming)
         case .board(let origin):
             guard var made = moving.takeOut(carrier) else { return nil }
+            if let wider = moving.widening(made, self) { made = wider }
             made = placed(made, at: origin)
             landing = .out(made)
         case .beside(let shapes):
             besideShapes = shapes.filter { document[$0] != nil }
-            guard let made = moving.takeOut(carrier), let size = laidOutSize(of: made),
+            guard var made = moving.takeOut(carrier) else { return nil }
+            // As wide as its rows read whole, before it's placed.
+            if let wider = moving.widening(made, self) { made = wider }
+            guard let size = laidOutSize(of: made),
                   let frame = insertionFrame(of: size, beside: shapes.filter { document[$0] != nil }) else { return nil }
             landing = .out(placed(made, at: frame.origin))
         }
@@ -287,7 +295,8 @@ extension CanvasEditor {
                 case .into(let target, let index, let renaming):
                     guard let fresh = transaction.document[target], let into = registry.rowMoving(of: fresh.kind),
                           let filled = into.inserting(fresh, carrier, index, renaming) else { throw Transaction.Refused([target]) }
-                    transaction.update(target) { $0 = filled }
+                    let whole = into.widening(filled, self) ?? filled
+                    transaction.update(target) { $0 = whole }
                 case .out(let made):
                     transaction.insert(made)
                 }

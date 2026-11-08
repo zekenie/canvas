@@ -121,6 +121,31 @@ let columnCorpus = [
         b.type("email text unique ")
         expectEqual(b.field.listedOffers, ["null", "default", "pk", "→"], "what the line says already isn't offered")
     },
+    test("a line committed wider than the table writes the width it reads whole at, in the same step; never narrower, at most the widest") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        let width = { b.editor.document[orders]?.box?.width ?? 0 }
+        // The widest a row makes one, 560 (`TableStyle`).
+        let initial = width()
+        b.begin(orders)
+        b.type("shipping_address_line_two character varying(255) null")
+        b.press(.return)
+        expect(b.lines(orders).last?.hasPrefix("shipping_address_line_two") ?? false)
+        let whole = width()
+        expect(whole > initial && whole < 560, "written as it committed, so it reads whole at rest and doesn't jump narrower: \(whole)")
+        expectEqual(b.undoName, "Add Column", "the same step")
+        b.type("id2 int")
+        b.press(.return)
+        expectEqual(width(), whole, "a short line leaves it as wide as it is")
+        b.press(.escape)
+        b.editor.undo()
+        b.editor.undo()
+        expectEqual(width(), initial, "undone, the width with it")
+        b.begin(orders)
+        b.type("payload " + String(repeating: "x", count: 200))
+        b.press(.return)
+        expectEqual(width(), 560, "no wider than the kind lets a row make it")
+    },
     test("a type typed whole that longer types extend keeps the list (`time`: timestamp, timestamptz), the word first; ↓ is the next row") {
         let b = try KitBench()
         let orders = b.table("orders", ["id uuid pk", "customer_id uuid"])

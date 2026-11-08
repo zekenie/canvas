@@ -96,6 +96,14 @@ extension SelectTool: Tool {
         let face = isPlain && isReached ? editor.faceHit(on: hit, at: pointer.world) : nil
         let keepsSelection = command || unitSelected || insideSelection
         let wasOnlySelection = editor.selectedShapeIDs == [id]
+        // An item's lead (an endpoint's method chip, a row's mark) is pressed before faces: a click runs it, a drag drags its
+        // item. The shape is selected only once the press turns out to be a click, so a drag of a row from an unselected
+        // shape leaves the selection, and the inspector it shows, as they were until the drop.
+        if isPlain, pointer.clickCount == 1, isReached, hit.isOnShape, let lead = editor.itemLead(on: id, at: pointer.world) {
+            editor.session = PointingLeadSession(shape: id, lead: lead, press: pointer.view, wasSelected: wasOnlySelection,
+                                                 selecting: keepsSelection ? nil : unit)
+            return
+        }
         if !keepsSelection {
             editor.selectedShapeIDs = shift ? editor.selectedShapeIDs + unit : unit
         }
@@ -134,11 +142,6 @@ extension SelectTool: Tool {
         // On a label (`LabeledShape`), a click edits and a drag moves the label: both wait for the
         // threshold.
         let onLabel = isReached && hit.isOnShape && editor.isOnLabel(id, at: pointer.world)
-        // An item's lead (an endpoint's method chip) is pressed before faces: a click runs it, a drag drags its item.
-        if isPlain, pointer.clickCount == 1, isReached, hit.isOnShape, let lead = editor.itemLead(on: id, at: pointer.world) {
-            editor.session = PointingLeadSession(shape: id, lead: lead, press: pointer.view, wasSelected: wasOnlySelection)
-            return
-        }
         // A face waits for the drag threshold, even on a lone box: released within it, it clicks.
         if let face {
             editor.session = PointingShapeSession(shapeID: id, press: pointer.view, didSelectOnPress: !keepsSelection,

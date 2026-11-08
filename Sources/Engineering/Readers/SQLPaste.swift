@@ -45,11 +45,13 @@ public enum SQLPaste {
     }
 
     /// What ⌘V puts down of the pasteboard's SQL: nil when no table and no enum reads.
+    @MainActor
     static func read(_ content: PasteContent, keys: KeyChannel) -> DrawPut? {
         text(of: content).flatMap { program(of: $0, keys: keys) }
     }
 
     /// What a paste of `text` puts down: nil when no table and no enum reads.
+    @MainActor
     static func program(of text: String, keys: KeyChannel) -> DrawPut? {
         let schema = SQLReader.read(text)
         return schema.isEmpty ? nil : put(schema, keys: keys)
@@ -57,6 +59,7 @@ public enum SQLPaste {
 
     /// The program that puts `schema` down: its tables and enums in the order they were made, four to a row, each table's keys the
     /// edges it implies.
+    @MainActor
     static func put(_ schema: SQLSchema, keys: KeyChannel) -> DrawPut {
         var shapes: [DrawPut.Shape] = []
         for item in schema.order {
@@ -72,6 +75,7 @@ public enum SQLPaste {
     // MARK: Statements
 
     /// A table's statement: its title, its schema's database, its columns as JSON, its keys as edges.
+    @MainActor
     private static func table(_ table: SQLTable, of schema: SQLSchema, keys: KeyChannel) -> DrawPut.Shape {
         let keyed = Set(table.keys.map(\.column))
         let columns: [Any] = table.columns.map { column in
@@ -105,6 +109,12 @@ public enum SQLPaste {
         var shape = shape(DatabaseTable.kind, table.name)
         shape.json = [(key: "columns", text: json(columns))]
         shape.edges = edges
+        // As wide as its columns read whole (a pg_dump's `character varying(255)`), as a commit widens a table (Tables'); a table
+        // the file has keeps its width.
+        shape.size = DrawPut.Dimensions(width: TableDefinition.wholeWidth(of: table.columns.map { column in
+            TableDefinition.WholeRow(name: column.name, type: typeWords(column.type.words, in: schema, from: table.name.schema), pill: nil,
+                                     nullable: column.nullable)
+        }))
         return shape
     }
 

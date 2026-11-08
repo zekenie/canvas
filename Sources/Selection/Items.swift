@@ -461,7 +461,9 @@ extension PointingItemSession: Session {
 }
 
 /// A press on an item's lead (`ShapeItemActions.lead`): released, its click; past the threshold, that item dragged at once,
-/// selected or not.
+/// selected or not. What a press on the shape would select (`selecting`) waits for the release: a click selects it, then
+/// runs the lead's click; a row dragged from a shape not selected leaves the selection as it was (so the inspector neither
+/// slides in nor out over the drop target mid-drag), and one from the selected shape shows its row selected as it goes.
 @MainActor
 final class PointingLeadSession {
     let shape: ShapeID
@@ -469,12 +471,16 @@ final class PointingLeadSession {
     let press: CGPoint
     /// Whether the shape was the only one selected before the press.
     let wasSelected: Bool
+    /// What the press would have selected, made so once it's a click (or a drag of the shape as a whole); nil keeps the
+    /// selection.
+    let selecting: [ShapeID]?
 
-    init(shape: ShapeID, lead: ItemLead, press: CGPoint, wasSelected: Bool) {
+    init(shape: ShapeID, lead: ItemLead, press: CGPoint, wasSelected: Bool, selecting: [ShapeID]? = nil) {
         self.shape = shape
         self.lead = lead
         self.press = press
         self.wasSelected = wasSelected
+        self.selecting = selecting
     }
 }
 
@@ -487,9 +493,10 @@ extension PointingLeadSession: Session {
         // row isn't selected, and the release isn't the lead's click.
         var session: (any Session)?
         if !editor.isReadOnly(shape) {
-            editor.selectItems([lead.item], of: shape)
+            if editor.selectedShapeIDs.contains(shape) { editor.selectItems([lead.item], of: shape) }
             session = drag(editor, shape, [lead.item], origin)
         }
+        if session == nil, let selecting { editor.selectedShapeIDs = selecting }
         let next = session ?? editor.translationSession(from: origin, pointer: pointer)
         editor.session = next
         next.drag(pointer, in: editor)
@@ -497,6 +504,7 @@ extension PointingLeadSession: Session {
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         editor.session = nil
+        if let selecting { editor.selectedShapeIDs = selecting }
         lead.click(editor, wasSelected)
     }
 

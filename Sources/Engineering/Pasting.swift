@@ -33,6 +33,7 @@ extension SQLPaste {
 
     /// What ⌘V of `text` puts down, Draw to put it down (`Draw.put`): its tables and enums by their titles, in rows of four, each
     /// table's keys the edges it implies; nil when no table and no enum reads.
+    @MainActor
     public static func program(of text: String) -> DrawPut? {
         program(of: text, keys: foreignKeys)
     }

@@ -80,6 +80,24 @@ private let paymentsSQL = """
         h.editor.undo()
         expectEqual(h.editor.document, before, "one Undo takes it")
     },
+    test("a pg_dump's long types: the table made as wide as its columns read whole, up to the widest; one the file has keeps its width") {
+        let h = try pasteHarness()
+        let dump = """
+            CREATE TABLE public.shipments (
+                id uuid NOT NULL,
+                shipping_address character varying(255),
+                tracking_number character varying(64) NOT NULL,
+                shipped_at timestamp with time zone
+            );
+            """
+        let landed = try paste(dump, in: h)
+        let shipments = try require(landed.first)
+        let width = try require(h.editor.document[shipments]?.box?.width)
+        expect(width > 260 && width <= 560, "wider than a new table's 260, as its columns read whole at rest: \(width)")
+        h.editor.transact { $0.update(shipments) { $0.box?.size.width = 300 } }
+        try paste(dump, in: h)
+        expectEqual(h.editor.document[shipments]?.box?.width, 300, "pasted again, the width the person left it at")
+    },
     test("pasted again: the table found by its title, its columns updated in place with their ids, a new column after the one pasted before it, one left out kept") {
         let h = try pasteHarness()
         try paste(paymentsSQL, in: h)
