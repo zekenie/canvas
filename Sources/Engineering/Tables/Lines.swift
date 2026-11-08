@@ -363,10 +363,25 @@ struct TableLines: LineModel {
     func rows(of props: DatabaseTable) -> [ColumnLine] { props.columns.map { ColumnLine($0) } }
     func setRows(_ rows: [ColumnLine], in props: inout DatabaseTable) { props.columns = rows.map(\.column) }
     func id(of row: ColumnLine) -> PartID { row.column.id }
+    func renaming(_ row: ColumnLine, to id: PartID) -> ColumnLine {
+        var row = row
+        row.column.id = id
+        return row
+    }
     func role(of row: ColumnLine) -> LineRole { LineLooks.column }
     func roleOfNewRow(at index: Int, in props: DatabaseTable) -> LineRole { LineLooks.column }
     func grammar(for role: LineRole) -> any LineGrammar<ColumnLine> { ColumnLineGrammar() }
     func lineRect(_ line: Int, in frame: CGRect) -> CGRect { KitStyle.rowRect(line, in: frame) }
+
+    /// Columns taken out are a new table (T5 panel 4: `addresses`): its own `id uuid pk` first, then the columns, as wide as
+    /// the table they came from; its name typed at once.
+    func takeOut(_ rows: [ColumnLine], from shape: ShapeRecord<DatabaseTable>) -> DatabaseTable {
+        var table = DatabaseTable.starter()
+        table.columns += rows.map(\.column)
+        table.frame.size = CGSize(width: shape.props.frame.width, height: KitStyle.height(rows: table.columns.count))
+        return table
+    }
+    var takeOutEditsTitle: Bool { true }
 
     /// What a line doesn't say stays: on delete, on update.
     func merged(_ read: ColumnLine, onto held: ColumnLine) -> ColumnLine {
@@ -504,6 +519,19 @@ struct EnumLines: LineModel {
     func rows(of props: DatabaseEnum) -> [EnumValue] { props.values }
     func setRows(_ rows: [EnumValue], in props: inout DatabaseEnum) { props.values = rows }
     func id(of row: EnumValue) -> PartID { row.id }
+    func renaming(_ row: EnumValue, to id: PartID) -> EnumValue {
+        var row = row
+        row.id = id
+        return row
+    }
+    /// Values taken out are an enum of their own, its name typed at once.
+    var takeOutEditsTitle: Bool { true }
+    func takeOut(_ rows: [EnumValue], from shape: ShapeRecord<DatabaseEnum>) -> DatabaseEnum {
+        var type = shape.props
+        type.values = rows
+        type.frame.size.height = KitStyle.height(rows: rows.count)
+        return type
+    }
     func role(of row: EnumValue) -> LineRole { LineLooks.value }
     func roleOfNewRow(at index: Int, in props: DatabaseEnum) -> LineRole { LineLooks.value }
     func grammar(for role: LineRole) -> any LineGrammar<EnumValue> { EnumLineGrammar() }

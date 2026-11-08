@@ -157,10 +157,10 @@ extension PluginRegistrar {
 // MARK: Reading them
 
 extension CanvasEditor {
-    /// A shape's parts (`ShapeParts`), in reading order of their rects' middles (`StopOrder.reading`, as
-    /// Tab reads shapes, a row being parts level within half the shortest one's height, so a note's rows are
-    /// read top to bottom), parts whose middles are level in `order`, then plugin order; a part two plugins
-    /// list (the same id) once. None for a shape not on the board shown, nor for the shape being edited,
+    /// A shape's parts (`ShapeParts`): its own (chips, pills, buttons, handles) and then its arrows (`.connection`), each in
+    /// reading order of their rects' middles (`StopOrder.reading`, as Tab reads shapes, a row being parts level within half
+    /// the shortest one's height, so a note's rows are read top to bottom), parts whose middles are level in `order`, then
+    /// plugin order; a part two plugins list (the same id) once. None for a shape not on the board shown, nor for the shape being edited,
     /// whose parts are its editor's.
     public func shapeParts(of id: ShapeID) -> [ShapePart] {
         guard editingShapeID != id, let record = document[id] else { return [] }
@@ -171,9 +171,14 @@ extension CanvasEditor {
             .sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }
             .flatMap { $0.element.parts(self, record) }
             .filter { !$0.rect.isNull && seen.insert($0.id).inserted }
+        // The shape's own parts first (chips, pills, buttons, handles), then its arrows (keyboard navigation's principle 3),
+        // each in reading order: ⌥⇧Tab from the shape reaches its last arrow at once, and ⌥Tab still starts at its first chip.
         // A row of parts is level within half the shortest one's height: a note's rows, a field's height apart, are rows of their own.
-        let range = max(1, (listed.map(\.rect.height).min() ?? 0) / 2)
-        return StopOrder.reading(listed, rowRange: range) { CGPoint(x: $0.rect.midX, y: $0.rect.midY) }
+        func reading(_ parts: [ShapePart]) -> [ShapePart] {
+            let range = max(1, (parts.map(\.rect.height).min() ?? 0) / 2)
+            return StopOrder.reading(parts, rowRange: range) { CGPoint(x: $0.rect.midX, y: $0.rect.midY) }
+        }
+        return reading(listed.filter { $0.role != .connection }) + reading(listed.filter { $0.role == .connection })
     }
 
     /// The focused part of the only selected shape (⌥Tab), as listed now; nil when none is.
@@ -252,15 +257,17 @@ extension CanvasEditor {
     /// An arrow key on the canvas: with a selection, `arrow`; with none, the view panned that way a step, a page
     /// with ⇧ (`pan`).
     func arrowKey(_ direction: CGPoint, large: Bool) {
+        if arrowOnItems(direction, extending: large) { return }
         if canNudge { return arrow(direction, large: large) }
         guard canPanByKeys else { return }
         pan(direction.x < 0 ? .left : direction.x > 0 ? .right : direction.y < 0 ? .up : .down, far: large)
     }
 
     /// Return and Enter on the canvas: the focused part pressed (⌥Tab), else the placing tool's shape put down and
-    /// edited (`placeAtKeyboard`), else the selection opened (`.openSelection`).
+    /// edited (`placeAtKeyboard`), else the first selected item opened (a row edited), else the selection opened
+    /// (`.openSelection`).
     func returnKey() {
-        if pressFocusedPart() || placeAtKeyboard() { return }
+        if pressFocusedPart() || placeAtKeyboard() || openSelectedItem() { return }
         perform(.openSelection)
     }
 }
@@ -270,6 +277,7 @@ extension CanvasEditor {
 extension SelectionState {
     /// The focus moves to `part` of `shape`; the ring is drawn there.
     func focusPart(_ part: ShapePart, of shape: ShapeID) {
+        items = nil
         partFocus = PartFocus(shape: shape, part: part.id)
         focusedPartRing = PartRing(rect: part.rect, revision: editor.revision, layout: editor.layoutRevision, zoom: editor.camera.zoom)
         editor.setNeedsDisplay()

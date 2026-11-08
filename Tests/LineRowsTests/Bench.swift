@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 @_spi(Host) import CanvasUI
+import ContextMenus
 import Find
 import Keyboard
 import LineRows
@@ -19,16 +20,23 @@ final class Bench {
     let refusals = RefusalLog()
     let window: NSWindow
     let canvas: CanvasView
+    /// The editor's pasteboard: the test's own, never the person's.
+    let pasteboard = NSPasteboard.withUniqueName()
 
     /// With `find`, Find and the tallies' entries as its texts, a text an entry by its id.
     init(find: Bool = false) throws {
         let finding: [any CanvasPlugin] = find ? [FindPlugin(), TallyFindPlugin()] : []
-        h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin()] + finding + [LineRowsPlugin(), TalliesPlugin(log: log), FreezingPlugin(log: refusals)])
+        h = try EditorHarness(plugins: [KeyboardPlugin(), SelectionPlugin(), ContextMenusPlugin()] + finding
+                              + [LineRowsPlugin(), TalliesPlugin(log: log), FreezingPlugin(log: refusals), PasteboardPlugin(pasteboard: pasteboard)])
         window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         canvas = CanvasView(editor: h.editor)
         window.contentView = canvas
         h.editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+    }
+
+    isolated deinit {
+        pasteboard.releaseGlobally()
     }
 
     /// A tally called `name`, its entries read from `lines`, in a step of its own.
@@ -116,4 +124,15 @@ extension Chord {
     static let commandDown = Chord(Key.down, .command)
     static let shiftReturn = Chord(Key.return, .shift)
     static let commandDelete = Chord(Key.delete, .command)
+}
+
+/// Gives the editor a pasteboard, as Clipboard does in the app: the test's own.
+struct PasteboardPlugin: CanvasPlugin {
+    let pasteboard: NSPasteboard
+    var id: PluginID { "test-pasteboard" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        let pasteboard = pasteboard
+        registrar.pasteboard { _ in pasteboard }
+    }
 }

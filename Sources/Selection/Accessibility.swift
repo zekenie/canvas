@@ -10,17 +10,33 @@ extension SelectionPlugin {
     func registerAccessibility(into registrar: inout PluginRegistrar) {
         registrar.accessibleOrder { $0.selectionState?.readingOrder ?? [] }
         registrar.accessibleParts({ editor, id in
-            editor.shapeParts(of: id).map { part in
+            // Its items first (a table's rows), said selected as they are, then its ⌥Tab parts.
+            let selected = editor.selectedItems.flatMap { $0.shape == id ? Set($0.ids) : nil } ?? []
+            let items = editor.shapeItems(of: id).map { item in
+                let itemID = item.id
+                return AccessiblePart(id: ItemKey(id: itemID), title: item.title, role: .row, rect: item.rect,
+                                      isSelected: selected.contains(itemID)) { editor in
+                    editor.selectItems([itemID], of: id)
+                }
+            }
+            return items + editor.shapeParts(of: id).map { part in
                 let partID = part.id
                 return AccessiblePart(id: partID, title: part.title, role: part.role.accessible, rect: part.rect) { editor in
                     editor.pressPartForAccessibility(partID, of: id)
                 }
             }
         }, focused: { editor in
+            // The first item selected has the keyboard, else the focused part.
+            if let selection = editor.selectedItems, editor.canStepItems { return AccessiblePartFocus(shape: selection.shape, part: ItemKey(id: selection.ids[0])) }
             guard editor.hasFocusedPart, let focus = editor.selectionState?.partFocus else { return nil }
             return AccessiblePartFocus(shape: focus.shape, part: focus.part)
         })
     }
+}
+
+/// An item's key among its shape's accessible parts, apart from every part's.
+struct ItemKey: Hashable {
+    let id: AnyHashable
 }
 
 extension PartRole {

@@ -62,17 +62,21 @@ public struct AccessiblePart {
     public var rect: CGRect
     /// What pressing it does, as its click does.
     public var press: @MainActor (CanvasEditor) -> Void
+    /// Whether it is selected: a row of its shape selected as an item (Selection's).
+    public var isSelected: Bool
 
-    /// What kind of control it is, as the host gives it a role.
+    /// What kind of control it is, as the host gives it a role: `row` is a row of the shape (a table's column), selectable.
     public enum Role: Sendable {
-        case button, menuButton, link, checkbox, handle, connection
+        case button, menuButton, link, checkbox, handle, connection, row
     }
 
-    public init(id: AnyHashable, title: String, role: Role, rect: CGRect, press: @escaping @MainActor (CanvasEditor) -> Void) {
+    public init(id: AnyHashable, title: String, role: Role, rect: CGRect, isSelected: Bool = false,
+                press: @escaping @MainActor (CanvasEditor) -> Void) {
         self.id = id
         self.title = title
         self.role = role
         self.rect = rect
+        self.isSelected = isSelected
         self.press = press
     }
 }

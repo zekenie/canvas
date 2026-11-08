@@ -276,11 +276,13 @@ let parts: KeyValuePairs<String, [String]> = [
     "Types/Rows": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form"],
     "Types/Engines": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form", "Rows"],
     // LineRows: the line a row is typed in and the grammar its lines are read and printed in; the kinds written as lines
-    // and the lines a shape shows (folds, peeks); the session of a shape being edited, its stops, keys and commits; a row's card.
+    // and the lines a shape shows (folds, peeks); rows moved as wholes (within a shape, into another, out into a new one) and
+    // on the pasteboard; the session of a shape being edited, its stops, keys and commits; a row's card.
     "LineRows/Field": [],
     "LineRows/Folds": [],
-    "LineRows/Session": ["Field", "Folds"],
-    "LineRows/Card": ["Field", "Folds", "Session"],
+    "LineRows/Moves": ["Folds"],
+    "LineRows/Session": ["Field", "Folds", "Moves"],
+    "LineRows/Card": ["Field", "Folds", "Moves", "Session"],
     // Engineering: the kinds' props and looks' constants; the line grammars a column and an enum's values are
     // written in, read and printed (pure); the table, the enum and the database, drawn, placed and written.
     "Engineering/Model": [],
@@ -336,7 +338,7 @@ let package = Package(
         // References: a pill that stands for any public shape, of a kind written after it too: what every shape gets, though it is a kind.
         .target(name: "References", dependencies: ["Boards", "Canvas", "CanvasRPC", "Chrome", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "Mentions", "Palette", "Publishing", "Queries", "QueryLanguage", "QueryTranslation", "Selection", "TableOfContents", "TextEditing", "Topology", "Validation"]), // layer: platform
         // Things you do: a palette, a command, a gesture, that no kind opts into and nothing builds on (but Clipboard, whose paste readers a plugin may import it for).
-        .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Draw", "Geometry", "Grouping", "Keyboard", "Selection"]), // layer: platform
+        .target(name: "Clipboard", dependencies: ["Canvas", "ContextMenus", "Draw", "Geometry", "Grouping", "Keyboard", "LineRows", "Selection"]), // layer: platform
         .target(name: "Snapping", dependencies: ["Canvas", "Geometry"]),                      // layer: platform
         // Jump To (⌘K): it lists
         // the titled shapes Titles names (each tinted as its kind is, the core's `registry.label(of:)`), goes to one as Boards' crumbs do (Boards'
@@ -354,9 +356,11 @@ let package = Package(
         // committed as the caret leaves it, one step the kind names; Titles' field for the title stop, Selection for Tab's
         // hops to the next shape of the kind; Connections for ⌘L in a row (its key, and the picker it opens on the row, which
         // imports no LineRows); Keyboard for ⌃⌘↑ and ⌃⌘↓, which fold and unfold, and Find for the rows a fold shows while they
-        // hold its hits. Its parts: Field, the line and its grammar; Folds, the lines a shape shows; Session, the stops, keys
-        // and commits.
-        .target(name: "LineRows", dependencies: ["Canvas", "Connections", "Find", "FuzzyMatching", "Keyboard", "Selection", "TextEditing", "Titles"]), // layer: platform
+        // hold its hits; Selection's items for rows selected on the canvas, ContextMenus for the take-out in the selection's
+        // menu, and Topology for the arrows a row starts, which a copy of it carries. Its parts: Field, the line and its
+        // grammar; Folds, the lines a shape shows; Moves, rows moved as wholes and on the pasteboard; Session, the stops, keys
+        // and commits; Card, a row's card.
+        .target(name: "LineRows", dependencies: ["Canvas", "Connections", "ContextMenus", "Find", "FuzzyMatching", "Keyboard", "Selection", "TextEditing", "Titles", "Topology"]), // layer: platform
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard", "SlashCommands"], path: "Examples/Reordering"), // layer: platform
         // Engines: what any plugin may run or ask.
@@ -426,7 +430,7 @@ let package = Package(
         .executableTarget(name: "DecisionModelsTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "DecisionModels", "LanguageModels", "TestKit"], path: "Tests/DecisionModelsTests"), // layer: test
         .executableTarget(name: "LanguageRulesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "ContextMenus", "DecisionModels", "DetailPanel", "Geometry", "Keyboard", "LanguageModels", "LanguageRules", "Mentions", "ProseMaps", "Queries", "QueryTranslation", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles", "Topology", "Types", "Validation"], path: "Tests/LanguageRulesTests"), // layer: test
         .executableTarget(name: "ProseMapsTests", dependencies: ["Canvas", "CanvasTesting", "LanguageModels", "ProseMaps", "TestKit"], path: "Tests/ProseMapsTests"), // layer: test
-        .executableTarget(name: "LineRowsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "Find", "Geometry", "Keyboard", "LineRows", "Selection", "TestKit", "TextEditing"], path: "Tests/LineRowsTests"), // layer: test
+        .executableTarget(name: "LineRowsTests", dependencies: ["Canvas", "CanvasTesting", "CanvasUI", "ContextMenus", "Find", "Geometry", "Keyboard", "LineRows", "Selection", "TestKit", "TextEditing"], path: "Tests/LineRowsTests"), // layer: test
         .executableTarget(name: "TitlesTests", dependencies: ["Adornments", "Canvas", "CanvasRPC", "CanvasTesting", "CanvasUI", "DetailPanel", "Find", "Geometry", "Keyboard", "Selection", "SlashCommands", "TableOfContents", "TestKit", "TextEditing", "Titles"], path: "Tests/TitlesTests"), // layer: test
         .executableTarget(name: "PortsTests", dependencies: ["Canvas", "CanvasRPC", "CanvasTesting", "Connections", "Geometry", "Keyboard", "Selection", "TestKit", "Topology"], path: "Tests/PortsTests"), // layer: test of Connections
         .executableTarget(name: "ArrowPortsTests", dependencies: ["Adornments", "Arrows", "Canvas", "CanvasTesting", "Colors", "Connections", "ContextMenus", "DetailPanel", "Draw", "Geometry", "Keyboard", "LanguageRules", "Mentions", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "TestKit", "Titles", "Topology", "Types"], path: "Tests/ArrowPortsTests"), // layer: test of Arrows

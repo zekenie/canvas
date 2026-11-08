@@ -3,6 +3,7 @@ import Canvas
 import Draw
 import Geometry
 import Grouping
+import LineRows
 import Selection
 
 /// Per editor: the copyability rules, gathered once (the registry is frozen), and what copying,
@@ -37,7 +38,7 @@ final class ClipboardState {
     static let cutType = NSPasteboard.PasteboardType("com.example.InfiniteCanvas.cut")
 
     private unowned let editor: CanvasEditor
-    private let pasteboard: NSPasteboard
+    let pasteboard: NSPasteboard
     /// Each kind's rule (`ShapeCopyability`), found once.
     private let rules: [ShapeKind: @MainActor (AnyShapeRecord) -> Bool]
     private let codec: BoardCodec
@@ -310,8 +311,9 @@ final class ClipboardState {
         return reading(.recognizing).map { ($0.name, $0.result, .read) }
     }
 
-    /// Whether a paste would put anything down: this app's shapes, or a recognizing reader that sniffs what is there.
+    /// Whether a paste would put anything down: rows, this app's shapes, or a recognizing reader that sniffs what is there.
     var hasShapes: Bool {
+        if RowsPasteboard.holdsRows(pasteboard) { return true }
         if let app = appShapes() { return !app.file.root.shapes.isEmpty }
         let readers = editor.contributions(to: PasteReaders.self).filter { $0.value.role == .recognizing }
         guard !readers.isEmpty else { return false }
@@ -353,6 +355,10 @@ final class ClipboardState {
     /// are restated, the nearest first, the rest made, landing beside the selection (centered on `point` for a click or the
     /// pointer), selected, in one step, "Paste" and the reader's name.
     func paste(centeredAt point: CGPoint? = nil) {
+        if RowsPasteboard.holdsRows(pasteboard) {
+            pasteRows(at: point)
+            return
+        }
         guard let (name, result, source) = pasteable() else {
             // Paste was lit by a reader's sniff (cheap, so it can say yes to text that reads as nothing): a key that does nothing says so.
             if hasShapes { editor.announce("Nothing to paste", priority: .low) }
@@ -364,6 +370,29 @@ final class ClipboardState {
         case .put(let program):
             putDown(program, at: point.map(PutSite.centered) ?? .beside(editor.selectedShapeIDs), named: "Paste \(name ?? "")")
         }
+    }
+
+    /// Rows on the pasteboard, put down: after the last row selected inside a shape that takes them (Selection's items), else
+    /// out on their own, the kind's take-out, at a click's point or beside the selection (in view with none), selected,
+    /// its name typed. A cut's rows move (`pasteRows`). Nothing for rows this app can't read.
+    private func pasteRows(at point: CGPoint?) {
+        guard let payload = RowsPasteboard.read(from: pasteboard, registry: editor.registry) else {
+            editor.announce("Nothing to paste", priority: .low)
+            return
+        }
+        editor.endEditing()
+        if point == nil, let selection = editor.selectedItems, let record = editor.document[selection.shape],
+           record.kind == payload.carrier.kind, let moving = editor.registry.rowMoving(of: record.kind) {
+            // After the last row selected: before the row that follows it.
+            let order = moving.rowIDs(of: record) ?? [], selected = Set(selection.ids.compactMap { $0.base as? PartID })
+            let last = order.lastIndex { selected.contains($0) }
+            let before = last.flatMap { $0 + 1 < order.count ? order[$0 + 1] : nil }
+            if last != nil {
+                editor.pasteRows(payload, to: .into(selection.shape, before: before))
+                return
+            }
+        }
+        editor.pasteRows(payload, to: point.map { .board(origin: $0) } ?? .beside(editor.selectedShapeIDs))
     }
 
     /// Paste as Note (⌥⇧⌘V): what the first plain reader on in the file reads of the pasteboard, put down beside the selection,
@@ -535,6 +564,29 @@ extension ClipboardState: EditorService {}
 
 extension CanvasEditor {
     var clipboard: ClipboardState? { service(ClipboardState.self) }
+
+    /// The rows selected inside the shape a key or the menu bar copies (Selection's items, as a subject with no point asks):
+    /// their ids, and the shape.
+    private func selectedRows(for subject: CommandSubject) -> (rows: [PartID], shape: ShapeID)? {
+        guard subject.point == nil, let selection = selectedItems, subject.shapes == [selection.shape] else { return nil }
+        let rows = selection.ids.compactMap { $0.base as? PartID }
+        return rows.isEmpty ? nil : (rows, selection.shape)
+    }
+
+    /// ⌘C with rows selected inside the shape: the rows on the pasteboard, with the arrows they start. Whether it took the key.
+    func copySelectedRows(for subject: CommandSubject) -> Bool {
+        guard let (rows, shape) = selectedRows(for: subject) else { return false }
+        copyRows(rows, of: shape)
+        return true
+    }
+
+    /// ⌘X with rows selected inside the shape: the rows on the pasteboard as a cut's, taken out with every arrow bound to them,
+    /// one step that counts them ("Cut Columns and 2 Arrows"). Whether it took the key.
+    func cutSelectedRows(for subject: CommandSubject) -> Bool {
+        guard session == nil, let (rows, shape) = selectedRows(for: subject) else { return false }
+        cutRows(rows, of: shape)
+        return true
+    }
 
     /// Whether the shape is there and its kind's rule (`ShapeCopyability`) lets it be copied.
     /// Without the Clipboard plugin, false.

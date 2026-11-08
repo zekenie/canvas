@@ -214,6 +214,7 @@ public struct SelectionPlugin: ListedPlugin {
         registrar.overlay(GroupFocusOverlay())
         registrar.overlay(HandlesOverlay())
         registrar.overlay(PartFocusOverlay())
+        registrar.overlay(ItemsOverlay())
         // The keys the select tool and resizing read with the pointer, for the Keyboard Shortcuts window.
         registrar.keyHint("⇧ or ⌘ Click", "Add or Remove From Selection", while: .pointer)
         registrar.keyHint("⌘ Drag", "Select Shapes Wholly in the Box", while: .pointer)
@@ -242,11 +243,17 @@ public struct SelectionPlugin: ListedPlugin {
         // An offscreen selection is brought into view as it goes, so the key's effect shows (P7).
         registrar.command(.delete, title: "Delete", answering: .delete, shortcuts: [.delete, .deleteForward],
                           isEnabled: { !$0.shapes.isEmpty && !$0.editor.hasFocusedPart(for: $0) }) {
+            // Items selected inside the shape (its rows) are what a key or the menu bar deletes: the kind's counted step.
+            if $0.editor.deleteItems(for: $0) { return }
             $0.editor.revealIfOffscreen($0.shapes)
             $0.editor.deleteShapes($0.shapes)
         }
         registrar.command(.selectAll, title: "Select All", answering: .selectAll, shortcut: KeyChord("a", .command),
-                          isEnabled: { !$0.editor.document.shapes.isEmpty }) { $0.editor.selectAll() }
+                          isEnabled: { !$0.editor.document.shapes.isEmpty }) { subject in
+            // With items selected, every item of their shape; else every shape.
+            if subject.editor.selectAllItems() { return }
+            subject.editor.selectAll()
+        }
         registrar.command(.goBack, title: "Back", in: NavigationSection.self, shortcuts: [KeyChord("[", .command), KeyChord("-", .control)],
                           runs: .betweenPresses, isEnabled: { $0.editor.canGoBack }) { $0.editor.goBack() }
         registrar.command(.goForward, title: "Forward", in: NavigationSection.self, placed: .after(.goBack),
@@ -265,7 +272,7 @@ public struct SelectionPlugin: ListedPlugin {
         // With ⌥ held they do the same, ⌥ being what a placement lays its shapes out by (`placeLater`: ⌥↩ puts
         // shapes waiting to be placed down as ⌥ shows them).
         registrar.shortcut(KeyChord(KeyChord.return.key, .option), openSelection) { $0.returnKey() }
-        registrar.pressFocused { $0.pressFocusedPart() }
+        registrar.pressFocused { $0.pressFocusedPart() || $0.toggleSelectedItem() }
         registrar.command(.zoomToSelection, title: "Zoom to Selection", in: ViewMenu.Zoom.self, shortcut: KeyChord("2", .shift),
                           isEnabled: { !$0.shapes.isEmpty && !$0.editor.unobscuredViewport.isEmpty }) { $0.editor.reveal($0.shapes) }
         registrar.command(.smartMagnify, title: "Smart Zoom", answering: .smartMagnify) { $0.editor.smartMagnify() }
@@ -273,23 +280,28 @@ public struct SelectionPlugin: ListedPlugin {
         // undo step, settled into or out of a container as the key is let go), while nothing's under way or
         // being edited; a focused part that adjusts (a handle) takes them instead. With nothing selected
         // they pan the view a step, and with ⇧ a page (the core's `pan`), as the Hand would.
+        // With items selected inside the only selected shape (its rows), they step through them instead: ↑ ↓ the item above
+        // or below, ⇧ extending the run, → ← opening and closing one that hides others.
         for (arrow, direction) in SelectionStyle.nudges {
-            registrar.shortcut(arrow, SelectionStyle.nudgeOrPan, when: { $0.canNudge || $0.canPanByKeys }, repeats: true) {
+            registrar.shortcut(arrow, SelectionStyle.nudgePanOrStep, when: { $0.canNudge || $0.canPanByKeys }, repeats: true) {
                 $0.arrowKey(direction, large: false)
             }
-            registrar.shortcut(KeyChord(arrow.key, .shift), SelectionStyle.nudgeOrPan, when: { $0.canNudge || $0.canPanByKeys }, repeats: true) {
+            registrar.shortcut(KeyChord(arrow.key, .shift), SelectionStyle.nudgePanOrStep, when: { $0.canNudge || $0.canPanByKeys }, repeats: true) {
                 $0.arrowKey(direction, large: true)
             }
         }
         // ⌥ and an arrow resize the only selected shape of a kind that resizes, from its top left: → and ↓ grow it,
         // ← and ↑ shrink it, a world unit, ten with ⇧, again and again while held, one step, "Resize", settled as
         // the key is let go as the drag's release settles it; a read-only one shakes.
+        // With items selected (its rows), ⌥↑ ⌥↓ move them instead, the kind's step, one a held key: an item has no box to
+        // resize (keyboard navigation's named exception, `line-option-arrows`); ⌥← ⌥→ do nothing then.
         for (arrow, direction) in SelectionStyle.nudges {
-            registrar.shortcut(KeyChord(arrow.key, .option), "Resize", when: { $0.keyResizable != nil }, repeats: true) {
-                $0.resizeSelection(direction, large: false)
+            registrar.shortcut(KeyChord(arrow.key, .option), SelectionStyle.resizeOrMove, when: { $0.keyResizable != nil || $0.canStepItems }, repeats: true) {
+                if !$0.moveItems(direction) { $0.resizeSelection(direction, large: false) }
             }
-            registrar.shortcut(KeyChord(arrow.key, [.option, .shift]), "Resize", when: { $0.keyResizable != nil }, repeats: true) {
-                $0.resizeSelection(direction, large: true)
+            registrar.shortcut(KeyChord(arrow.key, [.option, .shift]), SelectionStyle.resizeOrMove, when: { $0.keyResizable != nil || $0.canStepItems },
+                               repeats: true) {
+                if !$0.moveItems(direction) { $0.resizeSelection(direction, large: true) }
             }
         }
         // ⌥Tab and ⌥⇧Tab go into the only selected shape's parts (`ShapeParts`: its chips, pills, buttons,

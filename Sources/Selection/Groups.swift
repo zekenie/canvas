@@ -144,6 +144,12 @@ extension SelectionState {
         // A focus whose part went with no commit (left out as the zoom changed) shows nothing: let it go and go on.
         let partShown = editor.hasFocusedPart
         if clearPartFocus(), partShown { return }
+        // Items selected inside the shape: back to the shape, still selected.
+        if editor.selectedItems != nil {
+            clearItems()
+            return
+        }
+        clearItems()
         guard !selectedIDs.isEmpty else {
             focus = []
             return

@@ -84,6 +84,18 @@ public final class LineRowsService {
         return session.openCard()
     }
 
+    /// A row edited, as Return on it selected on the canvas, or a click on it once it's the only row selected, edits it: the
+    /// shape edited from `point` (the row under it, the caret there), else at the row's line's end. False where it can't be
+    /// (a read-only shape, which shakes).
+    @discardableResult
+    public func edit(_ row: PartID, of shape: ShapeID, at point: CGPoint?) -> Bool {
+        if editor.selectedShapeIDs != [shape] { editor.selectedShapeIDs = [shape] }
+        if let point { return editor.beginEditing(shape, at: point) }
+        guard editor.beginEditing(shape), let session, editor.editingShapeID == shape else { return false }
+        session.go(to: .row(row))
+        return true
+    }
+
     /// Where `id`'s session starts when Tab or ⇧Tab hopped to it, as its editing view is made: asked once.
     func startingStop(_ id: ShapeID) -> End? {
         guard let hopped, hopped.id == id else { return nil }

@@ -577,17 +577,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// refusal (a locked shape) writes nothing and shakes the shape.
     @discardableResult
     func write(_ changes: [LineChange<Row>], coalescing key: AnyHashable? = nil) -> Bool {
-        var name = ""
-        let model = model, id = id, registry = editor.registry
-        let written: Bool? = editor.transactWhole(nil, coalescing: key, shaking: [id]) { transaction in
-            guard model.apply(changes, to: id, in: &transaction) else { throw Transaction.Refused([id]) }
-            name = model.stepName(of: changes, along: transaction.deletedAlong, in: registry)
-            transaction.stepName = name
-            return true
-        }
-        guard written == true else { return false }
-        editor.announce(name)
-        return true
+        model.write(changes, to: id, in: editor, coalescing: key)
     }
 
     /// The keyboard left the line for somewhere else (a click away, another window): what it held is written.
