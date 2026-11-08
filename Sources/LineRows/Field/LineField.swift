@@ -50,6 +50,9 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     public var onPasteLines: ((String) -> Bool)?
     /// The keyboard left it.
     public var onBlur: (() -> Void)?
+    /// Whether the line holds words not yet written as a row (asked by Undo and Redo, which are the line's then).
+    public var draft: () -> Bool = { false }
+    public var holdsDraft: Bool { draft() }
     /// What fits at the caret now (nil: nothing), asked after every change and move of the caret.
     public var offering: (() -> LineOffers?)?
     /// The offer highlighted in the list (nil: none, or no list), as it changes: what's lit on the board.
@@ -65,6 +68,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     }
 
     private var isShowing = false
+    /// While a line break is inserted as a space instead.
+    private var isOneLining = false
     private var isSubstituting = false
     /// Between a change to the text and its end: the caret moving then is the change's.
     private var isChangingText = false
@@ -174,30 +179,71 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         self.highlights = highlights
     }
 
-    /// Typing in a run that stands for a shape, or onto its ends, makes it words again: it's read by name.
+    /// Typing in a run that stands for a shape, or onto its ends, makes it words again: it's read by name. Undoing the typing
+    /// makes it the shape's again (the run's attribute isn't the text's own undo). A line break, typed or dropped in, is a
+    /// space, inserted as one so the text's undo holds what went in.
     public override func shouldChangeText(in affectedCharRange: NSRange, replacementString: String?) -> Bool {
+        if !isShowing, !isOneLining, let typed = replacementString, typed.contains(where: \.isNewline) {
+            isOneLining = true
+            defer { isOneLining = false }
+            insertText(Self.oneLine(typed), replacementRange: affectedCharRange)
+            return false
+        }
+        let dropped = isShowing ? [] : references(touchedBy: affectedCharRange, typed: replacementString ?? "")
+        // Registered before the text's own undo, so it's undone after it: the characters are back, then the run is the shape's.
+        if let manager = undoManager, allowsUndo, !manager.isUndoing, !manager.isRedoing {
+            for run in dropped { Self.registerReference(run.target, over: run.range, present: true, on: self, with: manager) }
+        }
         guard super.shouldChangeText(in: affectedCharRange, replacementString: replacementString) else { return false }
         guard !isShowing, let storage = textStorage, storage.length > 0 else { return true }
-        let typed = replacementString ?? ""
-        var dropped: [NSRange] = []
-        storage.enumerateAttribute(Self.referenceKey, in: NSRange(location: 0, length: storage.length)) { value, run, _ in
-            guard value != nil else { return }
-            let at = affectedCharRange.location, end = NSMaxRange(affectedCharRange)
-            let inside = at > run.location && at < NSMaxRange(run)
-            let over = affectedCharRange.length > 0 && NSIntersectionRange(affectedCharRange, run).length > 0
-            let after = at == NSMaxRange(run) && affectedCharRange.length == 0 && !(typed.first?.isWhitespace ?? true)
-            let before = end == run.location && affectedCharRange.length == 0 && !(typed.last?.isWhitespace ?? true)
-            if inside || over || after || before { dropped.append(run) }
-        }
-        for run in dropped { storage.removeAttribute(Self.referenceKey, range: run) }
+        for run in dropped { storage.removeAttribute(Self.referenceKey, range: run.range) }
         isChangingText = true
         return true
     }
 
+    /// `text` with each line break a space.
+    private static func oneLine(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: " ").map { $0.isNewline ? " " : String($0) }.joined()
+    }
+
+    /// The runs that stand for a shape that a change of `range` to `typed` makes words: typed in, over or onto.
+    private func references(touchedBy range: NSRange, typed: String) -> [(range: NSRange, target: PartAddress)] {
+        guard let storage = textStorage, storage.length > 0 else { return [] }
+        var dropped: [(range: NSRange, target: PartAddress)] = []
+        storage.enumerateAttribute(Self.referenceKey, in: NSRange(location: 0, length: storage.length)) { value, run, _ in
+            guard let value = value as? Reference else { return }
+            let at = range.location, end = NSMaxRange(range)
+            let inside = at > run.location && at < NSMaxRange(run)
+            let over = range.length > 0 && NSIntersectionRange(range, run).length > 0
+            let after = at == NSMaxRange(run) && range.length == 0 && !(typed.first?.isWhitespace ?? true)
+            let before = end == run.location && range.length == 0 && !(typed.last?.isWhitespace ?? true)
+            if inside || over || after || before { dropped.append((run, value.target)) }
+        }
+        return dropped
+    }
+
+    /// An undo that sets the run at `range` to stand for `target` (`present`) or to stand for nothing, and registers the
+    /// other way for the redo: the run's attribute goes with the typing and comes back with its undo.
+    private static func registerReference(_ target: PartAddress, over range: NSRange, present: Bool, on field: LineField, with manager: UndoManager) {
+        manager.registerUndo(withTarget: field) { field in
+            MainActor.assumeIsolated {
+                guard let storage = field.textStorage, NSMaxRange(range) <= storage.length else { return }
+                if present {
+                    storage.addAttribute(Self.referenceKey, value: Reference(target), range: range)
+                } else {
+                    storage.removeAttribute(Self.referenceKey, range: range)
+                }
+                if let manager = field.undoManager { Self.registerReference(target, over: range, present: !present, on: field, with: manager) }
+                field.onChange?()
+            }
+        }
+    }
+
     public override func didChangeText() {
-        // Never a line break: a block is pasted as rows, so what's left is one line.
+        // Never a line break: a block is pasted as rows, and one typed in is a space (`shouldChangeText`); what's left is
+        // text set by other means.
         if let storage = textStorage, storage.string.contains(where: \.isNewline) {
-            let text = storage.string.replacingOccurrences(of: "\r\n", with: " ").map { $0.isNewline ? " " : String($0) }.joined()
+            let text = Self.oneLine(storage.string)
             let selection = selectedRange()
             storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
             setSelectedRange(NSRange(location: min(selection.location, storage.length), length: 0))
@@ -468,4 +514,10 @@ public enum LineFieldStyle {
     static let listMetrics = CaretListMetrics(width: 260, rowHeight: 22, rowsShown: 8, offset: 3)
     static let listFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     static let listName = "Suggestions"
+    /// The focused row's band: its corner radius.
+    static let bandRadius: CGFloat = 3
+    /// Room after the text in its field, so the caret at the end isn't cut.
+    static let textSlack: CGFloat = 4
+    /// How far short of the clip's edge the caret is kept.
+    static let caretMargin: CGFloat = 1
 }

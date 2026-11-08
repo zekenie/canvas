@@ -57,6 +57,8 @@ enum TableStyle {
     static let skeletonBarHeight: CGFloat = 8
     /// The most columns a bar stands for, so a name of hundreds of characters costs what one of twenty does.
     static let skeletonMostColumns = 40
+    /// The least a row is on screen, view points, for a skeleton to draw its bars: under it the paper says it.
+    static let skeletonLeastRow: CGFloat = 2
 }
 
 /// An enum's look.

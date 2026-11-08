@@ -274,6 +274,77 @@ import TextEditing
         b.begin(a, at: CGPoint(x: 150, y: 100 + Tally.head + Tally.rowHeight * 2.5))
         expectEqual(b.focus, "waiting")
     },
+    test("a commit that moves the caret to another stop leaves the kind's layout and the field where the caret is: ⌘⌫ then ⌥↑, and the keyboard leaving a draft on the waiting line") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green", "blue"])
+        b.begin(id)
+        b.press(.up)
+        b.field.setSelectedRange(NSRange(location: (b.field.string as NSString).length, length: 0))
+        b.press(.commandDelete)
+        b.press(.optionUp)
+        expectEqual(b.labels(id), ["red", "green"], "the emptied row went")
+        expectEqual(b.focus, "waiting")
+        let shapes = b.editor.shapeContext
+        expectEqual(shapes.layoutInput(LineRowsLayout.waiting, for: id), 2, "the kind leaves the waiting line's room, last")
+        expectEqual(shapes.layoutInput(LineRowsLayout.focused, for: id), nil, "no row is the field's")
+        b.press(.escape)
+        // A draft on the waiting line, written as the keyboard leaves while the session goes on: the row it became is the field's.
+        b.begin(id)
+        b.type("pink 2")
+        b.window.makeFirstResponder(nil)
+        b.window.settle()
+        expectEqual(b.labels(id), ["red", "green", "pink"])
+        if b.editor.editingShapeID == id {
+            let pink = try require(b.rows(id).last)
+            expectEqual(b.editor.shapeContext.layoutInput(LineRowsLayout.focused, for: id), pink.id, "the row the field draws is the new one")
+            expectEqual(b.editor.shapeContext.layoutInput(LineRowsLayout.waiting, for: id), nil, "the waiting line's room is given back")
+        }
+    },
+    test("a row taken out by another writer while it has the caret: its line, which the keyboard leaving writes, is added as a row, not lost") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green"])
+        b.begin(id)
+        b.press(.up)
+        b.field.setSelectedRange(NSRange(location: (b.field.string as NSString).length, length: 0))
+        b.type(" 9")
+        b.editor.transact("Take Out") { $0.update(id, as: Tally.self) { $0.props.rows.removeAll { $0.label == "green" } } }
+        b.window.settle()
+        expectEqual(b.labels(id), ["red", "green"], "the draft was written as a row, not lost")
+        expectEqual(b.rows(id).last?.count, 9)
+        expectEqual(b.undoName, "Add Entry")
+        let drawn = b.editor.shapeContext
+        expectEqual(drawn.layoutInput(LineRowsLayout.waiting, for: id), nil, "no waiting line's room kept for a caret that isn't there")
+        expectEqual(drawn.layoutInput(LineRowsLayout.focused, for: id), b.rows(id).last?.id, "the row the line stands for is the field's")
+    },
+    test("a line break dropped into the line is a space, put in as typing is: the text's undo takes out what went in") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red"])
+        b.begin(id)
+        b.type("x")
+        b.field.insertText("a\r\nb", replacementRange: b.field.selectedRange())
+        expectEqual(b.field.string, "xa b")
+        b.field.insertText("c\nd", replacementRange: NSRange(location: 0, length: 1))
+        expectEqual(b.field.string, "c da b", "over a selection too")
+        b.window.settle()
+        b.field.undoManager?.undo()
+        b.window.settle()
+        expectEqual(b.field.string, "xa b", "one undo takes back the last insert, whole, not a range past the text's end")
+    },
+    test("a line holds a draft when it has words that aren't written: a waiting line with any, a row changed (Undo and Redo are its own then, never the board's)") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green"])
+        b.begin(id)
+        expect(!b.field.holdsDraft, "the empty waiting line")
+        b.type("b")
+        expect(b.field.holdsDraft, "words on the waiting line")
+        b.press(.up)
+        expectEqual(b.focus, "row green")
+        expect(!b.field.holdsDraft, "a row as it was shown")
+        b.type("c")
+        expect(b.field.holdsDraft, "a row changed")
+        b.press(.down)
+        expect(!b.field.holdsDraft, "written, it's the row as shown")
+    },
 ])
 
 @MainActor let offerTests = Suite("What fits at a line's caret", [
@@ -379,6 +450,39 @@ import TextEditing
         expect(b.field.offerList == nil, "typed whole, it's offered no more")
         b.press(.down)
         expectEqual(b.rows(a).first?.ref, first, "and found by name: the first so called")
+    },
+])
+
+@MainActor let referenceUndoTests = Suite("A name that stands for a tally, through the text's undo", [
+    test("typing inside it makes it words, and undoing the typing makes it the tally's again: a line left as it was names the same one of two so called") {
+        let b = try Bench()
+        b.tally("twin", [], at: CGPoint(x: 400, y: 100))
+        b.tally("twin", [], at: CGPoint(x: 400, y: 300))
+        let twins = tallies(named: "twin", in: b.editor)
+        let first = twins[0], second = twins[1]
+        let a = b.h.add(Tally(CGRect(x: 100, y: 100, width: 240, height: 40), name: "a", rows: [TallyRow("y", ref: second)]))
+        b.editor.undoHistory.seal()
+        b.begin(a)
+        b.press(.up)
+        b.field.setSelectedRange(NSRange(location: 4, length: 0))
+        b.type("z")
+        expectEqual(b.field.string, "y twzin")
+        expect(b.field.line.references.isEmpty, "typed into, it's words")
+        b.window.settle()
+        b.field.undoManager?.undo()
+        b.window.settle()
+        expectEqual(b.field.string, "y twin")
+        expectEqual(b.field.line.references.map(\.target), [PartAddress(second)], "undone, it stands for the tally it did")
+        b.field.undoManager?.redo()
+        b.window.settle()
+        expectEqual(b.field.string, "y twzin")
+        expect(b.field.line.references.isEmpty, "redone, it's words again")
+        b.field.undoManager?.undo()
+        b.window.settle()
+        b.press(.down)
+        expectEqual(b.rows(a).first?.ref, second, "left as it was, it names the tally it did, not the first so called")
+        expect(b.rows(a).first?.ref != first)
+        expect(b.undoName == nil, "and writes no step: \(b.undoName ?? "-")")
     },
 ])
 

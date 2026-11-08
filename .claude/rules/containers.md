@@ -14,7 +14,7 @@ paths:
 
 # Containers
 
-Shapes holding shapes on one board (`ShapeContaining`: a frame): membership, paint order, moving and deleting a container, settling what's put down (the in-or-out rule), and putting a container down around shapes.
+Shapes holding shapes on one board (`ShapeContaining`: a frame, the engineering kit's database): membership, paint order, moving and deleting a container, settling what's put down (the in-or-out rule), and putting a container down around shapes.
 
 Related: [frames](frames.md), [topology](topology.md), [clipboard](clipboard.md), [locking](locking.md), [command line](command-line.md), [boards in a file](boards-in-a-file.md) ([every topic](../../CLAUDE.md#map)).
 

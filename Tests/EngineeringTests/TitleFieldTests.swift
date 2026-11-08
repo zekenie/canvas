@@ -90,6 +90,26 @@ import Titles
         expectEqual(h.editor.document[made.id]?[TitleProperty.self], "order_status")
         expectEqual(h.editor.undoHistory.undoName, "Add Enum")
     },
+    test("the Database tool and a click: a database at its default size, selected, one step, Add Database; ⇧↩ beside an enum makes an enum, Add Enum") {
+        let h = try kitHarness()
+        h.editor.setTool(ToolID(placing: Database.kind))
+        h.click(at: CGPoint(x: 400, y: 300))
+        let database = try require(h.shapes(Database.kind).first)
+        expectEqual(h.editor.document[database.id]?.typed(as: Database.self)?.props.frame.size, CGSize(width: 640, height: 400))
+        expectEqual(h.editor.selectedShapeIDs, [database.id])
+        expectEqual(h.editor.undoHistory.undoName, "Add Database")
+        let status = h.add(DatabaseEnum(frame: CGRect(x: 800, y: 600, width: 200, height: 68), values: [EnumValue(text: "paid")]), titled: "order_status")
+        h.editor.selectedShapeIDs = [status]
+        expectEqual(h.editor.menuTitle(of: .insertBeside), "New Enum Beside")
+        expect(h.editor.perform(.insertBeside))
+        let made = try require(h.shapes(DatabaseEnum.kind).last)
+        expect(made.id != status)
+        expectEqual(h.editor.editingShapeID, made.id, "the caret in its name")
+        let field = try require((h.editor.makeEditingView()?.view as? LineRowsView)?.titleField)
+        type("shipments", into: field)
+        field.field.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+        expectEqual(h.editor.undoHistory.undoName, "Add Enum")
+    },
     test("the field lies on the pill's row, from the paper's left end, the pill's height at 100% and zoomed in; the rest of its view takes no press") {
         let h = try kitHarness()
         let table = h.add(orders(), titled: "orders")

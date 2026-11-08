@@ -14,27 +14,48 @@ enum RowsDraw {
     static let columnLines = "lines (name type [null] [unique] [default …] [pk])"
     static let valueLines = "lines (a value each)"
     static let reason = "invalid_value"
+    /// What a name two shapes answer to is refused as (draw's own, for every name).
+    static let ambiguousReason = "ambiguous_title"
 
-    /// The columns a script wrote: its lines read, or its JSON items (an id given to each that has none), each type that
-    /// names an enum bound to it.
+    /// The columns a script wrote, each as the object a column is coded as: its lines read (every member a line says, a
+    /// `default` it doesn't give written null, so a restated column loses it), or its JSON items as they were given (an
+    /// id given to each that has none, and only the members it names), each type that names an enum bound to it. A name
+    /// two enums answer to is refused, not left unbound without a word.
     @MainActor
     static func columns(written value: JSONValue, _ context: DrawTextContext) throws(DrawError) -> JSONValue {
-        let read: [Column]
+        var items: [[String: JSONValue]]
         switch value {
-        case .string(let text): read = ColumnGrammar.read(lines: text)
-        case .array(let items): read = try items.map { item throws(DrawError) in try decoded(item, as: Column.self) }
+        case .string(let text):
+            items = ColumnGrammar.read(lines: text).map { column in
+                var members = (try? JSONValue(encoding: column))?.objectValue ?? [:]
+                if members["default"] == nil { members["default"] = .null }
+                return members
+            }
+        case .array(let given):
+            items = try given.map { item throws(DrawError) in try decoded(item, as: Column.self).members }
         default: return value
         }
-        let bound = read.map { column in
-            var column = column
-            if column.type.shape == nil, !column.type.words.isEmpty, let found = try? context.shape(called: column.type.words, admitting: {
-                $0.kind == DatabaseEnum.kind ? nil : "which isn't an enum"
-            }) {
-                column.type.shape = found.id
-            }
-            return column
+        // A type given as words alone is the file's enum of that name, when there is one.
+        for index in items.indices {
+            guard let type = items[index]["type"]?.objectValue, type["shape"] == nil, let words = type["words"]?.stringValue, !words.isEmpty,
+                  let found = try enumNamed(words, context) else { continue }
+            var bound = type
+            bound["shape"] = (try? JSONValue(encoding: found)) ?? .null
+            items[index]["type"] = .object(bound)
         }
-        return (try? JSONValue(encoding: bound)) ?? value
+        return .array(items.map(JSONValue.object))
+    }
+
+    /// The enum a column's type names, if it names one: a type of SQL's own and a name that isn't an enum's are none,
+    /// but two enums of one name are refused, as any ambiguous name is.
+    @MainActor
+    private static func enumNamed(_ words: String, _ context: DrawTextContext) throws(DrawError) -> ShapeID? {
+        do throws(DrawError) {
+            return try context.shape(called: words, admitting: { $0.kind == DatabaseEnum.kind ? nil : "which isn't an enum" }).id
+        } catch {
+            guard error.reason == ambiguousReason else { return nil }
+            throw error
+        }
     }
 
     /// The values a script wrote: its lines read, or its JSON items.
@@ -42,27 +63,52 @@ enum RowsDraw {
     static func values(written value: JSONValue) throws(DrawError) -> JSONValue {
         switch value {
         case .string(let text): return (try? JSONValue(encoding: EnumGrammar.read(lines: text))) ?? value
-        case .array(let items): return (try? JSONValue(encoding: try items.map { item throws(DrawError) in try decoded(item, as: EnumValue.self) })) ?? value
+        case .array(let items): return (try? JSONValue(encoding: try items.map { item throws(DrawError) in try decoded(item, as: EnumValue.self).row })) ?? value
         default: return value
         }
     }
 
-    /// `written` joined onto `held`, as `join` joins rows.
-    static func merged<Row: Codable>(_ written: JSONValue, onto held: JSONValue?, as _: Row.Type, _ join: ([Row], [Row]) -> [Row]) -> JSONValue {
-        guard let rows = try? written.decode([Row].self) else { return written }
-        let kept = held.flatMap { try? $0.decode([Row].self) } ?? []
-        return (try? JSONValue(encoding: join(rows, kept))) ?? written
+    /// The columns `written` says joined onto `held`: each item is read over the held column of its name, so a member it
+    /// leaves out stays (a null puts one back to its default), then joined as the grammar joins (`ColumnGrammar.merge`),
+    /// except that an `onDelete` or `onUpdate` it gives is the column's. A new column whose id another holds, or another
+    /// written one has, is given one of its own.
+    static func mergedColumns(_ written: JSONValue, onto held: JSONValue?) -> JSONValue {
+        guard case .array(let items) = written else { return written }
+        var merged = held.flatMap { try? $0.decode([Column].self) } ?? []
+        for case .object(let given) in items {
+            let old = merged.first { $0.name == given["name"]?.stringValue ?? "" }
+            var members = old.flatMap { try? JSONValue(encoding: $0).objectValue } ?? [:]
+            for (key, member) in given where key != "id" || member != .null { members[key] = member == .null ? nil : member }
+            guard var column = try? JSONValue.object(members).decode(Column.self) else { continue }
+            if old == nil, merged.contains(where: { $0.id == column.id }) { column.id = PartID() }
+            merged = ColumnGrammar.merge([column], onto: merged)
+            guard let at = merged.firstIndex(where: { $0.name == column.name }) else { continue }
+            if let onDelete = given["onDelete"] { merged[at].onDelete = onDelete.stringValue }
+            if let onUpdate = given["onUpdate"] { merged[at].onUpdate = onUpdate.stringValue }
+        }
+        return (try? JSONValue(encoding: merged)) ?? written
     }
 
-    /// A row written as JSON: an id given where it has none.
-    private static func decoded<Row: Decodable>(_ item: JSONValue, as _: Row.Type) throws(DrawError) -> Row {
+    /// The values `written` says joined onto `held` by text, a new value whose id another has given one of its own.
+    static func mergedValues(_ written: JSONValue, onto held: JSONValue?) -> JSONValue {
+        guard let values = try? written.decode([EnumValue].self) else { return written }
+        var merged = held.flatMap { try? $0.decode([EnumValue].self) } ?? []
+        for var value in values {
+            if !merged.contains(where: { $0.text == value.text }), merged.contains(where: { $0.id == value.id }) { value.id = PartID() }
+            merged = EnumGrammar.merge([value], onto: merged)
+        }
+        return (try? JSONValue(encoding: merged)) ?? written
+    }
+
+    /// A row written as JSON: an id given where it has none, and the members as it gave them. It must read as a row.
+    private static func decoded<Row: Decodable>(_ item: JSONValue, as _: Row.Type) throws(DrawError) -> (members: [String: JSONValue], row: Row) {
         var item = item
         if case .object(var members) = item, members["id"] == nil {
             members["id"] = .string(UUID().uuidString)
             item = .object(members)
         }
         do {
-            return try item.decode(Row.self)
+            return (item.objectValue ?? [:], try item.decode(Row.self))
         } catch {
             throw DrawError("\(item.compactText) isn't a row it takes", reason: reason)
         }
@@ -75,12 +121,12 @@ extension PluginRegistrar {
         drawValueWriter(for: "columns", describes: RowsDraw.columnLines, write: { value, context throws(DrawError) in
             try RowsDraw.columns(written: value, context)
         }, merge: { written, held in
-            RowsDraw.merged(written, onto: held, as: Column.self, ColumnGrammar.merge)
+            RowsDraw.mergedColumns(written, onto: held)
         })
         drawValueWriter(for: "values", describes: RowsDraw.valueLines, write: { value, _ throws(DrawError) in
             try RowsDraw.values(written: value)
         }, merge: { written, held in
-            RowsDraw.merged(written, onto: held, as: EnumValue.self, EnumGrammar.merge)
+            RowsDraw.mergedValues(written, onto: held)
         })
     }
 }

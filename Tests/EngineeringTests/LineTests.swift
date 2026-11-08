@@ -75,6 +75,11 @@ final class KitBench {
     }
 }
 
+/// A bitmap as PNG data, for two renders to be held equal.
+@MainActor func pngOf(_ rep: NSBitmapImageRep) throws -> Data {
+    try require(rep.representation(using: .png, properties: [:]))
+}
+
 /// A corpus of column lines, each a way a person writes one.
 let columnCorpus = [
     "id uuid pk", "customer_id uuid", "email text unique", "description text?", "placed_at timestamptz null", "currency char(3)",
@@ -139,12 +144,58 @@ let columnCorpus = [
         b.press(.escape)
         expectEqual(b.columns(orders).last?.type.shape, status, "typed, it's found by name")
         b.editor.transact { $0.update(status) { $0[TitleProperty.self] = "order_state" } }
+        let before = b.undoName
         b.begin(orders)
         b.press(.up)
         expectEqual(b.field.string, "status order_state", "its line says the enum's name now")
         b.press(.escape)
-        expectEqual(b.columns(orders).last?.type.shape, status, "an unchanged line keeps naming it")
+        expectEqual(b.columns(orders).last?.type, TypeRef("order_status", shape: status), "an unchanged line keeps naming it, as stored")
+        expectEqual(b.undoName, before, "and passing through it writes no step: the line was as it was shown")
+        // The pill, at rest, says the enum's name now: as it does where the enum was called so all along.
+        let renamed = try pngOf(render(b.editor))
+        let other = try KitBench()
+        other.enumType("order_state", ["pending"])
+        let table = other.table("orders", ["id uuid pk"])
+        other.begin(table)
+        other.type("status order_state")
+        other.press(.return)
+        other.press(.escape)
+        expect(renamed == (try pngOf(render(other.editor))), "the table drawn after the rename is the table drawn with the enum so named")
+        // Only what the person changed names the step: the name alone, on a row whose enum was renamed under it.
+        b.begin(orders)
+        b.press(.up)
+        b.field.setSelectedRange(NSRange(location: 0, length: 6))
+        b.type("state")
+        b.press(.down)
+        expectEqual(b.columns(orders).last?.name, "state")
+        expectEqual(b.undoName, "Rename Column", "a rename, though its type reads differently than stored")
+        b.press(.escape)
         expectEqual(b.editor.shapeContext.frame(of: try require(b.editor.document[orders]))?.height, KitStyle.height(rows: 2))
+    },
+    test("the title's ring shows only while its text has the keys; a press on its chip from a row puts the caret there, and Tab goes on from it to the first row") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk", "sku text"])
+        b.begin(orders)
+        let view = try require(b.view), title = try require(view.titleField)
+        b.press(.up)
+        expect(!title.hasKeys, "a row has the keys")
+        // The strip just left of the chip, where its ring is drawn: what's in it as the view draws it.
+        let strip = { @MainActor () throws -> [[Int]] in
+            let area = view.convert(title.frame, from: title.superview).insetBy(dx: -4, dy: -4)
+            let rep = try require(view.bitmapImageRepForCachingDisplay(in: area))
+            view.cacheDisplay(in: area, to: rep)
+            let scale = CGFloat(rep.pixelsWide) / area.width
+            return (0..<Int(area.height * scale)).flatMap { y in (0..<Int(3 * scale)).map { x in pixel(rep, at: CGPoint(x: x, y: y)) } }
+        }
+        let plain = try strip()
+        b.window.makeFirstResponder(title.field)
+        b.window.settle()
+        expectEqual(view.focus, .title, "the session follows the keys")
+        expect(title.hasKeys)
+        expect(try strip() != plain, "the ring is drawn while its text has the keys, and not while a row has them")
+        b.press(.tab)
+        expectEqual(view.focus, .row(b.columns(orders)[0].id), "Tab goes on from the title, not from the row the caret left")
+        expect(!title.hasKeys)
     },
     test("T2, panel 3: ten lines pasted into products are ten rows, one step, Paste Columns, the caret at the end of the last") {
         let b = try KitBench()

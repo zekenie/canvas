@@ -15,7 +15,9 @@ import TestKit
         defer { pasteboard.releaseGlobally() }
         let registry = try ShippedPlugins.registry(pasteboard: pasteboard, model: ScriptedLanguageModel())
         let menus = BoardMenus.make(appName: "Infinite Canvas", registry: registry)
-        let sections = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, autosaveName: nil).sections
+        // Every kit on: the keys of the kits' plugins are listed too (a file with a kit off lists none of its).
+        let kitsOn = Set(registry.kits.map(\.id))
+        let sections = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, kits: { kitsOn }, autosaveName: nil).sections
         let listed = sections.flatMap { $0.rows.flatMap(\.keys) }
         expectEqual(listed.count, Set(listed).count, "no key twice: \(listed)")
         for row in sections.flatMap(\.rows) { expect(!row.title.isEmpty && !row.keys.isEmpty, "\(row)") }
@@ -33,6 +35,13 @@ import TestKit
         for hint in registry.keyboardHelp where hint.place == .pointer || hint.place == .text {
             expect(hint.keys.allSatisfy(listed.contains), "\(hint.title) is listed")
         }
+        let rowTitles: Set = ["Next Row; on an Empty Row, Finish", "Move the Row", "Delete the Row", "New Shape Beside It"]
+        let rowHints = registry.keyboardHelp.filter { rowTitles.contains($0.title) }
+        expectEqual(rowHints.count, 4, "the hints of a row, the engineering kit's")
+        let rowKeys = rowHints.flatMap(\.keys)
+        expect(rowKeys.allSatisfy(listed.contains), "a row's keys, with the engineering kit on")
+        let bare = KeyboardShortcutsWindow(registry: registry, menu: { menus.main }, kits: { [] }, autosaveName: nil).sections.flatMap { $0.rows.flatMap(\.keys) }
+        expect(rowKeys.allSatisfy { !bare.contains($0) }, "and none with it off, as in a new file")
     },
     test("each key is filed where a person looks for it: a tool's under Tools, a command's with the menu item that runs it, the rest under the canvas, the pointer and text") {
         let pasteboard = NSPasteboard.withUniqueName()

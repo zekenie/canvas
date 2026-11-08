@@ -25,6 +25,8 @@ public final class TitleField: NSView, NSTextViewDelegate {
     public var typed: ((String) -> Void)?
     /// Return, Escape, Tab or ⇧Tab.
     public var finished: ((Ending) -> Void)?
+    /// The field took the keyboard (a press on the chip, VoiceOver's): for a host whose keys were elsewhere, in a row under it.
+    public var began: (() -> Void)?
     /// ↓, for a host with stops under the title (a table's rows): true takes it. Unset, ↓ is the text's.
     public var onDown: (() -> Bool)?
     /// The pill as it's drawn with no text: its symbol and tint.
@@ -58,6 +60,9 @@ public final class TitleField: NSView, NSTextViewDelegate {
     public required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     public override var isFlipped: Bool { true }
+
+    /// Whether its text has the keyboard: what its ring shows (a host with rows under it moves the keys to them).
+    public var hasKeys: Bool { field.window?.firstResponder === field }
 
     /// World units a view point, as the pill is drawn: its row's height in the bounds.
     private var scale: CGFloat { max(bounds.height / AdornmentLayout.rowHeight, .leastNormalMagnitude) }
@@ -107,7 +112,8 @@ public final class TitleField: NSView, NSTextViewDelegate {
         } else {
             chip.drawChip(width: width, at: .zero, scale: scale, in: cg)
         }
-        // The ring a field that has the keys shows, round the chip.
+        // The ring a field that has the keys shows, round the chip: a host that moves the keys to a row under it shows none.
+        guard hasKeys else { return }
         let reach = TitleFieldStyle.ringWidth * scale / 2
         let ring = CGRect(x: 0, y: 0, width: width * scale, height: bounds.height).insetBy(dx: -reach, dy: -reach)
         cg.addPath(CGPath(roundedRect: ring, cornerWidth: ring.height / 2, cornerHeight: ring.height / 2, transform: nil))
@@ -191,6 +197,22 @@ private final class TitleTextView: EditingTextView, UndoesBoardWhenEmpty {
 
     /// NSTextView's `init(frame:)` makes its text system and calls `init(frame:textContainer:)`, where it's set up.
     init() { super.init(frame: .zero) }
+
+    // Its chip's ring is drawn while it has the keys: the chip is drawn again as they come and go.
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became {
+            superview?.needsDisplay = true
+            (superview as? TitleField)?.began?()
+        }
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { superview?.needsDisplay = true }
+        return resigned
+    }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

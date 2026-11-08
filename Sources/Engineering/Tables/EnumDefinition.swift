@@ -65,7 +65,7 @@ extension EnumDefinition: CustomSkeleton {
         let frame = context.shapes.frame(of: shape)
         KitPaper.drawSkeleton(frame, in: context)
         let values = shape.props.values, rows = KitRows(shape, in: context.shapes)
-        context.fillSkeletonText(KitPaper.rowsInView(rows.lines(values.count), in: frame, context).compactMap { line in
+        context.fillSkeletonText(KitPaper.skeletonRowsInView(rows.lines(values.count), in: frame, context).compactMap { line in
             guard let index = rows.row(atLine: line) else { return nil }
             let row = KitStyle.rowRect(line, in: frame), start = row.minX + KitStyle.nameInset
             return KitPaper.bar(columns: SkeletonText.columns(of: values[index].text, upTo: TableStyle.skeletonMostColumns), column: EnumStyle.skeletonColumn,
@@ -81,7 +81,7 @@ extension EnumDefinition: Editable {
 
     func makeEditingView(for shape: ShapeRecord<DatabaseEnum>, context: EditContext<DatabaseEnum>) -> EditingView {
         LineRowsView.make(shape, context: context, model: EnumLines(), title: LineTitle { title in
-            TitleField(title: title, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, placeholder: EnumStyle.label, name: EnumStyle.titleFieldName)
+            TitleField(title: title, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, name: EnumStyle.titleFieldName)
         })
     }
 

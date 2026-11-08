@@ -53,8 +53,8 @@ extension Registry {
 }
 
 /// Rows written as lines: the sessions' service (the light an offer puts on the board, Tab's hops to the next shape of a
-/// kind, the layout inputs taken back as editing ends), the light's outline, and the keys the Keyboard Shortcuts window
-/// lists for a row.
+/// kind, the layout inputs taken back as editing ends) and the light's outline. The keys a row has are listed by the kind
+/// that opts in (the Keyboard Shortcuts window leaves out those of a kit that's off).
 public struct LineRowsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { .lineRows }
@@ -62,9 +62,5 @@ public struct LineRowsPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         registrar.service { LineRowsService(editor: $0) }
         registrar.outlines { editor in editor.service(LineRowsService.self)?.outlines() ?? Outlines() }
-        registrar.keyHint("↩ in a Row", "Next Row; on an Empty Row, Finish", while: .text)
-        registrar.keyHint("⌥↑ ⌥↓ in a Row", "Move the Row", while: .text)
-        registrar.keyHint("⌘⌫ then ⌫ in a Row", "Delete the Row", while: .text)
-        registrar.keyHint("⇧↩ in a Row", "New Shape Beside It", while: .text)
     }
 }

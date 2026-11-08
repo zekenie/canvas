@@ -483,11 +483,13 @@ struct AskPlugin: CanvasPlugin {
 /// each run, so it commits.
 struct NowPlugin: CanvasPlugin {
     let log: NowLog
+    /// What its step is called where the command's name isn't (`SelectionSlashCommand.atOnce(step:)`).
+    var step: String?
     var id: PluginID { "now-commands" }
 
     func register(into registrar: inout PluginRegistrar) {
         let log = log
-        registrar.selectionSlashCommand(.atOnce("stamp", argument: "words", when: { target, _ in
+        registrar.selectionSlashCommand(.atOnce("stamp", argument: "words", step: step, when: { target, _ in
             if case .everything = target { return true }
             return false
         }) { target, arguments, editor in
