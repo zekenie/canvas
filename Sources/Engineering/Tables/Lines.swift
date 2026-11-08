@@ -374,9 +374,11 @@ struct TableLines: LineModel {
     func lineRect(_ line: Int, in frame: CGRect) -> CGRect { KitStyle.rowRect(line, in: frame) }
 
     /// Columns taken out are a new table (T5 panel 4: `addresses`): its own `id uuid pk` first, then the columns, as wide as
-    /// the table they came from; its name typed at once.
+    /// the table they came from; its name typed at once. Columns that already hold the key (one named `id`, or any primary key)
+    /// are the table's own: no second `id uuid pk` is put before them.
     func takeOut(_ rows: [ColumnLine], from shape: ShapeRecord<DatabaseTable>) -> DatabaseTable {
         var table = DatabaseTable.starter()
+        if rows.contains(where: { $0.column.primaryKey || $0.column.name == "id" }) { table.columns = [] }
         table.columns += rows.map(\.column)
         table.frame.size = CGSize(width: shape.props.frame.width, height: KitStyle.height(rows: table.columns.count))
         return table

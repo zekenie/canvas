@@ -384,7 +384,7 @@ final class ClipboardState {
         if point == nil, let selection = editor.selectedItems, let record = editor.document[selection.shape],
            record.kind == payload.carrier.kind, let moving = editor.registry.rowMoving(of: record.kind) {
             // After the last row selected: before the row that follows it.
-            let order = moving.rowIDs(of: record) ?? [], selected = Set(selection.ids.compactMap { $0.base as? PartID })
+            let order = moving.rowIDs(of: record) ?? [], selected = Set(selection.acting.compactMap { $0.base as? PartID })
             let last = order.lastIndex { selected.contains($0) }
             let before = last.flatMap { $0 + 1 < order.count ? order[$0 + 1] : nil }
             if last != nil {
@@ -565,11 +565,11 @@ extension ClipboardState: EditorService {}
 extension CanvasEditor {
     var clipboard: ClipboardState? { service(ClipboardState.self) }
 
-    /// The rows selected inside the shape a key or the menu bar copies (Selection's items, as a subject with no point asks):
-    /// their ids, and the shape.
+    /// The rows selected inside the shape a key, the menu bar or a right-click copies (Selection's items): their ids, and the
+    /// shape.
     private func selectedRows(for subject: CommandSubject) -> (rows: [PartID], shape: ShapeID)? {
-        guard subject.point == nil, let selection = selectedItems, subject.shapes == [selection.shape] else { return nil }
-        let rows = selection.ids.compactMap { $0.base as? PartID }
+        guard let selection = selectedItems, subject.shapes == [selection.shape] else { return nil }
+        let rows = selection.acting.compactMap { $0.base as? PartID }
         return rows.isEmpty ? nil : (rows, selection.shape)
     }
 

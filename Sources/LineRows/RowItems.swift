@@ -89,7 +89,8 @@ extension ShapeRegistrar {
                 editor.moveRows(ids.compactMap { $0.base as? PartID }, of: shape, by: delta)
             },
             open: { editor, shape, id, point in RowItems.open(id, of: shape, at: point, in: editor) },
-            setOpen: { editor, shape, id, open in RowItems.setOpen(id, of: shape, open, in: editor) }))
+            setOpen: { editor, shape, id, open in RowItems.setOpen(id, of: shape, open, in: editor) },
+            selectedWords: { LineFieldStyle.selected(model.noun.counted($0)) }))
     }
 }
 
@@ -154,7 +155,7 @@ enum RowItems {
         let editor = subject.editor
         guard let selection = editor.selectedItems, subject.shapes == [selection.shape], let record = editor.document[selection.shape],
               let moving = editor.registry.rowMoving(of: record.kind) else { return nil }
-        let rows = selection.ids.compactMap { $0.base as? PartID }
+        let rows = selection.acting.compactMap { $0.base as? PartID }
         guard !rows.isEmpty else { return nil }
         let title = RowSteps.takeOut(moving.noun, count: rows.count, into: record.kind, in: editor.registry)
         return MenuItem(title, in: RowsMenuGroup.self, id: "take-out-rows", stepName: title) { ids, editor in
@@ -163,6 +164,8 @@ enum RowItems {
     }
 }
 
-/// The take-out of selected rows' group in a context menu: first, as it's about the rows selected.
+/// The take-out of selected rows' group in a context menu: right after the kind's own items, as it's about the rows selected.
 public enum RowsMenuGroup {}
-extension RowsMenuGroup: MenuGroup {}
+extension RowsMenuGroup: MenuGroup {
+    public static var order: Order<Self> { .after(ShapeMenuGroup.self) }
+}

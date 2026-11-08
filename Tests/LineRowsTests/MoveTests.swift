@@ -109,6 +109,60 @@ extension Bench {
         expectEqual(b.editor.moveRows(b.ids(a, "one"), of: a, to: .into(a, before: nil)), nil, "a read-only source keeps its order")
         expectEqual(b.labels(a), ["one", "two"])
     },
+    test("A take-out refused by a read-only corral shakes the corral; the rows stay and no step is left") {
+        let b = try Bench(extras: [CorralsPlugin()])
+        let corral = b.h.add(Corral(CGRect(x: 500, y: 300, width: 400, height: 300)))
+        let a = b.tally("a", ["one", "two"])
+        b.editor.freeze([corral])
+        b.editor.undoHistory.seal()
+        let steps = b.undoName
+        expectEqual(b.editor.moveRows(b.ids(a, "two"), of: a, to: .board(origin: CGPoint(x: 560, y: 360))), nil)
+        expectEqual(b.labels(a), ["one", "two"])
+        expectEqual(b.undoName, steps, "no step")
+        expect(b.refusals.refusals.last?.contains(corral) == true, "the corral that would not take it shakes")
+    },
+    test("One Undo of each move is exact in board-codec bytes: within a tally, between two, and a cut then a paste") {
+        let b = try Bench()
+        let a = b.tally("a", ["one", "two", "three"])
+        let c = b.tally("c", ["x", "y"], at: CGPoint(x: 400, y: 100))
+        var before = try b.bytes()
+        expect(b.editor.moveRows(b.ids(a, "one"), of: a, by: 1))
+        expectEqual(b.labels(a), ["two", "one", "three"])
+        b.editor.undo()
+        expectEqual(try b.bytes(), before, "within")
+        expect(b.editor.moveRows(b.ids(a, "two"), of: a, to: .into(c, before: nil)) != nil)
+        b.editor.undo()
+        expectEqual(try b.bytes(), before, "between")
+        expect(b.editor.cutRows(b.ids(a, "three"), of: a))
+        b.editor.undo()
+        expectEqual(try b.bytes(), before, "the cut")
+        expect(b.editor.cutRows(b.ids(a, "three"), of: a))
+        before = try b.bytes()
+        let payload = try require(b.editor.pasteboardRows)
+        b.editor.pasteRows(payload, to: .into(c, before: nil))
+        b.editor.undo()
+        expectEqual(try b.bytes(), before, "the paste of a cut")
+    },
+    test("⌥↑ ⌥↓ on a folded tally step over the entries its fold hides: one press changes what is shown, and nothing moves where nothing shown is past") {
+        let b = try Bench()
+        // A fold keeps the entries that have a count: a and c shown, b and d behind the +N line.
+        let id = b.tally("fruit", ["a 1", "b", "c 1", "d"])
+        b.editor.rowFolds?.fold([id])
+        b.window.settle()
+        b.editor.selectItems(b.ids(id, "c").map(AnyHashable.init), of: id)
+        b.editor.undoHistory.seal()
+        b.press(.optionUp)
+        expectEqual(b.labels(id), ["c", "a", "b", "d"], "c went above the shown a, past the hidden b")
+        b.editor.selectItems(b.ids(id, "a").map(AnyHashable.init), of: id)
+        b.editor.undoHistory.seal()
+        let steps = b.undoName
+        b.press(.optionDown)
+        expectEqual(b.labels(id), ["c", "a", "b", "d"], "nothing shown below a: no move")
+        expectEqual(b.undoName, steps, "and no step")
+        b.editor.selectItems(b.ids(id, "c").map(AnyHashable.init), of: id)
+        b.press(.optionDown)
+        expectEqual(b.labels(id), ["a", "c", "b", "d"], "c back below the shown a")
+    },
 ])
 
 @MainActor let payloadTests = Suite("Rows on the pasteboard", [
@@ -179,6 +233,31 @@ extension Bench {
         expect(!b.editor.document.shapes.contains { $0.kind == Strap.kind }, "its other end is gone: left out")
         let frame = try require(b.editor.document[out]?.box), beside = try require(b.editor.document[a]?.box)
         expect(!frame.intersects(beside), "beside, not over")
+    },
+    test("A paste whose carried strap names a row that is gone since binds that end to its tally as a whole: nothing is left bound to a part that is not there") {
+        let b = try Bench(extras: [StrapsPlugin()])
+        let a = b.tally("a", ["one", "two"])
+        let other = b.tally("other", ["z", "w"], at: CGPoint(x: 400, y: 300))
+        let two = b.ids(a, "two")[0], z = b.ids(other, "z")[0]
+        b.h.add(Strap(from: PartAddress(a, part: two), to: PartAddress(other, part: z)))
+        expect(b.editor.cutRows([two], of: a))
+        let payload = try require(b.editor.pasteboardRows)
+        b.editor.transact { $0.update(other, as: Tally.self) { $0.props.rows.removeAll { $0.id == z } } }
+        b.editor.pasteRows(payload, to: .into(a, before: nil))
+        let strap = try require(b.editor.document.shapes.compactMap { $0.typed(as: Strap.self) }.first)
+        expectEqual(strap.props.from, PartAddress(a, part: two))
+        expectEqual(strap.props.to, PartAddress(other), "the row z is gone: the tally as a whole")
+    },
+    test("A paste that cannot bring back a strap whose other end is not on the board says so") {
+        let b = try Bench(extras: [StrapsPlugin()])
+        let a = b.tally("a", ["one", "two"])
+        let other = b.tally("other", ["z"], at: CGPoint(x: 400, y: 300))
+        b.h.add(Strap(from: PartAddress(a, part: b.ids(a, "two")[0]), to: PartAddress(other, part: b.ids(other, "z")[0])))
+        expect(b.editor.cutRows(b.ids(a, "two"), of: a))
+        let payload = try require(b.editor.pasteboardRows)
+        b.editor.transact { $0.delete([other]) }
+        b.editor.pasteRows(payload, to: .into(a, before: nil))
+        expect(b.editor.announcements.last?.contains("1 strap left out") == true, "said: \(b.editor.announcements.last ?? "")")
     },
 ])
 
@@ -266,6 +345,64 @@ extension Bench {
         let inView = b.canvas.convert(b.editor.camera.toView(CGPoint(x: row.midX, y: row.midY)), to: view.superview)
         expectEqual(view.hitTest(inView), nil)
     },
+    test("Rows selected whole that another writer took out are no selection: the line takes typing again") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["apple", "pear", "plum"])
+        b.begin(id)
+        b.press(.up, times: 2)
+        b.press(.shiftDown)
+        expect(b.field.isBanded)
+        let gone = b.ids(id, "pear")
+        b.editor.transact("Delete") { $0.update(id, as: Tally.self) { $0.props.rows.removeAll { gone.contains($0.id) } } }
+        b.window.settle()
+        expect(!b.field.isBanded && b.field.isEditable, "the line is the caret's again")
+        expectEqual(b.view?.selectedRows, [])
+        b.type("fig")
+        b.press(.return)
+        expectEqual(b.labels(id), ["apple", "plum", "pearfig"], "and takes what is typed, after the draft of the row that went (the line that had the caret)")
+    },
+    test("A real press on rows selected whole ends editing and makes them items; a release on one of several selects it alone, on the only one edits it there") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["apple", "pear", "plum"])
+        let pear = b.ids(id, "pear")[0], plum = b.ids(id, "plum")[0]
+        @MainActor func press(on row: PartID) throws {
+            let rect = try require(b.editor.shapeContext.geometry(of: id)?.parts.frame(row)?.rect)
+            let point = b.editor.camera.toView(CGPoint(x: rect.midX, y: rect.midY))
+            if let view = b.view {
+                expectEqual(view.hitTest(b.canvas.convert(point, to: view.superview)), nil, "the band is not a hit: the press goes to the canvas")
+            }
+            b.canvas.mouseDown(with: b.window.mouse(.leftMouseDown, at: point, time: 100 + TimeInterval(b.window.contentView?.subviews.count ?? 0)))
+            expectEqual(b.editor.editingShapeID, nil, "editing ended with the press")
+            b.canvas.mouseUp(with: b.window.mouse(.leftMouseUp, at: point, time: 100.1))
+        }
+        b.begin(id)
+        b.press(.up, times: 2)
+        b.press(.shiftDown, times: 2)
+        expectEqual(b.view?.selectedRows, [pear, plum])
+        try press(on: pear)
+        expectEqual(b.itemLabels, ["pear"], "a release on one of several selected rows selects it alone, as on shapes")
+        expectEqual(b.editor.selectedShapeIDs, [id])
+        b.begin(id)
+        b.press(.up, times: 2)
+        b.press(.shiftDown)
+        expectEqual(b.view?.selectedRows, [pear])
+        try press(on: pear)
+        expectEqual(b.editor.editingShapeID, id, "a release on the only selected row edits it there")
+        expectEqual(b.focus, "row pear")
+    },
+    test("Edit ▸ Paste is lit while rows are selected whole and rows this tally takes are on the pasteboard, and dim with none") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["apple", "pear"])
+        let paste = NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "")
+        b.begin(id)
+        b.press(.up)
+        b.press(.shiftDown)
+        expect(b.field.isBanded)
+        b.pasteboard.clearContents()
+        expectEqual(b.field.validateUserInterfaceItem(paste), false, "nothing to paste")
+        expect(b.editor.copyRows(b.ids(id, "apple"), of: id))
+        expectEqual(b.field.validateUserInterfaceItem(paste), true, "rows the tally takes")
+    },
 ])
 
 @MainActor let rowItemTests = Suite("Entries as items of their tally", [
@@ -314,6 +451,43 @@ extension Bench {
         expectEqual(b.labels(id), ["apple"])
         expectEqual(b.undoName, "Move Entries to New Tally")
         expect(b.editor.selectedShapeIDs != [id])
+    },
+    test("A selected entry a fold hides shows as the +N line, and ⌫ and ⌥↑ act on the entry selected, never on the line that stands for it") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["a 1", "b", "c 1", "d"])
+        b.editor.selectItems(b.ids(id, "b").map(AnyHashable.init), of: id)
+        b.editor.rowFolds?.fold([id])
+        b.window.settle()
+        expectEqual(b.itemLabels, ["+N"])
+        expectEqual(b.editor.selectedItems?.acting.compactMap { $0.base as? PartID }, b.ids(id, "b"), "the keys act on b")
+        b.press(.delete)
+        expectEqual(b.labels(id), ["a", "c", "d"], "b went, nothing nobody selected")
+        expectEqual(b.undoName, "Delete Entry")
+    },
+    test("A run of entries drawn out, selected all, or toggled on the canvas is counted aloud as the band counts it; a step to one other is not") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["apple", "pear", "plum", "fig"])
+        b.editor.selectItems(b.ids(id, "apple").map(AnyHashable.init), of: id)
+        let heard = b.editor.announcements.count
+        b.press(.down)
+        expectEqual(Array(b.editor.announcements.dropFirst(heard)), [], "one to one: the focus says it")
+        b.press(.shiftDown)
+        expectEqual(b.editor.announcements.last, "2 entries selected")
+        b.press(.commandA)
+        expectEqual(b.editor.announcements.last, "4 entries selected")
+        b.press(.shiftUp)
+        expectEqual(b.editor.announcements.last, "3 entries selected", "drawn back")
+    },
+    test("Rows another writer deletes leave the tally selected, not an invisible items selection") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["apple", "pear"])
+        b.editor.selectItems(b.ids(id, "pear").map(AnyHashable.init), of: id)
+        let gone = b.ids(id, "pear")
+        b.editor.transact("Delete") { $0.update(id, as: Tally.self) { $0.props.rows.removeAll { gone.contains($0.id) } } }
+        expectEqual(b.editor.selectedItems, nil, "none listed: none selected")
+        expectEqual(b.editor.selectedShapeIDs, [id])
+        b.press(.delete)
+        expect(b.editor.document[id] == nil, "Delete is the tally's again, as the outline says")
     },
 ])
 

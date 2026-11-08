@@ -3335,9 +3335,13 @@ registrar.forShapes(adopting: .lineRows) { kinds in
   selects every item, Escape goes back to the shape. Clipboard cuts, copies and pastes them before the shape.
 - **Hidden items.** An item that stands for hidden ones (`stands`: a fold's "+N ›" line) shows selected while one
   of those is, and gives it back as it shows again.
-- **Read it** as `editor.selectedItems` (the shape, the ids in its order, the anchor) and set it with
-  `editor.selectItems(_:of:)`. The shape stays selected; its outline gives way to the items', drawn inside it.
-  VoiceOver hears them as rows (`AccessiblePart.Role.row`), before the shape's parts, said selected.
+- **Read it** as `editor.selectedItems` (the shape, the ids in its order, the anchor, and `acting`: what the keys
+  delete, move, cut and copy, which for a line standing for selected hidden items is those items) and set it with
+  `editor.selectItems(_:of:)`. The shape stays selected; its outline and handles give way to the items', drawn inside it,
+  and come back if the shape lists none of what is held (another writer deleted them). A ⌘ press on an item still
+  brushes when dragged. VoiceOver hears them as rows (`AccessiblePart.Role.row`; a part's `title` is worked out when
+  asked, so listing a big shape's rows costs their rects), before the shape's parts, said selected, and a run drawn
+  out or toggled is counted aloud through the actions' `selectedWords`.
 ## Describing a shape for VoiceOver
 
 VoiceOver sees the canvas as a layout area named for its board, whose children are its shapes, each
@@ -14740,7 +14744,8 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   another kind under its id ([Containers](#containers)), `move(_:to:)`, which takes shapes onto
   another board of the file, `move(_:toBoardOwnedBy:)` onto the board a shape on this one owns,
   `move(_:from:to:)` off any board onto any other, `translate(_:by:on:)`, which moves them there,
-  and `move(_:above:on:)` and `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, and
+  and `move(_:above:on:)` and `move(_:below:on:)`, which restack them there, `update(_:on:_:)`, which changes a shape there, `insert(_:on:)`, which puts one back there
+  (a key a cut took from a board that holds a pill for the table; on top, nothing held of it, a read-only board refusing it), and
   `delete(_:on:)` and `delete(inFile:)`, which delete one there, `board(containing:)`, which says where a shape is ([Boards in a file](#the-editor-and-the-file)), and for [containers](#containers),
   `setContainer(_:to:)` and `settle(_:)` (`settle(_:on:)` on another board). A record carries its props, the
   values of its [added properties](#added-properties) and its [metadata](#metadata), and
@@ -16269,7 +16274,7 @@ type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Ty
 neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
-line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup
+line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
 engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values · paste reader SQL
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```

@@ -1768,6 +1768,28 @@ public struct Transaction {
         }
     }
 
+    /// `insert(_:)` on another board of the file, over that board as this transaction leaves it: a shape put back where it was
+    /// (a key a cut took from a board that holds a pill for the table) is on top of what the board holds there, as an insert
+    /// here is, and nothing is held of it. Nothing for an id that is on some board already (unless this transaction deleted it),
+    /// for a board the editor couldn't show once this transaction commits, and for a read-only board, whose owner services hear
+    /// refused. On this transaction's own board it's `insert(_:)`.
+    public mutating func insert(_ record: AnyShapeRecord, on board: BoardID) {
+        guard board != self.board else { return insert(record) }
+        guard isNewToFile(record.id), !climb(board).isTaken, var there = transaction(on: board) else { return }
+        there.isCascading = isCascading
+        // `there` reads the board as this transaction leaves it, sharing its storage with the copy this one has staged
+        // (`update(_:on:_:)`): this one lets go of its copy while `there` writes, and takes the result back.
+        let wasStaged = stagedBoards.removeValue(forKey: board) != nil
+        there.insert(record)
+        if there.didChange {
+            take(there, reserving: false)
+            stagedIDs[record.id] = board
+        } else {
+            refused.formUnion(there.refused)
+            if wasStaged { stagedBoards[board] = there.document }
+        }
+    }
+
     /// `update(_:on:_:)`, with the shape's props typed.
     public mutating func update<P: ShapeProps>(_ id: ShapeID, on board: BoardID, as _: P.Type, _ body: (inout ShapeRecord<P>) -> Void) {
         update(id, on: board) { $0.modify(as: P.self, body) }

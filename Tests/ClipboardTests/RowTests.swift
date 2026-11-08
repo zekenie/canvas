@@ -186,5 +186,33 @@ extension EditorHarness {
         h.selectRows(a, "two")
         h.command("x")
         expectEqual(h.lines(a), ["one", "two"], "a locked docket keeps its rows")
+        let held = try require(h.editor.pasteboardRows)
+        expectEqual(held.cut, nil, "a refused cut leaves the pasteboard as it was: the copy of one")
+        expectEqual(held.carrier.typed(as: Docket.self)?.props.rows.map(\.text), ["one"])
+        expectEqual(pasteboard.string(forType: .string), "one")
+    },
+    test("A right-click menu on a docket whose rows are selected means the rows: Copy, Cut and Delete take them, never the docket") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try rowHarness(pasteboard)
+        let a = h.add(Docket(CGRect(x: 100, y: 100, width: 200, height: 40), ["one", "two", "three"]))
+        let point = h.editor.camera.toView(CGPoint(x: 150, y: 130))
+        @MainActor func perform(_ title: String) throws {
+            h.selectRows(a, "two")
+            let menu = try require(h.secondaryClick(at: point))
+            let item = try require(menu.items.first { $0.title == title }, "\(title) in \(menu.outline)")
+            menu.performActionForItem(at: menu.index(of: item))
+        }
+        try perform("Copy")
+        expectEqual(h.editor.pasteboardRows?.carrier.typed(as: Docket.self)?.props.rows.map(\.text), ["two"], "the row, not the docket")
+        expect(h.editor.document[a] != nil)
+        try perform("Cut")
+        expectEqual(h.lines(a), ["one", "three"])
+        expectEqual(h.editor.undoHistory.undoName, "Cut Line")
+        h.editor.undo()
+        h.editor.undoHistory.seal()
+        try perform("Delete")
+        expectEqual(h.lines(a), ["one", "three"], "the row deleted, the docket stays")
+        expect(h.editor.document[a] != nil)
     },
 ])

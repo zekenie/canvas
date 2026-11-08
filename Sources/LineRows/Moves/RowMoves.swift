@@ -103,6 +103,15 @@ public enum RowSteps {
         counted("Cut \(title(noun, count))", along: along, in: registry)
     }
 
+    /// "2 Arrows left out": what a cut took with its rows and a paste could not bring back (its other end isn't on the board).
+    public static func leftOut(_ along: [KindCount], in registry: Registry) -> String {
+        let parts = along.filter { $0.count > 0 }.map { item in
+            let label = registry.label(of: item.kind).name
+            return "\(item.count) \(item.count == 1 ? label : DeleteSteps.plural(label))"
+        }
+        return "\(DeleteSteps.list(parts)) left out"
+    }
+
     /// "Column" or "Columns".
     static func title(_ noun: LineNoun, _ count: Int) -> String { count == 1 ? noun.title : noun.pluralTitle }
 
@@ -145,24 +154,38 @@ extension CanvasEditor {
         return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key)?.shape
     }
 
-    /// ⌥↑ (-1) ⌥↓ (+1): `rows` of `shape` moved a place as a block, past the row before the first or after the last; nothing
-    /// at the ends. Held or repeated, one step (`coalescing`).
+    /// ⌥↑ (-1) ⌥↓ (+1): `rows` of `shape` moved a place as a block, past the row shown before the first or after the last, so a
+    /// press of a folded shape changes what it shows: rows its fold hides are stepped over, and a closed header takes the
+    /// rows it hides along. Nothing at the ends. Held or repeated, one step (`coalescing`).
     @discardableResult
     public func moveRows(_ rows: [PartID], of shape: ShapeID, by delta: Int, coalescing key: AnyHashable? = nil) -> Bool {
         guard let record = document[shape], let moving = registry.rowMoving(of: record.kind) else { return false }
         let order = moving.rows(record) ?? []
-        let wanted = Set(rows)
-        let indices = order.indices.filter { wanted.contains(order[$0]) }
+        let shown = shapeContext.layoutInput(LineRowsLayout.shown, of: record)
+        var block = Set(rows)
+        if let shown {
+            // A closed header moves with the rows behind it.
+            for (index, id) in order.enumerated() where block.contains(id) {
+                let line = shown.line(standingFor: index)
+                guard case .header(let header, _) = shown.lines[line], header == index else { continue }
+                for other in order.indices where other != index && shown.line(standingFor: other) == line { block.insert(order[other]) }
+            }
+        }
+        let indices = order.indices.filter { block.contains(order[$0]) }
         guard let first = indices.first, let last = indices.last else { return false }
+        func isShown(_ index: Int) -> Bool { shown?.isShown(index) ?? true }
         let before: PartID?
         if delta < 0 {
-            guard first > 0 else { return false }
-            before = order[first - 1]
+            guard let above = (0..<first).last(where: { !block.contains(order[$0]) && isShown($0) }) else { return false }
+            before = order[above]
         } else {
-            guard last < order.count - 1 else { return false }
-            before = last + 2 < order.count ? order[last + 2] : nil
+            guard let below = ((last + 1)..<order.count).first(where: { !block.contains(order[$0]) && isShown($0) }) else { return false }
+            // Past a closed header, past what it hides.
+            var after = below + 1
+            if let shown { while after < order.count, shown.line(standingFor: after) == shown.line(standingFor: below) { after += 1 } }
+            before = after < order.count ? order[after] : nil
         }
-        return moveRows(rows, of: shape, to: .into(shape, before: before), coalescing: key ?? AnyHashable(RowMoveRun(shape: shape, rows: Set(rows)))) != nil
+        return moveRows(Array(block), of: shape, to: .into(shape, before: before), coalescing: key ?? AnyHashable(RowMoveRun(shape: shape, rows: Set(rows)))) != nil
     }
 
     /// The rows as a block before `before` in their shape: one step, the rows selected as items after (unless the shape is
@@ -193,7 +216,7 @@ extension CanvasEditor {
     /// the board shown left out; `moves` says the rows are the same rows (a move, a cut's paste), so what's bound to them or
     /// names them follows (`moveParts`), and the arrows keep their ids where the file doesn't use them. Returns the shape
     /// they're in.
-    func landRows(_ carrier: AnyShapeRecord, source: ShapeID?, arrows: [AnyShapeRecord], moves: Bool, at place: RowPlace, step: String,
+    func landRows(_ carrier: AnyShapeRecord, source: ShapeID?, arrows: [AnyShapeRecord], far: [FarArrow] = [], moves: Bool, at place: RowPlace, step: String,
                   coalescing key: AnyHashable? = nil) -> (shape: ShapeID, rows: [PartID])? {
         guard let moving = registry.rowMoving(of: carrier.kind) else { return nil }
         let rows = moving.rows(carrier) ?? []
@@ -236,10 +259,12 @@ extension CanvasEditor {
             renaming = [:]
         }
         let landed = rows.map { renaming[$0] ?? $0 }
-        var tried: Set<ShapeID> = [destination]
-        if let source { tried.insert(source) }
+        // What a refusal shakes is what the transaction heard refused and what the body names (the source, the target, the container
+        // that would not take a shape put down): the new shape isn't there yet to shake.
+        var left: [KindCount] = []
         let body = { [self] () -> [ShapeID: CGPoint]? in
-            transactWhole(step, coalescing: key, shaking: tried) { transaction -> [ShapeID: CGPoint] in
+            left = []
+            return transactWhole(step, coalescing: key) { transaction -> [ShapeID: CGPoint] in
                 if let source, let fresh = transaction.document[source], let from = registry.rowMoving(of: fresh.kind) {
                     guard let without = from.removing(fresh, Set(rows)) else { throw Transaction.Refused([source]) }
                     transaction.update(source) { $0 = without }
@@ -254,16 +279,41 @@ extension CanvasEditor {
                 }
                 var moved: [PartAddress: PartAddress] = [:]
                 for row in rows { moved[PartAddress(carrier.id, part: row)] = PartAddress(destination, part: renaming[row] ?? row) }
-                // A paste's arrows, bound to the rows where they landed; one whose other end isn't here goes.
+                // A paste's arrows, bound to the rows where they landed; one whose other end isn't here is left out (and said), and
+                // one bound to a row of another shape that is gone since is bound to that shape as a whole, as taking the row out does.
                 var put: [ShapeID] = []
+                func leaveOut(_ arrow: AnyShapeRecord) {
+                    if let at = left.firstIndex(where: { $0.kind == arrow.kind }) { left[at].count += 1 } else { left.append(KindCount(kind: arrow.kind, count: 1)) }
+                }
                 for arrow in arrows {
                     guard var bound = arrow.movingParts(in: registry, { moved[$0] ?? $0 }) ?? Optional(arrow) else { continue }
-                    guard bound.boundParts(in: registry).allSatisfy({ transaction.document[$0.shape] != nil }) else { continue }
+                    guard bound.boundParts(in: registry).allSatisfy({ transaction.document[$0.shape] != nil }) else {
+                        leaveOut(arrow)
+                        continue
+                    }
+                    bound = bound.movingParts(in: registry, { address in
+                        guard let part = address.part, let held = transaction.document[address.shape], let names = registry.parts(of: held),
+                              !names.contains(where: { $0.id == part }) else { return address }
+                        return PartAddress(address.shape)
+                    }) ?? bound
                     if !moves || !file.isUnused(bound.id) || transaction.document[bound.id] != nil { bound = bound.copy(as: ShapeID()) }
                     transaction.insert(bound)
                     put.append(bound.id)
                 }
-                if moves { transaction.moveParts(moved) }
+                // A cut's keys that reached its rows through a pill on another board are put back on that board, bound as they
+                // were; `moveParts` then follows them to where the rows went, through the pill or to it as a whole.
+                if moves {
+                    for key in far {
+                        let there = transaction.contents(of: key.board)
+                        guard transaction.mayWrite(on: key.board), there[key.record.id] == nil, file.isUnused(key.record.id),
+                              key.record.boundParts(in: registry).allSatisfy({ there[$0.shape] != nil }) else {
+                            leaveOut(key.record)
+                            continue
+                        }
+                        transaction.insert(key.record, on: key.board)
+                    }
+                    transaction.moveParts(moved)
+                }
                 guard case .out = landing else { return [:] }
                 switch transaction.settle([destination] + put) {
                 case .settled(let nudges): return nudges
@@ -286,7 +336,7 @@ extension CanvasEditor {
             if let nudges { finishLanding(destination, landed: landed, out: out, editsTitle: false, nudges: nudges) }
         }
         guard nudges != nil else { return nil }
-        announce(step)
+        announce(left.isEmpty ? step : "\(step), \(RowSteps.leftOut(left, in: registry))")
         return (destination, landed)
     }
 

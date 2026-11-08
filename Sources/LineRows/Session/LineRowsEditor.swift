@@ -92,6 +92,9 @@ public class LineRowsView: NSView {
     /// The rows selected whole (⇧↑ ⇧↓), in their order; none while the caret is in a line.
     public var selectedRows: [PartID] { [] }
 
+    /// A commit settled (another writer's, an agent's): rows selected whole that it took out are no selection.
+    func documentDidSettle() {}
+
     /// ⌘↓: the line written, then the card of the row with the caret shown under it; false where there's none (the title, an
     /// empty waiting line, a row with nothing more).
     @discardableResult
@@ -164,6 +167,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         field.onChange = { [weak self] in self?.lineChanged() }
         field.onPasteLines = { [weak self] text in self?.paste(text) ?? false }
         field.onRows = { [weak self] action in self?.rowsAction(action) ?? false }
+        field.canPasteRows = { [weak self] in self?.pastableRows != nil }
         field.onBlur = { [weak self] in self?.blurred() }
         field.onFocus = { [weak self] in self?.focused() }
         editor.connectPicker?.connectsEditedRow = { [weak self] shape in shape == self?.id && self?.connectEditedRow() == true }
@@ -641,6 +645,16 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     // MARK: Rows selected whole
 
+    /// The rows selected whole went (another writer took them out): the line is the caret's again, shown and typed in.
+    override func documentDidSettle() {
+        guard !isMoving, let band, index(of: band.anchor) == nil || index(of: band.head) == nil else { return }
+        self.band = nil
+        reanchor()
+        setInputs()
+        place()
+        needsDisplay = true
+    }
+
     override var selectedRows: [PartID] {
         guard let band, let anchor = index(of: band.anchor), let head = index(of: band.head) else { return [] }
         let rows = rows
@@ -732,6 +746,13 @@ final class LineSession<Model: LineModel>: LineRowsView {
         }
     }
 
+    /// The rows on the pasteboard, if this shape takes them.
+    private var pastableRows: RowsPayload? {
+        guard let payload = editor.pasteboardRows, let kind = editor.document[id]?.kind, kind == payload.carrier.kind,
+              editor.registry.rowMoving(of: kind)?.takes(kind) == true else { return nil }
+        return payload
+    }
+
     /// ⌘C ⌘X with rows selected whole: on the pasteboard (a cut taking them out with the arrows bound to them, counted). ⌘V
     /// with rows on the pasteboard: after the caret's row (in place of an empty line), or after the rows selected whole, one
     /// step ("Paste Columns"), the caret at the end of the last. False: the key as text's.
@@ -753,7 +774,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
             if let above, index(of: above) != nil { show(.row(above), at: .end) } else { show(.waiting, at: .start, waitingAt: 0) }
             return true
         case .paste:
-            guard focus != .title, let payload = editor.pasteboardRows else { return false }
+            // Rows this shape takes: others (an enum's values on the pasteboard, in a table's line) are text there, pasted as lines.
+            guard focus != .title, let payload = pastableRows else { return false }
             let before: PartID?
             if band != nil {
                 let last = selectedRows.last.flatMap(index(of:)) ?? rows.count - 1

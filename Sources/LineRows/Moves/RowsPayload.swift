@@ -12,6 +12,18 @@ import Topology
 // holds those rows; pasted again, they're copies. The pasteboard is the editor's (the core's `pasteboard`, Clipboard's): the line
 // editor writes and reads rows itself while a row is typed in, Clipboard on the canvas.
 
+/// A key a cut took with its rows from another board: the board it was on (it reached a row through a pill for the table
+/// there) and the shape.
+public struct FarArrow {
+    public let board: BoardID
+    public let record: AnyShapeRecord
+
+    public init(board: BoardID, record: AnyShapeRecord) {
+        self.board = board
+        self.record = record
+    }
+}
+
 /// Rows on the pasteboard.
 public struct RowsPayload {
     /// The source's record, holding only these rows, untitled, under the source's id.
@@ -20,11 +32,15 @@ public struct RowsPayload {
     public let bound: [AnyShapeRecord]
     /// A cut's mark: its paste moves the rows, while no shape on the board holds them.
     public let cut: UUID?
+    /// A cut's keys from other boards (through a pill for the shape), each with its board: put back there by a paste that moves
+    /// the rows, while that board still holds what they were bound to.
+    public var far: [FarArrow]
 
-    public init(carrier: AnyShapeRecord, bound: [AnyShapeRecord] = [], cut: UUID? = nil) {
+    public init(carrier: AnyShapeRecord, bound: [AnyShapeRecord] = [], cut: UUID? = nil, far: [FarArrow] = []) {
         self.carrier = carrier
         self.bound = bound
         self.cut = cut
+        self.far = far
     }
 }
 
@@ -35,15 +51,21 @@ public enum RowsPasteboard {
     public static let type = NSPasteboard.PasteboardType("com.example.InfiniteCanvas.rows")
     /// A cut's mark beside them: a token, fresh each cut.
     public static let cutType = NSPasteboard.PasteboardType("com.example.InfiniteCanvas.rows.cut")
+    /// Which board each of a cut's keys from other boards was on, beside them: JSON, a board for a shape's id.
+    public static let farType = NSPasteboard.PasteboardType("com.example.InfiniteCanvas.rows.far")
 
     /// Writes `payload` on `pasteboard` in place of what was there, with `lines` as text beside it. False, and nothing
     /// written, when it doesn't encode.
     @discardableResult
     public static func write(_ payload: RowsPayload, lines: [String], to pasteboard: NSPasteboard, registry: Registry) -> Bool {
-        guard let data = try? BoardCodec(registry: registry).encode(CanvasDocument(shapes: [payload.carrier] + payload.bound)) else { return false }
+        guard let data = try? BoardCodec(registry: registry).encode(CanvasDocument(shapes: [payload.carrier] + payload.bound + payload.far.map(\.record))) else { return false }
         pasteboard.clearContents()
         pasteboard.setData(data, forType: type)
         if let cut = payload.cut { pasteboard.setString(cut.uuidString, forType: cutType) }
+        if !payload.far.isEmpty {
+            let boards = Dictionary(payload.far.map { ($0.record.id.description, $0.board.description) }) { first, _ in first }
+            if let json = try? JSONEncoder().encode(boards) { pasteboard.setData(json, forType: farType) }
+        }
         pasteboard.setString(lines.joined(separator: "\n"), forType: .string)
         return true
     }
@@ -57,7 +79,12 @@ public enum RowsPasteboard {
         let shapes = board.file.root.shapes.filter { !$0.isOpaque }
         guard let carrier = shapes.first(where: { registry.rowMoving(of: $0.kind) != nil }) else { return nil }
         let cut = pasteboard.string(forType: cutType).flatMap(UUID.init(uuidString:))
-        return RowsPayload(carrier: carrier, bound: shapes.filter { $0.id != carrier.id }, cut: cut)
+        let boards = pasteboard.data(forType: farType).flatMap { try? JSONDecoder().decode([String: String].self, from: $0) } ?? [:]
+        var bound: [AnyShapeRecord] = [], far: [FarArrow] = []
+        for shape in shapes where shape.id != carrier.id {
+            if let board = boards[shape.id.description].flatMap(BoardID.init) { far.append(FarArrow(board: board, record: shape)) } else { bound.append(shape) }
+        }
+        return RowsPayload(carrier: carrier, bound: bound, cut: cut, far: far)
     }
 }
 
@@ -105,30 +132,35 @@ extension CanvasEditor {
         return RowsPasteboard.write(payload, lines: moving.lines(payload.carrier, self), to: pasteboard, registry: registry)
     }
 
-    /// Cuts `rows` of `shape`: on the editor's pasteboard as a cut's, with every arrow bound to them, then taken out of the
-    /// shape with those arrows, in one step that counts them ("Cut Columns and 2 Arrows"). A read-only shape copies and
-    /// cuts nothing, and shakes. False with no pasteboard or no rows.
+    /// Cuts `rows` of `shape`: taken out of the shape with every arrow bound to them, in one step that counts them ("Cut Columns
+    /// and 2 Arrows"), and on the editor's pasteboard as a cut's with those arrows, the keys that reached them through a pill
+    /// on another board among them (with their boards). A read-only shape or board copies and cuts nothing, shakes, and leaves
+    /// the pasteboard as it was. False with no pasteboard or no rows.
     @discardableResult
     public func cutRows(_ rows: [PartID], of shape: ShapeID) -> Bool {
         guard let pasteboard, let record = document[shape], let moving = registry.rowMoving(of: record.kind),
-              let payload = rowsPayload(rows, of: shape, cut: true) else { return false }
+              var payload = rowsPayload(rows, of: shape, cut: true) else { return false }
         let ids = moving.rows(payload.carrier) ?? []
-        RowsPasteboard.write(payload, lines: moving.lines(payload.carrier, self), to: pasteboard, registry: registry)
         var name = ""
+        var far: [FarArrow] = []
         let registry = registry
+        let bound = payload.bound
         let done: Bool? = transactWhole(nil, shaking: [shape]) { transaction in
+            far = []
             guard let fresh = transaction.document[shape], let without = moving.removing(fresh, Set(ids)) else { throw Transaction.Refused([shape]) }
             transaction.update(shape) { $0 = without }
             guard transaction.refusedShapes.isEmpty else { throw Transaction.Refused([shape]) }
             // The arrows bound to them go with them, counted: those cut with them, and what the core takes along for the rest.
-            let arrows = Set(payload.bound.map(\.id)).filter { transaction.document[$0] != nil }
+            let arrows = Set(bound.map(\.id)).filter { transaction.document[$0] != nil }
             var counts: [KindCount] = []
             for id in arrows {
                 guard let kind = transaction.document[id]?.kind else { continue }
                 if let at = counts.firstIndex(where: { $0.kind == kind }) { counts[at].count += 1 } else { counts.append(KindCount(kind: kind, count: 1)) }
             }
             transaction.delete(arrows)
-            transaction.removeParts(Set(ids.map { PartAddress(shape, part: $0) }))
+            let keys = Self.keysThroughPills(to: Set(ids), of: shape, in: transaction, registry: registry)
+            let gone = transaction.removeParts(Set(ids.map { PartAddress(shape, part: $0) }))
+            far = keys.filter { gone.contains($0.record.id) }
             for item in transaction.deletedAlong {
                 if let at = counts.firstIndex(where: { $0.kind == item.kind }) { counts[at].count += item.count } else { counts.append(item) }
             }
@@ -137,9 +169,27 @@ extension CanvasEditor {
             return true
         }
         guard done == true else { return false }
+        payload.far = far
+        RowsPasteboard.write(payload, lines: moving.lines(payload.carrier, self), to: pasteboard, registry: registry)
         if selectedItems?.shape == shape { selectionStateItemsDidGo(of: shape) }
         announce(name)
         return true
+    }
+
+    /// The shapes on other boards that reach one of `rows` of `shape` through a pill for it (a key to a column of a table
+    /// shown on another board), as `transaction` has the file: what `removeParts` reaches through the file's stand-ins.
+    private static func keysThroughPills(to rows: Set<PartID>, of shape: ShapeID, in transaction: Transaction, registry: Registry) -> [FarArrow] {
+        let kinds = registry.referencingKinds
+        var pills: [BoardID: Set<ShapeID>] = [:]
+        for pill in transaction.standIns(naming: shape) where pill.board != transaction.board { pills[pill.board, default: []].insert(pill.id) }
+        var found: [FarArrow] = []
+        for (board, ids) in pills.sorted(by: { $0.key.description < $1.key.description }) {
+            for record in transaction.contents(of: board).shapes where kinds.contains(record.kind) {
+                let reaches = record.boundParts(in: registry).contains { address in ids.contains(address.shape) && address.part.map(rows.contains) == true }
+                if reaches { found.append(FarArrow(board: board, record: record)) }
+            }
+        }
+        return found
     }
 
     /// Rows put down at `place`, as one step: into a shape ("Paste Columns"), or out on their own,
@@ -166,7 +216,7 @@ extension CanvasEditor {
         } else {
             RowSteps.paste(moving.noun, count: rows.count)
         }
-        return landRows(payload.carrier, source: nil, arrows: payload.bound, moves: moves, at: place, step: step)
+        return landRows(payload.carrier, source: nil, arrows: payload.bound, far: payload.far, moves: moves, at: place, step: step)
     }
 
     /// Whether a shape of `kind` on the board holds one of `rows`: a cut's rows pasted once already.

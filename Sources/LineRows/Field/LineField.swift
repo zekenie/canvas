@@ -71,6 +71,9 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     public var onPasteLines: ((String) -> Bool)?
     /// Rows cut, copied or pasted as wholes (true: taken): ⌘X ⌘C with whole rows selected, ⌘V with rows on the pasteboard.
     public var onRows: ((LineRowsAction) -> Bool)?
+    /// Whether rows this shape takes are on the pasteboard: Edit › Paste is lit while rows are selected whole (the line takes no
+    /// typing then, so AppKit would dim it).
+    public var canPasteRows: (() -> Bool)?
     /// Whole rows are selected (⇧↑ ⇧↓): the line is hidden and takes no typing; ⌫ ⌦, ⌘X and ⌘C are the rows'.
     public var isBanded = false {
         didSet { isEditable = !isBanded }
@@ -332,9 +335,10 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         super.cut(sender)
     }
 
-    /// Edit › Cut and Copy are the rows' while whole rows are selected, though the line takes no typing then.
+    /// Edit › Cut, Copy and Paste are the rows' while whole rows are selected, though the line takes no typing then.
     public override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         if isBanded, item.action == #selector(NSText.cut(_:)) || item.action == #selector(NSText.copy(_:)) { return true }
+        if isBanded, item.action == #selector(NSText.paste(_:)) { return canPasteRows?() == true }
         return super.validateUserInterfaceItem(item)
     }
 

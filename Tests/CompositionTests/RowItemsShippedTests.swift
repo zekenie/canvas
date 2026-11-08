@@ -1,4 +1,5 @@
 import AppKit
+import Adornments
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
@@ -8,6 +9,7 @@ import Connections
 import Engineering
 import Geometry
 import LineRows
+import References
 import Selection
 import ShippedTesting
 import TestKit
@@ -69,6 +71,11 @@ private let customers = #"""
         expectEqual(editor.document[made]?.typed(as: DatabaseTable.self)?.props.columns.map(ColumnGrammar.print),
                     ["id uuid pk", "street text", "city text", "postcode text", "country char(2)"], "its own key first, then the columns")
         expectEqual(w.lineRows?.focus, .title)
+        // The new table's name field is as wide as its placeholder's pill, not the icon alone (the ring goes round the pill).
+        let field = try require(w.canvas.descendants(TitleField.self).first, "the name's field")
+        let scale = field.bounds.height / AdornmentLayout.rowHeight
+        expect(field.chipWidth > 50, "the empty field's chip has its placeholder's room: \(field.chipWidth)")
+        expect(field.chipWidth * scale <= field.bounds.width + 0.5, "the field's bounds hold its chip: \(field.chipWidth * scale) of \(field.bounds.width)")
         w.type("addresses", with: walk)
         walk.press(.escape)
         expectEqual(editor.editingShapeID, nil)
@@ -146,6 +153,55 @@ private let customers = #"""
         expectEqual(keys(editor), ["carts.customer_id -> customers.id"])
         expect(editor.document[key] != nil, "the key under its own id: a move")
         expectEqual(undoTitle(w.window), "Undo Paste Column")
+    },
+    test("a cut takes the keys that reach its column through a pill on another board and counts them; its paste is a move that puts them back under their ids; a second paste copies the column only") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        _ = try drawnInProcess(#"""
+            table "customers" columns: "id uuid pk\nemail text unique"
+            subboard "billing" below "customers"
+            """#, on: editor)
+        let customers = try require(table(editor, "customers"))
+        let billing = BoardID(owner: try require(editor.document.shapes.first { $0[TitleProperty.self] == "billing" }).id)
+        expect(editor.showBoard(billing))
+        w.window.makeFirstResponder(w.canvas)
+        @MainActor func keyArrows() -> [ShapeRecord<Arrow>] {
+            editor.contents(of: billing).shapes.compactMap { $0.typed(as: Arrow.self) }.filter { $0[ChannelProperty.self] == ForeignKey.id }
+        }
+        ShippedPlugins.pasteboard.clearContents()
+        ShippedPlugins.pasteboard.setString("CREATE TABLE statements (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers (id));", forType: .string)
+        expect(w.window.performKeyEquivalent(with: w.window.keyEvent("v", code: 9, modifiers: [.command])))
+        let key = try require(keyArrows().first)
+        let pill = try require(key.props.end.binding?.shapeID)
+        let id = try require(customers.props.columns.first { $0.name == "id" }?.id)
+        expectEqual(key.props.end.binding?.part, id, "the key ends at customers' pill, on its id")
+        // Back on customers' board: its id column cut.
+        expect(editor.showBoard(.root))
+        w.window.makeFirstResponder(w.canvas)
+        editor.undoHistory.seal()
+        let walk = w.walk()
+        editor.selectedShapeIDs = [customers.id]
+        editor.selectItems([AnyHashable(id)], of: customers.id)
+        walk.press(Chord("x", .command))
+        expectEqual(table(editor, "customers")?.props.columns.map(\.name), ["email"])
+        expectEqual(undoTitle(w.window), "Undo Cut Column and 1 Arrow", "the key on the other board is counted")
+        expectEqual(keyArrows().count, 0, "it went with the column")
+        // Pasted after the one left: the column the same column, the key where it was.
+        editor.selectedShapeIDs = [customers.id]
+        editor.selectItems([AnyHashable(try require(table(editor, "customers")?.props.columns.first?.id))], of: customers.id)
+        walk.press(Chord("v", .command))
+        expectEqual(table(editor, "customers")?.props.columns.map(\.name), ["email", "id"])
+        expectEqual(table(editor, "customers")?.props.columns.last?.id, id, "the same column")
+        let back = try require(keyArrows().first)
+        expectEqual(keyArrows().count, 1)
+        expectEqual(back.id, key.id, "under its own id")
+        expectEqual(back.props.end.binding?.shapeID, pill)
+        expectEqual(back.props.end.binding?.part, id, "on its column again, through the pill")
+        walk.press(Chord("v", .command))
+        expectEqual(table(editor, "customers")?.props.columns.map(\.name), ["email", "id", "id"], "a second paste is a copy")
+        expectEqual(keyArrows().count, 1, "and carries no key from the cut")
     },
 ])
 
