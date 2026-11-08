@@ -11,7 +11,8 @@ import Types
 // schema written once the put has found or made every note (`DrawPut.LateValue`): a `$ref` to a component's schema points at that
 // component's note (`urn:uuid:` and its id, a fragment kept), each property titled as the file keys it (`titled`: a field reads
 // `payment_id`, as written), and a type the file had is joined with what it holds, its
-// properties by name. The API alone on the first row, its types below it, four to a row. A type finds only a note that is a type,
+// properties by name. The API alone on the first row, its types below it, four to a row, each after the type that refers to it
+// most (`laidOut`). A type finds only a note that is a type,
 // so a plain note of the same name is left alone and a type made beside it.
 // So the put finds the API by its title, nearest first and file-wide, and the endpoints' writer joins its rows by method and full
 // path (`APIWords.mergedEndpoints`: ids kept; a new one under the longest header it starts with; one the paste leaves out kept); a
@@ -60,13 +61,39 @@ public enum OpenAPIPaste {
         for document in documents {
             rows.append([api(document, typeKind: typeKind)])
             guard let typeKind else { continue }
-            let types = document.types.map { type($0, kind: typeKind) }
+            let types = laidOut(document.types).map { type(document.types[$0], kind: typeKind) }
             rows += stride(from: 0, to: types.count, by: typesARow).map { Array(types[$0..<min($0 + typesARow, types.count)]) }
         }
         var put = DrawPut(rows: rows)
         // What it puts down of that kind is types, not notes: so VoiceOver hears it.
         if let typeKind { put.labels[typeKind.rawValue] = APIStyle.pastedTypeLabel }
         return put
+    }
+
+    /// The order a document's types are put down in, by what refers to what (`ReaderLayout.walk`): from the type most `$ref`s and
+    /// `allOf`s name, each after the type that refers to it most, so a type lands beside what it's built of (Refund beside Money
+    /// and Base). Indexes into `types`.
+    static func laidOut(_ types: [OpenAPIType]) -> [Int] {
+        let index = Dictionary(types.enumerated().map { ($0.element.name, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        var links: [(from: Int, to: Int)] = []
+        for (from, type) in types.enumerated() {
+            for name in type.isA { if let to = index[name] { links.append((from, to)) } }
+            func refs(_ schema: SchemaValue) {
+                switch schema {
+                case .object(let members):
+                    if let ref = schema["$ref"]?.string, let component = OpenAPIReader.component(of: ref), let to = index[component.name] {
+                        links.append((from, to))
+                    }
+                    for member in members { refs(member.value) }
+                case .array(let elements):
+                    elements.forEach(refs)
+                default:
+                    break
+                }
+            }
+            refs(type.schema)
+        }
+        return ReaderLayout.walk(Array(types.indices), links: links)
     }
 
     // MARK: Statements

@@ -81,34 +81,14 @@ public enum SQLPaste {
     /// never what its keys say. Indexes into `schema.tables`.
     static func laidOut(_ schema: SQLSchema) -> [Int] {
         let order = schema.order.compactMap { item -> Int? in if case .table(let index) = item { index } else { nil } }
-        var weight: [Int: [Int: Int]] = [:], named: [Int: Int] = [:]
+        var links: [(from: Int, to: Int)] = []
         for from in order {
             for key in schema.tables[from].keys {
-                guard let far = pasted(key.table, in: schema), let to = schema.tables.firstIndex(where: { $0.name == far.name }), to != from else { continue }
-                named[to, default: 0] += 1
-                weight[from, default: [:]][to, default: 0] += 1
-                weight[to, default: [:]][from, default: 0] += 1
+                guard let far = pasted(key.table, in: schema), let to = schema.tables.firstIndex(where: { $0.name == far.name }) else { continue }
+                links.append((from, to))
             }
         }
-        let place = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($0.element, $0.offset) })
-        var laid: [Int] = [], seen: Set<Int> = []
-        while laid.count < order.count {
-            // The most named of those left, the first made of a tie.
-            guard let start = order.filter({ !seen.contains($0) }).max(by: { (named[$0] ?? 0, place[$1]!) < (named[$1] ?? 0, place[$0]!) }) else { break }
-            var queue = [start]
-            seen.insert(start)
-            while !queue.isEmpty {
-                let table = queue.removeFirst()
-                laid.append(table)
-                let next = (weight[table] ?? [:]).filter { !seen.contains($0.key) }
-                    .sorted { ($0.value, place[$1.key]!) > ($1.value, place[$0.key]!) }.map(\.key)
-                for neighbor in next {
-                    seen.insert(neighbor)
-                    queue.append(neighbor)
-                }
-            }
-        }
-        return laid
+        return ReaderLayout.walk(order, links: links)
     }
 
     // MARK: Statements
@@ -211,5 +191,42 @@ public enum SQLPaste {
     /// A value as JSON text.
     private static func json(_ value: Any) -> String {
         (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+    }
+}
+
+/// How a reader orders what it puts down so that what refers to what lands together (`DrawPut` rows, four to a row): a table
+/// after the one it keys to most, a type after the one that refers to it most.
+enum ReaderLayout {
+    /// `items` (in the order they were read) ordered by `links` (one from an item to the item it refers to, as often as it does;
+    /// one to itself counts for nothing): from the item most links name (the first read of a tie), a walk that puts each item's
+    /// neighbors after it, the one with most links between them first (either way), then the order read; then from the most named
+    /// of those left, and so on. Every item once.
+    static func walk(_ items: [Int], links: [(from: Int, to: Int)]) -> [Int] {
+        var weight: [Int: [Int: Int]] = [:], named: [Int: Int] = [:]
+        let known = Set(items)
+        for link in links where link.from != link.to && known.contains(link.from) && known.contains(link.to) {
+            named[link.to, default: 0] += 1
+            weight[link.from, default: [:]][link.to, default: 0] += 1
+            weight[link.to, default: [:]][link.from, default: 0] += 1
+        }
+        let place = Dictionary(items.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        var laid: [Int] = [], seen: Set<Int> = []
+        while laid.count < place.count {
+            // The most named of those left, the first read of a tie.
+            guard let start = items.filter({ !seen.contains($0) }).max(by: { (named[$0] ?? 0, place[$1]!) < (named[$1] ?? 0, place[$0]!) }) else { break }
+            var queue = [start]
+            seen.insert(start)
+            while !queue.isEmpty {
+                let item = queue.removeFirst()
+                laid.append(item)
+                let next = (weight[item] ?? [:]).filter { !seen.contains($0.key) }
+                    .sorted { ($0.value, place[$1.key]!) > ($1.value, place[$0.key]!) }.map(\.key)
+                for neighbor in next {
+                    seen.insert(neighbor)
+                    queue.append(neighbor)
+                }
+            }
+        }
+        return laid
     }
 }

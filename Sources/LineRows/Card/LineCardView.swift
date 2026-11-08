@@ -623,17 +623,32 @@ final class LineCardSession<Model: LineModel>: LineCardView {
                 // Cut short of the edge, the "…" drawn in the room left (the card shows through the clip's mask there).
                 let ellipsis = LineCardStyle.ellipsisWidth
                 if !hasKeyboard, used > clipFrame.width, clipFrame.width > ellipsis {
-                    cut[CardStop(line: index, item: item)] = CGPoint(x: clipFrame.maxX - ellipsis, y: rect.midY)
+                    let end = Self.characterEdge(in: field, atOrBefore: clipFrame.width - ellipsis)
+                    cut[CardStop(line: index, item: item)] = CGPoint(x: clipFrame.minX + end + LineCardStyle.ellipsisGap, y: rect.midY)
                     clip.wantsLayer = true
                     let mask = clip.layer?.mask ?? CALayer()
                     mask.backgroundColor = NSColor.black.cgColor
-                    mask.frame = CGRect(x: 0, y: 0, width: clipFrame.width - ellipsis, height: clipFrame.height)
+                    mask.frame = CGRect(x: 0, y: 0, width: end, height: clipFrame.height)
                     clip.layer?.mask = mask
                 } else if clip.layer?.mask != nil {
                     clip.layer?.mask = nil
                 }
             }
         }
+    }
+
+    /// Where the last character that ends at or before `x` (the field's points) ends, so words cut short are cut between
+    /// characters, never through one; `x` itself where the field can't say (no window).
+    private static func characterEdge(in field: LineField, atOrBefore x: CGFloat) -> CGFloat {
+        guard let window = field.window else { return x }
+        func edge(_ index: Int) -> CGFloat? {
+            let screen = field.firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)
+            guard screen != .zero else { return nil }
+            return field.convert(window.convertFromScreen(screen), from: nil).minX
+        }
+        var index = field.characterIndexForInsertion(at: CGPoint(x: x, y: field.bounds.midY))
+        while index > 0, let at = edge(index), at > x { index -= 1 }
+        return index > 0 ? min(x, edge(index) ?? x) : x
     }
 
     /// VoiceOver reads the lines in the order the keys walk them, top to bottom, whatever order the views were added in.
@@ -824,6 +839,7 @@ enum LineCardStyle {
     /// What ends words cut at the card's edge, and the room it takes there.
     static let ellipsis = "…"
     static let ellipsisWidth: CGFloat = 14
+    static let ellipsisGap: CGFloat = 1
     static let yes = "yes"
     static let no = "no"
 

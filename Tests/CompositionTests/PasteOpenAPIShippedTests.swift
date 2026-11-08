@@ -224,6 +224,10 @@ private let refunds = """
         let response = try require(type(editor, "CreateRefundResponse"))
         let landed = try require(api(editor, "refunds API"))
         expectEqual(editor.selectedShapeIDs.count, 5, "the API and four types")
+        // paste 02 for types: each after the one that refers to it most, so Refund sits between Money and Base, which it's built of.
+        let row = [money, refund, base, response].sorted { ($0.box?.minX ?? 0) < ($1.box?.minX ?? 0) }.compactMap { $0[TitleProperty.self] }
+        expectEqual(row, ["Money", "Refund", "Base", "CreateRefundResponse"], "laid out by their references")
+        expectEqual(Set([money, refund, base, response].compactMap { $0.box?.minY }).count, 1, "one row of four")
         expectEqual(try schema(editor, "Refund")["properties"]?["amount"], .object([SchemaMember(key: "title", value: .string("amount")),
                                                                                      SchemaMember(key: "$ref", value: .string(SchemaReferences.uri(of: money.id)))]))
         // paste 06 and 07: each field titled as the file keys it, so it reads as written (E1 panel 4's `total_cents`).
