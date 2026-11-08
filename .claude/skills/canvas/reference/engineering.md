@@ -27,7 +27,7 @@ A key is an arrow from a column to the column it references, bound to both rows,
 edge "orders".customer_id -> "customers".id
 ```
 
-A column's line can say its key itself: `→ customers.id` draws the same edge, on the statement's line, and the column keeps no words of it. `→ customers` alone is its primary key, for a table already drawn (one the same script draws needs the column named). Writing the edge as well is the same key, drawn once; a line without `→` leaves the column's key alone.
+A column's line can say its key itself: `→ customers.id` draws the same edge, on the statement's line, and the column keeps no words of it. `→ customers` alone is its primary key, for a table already drawn (one the same script draws needs the column named). Writing the edge as well is the same key, drawn once; a line without `→` leaves the column's key alone; a line whose `→` goes elsewhere than the column's key re-aims it (the old key goes, the new one is drawn: a column has the one key its line says; an `edge` you write yourself stays).
 
 ```draw
 table "orders" columns: "billing_id uuid → customers.id\nshipping_id uuid -> customers.id"

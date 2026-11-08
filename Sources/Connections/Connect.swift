@@ -48,6 +48,10 @@ extension PluginRegistrar {
                 }) { subject in
             let editor = subject.editor
             if subject.shapes.count == 1, let picker = editor.connectPicker {
+                // ⌘L in the picker's own field, opened on a shape or one of its rows: it stays as it is.
+                if picker.isOpen(on: subject.shapes[0]) { return }
+                // A row being edited has the picker on the row, as its key does.
+                if editor.editingShapeID == subject.shapes[0], picker.connectsEditedRow?(subject.shapes[0]) == true { return }
                 editor.endEditing()
                 picker.open(on: subject.shapes[0])
             } else {

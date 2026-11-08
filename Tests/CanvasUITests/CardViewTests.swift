@@ -193,6 +193,36 @@ private final class Stop: NSView {
         expect(rig.h.editor.showCard(CanvasCard(id: "other", anchor: CGRect(x: 100, y: 100, width: 10, height: 10), view: other, size: { _ in CGSize(width: 50, height: 50) })))
         expect(rig.window.firstResponder === rig.canvas)
     },
+    test("a card that names where the keyboard goes back gives it there as it closes; a view no longer in the window, or none, is the editing view's, else the canvas's") {
+        let rig = try Rig()
+        @MainActor func card(returningTo responder: NSResponder?) -> CanvasCard {
+            CanvasCard(id: "returning", about: rig.shape, anchor: CGRect(x: 100, y: 100, width: 120, height: 22), view: rig.probe,
+                       firstResponder: rig.probe, returnsKeyboardTo: responder, size: { _ in CGSize(width: 200, height: 120) })
+        }
+        // A view of the window: the keyboard goes back to it, whatever the editing view is.
+        let line = Stop(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+        rig.canvas.addSubview(line)
+        expect(rig.h.editor.beginEditing(rig.shape))
+        expect(rig.h.editor.showCard(card(returningTo: line)))
+        expect(rig.window.firstResponder === rig.probe)
+        rig.h.editor.closeCard()
+        expect(rig.window.firstResponder === line, "the view named: \(String(describing: rig.window.firstResponder))")
+        // One taken out of the window since: the editing view's own.
+        let gone = Stop(frame: .zero)
+        let field = try require(rig.canvas.descendants(CardField.self).first)
+        expect(rig.h.editor.showCard(card(returningTo: gone)))
+        rig.h.editor.closeCard()
+        expect((rig.window.firstResponder as? NSTextView)?.delegate === field, "a stale view is passed over: \(String(describing: rig.window.firstResponder))")
+        // None named, nothing edited: the canvas.
+        rig.h.editor.endEditing()
+        expect(rig.h.editor.showCard(card(returningTo: nil)))
+        rig.h.editor.closeCard()
+        expect(rig.window.firstResponder === rig.canvas)
+        // Named but not in the window, nothing edited: the canvas too.
+        expect(rig.h.editor.showCard(card(returningTo: gone)))
+        rig.h.editor.closeCard()
+        expect(rig.window.firstResponder === rig.canvas)
+    },
     test("a key the plugin's view doesn't take stops at the card: no tool letter, no Delete and no Select All reach the canvas") {
         let rig = try Rig()
         expect(rig.show())

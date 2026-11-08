@@ -45,6 +45,7 @@ public struct EngineeringPlugin: ListedPlugin {
         registrar.keyHint("⌥↑ ⌥↓ in a Row", "Move the Row", while: .text)
         registrar.keyHint("⌘⌫ then ⌫ in a Row", "Delete the Row", while: .text)
         registrar.keyHint("⇧↩ in a Row", "New Shape Beside It", while: .text)
+        registrar.keyHint("⌘L in a Row", "Connect the Row", while: .text)
         // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
         registrar.channel(ForeignKey.self)
         registrar.service { KeyIndex(editor: $0) }

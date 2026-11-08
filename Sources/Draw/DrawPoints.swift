@@ -458,12 +458,16 @@ public struct DrawImpliedEdge: Hashable, Sendable {
     public var to: String
     public var toRow: String?
     public var attributes: [String: String]
+    /// The type of edge the row has only one of, if it has: the edges of this type the board has from the row to anywhere else are
+    /// this edge before it's re-aimed, and the run deletes them, as a line typed in the app re-aims the key its column had.
+    public var replacesType: String?
 
-    public init(fromRow: String?, to: String, toRow: String?, attributes: [String: String] = [:]) {
+    public init(fromRow: String?, to: String, toRow: String?, attributes: [String: String] = [:], replacesType: String? = nil) {
         self.fromRow = fromRow
         self.to = to
         self.toRow = toRow
         self.attributes = attributes
+        self.replacesType = replacesType
     }
 }
 

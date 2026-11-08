@@ -6,9 +6,11 @@ import CanvasTesting
 import CanvasUI
 import Chrome
 import Connections
+import Draw
 import Engineering
 import LanguageModels
 import LineRows
+import Locking
 import Selection
 import ShippedTesting
 import StickyNotes
@@ -253,6 +255,167 @@ private let shop = #"""
         expectEqual(keys(editor), ["orders.customer_id -> customers.id", "orders.total_cents -> customers.email"])
         walk.press(.escape)
     },
+    test("a key to a table with no name yet is kept when its column is edited: the line prints the pill's placeholder, standing for the row") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop + "\nedge \"orders\".customer_id -> \"customers\".id")
+        let arrow = try require(arrows(editor).first).id
+        let customers = try require(table(editor, "customers")).id
+        editor.transact("Clear Name") { $0.update(customers) { $0[TitleProperty.self] = nil } }
+        let walk = w.walk()
+        try w.edit("orders", row: "customer_id")
+        expectEqual(w.line?.string, "customer_id uuid → Table.id", "the placeholder, not nothing")
+        walk.press(Chord(Key.left, .command))
+        w.type("x_", with: walk)
+        walk.press(.down)
+        expectEqual(undoTitle(w.window), "Undo Rename Column")
+        expectEqual(arrows(editor).map(\.id), [arrow], "the key stays")
+        expectEqual(keys(editor), ["orders.x_customer_id -> ?.id"])
+        walk.press(.escape)
+    },
+    test("a key's words kept before their table existed read as a key once it does: the first edit draws it, as Change Column") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop)
+        let walk = w.walk()
+        try w.edit("orders", row: "total_cents")
+        w.retype("total_cents int -> ghost.id", with: walk)
+        walk.press(.down)
+        expectEqual(table(editor, "orders")?.props.columns.last?.unread, "→ ghost.id", "kept as words: no table yet")
+        walk.press(.escape)
+        try w.draw(#"table "ghost" right of "orders" columns: "id uuid pk""#)
+        try w.edit("orders", row: "total_cents")
+        walk.press(Chord(Key.left, .command))
+        w.type("x_", with: walk)
+        walk.press(.down)
+        expectEqual(undoTitle(w.window), "Undo Change Column", "the key is new on the board, so it isn't a rename")
+        expectEqual(keys(editor), ["orders.x_total_cents -> ghost.id"])
+        walk.press(.escape)
+    },
+    test("a key can go to another table: the arrow is re-aimed, kept with its id, laid out at the new row, and Undo brings the old end back") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop + "\ntable \"accounts\" below \"customers\" columns: \"id uuid pk\\nname text\"\nedge \"orders\".customer_id -> \"customers\".id")
+        let arrow = try require(arrows(editor).first).id
+        let accounts = try require(table(editor, "accounts")).id
+        let walk = w.walk()
+        try w.edit("orders", row: "customer_id")
+        w.retype("customer_id uuid -> accounts.id", with: walk)
+        walk.press(.down)
+        expectEqual(undoTitle(w.window), "Undo Change Key")
+        expectEqual(keys(editor), ["orders.customer_id -> accounts.id"])
+        expectEqual(arrows(editor).map(\.id), [arrow], "the same arrow")
+        let bounds = try require(editor.shapeContext.geometry(of: arrow)?.bounds)
+        let far = try require(editor.shapeContext.geometry(of: accounts)?.bounds)
+        expect(bounds.insetBy(dx: -4, dy: -4).intersects(far), "laid out to reach accounts: \(bounds) \(far)")
+        walk.press(.escape)
+        let board = try require(w.window as? BoardWindow)
+        board.undo(nil)
+        expectEqual(keys(editor), ["orders.customer_id -> customers.id"], "Undo brings the old end back")
+        expectEqual(arrows(editor).map(\.id), [arrow])
+    },
+    test("a column can't be its own key: a line that names its own row keeps the words, no arrow") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop)
+        let walk = w.walk()
+        try w.edit("orders", row: "customer_id")
+        w.retype("customer_id uuid -> orders.customer_id", with: walk)
+        walk.press(.down)
+        expectEqual(keys(editor), [], "its own row is no key")
+        expectEqual(table(editor, "orders")?.props.columns.first { $0.name == "customer_id" }?.unread, "→ orders.customer_id", "kept as words")
+        walk.press(.escape)
+    },
+    test("a table locked while its line holds a key: the commit writes nothing, no arrow, the columns as they were") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop)
+        let walk = w.walk()
+        try w.edit("orders", row: "customer_id")
+        w.type(" -> customers.id", with: walk)
+        let orders = try require(table(editor, "orders")).id
+        let before = table(editor, "orders")?.props.columns
+        expect(editor.attempt(.lock, on: [orders]))
+        expect(editor.isReadOnly(orders))
+        walk.press(.down)
+        expectEqual(keys(editor), [], "the key is not drawn on a locked table")
+        expectEqual(table(editor, "orders")?.props.columns, before, "nor the column changed")
+        walk.press(.escape)
+    },
+    test("⌘L in a row, Escape: the keyboard back on the line, the table still edited, nothing written or printed again; a second Escape ends editing") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop)
+        let walk = w.walk()
+        try w.edit("orders", row: "customer_id")
+        let orders = try require(table(editor, "orders")).id
+        walk.press(Chord(Key.left, .command))
+        walk.press(Chord("l", .command))
+        let picker = try require(editor.connectPicker)
+        expect(picker.isOpen)
+        expectEqual(editor.card?.accessibilityLabel, "Connect from customer_id in orders", "named for VoiceOver")
+        // ⌘L again, in the picker's own field: it stays, with the table edited.
+        walk.press(Chord("l", .command))
+        expect(picker.isOpen, "the key pressed in the picker does nothing")
+        expectEqual(editor.editingShapeID, orders)
+        let revision = editor.revision
+        walk.press(.escape)
+        expect(!picker.isOpen)
+        expect(w.window.firstResponder === w.line, "the keyboard back on the line")
+        expectEqual(editor.editingShapeID, orders, "the table is still edited")
+        expectEqual(editor.revision, revision, "nothing written")
+        // No reprint waits for a commit that never came: an unrelated one later leaves the caret where it was.
+        let caret = w.line?.selectedRange()
+        expectEqual(caret?.location, 0)
+        let customers = try require(table(editor, "customers")).id
+        editor.transact("Rename Table") { $0.update(customers) { $0[TitleProperty.self] = "accounts" } }
+        expectEqual(w.line?.selectedRange(), caret, "the line is not shown again")
+        walk.press(.escape)
+        expectEqual(editor.editingShapeID, nil, "one level at a time")
+    },
+    test("⌘L from a row lists the columns of a table with no primary key, never Itself on the primary key's own row, and the menu's Connect means the same as the key") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(shop + "\ntable \"log\" below \"orders\" columns: \"at timestamptz\\nmessage text\"")
+        let walk = w.walk()
+        try w.edit("orders", row: "customer_id")
+        walk.press(Chord("l", .command))
+        w.type("log", with: walk)
+        var listed = (editor.connectPicker?.picker?.list.rows ?? []).compactMap(\.item).map(\.title)
+        expect(!listed.contains("log"), "the table itself isn't a pick: \(listed)")
+        w.type(" m", with: walk)
+        listed = (editor.connectPicker?.picker?.list.rows ?? []).compactMap(\.item).map(\.title)
+        expect(listed.contains("message"), "but its columns are, though it has no primary key: \(listed)")
+        walk.press(.escape)
+        // The primary key's own row: Itself would only shake.
+        try w.edit("orders", row: "id")
+        walk.press(Chord("l", .command))
+        let ownRows = (editor.connectPicker?.picker?.list.rows ?? []).compactMap(\.item).map(\.title)
+        expect(!ownRows.contains("Itself"), "no Itself on the primary key: \(ownRows)")
+        walk.press(.escape)
+        walk.press(.escape)
+        // Connect from the menu bar, while a row has the caret: the picker on the row, as the key opens it.
+        try w.edit("orders", row: "customer_id")
+        expect(editor.perform(.connect), "the menu's item")
+        expectEqual(editor.connectPicker?.picker?.sourceEnd.part, column(editor, "orders", "customer_id"), "on the row")
+        expectEqual(editor.editingShapeID, try require(table(editor, "orders")).id, "the table still edited")
+        walk.press(.escape)
+        walk.press(.escape)
+    },
     test("T5, panel 4: ⌘L on a table made by hand, customers picked: a customer_id typed as its primary key, after the table's keys, its key drawn, one step") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -323,6 +486,33 @@ private let shop = #"""
         expect(keys(editor).contains("orders.seller_id -> customers.id"), "a table the file has, alone, is its primary key: \(keys(editor))")
         let unknown = try refusedInProcess(#"table "orders" columns: "x uuid → customers.nope""#, on: editor)
         expectEqual(unknown.reason, "unknown_row")
+        // A column has the one key its line says: a line that aims it elsewhere re-aims it, the old one going in the same run.
+        let aimed = try drawnInProcess(#"table "orders" columns: "customer_id uuid → customers.email""#, on: editor)
+        expect(keys(editor).contains("orders.customer_id -> customers.email") && !keys(editor).contains("orders.customer_id -> customers.id"), "\(keys(editor))")
+        expectEqual(keys(editor).count, 3, "one key a column")
+        let did = Set((aimed["changes"]?.arrayValue ?? []).compactMap { $0["did"]?.stringValue })
+        expect(did.contains("deleted") && did.contains("connected"), "the old key goes and the new one is drawn: \(did)")
+        let again2 = try drawnInProcess(#"table "orders" columns: "customer_id uuid → customers.email""#, on: editor)
+        expectEqual(Set(again2["changes"]?.arrayValue?.compactMap { $0["did"]?.stringValue } ?? []), ["unchanged"], "and again, nothing")
+        // A table alone is refused for what is wrong, not for a missing primary key.
+        let ghost = try refusedInProcess("table \"ghost\" columns: \"id uuid pk\"\ntable \"orders\" columns: \"g uuid → ghost\"", on: editor)
+        expectEqual(ghost.reason, "invalid_value")
+        expect(!ghost.message.contains("has no primary key"), ghost.message)
+    },
+    test("canvas apply: a node's columns with → draw their keys once, a second apply is unchanged, and a version without the → leaves the key") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        func plan(_ line: String) -> String {
+            #"{"drawing":"Shop","nodes":[{"key":"t:customers","kind":"table","props":{"title":"customers","columns":"id uuid pk"},"place":{"at":[0,0]}},{"key":"t:orders","kind":"table","props":{"title":"orders","columns":"id uuid pk\n"# + line + #""},"place":{"at":[400,0]}}],"edges":[]}"#
+        }
+        let first = try apply(document: plan("customer_id uuid → customers.id"), dryRun: false, on: nil, program: "canvas", in: editor)
+        expectEqual(keys(editor), ["orders.customer_id -> customers.id"], "\(first)")
+        expectEqual(arrows(editor).count, 1)
+        let again = try apply(document: plan("customer_id uuid → customers.id"), dryRun: false, on: nil, program: "canvas", in: editor)
+        expectEqual(keys(editor), ["orders.customer_id -> customers.id"], "a second apply draws it no more: \(again)")
+        expectEqual(arrows(editor).count, 1)
+        _ = try apply(document: plan("customer_id uuid"), dryRun: false, on: nil, program: "canvas", in: editor)
+        expectEqual(keys(editor), ["orders.customer_id -> customers.id"], "a version without the → leaves the key")
     },
     test("delete edge with row ends takes the key of those rows and leaves the pair's other; Undo brings it back; none there is nothing_to_delete") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
@@ -342,6 +532,14 @@ private let shop = #"""
         expectEqual(keys(editor), ["orders.billing_customer_id -> customers.id"], "a whole end matches its row")
         let none = try refusedInProcess(#"delete edge "orders".shipping_customer_id -> "customers".id"#, on: editor)
         expectEqual(none.reason, "nothing_to_delete")
+        // Either way round: `<-` names the pair from the far end, and `<->` takes the key whichever way it runs.
+        editor.undo()
+        expectEqual(keys(editor).count, 2)
+        _ = try drawnInProcess(#"delete edge "customers".id <- "orders".shipping_customer_id"#, on: editor)
+        expectEqual(keys(editor), ["orders.billing_customer_id -> customers.id"], "<- with the rows named from the other end")
+        editor.undo()
+        _ = try drawnInProcess(#"delete edge "orders".shipping_customer_id <-> "customers".id"#, on: editor)
+        expectEqual(keys(editor), ["orders.billing_customer_id -> customers.id"], "<-> either way")
         _ = try drawnInProcess(#"delete edge "orders" -> "customers""#, on: editor)
         expectEqual(keys(editor), [], "a pair named whole takes every key between them")
     },

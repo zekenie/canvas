@@ -2,6 +2,7 @@ import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Chrome
+import Geometry
 import Mentions
 import TestKit
 import Titles
@@ -17,6 +18,54 @@ import Titles
         $0.title(Roster.self, contents: false)
         $0.title(Corral.self, contents: false)
         $0.mentionable(Roster.self)
+    }
+}
+
+@MainActor private var namedDocks: Contributor {
+    Contributor(id: "named-docks") {
+        $0.title(Dock.self, contents: false)
+        $0.mentionable(Dock.self)
+    }
+}
+
+/// A shape whose rows stand alone (an endpoint: `stripe ref` finds one by its own name), registered beside the rosters.
+private struct Dock: BoxShapeProps {
+    static let kind: ShapeKind = "dock"
+    static let properties = Properties<Dock> {
+        Property("frame", \.frame).required()
+        Property("rows", \.rows)
+    }
+    var frame: CGRect
+    var rows: [RosterRow]
+
+    init(_ frame: CGRect, rows: [RosterRow] = []) {
+        self.frame = frame
+        self.rows = rows
+    }
+
+    init() { self.init(.zero) }
+}
+
+private struct DockDefinition: ShapeDefinition, PartedShape {
+    func render(_ shape: ShapeRecord<Dock>, in context: RenderContext) {}
+
+    func geometry(of shape: ShapeRecord<Dock>, in context: ShapeContext) -> ShapeGeometry {
+        let frame = shape.frame
+        let parts = shape.props.rows.enumerated().map { index, row in
+            PartFrame(id: row.id, rect: CGRect(x: frame.minX, y: frame.minY + 10 + CGFloat(index) * 20, width: frame.width, height: 20))
+        }
+        return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
+    }
+
+    func parts(of shape: ShapeRecord<Dock>) -> [PartName] {
+        shape.props.rows.map { PartName(id: $0.id, name: $0.name, kindWord: "Endpoint", standsAlone: true) }
+    }
+}
+
+private struct DocksPlugin: CanvasPlugin {
+    let id: PluginID = "docks"
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.shape(DockDefinition()) { _ in }
     }
 }
 
@@ -69,6 +118,28 @@ import Titles
         expect(b.matches("orders cust") { $0.part != b.customerID.id }.allSatisfy { $0.part?.id != b.customerID.id })
         let ruled = b.state.candidates(matching: "orders cust", in: AnyMentionable.self, for: nil, admitting: { $0 != b.orders }, listingParts: { _ in true })
         expect(ruled.matches.allSatisfy { $0.id != b.orders }, "a shape the list leaves out takes its rows with it")
+    },
+    test("a row that stands alone is found by its own name, in the name's band with the shapes, and its shape's rule still holds for it") {
+        let ref = RosterRow(name: "stripe ref"), plain = RosterRow(name: "refund")
+        let dock = ShapeID(), other = ShapeID()
+        let shapes = [
+            titled(Dock(CGRect(x: 0, y: 0, width: 160, height: 80), rows: [ref, plain]), "payments", id: dock),
+            titled(Roster(CGRect(x: 300, y: 0, width: 160, height: 80), rows: [RosterRow(name: "stripe")]), "stripe", id: other),
+        ]
+        let h = try EditorHarness(plugins: mentionPlugins([CorralsPlugin(), RostersPlugin(), DocksPlugin(), namedRosters, namedDocks]), document: CanvasDocument(shapes: shapes))
+        let state = h.editor.mentionState
+        @MainActor func found(_ query: String, rule: @escaping @MainActor (ShapeID) -> Bool = { _ in true }) -> [MentionCandidate] {
+            state.candidates(matching: query, in: AnyMentionable.self, for: nil, admitting: rule, listingParts: { _ in true }).matches
+        }
+        expectEqual(found("stripe ref").first?.address, PartAddress(dock, part: ref.id), "by its own name, no shape's name before it")
+        expectEqual(found("refund").first?.address, PartAddress(dock, part: plain.id))
+        expectEqual(found("payments refund").first?.address, PartAddress(dock, part: plain.id), "and by its path too")
+        // Shapes and rows share one ranking: by band, then score, then the shorter name: the shape named `stripe` before the row `stripe ref`.
+        let both = found("stripe")
+        expectEqual(both.map { $0.part == nil }, [true, false], "the shorter name first: \(both.map(\.id))")
+        expectEqual(both.first?.id, other)
+        // The shape's rule holds for its rows.
+        expect(found("stripe ref") { $0 != dock }.allSatisfy { $0.id != dock }, "a shape the list leaves out takes its rows with it")
     },
     test("a commit reads again the rows of the shapes it changed: a renamed row, an added one, a deleted shape; the rest are read no more") {
         let b = try RosterBoard()

@@ -66,7 +66,9 @@ final class KitNames {
     func tableNamed(_ name: String, besides shape: ShapeID) -> ShapeID? {
         read()
         let board = editor.file.board(containing: shape)
-        return keptTables.first { $0.board == board && $0.name == name }?.id
+        // As `canvas draw` finds a table by its title: with its whitespace folded.
+        let folded = TitleProperty.folded(name) ?? name
+        return keptTables.first { $0.board == board && $0.name == folded }?.id
     }
 }
 
@@ -129,14 +131,14 @@ struct ColumnLineGrammar: LineGrammar {
                 // The first `→` only: the word after it is its target, a key once it names a table's row on the board.
                 guard key == .none, scan.words.indices.contains(index + 1), scan.words[index + 1].role == .unread else { continue }
                 let target = scan.words[index + 1]
-                if let found = Self.target(target.text, at: target.range, in: line, context) {
+                if let found = Self.target(target.text, at: target.range, in: line, from: id, context) {
                     key = .to(found.row)
                     column.unread = Self.unread(scan, leaving: index...(index + 1))
                 }
             case .defaultValue: spans.append(LineSpan(word.range, .code))
             case .unread:
                 // A target that names a table is in its pill, the table's own name already as `customers.` is typed.
-                if index > 0, scan.words[index - 1].role == .arrow, Self.names(word.text, at: word.range, in: line, context) {
+                if index > 0, scan.words[index - 1].role == .arrow, Self.names(word.text, at: word.range, in: line, from: id, context) {
                     spans.append(LineSpan(word.range, .pill(LineLooks.keyFill, ink: LineLooks.keyInk)))
                 } else {
                     spans.append(LineSpan(word.range, .plain))
@@ -157,13 +159,14 @@ struct ColumnLineGrammar: LineGrammar {
 
     /// The row a key's target names, at `range` in the line: the run's reference (printed or picked: the row it stood for, whatever
     /// else is called so), on the whole target or on its column after the dot; else by name, a table on the shape's board and its
-    /// column, or its primary key for a table alone. Nil where it names no row.
-    static func target(_ word: String, at range: NSRange, in line: LineText, _ context: LineContext) -> (table: ShapeID, row: PartAddress)? {
+    /// column, or its primary key for a table alone. Nil where it names no row, or the line's own (`own`: a column is not its own key).
+    static func target(_ word: String, at range: NSRange, in line: LineText, from own: PartID, _ context: LineContext) -> (table: ShapeID, row: PartAddress)? {
         let editor = context.editor
         // Where nothing draws connections, a key can't be drawn: its words stay words.
         guard editor.registry.drawsConnections else { return nil }
         func row(_ address: PartAddress?) -> (table: ShapeID, row: PartAddress)? {
-            guard let address, address.part != nil, let record = editor.document[address.shape], record.kind == DatabaseTable.kind,
+            guard let address, address.part != nil, address != PartAddress(context.shape, part: own), let record = editor.document[address.shape],
+                  record.kind == DatabaseTable.kind,
                   editor.registry.parts(of: record)?.contains(where: { $0.id == address.part }) == true else { return nil }
             return (address.shape, address)
         }
@@ -176,12 +179,12 @@ struct ColumnLineGrammar: LineGrammar {
         guard let id = editor.service(KitNames.self)?.tableNamed(table, besides: context.shape),
               let record = editor.document[id]?.typed(as: DatabaseTable.self) else { return nil }
         let picked = column.map { name in record.props.columns.first { $0.name == name } } ?? Self.primaryKey(of: record.props)
-        return picked.map { (id, PartAddress(id, part: $0.id)) }
+        return picked.flatMap { $0.id == own && id == context.shape ? nil : (id, PartAddress(id, part: $0.id)) }
     }
 
     /// Whether a key's target as typed names a table on the board (`customers.`, `customers.i`): its pill forms.
-    private static func names(_ word: String, at range: NSRange, in line: LineText, _ context: LineContext) -> Bool {
-        if target(word, at: range, in: line, context) != nil { return true }
+    private static func names(_ word: String, at range: NSRange, in line: LineText, from own: PartID, _ context: LineContext) -> Bool {
+        if target(word, at: range, in: line, from: own, context) != nil { return true }
         guard let (table, _) = ColumnGrammar.target(word) else { return false }
         return context.editor.service(KitNames.self)?.tableNamed(table, besides: context.shape) != nil
     }
@@ -219,9 +222,11 @@ struct ColumnLineGrammar: LineGrammar {
 
     /// A row of a table written as a key's target, by the names they have now: `customers.id`. Nil for one that's gone.
     static func written(_ target: PartAddress, _ editor: CanvasEditor) -> String? {
-        guard let part = target.part, let record = editor.shape(inFile: target.shape), let table = editor.registry.title(of: record),
+        guard let part = target.part, let record = editor.shape(inFile: target.shape),
               let column = editor.registry.parts(of: record)?.first(where: { $0.id == part }) else { return nil }
-        return ColumnGrammar.written(table: table, column: column.name)
+        // A table with no name yet is the pill's placeholder: the line still holds its key, standing for the row, so editing the
+        // column keeps it.
+        return ColumnGrammar.written(table: editor.registry.title(of: record) ?? TableStyle.label, column: column.name)
     }
 
     func offers(at caret: Int, in line: LineText, reading: LineReading<ColumnLine>, context: LineContext) -> LineOffers? {
@@ -358,7 +363,9 @@ struct TableLines: LineModel {
     /// to the row named) or deleted where the line says otherwise than the board, all in the row's transaction; rows taken out handed
     /// to the core (`removeParts`), their keys going with them. False writes nothing (a locked table, a key that can't be drawn).
     func apply(_ changes: [LineChange<ColumnLine>], to id: ShapeID, in transaction: inout Transaction) -> Bool {
-        guard let record = transaction.document[id]?.typed(as: DatabaseTable.self) else { return false }
+        guard let held = transaction.document[id], let record = held.typed(as: DatabaseTable.self) else { return false }
+        // A locked table takes no key either: the columns can be as they were while a key is new.
+        guard !transaction.isReadOnly(held) else { return false }
         var columns = record.props.columns
         var removed: Set<PartAddress> = []
         var keyed: [(column: PartID, key: ColumnKey)] = []
@@ -396,7 +403,7 @@ struct TableLines: LineModel {
         switch change {
         case .add(let rows, _): rows.count == 1 ? TableStyle.addColumnStep : TableStyle.pasteColumnsStep
         case .change(let from, let to):
-            switch (resolved(from), resolved(to)) {
+            switch (held(from), resolved(to)) {
             case let (was, now) where was == now:
                 Self.onlyRenamed(from.column, to.column) ? TableStyle.renameColumnStep : TableStyle.changeColumnStep
             case let (was, now) where from.column == to.column:
@@ -406,6 +413,12 @@ struct TableLines: LineModel {
         case .delete(let rows): rows.count == 1 ? TableStyle.deleteColumnStep : TableStyle.deleteColumnsStep
         case .move: TableStyle.moveColumnStep
         }
+    }
+
+    /// The row the key of the column `line` was read from goes to on the board: what the column has, whatever its printed line said
+    /// (a key's words kept before their table existed read as a key that no arrow is yet).
+    private func held(_ line: ColumnLine) -> PartAddress? {
+        table.flatMap { keys?.target(of: line.column.id, in: $0) }
     }
 
     /// The row a line's key goes to, the board's for one as stored.

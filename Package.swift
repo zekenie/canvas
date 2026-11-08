@@ -346,7 +346,8 @@ let package = Package(
         // Rows written as lines (LineRows): a kind's rows typed a line each, one field moved to the row with the caret, a
         // grammar a role read and printed (TextEditing's caret list offering what fits, ranked by FuzzyMatching), each row
         // committed as the caret leaves it, one step the kind names; Titles' field for the title stop, Selection for Tab's
-        // hops to the next shape of the kind. Its parts: Field, the line and its grammar; Session, the stops, keys and commits.
+        // hops to the next shape of the kind, Connections for ⌘L in a row (its key, and the picker it opens on the row, which imports
+        // no LineRows). Its parts: Field, the line and its grammar; Session, the stops, keys and commits.
         .target(name: "LineRows", dependencies: ["Canvas", "Connections", "FuzzyMatching", "Selection", "TextEditing", "Titles"]), // layer: platform
         // Examples: the smallest plugin for each pattern (see docs/plugin-system.md).
         .target(name: "Reordering", dependencies: ["Canvas", "ContextMenus", "Keyboard", "SlashCommands"], path: "Examples/Reordering"), // layer: platform

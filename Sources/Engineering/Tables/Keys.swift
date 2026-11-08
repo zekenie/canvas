@@ -134,7 +134,12 @@ public enum KeyPicks {
     /// one or a table with a primary key; from a table, a table with one.
     static func admits(_ pick: ConnectPick, _ editor: CanvasEditor) -> Bool {
         guard let far = editor.document[pick.to.shape]?.typed(as: DatabaseTable.self) else { return false }
-        if pick.from.part != nil { return pick.to.part != nil || ColumnLineGrammar.primaryKey(of: far.props) != nil }
+        if pick.from.part != nil {
+            if pick.to.part != nil { return true }
+            // A table as a whole is its primary key's row, which a row of its own (the primary key itself) can't key to.
+            guard let key = ColumnLineGrammar.primaryKey(of: far.props) else { return false }
+            return PartAddress(far.id, part: key.id) != pick.from.address
+        }
         return pick.to.part == nil && ColumnLineGrammar.primaryKey(of: far.props) != nil
     }
 
@@ -170,14 +175,17 @@ public enum KeyPicks {
     }
 
     /// A key column's name for a table: its name, singular, and `_id` (`customers` → `customer_id`, `categories` → `category_id`,
-    /// `addresses` → `address_id`), its spaces underscores, lowercased; `_2`, `_3` after it where the table has the name already.
+    /// `addresses` → `address_id`, `statuses` and `status` → `status_id`), its spaces underscores, lowercased; `_2`, `_3` after it where the table has the name already.
     public static func keyColumnName(for table: String, among taken: [String]) -> String {
         var name = table.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: "_")
         if name.hasSuffix("ies"), name.count > 3 {
             name = String(name.dropLast(3)) + "y"
-        } else if ["sses", "xes", "ches", "shes", "zes"].contains(where: name.hasSuffix) {
+        } else if name.hasSuffix("yses"), name.count > 4 {
+            name = String(name.dropLast(4)) + "ysis"
+        } else if ["sses", "xes", "ches", "shes", "zes", "tuses", "buses", "puses", "ruses", "nuses"].contains(where: name.hasSuffix) {
+            // `addresses`, `boxes`, `statuses`: the plural's `es` goes. (`houses` and `databases` lose only their `s`.)
             name = String(name.dropLast(2))
-        } else if name.hasSuffix("s"), !name.hasSuffix("ss"), name.count > 1 {
+        } else if name.hasSuffix("s"), !["ss", "us", "is"].contains(where: name.hasSuffix), name.count > 1 {
             name = String(name.dropLast())
         }
         let base = (name.isEmpty ? "key" : name) + "_id"

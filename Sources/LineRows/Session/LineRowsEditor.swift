@@ -143,6 +143,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         field.onPasteLines = { [weak self] text in self?.paste(text) ?? false }
         field.onBlur = { [weak self] in self?.blurred() }
         field.onFocus = { [weak self] in self?.focused() }
+        editor.connectPicker?.connectsEditedRow = { [weak self] shape in shape == self?.id && self?.connectEditedRow() == true }
         field.offering = { [weak self] in self?.offers() }
         field.draft = { [weak self] in self?.hasDraft ?? false }
         field.onLight = { [weak service] light in service?.setLight(light) }
@@ -585,7 +586,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         commitDraft()
         if case .row(let row) = focus, index(of: row) != nil {
             awaitsPicker = true
-            picker.open(on: ConnectEnd(id, part: row), returningKeyboardTo: field)
+            picker.open(on: ConnectEnd(id, part: row), returningKeyboardTo: field) { [weak self] made in self?.picked(made) }
             if !picker.isOpen { awaitsPicker = false }
             return true
         }
@@ -595,12 +596,26 @@ final class LineSession<Model: LineModel>: LineRowsView {
         return true
     }
 
+    /// Connect from the menu bar, while a row has the caret: the key's meaning, the picker on the row. False on the title or the
+    /// waiting line, where Connect ends editing and acts on the shape.
+    private func connectEditedRow() -> Bool {
+        guard editor.editingShapeID == id, case .row(let row) = focus, index(of: row) != nil else { return false }
+        return connect()
+    }
+
     /// The keyboard back on the line from the picker: the pick is made as it closes, after the keyboard is back, so the row is
     /// printed again once its commit settles (the service tells), with the key it drew.
     private func focused() {
         guard awaitsPicker, !isMoving else { return }
         awaitsPicker = false
-        service.awaitingReprint = self
+        // Only a pick prints the line again: Escape, or a pick that made nothing, leaves it as it is.
+        if editor.connectPicker?.isPicking == true { service.awaitingReprint = self }
+    }
+
+    /// A pick is done: if it made no connection, nothing is coming for the line to wait for.
+    private func picked(_ made: Bool) {
+        awaitsPicker = false
+        if !made, service.awaitingReprint === self { service.awaitingReprint = nil }
     }
 
     override func reprint() {

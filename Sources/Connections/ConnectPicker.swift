@@ -121,8 +121,9 @@ public final class ConnectPicker {
         let found = sourcePart == nil
             ? mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true) { [self] id in admits(id) }
             : mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true,
-                                  admitting: { [self] id in admits(id) }, listingParts: { [self] address in admits(part: address) })
-        let choices = mentions.choicesNamingBoardShown(found.all)
+                                  admitting: { [self] id in admits(id) || reachesRows(of: id) }, listingParts: { [self] address in admits(part: address) })
+        // A shape listed for its rows alone (a table with no primary key, whose columns can be picked and which can't as a whole) is no row.
+        let choices = mentions.choicesNamingBoardShown(found.all.filter { $0.part != nil || admits($0.id) })
         let typed = text.contains { !$0.isWhitespace }
         var rows: [Row] = choices.map { choice in
             if choice.candidate.part == nil, case .fulfils(let needs)? = admitted[choice.candidate.id] { .shape(choice, needs: needs) } else { .shape(choice, needs: nil) }
@@ -161,6 +162,12 @@ public final class ConnectPicker {
         }
         admitted[id] = verdict
         return verdict != .cannot
+    }
+
+    /// Whether the rows of a shape may be listed though the shape isn't a pick: one of the board shown, which the source may be joined to
+    /// (the source's own rows too: a column keyed to another of its table's).
+    private func reachesRows(of id: ShapeID) -> Bool {
+        editor.document[id] != nil && context?.mayConnect(source, id) != false
     }
 
     /// Whether the list offers a row: one of a shape on the board shown (a row elsewhere is no end until pills stand for rows),

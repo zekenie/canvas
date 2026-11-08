@@ -73,15 +73,23 @@ enum RowsDraw {
         for column in ColumnGrammar.read(lines: text) {
             guard let key = ColumnGrammar.key(in: column.unread) else { continue }
             var row = key.column
-            if row == nil, let found = try? context.shape(called: key.table, admitting: { $0.kind == DatabaseTable.kind ? nil : "which isn't a table" }),
-               let record = context.service(KitNames.self)?.editor.shape(inFile: found.id)?.typed(as: DatabaseTable.self) {
-                row = ColumnLineGrammar.primaryKey(of: record.props)?.name
+            var held: DatabaseTable?
+            if row == nil {
+                do throws(DrawError) {
+                    let found = try context.shape(called: key.table, admitting: { $0.kind == DatabaseTable.kind ? nil : "which isn't a table" })
+                    held = context.service(KitNames.self)?.editor.shape(inFile: found.id)?.typed(as: DatabaseTable.self).map(\.props)
+                } catch {
+                    // Two tables of one name are refused, as any ambiguous name is; any other is a table the file doesn't have.
+                    if error.reason == ambiguousReason { throw error }
+                }
+                row = held.flatMap { ColumnLineGrammar.primaryKey(of: $0)?.name }
             }
             guard let row else {
-                throw DrawError("\(column.name)'s \(key.written) names no column of \(key.table), and it has no primary key", reason: reason,
+                let why = held == nil ? "and the file has no such table yet to take its primary key from" : "and it has no primary key"
+                throw DrawError("\(column.name)'s \(key.written) names no column of \(key.table), \(why)", reason: reason,
                                 hint: "write \(ColumnGrammar.arrow) \(ColumnGrammar.written(table: key.table, column: "id"))")
             }
-            edges.append(DrawImpliedEdge(fromRow: column.name, to: key.table, toRow: row, attributes: [ChannelProperty.key.rawValue: ForeignKey.id.rawValue]))
+            edges.append(DrawImpliedEdge(fromRow: column.name, to: key.table, toRow: row, attributes: [ChannelProperty.key.rawValue: ForeignKey.id.rawValue], replacesType: ForeignKey.id.rawValue))
         }
         return edges
     }
