@@ -212,6 +212,10 @@ extension Drawing {
         // Groups and ungroups, in script order: every shape and edge the script draws is in the transaction, so one may be named.
         changes += try applyGroups(in: &transaction)
 
+        // Room made below what the run grew (a table given columns), now, so what's read back is where it ends and the
+        // report says what moved; the step's own run after the body finds nothing more.
+        let pushed = transaction.makeRoom()
+
         // What it did, and what it should say, read from one context taken once every write is done (a context
         // is a snapshot, and anything worked out over one is worked out again for the next).
         let shapes = transaction.shapes
@@ -321,7 +325,14 @@ extension Drawing {
 
         let rows = changes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
         let said = warnings.enumerated().sorted { ($0.element.line ?? .max, $0.offset) < ($1.element.line ?? .max, $1.offset) }.map(\.element)
-        return DrawResult(changes: rows, warnings: said, nudges: nudges)
+        var moved: [DrawMoved] = []
+        for (id, delta) in pushed {
+            guard let record = transaction.document[id] else { continue }
+            moved.append(DrawMoved(kind: record.kind.rawValue, title: naming?.name(record, registry), id: id.description,
+                                   at: shapes.frame(of: record), down: delta.y))
+        }
+        moved.sort { ($0.at?.minY ?? 0, $0.id) < ($1.at?.minY ?? 0, $1.id) }
+        return DrawResult(changes: rows, warnings: said, nudges: nudges, moved: moved)
     }
 
     /// A restated shape as the statement leaves it: what it says, and where it's placed. A

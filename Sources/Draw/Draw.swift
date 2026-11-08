@@ -77,10 +77,33 @@ public struct DrawResult: Encodable, Sendable {
     /// What settling nudged into or out of containers, by how far (world units), for the glide;
     /// never said.
     var nudges: [ShapeID: CGPoint] = [:]
+    /// The shapes the run's growth pushed down to make room below what grew (`Transaction.makeRoom()`), top to bottom:
+    /// said only when there are some, so an agent sees its layout change.
+    var moved: [DrawMoved] = []
 
     enum CodingKeys: String, CodingKey {
-        case changes, warnings, dryRun, on
+        case changes, warnings, dryRun, on, moved
     }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(changes, forKey: .changes)
+        try container.encode(warnings, forKey: .warnings)
+        try container.encodeIfPresent(dryRun, forKey: .dryRun)
+        try container.encodeIfPresent(on, forKey: .on)
+        if !moved.isEmpty { try container.encode(moved, forKey: .moved) }
+    }
+}
+
+/// A shape a run moved down to make room below a shape it grew (a table given columns): its kind, its title (none for a
+/// shape without one), its id, where it is now ([[x, y], [width, height]], world units, as a row's `at`) and how far down
+/// it went.
+struct DrawMoved: Encodable, Sendable {
+    var kind: String
+    var title: String?
+    var id: String
+    var at: CGRect?
+    var down: CGFloat
 }
 
 /// A board a run drew on: `root`, or the id of the shape that holds it, as `boards`' `shows`; that
@@ -399,7 +422,7 @@ private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, d
                     if row.did == .created { row.id = nil }
                     return row
                 }
-                throw DryRun(result: DrawResult(changes: rows, warnings: result.warnings, dryRun: true))
+                throw DryRun(result: DrawResult(changes: rows, warnings: result.warnings, dryRun: true, moved: result.moved))
             }
             return result
         }

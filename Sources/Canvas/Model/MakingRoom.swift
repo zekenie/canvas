@@ -99,36 +99,36 @@ extension Transaction {
     private mutating func makeRoom(in level: ShapeID?, for growths: [ShapeID: Growth], budget: inout Int) -> (moves: [ShapeID: CGFloat], grew: Growth?) {
         let kinds = registry.containingKinds
         struct Node {
-            let id: ShapeID
+            let record: AnyShapeRecord
             let frame: CGRect
             /// How far its bottom went down by itself (a growth), before any push.
             let growth: CGFloat
-            /// Whether it stays: read-only, or put in or moved by the step.
-            let stays: Bool
+            /// Where it is among the level's members, back to front: of two at one height, the one behind first.
+            let order: Int
         }
         var nodes: [Node] = []
         do {
             let context = shapes
-            let members: [ShapeID]
-            if let level {
-                members = document.contents(of: level, containingKinds: kinds)
-            } else {
-                var top: [ShapeID] = []
-                document.shapes.forEach { if $0.box != nil && document.container(of: $0, containingKinds: kinds) == nil { top.append($0.id) } }
-                members = top
-            }
-            for id in members {
-                guard let record = document[id], record.box != nil else { continue }
-                if let growth = growths[id] {
-                    nodes.append(Node(id: id, frame: growth.was, growth: growth.now.maxY - growth.was.maxY, stays: holds(record) || placedHere(record)))
+            func node(_ record: AnyShapeRecord) {
+                guard record.box != nil else { return }
+                if let growth = growths[record.id] {
+                    nodes.append(Node(record: record, frame: growth.was, growth: growth.now.maxY - growth.was.maxY, order: nodes.count))
                 } else if let frame = context.frame(of: record) {
-                    nodes.append(Node(id: id, frame: frame, growth: 0, stays: holds(record) || placedHere(record)))
+                    nodes.append(Node(record: record, frame: frame, growth: 0, order: nodes.count))
                 }
             }
+            if let level {
+                for id in document.contents(of: level, containingKinds: kinds) { if let record = document[id] { node(record) } }
+            } else {
+                let document = document
+                document.shapes.forEach { if document.container(of: $0, containingKinds: kinds) == nil { node($0) } }
+            }
         }
-        nodes.sort { ($0.frame.minY, $0.id.description) < ($1.frame.minY, $1.id.description) }
+        nodes.sort { ($0.frame.minY, $0.order) < ($1.frame.minY, $1.order) }
         let tops = nodes.map(\.frame.minY)
         var push = [CGFloat](repeating: 0, count: nodes.count)
+        // Whether each stays (read-only, or put in or moved by the step), asked only of those a push reaches.
+        var stays = [Bool?](repeating: nil, count: nodes.count)
         let reach = Style.roomReach
         for (index, node) in nodes.enumerated() {
             let down = node.growth + push[index]
@@ -143,8 +143,10 @@ extension Transaction {
             while other < nodes.count, tops[other] < node.frame.maxY + down + reach {
                 defer { other += 1 }
                 let below = nodes[other]
-                guard other != index, !below.stays, push[other] < down,
+                guard other != index, push[other] < down,
                       min(node.frame.maxX, below.frame.maxX) - max(node.frame.minX, below.frame.minX) > 0 else { continue }
+                if stays[other] == nil { stays[other] = holds(below.record) || placedHere(below.record) }
+                guard stays[other] == false else { continue }
                 if push[other] == 0 {
                     guard budget > 0 else { continue }
                     budget -= 1
@@ -155,8 +157,8 @@ extension Transaction {
         var moves: [ShapeID: CGFloat] = [:]
         var byDelta: [CGFloat: Set<ShapeID>] = [:]
         for (index, node) in nodes.enumerated() where push[index] > 0 {
-            moves[node.id] = push[index]
-            byDelta[push[index], default: []].insert(node.id)
+            moves[node.record.id] = push[index]
+            byDelta[push[index], default: []].insert(node.record.id)
         }
         for (delta, ids) in byDelta.sorted(by: { $0.key < $1.key }) { translate(ids, by: CGPoint(x: 0, y: delta)) }
         // The container grows to hold what went down in it, from inside it, the gap inside its edge.
