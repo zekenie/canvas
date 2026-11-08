@@ -36,6 +36,13 @@ enum TableStyle {
     static let deleteKeyStep = "Delete Key"
     /// ⌘L on a table, a table picked: the key column made and its key drawn.
     static let addKeyColumnStep = "Add Key Column"
+    /// A column's on delete or on update changed in its card.
+    static let changeKeyActionStep = "Change Key Action"
+    /// What a key does when the row it names is deleted or changes its key, as its card offers them: SQL's, the default first.
+    static let keyActions = ["no action", "restrict", "cascade", "set null", "set default"]
+    /// The lines of a column's card.
+    static let typeLine = "type", referencesLine = "references", nullLine = "null", uniqueLine = "unique", primaryKeyLine = "primary key"
+    static let defaultLine = "default", onDeleteLine = "on delete", onUpdateLine = "on update"
     /// How faint a key's target's pill is behind it in a line.
     static let keyPillFill: CGFloat = 0.14
 

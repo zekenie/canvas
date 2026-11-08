@@ -21,6 +21,8 @@ final class KitBench {
     var editor: CanvasEditor { h.editor }
     let window: NSWindow
     let canvas: CanvasView
+    /// The menus a row's card asked to pop up (never on screen).
+    var menus: [NSMenu] = []
 
     init() throws {
         h = try kitHarness()
