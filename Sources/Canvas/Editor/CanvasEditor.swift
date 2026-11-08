@@ -739,6 +739,7 @@ public final class CanvasEditor {
                                       registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess,
                                       layout: layoutSource)
         transaction.mayReachBoardShown = false
+        transaction.boardShown = board
         let result: T
         do {
             defer { isTransacting = false }

@@ -64,6 +64,14 @@ public struct Transaction {
     /// shown from there is dropped whole (`CanvasEditor.transact(on:)`). A `willDelete` handler that would write
     /// there must leave that part out when this is false (the core does not do it for the handler), or the whole step is lost.
     public internal(set) var mayReachBoardShown = true
+    /// The board the editor shows, in a step on another board (`transact(on:)`): nil in a step on the board shown.
+    /// `mayWrite(on:)` asks it.
+    public internal(set) var boardShown: BoardID?
+    /// Whether this transaction may write on `other`: false for the board the editor shows, from a step on another board
+    /// (`mayReachBoardShown`), where a write would drop the whole commit. A writer that reaches shapes on boards it was not
+    /// given (`removeParts` and `moveParts` through pills, a `partsMoved` handler) leaves that board's shapes as they are
+    /// when this is false.
+    public func mayWrite(on other: BoardID) -> Bool { mayReachBoardShown || other != boardShown }
     let registry: Registry
     let camera: Camera
     let keys: StackingKeyGenerator
@@ -1328,9 +1336,10 @@ public struct Transaction {
 
     /// The stand-ins whose record names `shape` (a reference pill for a table), with the board each is on as this transaction
     /// leaves the file: the editor's stand-in lookup (`registrar.standInLookup`, Topology's), read as the file was before this
-    /// transaction (a pill put in by it isn't among them). None without a lookup.
+    /// transaction (a pill put in by it isn't among them). None without a lookup. In order of id, so the same call on the same file
+    /// makes the same file (the lookup itself has no order).
     public func standIns(naming shape: ShapeID) -> [(id: ShapeID, board: BoardID)] {
-        file.standIns(shape).compactMap { id in location(of: id).map { (id, $0) } }
+        file.standIns(shape).compactMap { id in location(of: id).map { (id, $0) } }.sorted { $0.id.description < $1.id.description }
     }
 
     /// The bindings a part reaches through a pill: for each part of `parts`, each stand-in that names its shape, by the board it
@@ -1397,7 +1406,7 @@ public struct Transaction {
             delete(local.taken)
             gone.formUnion(local.taken)
         }
-        for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) {
+        for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) where mayWrite(on: other) {
             let far = plan(addresses, on: other)
             for record in far.rebound { update(record.id, on: other) { $0 = record } }
             if !far.taken.isEmpty {
@@ -1433,7 +1442,7 @@ public struct Transaction {
                 moved.append(rebound)
             }
             for record in moved { update(record.id) { $0 = record } }
-            for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) {
+            for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) where mayWrite(on: other) {
                 for (record, _) in binding(addresses, on: other) {
                     guard let rebound = record.movingParts(in: registry, { address in
                         addresses[address].flatMap { reach(moves[$0], from: address, on: other) } ?? address
@@ -1453,7 +1462,10 @@ public struct Transaction {
         // Still in the shape the pill stands for: through the pill.
         if pills.contains(pill.shape) { return PartAddress(pill.shape, part: moved.part) }
         if location(of: moved.shape) == board { return moved }
-        if let other = pills.first(where: { location(of: $0) == board }) { return PartAddress(other, part: moved.part) }
+        // Of several pills there, the same one every time.
+        if let other = pills.filter({ location(of: $0) == board }).min(by: { $0.description < $1.description }) {
+            return PartAddress(other, part: moved.part)
+        }
         return PartAddress(pill.shape)
     }
 
@@ -1870,6 +1882,7 @@ public struct Transaction {
             there.writes.append(id)
         }
         there.mayReachBoardShown = mayReachBoardShown
+        there.boardShown = boardShown
         there.stagedFileValues = stagedFileValues
         return there
     }

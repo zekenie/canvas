@@ -735,6 +735,14 @@ public final class TopologyIndex {
         }
     }
 
+    /// For a stand-in for a row (`Forwarding.row`): whether a shape still lists that row, which it must for the pill to stand for it; nil for any
+    /// other stand-in. A row that is gone leaves the pill standing for nothing, as it is drawn (missing).
+    private func holdsRow(_ forwarding: Forwarding) -> ((AnyShapeRecord) -> Bool)? {
+        guard case .row(_, let part) = forwarding else { return nil }
+        let registry = registry
+        return { registry.parts(of: $0)?.contains { $0.id == part } == true }
+    }
+
     /// What a stand-in stands for now: the shapes it names, in order, each once, that are on a board
     /// the editor can show, not kept aside, not stand-ins (one hop), not itself, and that its rule
     /// admits, with their kinds; and whether its record names them or they were provided.
@@ -743,7 +751,7 @@ public final class TopologyIndex {
             return ([], [], .record)
         }
         let (named, kind) = named(by: standIn, forwarding)
-        let taken = Effective.taking(named, for: standIn, isStandIn: { standInRules[$0] != nil }, admits: admits) { target in
+        let taken = Effective.taking(named, for: standIn, isStandIn: { standInRules[$0] != nil }, admits: admits, alsoNeeds: holdsRow(forwarding)) { target in
             #if DEBUG
             targetsRead += 1
             #endif
@@ -768,7 +776,8 @@ public final class TopologyIndex {
             #endif
             let standsFor = tables.standIns(for: id).contains(standIn)
             let record = lookup.shape(id)
-            let may = record.map { !$0.isOpaque && standInRules[$0.kind] == nil && admits($0) } ?? false
+            let needsRow = holdsRow(forwarding)
+            let may = record.map { !$0.isOpaque && standInRules[$0.kind] == nil && admits($0) && (needsRow?($0) ?? true) } ?? false
             if may, !standsFor, let record, let index = Self.place(of: id, in: named, among: tables.forwards(of: standIn)) {
                 tables.insertForward(standIn, id, at: index, record.kind, as: kind)
                 change.came.append((id, record.kind))
@@ -979,6 +988,15 @@ private struct Upkeep {
 extension CanvasEditor {
     /// Topology's index of the file's edges; nil without TopologyPlugin.
     public var topology: TopologyIndex? { service(TopologyIndex.self) }
+
+    /// `accessibleName(of:)`, but a part named on a stand-in (a key to a column on another board: the pill for its table, the column
+    /// on the binding) is read as the part of the shape it stands for ("id in customers"), as a part named on the shape itself is.
+    /// Nil for what neither names.
+    public func accessibleName(readingThrough address: PartAddress) -> String? {
+        if let name = accessibleName(of: address) { return name }
+        guard address.part != nil, let shape = topology?.directTarget(of: address.shape) else { return nil }
+        return accessibleName(of: PartAddress(shape, part: address.part))
+    }
 }
 
 /// `editor.shape(inFile:)` for many shapes at once (a board deleted or pasted, thousands of them):

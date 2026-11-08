@@ -76,7 +76,7 @@ public enum ReferenceEdits {
     static func follow(_ moves: [PartAddress: PartAddress], in transaction: inout Transaction) {
         var asked: Set<ShapeID> = []
         for from in moves.keys where from.part != nil && asked.insert(from.shape).inserted {
-            for pill in transaction.standIns(naming: from.shape) {
+            for pill in transaction.standIns(naming: from.shape) where transaction.mayWrite(on: pill.board) {
                 let there = transaction.contents(of: pill.board)
                 guard let record = there[pill.id]?.typed(as: Reference.self), let target = record.props.target, target.id == from.shape,
                       let row = target.row, let to = moves[PartAddress(from.shape, part: row)] else { continue }
