@@ -233,4 +233,24 @@ extension EmptyBoardWindow {
         let shop = try require(editor.document.shapes.first { $0.kind == Database.kind })
         expectEqual(tables(editor).first.flatMap { editor.document[$0.id]?.container }, shop.id)
     },
+    test("tables of different heights placed side by side in a database draw: the taller is slid down to the database's inset and said, not refused, as in a frame") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"database "shop" size: 1400x900"#, on: editor)
+        let shop = try require(editor.document.shapes.first { $0.kind == Database.kind })
+        let box = try require(shop.box)
+        let script = #"""
+            table "users" in "shop" columns: "id uuid pk"
+            table "orders" in "shop" right of "users" columns: "id uuid pk\nuser_id uuid\ntotal int\nplaced_at timestamp\nstatus text\nnote text\nshipped_at timestamp\nsku text"
+            """#
+        let result = try drawnInProcess(script, on: editor)
+        let users = try require(tables(editor).first { editor.document[$0.id]?[TitleProperty.self] == "users" }), orders = try require(tables(editor).first { editor.document[$0.id]?[TitleProperty.self] == "orders" })
+        let usersBox = try require(editor.document[users.id]?.box), ordersBox = try require(editor.document[orders.id]?.box)
+        expect(ordersBox.height > usersBox.height, "taller")
+        expectEqual(usersBox.minY, box.minY + 40)
+        expectEqual(ordersBox.minY, box.minY + 40, "slid down to the inset")
+        expect(ordersBox.minX > usersBox.maxX)
+        expectEqual(result["warnings"]?.arrayValue?.compactMap { $0["message"]?.stringValue }, [#""orders" was slid down to stay inside "shop""#])
+        expectEqual([users.id, orders.id].map { editor.document[$0]?.container }, [shop.id, shop.id])
+    },
 ])

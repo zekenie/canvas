@@ -58,6 +58,8 @@ enum Why: Equatable {
     case separation(Int)
     /// A drawing with nothing to hang on, solved with its unplaced shape at the origin.
     case anchor
+    /// A box slid along the axis its placement leaves free, to stay inside what holds it.
+    case slide(box: Int)
 }
 
 /// Two of anything, one per axis.
@@ -522,6 +524,7 @@ struct Solver {
     mutating func solve() throws(ScriptError) -> LayoutSolution {
         var rects = Array(repeating: CGRect.null, count: count)
         var pushes: [LayoutSolution.Push] = []
+        var slides: [LayoutSolution.Slide] = []
         guard count > 0 else { return LayoutSolution(rects: [], pushes: []) }
         let everyone = Array(0..<count)
         if let anchor, let cluster = pureCluster(of: anchor) {
@@ -536,14 +539,16 @@ struct Solver {
                           among: Placement(rects.map { $0.isNull ? nil : $0 }))
             for box in cluster { rects[box] = rect(box, drawing.solution).offsetBy(dx: at.x, dy: at.y) }
             pushes = tied.pushes + drawing.pushes
+            slides = tied.slides + drawing.slides
         } else {
             let all = try run(everyone, obstacles: true, anchored: nil)
             try checkTied(everyone, all.solution)
             for box in everyone { rects[box] = rect(box, all.solution) }
             pushes = all.pushes
+            slides = all.slides
         }
         let placement = Placement(rects.map { $0.isNull ? nil : $0 })
-        return LayoutSolution(rects: rects, pushes: pushes, zones: everyone.map { zones(of: $0, placement) })
+        return LayoutSolution(rects: rects, pushes: pushes, zones: everyone.map { zones(of: $0, placement) }, slides: slides)
     }
 
     /// The obstacles a box overlaps, where it's placed, that are zones for it, in stacking order:
@@ -651,7 +656,7 @@ struct Solver {
     /// Solves these boxes: the bounds they say, region alignments measured, then separation rounds
     /// until a pass adds none; with the anchor at the origin, for a drawing solved alone.
     mutating func run(_ boxes: [Int], obstacles: Bool, anchored: Int?) throws(ScriptError)
-        -> (solution: PerAxis<AxisSolution>, pushes: [LayoutSolution.Push]) {
+        -> (solution: PerAxis<AxisSolution>, pushes: [LayoutSolution.Push], slides: [LayoutSolution.Slide]) {
         var inRun = Array(repeating: false, count: nodes)
         inRun[0] = true
         for box in boxes { inRun[node(box)] = true }
@@ -664,6 +669,7 @@ struct Solver {
         }
         let aligning = pending.filter { inRun[node($0.box)] }
         var moved: [LayoutSolution.Push] = []
+        var slides: [LayoutSolution.Slide] = []
         let within = inside.filter { inRun[node($0.box)] }
         var bounds = kept
         var solution: PerAxis<AxisSolution>
@@ -681,7 +687,7 @@ struct Solver {
                     solution = try solveAll(bounds)
                 }
             }
-            try keepInside(within, solution)
+            if try keepInside(within, solution, &kept, &bounds, &slides) { continue }
             var added = false
             while let clash = firstClash(boxes, solution, obstacles: obstacles) {
                 let (axis, bound) = try separate(clash, solution, bounds)
@@ -692,8 +698,8 @@ struct Solver {
                 let found = pushes(clash, axis, boxes, before, solution)
                 separations[separations.count - 1].moved = found.map(\.box)
                 moved += found
-                try keepInside(within, solution)
                 added = true
+                if try keepInside(within, solution, &kept, &bounds, &slides) { break }
             }
             if !added { break }
         }
@@ -701,7 +707,7 @@ struct Solver {
         for index in moved.indices {
             moved[index].placementsHold = placementsHold(moved[index].box, moved[index].way.axis, solution, bounds)
         }
-        return (solution, moved)
+        return (solution, moved, slides)
     }
 
     /// What holds each list of these boxes as one across the page, where this solve, before anything
@@ -864,13 +870,22 @@ struct Solver {
     /// Every box `inside` another is still within it, the gap in from each side, or there's no room:
     /// naming what the box was kept clear of, and any other pair kept apart that moved it (a shape
     /// centered on it, kept clear of the zone they're drawn in, takes it along), unless it never fit.
-    func keepInside(_ within: [Inside], _ solution: PerAxis<AxisSolution>) throws(ScriptError) {
+    ///
+    /// A box that crosses the edge only on the axis its placement leaves free (a lone direction centers
+    /// it there) isn't refused when it fits: it slides along that axis until it is inside, and the
+    /// bounds are changed to say so, which is `true` (the caller solves again from them).
+    func keepInside(_ within: [Inside], _ solution: PerAxis<AxisSolution>, _ kept: inout PerAxis<[Bound]>,
+                    _ bounds: inout PerAxis<[Bound]>, _ slides: inout [LayoutSolution.Slide]) throws(ScriptError) -> Bool {
         for entry in within {
             let axis = entry.axis, whole = span(entry.target, axis, whole: true)
             let at = solution[axis].pos[node(entry.box)], holder = solution[axis].pos[whole.node]
             guard at > -.infinity, holder > -.infinity else { continue }
             let start = holder + whole.start, end = start + whole.length
             guard at < start + entry.gap - Self.slack || at + placed[entry.box][axis] > end - entry.gap + Self.slack else { continue }
+            if let slide = slide(entry, whole, early: at < start + entry.gap - Self.slack, &kept, &bounds) {
+                slides.append(slide)
+                return true
+            }
             let box = problem.free[entry.box]
             let holderName = name(entry.target.ref)
             var clear: [String] = [], apart: [String] = [], lines = [box.line]
@@ -898,6 +913,35 @@ struct Solver {
                               hint: fits && !(clear + apart).isEmpty ? "place it elsewhere, or say overlap: allow"
                                   : grows ? "make \(holderName) bigger, or this smaller" : "make this smaller, or place it elsewhere")
         }
+        return false
+    }
+
+    /// A box that crosses its holder's edge on an axis nothing but the centering of a lone direction
+    /// settles, and fits there, is let slide: the centering is held from the one side only (it may be
+    /// no earlier than its target's middle gives, or no later), and the holder's edge, the gap in,
+    /// from the other. It keeps its side of what it's placed against, which its other axis holds.
+    /// Nil when it can't: it doesn't fit, or something else says where it sits on the axis.
+    func slide(_ entry: Inside, _ whole: (node: Int, start: CGFloat, length: CGFloat), early: Bool, _ kept: inout PerAxis<[Bound]>,
+               _ bounds: inout PerAxis<[Bound]>) -> LayoutSolution.Slide? {
+        let axis = entry.axis, me = node(entry.box), size = placed[entry.box][axis]
+        guard size + 2 * entry.gap <= whole.length + Self.slack else { return nil }
+        func centering(_ bound: Bound) -> Bool {
+            if case .centering(entry.box, _) = bound.why { return true }
+            return false
+        }
+        let forward = { (bound: Bound) in centering(bound) && bound.to == me }, reverse = { (bound: Bound) in centering(bound) && bound.from == me }
+        // Both halves of the centering: an exact distance from what it's placed against.
+        guard kept[axis].contains(where: forward), kept[axis].contains(where: reverse) else { return nil }
+        let drop = early ? reverse : forward
+        let edge = early
+            ? Bound(from: whole.node, to: me, weight: whole.start + entry.gap, why: .slide(box: entry.box))
+            : Bound(from: me, to: whole.node, weight: size + entry.gap - (whole.start + whole.length), why: .slide(box: entry.box))
+        kept[axis].removeAll(where: drop)
+        bounds[axis].removeAll(where: drop)
+        kept[axis].append(edge)
+        bounds[axis].append(edge)
+        let way: Direction = axis == .x ? (early ? .right : .left) : (early ? .below : .above)
+        return LayoutSolution.Slide(box: entry.box, way: way, inside: entry.target.ref)
     }
 
     // MARK: Region alignments
@@ -1283,7 +1327,7 @@ struct Solver {
             case .keep(let box): say(box, other: "stays where it is \(axis.adverb)")
             case .list(let box, let after): say(box, other: "is listed under \(problem.free[after].name)")
             case .separation(let index): apart.append(separations[index])
-            case .anchor: break
+            case .anchor, .slide: break
             }
         }
         /// `is right of "A" and left of "B"`, `stays where it is horizontally`.

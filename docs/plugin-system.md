@@ -12326,7 +12326,9 @@ language:
 
 - **`in "X"`, for X a container**, draws on the board X is on and puts the shape in X: it's kept
   within X, 40 in from each side, as `inside` keeps a box (the layout problem's `Free.holder`,
-  checked as `inside` is, `no_room` when it can't be), wherever its placements put it there; with
+  checked as `inside` is, `no_room` when it can't be, unless the shape crosses the edge only on the axis its lone
+  direction leaves free (`right of`'s centering across, `below`'s along) and fits there: it is slid along
+  that axis, keeping its side of the target, and a warning says so, `LayoutSolution.slides`), wherever its placements put it there; with
   none, and not in X already (where a restated shape stays), it's placed as `inside "X" top-left`
   places one, a clause written `in "X"`, so several make a list down from there. X must be on the
   board as the run starts (`unsupported` for one the script draws: draw it, then what's in it),
