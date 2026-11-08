@@ -219,11 +219,108 @@ enum QueryKitBoard {
         expectEqual(try ids(#"table:edge-to("customers", foreign-key)"#), kitIDs([K.orders]))
         expectEqual(try ids(#":edge-from("orders", foreign-key)"#), kitIDs([K.customers]))
         expectEqual(try ids(#":edge-to("refunds", writes)"#), kitIDs([K.ordersAPI]))
+        // Which endpoint: the arrows into the table, whose rows say it.
+        let into = try JSON(text: try query(#"arrow[channel=writes]:ends-at("refunds")"#, on: board, server, ["--brief"]).output)
+        expectEqual(into["rows"]?.arrayValue?.map { $0["id"] }, [.string(K.writesRefunds.description)])
+        expectEqual(into["rows"]?.arrayValue?.first?["connection"]?["from"]?["row"], "POST /orders/{id}/refunds")
         expectEqual(try ids(#"table:edge-from("orders API", reads)"#), kitIDs([K.orders]))
         expectEqual(try ids(#":edge-to("billing API", calls)"#), kitIDs([K.ordersAPI]))
         expectEqual(try ids(#":edge-to("orders API", calls)"#), kitIDs([K.storefront]))
         expectEqual(try ids(#"table:downstream-of("orders API", writes|calls)"#), kitIDs([K.refunds, K.auditLog]))
         expect(!board.isDocumentEdited)
+    },
+    test("across boards: a key and a call drawn through pills name the rows at the original's ends (the pill itself no row), and --ask's blocks say them") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(answers: ["table"])
+        try configureQueryBoards(pasteboard: pasteboard, model: model)
+        let board = try QueryKitBoard.document()
+        defer { board.close() }
+        let editor = board.editor
+        let server = try startQueryServer(for: board)
+        defer { server.stop() }
+        typealias K = QueryKitBoard
+        // A ledger and a hook on a subboard: the ledger's key into orders.id, the hook's call into GET /orders/{id}, both across.
+        _ = try drawnInProcess(#"""
+            subboard "billing" below "orders API" (gap: 200)
+            """#, on: editor)
+        _ = try drawnInProcess(#"""
+            table "ledger" in "billing" columns: "id uuid pk\norder_id uuid → orders.id"
+            api "billing hooks" below "ledger" (gap: 60) in "billing" endpoints: "POST /hooks/paid"
+            edge "billing hooks"."POST /hooks/paid" -> "orders API"."GET /orders/{id}" channel: calls
+            """#, on: editor)
+        let ledger = try require(editor.file.everyBoard.lazy.flatMap { editor.file[$0].shapes }.first { $0[TitleProperty.self] == "ledger" }).id
+        let hooks = try require(editor.file.everyBoard.lazy.flatMap { editor.file[$0].shapes }.first { $0[TitleProperty.self] == "billing hooks" }).id
+        let key = try JSON(text: try query(#"arrow[channel=foreign-key]"#, on: board, server, ["--brief"]).output)
+        let far = try require(key["rows"]?.arrayValue?.first { $0["connection"]?["from"]?["title"] == "ledger" }, "the key on the billing board")
+        expectEqual(far["connection"]?["from"], ["id": .string(ledger.description), "title": "ledger", "row": "order_id"], "the original's row at its own end")
+        expectEqual(far["connection"]?["to"], ["id": .string(K.orders.description), "title": "orders", "row": "id"], "the table the pill stands for, and its column")
+        expect(far["connection"]?["via"] != nil, "through the pill: \(far)")
+        expectEqual(far["connection"]?["via"]?["to"]?["row"], nil, "the pill itself names no row")
+        let calls = try JSON(text: try query(#"arrow[channel=calls]"#, on: board, server, ["--brief"]).output)
+        let hook = try require(calls["rows"]?.arrayValue?.first { $0["connection"]?["from"]?["title"] == "billing hooks" }, "the call on the billing board")
+        expectEqual(hook["connection"]?["from"]?["row"], "POST /hooks/paid")
+        expectEqual(hook["connection"]?["to"], ["id": .string(K.ordersAPI.description), "title": "orders API", "row": "GET /orders/{id}"])
+        // The model is told the key's far end by the table's name, and the call by the endpoint it ends at.
+        let asked = try canvas(server, ["query", "--ask", "What calls the orders API?", "--board", "\(board.number)"])
+        expectEqual(asked.status, 0, asked.error)
+        let request = try require(model.lastRequest?.messages.first?.text)
+        let tables = try require(request.range(of: "<tables>\n"), request)
+        let tablesEnd = try require(request.range(of: "\n</tables>"))
+        let ledgerLine = try require(request[tables.upperBound..<tablesEnd.lowerBound].split(separator: "\n").first { $0.hasPrefix("ledger") })
+        expectEqual(String(ledgerLine), "ledger: id uuid pk; order_id uuid → orders.id", "a key through a pill, and a table in a subboard no database")
+        let apis = try require(request.range(of: "<apis>\n"), request)
+        let apisEnd = try require(request.range(of: "\n</apis>"))
+        let lines = request[apis.upperBound..<apisEnd.lowerBound].split(separator: "\n").map(String.init)
+        expect(lines.contains(#"- GET /orders/{id} → 200 Order; reads "orders"; called by "billing hooks" POST /hooks/paid; called by "Storefront""#)
+               || lines.contains(#"- GET /orders/{id} → 200 Order; reads "orders"; called by "Storefront"; called by "billing hooks" POST /hooks/paid"#),
+               "an endpoint called from a pill on another board: \(lines)")
+        _ = hooks
+    },
+    test("a type note and an enum renamed: a body's type and a column's type are found by the name they have now, and <apis> and <tables> say it") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(answers: [#"api[endpoints.body="RefundRequest"]"#])
+        try configureQueryBoards(pasteboard: pasteboard, model: model)
+        let board = try QueryKitBoard.document()
+        defer { board.close() }
+        let editor = board.editor
+        let server = try startQueryServer(for: board)
+        defer { server.stop() }
+        typealias K = QueryKitBoard
+        @MainActor func ids(_ text: String) throws -> [String] {
+            let answered = try query(text, on: board, server, ["--brief"])
+            expectEqual(answered.status, 0, "\(text): \(answered.error)")
+            return try rowIDs(answered.output)
+        }
+        // A type note the orders API's refund body names, by the shape.
+        _ = try drawnInProcess(#"sticky-note "NewRefund" below "Storefront" (gap: 100) schema: "{\"type\": \"object\", \"properties\": {\"amount\": {\"type\": \"integer\"}}}""#, on: editor)
+        let note = try require(editor.document.shapes.first { $0[TitleProperty.self] == "NewRefund" }).id
+        editor.transact("Bind") { tx in
+            tx.update(K.ordersAPI, as: API.self) { api in
+                for place in api.props.endpoints.indices {
+                    if case .endpoint(var endpoint) = api.props.endpoints[place], endpoint.id == K.postRefund {
+                        endpoint.body = TypeRef("NewRefund", shape: note)
+                        api.props.endpoints[place] = .endpoint(endpoint)
+                    }
+                }
+            }
+        }
+        expectEqual(try ids(#"api[endpoints.body="NewRefund"]"#), kitIDs([K.ordersAPI]))
+        editor.transact("Rename") { tx in
+            tx.update(note) { $0[TitleProperty.self] = "RefundRequest" }
+            tx.update(K.orderStatus) { $0[TitleProperty.self] = "order_state" }
+        }
+        expectEqual(try ids(#"api[endpoints.body="RefundRequest"]"#), kitIDs([K.ordersAPI]), "the name the card shows")
+        expectEqual(try ids(#"api[endpoints.body="NewRefund"]"#), [], "the words it was written in no longer")
+        expectEqual(try ids(#"table[columns.type="order_state"]"#), kitIDs([K.orders]))
+        expectEqual(try ids(#"table[columns.type="order_status"]"#), [])
+        let asked = try canvas(server, ["query", "--ask", "Which APIs take a RefundRequest?", "--board", "\(board.number)"])
+        expectEqual(asked.status, 0, asked.error)
+        expectEqual(try rowIDs(asked.output), kitIDs([K.ordersAPI]))
+        let request = try require(model.lastRequest?.messages.first?.text)
+        expect(request.contains("- POST /orders/{id}/refunds (RefundRequest) → 201 Refund;"), "the block says the name the card does: \(request)")
+        expect(request.contains("status order_state;"), request)
     },
     test("--ask tells the model the file's tables, a line each with their keys and database, and its APIs, a route a line with what each does") {
         let pasteboard = NSPasteboard.withUniqueName()

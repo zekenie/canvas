@@ -916,6 +916,14 @@ final class Evaluation {
             }
             try await readNames(named)
         }
+        // A test that reads a value as the name of the shape it names (a column's type, an enum's name now) reads those names first.
+        var named: [ShapeID] = []
+        for id in pool {
+            guard let entry = entry(id), let index = readerOf[entry.record.kind], case .property(let shape) = readers[index].source,
+                  case .path(let path) = readers[index].test.comparison, path.namedBy != nil else { continue }
+            named += path.namedShapes(in: value(attribute, of: entry, shape: shape))
+        }
+        if !named.isEmpty { try await readNames(named) }
         var found: Set<ShapeID> = []
         for id in pool {
             try tick()
@@ -926,7 +934,7 @@ final class Evaluation {
                 if reader.test.holds(name: name(id)) { found.insert(id) }
             case .property(let shape):
                 read.insert(id)
-                if reader.test.holds(value(attribute, of: entry, shape: shape), shape: shape) { found.insert(id) }
+                if reader.test.holds(value(attribute, of: entry, shape: shape), shape: shape, names: { self.name($0) }) { found.insert(id) }
             }
         }
         if found.isEmpty {

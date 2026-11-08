@@ -1776,7 +1776,12 @@ the two never disagree:
   to: CanvasTesting's `Properties<MemoNote>(definition: "memo-note")` is `canvastesting.memo-note`
   in a schema, named after the module that declares the type, so a type has one name wherever it's
   described, and two modules' definitions never collide. A struct that holds itself (a tree) needs a
-  name, and its definition then refers to itself.
+  name, and its definition then refers to itself. `Properties(readsAs: "name")` says which member a
+  value of the struct reads as where a query compares it as one value (the schema's
+  `x-canvas-reads-as`; it must be one of its properties, or the registry refuses the kind), and
+  `namedBy: "shape"` the member holding the id of a shape whose name it then reads as while that shape
+  has one (`x-canvas-named-by`): the engineering kit's `TypeRef` reads as the name of the enum or type
+  it names now, its words only where none ([What plugins add](#what-plugins-add), Queries).
 - **A dictionary keyed by strings** is an object whose members, named anything, are each its
   value's type (`additionalProperties`).
 - **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Arrows'
@@ -2376,7 +2381,7 @@ What agents read of it is a plugin value of its own, `EngineeringAgentsPlugin`, 
 with the kit off is asked about its tables as one with it on:
 
 ```swift
-registrar.queryPseudoClass("route", …, argument: "route", reads: .file,              // :route("POST /orders/{id}/refunds")
+registrar.queryPseudoClass("route", …, argument: "route", reads: .file, refusing: RoutePattern.refusal(of:),   // :route("POST /orders/{id}/refunds")
                            prepare: { _, text in RoutePattern(text) }, matches: …, members: ["routes"], rowMembers: …)
 registrar.queryPartNames(of: DatabaseTable.kind) { record, part in …columns.first { $0.id == part }?.name }   // "row": "customer_id"
 registrar.queryAskFact(tag: "tables") { editor, question in KitAskFacts.tables(in: editor, question: question) }
@@ -10067,9 +10072,17 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   is the `:not` of the test, as everywhere. One thing the schema does say: an object whose schema names
   the member it reads as (`Properties(readsAs:)`, KindSchema's `x-canvas-reads-as`, `readsAs(_:at:)`)
   is compared by that member where a path ends at it, so `[columns.type="uuid"]` tests a type's
-  `words`, and a list of such objects compared with no path is searched by it, an item at a time
-  (`enum-type[values="paid"]`, an enum's values read as their `text`): the engine knows no kind's
-  meaning, the kind's schema says it. The canonical form stays as written. Typing by the schemas of a shape's types is left for
+  `words`, and a list of such objects compared with no path (an equality, a text operator, `~=`;
+  never an ordering) is searched by it, an item at a time (`enum-type[values="paid"]`, an enum's
+  values read as their `text`): the engine knows no kind's meaning, the kind's schema says it.
+  `Properties(readsAs:namedBy:)` may add the member that holds a shape's id (`x-canvas-named-by`,
+  `KindSchema.namedBy(_:at:)`): the object then reads as that shape's name while it has one, in place of
+  its `readsAs` member, which a rename of that shape changes with nothing written here (a column's
+  type reads as its enum's name now; the words only where the shape is gone, outside the query's range or
+  nameless). The schema is held to its members too: where every object a path goes through is
+  closed (`additionalProperties: false`), a member it doesn't have is `unknown_attribute` with the one
+  nearest and the members (`KindSchema.unknownMember(of:at:)`: `[columns.nam="x"]`), not a quiet
+  answer of none; an object that may hold more (`fieldValues`, any JSON) is left to its plugin's warning. The canonical form stays as written. Typing by the schemas of a shape's types is left for
   later: it would make the vocabulary depend on the file, which today is built once from the
   registry and is `Sendable`.
 - **Text as a person reads it.** A string whose schema names a media type a text format reads
@@ -10417,7 +10430,9 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
 - **A word with a text, members and absent ids** (`queryPseudoClass(…, argument: "name", reads: .file,
   prepare: { file, text in … }, seeds:, matches:, members: ["tag"], rowMembers:, absent:)`): written
   `:drawn-by("Plans")`, exactly one quoted string (`bad_argument` for none, another sort of thing or
-  two; a word declared without an argument still refuses `:x("…")`). `prepare` is given the text,
+  two; a word declared without an argument still refuses `:x("…")`; `refusing:` says why a text
+  can't be the word's where that shows without the file, `:route("POST")` "says no path", refused as
+  `bad_argument` with the word's example, never an empty answer). `prepare` is given the text,
   and `seeds`, `matches`, `rowMembers` and `absent` see what it made; a query using the word with two
   texts prepares each on its own. `rowMembers(shape, prepared)` adds the members `members` declares
   (never a row's own key: `QueryWords.check` refuses it and the registry report names them) to each

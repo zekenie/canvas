@@ -18,6 +18,7 @@ public struct EngineeringAgentsPlugin: ListedPlugin {
 
     public func register(into registrar: inout PluginRegistrar) {
         registrar.queryPseudoClass(RouteWord.word, RouteWord.summary, example: RouteWord.example, argument: "route", reads: .file,
+                                   refusing: RoutePattern.refusal(of:),
                                    prepare: { _, text in RoutePattern(text) },
                                    matches: { shape, route in RouteWord.routes(shape.record, route).isEmpty ? .no : .yes },
                                    members: [RouteWord.member],
@@ -32,8 +33,7 @@ public struct EngineeringAgentsPlugin: ListedPlugin {
             record.typed(as: DatabaseEnum.self)?.props.values.first { $0.id == part }?.text
         }
         registrar.queryPartNames(of: API.kind) { record, part in
-            guard let rows = record.typed(as: API.self)?.props.endpoints, let index = rows.firstIndex(where: { $0.id == part }) else { return nil }
-            return APIGroups.fullName(of: index, in: rows)
+            record.typed(as: API.self).flatMap { APIGroups.fullName(ofRow: part, in: $0.props.endpoints) }
         }
         registrar.queryAskFact(tag: KitAskFacts.tablesTag) { editor, question in KitAskFacts.tables(in: editor, question: question) }
         registrar.queryAskFact(tag: KitAskFacts.apisTag) { editor, question in KitAskFacts.apis(in: editor, question: question) }

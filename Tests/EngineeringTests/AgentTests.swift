@@ -63,6 +63,17 @@ extension EditorHarness {
         expectEqual(RoutePattern("POST /a /b"), nil, "two paths")
         let root = try require(RoutePattern("GET /"))
         expect(root.matches(method: "GET", path: "/") && !root.matches(method: "GET", path: "/orders"))
+        expect(!root.matches(method: "GET", path: ""), "an endpoint with no path yet is no route")
+        // A parameter inside a segment is anonymous too, the rest of the segment as written.
+        let inside = try require(RoutePattern("GET /files/{n}.json"))
+        expect(inside.matches(method: "GET", path: "/files/{name}.json") && !inside.matches(method: "GET", path: "/files/{name}.xml"))
+        expect(try require(RoutePattern("/reports/{y}-{m}")).matches(method: "GET", path: "/reports/{year}-{month}"))
+        expect(!inside.matches(method: "GET", path: "/files/report.json"), "a word is no parameter")
+        expect(!inside.matches(method: "GET", path: "/files/{name}"), "nor a whole parameter one inside a segment")
+        expectEqual(RoutePattern.refusal(of: "POST /orders"), nil)
+        expectEqual(RoutePattern.refusal(of: "/orders"), nil)
+        expectEqual(RoutePattern.refusal(of: "POST"), "POST says no path.")
+        expect(RoutePattern.refusal(of: "") != nil && RoutePattern.refusal(of: "GET /a /b") != nil && RoutePattern.refusal(of: "a b") != nil)
     },
     test(":route finds the APIs with that endpoint, by whole path under its header; each row says the endpoints it matched") {
         let h = try agentHarness()
@@ -76,7 +87,19 @@ extension EditorHarness {
         expectEqual(try h.ask(#":route("GET /orders")"#).rows.first?.members, ["routes": ["GET /orders"]], "the header's own path, GET / under it")
         expectEqual(try h.ask(#"api:route("/v1/orders/{id}"), :route("GET /orders/{id}")"#).rows.map(\.id), [orders, billing])
         expectEqual(try h.ask(#":route("DELETE /orders/{id}")"#).count, 0)
-        expectEqual(try h.ask(#":route("nothing at all")"#).count, 0, "words that say no route find nothing")
+        for text in ["POST", "GET /a /b", "", "nothing at all"] {
+            do {
+                _ = try h.ask(#":route("\#(text)")"#)
+                expect(false, "\(text) says no route, and is answered")
+            } catch {
+                let said = String(describing: error)
+                expect(said.contains("bad_argument") && said.contains(#":route("POST /orders/{id}/refunds")"#), "\(text): \(said)")
+            }
+        }
+        h.add(API(frame: CGRect(x: 500, y: 700, width: 400, height: 100), endpoints: [.endpoint(Endpoint(id: PartID(), method: "GET", path: ""))]), titled: "blank API")
+        expectEqual(try h.ask(#":route("GET /")"#).count, 0, "a row with no path yet is no route")
+        h.api("files API", ["GET /files/{name}.json"], at: 800)
+        expectEqual(try h.ask(#":route("/files/{n}.json")"#).count, 1, "a parameter inside a segment is any parameter")
         // A file's words: what it reads is the file alone, so a stored query may hold it.
         let plan = try require(h.editor.queries).check(#":route("GET /")"#)
         expect(plan.readsOnlyTheFile, "it reads the file")
@@ -104,6 +127,26 @@ extension EditorHarness {
         expectEqual(try h.ask(#"api[endpoints.method="GET"]"#).count, 0)
         expectEqual(try h.ask(#"[columns.name.first="x"]"#).count, 0, "a member past a string is no value: answered, none")
     },
+    test("a column's type reads as the enum's name now: a rename changes what a test finds, and the words only where it names no enum") {
+        let h = try agentHarness()
+        let status = h.add(DatabaseEnum(frame: CGRect(x: 100, y: 600, width: 200, height: 80), values: ["pending", "paid"].map { EnumValue(text: $0) }),
+                           titled: "order_status")
+        let orders = h.table("orders", ["id uuid pk", "status order_status", "kind ghost"], at: 300)
+        h.editor.transact("Bind") { tx in
+            tx.update(orders, as: DatabaseTable.self) { $0.props.columns[1].type.shape = status; $0.props.columns[2].type.shape = ShapeID() }
+        }
+        expectEqual(try h.ask(#"table[columns.type="order_status"]"#).rows.map(\.id), [orders])
+        expectEqual(try h.ask(#"table[columns.type="ghost"]"#).rows.map(\.id), [orders], "a type that names nothing now is read as written")
+        h.editor.transact("Rename") { $0.update(status) { $0[TitleProperty.self] = "order_state" } }
+        expectEqual(try h.ask(#"table[columns.type="order_state"]"#).rows.map(\.id), [orders], "the new name finds it, as the card and <tables> say it")
+        expectEqual(try h.ask(#"table[columns.type="order_status"]"#).count, 0, "the old one no longer does")
+        expectEqual(try h.ask(#"table[columns.type^="order_"]"#).rows.map(\.id), [orders])
+        let block = try h.fact("tables")
+        expect(block.contains("status order_state"), block)
+        // Not a rename the words kept: the enum gone, the words are what is left.
+        h.editor.transact("Delete") { $0.delete([status]) }
+        expectEqual(try h.ask(#"table[columns.type="order_status"]"#).rows.map(\.id), [orders])
+    },
     test("<tables>: a table a line, its columns in their grammar, the database it's in; an enum a line; the question's tables first") {
         let h = try agentHarness()
         expectEqual(try h.fact("tables"), "", "no tables, no block")
@@ -124,6 +167,16 @@ extension EditorHarness {
         ])
         expect(try h.fact("tables", "which customers have an email?").hasPrefix("customers: "), "the tables the question names first")
     },
+    test("<tables> says a column's default as the word and not its value, and neither block says a word a row kept unread") {
+        let h = try agentHarness()
+        h.table("people", ["id uuid pk", "token text default 'sk_live_abc' extra words kept"], at: 300)
+        let text = try h.fact("tables")
+        expectEqual(text, "people: id uuid pk; token text default")
+        expect(!text.contains("sk_live") && !text.contains("extra"))
+        h.api("notes API", ["GET /notes secret words kept"])
+        expect(try require(EndpointGrammar.read("GET /notes secret words kept")?.endpoint).unread.contains("secret"), "the row did keep them")
+        expectEqual(try h.fact("apis"), "notes API\n- GET /notes", "an endpoint's unread words stay out")
+    },
     test("<apis>: an API a line with its server, its routes a line each by whole path; a deprecated one says so; none, no block") {
         let h = try agentHarness()
         expectEqual(try h.fact("apis"), "")
@@ -138,6 +191,16 @@ extension EditorHarness {
             "- GET /v0/orders",
         ])
     },
+    test("full paths in one pass are each row's own: under a header, under none, a header itself, and a row found by its id") {
+        let rows = ["GET /top", "/orders", "GET /{id}", "POST /{id}/refunds", "/", "GET /", "/customers/", "GET /{n}/orders"].compactMap { EndpointGrammar.read($0) }
+        expectEqual(APIGroups.fullPaths(in: rows), rows.indices.map { APIGroups.fullPath(of: $0, in: rows) })
+        for (index, row) in rows.enumerated() {
+            let id = row.header?.id ?? row.endpoint?.id
+            expectEqual(APIGroups.fullName(ofRow: try require(id), in: rows), APIGroups.fullName(of: index, in: rows), "row \(index)")
+        }
+        expectEqual(APIGroups.fullName(ofRow: PartID(), in: rows), nil)
+        expectEqual(APIGroups.fullPaths(in: []), [])
+    },
     test("a block past its limit keeps whole shapes while they fit, then names the rest; one shape too long keeps the lines that fit") {
         let h = try agentHarness()
         for index in 0..<400 { h.table("table_\(index)", ["id uuid pk", "name text", "created_at timestamptz"], at: CGFloat(index) * 120) }
@@ -145,6 +208,12 @@ extension EditorHarness {
         expect(text.count <= 8_000, "at most 8,000 characters: \(text.count)")
         let last = try require(text.split(separator: "\n").last)
         expect(last.hasPrefix("and ") && last.contains("more tables: "), "the rest named: \(last.prefix(60))")
+        let wide = h.table("zebra_ledger", (0..<600).map { "column_number_\($0) text" }, at: 100_000)
+        let one = try h.fact("tables", "what is in zebra_ledger?")
+        expect(one.count <= 8_000, "\(one.count)")
+        expect(one.hasPrefix("zebra_ledger: column_number_0 text; column_number_1 text"), "its name kept, though one line is too long: \(one.prefix(80))")
+        expect(one.contains("; and ") && one.contains(" more"), "the columns left out said: \(one.suffix(60))")
+        _ = wide
         let routes = (0..<600).map { "GET /items/\($0)/children/{id}" }
         h.api("big API", routes)
         let apis = try h.fact("apis")

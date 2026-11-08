@@ -13,8 +13,8 @@ import QueryLanguage
 extension TypedTest {
     /// Whether a property's value passes: `value` as the shape has it, its text read through its
     /// format (nil when the shape has none), and `shape` what the property's schema says it is.
-    func holds(_ value: JSONValue?, shape: KindSchema.PropertyShape) -> Bool {
-        if case .path(let path) = comparison { return path.holds(value) }
+    func holds(_ value: JSONValue?, shape: KindSchema.PropertyShape, names: (ShapeID) -> String? = { _ in nil }) -> Bool {
+        if case .path(let path) = comparison { return path.holds(value, names: names) }
         let value = value == .null ? nil : value
         if case .boolean(let fallback) = shape {
             let actual = value?.boolValue ?? fallback

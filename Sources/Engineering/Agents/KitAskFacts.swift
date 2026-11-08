@@ -8,7 +8,7 @@ import Topology
 // their keys (`customer_id uuid → customers.id`) and the database it's in, and each enum its values; `<apis>`, each API a line
 // (its server) and its routes a line each, whole paths, with what each writes, reads and calls and what calls it. So a question
 // about a column or an endpoint finds the table or the API that holds it. Names, types and paths only, as a table's or an API's
-// lines show them: never a note's text or a value. Each block at most `blockLimit` characters, the shapes whose words the question
+// lines show them, a column's default only as the word: never a note's text or a value, nor a word a row kept unread. Each block at most `blockLimit` characters, the shapes whose words the question
 // names first, then in file order; past the limit, the rest named on a last line, as many as fit.
 
 @MainActor
@@ -35,19 +35,21 @@ enum KitAskFacts {
         snapshot.forEachShape(inFileOrder: { record, _ in
             if let table = record.typed(as: DatabaseTable.self) {
                 let name = self.name(of: record, registry)
+                // A type as it is called now, as the card shows it; a key's target by the names this block lists.
                 let columns = table.props.columns.map { column in
                     var column = column
                     if let id = column.type.shape, let now = names?.name(of: id) { column.type.words = now }
-                    var line = ColumnGrammar.print(column)
-                    if let target = keys?.target(of: column.id, in: record.id), let written = ColumnLineGrammar.written(target, editor) {
-                        line += " \(ColumnGrammar.arrow) \(written)"
+                    var line = Self.line(of: column)
+                    if let target = keys?.target(of: column.id, in: record.id), let far = snapshot.shape(target.shape), let part = target.part,
+                       let row = registry.parts(of: far)?.first(where: { $0.id == part }) {
+                        line += " \(ColumnGrammar.arrow) " + ColumnGrammar.written(table: self.name(of: far, registry), column: row.name)
                     }
-                    return line
+                    return (column, line)
                 }
-                let database = record.container.flatMap { snapshot.shape($0) }.flatMap { registry.title(of: $0) }
+                let database = record.container.flatMap { snapshot.shape($0) }.flatMap { $0.kind == Database.kind ? registry.title(of: $0) : nil }
                 let head = name + (database.map { " (in \(quoted($0)))" } ?? "")
-                entries.append(Entry(name: name, lines: [columns.isEmpty ? head : head + ": " + columns.joined(separator: "; ")],
-                                     words: words(in: ([name] + table.props.columns.map(\.name) + table.props.columns.map(\.type.words)).joined(separator: " "))))
+                entries.append(Entry(name: name, lines: [columns.isEmpty ? head : head + ": " + columns.map(\.1).joined(separator: "; ")],
+                                     words: words(in: ([name] + columns.map(\.0.name) + columns.map(\.0.type.words)).joined(separator: " "))))
             } else if let type = record.typed(as: DatabaseEnum.self) {
                 let name = self.name(of: record, registry)
                 let values = type.props.values.map(\.text)
@@ -73,9 +75,17 @@ enum KitAskFacts {
             if api.props.deprecated { about.append("deprecated") }
             var lines = [name + (about.isEmpty ? "" : " (\(about.joined(separator: ", ")))")]
             var said = [name]
+            let paths = APIGroups.fullPaths(in: api.props.endpoints)
             for (index, row) in api.props.endpoints.enumerated() {
                 guard var endpoint = row.endpoint else { continue }
-                endpoint.path = APIGroups.fullPath(of: index, in: api.props.endpoints)
+                endpoint.path = paths[index]
+                // Not a half-typed row's; a type as it is called now, as the card shows it; and no word the row kept unread.
+                guard !endpoint.path.isEmpty else { continue }
+                if let body = endpoint.body { endpoint.body?.words = APITypes.printed(body, editor) }
+                for place in endpoint.responses.indices {
+                    if let type = endpoint.responses[place].type { endpoint.responses[place].type?.words = APITypes.printed(type, editor) }
+                }
+                endpoint.unread = ""
                 var line = "- " + EndpointGrammar.print(endpoint)
                 said.append(line)
                 // What it does first (writes, reads, calls), then what calls it, each once.
@@ -93,6 +103,18 @@ enum KitAskFacts {
             entries.append(Entry(name: name, lines: lines, words: words(in: said.joined(separator: " "))))
         })
         return block(entries, question: question, noun: ("API", "APIs"))
+    }
+
+    /// A column as the block says it: its name, type, null, unique, `default` (the word, never its value) and pk; no word it kept
+    /// unread, and no key's arrow, which is added with its target's name.
+    private static func line(of column: Column) -> String {
+        var words = [column.name]
+        if !column.type.words.isEmpty { words.append(column.type.words) }
+        if column.nullable { words.append(ColumnGrammar.null) }
+        if column.unique { words.append(ColumnGrammar.unique) }
+        if column.default != nil { words.append(ColumnGrammar.default) }
+        if column.primaryKey { words.append(ColumnGrammar.primaryKey) }
+        return words.joined(separator: " ")
     }
 
     /// A shape's name as a block writes it: its title, else `#` and its id, which an agent may be given.
@@ -137,20 +159,31 @@ enum KitAskFacts {
                 taken += 1
                 continue
             }
-            // The first entry alone too long for the block: its lines while they fit, and how many are left.
+            // The first entry alone too long for the block: its lines while they fit, and how many are left; a first line that
+            // doesn't fit (a table of hundreds of columns) cut at a `;`, its name kept.
             if taken == 0 {
                 var lines: [String] = []
                 for (index, line) in entry.lines.enumerated() {
                     let left = entry.lines.count - index - 1
                     let note = left > 0 ? "- and \(left) more" : ""
-                    guard size + line.count + 1 + note.count + 1 + reserve <= limit else {
-                        let missing = entry.lines.count - index
-                        lines.append("- and \(missing) more")
-                        size += lines.last!.count + 1
-                        break
+                    let room = limit - size - reserve - (note.isEmpty ? 0 : note.count + 1) - 1
+                    if line.count <= room {
+                        lines.append(line)
+                        size += line.count + 1
+                        continue
                     }
-                    lines.append(line)
-                    size += line.count + 1
+                    if index == 0 {
+                        lines.append(cut(line, to: room))
+                        size += lines.last!.count + 1
+                        if !note.isEmpty {
+                            lines.append(note)
+                            size += note.count + 1
+                        }
+                    } else {
+                        lines.append("- and \(entry.lines.count - index) more")
+                        size += lines.last!.count + 1
+                    }
+                    break
                 }
                 kept.append(lines.joined(separator: "\n"))
                 taken = 1
@@ -161,6 +194,23 @@ enum KitAskFacts {
             kept.append(omission(of: ranked[taken...].map(\.name), count: ranked.count - taken, noun: noun, room: limit - size))
         }
         return kept.joined(separator: "\n")
+    }
+
+    /// A line cut to `room` characters at a `; `, with how many of its parts are left (`orders: id uuid pk; and 240 more`); its
+    /// first part alone when that is all that fits, cut with `…` when not even that does.
+    static func cut(_ line: String, to room: Int) -> String {
+        let parts = line.components(separatedBy: "; ")
+        var kept = parts[0]
+        guard kept.count + 1 <= room else { return String(kept.prefix(max(room - 1, 0))) + "…" }
+        for (place, part) in parts.enumerated().dropFirst() {
+            let next = kept + "; " + part
+            let rest = parts.count - place - 1
+            let tail = rest > 0 ? "; and \(rest) more" : ""
+            guard next.count + tail.count <= room else { break }
+            kept = next
+        }
+        let left = parts.count - kept.components(separatedBy: "; ").count
+        return left > 0 ? kept + "; and \(left) more" : kept
     }
 
     /// `and 3 more tables: a, b, c`, the names as many as `room` holds, then `…`.

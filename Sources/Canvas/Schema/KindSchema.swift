@@ -159,20 +159,59 @@ public struct KindSchema: Sendable {
     /// (`Properties(readsAs:)`): a type as written reads as its `words`, an enum's value as its `text`.
     public static let readsAsKeyword = "x-canvas-reads-as"
 
+    /// The keyword that says which member of such an object holds the id of a shape whose name, once it has one, is what the
+    /// value reads as in place of its `readsAs` member (`Properties(readsAs:namedBy:)`): a type as written reads as the name of
+    /// the shape it names now, not the words it was written in.
+    public static let namedByKeyword = "x-canvas-named-by"
+
     /// The member the value at `path` inside a property reads as (`readsAsKeyword`), a list met at any step, or at the end,
     /// read as its items, and each branch of a `oneOf` or `anyOf` looked in for a member; nil where the value is no object, or
     /// its schema says no member. What a query's test of `[columns.type="uuid"]` compares: `columns.type.words`.
     public func readsAs(_ property: String, at path: [String]) -> String? {
-        guard let start = properties[property] else { return nil }
-        var schemas = items(resolved(start))
-        for member in path {
-            schemas = schemas.flatMap { schema in branches(of: schema).compactMap { $0["properties"]?[member] }.flatMap { items(resolved($0)) } }
-            guard !schemas.isEmpty else { return nil }
-        }
+        reading(property, at: path)?.member
+    }
+
+    /// The member of the object at `path` (as `readsAs(_:at:)`) that names the shape whose name the value reads as
+    /// (`namedByKeyword`); nil where its schema says none.
+    public func namedBy(_ property: String, at path: [String]) -> String? {
+        reading(property, at: path)?.namedBy
+    }
+
+    /// What the object at `path` reads as, and by which shape's name.
+    private func reading(_ property: String, at path: [String]) -> (member: String, namedBy: String?)? {
+        let (schemas, missing) = walk(property, path)
+        guard let schemas, missing == nil else { return nil }
         for schema in schemas.flatMap(branches) {
-            if let member = schema[Self.readsAsKeyword]?.stringValue, schema["properties"]?[member] != nil { return member }
+            if let member = schema[Self.readsAsKeyword]?.stringValue, schema["properties"]?[member] != nil {
+                let named = schema[Self.namedByKeyword]?.stringValue.flatMap { schema["properties"]?[$0] != nil ? $0 : nil }
+                return (member, named)
+            }
         }
         return nil
+    }
+
+    /// The first member of `path`, inside a property's value, that the schema rules out (and its place in `path`), with the members it has there (sorted):
+    /// where every object the path reaches is closed (`additionalProperties: false`) and none has it. Nil for a path the schema
+    /// follows, and for one that goes into an object whose members aren't listed (any JSON, a dictionary), which it can't judge.
+    public func unknownMember(of property: String, at path: [String]) -> (member: String, known: [String], depth: Int)? {
+        let (schemas, missing) = walk(property, path)
+        guard let missing else { return nil }
+        let objects = (schemas ?? []).flatMap(branches).filter { $0["properties"]?.objectValue != nil }
+        guard !objects.isEmpty, objects.allSatisfy({ $0["additionalProperties"] == false }) else { return nil }
+        return (path[missing], Set(objects.flatMap { $0["properties"]?.objectValue?.keys.map { $0 } ?? [] }).sorted(), missing)
+    }
+
+    /// The schemas the value at `path` inside a property can have (a list at any step read as its items), nil for a property the
+    /// kind hasn't; and the first member no branch has, where the path stops (then the schemas it stopped at).
+    private func walk(_ property: String, _ path: [String]) -> (schemas: [JSONObject]?, missing: Int?) {
+        guard let start = properties[property] else { return (nil, nil) }
+        var schemas = items(resolved(start))
+        for (depth, member) in path.enumerated() {
+            let next = schemas.flatMap { schema in branches(of: schema).compactMap { $0["properties"]?[member] }.flatMap { items(resolved($0)) } }
+            guard !next.isEmpty else { return (schemas, depth) }
+            schemas = next
+        }
+        return (schemas, nil)
     }
 
     /// A schema, or the items of the lists it is, however deep, each resolved.

@@ -100,6 +100,7 @@ extension TypeRef: SchemaDescribed {
              "required": ["words"],
              "additionalProperties": false,
              KindSchema.readsAsKeyword: "words",
+             KindSchema.namedByKeyword: "shape",
              "description": "A type as written, and the shape its words name (an enum), if one matches."]
         }
     }

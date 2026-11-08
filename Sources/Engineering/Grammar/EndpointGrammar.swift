@@ -279,6 +279,39 @@ public enum APIGroups {
         }
     }
 
+    /// Every row's full path, in order: one pass, each header's prefix carried along, never found again for each row (what
+    /// `fullPath(of:in:)` does for one). What agents' answers over a large API read (`:route`, `--ask`'s `<apis>`).
+    public static func fullPaths(in rows: [APIRow]) -> [String] {
+        var prefix = "", paths: [String] = []
+        paths.reserveCapacity(rows.count)
+        for row in rows {
+            switch row {
+            case .header(let header):
+                prefix = header.prefix
+                paths.append(prefix)
+            case .endpoint(let endpoint):
+                paths.append(joined(prefix, endpoint.path))
+            }
+        }
+        return paths
+    }
+
+    /// The full name of the row with the id `part`, in one pass; nil for none: what a connection's end bound to a row says in a
+    /// query's answer, for as many ends as the answer has.
+    public static func fullName(ofRow part: PartID, in rows: [APIRow]) -> String? {
+        var prefix = ""
+        for row in rows {
+            switch row {
+            case .header(let header):
+                prefix = header.prefix
+                if header.id == part { return prefix }
+            case .endpoint(let endpoint):
+                if endpoint.id == part { return fullName(method: endpoint.method, path: joined(prefix, endpoint.path)) }
+            }
+        }
+        return nil
+    }
+
     /// What an endpoint is called wherever it's listed (a pill, Find, the picker, agents): `POST /orders/{id}/refunds`.
     public static func fullName(method: String, path: String) -> String {
         [method, path].filter { !$0.isEmpty }.joined(separator: " ")

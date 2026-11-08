@@ -153,7 +153,12 @@ table:edge-from("orders API", writes)
 arrow[channel=calls]
 ```
 
-Which endpoint writes refunds is the API whose row the arrow leaves; the arrow's own row in an answer names it, `"from": {"id": …, "title": "orders API", "row": "POST /orders/{id}/refunds"}`, as a key's names the column at each end (`"row": "customer_id"`):
+Which API writes refunds is `api:edge-to("refunds", writes)`. Which endpoint is a question about the arrows: an arrow's own row in an answer names the row at each end, `"from": {"id": …, "title": "orders API", "row": "POST /orders/{id}/refunds"}`, as a key's names the column (`"row": "customer_id"`), so the arrows into a table say the endpoints that write it:
+
+```query
+/* matches: (arrow) */
+arrow[channel=writes]:ends-at("refunds")
+```
 
 ```query
 /* matches: "orders API" */

@@ -520,7 +520,7 @@ private struct Resolver {
     /// Whether a comparison with no path is a path test all the same: on a list of objects, or an object, whose schema says the
     /// member each reads as (`KindSchema.readsAs`): `[values="paid"]` is `[values.text="paid"]`, an item at a time.
     static func readsItems(_ test: AttributeTest, attribute: QueryVocabulary.AttributeEntry, of entry: QueryVocabulary.KindEntry) -> Bool {
-        guard test.path.isEmpty, test.op != nil else { return false }
+        guard test.path.isEmpty, let op = test.op, !op.isOrdering else { return false }
         switch attribute.shape {
         case .array, .object: return entry.schema.readsAs(attribute.name, at: []) != nil
         default: return false
@@ -548,11 +548,19 @@ private struct Resolver {
             let what = attribute.shape.what(compactType: attribute.compactType)
             throw QueryError(.unknownAttribute, "\(name) is \(what), so it has no members.", hint: "[\(name)] tests it.", span: span)
         }
+        // A member the kind's schema rules out is a slip, not an empty answer: a schema that lists every member of the objects the
+        // path goes through (closed) is held to them.
+        if let unknown = entry.schema.unknownMember(of: name, at: test.path) {
+            let inside = test.path.prefix(unknown.depth).joined(separator: ".")
+            throw QueryError(.unknownAttribute, "\(inside.isEmpty ? name : "\(name).\(inside)") has no member \(unknown.member).",
+                             hint: sentences(didYouMean(Suggestions.closest(to: unknown.member, among: unknown.known, limit: 1)),
+                                             "Its members: \(unknown.known.joined(separator: ", "))."), span: span)
+        }
         guard let op = test.op, let literal = test.value else {
             return TypedTest(comparison: .path(PathTest(members: test.path, op: nil, literal: "", ignoringCase: false)), ignoringCase: false)
         }
         let members = test.path + (entry.schema.readsAs(name, at: test.path).map { [$0] } ?? [])
-        let written = test.path.joined(separator: ".")
+        let written = members.joined(separator: ".")
         if op.isOrdering {
             if let flag = test.flag {
                 var plain = test
@@ -565,7 +573,8 @@ private struct Resolver {
                                  hint: "\(name).\(written) is compared by its value: a number, or a date as \"2026-10-01\".", span: span)
             }
         }
-        let path = PathTest(members: members, op: op, literal: literal.text, ignoringCase: test.flag == .insensitive)
+        let path = PathTest(members: members, op: op, literal: literal.text, ignoringCase: test.flag == .insensitive,
+                            namedBy: members.count > test.path.count ? entry.schema.namedBy(name, at: test.path) : nil)
         return TypedTest(comparison: .path(path), ignoringCase: path.ignoringCase)
     }
 
@@ -718,6 +727,9 @@ private struct Resolver {
             if let argument = declared.argument {
                 do throws(QueryError) {
                     text = try pseudo.text(argument: argument, example: declared.example)
+                    if let text, let why = behavior.refusing?(text) {
+                        throw QueryError(.badArgument, why, hint: declared.example, span: pseudo.span)
+                    }
                 } catch {
                     problem(error)
                     return nil

@@ -62,6 +62,34 @@ struct Badge: SchemaDefined, Hashable, Sendable {
     init() { self.init(label: "", level: 0) }
 }
 
+/// A type as written, read as its words, and as the name of the shape it names now, while that shape has one.
+struct Kind: SchemaDefined, Hashable, Sendable {
+    static let properties = Properties<Kind>(definition: "kind-ref", readsAs: "words", namedBy: "shape") {
+        Property("words", \.words)
+        Property("shape", \.shape)
+    }
+    var words: String
+    var shape: ShapeID?
+    init(words: String, shape: ShapeID? = nil) {
+        self.words = words
+        self.shape = shape
+    }
+    init() { self.init(words: "") }
+}
+
+/// What a chore is of, and what its tasks are of.
+enum KindProperty {}
+extension KindProperty: ShapeProperty {
+    static let key: PropertyKey = "kindOf"
+    static var defaultValue: Kind? { nil }
+}
+
+enum KindsProperty {}
+extension KindsProperty: ShapeProperty {
+    static let key: PropertyKey = "kindsOf"
+    static var defaultValue: [Kind]? { nil }
+}
+
 /// What a chore's crew is: a list of hands.
 enum Crew {}
 extension Crew: ShapeProperty {
@@ -79,6 +107,10 @@ extension BadgeProperty: ShapeProperty {
 private let crewPlugin = Contributor(id: "crew") { registrar in
     registrar.declare(Crew.self)
     registrar.declare(BadgeProperty.self)
+    registrar.declare(KindProperty.self)
+    registrar.declare(KindsProperty.self)
+    registrar.optIn(Chore.self, to: KindProperty.self)
+    registrar.optIn(Chore.self, to: KindsProperty.self)
     registrar.optIn(Chore.self, to: Crew.self)
     registrar.optIn(Chore.self, to: BadgeProperty.self)
 }
@@ -119,6 +151,18 @@ private let crewPlugin = Contributor(id: "crew") { registrar in
             "type": .string(WireEdge.id.rawValue), "from": ["id": .string(uuid(1)), "row": "customer_id"], "to": ["id": .string(uuid(2)), "row": "id"],
         ])
     },
+    test("a part the shape no longer holds names no row, and the answer still has its ends") {
+        let rows = ["id", "customer_id"].map { RosterRow(name: $0) }
+        let left = ShapeRecord(id: id(1), Roster(CGRect(x: 0, y: 0, width: 100, height: 80), rows: rows))
+        let right = ShapeRecord(id: id(2), Roster(CGRect(x: 300, y: 0, width: 100, height: 80), rows: rows))
+        let gone = PartID()
+        let strap = ShapeRecord(id: id(11), Strap(from: PartAddress(left.id, part: gone), to: PartAddress(right.id, part: rows[1].id)))
+        let h = try EditorHarness(plugins: queryPlugins(more: [RostersPlugin(), StrapsPlugin(), strapWires(), rosterNames()]),
+                                  file: CanvasFile(root: CanvasDocument(shapes: [AnyShapeRecord(left), AnyShapeRecord(right), AnyShapeRecord(strap)])))
+        expectEqual(try answer("strap", on: h).rows.map(\.connection), [
+            QueryConnection(type: WireEdge.id, from: QueryEnd(id: id(1)), to: QueryEnd(id: id(2), row: "customer_id")),
+        ])
+    },
     test("one plugin names a kind's parts, and the report says so") {
         let twice = try? Registry(plugins: queryPlugins(more: [RostersPlugin(), rosterNames(), Contributor(id: "again") { registrar in
             registrar.queryPartNames(of: Roster.kind) { _, _ in nil }
@@ -146,6 +190,50 @@ private let crewPlugin = Contributor(id: "crew") { registrar in
         ], on: h)
         // As written, never as it's read.
         expectEqual(try require(h.editor.queries).check(#"chore[crew="Ann"]"#).canonical, #"chore[crew="Ann"]"#)
+    },
+    test("a path through a list or an object the schema closes names only its members: a slip is refused with the members, never answered none") {
+        let h = try crewed()
+        for (query, message, hint) in [
+            (#"chore[crew.nam="Ann"]"#, "crew has no member nam.", "Did you mean name? Its members: name, role."),
+            ("chore[crew.nam]", "crew has no member nam.", "Did you mean name? Its members: name, role."),
+            ("chore[badge.lable=gold]", "badge has no member lable.", "Did you mean label? Its members: label, level."),
+        ] {
+            let error = try require(try refusedAnswer(query, on: h), "\(query) is answered")
+            expectEqual(error.reason, .unknownAttribute, query)
+            expectEqual(error.message, message, query)
+            expectEqual(error.hint, hint, query)
+        }
+        expectMatches([#"chore[crew.name]"#: [1, 2], #"chore[badge.label]"#: [1, 2], "chore[badge.level.deeper]": []], on: h)
+    },
+    test("orderings on a list read as its members are refused, as they are on any list, and path orderings say the members they compare") {
+        let h = try crewed()
+        for query in [#"chore[crew<"Bo"]"#, "chore[crew>3]"] {
+            expect(try refusedAnswer(query, on: h) != nil, "\(query) is refused")
+        }
+        let error = try require(try refusedAnswer(#"chore[badge.label>old]"#, on: h))
+        expectEqual(error.hint, #"badge.label is compared by its value: a number, or a date as "2026-10-01"."#)
+    },
+    test("an object that names a shape reads as that shape's name now: a rename changes what is found, the words only where it names none") {
+        var alpha = chore(id(1), caption: "Alpha")
+        alpha[KindProperty.self] = Kind(words: "Alpha", shape: nil)
+        var beta = chore(id(2), caption: "Beta")
+        beta[KindProperty.self] = Kind(words: "Alpha", shape: id(1))
+        beta[KindsProperty.self] = [Kind(words: "Gamma", shape: id(1)), Kind(words: "Delta", shape: id(9))]
+        let h = try EditorHarness(plugins: queryPlugins(more: [crewPlugin]), file: CanvasFile(root: CanvasDocument(shapes: [alpha, beta])))
+        expectMatches([
+            #"chore[kindOf="Alpha"]"#: [1, 2],
+            #"chore[kindsOf="Alpha"]"#: [2],
+            #"chore[kindsOf="Gamma"]"#: [],
+            #"chore[kindsOf="Delta"]"#: [2],
+        ], on: h)
+        h.editor.transact("Rename") { $0.update(id(1)) { $0[Caption.self] = "Omega" } }
+        expectMatches([
+            #"chore[kindOf="Omega"]"#: [2],
+            #"chore[kindOf="Alpha"]"#: [1],
+            #"chore[kindsOf="Omega"]"#: [2],
+            #"chore[kindsOf^="Ome"]"#: [2],
+            #"chore[kindsOf="Delta"]"#: [2],
+        ], on: h)
     },
     test("a list of text has no members, nor an object that says no member it reads as compared whole") {
         let h = try crewed()

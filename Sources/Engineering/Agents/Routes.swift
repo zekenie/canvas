@@ -34,15 +34,39 @@ public struct RoutePattern: Hashable, Sendable {
         guard !path.isEmpty else { return nil }
     }
 
-    /// A path's segments, the slashes between them left out.
+    /// Why `text` is no route, where it isn't one: none, a method alone or more than one path; nil for a route.
+    public static func refusal(of text: String) -> String? {
+        let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard let first = words.first else { return "A route is a path, with a method before it if it has one." }
+        if words.count == 1, EndpointGrammar.method(first) != nil { return "\(first) says no path." }
+        if words.count > (EndpointGrammar.method(first) != nil ? 2 : 1) { return "A route is one path, with a method before it if it has one." }
+        return nil
+    }
+
+    /// A path's segments, the slashes between them left out. A parameter is a segment that is one alone; one inside a word
+    /// (`{name}.json`, `{year}-{month}`) is anonymous too, whatever its name, the rest of the segment as written.
     static func segments(of path: String) -> [Segment] {
         path.split(separator: "/").map { segment in
-            segment.hasPrefix("{") && segment.hasSuffix("}") && segment.count > 1 ? .parameter : .word(String(segment))
+            var word = "", inside = false
+            for character in segment {
+                if character == "{", !inside {
+                    inside = true
+                    word += "{"
+                } else if character == "}", inside {
+                    inside = false
+                    word += "}"
+                } else if !inside {
+                    word.append(character)
+                }
+            }
+            if inside { return .word(String(segment)) }
+            return word == "{}" ? .parameter : .word(word)
         }
     }
 
-    /// Whether an endpoint of `method` at the whole path `path` is this route.
+    /// Whether an endpoint of `method` at the whole path `path` is this route; one with no path yet (a row half typed) is none.
     public func matches(method other: String, path: String) -> Bool {
+        guard !path.isEmpty else { return false }
         if let method, method != other.uppercased() { return false }
         return Self.segments(of: path) == segments
     }
@@ -50,9 +74,10 @@ public struct RoutePattern: Hashable, Sendable {
     /// The endpoints of `api` that are this route, by their whole names (`POST /orders/{id}/refunds`), in the API's order.
     public func routes(in api: API) -> [String] {
         var found: [String] = []
+        let paths = APIGroups.fullPaths(in: api.endpoints)
         for (index, row) in api.endpoints.enumerated() {
             guard let endpoint = row.endpoint else { continue }
-            let path = APIGroups.fullPath(of: index, in: api.endpoints)
+            let path = paths[index]
             if matches(method: endpoint.method, path: path) { found.append(APIGroups.fullName(method: endpoint.method, path: path)) }
         }
         return found

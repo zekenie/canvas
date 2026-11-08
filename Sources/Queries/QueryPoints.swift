@@ -282,6 +282,8 @@ struct ContributedPseudoClass: Sendable {
     /// main actor as rows are built.
     var rowMembers: (@Sendable (QueryShape, any Sendable) -> [String: JSON])?
     var memberNames: [String] = []
+    /// Why a text can't be its argument, where that shows without the file: the query is refused with it.
+    var refusing: (@Sendable (String) -> String?)?
     /// What its argument names that the file no longer holds, off the main actor.
     var absent: (@Sendable (any Sendable) -> [QueryAbsent])?
     /// Whether a query that holds it waits for answers still arriving (`TopologyIndex.isSettling`), as one that
@@ -670,8 +672,11 @@ extension PluginRegistrar {
     /// "name", `prepare` is given the text, and `seeds`, `matches`, `rowMembers` and `absent` see what it made.
     /// Written `:drawn-by("Plans")`: exactly one string (`bad_argument` for none, another sort of thing or
     /// two). A query may use it with several texts, each prepared, seeded and answered on its own.
+    /// `refusing` says why a text can't be the word's, where it can tell without the file (a route with no path), and the
+    /// query is refused as `bad_argument` with that, the word's example as the hint, rather than matching nothing.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String, argument: String, reads _: QueryFileReads,
+        refusing: (@Sendable (String) -> String?)? = nil,
         prepare: @escaping @MainActor (QueryFilePreparation, String) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
@@ -682,7 +687,7 @@ extension PluginRegistrar {
         contributePseudoClass(word, summary, example: example, argument: argument, reads: .file,
                               prepare: { preparation, text in prepare(preparation.file, text ?? "") },
                               seeds: seeds, matches: matches, onMain: nil, problems: nil, settles: false,
-                              members: members, rowMembers: rowMembers, absent: absent)
+                              members: members, rowMembers: rowMembers, absent: absent, refusing: refusing)
     }
 
     private mutating func contributePseudoClass<Prepared: Sendable>(
@@ -695,7 +700,8 @@ extension PluginRegistrar {
         settles: Bool,
         members: [String] = [],
         rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
-        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil,
+        refusing: (@Sendable (String) -> String?)? = nil
     ) {
         let erasedPrepare: @MainActor (QueryPreparation, String?) -> any Sendable = { prepare($0, $1) }
         let erasedMatches: @Sendable (QueryShape, any Sendable) -> QueryVerdict = { shape, prepared in matches(shape, prepared as! Prepared) }
@@ -713,6 +719,7 @@ extension PluginRegistrar {
                                                  onMain: erasedOnMain, problems: erasedProblems, settles: settles)
         if let rowMembers { pseudoClass.rowMembers = { shape, prepared in rowMembers(shape, prepared as! Prepared) } }
         pseudoClass.memberNames = members
+        pseudoClass.refusing = refusing
         if let absent { pseudoClass.absent = { prepared in absent(prepared as! Prepared) } }
         var declaration = QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass))
         declaration.argument = argument

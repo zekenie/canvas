@@ -30,9 +30,14 @@ struct PathTest: Sendable, Equatable {
     /// The literal as a date (a day, or an instant), when it is one and no number: an ordering
     /// compares these.
     let date: PlanValue?
+    /// The member of the object the path ends in (before its last step, which reads it) that holds the id of a shape whose name
+    /// now is what the object reads as, while the shape has one (`KindSchema.namedBy`): a type as written reads as the name of the
+    /// type it names, not the words it was written in. Nil for none.
+    let namedBy: String?
 
-    init(members: [String], op: Operator?, literal: String, ignoringCase: Bool) {
+    init(members: [String], op: Operator?, literal: String, ignoringCase: Bool, namedBy: String? = nil) {
         self.members = members
+        self.namedBy = namedBy
         self.op = op == .notEquals ? .equals : op
         self.literal = literal
         self.ignoringCase = ignoringCase
@@ -52,12 +57,14 @@ struct PathTest: Sendable, Equatable {
     /// at the end, gives each of its items (lists in lists too), so a path goes into a list and a
     /// test holds when any item does. `inList` is whether one came out of a list. None where there
     /// is nothing: a step that isn't an object or lacks the member, null.
-    func reached(in root: JSONValue?) -> [(value: JSONValue, inList: Bool)] {
+    func reached(in root: JSONValue?, names: (ShapeID) -> String? = { _ in nil }) -> [(value: JSONValue, inList: Bool)] {
         var found: [(value: JSONValue, inList: Bool)] = []
         func walk(_ value: JSONValue?, _ step: Int, _ inList: Bool) {
             switch value {
             case .array(let items)?:
                 for item in items { walk(item, step, true) }
+            case .object(let object)? where step == members.count - 1 && named(object, names) != nil:
+                found.append((.string(named(object, names)!), inList))
             case .object(let object)? where step < members.count:
                 walk(object[members[step]], step + 1, inList)
             case .null?, nil:
@@ -70,10 +77,41 @@ struct PathTest: Sendable, Equatable {
         return found
     }
 
+    /// The name an object reads as now, where it names a shape that has one (`namedBy`).
+    private func named(_ object: JSONObject, _ names: (ShapeID) -> String?) -> String? {
+        guard let id = shape(in: object) else { return nil }
+        return names(id).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private func shape(in object: JSONObject) -> ShapeID? {
+        guard let namedBy, let text = object[namedBy]?.stringValue, let uuid = UUID(uuidString: text) else { return nil }
+        return ShapeID(uuid)
+    }
+
+    /// The shapes the objects the path ends in name (`namedBy`) within `root`: those whose names the test reads before it holds.
+    func namedShapes(in root: JSONValue?) -> [ShapeID] {
+        guard namedBy != nil else { return [] }
+        var found: [ShapeID] = []
+        func walk(_ value: JSONValue?, _ step: Int) {
+            switch value {
+            case .array(let items)?:
+                for item in items { walk(item, step) }
+            case .object(let object)? where step == members.count - 1:
+                if let id = shape(in: object) { found.append(id) }
+            case .object(let object)? where step < members.count:
+                walk(object[members[step]], step + 1)
+            default:
+                break
+            }
+        }
+        walk(root, 0)
+        return found
+    }
+
     /// Whether the shape's attribute passes: any value reached passes, and `[a.b=""]` when none
-    /// says anything.
-    func holds(_ root: JSONValue?) -> Bool {
-        let values = reached(in: root)
+    /// says anything. `names` says the name of a shape the value names, where the test reads it (`namedBy`).
+    func holds(_ root: JSONValue?, names: (ShapeID) -> String? = { _ in nil }) -> Bool {
+        let values = reached(in: root, names: names)
         guard let op else { return values.contains { TypedTest.saysSomething($0.value) } }
         switch op {
         case .equals, .notEquals:

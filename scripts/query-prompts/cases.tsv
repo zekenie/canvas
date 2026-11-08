@@ -114,7 +114,7 @@ k01	kit	which tables have an email column?	-	customers	engineering	table[columns
 k02	kit	which tables are in the shop database?	-	customers, orders, refunds	engineering	"shop" table
 k03	kit	which tables reference customers?	-	orders	engineering	table:edge-to("customers", foreign-key)
 k04	kit	what does the refunds table reference?	-	orders	engineering	:edge-from("refunds", foreign-key)
-k05	kit	which endpoint writes refunds?	-	orders API	engineering	:edge-to("refunds", writes)
+k05	kit	which endpoint writes refunds?	-	00000000-0000-4000-8000-0000000D0053	engineering	arrow[channel=writes]:ends-at("refunds")
 k06	kit	which API serves POST /orders/{order_id}/refunds?	-	orders API	engineering	:route("POST /orders/{id}/refunds")
 k07	kit	which tables does the orders API read?	-	orders	engineering	table:edge-from("orders API", reads)
 k08	kit	what calls the orders API?	-	Storefront	engineering	:edge-to("orders API", calls)

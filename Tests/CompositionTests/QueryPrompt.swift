@@ -62,7 +62,7 @@ enum QueryPrompt {
         ":end-of(arrow[channel=note-link])",
         // Tables and APIs (the story has none: each answers nothing).
         #"table[columns.name="email"]"#, #"[columns.type="uuid"]"#, "[columns.unique=true]", #"enum-type[values="paid"]"#,
-        #":route("POST /orders/{id}/refunds")"#, "arrow[channel=writes]",
+        #":route("POST /orders/{id}/refunds")"#, "arrow[channel=writes]", #"arrow[channel=writes]:ends-at("refunds")"#,
         // Combining.
         #"sticky-note[locked]:mentions("Checkout")"#, "sticky-note, subboard", "sticky-note:not(:mentions(*))",
         #""Payments" sticky-note[locked]:mentions("Checkout")"#,
