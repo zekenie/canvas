@@ -72,6 +72,14 @@ public enum Style {
     /// strokes a hover like the selection.
     static let faintIndicatorWidth: CGFloat = 2.5
     static let faintIndicatorOpacity: CGFloat = 0.6
+    /// The hinted shape's lit part (`editor.hintedPart`, a row a connection would end on, T3's lit row): its rect this far
+    /// inside, rounded this much, stroked this wide (view points) and filled faintly, in the hint's color.
+    static let hintedPartInset: CGFloat = 2
+    /// A part read with its shape, as VoiceOver and the lists say it: "id in customers".
+    static func partInShape(_ part: String, _ shape: String) -> String { "\(part) in \(shape)" }
+    static let hintedPartRadius: CGFloat = 5
+    static let hintedPartWidth: CGFloat = 2
+    static let hintedPartFillOpacity: CGFloat = 0.16
     /// A faint outline beside tinted ones (`Outlines.tinted`) is stronger than alone: it's the shape
     /// they're about (the one hovered, when they're a hover's lights), and has to read above them.
     static let tintedFaintIndicatorOpacity: CGFloat = 0.85

@@ -37,6 +37,9 @@ enum TableStyle {
     static let uniqueSymbol = "1.square"
     static let markSize: CGFloat = 13
     static let keyColor = KitStyle.onPaper(KitStyle.keyGold).solid.light
+    /// A column that starts a key (the key index's): a link, in the frames' blue made to read on the paper.
+    static let linkSymbol = "link"
+    static let linkColor = KitStyle.onPaper(KitStyle.linkBlue).solid.light
     static let uniqueColor = KitStyle.secondaryInk
 
     /// An enum-typed column's pill: the frames' purple as Palette makes it on the paper, faint behind the enum's name in

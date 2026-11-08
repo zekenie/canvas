@@ -368,6 +368,12 @@ public struct Registry {
         partedDefinitions[shape.kind]?.erasedParts(of: shape)
     }
 
+    /// `shape` with these parts taken out (`PartedShape.removing(_:from:)`), keeping its metadata; nil when its kind has
+    /// no parts, doesn't take them out by id, or it has none of them. The writer then hands them to `removeParts`.
+    public func removing(_ parts: Set<PartID>, from shape: AnyShapeRecord) -> AnyShapeRecord? {
+        partedDefinitions[shape.kind]?.erasedRemoving(parts, from: shape)
+    }
+
     /// Whether a kind's shapes take a frame they're given their own way (`CustomSizing`).
     public func takesFramesItsOwnWay(_ kind: ShapeKind) -> Bool { customSizings[kind] != nil }
 

@@ -107,7 +107,8 @@ extension LineModel {
         guard !counted.isEmpty else { return name }
         let parts = counted.map { item in
             let label = registry.label(of: item.kind).name
-            return item.count == 1 ? label : "\(item.count) \(DeleteSteps.plural(label))"
+            // Counted even for one ("Delete Column and 1 Arrow"): the row is the step's noun, what went is how many.
+            return "\(item.count) \(item.count == 1 ? label : DeleteSteps.plural(label))"
         }
         return "\(name) and \(DeleteSteps.list(parts))"
     }

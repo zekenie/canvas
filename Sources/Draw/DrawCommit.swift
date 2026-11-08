@@ -129,6 +129,28 @@ extension Drawing {
                 raise(item, in: &transaction)
             }
         }
+        // Rows deleted, once the shapes are written (a statement may restate the shape too): each shape without them, and what
+        // its kind takes along with a row (a key at it) deleted in the same step (`removeParts`), each said.
+        for (statement, id, parts) in rowDeletes {
+            guard let record = transaction.document[id], let without = registry.removing(parts, from: record) else {
+                throw DrawError(statement, .internal, "the rows \(statement.text) names came out not in their shape")
+            }
+            transaction.update(id) { $0 = without }
+            let title = Drawing.title(of: without, names: names, naming: naming, registry: registry)
+            changes.append(DrawChange(line: statement.line, did: .updated, kind: record.kind.rawValue, title: title))
+            for gone in transaction.removeParts(Set(parts.map { PartAddress(id, part: $0) })).sorted(by: { $0.description < $1.description }) {
+                guard let connection = before.shape(gone) else { continue }
+                if let ends = edging?.ends(connection, registry) {
+                    let from = end(ends.from, in: before, written: [:]), to = end(ends.to, in: before, written: [:])
+                    var row = DrawChange(line: statement.line, did: .deleted, kind: connection.kind.rawValue, from: from.name, to: to.name)
+                    row.fromID = from.id?.description
+                    row.toID = to.id?.description
+                    changes.append(row)
+                } else {
+                    changes.append(DrawChange(line: statement.line, did: .deleted, kind: connection.kind.rawValue))
+                }
+            }
+        }
         // Edges, before the settle, so it judges by a transaction that holds them: an end gives its type's notes a
         // row, and the settle reads the notes at the size they will have (`Drawing.layOut()` made the same
         // arrows, laid in, to give `room`).
@@ -413,12 +435,13 @@ extension Drawing {
         // Asked the way the edge is drawn, when `<->` finds one drawn the other way.
         let reversed = match?.reversed ?? false
         var request = EdgeRequest(from: ends.0, to: ends.1, fromSide: side(edge.edge.fromSide), toSide: side(edge.edge.toSide),
-                                  bothHeads: edge.edge.bothHeads, attributes: edge.attributes, fromName: edge.fromName.said,
+                                  fromPart: edge.fromPart, toPart: edge.toPart, bothHeads: edge.edge.bothHeads, attributes: edge.attributes, fromName: edge.fromName.said,
                                   toName: edge.toName.said, written: edge.edge.written,
                                   fromStandsFor: standsFor(ends.0, in: document), toStandsFor: standsFor(ends.1, in: document),
                                   beside: pairs[[ends.0, ends.1]] ?? [])
         if reversed {
             swap(&request.fromSide, &request.toSide)
+            swap(&request.fromPart, &request.toPart)
             swap(&request.fromName, &request.toName)
         }
         func make(changing existing: AnyShapeRecord?) throws(DrawError) -> AnyShapeRecord {
@@ -478,7 +501,8 @@ extension Drawing {
         // The pair's arrows, and of them those the statement is about: all, if it writes no identity;
         // else those that hold what it writes, or, when none does, the pair's one plain arrow (which
         // takes it), or none (a new arrow).
-        let matches = addressedMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document, identity: edge.identity)
+        let matches = addressedMatches(from: edge.from, to: edge.to, bothHeads: edge.edge.bothHeads, among: drawn, in: document, identity: edge.identity,
+                                       parts: (edge.fromPart, edge.toPart))
         let (made, ends, reversed) = try connection(for: edge, matches: matches, beside: pairs, edging: edging, kind: kind, in: document,
                                                       shapes: transaction.shapes)
         let match = matches.first

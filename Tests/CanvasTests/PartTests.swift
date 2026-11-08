@@ -7,7 +7,8 @@ import TestKit
 
 // The core's part basics over CanvasTesting's rosters: a part's id written as a UUID string and kept by a copy, a part
 // addressed with its shape, a kind's parts read from its record (`PartedShape`, through the registry) and where each is
-// kept in its geometry (`ShapeGeometry.parts`), a folded part where the last shown one is. Nothing binds a part yet.
+// kept in its geometry (`ShapeGeometry.parts`), a folded part where the last shown one is; a part lit as the hint's, and a
+// part's name read with its shape's.
 
 private func uuid(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))! }
 
@@ -60,6 +61,37 @@ private func uuid(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-
         expectEqual(folded.map(\.isShown), [true, false, false])
         expectEqual(folded.frame(rows[2].id)?.rect, folded.frame(rows[0].id)?.rect, "folded away: shown where the last row shown is")
         expectEqual(folded.frame(nearestY: 170)?.id, rows[0].id, "a part folded away is never the nearest")
+    },
+    test("a part of the hinted shape is lit, drawn where its row is and nowhere else, and goes when the hint does") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), RostersPlugin()])
+        let rows = (1...3).map { RosterRow(id: PartID(uuid($0)), name: "r\($0)") }
+        let roster = h.editor.add(Roster(CGRect(x: 100, y: 100, width: 200, height: 70), rows: rows))
+        let size = CGSize(width: 400, height: 300)
+        h.editor.hintedPart = rows[1].id
+        expectEqual(h.editor.hintedPart, nil, "no part without a hinted shape")
+        h.editor.hintedShapeID = roster
+        let hinted = renderBitmap(h.editor, size: size)
+        h.editor.hintedPart = rows[1].id
+        expectEqual(h.editor.hintedPart, rows[1].id)
+        let lit = renderBitmap(h.editor, size: size)
+        expect(changedPixels(hinted, lit, in: CGRect(x: 110, y: 131, width: 180, height: 18)) > 0, "the row is lit")
+        expectEqual(changedPixels(hinted, lit, in: CGRect(x: 110, y: 111, width: 180, height: 16)), 0, "the row above isn't")
+        expectEqual(changedPixels(hinted, lit, in: CGRect(x: 110, y: 153, width: 180, height: 14)), 0, "nor the one below")
+        h.editor.hintedShapeID = nil
+        expectEqual(h.editor.hintedPart, nil, "the hint's part goes with the hint")
+        h.editor.hintedShapeID = roster
+        expectEqual(h.editor.hintedPart, nil, "and doesn't come back with it")
+    },
+    test("a part's name is read with its shape's; the shape alone is its own; a part it doesn't have is none") {
+        let h = try EditorHarness(plugins: [FixturesPlugin(), RostersPlugin()])
+        let row = RosterRow(id: PartID(uuid(3)), name: "carol")
+        let roster = h.editor.add(Roster(CGRect(x: 0, y: 0, width: 100, height: 40), rows: [row]))
+        expectEqual(h.editor.accessibleName(of: PartAddress(roster, part: row.id)), "carol in roster")
+        expectEqual(h.editor.accessibleName(of: PartAddress(roster)), "roster")
+        expectEqual(h.editor.accessibleName(of: PartAddress(roster, part: PartID(uuid(4)))), nil)
+        expectEqual(h.editor.accessibleName(of: PartAddress(ShapeID())), nil)
+        expectEqual(h.editor.registry.removing([row.id], from: try require(h.editor.document[roster])), nil,
+                    "a kind that doesn't take its parts out by id: nothing")
     },
     test("a shape's parts' ids are in its props as coded, which is what a copy is made of (the copy itself, with the clipboard, is CompositionTests' engineering suite)") {
         let row = RosterRow(id: PartID(uuid(5)), name: "only")

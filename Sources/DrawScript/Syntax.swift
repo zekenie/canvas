@@ -114,6 +114,16 @@ public enum ShapeName: Sendable, Hashable, ExpressibleByStringLiteral {
     /// The character an id starts with.
     public static let idMark: Character = "#"
 
+    /// The character between a shape's name and a row of it, outside the quotes (titles hold dots): `"orders".customer_id`.
+    public static let rowMark: Character = "."
+
+    /// A row of a shape as a script writes it after the dot: bare when it is a word of letters, digits, `_` and `-`
+    /// (`customer_id`), else quoted (`"POST /orders"`).
+    public static func writtenRow(_ row: String) -> String {
+        let bare = !row.isEmpty && row.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+        return "\(rowMark)" + (bare ? row : quote(row))
+    }
+
     /// Whether `text` (without the `#`) is an id's shape: 36 characters, hex digits in groups of 8, 4, 4, 4 and 12.
     public static func isID(_ text: some StringProtocol) -> Bool {
         guard text.count == 36 else { return false }
@@ -187,6 +197,9 @@ public struct EdgeStatement: Sendable, Equatable {
     public var from: ShapeName
     /// The name of the shape it ends on.
     public var to: ShapeName
+    /// A row of the shape it starts from (`"orders".customer_id`), and of the one it ends on: nil for the shape as a whole.
+    public var fromRow: String?
+    public var toRow: String?
     /// As written: `->`, `<-` (the ends written the other way round), or `<->` (heads at both ends).
     public var arrow: EdgeArrow
     /// `from:`, the side its start aims at.
@@ -232,9 +245,10 @@ public struct EdgeStatement: Sendable, Equatable {
         clauses.first?.written ?? container.map { "\(Word.in.rawValue) \($0.written)" }
     }
 
-    /// Its ends as written: `"A" -> "B"`, `"B" <- "A"`.
+    /// Its ends as written: `"A" -> "B"`, `"B" <- "A"`, `"orders".customer_id -> "customers".id`.
     public var written: String {
-        arrow == .backward ? "\(to.written) \(arrow.rawValue) \(from.written)" : "\(from.written) \(arrow.rawValue) \(to.written)"
+        let from = self.from.written + (fromRow.map(ShapeName.writtenRow) ?? ""), to = self.to.written + (toRow.map(ShapeName.writtenRow) ?? "")
+        return arrow == .backward ? "\(to) \(arrow.rawValue) \(from)" : "\(from) \(arrow.rawValue) \(to)"
     }
 }
 
@@ -246,10 +260,12 @@ public enum EdgeShare: Sendable, Equatable {
     case beside(ShapeName)
 }
 
-/// `delete "<title>"`, or `delete edge "<a>" -> "<b>"`.
+/// `delete "<title>"`, `delete "<title>".<row>`, or `delete edge "<a>" -> "<b>"`.
 public enum DeleteStatement: Sendable, Equatable {
     /// The shape with this name, and every connection with an end on it.
     case shape(ShapeName)
+    /// A row of the shape with this name (`delete "orders".legacy_note`), and what its kind takes along with it (its keys).
+    case row(ShapeName, row: String)
     /// The connections from one shape to another; either way round for `<->`. `attributes` are the
     /// keys that tell two connections of one pair apart (`delete edge "A" -> "B" is: "T"`), as
     /// written, for the caller to check: the language knows no kind.

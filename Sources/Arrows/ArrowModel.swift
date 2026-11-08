@@ -13,6 +13,9 @@ public struct Arrow: ShapeProps {
         // Its text may mention shapes: text that would now read as a mention (or an escaped one)
         // is escaped, so it stays the text it was.
         PropsMigration("text may mention shapes") { props in MentionTextFormat.escapeLookalikesV1(in: &props, "text") },
+        // An end may be bound to a part of its shape (a row: `ArrowBinding.part`), left out when it isn't, so nothing
+        // written before reads otherwise.
+        PropsMigration("an end may be bound to a part of its shape"),
     ]
     public static let properties = Properties<Arrow>(title: "Arrow") {
         Property("start", \.start).required()
@@ -126,6 +129,7 @@ public struct ArrowBinding: SchemaDefined, Equatable {
         Property("normalizedAnchor", \.normalizedAnchor).description("Where it aims within the shape's bounds: [0, 0] is the top-left corner, [1, 1] the bottom-right.")
         Property("isPrecise", \.isPrecise).description("Imprecise bindings aim at the center of the shape's bounds.")
         Property("isExact", \.isExact).description("Exact bindings run to the anchor, not the shape's outline.")
+        Property("part", \.part).description("A part of the shape it's bound to (a row), drawn at that row's side facing the other end; absent for the shape as a whole.")
     }
     /// A shape arrows can bind to (see `Connectables`).
     public var shapeID: ShapeID
@@ -136,13 +140,22 @@ public struct ArrowBinding: SchemaDefined, Equatable {
     public var isPrecise: Bool
     /// Exact bindings run all the way to the anchor instead of stopping at the shape's outline.
     public var isExact: Bool
+    /// A part of the shape it's bound to (a row of a table: `PartedShape`), nil for the shape as a whole. Its end is then at
+    /// the row's left or right side, at its middle, the side facing the other end, unclipped (a departure from tldraw); it is
+    /// written precise and exact, its anchor where the side was when it was bound, which is where it's drawn while the
+    /// shape's geometry doesn't list the part (a row taken out under a locked arrow).
+    public var part: PartID?
 
-    public init(shapeID: ShapeID, normalizedAnchor: CGPoint, isPrecise: Bool, isExact: Bool) {
+    public init(shapeID: ShapeID, normalizedAnchor: CGPoint, isPrecise: Bool, isExact: Bool, part: PartID? = nil) {
         self.shapeID = shapeID
         self.normalizedAnchor = normalizedAnchor
         self.isPrecise = isPrecise
         self.isExact = isExact
+        self.part = part
     }
+
+    /// The address it's bound to: its shape, and its part.
+    public var address: PartAddress { PartAddress(shapeID, part: part) }
 
     public init() { self.init(shapeID: ShapeID(), normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false) }
 }

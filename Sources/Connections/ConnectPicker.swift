@@ -45,7 +45,8 @@ public final class ConnectPicker {
     private var admitted: [ShapeID: FarVerdict?] = [:]
 
     /// What the connector can join `source` to: the kinds of shape, and whether itself. Nil where there is nothing to pick for it:
-    /// nothing makes connections, or it ends nowhere (a pill that stands for nothing), or it joins no kind of shape and not itself.
+    /// nothing makes connections, or it ends nowhere (a pill that stands for nothing), or it joins no kind of shape and not itself. A kind with ports only on its rows (a table's keys) has none on its sides: it joins
+    /// the other kinds with none, as it did before it had any.
     static func reach(of source: ShapeID, in editor: CanvasEditor) -> (kinds: Set<ShapeKind>, loops: Bool)? {
         guard editor.registry.drawsConnections, let record = editor.document[source], let ports = editor.service(PortState.self),
               editor.registry.canConnect(source, in: editor.shapeContext), let standing = ports.standingKinds(of: record) else { return nil }
@@ -54,7 +55,7 @@ public final class ConnectPicker {
         let standIns = registry.standIns.kinds
         func joins(_ kind: ShapeKind) -> Bool {
             registry.connectionChannel(from: record.kind, fromStandingFor: standing, to: kind) != nil
-                || (!registry.hasPorts(record.kind, standingFor: standing) && !registry.hasPorts(kind))
+                || (!registry.hasPorts(record.kind, standingFor: standing, onParts: false) && !registry.hasPorts(kind, onParts: false))
         }
         let kinds = Set(registry.kinds.filter { $0 != connector && !standIns.contains($0) && joins($0) })
         // The connector can join it to itself where it can join its kind to its kind, and the kind admits it.

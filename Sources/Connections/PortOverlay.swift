@@ -30,12 +30,19 @@ enum PortStyle {
     /// hovered shape is (the one it would end on now gets the full outline, the hint).
     static let takerOutlineWidth: CGFloat = 2.5
     static let takerOutlineOpacity: CGFloat = 0.6
+    /// The row whose dots show, and the row a drag from one of them starts at (T3's payment_id): a band in the accent,
+    /// this faint, its rect this far inside and rounded this much, as the row a connection would end on is lit (without
+    /// that one's stroke).
+    static let rowBandOpacity: CGFloat = 0.16
+    static let rowBandInset: CGFloat = 2
+    static let rowBandRadius: CGFloat = 5
 }
 
 /// The dots of the shape whose ports show (`PortState.host`), in the select tool while the pointer's
 /// on the canvas within reach of them and nothing is under way but a dot's press, where no shape
-/// above theirs covers them; and,
-/// while a connection is drawn from one, a faint outline on each shape in view it could end on.
+/// above theirs covers them, with a faint band on the row whose dots they are (`partPorts`); and,
+/// while a connection is drawn from one, a faint outline on each shape in view it could end on, and
+/// the band on the row it starts at.
 /// Constant on screen; they go where the shape is drawn, so they shake with a locked shape.
 struct PortOverlay: CanvasOverlay {
     var space: OverlaySpace { .world }
@@ -45,6 +52,7 @@ struct PortOverlay: CanvasOverlay {
         guard let state = editor.service(PortState.self), state.isShowing else { return }
         if let connection = state.activeConnection {
             outlineTakers(of: connection, state: state, in: context)
+            if let part = connection.part { band(part, of: connection.shape, in: context) }
             return
         }
         // The pointer's where it is now (a press held after Escape, the camera moved under it), not
@@ -53,14 +61,16 @@ struct PortOverlay: CanvasOverlay {
         guard let host = state.host, editor.session == nil || pressed != nil,
               pressed != nil || (editor.pointerOverCanvas != nil && state.isNear(host, editor.camera.toView(editor.pointerWorldLocation)))
         else { return }
+        if let part = state.hostPart { band(part, of: host, in: context) }
         let hovered = editor.hoveredButton?.base as? PortDot
         let zoom = context.zoom
         let offset = context.worldDrawingOffset(of: host)
         let cg = context.cg
         // Only the dots in view are looked at, and drawn.
         let view = context.visibleRect.insetBy(dx: -PortStyle.hitRadius / zoom, dy: -PortStyle.hitRadius / zoom)
-        let inView = Set(state.dots(of: host).filter { view.contains($0.center) }.map(\.dot.side))
-        for (dot, center) in state.liveDots(of: host, on: inView) {
+        let inView = Set(state.dots(of: host, part: state.hostPart).filter { view.contains($0.center) }.map(\.dot))
+        for placed in state.liveDots(of: host, part: state.hostPart, on: inView) {
+            let dot = placed.dot, center = placed.center
             let point = CGPoint(x: center.x + offset.x, y: center.y + offset.y)
             let isLit = dot == hovered || dot == pressed
             let color = state.color(of: dot)
@@ -78,6 +88,21 @@ struct PortOverlay: CanvasOverlay {
             cg.setLineWidth(PortStyle.ringWidth / zoom)
             cg.strokeEllipse(in: circle(radius))
         }
+    }
+
+    /// The band on `part` of `id` (the row whose dots show, or the row a drag started at), where its kept geometry has it and
+    /// it shows; nothing for a row out of view.
+    private func band(_ part: PartID, of id: ShapeID, in context: OverlayContext) {
+        guard let frame = context.shapes.geometry(of: id)?.parts.frame(part), frame.isShown,
+              frame.rect.intersects(context.visibleRect) else { return }
+        let zoom = context.zoom, offset = context.worldDrawingOffset(of: id), inset = PortStyle.rowBandInset / zoom
+        let rect = frame.rect.offsetBy(dx: offset.x, dy: offset.y).insetBy(dx: inset, dy: inset)
+        guard rect.width > 0, rect.height > 0 else { return }
+        let radius = min(PortStyle.rowBandRadius / zoom, rect.width / 2, rect.height / 2)
+        let cg = context.cg
+        cg.setFillColor(NSColor.controlAccentColor.withAlphaComponent(PortStyle.rowBandOpacity).cgColor)
+        cg.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        cg.fillPath()
     }
 
     /// Each shape in view the connection could end on, but the one it would end on now (hinted),

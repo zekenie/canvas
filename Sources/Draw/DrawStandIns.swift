@@ -279,10 +279,15 @@ extension Drawing {
         return plain.count == 1 ? plain : []
     }
 
-    /// The arrows of the pair that a statement with this identity addresses (`addressed`).
+    /// The arrows of the pair that a statement with this identity addresses (`addressed`), at the rows it names (`parts`:
+    /// none for whole shapes): a key between two rows of a pair of tables is another edge than one between two others.
     func addressedMatches(from: ShapeID, to: ShapeID, bothHeads: Bool, among connections: [BoardConnection],
-                          in document: CanvasDocument, identity: EdgeIdentity?) -> [EdgeMatch] {
-        Self.addressed(edgeMatches(from: from, to: to, bothHeads: bothHeads, among: connections, in: document), by: identity)
+                          in document: CanvasDocument, identity: EdgeIdentity?, parts: (from: PartID?, to: PartID?) = (nil, nil)) -> [EdgeMatch] {
+        let atRows = edgeMatches(from: from, to: to, bothHeads: bothHeads, among: connections, in: document).filter { match in
+            let held = registry.edges(of: match.connection.record).first(where: \.isConnection)?.parts ?? .none
+            return held == (match.reversed ? EdgeParts(source: parts.to, target: parts.from) : EdgeParts(source: parts.from, target: parts.to))
+        }
+        return Self.addressed(atRows, by: identity)
     }
 
     /// The kinds of what a connection's end stands for, if it's a stand-in standing for one shape:

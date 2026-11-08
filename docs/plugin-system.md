@@ -2389,6 +2389,28 @@ transaction.moveParts([PartAddress(orders, part: id): PartAddress(items, part: i
 registrar.partsMoved { moves, transaction in … }                  // a name of a row renamed where it went
 ```
 
+**Keys.** A key is an arrow bound to two rows, on the kit's channel. The kit declares the channel, gives
+a table's rows ports on it both ways, and keeps an index of each table's keys that its render reads:
+
+```swift
+public enum ForeignKey {}
+extension ForeignKey: Channel {
+    public static let id: ChannelID = "foreign-key"
+    public static var isOnEveryChannel: Bool { false }    // a subboard, open to every channel, takes no keys
+}
+registrar.channel(ForeignKey.self)
+registrar.service { KeyIndex(editor: $0) }               // per table, from Topology's edges with their parts
+table.partPorts(ForeignKey.self)                         // a dot at each end of the hovered row; a key ends on a row
+extension TableDefinition: TakesBoundShapes {}           // a table or a column deleted takes its keys
+```
+
+An arrow's end binds a row (`ArrowBinding.part`) and is drawn at the row's side facing the other end
+([the connector](#the-connector-arrows)); its edge carries both rows (`Edge.parts`, [Topology](#topology)).
+`KeyIndex` reads them (`edges(of: table, .outgoing, types: .only(foreign-key))`), redoes only the tables a
+change to those edges touched, and the column that starts a key shows a link in its gutter. `canvas draw`
+names a row with a dot outside the quotes: `edge "orders".customer_id -> "customers".id`, `delete
+"orders".legacy_note`; a kind takes a row out by id through `PartedShape.removing(_:from:)`.
+
 **Columns written as lines.** Edited, a table is LineRows' editing view ([rows written as
 lines](#rows-written-as-lines)): its name in its pill, then a line a column. `ColumnLineGrammar` reads a line
 through `ColumnGrammar.scan` (each word's role and range) into spans the field draws (the type as code, an
@@ -3172,6 +3194,9 @@ registrar.shape(PatchDefinition()) { patch in
   (`registry.label(of:)`, always), every plugin's `labelParts`, then every plugin's `states`, joined
   with ", " ("Checkout, Note, Person, locked"), and the first `value` and `help`. With none, a shape is
   its kind ("Note").
+- **A part's name** is `editor.accessibleName(of: PartAddress)`: the shape's name for a shape as a
+  whole, a part's name read with its shape's ("id in customers") or alone for a part that stands
+  alone; nil for what isn't there. A list of rows and an arrow's end at a row use it.
 - **Asked, never kept.** It runs only when an assistive app asks for a shape, never per frame, and
   is worked out afresh each time, so a description reads the record and services as they are.
 - **The order and the parts** are two claims, each one plugin's: `registrar.accessibleOrder` (the Tab
@@ -6944,6 +6969,18 @@ shape's bounds than a dot's reach, only where the shape is under the pointer), a
 on a container (its edge, its tab) a dot takes it only on its disc, while the nearest dot within
 reach still keeps its shape's dots showing as the pointer crosses the edge to it.
 
+### Ports on rows
+
+A kind whose shapes have rows (`PartedShape`) may have ports on its rows instead of its sides:
+`x.partPorts(C.self, role:)` (`registrar.partPorts(K.self, on: C.self)` for another plugin's kind). The
+row the pointer is on shows a dot just outside each end (`PortDot.part`) and a faint band, which stays on
+the row a drag from one starts at while it lasts; the drag is a `Connection` with `part`, and a connection on that channel ending on such a shape binds the row under its
+end (the arrow ports' `ArrowPartRules`). Which kinds may be at a channel's ends is the channel's data:
+`static var isOnEveryChannel: Bool { false }` keeps it off kinds with ports on every channel (a subboard),
+while a stand-in still takes it. By name, `ConnectEnd(shape, part:)`, `ConnectionRequest(fromPart:toPart:)`
+and Draw's `EdgeRequest.fromPart`/`toPart` carry rows; `registry.takesOnParts(kind, channel, as:)` and
+`partDotChannels(of:)` read the table.
+
 ### Ports at a stand-in
 
 A [stand-in](#stand-ins-forwarding) (a [reference](#references): a pill that stands for another
@@ -7081,7 +7118,8 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
   the shape's to grab.
 - **While a connection is drawn** the dots are gone, and each shape in view it could end on is
   outlined faintly, as a hovered shape is (2.5 points, the accent at 60%); the shape it would end
-  on now gets the full outline, the hint.
+  on now gets the full outline, the hint, and, ending on a row, that row is lit (the core's
+  `editor.hintedPart`, its rect from the shape's kept geometry, in the hint's color).
 - **Locked shapes keep their ports.** A connection to or from one changes an arrow, never the
   shape.
 - **What it costs.** `PortState` finds every kind's ports once, as the registry is frozen. The
@@ -7094,8 +7132,13 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 
 ### The connector: arrows
 
+An arrow's end may bind a row (`ArrowBinding.part`, arrow version 3): drawn at the middle of the row's
+side facing the other end, unclipped, kept by an arrow moved alone, stepped a row by ↑ ↓ on its ⌥Tab
+part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`); an end with
+no part is drawn as it always was.
+
 The ports code never learns what a connection is. One plugin draws them, the connector
-(`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:begin:)`, the `Connectors`
+(`registrar.connects(K.self, edgeType: F.self, canConnect:make:ends:parts:begin:)`, the `Connectors`
 point, at most one). `K` is what connections are, and opts into `ChannelProperty`; `F` is the
 family of edges they are in Topology's graph (an `EdgeType`, which this declares, and every
 channel's type is under); `canConnect` says which shapes one
@@ -9067,6 +9110,12 @@ topology.edges(of: note, .incoming, types: .only(MentionEdge.id))       // who m
 topology.edges(ofType: .within(ArrowEdge.id))                           // every arrow bound at both ends, on any channel
 topology.isInside(note, subboard)                                       // on its board, in a frame there, or on a board under it
 ```
+
+**Edges at rows.** An edge keeps whole shapes at its ends and carries the row each end reaches
+(`edge.parts`, `.none` or a boxed `.some(source:target:)`; `sourcePart`, `targetPart`), part of its
+identity, so a key moved to another row is another edge. A source says them with
+`sink.emit(type, from:to:fromPart:toPart:)`, and `topology.edges(of: table, part: column, .outgoing)` is a
+row's edges.
 
 ### The shapes are the system of record
 
@@ -12656,7 +12705,7 @@ Draw knows no title, port, validity, mention or group. `draw` takes each from a 
 |---|---|---|---|---|
 | `DrawNames` | `registrar.drawNames(name:namingProperty:isDerived:fold:)` | What a shape is called; the property of its kind's schema a title is written to (nil: its shapes can't be named); whether the kind works names out itself; how a title a script writes is folded | No titles: a titled statement is `no_names` | TitleNamesPlugin |
 | `DrawLabels` | `registrar.drawLabels { record, registry in … }` | What a shape with no title is called for the reference `draw` puts beside the shape an edge ends at on another board (the label the maker is handed): the name where it is named in words, its first line or its values | The kind's name (`Untitled sticky note`) | MentionTextsPlugin |
-| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
+| `DrawEdges` | `registrar.drawEdges(kind:attributes:sides:rows:ends:make:)` | The kind edges are (nil while nothing makes them); the attribute keys an edge takes beside `from:` and `to:`; what an edge may leave a kind on, by side, and what an edge at one of its rows carries (`rows`, none by default) (for `kinds`); which shapes a connection joins; a connection made or changed | No edges: an edge statement is `no_edges` | PortEdgesPlugin |
 | `DrawEdgeIdentities` | `registrar.drawEdgeIdentity(IsAProperty.key)` | A property of the edge kind that tells two edges of one pair apart, named by the plugin that owns it (one a key) | The pair alone: two connections of one pair are `ambiguous_edge` | TypeNamesPlugin (`is`) |
 | `DrawChecks` | `registrar.drawChecks(touched: { changes, shapes in … }, rest: "canvas query …") { record, shapes in … }` | What's wrong with a shape made or changed, as the script leaves the board: `DrawIssue`s (a message, its level: a warning, an error, or `incomplete`, that the shape still needs something; the property it's about). And `touched`: of what the run wrote (`transaction.pending`, with its shapes), the other shapes to look at, on any board; the run checks each as it found it and as it leaves it and warns of each issue it brought (`rest` is the command that lists them all, an error, a warning or what a shape still needs, said after the twentieth shape) | Each shape checked against its kind's schema (`registry.schemaViolations(of:)`); with no `touched`, a run says only what's wrong with the shapes it wrote | ValidationChecksPlugin |
 | `DrawTextFormats` | `registrar.drawTextFormat(mediaType:describes:write:)` | Each string a script writes whose schema says `contentMediaType` of that media type, as `write` gets it (its string's escapes undone) with a `DrawTextContext` (the registry, the string's schema as its kind declares it, and `shape(called:admitting:)`, which finds the shape a title names as the script finds one, `admitting` taking the record and the keys the script writes on it, for a shape drawn in the same run: what to keep, or a refusal. `describes` is said after the attribute's type in `canvas kinds`. A list whose schema is `uniqueItems` is written with each once, the first, after its strings are written (two titles of one shape are one id) | Text kept as written; `kinds` says nothing after its type | MentionTextsPlugin, TypeNamesPlugin |
@@ -12689,6 +12738,7 @@ registrar.drawNames(name: { record, registry in registry.title(of: record) },
 registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                     attributes: [ChannelProperty.key.rawValue],
                     sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
+                    rows: { kind, registry in registry.drawCanName(kind) ? registry.partChannels(of: kind).map(\.rawValue) : [] },
                     ends: { record, registry in registry.connectionEnds(of: record) },
                     make: { request, existing, shapes throws(DrawError) in
                         try EdgeChannels.connection(for: request, existing: existing, in: shapes)
@@ -14516,7 +14566,9 @@ nothing, and the view chooses, as it always has. A note too short for its text a
   flat; none for one kept aside): what shapes placed among others keep clear of, as
   [`canvas draw`](#draw)'s obstacles.
 - **The hint** (`hintedShapeID`, a target outlined whatever the tool) always names a shape that
-  exists, and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
+  exists, and `hintedPart` (set after it, which clears it when the hint changes) lights one of its
+  parts, a row (`PartedShape`) a connection would end on, in the hint's color, while the shape's
+  geometry lists it; and so does `editingShapeID`, the shape being edited (and `editingSelectedText` what's
   selected in its editing view, if that's text: the host says, `CanvasEditorDelegate`, so headless
   it's nil; [Find](#find)'s ⌘F types it; an attachment that adopts the core's `ReadsAsText`, a
   mention's pill, reads as its text in it and any other is dropped). After every transaction that
@@ -15909,7 +15961,7 @@ core                 tool hand · command undo · command redo · command insert
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⇧↩ → command insertBeside · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
 topology             service TopologyIndex · edge type stands-for
-arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v2 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
+arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v3 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · insert beside by default sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · paste reader Note · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
@@ -15956,7 +16008,7 @@ snapping             service SnapState · translation adjuster · resize adjuste
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
 connect-picker       service ConnectPickerHost · SelectionObservers
-arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowBindingRules
+arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowPartRules · ArrowBindingRules
 language-models      service LanguageModelState
 decision-models      service Decisions
 language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
@@ -15996,7 +16048,7 @@ neighbor-details     service NeighborList · ShapeDetails in Connections → eve
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · outlines
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · channel foreign-key · edge type foreign-key · service KeyIndex · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · ports foreign-key on rows → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · draw value columns · draw value values
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as

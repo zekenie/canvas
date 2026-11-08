@@ -46,6 +46,11 @@ public struct TopologySnapshot: Sendable {
         tables.edges(of: id, direction, types: filter, in: types, view: view)
     }
 
+    /// `id`'s edges at one of its parts (nil: the shape as a whole): as `TopologyIndex.edges(of:part:_:types:view:)`.
+    public func edges(of id: ShapeID, part: PartID?, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all) -> [Edge] {
+        edges(of: id, direction, types: filter).filter { $0.touches(id, part: part, direction) }
+    }
+
     /// Whether `id` has an edge `edges(of:_:types:)` would find that `predicate` takes: it stops at
     /// the first, and makes nothing.
     public func hasEdges(of id: ShapeID, _ direction: EdgeDirection = .either, types filter: EdgeTypeFilter = .all,

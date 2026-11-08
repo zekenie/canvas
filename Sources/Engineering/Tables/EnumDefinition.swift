@@ -57,6 +57,14 @@ extension EnumDefinition: PartedShape {
     func parts(of shape: ShapeRecord<DatabaseEnum>) -> [PartName] {
         shape.props.values.map { PartName(id: $0.id, name: $0.text, kindWord: "Value") }
     }
+
+    func removing(_ parts: Set<PartID>, from shape: ShapeRecord<DatabaseEnum>) -> DatabaseEnum? {
+        var type = shape.props
+        type.values.removeAll { parts.contains($0.id) }
+        guard type.values.count < shape.props.values.count else { return nil }
+        derive(&type)
+        return type
+    }
 }
 
 /// Zoomed out: its paper, and a bar a value in one fill.

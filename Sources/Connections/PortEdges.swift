@@ -15,6 +15,8 @@ public struct PortEdgesPlugin: ListedPlugin {
         registrar.drawEdges(kind: { registry in registry.makesConnections ? registry.connectorKind : nil },
                             attributes: [ChannelProperty.key.rawValue],
                             sides: { kind, registry in EdgeChannels.sides(of: kind, in: registry) },
+                            // A kind's rows' channels (a table's columns: `foreign-key`), for an edge that names a row.
+                            rows: { kind, registry in registry.drawCanName(kind) ? registry.partChannels(of: kind).map(\.rawValue) : [] },
                             ends: { record, registry in registry.connectionEnds(of: record) },
                             make: { request, existing, shapes throws(DrawError) in
                                 try EdgeChannels.connection(for: request, existing: existing, in: shapes)
@@ -100,6 +102,8 @@ enum EdgeChannels {
     struct End {
         let record: AnyShapeRecord
         let standsFor: [ShapeKind]
+        /// Whether the end is a part of the shape (a row), which takes connections on its kind's part ports, never its sides'.
+        var isPart = false
 
         var kind: ShapeKind { record.kind }
 
@@ -109,15 +113,24 @@ enum EdgeChannels {
         /// What a message about its own ports (its sides) calls it: a stand-in, and what for.
         var described: String { standsFor.first.map { "\(indefinite(kind)) for \(indefinite($0))" } ?? indefinite(kind) }
 
+        /// Whether it takes `channel` as `role`: a row on its kind's part ports, a shape as a whole on its sides'.
         func takes(_ channel: ChannelID, as role: PortRole, side: PortSide? = nil, in registry: Registry) -> Bool {
-            registry.takes(kind, standingFor: standsFor, channel, as: role, side: side)
+            let onParts = registry.takesOnParts(kind, standingFor: standsFor, channel, as: role)
+            if isPart { return onParts && side == nil }
+            return !onParts && registry.takes(kind, standingFor: standsFor, channel, as: role, side: side)
         }
 
         func sides(on channel: ChannelID, as role: PortRole, in registry: Registry) -> [PortSide] {
             registry.portSides(of: kind, standingFor: standsFor, on: channel, as: role)
         }
 
-        func hasPorts(in registry: Registry) -> Bool { registry.hasPorts(kind, standingFor: standsFor) }
+        func hasPorts(in registry: Registry) -> Bool { registry.hasPorts(kind, standingFor: standsFor, onParts: isPart) }
+
+        /// The channels a connection may start on from it, on `side` if one is named: a row's dots', or its sides'.
+        func starts(side: PortSide?, in registry: Registry) -> [ChannelID] {
+            isPart ? registry.partDotChannels(of: kind, standingFor: standsFor)
+                   : registry.dotChannels(of: kind, standingFor: standsFor, side: side)
+        }
     }
 
     /// The connection `request` asks for: new (`existing` nil), or `existing` changed as it says.
@@ -126,7 +139,8 @@ enum EdgeChannels {
         guard let fromRecord = shapes.shape(request.from), let toRecord = shapes.shape(request.to) else {
             throw refuse(.internal, "\(request.written) names a shape that isn't on the board")
         }
-        let from = End(record: fromRecord, standsFor: request.fromStandsFor), to = End(record: toRecord, standsFor: request.toStandsFor)
+        let from = End(record: fromRecord, standsFor: request.fromStandsFor, isPart: request.fromPart != nil)
+        let to = End(record: toRecord, standsFor: request.toStandsFor, isPart: request.toPart != nil)
         for (isStart, name, end) in [(true, request.fromName, from), (false, request.toName, to)] where !registry.canConnect(end.record.id, in: shapes) {
             throw refuse(.cannotConnect, "\(name) can't be connected: nothing here connects \(indefinite(end.named))",
                          hint: "connect \(isStart ? "from" : "to") another shape")
@@ -161,8 +175,8 @@ enum EdgeChannels {
             channel = try pick(request, from: from, to: to, written: written, in: registry)
         }
         let made = registry.connection(ConnectionRequest(from: request.from, to: request.to, fromSide: request.fromSide?.port,
-                                                         toSide: request.toSide?.port, channel: channel, bothHeads: request.bothHeads,
-                                                         beside: request.beside),
+                                                         toSide: request.toSide?.port, fromPart: request.fromPart, toPart: request.toPart,
+                                                         channel: channel, bothHeads: request.bothHeads, beside: request.beside),
                                        existing: existing, in: shapes)
         guard let made else {
             throw refuse(.cannotConnect, "\(request.fromName) can't be connected to \(request.toName)\(channel.map { " on \($0)" } ?? "")",
@@ -197,8 +211,9 @@ enum EdgeChannels {
             try checkSides(request, from: from, to: to, on: wanted, written: true, in: registry)
             channel = wanted
         case .unwritten:
-            if let first = registry.connectionChannel(from: from.kind, fromSide: request.fromSide?.port, fromStandingFor: from.standsFor,
-                                                      to: to.kind, toSide: request.toSide?.port, toStandingFor: to.standsFor) {
+            if let first = from.starts(side: request.fromSide?.port, in: registry).first(where: {
+                to.takes($0, as: .target, side: request.toSide?.port, in: registry)
+            }) {
                 channel = first
             } else if !from.hasPorts(in: registry), !to.hasPorts(in: registry) {
                 return nil

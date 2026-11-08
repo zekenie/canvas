@@ -99,7 +99,7 @@ extension CanvasEditor {
         connect(ConnectEnd(first), to: ConnectEnd(ids.last ?? first))
     }
 
-    /// Connects `source`, a shape of the board shown, to `target`: the one writer under ⌘L (two shapes, one, and the picker's
+    /// Connects `source`, a shape of the board shown or a part of one (a row), to `target`, a shape or a part: the one writer under ⌘L (two shapes, one, and the picker's
     /// picks), as `canvas draw` makes `edge "A" -> "B"` (`registry.drawConnection`), in one step named for the plan (`plan.step`,
     /// "Connect" for none) that holds the arrow, what the plan wrote first (`plan.prepare`) and what the `ConnectionMade` hooks do
     /// to the arrow. A stand-in end (a reference pill) is an end as what it stands for. A `target` on another board is reached
@@ -138,6 +138,11 @@ extension CanvasEditor {
                 refuseChanges(to: ids)
                 return nil
             case .reads, .fulfils:
+                // A row of a shape on another board is no end until pills stand for rows (K10): the pill would be the whole shape.
+                guard target.part == nil else {
+                    refuseChanges(to: ids)
+                    return nil
+                }
                 guard let route = verdicts.route, let far = shape(inFile: target.shape),
                       let placed = route.placePill(standingFor: target.shape, label: registry.mentionAppearance(of: far)?.label ?? "",
                                                    beside: source.shape, edgeIs: .from, sharing: .any, verdicts: verdicts, in: self) else {
@@ -175,7 +180,8 @@ extension CanvasEditor {
                     try pill.claim(in: &transaction, registry: registry)
                     ends.to = ConnectEnd(try pill.put(in: &transaction))
                 }
-                guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: standingFor)
+                guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: standingFor,
+                                                         parts: (ends.from.part, ends.to.part))
                 else { throw Transaction.Refused() }
                 transaction.insert(made)
                 guard transaction.document[made.id] != nil else { throw Transaction.Refused() }

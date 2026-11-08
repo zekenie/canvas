@@ -13,6 +13,9 @@ import Selection
 //   moved (`CustomTranslation`). ⌥⌘ and an arrow bind it to the nearest shape that way (Selection's
 //   `nearestShape`, the rule ⌥⌘ steps between shapes by) through `ArrowTargeting.bindTerminal`, imprecise,
 //   as a quick drag released there does. Return toggles its head, as a double-click on it does.
+// - An end bound to a row (a key's): ↑ ↓ step it to the row above or below on its shape ("Move Arrow End", one step while
+//   held), announced by the row's name ("id in customers"); ← → change nothing, since its side follows the far end. ⌥⌘ and
+//   an arrow bind it to the nearest shape that way, at the row nearest the end's height.
 // - The bend: the arrows move it as its drag does, across the arrow (a level arrow bends with ↑ ↓, an
 //   upright one with ← →); Return straightens the arrow.
 // - The label: the arrows slide it along the body as its drag does (no snap to halfway, which would
@@ -75,6 +78,10 @@ enum ArrowParts {
             bindNearest(end, of: id, from: from, toward: step.adjacentDirection, targeting: targeting)
             return true
         }
+        if let binding = arrow[end].binding, binding.part != nil {
+            stepRow(end, of: id, binding, by: step, targeting: targeting)
+            return true
+        }
         let point = from + step.offset
         let filter = targeting.filter(for: id, end)
         targeting.updateArrow(id) { arrow in
@@ -90,6 +97,29 @@ enum ArrowParts {
         return true
     }
 
+    /// ↑ ↓ on an end bound to a row: bound to the shown row above or below it on its shape, at its side as before (the side is
+    /// worked out from the far end when drawn), and VoiceOver told which. ← →, no row that way, or the row the other end is at,
+    /// leave it as it is.
+    private static func stepRow(_ end: ArrowEnd, of id: ShapeID, _ binding: ArrowBinding, by step: PartStep, targeting: ArrowTargeting) {
+        guard step.direction.y != 0, let part = binding.part, let shape = targeting.connectables[binding.shapeID] else { return }
+        let shown = shape.parts.filter(\.isShown)
+        guard let at = shown.firstIndex(where: { $0.id == part }) else { return }
+        let next = at + (step.direction.y < 0 ? -1 : 1)
+        guard shown.indices.contains(next) else { return }
+        let row = shown[next]
+        // Never onto the row the other end is at: a key is not a loop on one row (connect refuses it too).
+        if targeting.arrow(id)?[end.opposite].binding?.address == PartAddress(binding.shapeID, part: row.id) { return }
+        var moved = binding
+        moved.part = row.id
+        if shape.bounds.width > 0, shape.bounds.height > 0 {
+            moved.normalizedAnchor = normalizedAnchor(CGPoint(x: binding.normalizedAnchor.x * shape.bounds.width + shape.bounds.minX, y: row.rect.midY),
+                                                      in: shape.bounds)
+        }
+        targeting.updateArrow(id) { $0[end] = .bound(moved) }
+        let editor = targeting.editor
+        if let name = editor.accessibleName(of: moved.address) { editor.announce(name) }
+    }
+
     /// ⌥⌘ and an arrow on an end: bound to the nearest shape that way from where the end aims, of those it may
     /// bind to, other than the one it is bound to, as a quick drag of it released on that shape's middle
     /// binds; and VoiceOver is told which. Nothing that way leaves it as it is.
@@ -101,10 +131,16 @@ enum ArrowParts {
         guard let target = editor.nearestShape(to: point, toward: direction, among: { record in
             record.id != current && connectables[record.id] != nil && (accepts?(record) ?? true)
         }), let shape = connectables[target] else { return }
-        targeting.bindTerminal(of: id, end, to: shape.bounds.center, isPrecise: false, modifiers: [], onto: shape)
+        // Onto a shape whose rows it binds, the row nearest the end's height; else its middle.
+        let byRow = editor.document[target].flatMap { record in
+            editor.document[id].map { editor.registry.arrowBindsPart($0, end, of: record, in: editor.shapeContext) }
+        } ?? false
+        targeting.bindTerminal(of: id, end, to: byRow ? CGPoint(x: shape.bounds.midX, y: point.y) : shape.bounds.center, isPrecise: false,
+                               modifiers: [], onto: shape)
         // No drag is under way to outline what the end aims at.
         editor.hintedShapeID = nil
-        if let name = editor.accessibleDescription(of: target)?.name { editor.announce(name) }
+        let bound = targeting.arrow(id)?[end].binding
+        if let name = bound.flatMap({ editor.accessibleName(of: $0.address) }) ?? editor.accessibleDescription(of: target)?.name { editor.announce(name) }
     }
 
     /// Return on the bend: the arrow straight.
@@ -139,8 +175,9 @@ enum ArrowParts {
     /// What VoiceOver says of an arrow besides its kind: where it runs ("from Checkout to Payment", by the
     /// names of the shapes its ends are bound to, as VoiceOver says them), and its label's words.
     static func accessibility(of shape: ShapeRecord<Arrow>, in editor: CanvasEditor) -> AccessibleTraits {
+        // A row's end by the row's name, read with its shape's ("id in customers").
         func name(_ end: ArrowEnd) -> String? {
-            shape.props[end].binding.flatMap { editor.accessibleDescription(of: $0.shapeID)?.name }
+            shape.props[end].binding.flatMap { editor.accessibleName(of: $0.address) ?? editor.accessibleDescription(of: $0.shapeID)?.name }
         }
         let runs = ArrowStyle.accessibleRun(from: name(.start), to: name(.end))
         let text = shape.props.hasText ? editor.mentions?.plainText(shape.props.text) ?? shape.props.text.plainText() : nil

@@ -5,11 +5,21 @@ import Canvas
 // (`ConnectPicks`): which picks it admits, and what an admitted pick is (a `ConnectPlan`: the step's name, the two ends, and what
 // to write first). Connections names no such kind.
 
-/// One end of a connection: a shape. (A part of a shape, a row, joins it when a shape has parts.)
+/// One end of a connection: a shape, or a part of it (a row: `PartedShape`).
 public struct ConnectEnd: Hashable, Sendable {
     public var shape: ShapeID
+    /// The part of it, nil for the shape as a whole.
+    public var part: PartID?
 
-    public init(_ shape: ShapeID) { self.shape = shape }
+    public init(_ shape: ShapeID, part: PartID? = nil) {
+        self.shape = shape
+        self.part = part
+    }
+
+    public init(_ address: PartAddress) { self.init(address.shape, part: address.part) }
+
+    /// It as an address.
+    public var address: PartAddress { PartAddress(shape, part: part) }
 }
 
 /// A pick asked of `ConnectPicks`: the shape the picker was opened on, and the shape picked (the same shape, for Itself).

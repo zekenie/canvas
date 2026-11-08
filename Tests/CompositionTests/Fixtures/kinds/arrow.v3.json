@@ -1,0 +1,31 @@
+{
+  "bend" : 24,
+  "end" : {
+    "bound" : {
+      "isExact" : true,
+      "isPrecise" : true,
+      "normalizedAnchor" : [
+        0,
+        0.5
+      ],
+      "part" : "55555555-5555-4555-8555-555555555555",
+      "shapeID" : "44444444-4444-4444-8444-444444444444"
+    }
+  },
+  "endArrowhead" : true,
+  "labelPosition" : 0.75,
+  "start" : {
+    "bound" : {
+      "isExact" : true,
+      "isPrecise" : true,
+      "normalizedAnchor" : [
+        0.25,
+        0.75
+      ],
+      "part" : "33333333-3333-4333-8333-333333333333",
+      "shapeID" : "22222222-2222-2222-2222-222222222222"
+    }
+  },
+  "startArrowhead" : true,
+  "text" : "Calls @[Groceries](shape:7C1E0B8A-2F4D-4A6B-9C3E-5D2F1A0B9C8D), not \\@[Q2](shape:11111111-2222-4333-8444-555555555555)"
+}

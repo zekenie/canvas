@@ -485,7 +485,7 @@ extension Edge {
     /// The edge with these ends, forwarded as `origin` says: one of its copies.
     @inline(__always)
     func copy(_ source: ShapeID, _ target: ShapeID, _ origin: EdgeOrigin) -> Edge {
-        Edge(type: type, source: source, target: target, carrier: carrier, slot: slot, count: count, origin: origin)
+        Edge(type: type, source: source, target: target, carrier: carrier, slot: slot, count: count, origin: origin, parts: parts)
     }
 }
 
