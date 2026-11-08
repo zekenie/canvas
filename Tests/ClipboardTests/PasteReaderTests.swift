@@ -60,7 +60,7 @@ import TestKit
         expectEqual(Set(h.editor.document.shapes.map(\.id)).count, 6, "each its own id")
         setText(pasteboard, "a box")
         expect(!h.editor.canPaste, "text no reader reads")
-        expectEqual(asked.texts, ["3 boxes", "3 boxes", "a box"], "asked once a pasteboard and a file: the first paste changed the file")
+        expectEqual(asked.texts, ["3 boxes", "a box"], "asked once a pasteboard")
     },
     test("Paste at Pointer and the context menu's Paste land read shapes on the pointer and the click") {
         let pasteboard = privatePasteboard()

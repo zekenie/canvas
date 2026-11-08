@@ -63,24 +63,14 @@ public struct DrawPut: Sendable {
             guard let head = within.first else { return .title(title) }
             return .path(ShapePath(head: .title(head), rest: Array(within.dropFirst()) + [title]))
         }
-
-        /// The shape of the file a put at `site` would find for this one, nil for none (a new one would be made): the shape of
-        /// its kind at its path, else called its title, the nearest (in the container the block lands in, then on the board
-        /// shown, then the file's order). What a reader asks of a shape it names but doesn't draw: a key's table, to name its
-        /// primary key's row.
-        @MainActor
-        public func found(at site: PutSite, in editor: CanvasEditor) -> ShapeID? {
-            guard let name, let naming = editor.registry.drawNaming else { return nil }
-            let names = FileNames(editor, naming: naming)
-            let finding = PutFinding(site: site, editor: editor)
-            return finding.place(kind: ShapeKind(rawValue: kind), name: name, writes: false, names: names, naming: naming)?.id
-        }
     }
 
     /// An edge a shape's values imply (a column's key to the row it names): from `fromRow` of the shape (nil: the shape as a
     /// whole) to `toRow` (nil: as a whole) of the shape of kind `toKind` called `toTitle`, within `toWithin` (a path found
     /// first), found as the put's own shapes are found (one the put draws, else the file's nearest), with the edge maker's
     /// attributes; `replacesType`: the type of edge the row has one of, which this re-aims (`DrawImpliedEdge`).
+    /// `toRowOfShape`: for a row only the far shape can say (a table's primary key, which a key that names no column means), asked
+    /// of the far shape the put found, as the file has it, when `toRow` is nil: the edge is left out where it gives none.
     public struct Edge: Sendable, Hashable {
         public var fromRow: String?
         public var toKind: String
@@ -89,9 +79,11 @@ public struct DrawPut: Sendable {
         public var toRow: String?
         public var attributes: [String: String]
         public var replacesType: String?
+        public var toRowOfShape: (@MainActor @Sendable (ShapeID, CanvasEditor) -> String?)?
 
         public init(fromRow: String?, toKind: String, toTitle: String, toWithin: [String] = [], toRow: String?,
-                    attributes: [String: String] = [:], replacesType: String? = nil) {
+                    attributes: [String: String] = [:], replacesType: String? = nil,
+                    toRowOfShape: (@MainActor @Sendable (ShapeID, CanvasEditor) -> String?)? = nil) {
             self.fromRow = fromRow
             self.toKind = toKind
             self.toTitle = toTitle
@@ -99,10 +91,25 @@ public struct DrawPut: Sendable {
             self.toRow = toRow
             self.attributes = attributes
             self.replacesType = replacesType
+            self.toRowOfShape = toRowOfShape
         }
 
         /// The far shape as a statement would name it.
         var toShape: Shape { Shape(kind: toKind, title: toTitle, within: toWithin) }
+
+        /// Whether two are the same edge: a row asked of the far shape is only whether there is one.
+        public static func == (a: Edge, b: Edge) -> Bool {
+            a.fromRow == b.fromRow && a.toKind == b.toKind && a.toTitle == b.toTitle && a.toWithin == b.toWithin && a.toRow == b.toRow
+                && a.attributes == b.attributes && a.replacesType == b.replacesType && (a.toRowOfShape == nil) == (b.toRowOfShape == nil)
+        }
+
+        public func hash(into hasher: inout Hasher) {
+            hasher.combine(fromRow)
+            hasher.combine(toKind)
+            hasher.combine(toTitle)
+            hasher.combine(toWithin)
+            hasher.combine(toRow)
+        }
     }
 
     /// Shapes in layout rows, numbered in order from 1: each row left to right, the rows top to bottom.
@@ -174,6 +181,8 @@ private struct Putting {
         var isNew: Bool
         /// Its original line, which `block` names it by.
         var original: Int
+        /// The titles of the containers its name is within, outermost first (a path's), which a value may call it by.
+        var within: [String] = []
         /// The edges its values imply, each with its far shape found (`DrawPut.edges`).
         var implied: [DrawImpliedEdge] = []
     }
@@ -194,12 +203,23 @@ private struct Putting {
         options.byAgent = false
         options.step = step
         options.reserved = Set(planned.filter(\.isNew).compactMap(\.id))
+        // The names a value may call a shape of the put by: its title, and, within containers, the path (`billing.status`). A title
+        // shared by shapes the put names is the one in no container's, else none of them alone (a value that means one of them
+        // calls it by its path).
+        var bare: [String: ShapeID] = [:], inside: [String: [ShapeID]] = [:]
         for item in planned {
             // A far shape an implied edge names is keyed by its id, which no title can be.
             for edge in item.implied { if let far = UUID(uuidString: edge.to) { options.keys[edge.to] = ShapeID(far) } }
             guard case .shape(let shape) = item.statement.body, let id = item.id, let title = shape.newTitle ?? shape.title else { continue }
-            options.keys[title] = id
+            if item.within.isEmpty {
+                bare[title] = bare[title] ?? id
+            } else {
+                options.keys[(item.within + [title]).joined(separator: ".")] = id
+                inside[title, default: []].append(id)
+            }
         }
+        for (title, id) in bare { options.keys[title] = id }
+        for (title, ids) in inside where bare[title] == nil && ids.count == 1 { options.keys[title] = ids[0] }
 
         // Runs by board: the shown board's first, with every new shape and edge; a shape the file has elsewhere is restated on its
         // own board.
@@ -263,16 +283,20 @@ private struct Putting {
         // The statement that first named each kind and title (or path) in the put: a later one of the same is the same shape, and
         // joins it.
         var first: [String: Int] = [:]
+        // The shapes of the file the statements so far found: another statement's name never finds one of them again, so two
+        // names that both fall back to one title (`auth.users` and `users`) are two shapes, the next nearest or a new one.
+        var claimed: Set<ShapeID> = []
         for statement in block.script.statements {
             guard case .shape(var shape) = statement.body else {
                 planned.append(Planned(statement: statement, board: shown, id: nil, isNew: false, original: statement.line))
                 continue
             }
-            var id: ShapeID?, board = shown, isNew = false
+            var id: ShapeID?, board = shown, isNew = false, within: [String] = []
             let kind = ShapeKind(rawValue: shape.word)
             switch shape.name {
             case let name? where name.title != nil || name.path != nil:
                 let written = name.title ?? name.path!.last
+                if let path = name.path, case .title(let head) = path.head { within = [head] + path.rest.dropLast() }
                 if let naming, let names, let key = Self.key(kind: kind, name: name, names: names, naming: naming) {
                     if let index = first[key], case .shape(var earlier) = planned[index].statement.body {
                         // A name written twice names one shape: the later statement's values join the earlier's (which keeps a
@@ -285,9 +309,10 @@ private struct Putting {
                     }
                     // A shape that cannot be changed is no match for a statement that gives it values: a new shape is made.
                     first[key] = planned.count
-                    if let found = finding.place(kind: kind, name: name, writes: !shape.attributes.isEmpty, names: names, naming: naming) {
+                    if let found = finding.place(kind: kind, name: name, writes: !shape.attributes.isEmpty, names: names, naming: naming, excluding: claimed) {
                         id = found.id
                         board = found.board
+                        claimed.insert(found.id)
                     } else {
                         id = ShapeID()
                         isNew = true
@@ -309,7 +334,7 @@ private struct Putting {
             if isNew, shape.container == nil, let holder = finding.holder { shape.container = .id(holder.description) }
             var named = statement
             named.body = .shape(shape)
-            planned.append(Planned(statement: named, board: board, id: id, isNew: isNew, original: statement.line))
+            planned.append(Planned(statement: named, board: board, id: id, isNew: isNew, original: statement.line, within: within))
         }
         // The edges a statement's values imply, each to the shape its far end finds: one the put draws, else the file's nearest;
         // one that finds none is left out.
@@ -326,7 +351,13 @@ private struct Putting {
                         far = finding.place(kind: kind, name: name, writes: false, names: names, naming: naming)?.id
                     }
                     guard let far else { continue }
-                    planned[index].implied.append(DrawImpliedEdge(fromRow: edge.fromRow, to: far.description, toRow: edge.toRow,
+                    // A row only the far shape can say (its primary key's), as the file has it: none, no edge.
+                    var row = edge.toRow
+                    if row == nil, let pick = edge.toRowOfShape {
+                        row = pick(far, editor)
+                        guard row != nil else { continue }
+                    }
+                    planned[index].implied.append(DrawImpliedEdge(fromRow: edge.fromRow, to: far.description, toRow: row,
                                                                   attributes: edge.attributes, replacesType: edge.replacesType))
                 }
             }
@@ -439,10 +470,11 @@ struct PutFinding {
 
     /// The shape of `kind` the file has that `name` finds, nil for none: a path's, else its title's (a title alone is its own).
     /// `writes`: a shape that cannot be changed is none.
-    func place(kind: ShapeKind, name: ShapeName, writes: Bool, names: FileNames, naming: DrawNaming) -> FileNames.Place? {
+    /// `excluding`: shapes already taken by another name of the put, which no other finds.
+    func place(kind: ShapeKind, name: ShapeName, writes: Bool, names: FileNames, naming: DrawNaming, excluding: Set<ShapeID> = []) -> FileNames.Place? {
         let file = editor.file
         func admitted(_ places: [FileNames.Place]) -> [FileNames.Place] {
-            places.filter { file.record($0.id)?.kind == kind && !(writes && editor.isReadOnly(inFile: $0.id)) }
+            places.filter { !excluding.contains($0.id) && file.record($0.id)?.kind == kind && !(writes && editor.isReadOnly(inFile: $0.id)) }
         }
         switch name {
         case .title(let written):
@@ -450,7 +482,7 @@ struct PutFinding {
             return nearest(of: admitted(names.places[folded] ?? []))
         case .path(let path):
             if let folded = names.folded(path), let found = nearest(of: admitted(names.match(folded, board: shown).shapes)) { return found }
-            return place(kind: kind, name: .title(path.last), writes: writes, names: names, naming: naming)
+            return place(kind: kind, name: .title(path.last), writes: writes, names: names, naming: naming, excluding: excluding)
         case .id:
             return nil
         }

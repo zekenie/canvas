@@ -249,8 +249,32 @@ enum SQLTokens {
             }
             advance()
             tokens.append(SQLToken(kind: .symbol, text: String(c), range: start..<at))
+            // `COPY t (…) FROM stdin;` is followed by the table's rows as raw lines to one that is `\.`, which no quote or comment in
+            // them opens (pg_dump writes its keys after them).
+            if c == ";", copiesFromInput(tokens.dropLast()) { skipRows() }
         }
         return tokens
+
+        /// Whether the statement these tokens (up to the `;`) end is `COPY … FROM STDIN`.
+        func copiesFromInput(_ ended: ArraySlice<SQLToken>) -> Bool {
+            let statement = ended.reversed().prefix { !$0.isSymbol(";") }.reversed()
+            guard statement.first?.is("COPY") == true else { return false }
+            let words = Array(statement)
+            return words.indices.dropLast().contains { words[$0].is("FROM") && words[$0 + 1].is("STDIN") }
+        }
+
+        /// Passes over the lines after the statement's end, through the one that is `\.` (to the end of the text where none is).
+        func skipRows() {
+            while at < end, !text[at].isNewline { advance() }
+            while at < end {
+                advance()
+                let lineStart = at
+                while at < end, !text[at].isNewline { advance() }
+                if text[lineStart..<at].trimmingCharacters(in: .whitespaces) == "\\." {
+                    return
+                }
+            }
+        }
 
         /// The run from a quote at `at` to its closing quote, the quotes off: a doubled closing quote is one, and with `escapes` a
         /// backslash takes the character after it.
@@ -397,7 +421,8 @@ struct Cursor {
         guard takeSymbol("(") else { return nil }
         var parts: [[SQLToken]] = [], part: [SQLToken] = [], depth = 0
         while let token = next() {
-            if token.isSymbol("(") { depth += 1 }
+            if token.isSymbol("(") || token.isSymbol("[") { depth += 1 }
+            if token.isSymbol("]") { depth = max(0, depth - 1) }
             if token.isSymbol(")") {
                 if depth == 0 { break }
                 depth -= 1
@@ -417,8 +442,8 @@ struct Cursor {
     mutating func rest() -> [[SQLToken]] {
         var parts: [[SQLToken]] = [], part: [SQLToken] = [], depth = 0
         while let token = next() {
-            if token.isSymbol("(") { depth += 1 }
-            if token.isSymbol(")") { depth = max(0, depth - 1) }
+            if token.isSymbol("(") || token.isSymbol("[") { depth += 1 }
+            if token.isSymbol(")") || token.isSymbol("]") { depth = max(0, depth - 1) }
             if token.isSymbol(","), depth == 0 {
                 parts.append(part)
                 part = []
@@ -614,8 +639,8 @@ private struct Reading {
                 if token.kind == .word, constraintWords.contains(token.text.uppercased()) { break }
                 if token.isSymbol(",") { break }
             }
-            if token.isSymbol("(") { depth += 1 }
-            if token.isSymbol(")") { depth -= 1 }
+            if token.isSymbol("(") || token.isSymbol("[") { depth += 1 }
+            if token.isSymbol(")") || token.isSymbol("]") { depth -= 1 }
             if depth < 0 { break }
             cursor.next()
         }

@@ -1536,9 +1536,10 @@ struct Drawing {
 
     // MARK: Edges
 
-    /// The edges a shape statement's values imply (`DrawValueWriting.edges`), from the shape it draws, as edge statements: none for a
-    /// statement that couldn't be resolved, or one whose values imply none. A shape with no name can't be an edge's end, so a value
-    /// of one that implies an edge is refused.
+    /// The edges a shape statement's values imply, from the shape it draws, as edge statements: those its value writers say
+    /// (`DrawValueWriting.edges`) and, for a person's put, those the put says its statement implies (`DrawOptions.implied`, a
+    /// table's keys): none for a statement that couldn't be resolved, or one whose values imply none. A shape with no name can't
+    /// be an edge's end, so a value of one that implies an edge is refused.
     private func impliedEdges(of shape: ShapeStatement, _ statement: Statement) throws(DrawError) -> [(EdgeStatement, DrawImpliedEdge)] {
         if let title = shape.title, unresolved.contains(fold(title) ?? title) { return [] }
         guard let lookup = textWriter?.lookup else { return [] }
@@ -1554,7 +1555,7 @@ struct Drawing {
                 throw error.said(error.message, on: statement)
             }
         }
-        if let put = options.implied[statement.line] { said.append((shape.word, put)) }
+        if let put = options.implied[statement.line] { said.append(("the put", put)) }
         for (key, found) in said {
             guard !found.isEmpty else { continue }
             guard let name = shape.name else {

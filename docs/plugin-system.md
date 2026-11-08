@@ -2461,16 +2461,18 @@ tables, columns, enums and keys) and writes a draw program for Draw to put down 
 shapes are found or made:
 
 ```swift
-registrar.pasteReader("SQL", sniff: { SQLPaste.sniffs($0) }) { content, editor in
-    SQLPaste.read(content, in: editor, keys: SQLPaste.foreignKeys)   // a table a statement, its columns as JSON,
-}                                                                   // its keys the edges it implies
+registrar.pasteReader("SQL", sniff: { SQLPaste.sniffs($0) }) { content, _ in
+    SQLPaste.read(content, keys: SQLPaste.foreignKeys)   // a table a statement, its columns as JSON,
+}                                                       // its keys the edges it implies
 ```
 
 A table is found by its title, nearest first and file-wide (`billing.payments` the payments in the database
 billing first, `DrawPut.Shape.within`), and its columns are joined by name as `columns:` joins them, so their ids
 stay and so do the keys bound to them; a new column goes after the column pasted before it. A key is an edge the
 statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `→` is; one whose table or row is found
-nowhere is left out, and the paste lands anyway.
+nowhere is left out (a key the column had stays), and the paste lands anyway. The reading holds only the text: a key to a
+table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
+brought into it, and VoiceOver hears what was made and what updated; SQL that reads as nothing says "Nothing to paste".
 
 ## Rows written as lines
 
@@ -6517,8 +6519,7 @@ giving a shape back the id it had.
   so otherwise ⌘V's key goes on, Edit › Paste is dimmed and the context menu has none; on a locked
   subboard's board nothing is pasted, and nothing refused, since there's nothing to try. Copy and
   Cut work there as they do for a locked shape: copies, and a cut deletes nothing and shakes. The pasteboard is
-  read again only when it's changed, and a reader's reading again when the file has too (a reader is handed the
-  editor: SQL's key to a table named alone reads that table's primary key). `ClipboardPlugin(pasteboard:)` takes the pasteboard, the
+  read again only when it's changed. `ClipboardPlugin(pasteboard:)` takes the pasteboard, the
   system's by default.
 - **Where the keys work.** ⌘X, ⌘C, ⌘V and ⌘D are Keyboard's while the canvas has the keyboard.
   Elsewhere the menu has them: the board's window controller answers Edit › Cut, Copy and Paste

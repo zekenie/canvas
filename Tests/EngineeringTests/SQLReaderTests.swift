@@ -151,6 +151,8 @@ import TestKit
             CREATE SEQUENCE public.payments_seq START WITH 1;
             COMMENT ON TABLE public.payments IS 'money; in';
             COPY public.orders (id, total_cents) FROM stdin;
+            1\t500
+            \\.
             ALTER TABLE ONLY public.orders
                 ADD CONSTRAINT orders_pkey PRIMARY KEY (id);
             ALTER TABLE ONLY public.payments
@@ -174,6 +176,48 @@ import TestKit
         expect((try column(payments, "amount_cents")).unique)
         expect((try column(payments, "amount_cents")).nullable)
         expectEqual(try table(schema, "orders").primaryKey, ["id"])
+    },
+    test("a pg_dump with data: the rows after COPY … FROM stdin are raw lines to \\., whatever quotes, comments and dollars they hold, and the keys written after them are read") {
+        let dump = """
+            CREATE TABLE public.people (id integer NOT NULL, name text);
+            CREATE TABLE public.orders (id integer NOT NULL, person_id integer);
+            COPY public.people (id, name) FROM stdin;
+            1\tO'Brien
+            2\t/usr/*
+            3\t$x$ -- not a comment
+            \\.
+
+            COPY public.orders (id, person_id) FROM stdin;
+            10\t1
+            \\.
+
+            ALTER TABLE ONLY public.people
+                ADD CONSTRAINT people_pkey PRIMARY KEY (id);
+            ALTER TABLE ONLY public.orders
+                ADD CONSTRAINT orders_person_fkey FOREIGN KEY (person_id) REFERENCES public.people(id);
+            """
+        let schema = SQLReader.read(dump)
+        expectEqual(schema.tables.map(\.name.name), ["people", "orders"])
+        expectEqual(try table(schema, "people").primaryKey, ["id"], "the key after the data is read")
+        expectEqual(try table(schema, "orders").keys, [SQLKey(column: "person_id", table: SQLName("people"), targetColumn: "id")])
+        expectEqual(SQLReader.read("COPY t (a) FROM stdin;\n1\n'unterminated").isEmpty, true, "rows with no end run to the end of the text")
+    },
+    test("a comma inside brackets holds a column together: DEFAULT ARRAY[1, 2], and in an ALTER's actions") {
+        let schema = SQLReader.read("""
+            CREATE TABLE shapes (
+              id int PRIMARY KEY,
+              sizes int[] DEFAULT ARRAY[1, 2] NOT NULL,
+              tags text[] DEFAULT ARRAY['a', 'b'],
+              after_it text
+            );
+            ALTER TABLE shapes ADD COLUMN extra int[] DEFAULT ARRAY[3, 4], ADD COLUMN more int;
+            """)
+        let shapes = try table(schema, "shapes")
+        expectEqual(shapes.columns.map(\.name), ["id", "sizes", "tags", "after_it", "extra", "more"])
+        expectEqual((try column(shapes, "sizes")).default, "ARRAY[1, 2]")
+        expectEqual((try column(shapes, "tags")).default, "ARRAY['a', 'b']")
+        expectEqual((try column(shapes, "extra")).default, "ARRAY[3, 4]")
+        expect(!(try column(shapes, "sizes")).nullable)
     },
     test("names: unquoted folded to lower case, quoted and backticked kept as written, schema.table and catalog.schema.table") {
         let schema = SQLReader.read("""

@@ -211,7 +211,6 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         let within = DrawPut(rows: [[DrawPut.Shape(kind: "tile", title: "Hub", within: ["Pen"], values: [(key: "finish", text: "glossy")])]])
         expectEqual(try put(within, at: .beside([]), in: editor), [held.id], "the Hub in Pen, though the loose one is nearer by title")
         expectEqual(finish(of: held.id, in: editor), .glossy)
-        expectEqual(DrawPut.Shape(kind: "tile", title: "Hub", within: ["Pen"]).found(at: .beside([]), in: editor), held.id, "what a reader is told the put finds")
         let nowhere = DrawPut(rows: [[DrawPut.Shape(kind: "tile", title: "Hub", within: ["Nope"], values: [(key: "finish", text: "glossy")])]])
         expectEqual(try put(nowhere, at: .beside([]), in: editor), [loose.id], "no container Nope: the Hub its title finds, the loose one, in no container as the block")
         expectEqual(tileCount(editor), 2, "nothing made")
@@ -244,5 +243,39 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         while editor.undoHistory.undoName == "Paste Tiles" { editor.undo() }
         expectEqual(editor.document, before, "a put is its own step")
         expect(editor.document[far.id] != nil)
+    },
+    test("two names that both fall back to one title are two shapes: the second finds the next nearest, else is made, never the one twice") {
+        let editor = try drawEditor()
+        let first = tile("Hub", CGRect(x: 0, y: 0, width: 100, height: 60), in: editor)
+        let program = DrawPut(rows: [[
+            DrawPut.Shape(kind: "tile", title: "Hub", within: ["Nope"], values: [(key: "finish", text: "glossy")]),
+            DrawPut.Shape(kind: "tile", title: "Hub", values: [(key: "finish", text: "matte")]),
+        ]])
+        let landed = try put(program, at: .beside([]), in: editor)
+        expectEqual(landed.count, 2)
+        expectEqual(landed[0], first.id, "the path, failing that the title: the one the file has")
+        expect(landed[1] != first.id, "the bare title finds no other: a new one")
+        expectEqual(finish(of: first.id, in: editor), .glossy)
+        expectEqual(finish(of: landed[1], in: editor), .matte)
+        expectEqual(tileCount(editor), 2)
+        // Pasted again: each finds its own.
+        let again = try put(program, at: .beside([]), in: editor)
+        expectEqual(again, landed, "restated in place, neither twice")
+        expectEqual(tileCount(editor), 2)
+        expectEqual(finish(of: first.id, in: editor), .glossy)
+        expectEqual(finish(of: landed[1], in: editor), .matte)
+    },
+    test("a row only the far shape can say is asked of the shape the put found; where it gives none the edge is left out") {
+        let editor = try drawEditor()
+        _ = tile("Far", CGRect(x: 900, y: 0, width: 100, height: 60), in: editor)
+        func edge(_ ask: (@MainActor @Sendable (ShapeID, CanvasEditor) -> String?)?) -> DrawPut.Edge {
+            DrawPut.Edge(fromRow: nil, toKind: "tile", toTitle: "Far", toRow: nil, attributes: [Tone.key.rawValue: "warm"], toRowOfShape: ask)
+        }
+        let program = DrawPut(rows: [[
+            DrawPut.Shape(kind: "tile", title: "A", edges: [edge(nil)]),
+            DrawPut.Shape(kind: "tile", title: "B", edges: [edge({ _, _ in nil })]),
+        ]])
+        _ = try put(program, at: .beside([]), in: editor)
+        expectEqual(links(in: editor).sorted(), ["A -> Far"], "B's was asked and had no row to give")
     },
 ])

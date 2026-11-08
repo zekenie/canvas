@@ -14,9 +14,9 @@ import Titles
 // file-wide (a schema's name the path into its database, else the bare title; a paste makes no database), its columns joined by
 // name in place (ids kept, so keys bound to them stay; a new one after the column pasted before it; one the paste leaves out kept),
 // an enum's values by text and a column's type bound to the enum it names, and a table's keys in the program as the edges it
-// implies (to the row a column names, or the far table's primary key's: the pasted one's, else the file's), each re-aiming its
-// column's key. With no connector here the keys draw nothing, and the put still lands, never refused; the keys are drawn in
-// CompositionTests' `pasteSQLShippedTests`.
+// implies (to the row a column names, or the far table's primary key's: the pasted one's, else the file's, asked when the put
+// finds the far table), each re-aiming its column's key. With no connector here the keys draw nothing, and the put still lands,
+// never refused; the keys are drawn, re-aimed and kept in CompositionTests' `pasteSQLShippedTests`.
 
 /// The kit's board with draw's names (Titles'), so a put finds shapes by their titles.
 @MainActor private func pasteHarness() throws -> EditorHarness {
@@ -31,7 +31,7 @@ import Titles
 @MainActor @discardableResult
 private func paste(_ sql: String, in h: EditorHarness) throws -> [ShapeID] {
     let site = PutSite.beside(h.editor.selectedShapeIDs)
-    let program = try require(SQLPaste.program(of: sql, at: site, in: h.editor), "the SQL reads")
+    let program = try require(SQLPaste.program(of: sql), "the SQL reads")
     return try h.editor.undoHistory.group("Paste SQL") { try put(program, at: site, in: h.editor, step: "Paste SQL") }
 }
 
@@ -59,7 +59,7 @@ private let paymentsSQL = """
         let h = try pasteHarness()
         let orders = h.add(orders(), titled: "orders")
         h.editor.selection = orders
-        let program = try require(SQLPaste.program(of: paymentsSQL, at: .beside([orders]), in: h.editor))
+        let program = try require(SQLPaste.program(of: paymentsSQL))
         expectEqual(program.block.map(\.count), [1])
         let edges = program.edges.values.flatMap { $0 }
         expectEqual(edges, [DrawPut.Edge(fromRow: "order_id", toKind: "table", toTitle: "orders", toRow: "id",
@@ -124,8 +124,8 @@ private let paymentsSQL = """
         expectEqual(columns(loose, in: h.editor).map(\.name) + columns(inBilling, in: h.editor).map(\.name),
                     ["id", "due", "id", "total_cents"], "public. is dropped: a bare title, the nearest (the loose one is first on the board)")
         try paste("CREATE TABLE archive.invoices (id uuid PRIMARY KEY, archived_at timestamptz);", in: h)
-        expect(columns(loose, in: h.editor).contains { $0.name == "archived_at" } || columns(inBilling, in: h.editor).contains { $0.name == "archived_at" },
-               "no database archive: the bare title")
+        expectEqual(columns(loose, in: h.editor).map(\.name), ["id", "archived_at", "due"], "no database archive: the bare title, the nearest: the loose one, in no container; after id, the column pasted before it")
+        expectEqual(columns(inBilling, in: h.editor).map(\.name), ["id", "total_cents"], "the one in billing untouched")
         expectEqual(h.shapes(Database.kind).count, 1, "a paste makes no database")
         expectEqual(h.shapes(DatabaseTable.kind).count, 2)
     },
@@ -149,7 +149,7 @@ private let paymentsSQL = """
     test("in paste order, four to a row; the tables and enums all returned, as ⌘V selects them") {
         let h = try pasteHarness()
         let sql = (1...6).map { "CREATE TABLE t\($0) (id int PRIMARY KEY);" }.joined(separator: "\n") + "\nCREATE TYPE mood AS ENUM ('ok');"
-        let program = try require(SQLPaste.program(of: sql, at: .beside([]), in: h.editor))
+        let program = try require(SQLPaste.program(of: sql))
         expectEqual(program.block.map(\.count), [4, 3])
         let landed = try paste(sql, in: h)
         expectEqual(landed.count, 7)
@@ -158,7 +158,7 @@ private let paymentsSQL = """
         expect(boxes[4].minY > boxes[0].maxY, "the rest below")
         expect(boxes[1].minX > boxes[0].maxX && boxes[2].minX > boxes[1].maxX, "left to right in paste order")
     },
-    test("a key's row: the column it names; REFERENCES t alone the pasted table's primary key, else the file's table's; a table found nowhere no key, and the paste still lands") {
+    test("a key's row: the column it names; REFERENCES t alone the pasted table's primary key, else asked of the table the put finds (the file's), and no edge where it has none; the paste lands whole") {
         let h = try pasteHarness()
         h.add(DatabaseTable(frame: CGRect(x: 100, y: 100, width: 260, height: 44), columns: [Column(name: "code", type: TypeRef("text"), primaryKey: true)]),
               titled: "currencies")
@@ -168,18 +168,81 @@ private let paymentsSQL = """
               id int PRIMARY KEY,
               account int REFERENCES accounts,
               currency text REFERENCES currencies,
-              owner uuid REFERENCES people,
               branch uuid REFERENCES branches (id)
             );
             """
-        let program = try require(SQLPaste.program(of: sql, at: .beside([]), in: h.editor))
-        let edges = program.edges.values.flatMap { $0 }.map { "\($0.fromRow ?? "") → \($0.toTitle).\($0.toRow ?? "")" }
-        expectEqual(edges, ["account → accounts.number", "currency → currencies.code", "branch → branches.id"],
-                    "people has no primary key anyone knows: no key; branches is named, and the put finds it nowhere")
+        let program = try require(SQLPaste.program(of: sql))
+        let edges = program.edges.values.flatMap { $0 }
+        expectEqual(edges.map { "\($0.fromRow ?? "") → \($0.toTitle).\($0.toRow ?? "")" }, ["account → accounts.number", "currency → currencies.", "branch → branches.id"],
+                    "the pasted table's primary key is known; the file's currencies is asked of it when the put finds it")
+        expect(edges[1].toRowOfShape != nil && edges[0].toRowOfShape == nil && edges[2].toRowOfShape == nil)
         let landed = try paste(sql, in: h)
         expectEqual(landed.count, 2, "landed whole, the keys it can't draw left out")
         let ledger = try require(titled("ledger", DatabaseTable.kind, in: h.editor).first)
-        expectEqual(columns(ledger.id, in: h.editor).map(\.name), ["id", "account", "currency", "owner", "branch"])
+        expectEqual(columns(ledger.id, in: h.editor).map(\.name), ["id", "account", "currency", "branch"])
+    },
+    test("two schemas' tables of one name, pasted and pasted again: two shapes, each found once and kept apart, never the one twice") {
+        let h = try pasteHarness()
+        let sql = """
+            CREATE TABLE auth.users (id uuid PRIMARY KEY, email text);
+            CREATE TABLE users (id uuid PRIMARY KEY, name text);
+            CREATE TYPE a.status AS ENUM ('x');
+            CREATE TYPE b.status AS ENUM ('y');
+            """
+        let first = try paste(sql, in: h)
+        expectEqual(first.count, 4)
+        expectEqual(titled("users", DatabaseTable.kind, in: h.editor).count, 2, "no database auth: a table of its own")
+        let before = columns(first[0], in: h.editor).map(\.name) + columns(first[1], in: h.editor).map(\.name)
+        expectEqual(before, ["id", "email", "id", "name"])
+        let again = try paste(sql + "\nCREATE TABLE audit (id int);", in: h)
+        expectEqual(again.count, 5, "restated in place, the one new table made")
+        expectEqual(Set(again).intersection(Set(first)), Set(first), "the same four shapes")
+        expectEqual(titled("users", DatabaseTable.kind, in: h.editor).count, 2, "still two")
+        expectEqual(titled("status", DatabaseEnum.kind, in: h.editor).count, 2, "still two")
+        expectEqual(columns(first[0], in: h.editor).map(\.name) + columns(first[1], in: h.editor).map(\.name), before, "each one's columns its own")
+        let values = Set(first[2...3].compactMap { h.editor.document[$0]?.typed(as: DatabaseEnum.self)?.props.values.map(\.text) })
+        expectEqual(values, [["x"], ["y"]])
+    },
+    test("an enum named by its schema when its title is shared: each column typed by the enum it says, a bare name the table's own schema's") {
+        let h = try pasteHarness()
+        try paste("""
+            CREATE TYPE a.status AS ENUM ('x');
+            CREATE TYPE b.status AS ENUM ('y');
+            CREATE TABLE a.status_log (kind a.status, other b.status);
+            CREATE TABLE b.entries (kind status);
+            """, in: h)
+        let enums = titled("status", DatabaseEnum.kind, in: h.editor)
+        @MainActor func valuesOf(_ type: TypeRef) -> [String]? {
+            type.shape.flatMap { id in h.editor.document[id]?.typed(as: DatabaseEnum.self)?.props.values.map(\.text) }
+        }
+        let log = try require(titled("status_log", DatabaseTable.kind, in: h.editor).first)
+        let kinds = columns(log.id, in: h.editor).map { valuesOf($0.type) }
+        expectEqual(kinds, [["x"], ["y"]], "a.status and b.status, not the last status of the paste")
+        let entries = try require(titled("entries", DatabaseTable.kind, in: h.editor).first)
+        expectEqual(columns(entries.id, in: h.editor).map { valuesOf($0.type) }, [["y"]], "a bare status in a table of b: b's")
+        expectEqual(enums.count, 2)
+        // A table and an enum of one title, in different schemas.
+        try paste("CREATE TABLE a.mood (id int); CREATE TYPE b.mood AS ENUM ('ok'); CREATE TABLE feelings (m b.mood);", in: h)
+        let feelings = try require(titled("feelings", DatabaseTable.kind, in: h.editor).first)
+        let mood = try require(columns(feelings.id, in: h.editor).first?.type.shape.flatMap { h.editor.document[$0] })
+        expectEqual(mood.kind, DatabaseEnum.kind, "the enum, not the table a.mood")
+    },
+    test("pasted again, a key that now says no action has none: ON DELETE and ON UPDATE are the SQL's; a column pasted with no key keeps what it had") {
+        let h = try pasteHarness()
+        h.add(orders(), titled: "orders")
+        try paste("CREATE TABLE payments (id uuid PRIMARY KEY, order_id uuid REFERENCES orders (id) ON DELETE CASCADE ON UPDATE RESTRICT);", in: h)
+        let payments = try require(titled("payments", DatabaseTable.kind, in: h.editor).first).id
+        @MainActor func order() -> Column? { columns(payments, in: h.editor).first { $0.name == "order_id" } }
+        expectEqual(order()?.onDelete, "cascade")
+        expectEqual(order()?.onUpdate, "restrict")
+        try paste("CREATE TABLE payments (id uuid PRIMARY KEY, order_id uuid REFERENCES orders (id) ON DELETE SET NULL);", in: h)
+        expectEqual(order()?.onDelete, "set null")
+        expectEqual(order()?.onUpdate, nil, "no ON UPDATE said: none")
+        try paste("CREATE TABLE payments (id uuid PRIMARY KEY, order_id uuid REFERENCES orders (id));", in: h)
+        expectEqual(order()?.onDelete, nil, "no ON DELETE said: none")
+        try paste("CREATE TABLE payments (id uuid PRIMARY KEY, order_id uuid REFERENCES orders (id) ON DELETE CASCADE);", in: h)
+        try paste("CREATE TABLE payments (id uuid PRIMARY KEY, order_id uuid);", in: h)
+        expectEqual(order()?.onDelete, "cascade", "a column pasted without a key keeps its key, and so its action")
     },
     test("a locked table is no match for a paste that writes it: a new one is made beside, never a refusal") {
         let refusals = RefusalLog()

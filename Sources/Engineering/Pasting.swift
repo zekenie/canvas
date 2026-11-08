@@ -9,8 +9,8 @@ import Draw
 extension PluginRegistrar {
     /// ⌘V of SQL ("Paste SQL"): a text with `CREATE TABLE` or `AS ENUM`, or a `.sql` file, read when one table or enum reads.
     mutating func sqlPaste() {
-        pasteReader(SQLPaste.name, sniff: { SQLPaste.sniffs($0) }, read: { content, editor in
-            SQLPaste.read(content, in: editor, keys: SQLPaste.foreignKeys)
+        pasteReader(SQLPaste.name, sniff: { SQLPaste.sniffs($0) }, read: { content, _ in
+            SQLPaste.read(content, keys: SQLPaste.foreignKeys)
         })
     }
 }
@@ -21,10 +21,9 @@ extension SQLPaste {
         KeyChannel(attributes: [ChannelProperty.key.rawValue: ForeignKey.id.rawValue], type: ForeignKey.id.rawValue)
     }
 
-    /// What ⌘V of `text` puts down at `site`, Draw to put it down (`Draw.put`): its tables and enums by their titles, in rows of
-    /// four, each table's keys the edges it implies; nil when no table and no enum reads.
-    @MainActor
-    public static func program(of text: String, at site: PutSite, in editor: CanvasEditor) -> DrawPut? {
-        program(of: text, at: site, in: editor, keys: foreignKeys)
+    /// What ⌘V of `text` puts down, Draw to put it down (`Draw.put`): its tables and enums by their titles, in rows of four, each
+    /// table's keys the edges it implies; nil when no table and no enum reads.
+    public static func program(of text: String) -> DrawPut? {
+        program(of: text, keys: foreignKeys)
     }
 }
