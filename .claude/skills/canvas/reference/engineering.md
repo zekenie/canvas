@@ -40,6 +40,8 @@ The channel is the one the columns take, so `channel: foreign-key` can be writte
 edge "orders".custmer_id -> "customers".id
 ```
 
+**A key to a table on another board** goes through a reference to that table, as any edge to a shape on another board does: the run puts the reference beside the column's table (or uses the one the board has for that table there), and the arrow names the column on the reference, so the key is read as the column's (`:edge-to`, the column's line `→ customers.id`, deleting customers.id deleting it). Name the far row as a near one is named, `edge "statements".customer_id -> "customers".id`, and a line's `→ customers.id` the same way. Drawn again it is `unchanged`, and `delete edge` with its rows finds it through the reference. Moving a table to another board keeps its keys the same way.
+
 `delete edge` takes keys between two tables: named whole, every one between them; with a row at an end, only those bound to it there, so of two keys from orders to customers one goes and the other stays. None there is `nothing_to_delete`.
 
 ```draw

@@ -165,20 +165,31 @@ public final class ConnectPicker {
     }
 
     /// Whether the rows of a shape may be listed though the shape isn't a pick: one of the board shown, which the source may be joined to
-    /// (the source's own rows too: a column keyed to another of its table's).
+    /// (the source's own rows too: a column keyed to another of its table's), or one on another board a pill can reach (a row there is
+    /// reached through a pill for its shape, or its own: `editor.connect`).
     private func reachesRows(of id: ShapeID) -> Bool {
-        editor.document[id] != nil && context?.mayConnect(source, id) != false
+        if editor.document[id] != nil { return context?.mayConnect(source, id) != false }
+        return farReaches(id)
     }
 
-    /// Whether the list offers a row: one of a shape on the board shown (a row elsewhere is no end until pills stand for rows),
-    /// not the source's own, that the source's kind admits, of a shape it may be joined to.
+    /// Whether the list offers a row: one of a shape on the board shown, or on another board a pill can reach; not the source's own,
+    /// that the source's kind admits, of a shape it may be joined to.
     private func admits(part address: PartAddress) -> Bool {
         if let known = admittedParts[address] { return known }
-        let admitted = editor.document[address.shape] != nil && address != sourceEnd.address
-            && context?.mayConnect(source, address.shape) != false
+        let here = editor.document[address.shape] != nil
+        let admitted = (here ? context?.mayConnect(source, address.shape) != false : farReaches(address.shape)) && address != sourceEnd.address
             && editor.connectPicksAdmit(from: sourceEnd, to: ConnectEnd(address))
         admittedParts[address] = admitted
         return admitted
+    }
+
+    /// Whether a shape on another board can be reached through a pill (as it is, or once a pick makes it what the pill needs).
+    private func farReaches(_ id: ShapeID) -> Bool {
+        if let known = admitted[id] { return known != .cannot }
+        switch verdicts?.verdict(of: id) {
+        case .reads?, .fulfils?: return true
+        default: return false
+        }
     }
 
     // MARK: The rows

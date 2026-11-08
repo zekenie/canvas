@@ -114,6 +114,19 @@ private let shop = #"""
         expectEqual(pills(editor, on: billing).count, 0, "undone with its pill")
         expectEqual(arrows(editor, on: billing).count, 0)
     },
+    test("⌘L's picker from a row lists the columns of a table on another board, and a pick of one reaches it through the table's pill") {
+        let (editor, billing) = try shopEditor()
+        expect(editor.showBoard(billing))
+        let statements = try require(table(editor, "statements")), customers = try require(table(editor, "customers"))
+        let picker = try require(ConnectPicker(editor: editor, source: ConnectEnd(statements.id, part: column(editor, "statements", "customer_id"))))
+        picker.setQuery("customers id")
+        let row = try require(picker.list.rows.indices.first { picker.end(row: $0) == ConnectEnd(customers.id, part: column(editor, "customers", "id")) },
+                              "customers.id is listed: \(picker.list.rows.compactMap(\.item).map(\.title))")
+        let pick = try require(picker.pickEnd(row: row))
+        expect(editor.connect(picker.sourceEnd, to: pick, fulfil: true) != nil)
+        expectEqual(pills(editor, on: billing).count, 1)
+        expect(keys(editor).contains("statements.customer_id -> customers.id"), "\(keys(editor))")
+    },
     test("a pill for a table takes its rows' keys on its parts: no foreign-key dots, no side a key ends on, a named row through it taken") {
         let (editor, _) = try shopEditor()
         let registry = editor.registry, stands = [DatabaseTable.kind]

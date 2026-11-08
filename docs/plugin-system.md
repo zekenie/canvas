@@ -2389,6 +2389,15 @@ transaction.moveParts([PartAddress(orders, part: id): PartAddress(items, part: i
 registrar.partsMoved { moves, transaction in … }                  // a name of a row renamed where it went
 ```
 
+A binding may reach a row through a pill for its shape (a key to a column on another board: the pill, with the
+column on the binding). Both reach those too, on the pill's board and in the same step, through the one stand-in
+lookup a plugin gives the core (Topology's, `standIns(naming:)`):
+
+```swift
+registrar.standInLookup { editor, shape in editor.topology?.standIns(naming: shape) ?? [] }
+transaction.standIns(naming: table)      // [(id, board)]: each pill for the table, where it is
+```
+
 **Keys.** A key is an arrow bound to two rows, on the kit's channel. The kit declares the channel, gives
 a table's rows ports on it both ways, and keeps an index of each table's keys that its render reads:
 
@@ -7199,7 +7208,9 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 
 An arrow's end may bind a row (`ArrowBinding.part`, arrow version 3): drawn at the middle of the row's
 side facing the other end, unclipped, kept by an arrow moved alone, stepped a row by ↑ ↓ on its ⌥Tab
-part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`). Such an arrow
+part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`). A row named on a
+binding to a shape that lists no rows (a reference pill for the table, a key to a column on another board) is
+ignored by the geometry, the pill met whole, and kept for Topology. Such an arrow
 is a level curve, a cubic (Geometry's `Cubic`) leaving each end along the way out of its side, half the way
 ahead or a C behind, and entering a shape bound as a whole square to the side it meets, or at the entry its
 kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its middle exactly by itself. An
@@ -9339,9 +9350,15 @@ placed where they're wanted. The kind says so, and Topology does the rest; it kn
 ```swift
 x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
     .shapes(shape.props.stands)             // what its record names, on any board
+    // or .row(shape.props.shape, shape.props.row): one row of a shape (a pill for an endpoint)
     // or .provided(ForwardingKey(shape.props.question)): whatever is provided for that key
 }
 ```
+
+- **Rows.** A stand-in for a row (`.row`) stands for its shape, and an edge forwarded through it reaches that row
+  (`Edge.targetPart`), unless the edge names a part there itself: a key bound to a pill for a table with the column on
+  its binding reaches the column. So `edges(of: table, part: column)` counts keys through pills. `directPart(of:)` says
+  a stand-in's row; `makesRow:` beside `makes:` says how one is made for a row (`standIns.make(_:standingFor:row:label:)`).
 
 - **What it stands for** (`effective`, worked out from records alone): what the rule names, in
   order, each once (a name again is left out, the first kept), taking only shapes on a board the
@@ -11363,7 +11380,9 @@ Moving keeps the glue for its `Block` and the commit. Moving keeps the arrows th
 an arrow bound to a shape that moves to another board and one that stays goes where its start goes, with
 the start (ending at a reference pill for the shape that stays, landed beside the start where it lands)
 or staying (ending at a pill for the shape that moved, beside its start); a pill for the same shape the board
-has already is reused, and so is the shape itself where it is there. That is Draw's `CrossingArrows`
+has already is reused, and so is the shape itself where it is there. An end at a row keeps it, on the binding to
+the pill for its shape (a key to a column through its table's pill), or through a pill of the row's own for a row
+that stands alone. That is Draw's `CrossingArrows`
 (`init?(moving:from:to:by:label:in:)` plans from the editor, `rebind(in:)` writes before `Transaction.move` and
 `Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly; a pill
 that stays on the origin is put down by the in-or-out rule in `finish`, once the shapes have gone, so a container that
@@ -11864,8 +11883,9 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
                        fulfilling: { record, registry in registry.makePublic(&record) },
                        calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
                        makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) },
+                       makesRow: { props, target, label in … },   // a pill for a row: ReferenceTarget(id:label:row:)
                        seats: { props, seat, context in … }) { shape, _ in   // fitted to say where its shape is (ReferenceState.place(of:at:in:))
-        if let target = shape.props.target { return .shapes([target.id]) }
+        if let target = shape.props.target { return target.row.map { .row(target.id, $0) } ?? .shapes([target.id]) }
         if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
         return nil
     }
@@ -11884,7 +11904,12 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   title, so `canvas kinds` lists it with no edges. The mode is derived, never stored: a target makes it
   direct, words or a query make it dynamic, else it's empty. `ReferenceEdits` writes it: each of `pick`,
   `find(words:query:)` and `clear` keeps one mode and refits the width to what the pill now says. The
-  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member.
+  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member; v2's (`reference.v2.json`) a target's `row`.
+- **A pill for a row** (version 2: `ReferenceTarget.row`, absent for a shape as a whole): a row that stands alone (an
+  endpoint) gets a pill of its own, which stands for its shape at that row (`Forwarding.row`), shows the row's live
+  name and lead under its shape's place line (the shape last), is missing once the row is gone from a shape that is
+  there, and follows the row when it moves to another shape (`registrar.partsMoved`). A row that doesn't stand alone
+  (a column) is reached through a pill for its table, the column on the arrow's binding.
 - **Made by name.** `makes` is how `canvas draw` makes a direct reference (`registry.standIns.make`): the
   pill's own writer, `ReferenceEdits.pick`, with the shape's id and the name its title folds to, so it's
   fitted to its label as a picked one is. An edge to a public shape on another board puts one beside the
