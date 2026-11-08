@@ -46,7 +46,8 @@ struct RowCardDetails: View {
                     LabeledContent(line.label) {
                         Text(line.value.isEmpty ? RowPanelStyle.empty : line.value)
                             .foregroundStyle(line.value.isEmpty ? .tertiary : .primary)
-                            .multilineTextAlignment(.trailing)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                     }
                     .accessibilityElement(children: .combine)
