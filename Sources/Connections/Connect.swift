@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Canvas
 import ContextMenus
@@ -19,13 +20,25 @@ extension ConnectSection: MenuBarSection {
     public static var menu: MenuBarMenu { "Insert" }
 }
 
+/// Connect's key, ⌘L: the command's, and what a field that answers it before the menu bar (a row's line, which opens the picker on
+/// its row) reads, so one key has one meaning.
+public enum ConnectKey {
+    public static let chord = KeyChord("l", .command)
+
+    /// Whether a key event is the key: its letter, with ⌘ and nothing else held but caps lock.
+    @MainActor public static func isPressed(by event: NSEvent) -> Bool {
+        event.type == .keyDown && event.charactersIgnoringModifiers?.lowercased() == String(chord.key)
+            && event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command
+    }
+}
+
 extension PluginRegistrar {
     /// ⌘L, Connect: for two shapes, a connection from the one selected first to the other; for one, the picker of the shapes it
     /// can be connected to, Itself last (`ConnectPickerPlugin`), and, in a list without it, the loop (the drag from its dot back
     /// onto it, by keys), while something makes connections. Between presses: in a note's words it ends editing, its words
     /// kept, and opens the picker; a list without the picker keeps the key out of a shape being edited and mid-press.
     mutating func connectCommand() {
-        command(.connect, title: ConnectionsStyle.connect, in: ConnectSection.self, shortcut: KeyChord("l", .command), runs: .betweenPresses,
+        command(.connect, title: ConnectionsStyle.connect, in: ConnectSection.self, shortcut: ConnectKey.chord, runs: .betweenPresses,
                 isEnabled: { subject in
                     let editor = subject.editor
                     guard (1...2).contains(subject.shapes.count), editor.registry.drawsConnections else { return false }
@@ -35,6 +48,10 @@ extension PluginRegistrar {
                 }) { subject in
             let editor = subject.editor
             if subject.shapes.count == 1, let picker = editor.connectPicker {
+                // ⌘L in the picker's own field, opened on a shape or one of its rows: it stays as it is.
+                if picker.isOpen(on: subject.shapes[0]) { return }
+                // A row being edited has the picker on the row, as its key does.
+                if editor.editingShapeID == subject.shapes[0], picker.connectsEditedRow?(subject.shapes[0]) == true { return }
                 editor.endEditing()
                 picker.open(on: subject.shapes[0])
             } else {

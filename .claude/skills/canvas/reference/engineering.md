@@ -4,7 +4,7 @@ The engineering kit draws a database's tables the way an engineer sketches them:
 
 ## A table and its columns
 
-`columns:` takes the columns as lines in quotes, one a column, `\n` between them, each `name type [null] [unique] [default …] [pk]`: its name, its type as SQL writes it, then any of `null` (it may be null; a `?` after the type says it too), `unique`, `default` and the word after it, and `pk` (part of the primary key), in any order. Words a line can't place stay in the column as written (a `→ customers.id` typed in a line among them: a key is drawn as an edge, below), shown plain. A new table drawn with no `columns:` has one, `id uuid pk`.
+`columns:` takes the columns as lines in quotes, one a column, `\n` between them, each `name type [null] [unique] [default …] [pk] [→ table.column]`: its name, its type as SQL writes it, then any of `null` (it may be null; a `?` after the type says it too), `unique`, `default` and the word after it, `pk` (part of the primary key), and a key, `→` (or `->`) and the column it references (below), in any order. Words a line can't place stay in the column as written, shown plain. A new table drawn with no `columns:` has one, `id uuid pk`.
 
 ```draw
 table "customers" columns: "id uuid pk\nemail text unique\nname text\ncreated_at timestamptz default now()"
@@ -27,11 +27,23 @@ A key is an arrow from a column to the column it references, bound to both rows,
 edge "orders".customer_id -> "customers".id
 ```
 
+A column's line can say its key itself: `→ customers.id` draws the same edge, on the statement's line, and the column keeps no words of it. `→ customers` alone is its primary key, for a table already drawn (one the same script draws needs the column named). Writing the edge as well is the same key, drawn once; a line without `→` leaves the column's key alone; a line whose `→` goes elsewhere than the column's key re-aims it (the old key goes, the new one is drawn: a column has the one key its line says; an `edge` you write yourself stays).
+
+```draw
+table "orders" columns: "billing_id uuid → customers.id\nshipping_id uuid -> customers.id"
+```
+
 The channel is the one the columns take, so `channel: foreign-key` can be written or left out; only a table's columns take it (an enum, a database, a note or a subboard takes none). The column shows a link in its gutter, and the arrow leaves its row's side facing the other table. Drawn again, the same rows are the same key (`unchanged`); two other rows of the same tables are another key. A row the table doesn't have is `unknown_row`, with the ones like it:
 
 ```draw-error
 // reason: unknown_row
 edge "orders".custmer_id -> "customers".id
+```
+
+`delete edge` takes keys between two tables: named whole, every one between them; with a row at an end, only those bound to it there, so of two keys from orders to customers one goes and the other stays. None there is `nothing_to_delete`.
+
+```draw
+delete edge "orders".shipping_id -> "customers".id
 ```
 
 Deleting a table deletes its keys, either way; deleting a column deletes the keys at it. `delete "orders".placed_at` takes the column out:
@@ -84,7 +96,7 @@ table:edge-to("customers", foreign-key)
 ```
 
 ```query
-/* count: 1 */
+/* count: 2 */
 arrow[channel=foreign-key]
 ```
 

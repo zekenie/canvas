@@ -29,6 +29,9 @@ public final class LineRowsService {
     enum End { case first, last }
     /// The shape Tab or ⇧Tab hopped to, and the end it starts at.
     private var hopped: (id: ShapeID, end: End)?
+    /// A session whose row's line is printed again once the commit it waits for settles: ⌘L's pick, made as the picker closes
+    /// and the keyboard is back on the line.
+    weak var awaitingReprint: LineRowsView?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -74,6 +77,13 @@ public final class LineRowsService {
 }
 
 extension LineRowsService: EditorService {
+    /// A pick that a session's line waits for is in: the line printed again, with what it drew.
+    public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
+        guard let session = awaitingReprint else { return }
+        awaitingReprint = nil
+        session.reprint()
+    }
+
     /// Editing's end takes back what the session set and puts the light out.
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {
         if hopped?.id == id { hopped = nil }

@@ -1,17 +1,19 @@
 import Canvas
 import CanvasRPC
+import Connections
 import Draw
 import Foundation
 
 // `canvas draw`'s words for a table's columns and an enum's values: each takes text, a row a line in its grammar
 // (`columns: "id uuid pk\ncustomer_id uuid"`, `values: "pending\npaid"`), or the rows as JSON, and joins them onto what the
 // shape holds by name (a column) or text (a value), so a statement names only what it changes, the rows it leaves out
-// stay, and a script run again is `unchanged`. A column's type that names an enum of the file is bound to it. A key's `→`
-// is kept as words until keys land.
+// stay, and a script run again is `unchanged`. A column's type that names an enum of the file is bound to it. A line's key,
+// `→ customers.id`, is an edge the value implies (`implies`), drawn as `edge "orders".customer_id -> "customers".id channel:
+// foreign-key` on the statement's line, so the column keeps none of its words; a line without one leaves a key alone.
 
 /// What the writers say the text takes, which `canvas kinds` shows.
 enum RowsDraw {
-    static let columnLines = "lines (name type [null] [unique] [default …] [pk])"
+    static let columnLines = "lines (name type [null] [unique] [default …] [pk] [→ table.column])"
     static let valueLines = "lines (a value each)"
     static let reason = "invalid_value"
     /// What a name two shapes answer to is refused as (draw's own, for every name).
@@ -27,6 +29,9 @@ enum RowsDraw {
         switch value {
         case .string(let text):
             items = ColumnGrammar.read(lines: text).map { column in
+                var column = column
+                // A key is its arrow, the edge the line implies: its words are no column's.
+                if let key = ColumnGrammar.key(in: column.unread) { column.unread = key.rest }
                 var members = (try? JSONValue(encoding: column))?.objectValue ?? [:]
                 if members["default"] == nil { members["default"] = .null }
                 return members
@@ -56,6 +61,37 @@ enum RowsDraw {
             guard error.reason == ambiguousReason else { return nil }
             throw error
         }
+    }
+
+    /// The keys a script's lines say (`→ customers.id`), each the edge it implies from its column, on the `foreign-key` channel: to
+    /// the column named, or, for a table alone (`→ customers`), its primary key's (a table the script can't find is the edge's to
+    /// refuse). JSON items say none.
+    @MainActor
+    static func keys(written value: JSONValue, _ context: DrawTextContext) throws(DrawError) -> [DrawImpliedEdge] {
+        guard case .string(let text) = value else { return [] }
+        var edges: [DrawImpliedEdge] = []
+        for column in ColumnGrammar.read(lines: text) {
+            guard let key = ColumnGrammar.key(in: column.unread) else { continue }
+            var row = key.column
+            var held: DatabaseTable?
+            if row == nil {
+                do throws(DrawError) {
+                    let found = try context.shape(called: key.table, admitting: { $0.kind == DatabaseTable.kind ? nil : "which isn't a table" })
+                    held = context.service(KitNames.self)?.editor.shape(inFile: found.id)?.typed(as: DatabaseTable.self).map(\.props)
+                } catch {
+                    // Two tables of one name are refused, as any ambiguous name is; any other is a table the file doesn't have.
+                    if error.reason == ambiguousReason { throw error }
+                }
+                row = held.flatMap { ColumnLineGrammar.primaryKey(of: $0)?.name }
+            }
+            guard let row else {
+                let why = held == nil ? "and the file has no such table yet to take its primary key from" : "and it has no primary key"
+                throw DrawError("\(column.name)'s \(key.written) names no column of \(key.table), \(why)", reason: reason,
+                                hint: "write \(ColumnGrammar.arrow) \(ColumnGrammar.written(table: key.table, column: "id"))")
+            }
+            edges.append(DrawImpliedEdge(fromRow: column.name, to: key.table, toRow: row, attributes: [ChannelProperty.key.rawValue: ForeignKey.id.rawValue], replacesType: ForeignKey.id.rawValue))
+        }
+        return edges
     }
 
     /// The values a script wrote: its lines read, or its JSON items.
@@ -120,6 +156,8 @@ extension PluginRegistrar {
     mutating func rowsDraw() {
         drawValueWriter(for: "columns", describes: RowsDraw.columnLines, write: { value, context throws(DrawError) in
             try RowsDraw.columns(written: value, context)
+        }, implies: { value, context throws(DrawError) in
+            try RowsDraw.keys(written: value, context)
         }, merge: { written, held in
             RowsDraw.mergedColumns(written, onto: held)
         })

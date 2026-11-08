@@ -95,7 +95,7 @@ let columnCorpus = [
         let context = LineContext(editor: b.editor, shape: table)
         let grammar = try require(b.editor.registry.lineRows(of: DatabaseTable.kind))
         expectEqual(grammar.noun.plural, "columns")
-        let lost = TestColumnGrammar.grammar.losses(in: columnCorpus, unread: { $0.unread.split(separator: " ").map(String.init) }, in: context)
+        let lost = TestColumnGrammar.grammar.losses(in: columnCorpus, unread: { $0.column.unread.split(separator: " ").map(String.init) }, in: context)
         expect(lost.isEmpty, "lost: \(lost)")
         let values = TestColumnGrammar.values.losses(in: ["pending", "  paid  ", "refunded twice"], unread: { $0.text.split(separator: " ").map(String.init) }, in: context)
         expect(values.isEmpty, "lost: \(values)")
@@ -283,6 +283,6 @@ let columnCorpus = [
 /// The kit's grammars, as a test reaches them: through the registry's lineRows, a table's model reads its lines.
 @MainActor
 enum TestColumnGrammar {
-    static var grammar: any LineGrammar<Column> { EngineeringLines.columns }
+    static var grammar: any LineGrammar<ColumnLine> { EngineeringLines.columns }
     static var values: any LineGrammar<EnumValue> { EngineeringLines.values }
 }

@@ -20,6 +20,9 @@ public struct CanvasCard {
     public let view: NSView
     /// What gets the keyboard as it shows. Nil: the keyboard stays where it is.
     public let firstResponder: NSResponder?
+    /// What gets the keyboard back as it closes, if it had it: a line of the editing view that opened it (a row's, whose field
+    /// moves among its rows). Nil, or one no longer in the window: the editing view's first responder, else the canvas.
+    public let returnsKeyboardTo: NSResponder?
     /// The step its commits are, from show to close (`transact(coalescing: id)`). Nil: it holds none.
     public internal(set) var stepName: String?
     /// Shown inside a press (or any action): the step that action made stays open when it ends, as the
@@ -42,7 +45,7 @@ public struct CanvasCard {
     public let didClose: @MainActor (CanvasCardClosing) -> Void
 
     public init<ID: Hashable & Sendable>(id: ID, about shape: ShapeID? = nil, anchor: CGRect, view: NSView,
-                                         firstResponder: NSResponder? = nil, stepName: String? = nil,
+                                         firstResponder: NSResponder? = nil, returnsKeyboardTo: NSResponder? = nil, stepName: String? = nil,
                                          adoptsPress: Bool = false, showsZoomedOut: Bool = false, accessibilityLabel: String? = nil,
                                          size: @escaping @MainActor (CGSize) -> CGSize,
                                          didClose: @escaping @MainActor (CanvasCardClosing) -> Void = { _ in }) {
@@ -51,6 +54,7 @@ public struct CanvasCard {
         self.anchor = anchor
         self.view = view
         self.firstResponder = firstResponder
+        self.returnsKeyboardTo = returnsKeyboardTo
         self.stepName = stepName
         self.adoptsPress = adoptsPress
         self.showsZoomedOut = showsZoomedOut

@@ -52,6 +52,9 @@ public final class MentionState {
     /// match; the shapes it gives no name (the "Untitled …" placeholder) are in the catalog's side
     /// table, read only by `candidates(…listingUnnamed: true)`.
     @ObservationIgnored private var catalog = MentionCatalog()
+    /// The rows of the catalog's named shapes (`PartedShape`'s parts), read with their shapes' entries: what a list that asks for
+    /// rows ranks besides the shapes (`candidates(…listingParts:)`).
+    @ObservationIgnored private var partCatalog = MentionPartCatalog()
     /// The containment tree's names, for the path a query of several words is matched along and the place a
     /// list says for a shape (Boards' `ShapePaths`): read as a query or a list goes through a container,
     /// let go of by the commit that changes it.
@@ -389,9 +392,10 @@ public final class MentionState {
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owner: ShapeID?,
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             listingUnnamed: Bool = false,
-                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
+                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil,
+                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil) -> MentionCandidates {
         candidates(matching: query, in: scope, for: owner.map { [$0] } ?? [], kinds: kinds, among: among, listingUnnamed: listingUnnamed,
-                   admitting: rule)
+                   admitting: rule, listingParts: parts)
     }
 
     /// What the `@` picker lists for `query` in text of `scope`, for `owners`: the text's shape, which
@@ -443,10 +447,18 @@ public final class MentionState {
     /// the notes that fit a relationship row asks, since a note with nothing in it fits and is
     /// pickable; `@`, `/move-to` and the reference list do not, and nothing they cost moves. A shape
     /// handed in `among` is of the catalog, or an unnamed one.
+    ///
+    /// `listingParts`, if given, lists the rows of the shapes it would list too (`PartedShape`'s parts, a table's columns), those
+    /// the rule admits, as candidates of their own (`MentionCandidate.part`), for a typed query only: a row that stands alone (an
+    /// endpoint) by its name, in the name's band, and every row by its path, its shape's containers and the shape's own name
+    /// before its name, in the path's band (`orders cust`). The query's words split at a dot followed by a letter too
+    /// (`orders.cust`), for shapes as for rows. A row that doesn't stand alone is never matched by its name alone: a column is
+    /// listed under its table's name, so `id` doesn't list every table's.
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owners: [ShapeID],
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             listingUnnamed: Bool = false,
-                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil) -> MentionCandidates {
+                                            admitting rule: (@MainActor (ShapeID) -> Bool)? = nil,
+                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil) -> MentionCandidates {
         refreshStale()
         let document = editor.document, file = editor.file, registry = registry
         let admitsAll = S.self == AnyMentionable.self
@@ -545,7 +557,7 @@ public final class MentionState {
         var tierFound = 0
         // Words before the last may name the containers a shape is inside (`byPath`); a query of one word
         // is its name's alone, as ever.
-        let matcher = PathMatcher(query)
+        let matcher = PathMatcher(query, splittingDots: parts != nil)
         let byPath = matcher.pieceCount > 1
         /// A member's slot in the catalog, member for member (its entry may have gone since: nil).
         let memberSlots = members?.map { catalog.slot(of: $0) }
@@ -650,7 +662,7 @@ public final class MentionState {
             }
             ranked.sort { isWorse($1, $0) }
         }
-        var matches = ranked.prefix(MentionRanking.maxMatches).map { found in
+        func shapeCandidate(_ found: Found) -> MentionCandidate {
             let id = entries[found.slot].id
             let label = catalog.appearances[found.slot].label
             if found.band == .path {
@@ -660,6 +672,29 @@ public final class MentionState {
                 return candidate(id, matched: match?.matched.last ?? [], containersMatched: match.map { Array($0.matched.dropLast()) } ?? [])
             }
             return candidate(id, matched: FuzzyMatcher.match(q, in: FuzzyMatcher.Label(label))?.matched ?? [])
+        }
+        var matches: [MentionCandidate]
+        if let parts {
+            // The rows found, in among the shapes by band and score: a band's shapes and rows ranked together.
+            let rows = partMatches(q, matcher, listable: listable, admitting: parts, leavingOut: leavesOut ? leftOut : [])
+            var merged: [(band: MatchBand, score: Int, length: Int, make: () -> MentionCandidate)] = []
+            for found in ranked.prefix(MentionRanking.maxMatches) {
+                merged.append((found.band, found.score, entries[found.slot].labelLength, { shapeCandidate(found) }))
+            }
+            for row in rows {
+                merged.append((row.band, row.score, partCatalog.entries[row.slot].labelLength, { self.partCandidate(row.slot, band: row.band, q, matcher) }))
+            }
+            // Stable: within a band and score, the shorter name, then shapes before rows as each list had them.
+            let order = merged.indices.sorted { a, b in
+                let x = merged[a], y = merged[b]
+                if x.band != y.band { return x.band < y.band }
+                if x.score != y.score { return x.score > y.score }
+                if x.length != y.length { return x.length < y.length }
+                return a < b
+            }
+            matches = order.prefix(MentionRanking.maxMatches).map { merged[$0].make() }
+        } else {
+            matches = ranked.prefix(MentionRanking.maxMatches).map(shapeCandidate)
         }
         // The unnamed, by their placeholder label alone (one match a label), after the named. The typo's tier is
         // tried as the named are: only when the other tiers found fewer than `typoPassBelow` shapes, named and
@@ -681,6 +716,109 @@ public final class MentionState {
             }
         }
         return MentionCandidates(recent: [], nearby: [], matches: matches, forgave: forgave, words: matcher.pieceCount)
+    }
+
+    /// The rows a typed query finds (`candidates(…listingParts:)`), best first, as many as a list shows: a row that stands alone by
+    /// its name, in the name's band; every row by its path (its shape's containers, then the shape's own name, then its name; at
+    /// least one word placed before its name), in the path's band. Only the rows of shapes the list would list (`listable`), but
+    /// those left out, and that `rule` admits. Two linear passes over the rows' keys, and a path row a shape.
+    private func partMatches(_ q: FuzzyMatcher.Query, _ matcher: PathMatcher, listable: (ShapeID) -> Bool, admitting rule: (PartAddress) -> Bool,
+                             leavingOut leftOut: Set<ShapeID>) -> [(slot: Int, score: Int, band: MatchBand)] {
+        let rows = partCatalog.entries
+        guard !rows.isEmpty else { return [] }
+        var shapeListed: [ShapeID: Bool] = [:]
+        func admits(_ slot: Int) -> Bool {
+            let entry = rows[slot]
+            if leftOut.contains(entry.shape) { return false }
+            let listed: Bool
+            if let known = shapeListed[entry.shape] {
+                listed = known
+            } else {
+                listed = catalog.contains(entry.shape) && listable(entry.shape)
+                shapeListed[entry.shape] = listed
+            }
+            return listed && rule(PartAddress(entry.shape, part: entry.part.id))
+        }
+        var found: [Int: (score: Int, band: MatchBand)] = [:]
+        // Those that stand alone, by their names.
+        if rows.contains(where: \.part.standsAlone) {
+            q.withView { view in
+                partCatalog.keys.withUnsafeBufferPointer { keys in
+                    _ = FuzzyMatcher.ranking(view, count: rows.count, wantSpans: false, label: { slot in
+                        let entry = rows[slot]
+                        guard entry.part.standsAlone, admits(slot) else { return nil }
+                        return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
+                    }) { slot, score, _ in found[slot] = (score, .name) }
+                }
+            }
+        }
+        // Every row by its path: the last word in its name, the words before along its shape's path, through the shape's own name.
+        if matcher.pieceCount > 1 {
+            var named: [Int] = []
+            FuzzyMatcher.Query(matcher.pieces[matcher.pieceCount - 1]).withView { view in
+                partCatalog.keys.withUnsafeBufferPointer { keys in
+                    _ = FuzzyMatcher.ranking(view, count: rows.count, wantSpans: false, label: { slot in
+                        guard admits(slot) else { return nil }
+                        let entry = rows[slot]
+                        return UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count])
+                    }) { slot, _, _ in named.append(slot) }
+                }
+            }
+            var chains: [ShapeID: PathMatcher.Row] = [:]
+            let root = matcher.rootRow
+            var last: (shape: ShapeID, row: PathMatcher.Row, isUsable: Bool)?
+            for slot in named {
+                let entry = rows[slot]
+                if last?.shape != entry.shape {
+                    let row = paths.row(after: entry.shape, matcher, root: root, memo: &chains)
+                    last = (entry.shape, row, row.best.dropFirst().contains { $0 != PathMatcher.Row.unreachable })
+                }
+                guard let known = last, known.isUsable else { continue }
+                let score = partCatalog.keys.withUnsafeBufferPointer { keys in
+                    matcher.leafScore(after: known.row, keys: UnsafeBufferPointer(rebasing: keys[entry.start..<entry.start + entry.count]), placingAtLeast: 1)
+                }
+                guard let score, found[slot] == nil else { continue }
+                found[slot] = (score, .path)
+            }
+        }
+        let ranked = found.map { (slot: $0.key, score: $0.value.score, band: $0.value.band) }.sorted { a, b in
+            if a.band != b.band { return a.band < b.band }
+            if a.score != b.score { return a.score > b.score }
+            if rows[a.slot].labelLength != rows[b.slot].labelLength { return rows[a.slot].labelLength < rows[b.slot].labelLength }
+            return a.slot < b.slot
+        }
+        return Array(ranked.prefix(MentionRanking.maxMatches))
+    }
+
+    /// A row as a list shows it (`MentionCandidate.part`): its name, its lead's symbol (else its shape's), its kind word, and where it is,
+    /// its shape's place and then the shape's own name; the characters a path's words took in each.
+    private func partCandidate(_ slot: Int, band: MatchBand, _ q: FuzzyMatcher.Query, _ matcher: PathMatcher) -> MentionCandidate {
+        let entry = partCatalog.entries[slot]
+        let shape = catalog.anyAppearance(of: entry.shape)
+        let symbol: String = if case .symbol(let name) = entry.part.lead { name } else { shape?.systemImage ?? "" }
+        let appearance = MentionAppearance(label: entry.part.name, systemImage: symbol, kindName: entry.part.kindWord, detail: entry.part.kindWord,
+                                           tint: shape?.tint)
+        var matched: [Range<Int>] = [], along: [[Range<Int>]] = []
+        let owner = paths.node(entry.shape).name
+        if band == .path {
+            let names = paths.containers(of: entry.shape).map { paths.node($0).name.title ?? "" } + [owner.title ?? shape?.label ?? "", entry.part.name]
+            if let match = matcher.match(path: names, placingAtLeast: 1) {
+                matched = match.matched.last ?? []
+                along = Array(match.matched.dropLast())
+            }
+        } else {
+            matched = FuzzyMatcher.match(q, in: FuzzyMatcher.Label(entry.part.name))?.matched ?? []
+        }
+        let containers = containersShown(of: entry.shape) + [(owner, paths.containers(of: entry.shape).count)]
+        let place = MentionPlace(names: containers.map(\.name), matched: containers.map { along.indices.contains($0.index) ? along[$0.index] : [] })
+        return MentionCandidate(id: entry.shape, appearance: appearance, isReadOnly: isReadOnly(entry.shape), matched: matched, place: place,
+                                part: entry.part)
+    }
+
+    /// The rows the catalog holds of a shape, in its order (tests: the catalog's upkeep).
+    public func listedParts(of shape: ShapeID) -> [PartName] {
+        refreshStale()
+        return partCatalog.rows(of: shape).map(\.part)
     }
 
     /// The shapes in the catalog on the board shown nearest `origin` that can be listed, up to
@@ -892,6 +1030,7 @@ public final class MentionState {
     /// (`editor.showableBoards`).
     private func readCatalog() {
         catalog = MentionCatalog()
+        partCatalog = MentionPartCatalog()
         paths.forgetAll()
         memberSets = [:]
         stale = []
@@ -934,6 +1073,8 @@ public final class MentionState {
         entriesRead += 1
         #endif
         catalog.set(record.id, appearance, on: board, recentRank: recent.firstIndex(of: record.id) ?? -1)
+        // Its rows with it: read again only where their names changed.
+        partCatalog.set(record.id, parts: registry.parts(of: record) ?? [])
         for members in memberSets.values { members.set(record.id, admitted: members.admits(record, registry)) }
     }
 
@@ -941,6 +1082,7 @@ public final class MentionState {
     private func removeEntry(_ id: ShapeID) {
         catalog.removeUnnamed(id)
         catalog.remove(id)
+        partCatalog.remove(id)
         for members in memberSets.values { members.remove(id) }
     }
 
@@ -1068,16 +1210,24 @@ public struct MentionCandidate: Hashable, Sendable {
     public let appearance: MentionAppearance
     public let isReadOnly: Bool
     public let matched: [Range<Int>]
-    /// Where the shape is, from the board shown (`MentionState.place(ofShape:)`): nil on the board shown, in no container.
+    /// Where the shape is, from the board shown (`MentionState.place(ofShape:)`): nil on the board shown, in no container. For a
+    /// row, the place of its shape and the shape's own name.
     public let place: MentionPlace?
+    /// The row of the shape it is, for a list that asks for rows (`candidates(…listingParts:)`): its `appearance` is the row's
+    /// (its name, its kind word); nil for the shape as a whole.
+    public let part: PartName?
 
-    public init(id: ShapeID, appearance: MentionAppearance, isReadOnly: Bool, matched: [Range<Int>], place: MentionPlace? = nil) {
+    public init(id: ShapeID, appearance: MentionAppearance, isReadOnly: Bool, matched: [Range<Int>], place: MentionPlace? = nil, part: PartName? = nil) {
         self.id = id
         self.appearance = appearance
         self.isReadOnly = isReadOnly
         self.matched = matched
         self.place = place
+        self.part = part
     }
+
+    /// What it is: its shape, and its row if it is one.
+    public var address: PartAddress { PartAddress(id, part: part?.id) }
 }
 
 /// What the picker lists: for an empty query, recent picks and nearby shapes; for any other, the

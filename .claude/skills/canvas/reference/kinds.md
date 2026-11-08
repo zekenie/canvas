@@ -145,7 +145,7 @@ Called Table, placed by the Table tool
 
 | attribute | takes |
 |---|---|
-| `columns` | lines (name type [null] [unique] [default …] [pk]) or JSON [{default, id, name, nullable, onDelete, onUpdate, primaryKey, type, unique, unread}] |
+| `columns` | lines (name type [null] [unique] [default …] [pk] [→ table.column]) or JSON [{default, id, name, nullable, onDelete, onUpdate, primaryKey, type, unique, unread}] |
 | `locked` | true\|false |
 | `private` | true\|false |
 

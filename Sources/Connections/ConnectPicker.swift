@@ -14,6 +14,10 @@ import Topology
 // another board (a pill has the ports of what it stands for); a pick the source's kind does not admit (`ConnectPicks`), a shape the
 // source holds or is held by (`mayConnect`) and one that cannot be reached (`FarVerdict.cannot`) are left out. Asked once a commit,
 // not once a shape a keystroke.
+//
+// Opened on a row (one being edited, ⌘L), it lists the rows of the shapes it lists too, as Mentions' catalog has them
+// (`listingParts`): a row by its path, its shape's name before its own (`orders cust`, `orders.cust`), those on the board shown
+// that the source's kind admits; a pick is then that row, or a shape, which the kind makes a row of (a table's primary key).
 
 @MainActor
 public final class ConnectPicker {
@@ -27,6 +31,10 @@ public final class ConnectPicker {
     private let editor: CanvasEditor
     /// The shape the picker was opened on.
     public let source: ShapeID
+    /// The row of it the picker was opened on (one being edited), nil for the shape as a whole.
+    public let sourcePart: PartID?
+    /// The shape or row the picker was opened on.
+    public var sourceEnd: ConnectEnd { ConnectEnd(source, part: sourcePart) }
     /// The kinds of shape it lists.
     public let kinds: Set<ShapeKind>
     /// Whether the connector can join the source to itself: Itself is listed.
@@ -43,11 +51,12 @@ public final class ConnectPicker {
     private var verdicts: FarVerdicts?
     private var context: ShapeContext?
     private var admitted: [ShapeID: FarVerdict?] = [:]
+    private var admittedParts: [PartAddress: Bool] = [:]
 
     /// What the connector can join `source` to: the kinds of shape, and whether itself. Nil where there is nothing to pick for it:
     /// nothing makes connections, or it ends nowhere (a pill that stands for nothing), or it joins no kind of shape and not itself. A kind with ports only on its rows (a table's keys) has none on its sides: it joins
     /// the other kinds with none, as it did before it had any.
-    static func reach(of source: ShapeID, in editor: CanvasEditor) -> (kinds: Set<ShapeKind>, loops: Bool)? {
+    static func reach(of source: ShapeID, part: PartID? = nil, in editor: CanvasEditor) -> (kinds: Set<ShapeKind>, loops: Bool)? {
         guard editor.registry.drawsConnections, let record = editor.document[source], let ports = editor.service(PortState.self),
               editor.registry.canConnect(source, in: editor.shapeContext), let standing = ports.standingKinds(of: record) else { return nil }
         let registry = editor.registry
@@ -59,15 +68,25 @@ public final class ConnectPicker {
         }
         let kinds = Set(registry.kinds.filter { $0 != connector && !standIns.contains($0) && joins($0) })
         // The connector can join it to itself where it can join its kind to its kind, and the kind admits it.
-        let loops = joins(record.kind) && editor.connectPicksAdmit(from: source, to: source)
+        let loops = joins(record.kind) && editor.connectPicksAdmit(from: ConnectEnd(source, part: part), to: ConnectEnd(source))
         return kinds.isEmpty && !loops ? nil : (kinds, loops)
     }
 
     /// A picker for `source`, a shape of the board shown; nil where there is nothing to pick for it (`reach`).
-    public init?(editor: CanvasEditor, source: ShapeID) {
-        guard let reach = Self.reach(of: source, in: editor) else { return nil }
+    public convenience init?(editor: CanvasEditor, source: ShapeID) {
+        self.init(editor: editor, source: ConnectEnd(source))
+    }
+
+    /// A picker for `source`, a shape of the board shown or a row of one; nil where there is nothing to pick for it (`reach`), or
+    /// the row isn't one of the shape's.
+    public init?(editor: CanvasEditor, source: ConnectEnd) {
+        if let part = source.part {
+            guard let record = editor.document[source.shape], editor.registry.parts(of: record)?.contains(where: { $0.id == part }) == true else { return nil }
+        }
+        guard let reach = Self.reach(of: source.shape, part: source.part, in: editor) else { return nil }
         self.editor = editor
-        self.source = source
+        self.source = source.shape
+        sourcePart = source.part
         kinds = reach.kinds
         canLoop = reach.loops
         setQuery("")
@@ -85,9 +104,9 @@ public final class ConnectPicker {
     }
 
     private func relist(_ text: String, keepingHighlight: Bool) {
-        let held = keepingHighlight ? list.highlighted.flatMap { target(row: $0) } : nil
+        let held = keepingHighlight ? list.highlighted.flatMap { end(row: $0) } : nil
         listFor(text)
-        if let held, let row = rows.indices.first(where: { target(row: $0) == held }) { list.highlight(row: row) }
+        if let held, let row = rows.indices.first(where: { end(row: $0) == held }) { list.highlight(row: row) }
     }
 
     private func listFor(_ text: String) {
@@ -99,13 +118,15 @@ public final class ConnectPicker {
             return
         }
         let source = source
-        let found = mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true) { [self] id in
-            admits(id)
-        }
-        let choices = mentions.choicesNamingBoardShown(found.all)
+        let found = sourcePart == nil
+            ? mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true) { [self] id in admits(id) }
+            : mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true,
+                                  admitting: { [self] id in admits(id) || reachesRows(of: id) }, listingParts: { [self] address in admits(part: address) })
+        // A shape listed for its rows alone (a table with no primary key, whose columns can be picked and which can't as a whole) is no row.
+        let choices = mentions.choicesNamingBoardShown(found.all.filter { $0.part != nil || admits($0.id) })
         let typed = text.contains { !$0.isWhitespace }
         var rows: [Row] = choices.map { choice in
-            if case .fulfils(let needs)? = admitted[choice.candidate.id] { .shape(choice, needs: needs) } else { .shape(choice, needs: nil) }
+            if choice.candidate.part == nil, case .fulfils(let needs)? = admitted[choice.candidate.id] { .shape(choice, needs: needs) } else { .shape(choice, needs: nil) }
         }
         // Itself is last while anything is listed, or nothing is typed: a typed word that finds nothing leaves the list empty, so a
         // Return on it makes no loop.
@@ -123,6 +144,7 @@ public final class ConnectPicker {
         verdicts = FarVerdicts(editor)
         context = editor.shapeContext
         admitted = [:]
+        admittedParts = [:]
     }
 
     /// Whether the list offers a shape: not the source, a pick its kind admits, not one the source holds or is held by, and one that
@@ -131,7 +153,7 @@ public final class ConnectPicker {
         if id == source { return false }
         if let known = admitted[id] { return known != .cannot }
         var verdict: FarVerdict = .cannot
-        if editor.connectPicksAdmit(from: source, to: id) {
+        if editor.connectPicksAdmit(from: sourceEnd, to: ConnectEnd(id)) {
             if editor.document[id] != nil {
                 verdict = context?.mayConnect(source, id) == false ? .cannot : .here
             } else if let verdicts {
@@ -140,6 +162,23 @@ public final class ConnectPicker {
         }
         admitted[id] = verdict
         return verdict != .cannot
+    }
+
+    /// Whether the rows of a shape may be listed though the shape isn't a pick: one of the board shown, which the source may be joined to
+    /// (the source's own rows too: a column keyed to another of its table's).
+    private func reachesRows(of id: ShapeID) -> Bool {
+        editor.document[id] != nil && context?.mayConnect(source, id) != false
+    }
+
+    /// Whether the list offers a row: one of a shape on the board shown (a row elsewhere is no end until pills stand for rows),
+    /// not the source's own, that the source's kind admits, of a shape it may be joined to.
+    private func admits(part address: PartAddress) -> Bool {
+        if let known = admittedParts[address] { return known }
+        let admitted = editor.document[address.shape] != nil && address != sourceEnd.address
+            && context?.mayConnect(source, address.shape) != false
+            && editor.connectPicksAdmit(from: sourceEnd, to: ConnectEnd(address))
+        admittedParts[address] = admitted
+        return admitted
     }
 
     // MARK: The rows
@@ -170,19 +209,26 @@ public final class ConnectPicker {
     }
 
     /// The shape a row picks: nil for a row that is no pick. Itself is the source.
-    public func target(row index: Int) -> ShapeID? {
+    public func target(row index: Int) -> ShapeID? { end(row: index)?.shape }
+
+    /// The shape, or the row of one, a row picks: nil for a row that is no pick. Itself is the source's shape as a whole.
+    public func end(row index: Int) -> ConnectEnd? {
         guard rows.indices.contains(index) else { return nil }
         switch rows[index] {
-        case .shape(let choice, _): return choice.candidate.id
-        case .itself: return source
+        case .shape(let choice, _): return ConnectEnd(choice.candidate.address)
+        case .itself: return ConnectEnd(source)
         case .empty: return nil
         }
     }
 
     /// Pressed on a row: the shape, and that it counts among the recent picks (a pick of Itself counts for none).
-    public func pick(row index: Int) -> ShapeID? {
-        guard let target = target(row: index) else { return nil }
-        if target != source { editor.mentions?.didPick(target) }
+    public func pick(row index: Int) -> ShapeID? { pickEnd(row: index)?.shape }
+
+    /// Pressed on a row: the shape or row it picks, and that its shape counts among the recent picks (a pick of Itself counts for
+    /// none).
+    public func pickEnd(row index: Int) -> ConnectEnd? {
+        guard let target = end(row: index) else { return nil }
+        if target.shape != source { editor.mentions?.didPick(target.shape) }
         return target
     }
 }

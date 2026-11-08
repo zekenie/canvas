@@ -12,12 +12,15 @@ import Chrome
 final class CardView: NSView {
     let cardID: AnyHashable
     let content: NSView
+    /// What gets the keyboard back as it closes (`CanvasCard.returnsKeyboardTo`).
+    let returnsKeyboardTo: NSResponder?
     /// Clips the content to the bubble's rounded corners.
     private let clip = NSView()
 
     init(_ card: CanvasCard) {
         cardID = card.id
         content = card.view
+        returnsKeyboardTo = card.returnsKeyboardTo
         super.init(frame: .zero)
         clip.wantsLayer = true
         clip.layer?.cornerRadius = CardStyle.cornerRadius

@@ -22,7 +22,8 @@ public struct ConnectEnd: Hashable, Sendable {
     public var address: PartAddress { PartAddress(shape, part: part) }
 }
 
-/// A pick asked of `ConnectPicks`: the shape the picker was opened on, and the shape picked (the same shape, for Itself).
+/// A pick asked of `ConnectPicks`: the shape the picker was opened on, or its row (a row being edited, ⌘L), and the shape or row
+/// picked (the same shape, for Itself).
 public struct ConnectPick: Sendable {
     public var from: ConnectEnd
     public var to: ConnectEnd
@@ -94,9 +95,9 @@ extension PluginRegistrar {
 extension CanvasEditor {
     /// What the kind of `source` means by a pick of `target` in the picker: its contribution's plan, else a plain connection.
     /// `.refused` where the kind's own rule gives no plan.
-    func connectPlan(from source: ShapeID, to target: ShapeID) -> ConnectPlanning {
-        let pick = ConnectPick(from: ConnectEnd(source), to: ConnectEnd(target))
-        guard let kind = document[source]?.kind, let contribution = registry.contributions(to: ConnectPicks.self, for: kind).first else {
+    func connectPlan(from source: ConnectEnd, to target: ConnectEnd) -> ConnectPlanning {
+        let pick = ConnectPick(from: source, to: target)
+        guard let kind = document[source.shape]?.kind, let contribution = registry.contributions(to: ConnectPicks.self, for: kind).first else {
             return .plan(ConnectPlan(from: pick.from, to: pick.to))
         }
         guard contribution.admits(pick, self), let plan = contribution.plan(pick, self) else { return .refused }
@@ -104,9 +105,9 @@ extension CanvasEditor {
     }
 
     /// Whether the picker offers a pick of `target` from `source`.
-    func connectPicksAdmit(from source: ShapeID, to target: ShapeID) -> Bool {
-        guard let kind = document[source]?.kind, let contribution = registry.contributions(to: ConnectPicks.self, for: kind).first else { return true }
-        return contribution.admits(ConnectPick(from: ConnectEnd(source), to: ConnectEnd(target)), self)
+    func connectPicksAdmit(from source: ConnectEnd, to target: ConnectEnd) -> Bool {
+        guard let kind = document[source.shape]?.kind, let contribution = registry.contributions(to: ConnectPicks.self, for: kind).first else { return true }
+        return contribution.admits(ConnectPick(from: source, to: target), self)
     }
 }
 

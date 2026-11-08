@@ -79,7 +79,7 @@ extension Drawing {
             }
             // The ends a `delete edge` wrote as ids, as written: a row calls such an end so, and says which shape it was.
             var writtenIDs: [ShapeID: String] = [:]
-            if case .delete(.edges(let from, let to, _, _)) = delete.statement.body {
+            if case .delete(.edges(let from, let to, _, _, _, _)) = delete.statement.body {
                 for name in [from, to] { if case .id(let text) = name, let uuid = UUID(uuidString: text) { writtenIDs[ShapeID(uuid)] = name.written } }
             }
             for connection in delete.connections {

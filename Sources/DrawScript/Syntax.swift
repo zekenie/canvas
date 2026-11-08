@@ -268,8 +268,10 @@ public enum DeleteStatement: Sendable, Equatable {
     case row(ShapeName, row: String)
     /// The connections from one shape to another; either way round for `<->`. `attributes` are the
     /// keys that tell two connections of one pair apart (`delete edge "A" -> "B" is: "T"`), as
-    /// written, for the caller to check: the language knows no kind.
-    case edges(from: ShapeName, to: ShapeName, eitherWay: Bool, attributes: [Attribute] = [])
+    /// written, for the caller to check: the language knows no kind. A row at an end
+    /// (`delete edge "orders".shipping_customer_id -> "customers".id`) narrows them to those bound to it there; an end with
+    /// none takes them at any row.
+    case edges(from: ShapeName, to: ShapeName, eitherWay: Bool, attributes: [Attribute] = [], fromRow: String? = nil, toRow: String? = nil)
 }
 
 /// `group "A" and "B" { and "C" }` (two or more shapes) or `ungroup "A" { and "B" }` (one or more): the shapes a statement

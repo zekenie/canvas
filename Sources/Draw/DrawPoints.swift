@@ -440,6 +440,35 @@ public struct DrawValueWriting {
     let describes: String?
     let write: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue
     let merge: @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue
+    /// The edges the value as written implies, from the shape its statement draws (a column's line's `→ customers.id`: a key);
+    /// nil for a writer whose values imply none.
+    let edges: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge]
+    /// Whether its values imply edges at all (`edges` answers none otherwise).
+    let impliesEdges: Bool
+}
+
+/// An edge a value implies (`DrawValueWriting.edges`): from the shape whose statement writes the value, at the row `fromRow`
+/// (nil: the shape as a whole), to the shape called `to` (a title, found as an edge's end is), at its row `toRow`, with the edge
+/// maker's attributes (`channel: foreign-key`). The run draws it as `edge "orders".customer_id -> "customers".id channel:
+/// foreign-key` on the statement's line: an edge the script writes itself between the same rows is the same edge, drawn once,
+/// and one the board has already is `unchanged`, so a value written again draws nothing new; a value that implies none leaves
+/// the shape's edges alone.
+public struct DrawImpliedEdge: Hashable, Sendable {
+    public var fromRow: String?
+    public var to: String
+    public var toRow: String?
+    public var attributes: [String: String]
+    /// The type of edge the row has only one of, if it has: the edges of this type the board has from the row to anywhere else are
+    /// this edge before it's re-aimed, and the run deletes them, as a line typed in the app re-aims the key its column had.
+    public var replacesType: String?
+
+    public init(fromRow: String?, to: String, toRow: String?, attributes: [String: String] = [:], replacesType: String? = nil) {
+        self.fromRow = fromRow
+        self.to = to
+        self.toRow = toRow
+        self.attributes = attributes
+        self.replacesType = replacesType
+    }
 }
 
 /// What writes a property's values in `canvas draw`: at most one plugin for each property key.
@@ -531,12 +560,22 @@ extension PluginRegistrar {
         drawValueWriter(for: key, describes: describes, write: write) { written, held, _ in merge(written, held) }
     }
 
+    /// The same for a writer whose values imply edges (`DrawImpliedEdge`): `implies` gives the edges the value as written implies,
+    /// from the shape its statement draws, which the run draws with the script's own.
+    public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
+                                         write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue,
+                                         implies: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge],
+                                         merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
+        contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: { written, held, _ in merge(written, held) },
+                                    edges: implies, impliesEdges: true), to: DrawValueWriters.self)
+    }
+
     /// The same, `merge` handed the registry too, for a join that goes by what other plugins say (Types keeps every
     /// directive plugins hold in a schema, `registry.heldDirectives`).
     public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue = { value, _ in value },
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?, _ registry: Registry) -> JSONValue) {
-        contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: merge), to: DrawValueWriters.self)
+        contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: merge, edges: { _, _ in [] }, impliesEdges: false), to: DrawValueWriters.self)
     }
 
     /// Names shapes for `canvas draw`: `name` is what a shape is called (folded, as `fold` folds a

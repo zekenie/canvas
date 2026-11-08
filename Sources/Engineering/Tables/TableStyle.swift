@@ -30,6 +30,14 @@ enum TableStyle {
     static let deleteColumnStep = "Delete Column"
     static let deleteColumnsStep = "Delete Columns"
     static let moveColumnStep = "Move Column"
+    /// A line's `→` the only change: a key made, re-aimed, or taken out.
+    static let addKeyStep = "Add Key"
+    static let changeKeyStep = "Change Key"
+    static let deleteKeyStep = "Delete Key"
+    /// ⌘L on a table, a table picked: the key column made and its key drawn.
+    static let addKeyColumnStep = "Add Key Column"
+    /// How faint a key's target's pill is behind it in a line.
+    static let keyPillFill: CGFloat = 0.14
 
     /// The gutter's marks: a primary key's key, in the frames' gold made to read on the paper (it measured 2.9), and a
     /// unique column's "1" in a rounded square, in the types' grey.

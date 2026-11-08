@@ -38,6 +38,6 @@ import Titles
         let h = try kitHarness(on: false)
         let hints = { @MainActor (on: Set<KitID>) in h.editor.registry.keyboardHelp(kitsOn: on).filter { "\($0)".contains("in a Row") } }
         expect(hints([]).isEmpty, "off: \(hints([]))")
-        expectEqual(hints([EngineeringKit.id]).count, 4)
+        expectEqual(hints([EngineeringKit.id]).count, 5)
     },
 ])

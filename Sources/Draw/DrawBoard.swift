@@ -582,7 +582,7 @@ extension Drawing {
                 claimPlace(edge.container, edge.clauses, statement)
             case .delete(.shape(let name)), .delete(.row(let name, _)):
                 book.claim(name, statement)
-            case .delete(.edges(let from, let to, let eitherWay, _)):
+            case .delete(.edges(let from, let to, let eitherWay, _, _, _)):
                 book.claimEdge(from, to, via: false, bothHeads: eitherWay, statement)
             case .group(let group), .ungroup(let group):
                 // A group is its shapes on one board: each claims the board it is on.

@@ -3,8 +3,9 @@ import Foundation
 
 // The column grammar: a column written as a line, `name type [null] [unique] [default …] [pk] [→ table.column]`, read
 // into the kit's model and printed back from it. One reader and one printer, pure, shared by everything that writes a
-// column from text: a person typing a row (later), a pasted block, and `canvas draw`'s `columns:`. Words it can't
-// place stay in the row (`unread`), shown plain, never marked; so does a key's `→ table.column` until keys land.
+// column from text: a person typing a row, a pasted block, and `canvas draw`'s `columns:`. Words it can't place stay in
+// the row (`unread`), shown plain, never marked. A key's `→ table.column` is read among them, and said apart by `key(in:)`:
+// a key is its arrow, so what writes a column from a line draws the arrow and keeps the words only where they name nothing.
 // Printing what was read loses no word.
 
 /// The column grammar's reader and printer.
@@ -155,6 +156,43 @@ public enum ColumnGrammar {
         return merged
     }
 
+    /// A key's words in a column's unread words: `→` (or `->`) and the word after it, `table.column`, `table` alone (its primary
+    /// key's) or `"a table".column`. Nil where there's no `→` with a word after it.
+    public static func key(in unread: String) -> KeyWords? {
+        let words = Self.words(of: unread)
+        guard let at = words.firstIndex(where: { $0 == arrow || $0 == typedArrow }), words.indices.contains(at + 1) else { return nil }
+        let target = words[at + 1]
+        var rest = words
+        rest.removeSubrange(at...(at + 1))
+        guard let (table, column) = Self.target(target) else { return nil }
+        return KeyWords(table: table, column: column, written: "\(arrow) \(target)", rest: rest.joined(separator: " "))
+    }
+
+    /// A key's target as written, `table.column`, `table`, `"a table".column`: the table's name and the column's (nil for none,
+    /// the table's primary key). The column is after the last dot: a table's name may hold one (`v1.2`) only when quoted. Nil for
+    /// a word that names no table.
+    public static func target(_ word: String) -> (table: String, column: String?)? {
+        if word.hasPrefix("\""), let close = word.dropFirst().firstIndex(of: "\"") {
+            let table = String(word[word.index(after: word.startIndex)..<close])
+            let after = word[word.index(after: close)...]
+            guard !table.isEmpty else { return nil }
+            if after.isEmpty { return (table, nil) }
+            guard after.hasPrefix(".") else { return nil }
+            let column = String(after.dropFirst())
+            return (table, column.isEmpty ? nil : column)
+        }
+        guard let dot = word.lastIndex(of: ".") else { return word.isEmpty ? nil : (word, nil) }
+        let table = String(word[..<dot]), column = String(word[word.index(after: dot)...])
+        guard !table.isEmpty else { return nil }
+        return (table, column.isEmpty ? nil : column)
+    }
+
+    /// A key's target written: `customers.id`, a table's name that holds a dot, a space or a quote in quotes.
+    public static func written(table: String, column: String) -> String {
+        let plain = !table.isEmpty && !table.contains(where: { $0 == "." || $0 == "\"" || $0.isWhitespace || $0 == "(" || $0 == ")" || $0 == "'" })
+        return (plain ? table : "\"\(table.replacingOccurrences(of: "\"", with: ""))\"") + "." + column
+    }
+
     /// Whether a word is one of the grammar's own (so it can't be a type: `id pk` is a column with no type).
     static func isFlag(_ word: String) -> Bool {
         [null, not, unique, primaryKey, primary, Self.default].contains(word.lowercased()) || word == arrow || word == typedArrow
@@ -214,6 +252,18 @@ public enum ColumnGrammar {
         flush()
         return (words, quote != nil ? quoteAt : depth > 0 ? groupAt : nil)
     }
+}
+
+/// A key as a column's line writes it: `→ customers.id`.
+public struct KeyWords: Equatable, Sendable {
+    /// The table it names, as written (its quotes taken off).
+    public var table: String
+    /// The column it names; nil for the table's primary key.
+    public var column: String?
+    /// Its words as written: `→ customers.id`.
+    public var written: String
+    /// The unread words without them.
+    public var rest: String
 }
 
 /// The enum grammar: one value a line, as typed, trimmed.
