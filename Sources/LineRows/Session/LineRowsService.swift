@@ -22,6 +22,9 @@ public final class LineRowsService {
     var cards: (any LineCardShowing)?
     /// The session of the shape being edited, as it started.
     weak var session: LineRowsView?
+    /// The rows its session has selected whole (⇧↑ ⇧↓), and their shape: what's selected as items on the canvas as editing
+    /// ends.
+    var band: (shape: ShapeID, rows: [PartID])?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -116,6 +119,11 @@ extension LineRowsService: EditorService {
     /// Editing's end takes back what the session set and puts the light out.
     public func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {
         if hopped?.id == id { hopped = nil }
+        // Rows selected whole stay selected, as items of their shape on the canvas (Escape, ⌘↑, a press on them).
+        if let band, band.shape == id {
+            self.band = nil
+            if editor.document[id] != nil { editor.selectItems(band.rows.map(AnyHashable.init), of: id) }
+        }
         setLight(nil)
         editor.setLayoutInput(LineRowsLayout.waiting, nil, for: id)
         editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)

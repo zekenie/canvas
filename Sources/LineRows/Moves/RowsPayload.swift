@@ -149,7 +149,14 @@ extension CanvasEditor {
     /// arrow whose other end isn't on the board is left out. Returns the shape they're in; nil where nothing landed (a
     /// read-only target, which shakes, or a shape that takes no rows of their kind).
     @discardableResult
-    public func pasteRows(_ payload: RowsPayload, to place: RowPlace) -> ShapeID? {
+    public func pasteRows(_ payload: RowsPayload, to place: RowPlace) -> ShapeID? { landPasted(payload, at: place)?.shape }
+
+    /// A paste of rows into `shape`, before `before` (nil: after its last), as the line editor makes it: the rows that landed.
+    func landPastedRows(_ payload: RowsPayload, into shape: ShapeID, before: PartID?) -> [PartID]? {
+        landPasted(payload, at: .into(shape, before: before))?.rows
+    }
+
+    private func landPasted(_ payload: RowsPayload, at place: RowPlace) -> (shape: ShapeID, rows: [PartID])? {
         guard let moving = registry.rowMoving(of: payload.carrier.kind) else { return nil }
         let rows = moving.rows(payload.carrier) ?? []
         guard !rows.isEmpty else { return nil }

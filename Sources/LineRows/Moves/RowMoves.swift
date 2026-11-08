@@ -142,7 +142,7 @@ extension CanvasEditor {
         let step: String = if case .into = place { RowSteps.move(moving.noun, count: ids.count) } else {
             RowSteps.takeOut(moving.noun, count: ids.count, into: record.kind, in: registry)
         }
-        return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key)
+        return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key)?.shape
     }
 
     /// ⌥↑ (-1) ⌥↓ (+1): `rows` of `shape` moved a place as a block, past the row before the first or after the last; nothing
@@ -194,7 +194,7 @@ extension CanvasEditor {
     /// names them follows (`moveParts`), and the arrows keep their ids where the file doesn't use them. Returns the shape
     /// they're in.
     func landRows(_ carrier: AnyShapeRecord, source: ShapeID?, arrows: [AnyShapeRecord], moves: Bool, at place: RowPlace, step: String,
-                  coalescing key: AnyHashable? = nil) -> ShapeID? {
+                  coalescing key: AnyHashable? = nil) -> (shape: ShapeID, rows: [PartID])? {
         guard let moving = registry.rowMoving(of: carrier.kind) else { return nil }
         let rows = moving.rows(carrier) ?? []
         guard !rows.isEmpty else { return nil }
@@ -287,7 +287,7 @@ extension CanvasEditor {
         }
         guard nudges != nil else { return nil }
         announce(step)
-        return destination
+        return (destination, landed)
     }
 
     /// What a landing leaves: the new shape selected and brought into view, its name typed where the kind says so; else the

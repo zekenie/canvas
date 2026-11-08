@@ -2,6 +2,7 @@ import AppKit
 import Canvas
 import Connections
 import FuzzyMatching
+import Palette
 import TextEditing
 
 // The one line a row is typed in: an `EditingTextView` on TextKit 2 (so `placeSelection(at:)` and `caretFrame` work), moved
@@ -34,6 +35,20 @@ public enum LineKey: Equatable, Sendable {
     case deleteEmpty
     /// ⌘L, Connect's key: the line written, the picker opens on its row.
     case connect
+    /// ⇧↑ ⇧↓: whole rows selected, the first the caret's row, then the run drawn up or down.
+    case extendUp, extendDown
+    /// ⌫ ⌦ with whole rows selected: the rows go.
+    case deleteRows
+}
+
+/// What the keys do with rows on the pasteboard.
+public enum LineRowsAction: Sendable {
+    /// ⌘C with whole rows selected.
+    case copy
+    /// ⌘X with whole rows selected.
+    case cut
+    /// ⌘V with rows on the pasteboard.
+    case paste
 }
 
 @MainActor
@@ -55,6 +70,12 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     public var onChange: (() -> Void)?
     /// A block of several lines pasted (true: taken, as rows).
     public var onPasteLines: ((String) -> Bool)?
+    /// Rows cut, copied or pasted as wholes (true: taken): ⌘X ⌘C with whole rows selected, ⌘V with rows on the pasteboard.
+    public var onRows: ((LineRowsAction) -> Bool)?
+    /// Whole rows are selected (⇧↑ ⇧↓): the line is hidden and takes no typing; ⌫ ⌦, ⌘X and ⌘C are the rows'.
+    public var isBanded = false {
+        didSet { isEditable = !isBanded }
+    }
     /// The keyboard left it.
     public var onBlur: (() -> Void)?
     /// The keyboard came to it (back from a card the line opened: the picker).
@@ -291,7 +312,31 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
             if event.isARepeat { return true }
             return key(.connect, closing: true)
         }
+        // ⌘X ⌘C with whole rows selected, ⌘V with rows on the pasteboard: the rows', as Edit › Cut, Copy and Paste are.
+        if window?.firstResponder === self, event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+           let action = Self.rowsActions[event.charactersIgnoringModifiers ?? ""] {
+            if event.isARepeat { return true }
+            if (action == .paste || isBanded), onRows?(action) == true { return true }
+        }
         return super.performKeyEquivalent(with: event)
+    }
+
+    private static let rowsActions: [String: LineRowsAction] = ["x": .cut, "c": .copy, "v": .paste]
+
+    public override func copy(_ sender: Any?) {
+        if isBanded, onRows?(.copy) == true { return }
+        super.copy(sender)
+    }
+
+    public override func cut(_ sender: Any?) {
+        if isBanded, onRows?(.cut) == true { return }
+        super.cut(sender)
+    }
+
+    /// Edit › Cut and Copy are the rows' while whole rows are selected, though the line takes no typing then.
+    public override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if isBanded, item.action == #selector(NSText.cut(_:)) || item.action == #selector(NSText.copy(_:)) { return true }
+        return super.validateUserInterfaceItem(item)
     }
 
     /// The keys a text view's bindings never send as one command: ⌥↑ ⌥↓, ⇧↩, ⌘↩, ⌘↑, ⌘↓ (the row's card), a held Return once,
@@ -302,6 +347,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         guard let reading = KeyMeaning.Reading(event: event) else { return false }
         let modifiers = reading.modifiers
         switch (reading.meaning, modifiers) {
+        case (.up, [.shift]): return key(.extendUp, closing: true)
+        case (.down, [.shift]): return key(.extendDown, closing: true)
         case (.up, [.option]): return key(.moveUp, closing: true)
         case (.down, [.option]): return key(.moveDown, closing: true)
         case (.up, [.command]): return key(.end, closing: true)
@@ -358,6 +405,7 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         case (.next, _): if key(.next, closing: true) { return }
         case (.previous, _): if key(.previous, closing: true) { return }
         case (.back, _): if key(.end, closing: true) { return }
+        case (.delete, _) where isBanded: if key(.deleteRows, closing: true) { return }
         case (.delete, _) where selector == #selector(NSResponder.deleteBackward(_:)) && string.isEmpty:
             if key(.deleteEmpty, closing: true) { return }
         default: break
@@ -377,6 +425,7 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
 
     /// Several lines pasted are the session's, a row a line; one is text.
     public override func paste(_ sender: Any?) {
+        if onRows?(.paste) == true { return }
         if let text = NSPasteboard.general.string(forType: .string), text.contains(where: \.isNewline), onPasteLines?(text) == true { return }
         super.paste(sender)
     }
@@ -547,4 +596,8 @@ public enum LineFieldStyle {
     static let textSlack: CGFloat = 4
     /// How far short of the clip's edge the caret is kept.
     static let caretMargin: CGFloat = 1
+    /// What VoiceOver hears as whole rows are selected: "3 columns selected".
+    static func selected(_ counted: String) -> String { "\(counted) selected" }
+    /// Whole rows selected while a shape is edited (⇧↑ ⇧↓): the accent, light, behind them.
+    static let rowsBand = NSColor(name: nil) { NSColor.controlAccentColor.withAlphaComponent($0.isDark ? 0.28 : 0.18) }
 }

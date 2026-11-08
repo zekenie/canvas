@@ -41,6 +41,12 @@ struct LineMoveRun: Hashable {
     let row: PartID
 }
 
+/// Moves of rows selected whole, repeated, coalesced into one step.
+struct LineBlockRun: Hashable {
+    let shape: ShapeID
+    let rows: Set<PartID>
+}
+
 /// The editing view of a kind written as lines, as a host and a test read it, whatever its rows are.
 @MainActor
 public class LineRowsView: NSView {
@@ -82,6 +88,9 @@ public class LineRowsView: NSView {
 
     /// Prints the row with the caret again as it's stored, where the line holds nothing of the person's.
     func reprint() {}
+
+    /// The rows selected whole (⇧↑ ⇧↓), in their order; none while the caret is in a line.
+    public var selectedRows: [PartID] { [] }
 
     /// ⌘↓: the line written, then the card of the row with the caret shown under it; false where there's none (the title, an
     /// empty waiting line, a row with nothing more).
@@ -133,6 +142,14 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private var elements: [LineStop: LineRowElement] = [:]
     /// ⌘L opened the picker on the row with the caret: its line is printed again as the keyboard comes back, with what the pick made.
     private var awaitsPicker = false
+    /// Whole rows selected (⇧↑ ⇧↓): the row the first ⇧ key selected and the end the keys move. The caret's stop stays the
+    /// anchor's row, its line hidden while they're selected.
+    private var band: (anchor: PartID, head: PartID)? {
+        didSet {
+            field.isBanded = band != nil
+            service.band = band == nil ? nil : (id, selectedRows)
+        }
+    }
 
     init(shape: ShapeRecord<Model.Props>, context: EditContext<Model.Props>, model: Model, title: LineTitle?, service: LineRowsService) {
         id = shape.id
@@ -146,6 +163,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         field.onKey = { [weak self] key in self?.handle(key) ?? false }
         field.onChange = { [weak self] in self?.lineChanged() }
         field.onPasteLines = { [weak self] text in self?.paste(text) ?? false }
+        field.onRows = { [weak self] action in self?.rowsAction(action) ?? false }
         field.onBlur = { [weak self] in self?.blurred() }
         field.onFocus = { [weak self] in self?.focused() }
         editor.connectPicker?.connectsEditedRow = { [weak self] shape in shape == self?.id && self?.connectEditedRow() == true }
@@ -306,6 +324,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
             return
         }
         clip.isHidden = false
+        // Rows selected whole hide the line, which keeps the keyboard (a hidden view would give it up): drawn clear.
+        clip.alphaValue = band == nil ? 1 : 0
         let style = model.style
         let clipFrame = CGRect(x: line.minX + style.textInset, y: line.minY, width: max(1, line.width - style.textInset - style.trailingInset), height: line.height)
         if clip.frame != clipFrame { clip.frame = clipFrame }
@@ -337,6 +357,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     /// The band behind the line with the caret, and its gutter's mark as it reads now.
     override func draw(_ dirtyRect: NSRect) {
+        if let rows = bandRect {
+            LineFieldStyle.rowsBand.setFill()
+            NSBezierPath(roundedRect: rows.insetBy(dx: model.style.bandInset, dy: 0), xRadius: LineFieldStyle.bandRadius, yRadius: LineFieldStyle.bandRadius).fill()
+            return
+        }
         guard let line = rect(of: focus) else { return }
         let style = model.style
         let band = line.insetBy(dx: style.bandInset, dy: 0)
@@ -362,6 +387,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
                             y: bounds.minY + (point.y - frame.minY) * bounds.height / frame.height)
         }
         if let titleField, let hit = titleField.hitTest(local) { return hit }
+        // A press on rows selected whole goes through to the canvas, which ends editing first: they're its items there.
+        if let rows = bandRect, rows.contains(local) { return nil }
         guard let paper, bounds.contains(local) else { return nil }
         let inPaper = paper.offsetBy(dx: -origin.x, dy: -origin.y)
         guard inPaper.contains(local) else { return nil }
@@ -390,6 +417,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// Puts the caret in `stop`, its line shown as stored, and tells the kind what to draw. `takingKeys` false is for a stop
     /// the keyboard is already at (the title's field, pressed).
     private func show(_ stop: LineStop, at caret: Caret, waitingAt: Int? = nil, takingKeys: Bool = true) {
+        if band != nil { band = nil }
         isMoving = true
         defer { isMoving = false }
         focus = stop
@@ -449,8 +477,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// What the kind reads: where the waiting line is while it has the caret (it takes no room otherwise, as the frames
     /// draw a table whose row is being typed in), and which row the field draws.
     private func setInputs() {
-        editor.setLayoutInput(LineRowsLayout.waiting, focus == .waiting ? waitingLine : nil, for: id)
-        if case .row(let row) = focus {
+        editor.setLayoutInput(LineRowsLayout.waiting, focus == .waiting && band == nil ? waitingLine : nil, for: id)
+        if case .row(let row) = focus, band == nil {
             editor.setLayoutInput(LineRowsLayout.focused, row, for: id)
         } else {
             editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)
@@ -590,6 +618,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
 
     private func handle(_ key: LineKey) -> Bool {
         reanchor()
+        if band != nil, let taken = bandKey(key) { return taken }
         switch key {
         case .commit: returnPressed()
         case .up: step(by: -1)
@@ -603,8 +632,164 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .addBeside: addBeside()
         case .deleteEmpty: return deleteEmpty()
         case .connect: return connect()
+        case .extendUp: extend(by: -1)
+        case .extendDown: extend(by: 1)
+        case .deleteRows: return false
         }
         return true
+    }
+
+    // MARK: Rows selected whole
+
+    override var selectedRows: [PartID] {
+        guard let band, let anchor = index(of: band.anchor), let head = index(of: band.head) else { return [] }
+        let rows = rows
+        return (min(anchor, head)...max(anchor, head)).map { model.id(of: rows[$0]) }
+    }
+
+    /// Where the rows selected whole are drawn, in the view's coordinates.
+    private var bandRect: CGRect? {
+        let rects = selectedRows.compactMap { rect(of: .row($0)) }
+        guard let first = rects.first else { return nil }
+        return rects.dropFirst().reduce(first) { $0.union($1) }
+    }
+
+    /// ⇧↑ (-1) ⇧↓ (+1): the first selects the caret's row whole (the line written first; ⇧↑ on the waiting line, the row above
+    /// it), then the run's moving end goes a row up or down; the line is hidden while rows are selected. VoiceOver hears how
+    /// many.
+    private func extend(by delta: Int) {
+        if let band {
+            guard let head = index(of: band.head) else { return }
+            let next = head + delta
+            guard rows.indices.contains(next) else { return }
+            self.band = (band.anchor, model.id(of: rows[next]))
+        } else {
+            guard focus != .title else { return }
+            if focus == .waiting, commitDraft() == nil {
+                // An empty waiting line: ⇧↑ selects the row above it.
+                guard delta < 0, waitingAt > 0, rows.indices.contains(waitingAt - 1) else { return }
+                let above = model.id(of: rows[waitingAt - 1])
+                show(.row(above), at: .end)
+            } else {
+                commitDraft()
+            }
+            guard case .row(let row) = focus, index(of: row) != nil else { return }
+            field.closeOffers()
+            band = (row, row)
+        }
+        setInputs()
+        place()
+        editor.announce(LineFieldStyle.selected(model.noun.counted(selectedRows.count)))
+    }
+
+    /// A key while rows are selected whole: ⇧↑ ⇧↓ draw the run; ⌥↑ ⌥↓ move the rows (one step a held key); ⌫ ⌦ delete them;
+    /// Escape, ⌘↑ and ⌘↩ end editing, the rows selected as items on the canvas; any other key goes back to the line at the
+    /// run's moving end (↑ ↓ Return Tab) and does there what it does. Nil: the key as with no rows selected.
+    private func bandKey(_ key: LineKey) -> Bool? {
+        guard let band else { return nil }
+        switch key {
+        case .extendUp, .extendDown:
+            return nil
+        case .moveUp, .moveDown:
+            let rows = selectedRows
+            editor.moveRows(rows, of: id, by: key == .moveUp ? -1 : 1, coalescing: LineBlockRun(shape: id, rows: Set(rows)))
+            place()
+            return true
+        case .deleteRows:
+            deleteSelectedRows()
+            return true
+        case .end, .finish:
+            end()
+            return true
+        case .deleteEmpty:
+            deleteSelectedRows()
+            return true
+        case .commit, .up, .down, .next, .previous, .card, .addBeside, .connect:
+            // Back to a line: the run's moving end, the caret at its end; then the key does what it does there.
+            show(.row(band.head), at: .end)
+            return key == .commit || key == .up || key == .down ? true : nil
+        }
+    }
+
+    /// The rows selected whole deleted, one step the kind names, and what went with them; the caret to the row above them (else
+    /// the one after, else the waiting line).
+    private func deleteSelectedRows() {
+        let ids = Set(selectedRows)
+        let gone = rows.filter { ids.contains(model.id(of: $0)) }
+        guard let first = rows.firstIndex(where: { ids.contains(model.id(of: $0)) }), !gone.isEmpty else { return }
+        // The caret's row goes with them: the line it leaves, hidden as it goes, writes nothing.
+        isMoving = true
+        let written = write([.delete(gone)])
+        isMoving = false
+        guard written else { return }
+        let left = rows
+        if first > 0, left.indices.contains(first - 1) {
+            show(.row(model.id(of: left[first - 1])), at: .end)
+        } else if let next = left.first {
+            show(.row(model.id(of: next)), at: .start)
+        } else {
+            show(.waiting, at: .start, waitingAt: 0)
+        }
+    }
+
+    /// ⌘C ⌘X with rows selected whole: on the pasteboard (a cut taking them out with the arrows bound to them, counted). ⌘V
+    /// with rows on the pasteboard: after the caret's row (in place of an empty line), or after the rows selected whole, one
+    /// step ("Paste Columns"), the caret at the end of the last. False: the key as text's.
+    private func rowsAction(_ action: LineRowsAction) -> Bool {
+        switch action {
+        case .copy:
+            guard band != nil else { return false }
+            editor.copyRows(selectedRows, of: id)
+            return true
+        case .cut:
+            guard band != nil else { return false }
+            let rows = selectedRows
+            let above = self.rows.firstIndex { model.id(of: $0) == rows.first }.flatMap { $0 > 0 ? model.id(of: self.rows[$0 - 1]) : nil }
+            // The caret's row goes with them: the line it leaves, hidden as it goes, writes nothing.
+            isMoving = true
+            let cut = editor.cutRows(rows, of: id)
+            isMoving = false
+            guard cut else { return true }
+            if let above, index(of: above) != nil { show(.row(above), at: .end) } else { show(.waiting, at: .start, waitingAt: 0) }
+            return true
+        case .paste:
+            guard focus != .title, let payload = editor.pasteboardRows else { return false }
+            let before: PartID?
+            if band != nil {
+                let last = selectedRows.last.flatMap(index(of:)) ?? rows.count - 1
+                before = rows.indices.contains(last + 1) ? model.id(of: rows[last + 1]) : nil
+            } else {
+                reanchor()
+                let blank = field.string.trimmingCharacters(in: .whitespaces).isEmpty
+                switch focus {
+                case .row(let row) where !blank:
+                    commitDraft()
+                    let at = (index(of: row) ?? rows.count - 1) + 1
+                    before = rows.indices.contains(at) ? model.id(of: rows[at]) : nil
+                case .row(let row):
+                    // An emptied row: the rows go where it is, and it goes.
+                    before = row
+                default:
+                    if !blank { commitDraft() }
+                    let at = focus == .waiting ? min(waitingAt, rows.count) : rows.count
+                    before = rows.indices.contains(at) ? model.id(of: rows[at]) : nil
+                }
+            }
+            // An emptied row the rows land in place of goes in the same step.
+            var emptied: Row?
+            if band == nil, case .row(let row) = focus, field.string.trimmingCharacters(in: .whitespaces).isEmpty { emptied = storedRow(row) }
+            isMoving = true
+            defer { isMoving = false }
+            var landed: [PartID]?
+            let moving = editor.registry.rowMoving(of: payload.carrier.kind)
+            editor.undoHistory.group(moving.map { RowSteps.paste($0.noun, count: $0.rowIDs(of: payload.carrier)?.count ?? 0) }) {
+                landed = editor.landPastedRows(payload, into: id, before: before)
+                if landed != nil, let emptied { write([.delete([emptied])]) }
+            }
+            guard let last = landed?.last else { return true }
+            show(.row(last), at: .end)
+            return true
+        }
     }
 
     /// ⌘L: the line written, then, on a row, ⌘L's picker opens on the row, the shape still edited and the keyboard back on the line
