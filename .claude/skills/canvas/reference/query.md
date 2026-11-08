@@ -371,7 +371,7 @@ arrow[bend=0]
 
 ## Inside
 
-Two kinds hold shapes. A subboard holds a board of shapes: a shape on that board, or on a board inside it, is inside the subboard. A frame holds shapes on the board it's on: a shape in it, or in a frame in it, or on the board of a subboard in it, is inside the frame. It's one tree, whatever holds what, so every form here reads a frame as it reads a subboard: `"Sprint 3" sticky-note` is every note in the frame called Sprint 3, at any depth, `frame"Sprint 3" > *` what's directly in it, and `frame:has("Login bug")` the frames Login bug is in. That's the only inside a query knows: a shape drawn over a note or a subboard's card (what `draw`'s `inside` places) isn't inside it; over a frame, it's in the frame, since nothing sits across a frame's edge.
+Three kinds hold shapes. A subboard holds a board of shapes: a shape on that board, or on a board inside it, is inside the subboard. A frame holds shapes on the board it's on: a shape in it, or in a frame in it, or on the board of a subboard in it, is inside the frame. A database (the engineering kit's, which holds tables and enums) holds shapes on its board as a frame does. It's one tree, whatever holds what, so every form here reads a frame, and a database, as it reads a subboard: `"Sprint 3" sticky-note` is every note in the frame called Sprint 3, at any depth, `frame"Sprint 3" > *` what's directly in it, and `frame:has("Login bug")` the frames Login bug is in. That's the only inside a query knows: a shape drawn over a note or a subboard's card (what `draw`'s `inside` places) isn't inside it; over a frame, it's in the frame, since nothing sits across a frame's edge.
 
 | form | means |
 |---|---|

@@ -61,7 +61,7 @@ private func uuid(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-
         expectEqual(folded.frame(rows[2].id)?.rect, folded.frame(rows[0].id)?.rect, "folded away: shown where the last row shown is")
         expectEqual(folded.frame(nearestY: 170)?.id, rows[0].id, "a part folded away is never the nearest")
     },
-    test("a copy keeps its parts' ids, so what names a part names it by its shape and the part") {
+    test("a shape's parts' ids are in its props as coded, which is what a copy is made of (the copy itself, with the clipboard, is CompositionTests' engineering suite)") {
         let row = RosterRow(id: PartID(uuid(5)), name: "only")
         let record = AnyShapeRecord(ShapeRecord(Roster(CGRect(x: 0, y: 0, width: 50, height: 30), rows: [row])))
         let data = try JSONEncoder().encode(try require(record.typed(as: Roster.self)?.props))

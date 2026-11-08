@@ -112,4 +112,32 @@ private func contrast(_ a: [Int], _ b: [Int]) -> Double {
             }
         }
     },
+    test("a label drawn whole at a scale (a field's empty pill) is its chip at that scale; its chip alone is as wide as asked, its symbol in it and no text") {
+        let size = CGSize(width: 240, height: 60)
+        func bitmap(_ draw: (CGContext) -> Void) -> NSBitmapImageRep {
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height), bitsPerSample: 8,
+                                       samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            let cg = NSGraphicsContext(bitmapImageRep: rep)!.cgContext
+            cg.translateBy(x: 0, y: size.height)
+            cg.scaleBy(x: 1, y: -1)
+            NSAppearance(named: .aqua)!.performAsCurrentDrawingAppearance {
+                cg.setFillColor(paperWhite.cgColor)
+                cg.fill(CGRect(origin: .zero, size: size))
+                draw(cg)
+            }
+            return rep
+        }
+        let label = AdornmentLabel("Table", systemImage: "tablecells").tinted(lightBlue)
+        let one = inked(bitmap { label.draw(at: CGPoint(x: 20, y: 10), scale: 1, in: $0) }), two = inked(bitmap { label.draw(at: CGPoint(x: 20, y: 10), scale: 2, in: $0) })
+        expect(abs(one.minX - 20) <= 1 && abs(one.minY - 10) <= 1 && abs(one.height - 18) <= 1, "its top left is the point, a pill tall: \(one)")
+        expect(abs(two.width - 2 * one.width) <= 2 && abs(two.height - 2 * one.height) <= 2, "twice the scale, twice the size: \(one) against \(two)")
+        let chip = bitmap { label.drawChip(width: 60, at: CGPoint(x: 20, y: 10), scale: 1, in: $0) }, box = inked(chip)
+        expect(abs(box.minX - 20) <= 1 && abs(box.width - 60) <= 1 && abs(box.height - 18) <= 1, "as wide as asked: \(box)")
+        let wide = inked(bitmap { label.drawChip(width: 120, at: CGPoint(x: 20, y: 10), scale: 1, in: $0) })
+        expect(abs(wide.width - 120) <= 1, "and no wider than that: \(wide)")
+        // No text in it: the pixels past its symbol, in the middle of a wide chip, are the capsule's alone.
+        let middle = pixel(bitmap { label.drawChip(width: 120, at: CGPoint(x: 20, y: 10), scale: 1, in: $0) }, at: CGPoint(x: 100, y: 19))
+        let edge = pixel(bitmap { label.drawChip(width: 120, at: CGPoint(x: 20, y: 10), scale: 1, in: $0) }, at: CGPoint(x: 120, y: 12))
+        expectEqual(middle, edge, "no text over the capsule")
+    },
 ])

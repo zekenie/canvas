@@ -57,9 +57,14 @@ extension TableDefinition: ShapeDefinition {
 
     /// An enum-typed column's pill: the enum its type names, while it's in the file, by its name now.
     private func enumPill(of column: Column, in context: RenderContext) -> AdornmentLabel? {
-        guard let id = column.type.shape, let record = context.shape(inFile: id), record.kind == DatabaseEnum.kind else { return nil }
+        guard let record = enumRecord(of: column, in: context) else { return nil }
         let name = context.shapes.registry.title(of: record) ?? column.type.words
         return AdornmentLabel(name).tinted(TableStyle.enumPill)
+    }
+
+    /// The enum a column's type names, while it's in the file: what makes the type a pill, at rest and zoomed out.
+    private func enumRecord(of column: Column, in context: RenderContext) -> AnyShapeRecord? {
+        column.type.shape.flatMap { context.shape(inFile: $0) }.flatMap { $0.kind == DatabaseEnum.kind ? $0 : nil }
     }
 
     /// Its laid-out frame, and a part a row.
@@ -115,14 +120,14 @@ extension TableDefinition: CustomSkeleton {
         KitPaper.drawSkeleton(frame, in: context)
         let columns = shape.props.columns, rows = KitRows(shape, in: context.shapes)
         var text: [CGRect] = [], pills: [CGRect] = []
-        for line in KitPaper.rowsInView(rows.lines(columns.count), in: frame, context) {
+        for line in KitPaper.skeletonRowsInView(rows.lines(columns.count), in: frame, context) {
             guard let index = rows.row(atLine: line) else { continue }
             let column = columns[index], row = KitStyle.rowRect(line, in: frame)
             let start = row.minX + KitStyle.nameInset, end = row.maxX - KitStyle.trailingInset
             let type = KitPaper.bar(columns: SkeletonText.columns(of: column.type.words, upTo: TableStyle.skeletonMostColumns),
                                     column: TableStyle.skeletonTypeColumn, at: end, trailing: true, in: row, room: (end - start) / 2)
             if let type {
-                if column.type.shape != nil { pills.append(type) } else { text.append(type) }
+                if enumRecord(of: column, in: context) != nil { pills.append(type) } else { text.append(type) }
             }
             if let name = KitPaper.bar(columns: SkeletonText.columns(of: column.name, upTo: TableStyle.skeletonMostColumns), column: TableStyle.skeletonNameColumn,
                                        at: start, in: row, room: max(0, (type?.minX ?? end) - KitStyle.nameGap - start)) {
@@ -145,7 +150,7 @@ extension TableDefinition: Editable {
 
     func makeEditingView(for shape: ShapeRecord<DatabaseTable>, context: EditContext<DatabaseTable>) -> EditingView {
         LineRowsView.make(shape, context: context, model: TableLines(), title: LineTitle { title in
-            TitleField(title: title, systemImage: TableStyle.symbol, tint: nil, placeholder: TableStyle.label, name: TableStyle.titleFieldName)
+            TitleField(title: title, systemImage: TableStyle.symbol, tint: nil, name: TableStyle.titleFieldName)
         })
     }
 

@@ -134,6 +134,14 @@ enum KitPaper {
         KitStyle.rows(count, in: frame, reaching: context.cg.boundingBoxOfClipPath)
     }
 
+    /// The rows a skeleton draws bars for: those of `rowsInView`, none while a row is under `TableStyle.skeletonLeastRow` view
+    /// points tall, where its bars would be a smear of fractions of a pixel the paper alone says as well, so a board of
+    /// thousands of tables far out costs a card each, and not a bar a row of every one.
+    static func skeletonRowsInView(_ count: Int, in frame: CGRect, _ context: RenderContext) -> Range<Int> {
+        guard KitStyle.rowHeight * context.zoom >= TableStyle.skeletonLeastRow else { return 0..<0 }
+        return rowsInView(count, in: frame, context)
+    }
+
     /// A bar of `columns` columns of `column` wide each, from `x` (or ending at it, `trailing`), in row `row`'s middle.
     static func bar(columns: Int, column: CGFloat, at x: CGFloat, trailing: Bool = false, in row: CGRect, room: CGFloat) -> CGRect? {
         let width = min(room, CGFloat(min(columns, TableStyle.skeletonMostColumns)) * column)

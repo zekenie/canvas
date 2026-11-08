@@ -112,6 +112,17 @@ import Titles
         expectEqual(h.editor.document[a]?.container, database.id)
         expectEqual(h.editor.undoHistory.undoName, "Create Database")
     },
+    test("Create Database from an enum's menu: an untitled database round it, one step") {
+        let h = try kitHarness()
+        let status = h.add(DatabaseEnum(frame: CGRect(x: 100, y: 100, width: 200, height: 68), values: [EnumValue(text: "paid")]), titled: "order_status")
+        h.editor.selectedShapeIDs = [status]
+        let menu = try require(h.secondaryClick(at: CGPoint(x: 200, y: 140)))
+        expect(menu.outline.contains("Create Database"), "\(menu.outline)")
+        try menu.choose("Create Database")
+        let database = try require(h.shapes(Database.kind).first)
+        expectEqual(h.editor.document[status]?.container, database.id)
+        expectEqual(h.editor.undoHistory.undoName, "Create Database")
+    },
     test("⇧↩ with a table selected: a new table beside it, its name typed at once; the name joins Add Table") {
         let h = try kitHarness()
         let orders = h.add(tableOrders(), titled: "orders")
