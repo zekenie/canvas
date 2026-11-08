@@ -84,7 +84,7 @@ public final class BoardWindow: NSWindow {
     /// and says the board's is its then (`UndoesBoardWhenEmpty`: a row's line).
     private func textUndo(redoing: Bool) -> UndoManager? {
         guard let manager = textUndoInUse else { return nil }
-        if textWithKeyboard is UndoesBoardWhenEmpty, !(redoing ? manager.canRedo : manager.canUndo) { return nil }
+        if let text = textWithKeyboard as? UndoesBoardWhenEmpty, !text.holdsDraft, !(redoing ? manager.canRedo : manager.canUndo) { return nil }
         return manager
     }
 

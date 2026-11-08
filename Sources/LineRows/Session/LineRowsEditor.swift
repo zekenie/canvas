@@ -110,6 +110,10 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private var waitingAt = 0
     /// The row as it's stored, that the field shows (nil on the waiting line).
     private var held: Row?
+    /// The line the field was given, and the row it stands for (its line read, joined onto the stored row): what a draft is
+    /// measured against, so a line the person didn't change writes nothing, whatever the file has become since the row was
+    /// stored (an enum renamed under a column's type).
+    private var shown: (line: LineText, row: Row)?
     /// What the field's line reads as now.
     private var reading: LineReading<Row>?
     /// A move of the caret under way: the field leaving a row isn't the keyboard leaving.
@@ -133,6 +137,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         field.onPasteLines = { [weak self] text in self?.paste(text) ?? false }
         field.onBlur = { [weak self] in self?.blurred() }
         field.offering = { [weak self] in self?.offers() }
+        field.draft = { [weak self] in self?.hasDraft ?? false }
         field.onLight = { [weak service] light in service?.setLight(light) }
         if let title {
             let titleField = title.make(shape[TitleProperty.self])
@@ -142,6 +147,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
                 context.transact { $0.update(id) { $0[TitleProperty.self] = title } }
             }
             titleField.finished = { [weak self] ending in self?.titleEnded(ending) }
+            titleField.began = { [weak self] in self?.titleBegan() }
             titleField.onDown = { [weak self] in
                 self?.step(by: 1)
                 return true
@@ -277,7 +283,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let clipFrame = CGRect(x: line.minX + style.textInset, y: line.minY, width: max(1, line.width - style.textInset - style.trailingInset), height: line.height)
         if clip.frame != clipFrame { clip.frame = clipFrame }
         let height = ceil(field.layoutManagerLineHeight(style))
-        let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(), width: max(textWidth + 4, clipFrame.width + slide), height: height)
+        let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(), width: max(textWidth + LineFieldStyle.textSlack, clipFrame.width + slide), height: height)
         if field.frame != fieldFrame { field.frame = fieldFrame }
         keepCaretInClip()
         needsDisplay = true
@@ -293,7 +299,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private func keepCaretInClip() {
         // The caret in the field's own coordinates, which slide with it: in view while it's `slide` to `slide + limit`.
         guard let caret = field.caretFrame else { return }
-        let limit = clip.frame.width - 1
+        let limit = clip.frame.width - LineFieldStyle.caretMargin
         var next = slide
         if caret.maxX - next > limit { next = caret.maxX - limit }
         if caret.minX - next < 0 { next = max(0, caret.minX) }
@@ -308,7 +314,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let style = model.style
         let band = line.insetBy(dx: style.bandInset, dy: 0)
         style.band.setFill()
-        NSBezierPath(roundedRect: band, xRadius: 3, yRadius: 3).fill()
+        NSBezierPath(roundedRect: band, xRadius: LineFieldStyle.bandRadius, yRadius: LineFieldStyle.bandRadius).fill()
         guard let mark = reading?.mark,
               let image = NSImage(systemSymbolName: mark.symbol, accessibilityDescription: nil)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: style.markSize, weight: .semibold)
@@ -354,8 +360,9 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case point(CGPoint, clicks: Int)
     }
 
-    /// Puts the caret in `stop`, its line shown as stored, and tells the kind what to draw.
-    private func show(_ stop: LineStop, at caret: Caret, waitingAt: Int? = nil) {
+    /// Puts the caret in `stop`, its line shown as stored, and tells the kind what to draw. `takingKeys` false is for a stop
+    /// the keyboard is already at (the title's field, pressed).
+    private func show(_ stop: LineStop, at caret: Caret, waitingAt: Int? = nil, takingKeys: Bool = true) {
         isMoving = true
         defer { isMoving = false }
         focus = stop
@@ -364,10 +371,12 @@ final class LineSession<Model: LineModel>: LineRowsView {
         switch stop {
         case .title:
             held = nil
+            shown = nil
             reading = nil
             field.closeOffers()
         case .waiting:
             held = nil
+            shown = nil
             field.substitutions = grammar.substitutions
             field.show(LineText(""), caret: 0)
             lineChanged(reportingChange: false)
@@ -377,6 +386,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             field.substitutions = grammar.substitutions
             field.show(stored.map { grammar.print($0, in: lineContext(row)) } ?? LineText(""))
             lineChanged(reportingChange: false)
+            shown = stored.map { stored in (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored) }
         }
         setInputs()
         place()
@@ -397,7 +407,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
                 field.setAccessibilityLabel("New \(model.noun.singular)")
             }
         }
-        if let window {
+        if takingKeys, let window {
             let responder = focusedResponder
             if window.firstResponder !== responder { window.makeFirstResponder(responder) }
         }
@@ -447,6 +457,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     @discardableResult
     func commitDraft() -> LineStop? {
         guard focus != .title, editor.canTransact, editor.document[id] != nil else { return nil }
+        reanchor()
         let line = field.line
         let blank = line.string.trimmingCharacters(in: .whitespaces).isEmpty
         switch focus {
@@ -457,6 +468,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
             // The line is that row now: written again, it changes nothing.
             focus = .row(model.id(of: row))
             held = rows.first { model.id(of: $0) == model.id(of: row) }
+            shown = held.map { (field.line, $0) }
+            refreshStop()
             return focus
         case .row(let rowID):
             guard let current = rows.first(where: { model.id(of: $0) == rowID }) else { return nil }
@@ -465,17 +478,53 @@ final class LineSession<Model: LineModel>: LineRowsView {
                 focus = .waiting
                 waitingAt = rows.count
                 held = nil
+                shown = nil
+                refreshStop()
+                lineChanged(reportingChange: false)
                 return .waiting
             }
+            // A line left as it was shown writes nothing, though what it reads as may not be what's stored (an enum it names
+            // was renamed since); one changed is measured against what it stood for, so only what the person changed counts.
+            if let shown, field.line == shown.line { return focus }
             guard let read = grammar.read(line, id: rowID, in: lineContext(rowID)).row else { return nil }
             let merged = model.merged(read, onto: current)
-            guard merged != current else { return focus }
-            guard write([.change(from: current, to: merged)]) else { return nil }
+            let before = shown?.row ?? current
+            guard merged != before else { return focus }
+            guard write([.change(from: before, to: merged)]) else { return nil }
             held = rows.first { model.id(of: $0) == rowID }
+            shown = held.map { (field.line, $0) }
             return .row(rowID)
         case .title:
             return nil
         }
+    }
+
+    /// A commit changed the stop with the caret (a waiting line became its row, an emptied row went): what the kind lays
+    /// out and the field's place follow, for a caller that goes on without showing a stop.
+    private func refreshStop() {
+        guard editor.editingShapeID == id else { return }
+        setInputs()
+        place()
+        needsDisplay = true
+    }
+
+    /// Whether the line has words the person wrote that aren't stored: a waiting line with any, a row changed.
+    private var hasDraft: Bool {
+        switch focus {
+        case .title: false
+        case .waiting: !field.string.trimmingCharacters(in: .whitespaces).isEmpty
+        case .row: shown.map { field.line != $0.line } ?? false
+        }
+    }
+
+    /// The row with the caret is gone (another writer took it out): its line is a draft on the waiting line, last.
+    private func reanchor() {
+        guard case .row(let row) = focus, index(of: row) == nil else { return }
+        focus = .waiting
+        waitingAt = rows.count
+        held = nil
+        shown = nil
+        refreshStop()
     }
 
     /// One step of `changes`, named as the kind names the first (and what a delete took along); heard by VoiceOver. A
@@ -504,6 +553,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     // MARK: Keys
 
     private func handle(_ key: LineKey) -> Bool {
+        reanchor()
         switch key {
         case .commit: returnPressed()
         case .up: step(by: -1)
@@ -640,6 +690,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// otherwise), one step ("Paste Columns"); the caret at the end of the last. One line is typed.
     private func paste(_ text: String) -> Bool {
         guard focus != .title else { return false }
+        reanchor()
         let lines = grammar.lines(fromPasted: text)
         guard lines.count > 1 else {
             if let line = lines.first { field.insertText(line, replacementRange: field.selectedRange()) }
@@ -678,6 +729,14 @@ final class LineSession<Model: LineModel>: LineRowsView {
         guard write(changes) else { return true }
         show(.row(model.id(of: made[made.count - 1])), at: .end)
         return true
+    }
+
+    /// The title's field took the keyboard (a press on its pill, VoiceOver's): the line it left is written, and the title is
+    /// the stop, so the keys go on from it.
+    private func titleBegan() {
+        guard focus != .title, !isMoving else { return }
+        commitDraft()
+        show(.title, at: .end, takingKeys: false)
     }
 
     /// The title's field ended: Return to the waiting line, Tab on, ⇧Tab back, Escape out.

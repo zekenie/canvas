@@ -15,7 +15,7 @@ import Titles
 /// The file's enums by name, for a column's type that names one: kept until the file changes (`editor.revision`), so a
 /// keystroke on a board of thousands of shapes reads a list. Nearest first: one on the shape's board, then any other.
 @MainActor
-final class KitNames: EditorService {
+final class KitNames {
     unowned let editor: CanvasEditor
     private var revision = -1
     private var kept: [(id: ShapeID, name: String, board: BoardID)] = []
@@ -52,6 +52,8 @@ final class KitNames: EditorService {
         enums.first { $0.id == id }?.name
     }
 }
+
+extension KitNames: EditorService {}
 
 // MARK: Columns
 
