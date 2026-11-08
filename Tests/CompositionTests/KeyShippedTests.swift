@@ -7,6 +7,7 @@ import CanvasUI
 import Clipboard
 import Connections
 import Engineering
+import Geometry
 import LanguageModels
 import LineRows
 import Selection
@@ -163,3 +164,126 @@ private let shop = #"""
     let error = try refusedInProcess(script, on: editor)
     return JSON.object(["reason": .string(error.reason ?? ""), "hint": .string(error.hint ?? "")])
 }
+
+/// The app's canvas view over the shipped kit, driven by the mouse (as `LoopWindowTests` drives a note's): one clock for the
+/// events' times and the editor's timers.
+@MainActor final class KeyDragWindow {
+    let editor: CanvasEditor
+    let window: NSWindow
+    let canvas: CanvasView
+    private let scheduler: ManualScheduler
+    private var time: TimeInterval = 1
+    private var location = CGPoint.zero
+
+    init(_ script: String) throws {
+        let scheduler = ManualScheduler()
+        self.scheduler = scheduler
+        editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: scheduler, model: ScriptedLanguageModel())
+        (window, canvas) = windowed(editor)
+        editor.turn(EngineeringKit.self, on: true)
+        editor.viewportDidResize(to: CGSize(width: 800, height: 600))
+        _ = try drawnInProcess(script, on: editor)
+        editor.selectedShapeIDs = []
+        editor.undoHistory.seal()
+    }
+
+    func wait(_ ms: Int) {
+        time += Double(ms) / 1000
+        scheduler.advance(by: .milliseconds(ms))
+    }
+
+    func move(to point: CGPoint) {
+        wait(16)
+        location = point
+        canvas.mouseMoved(with: window.mouse(.mouseMoved, at: point, clicks: 0, time: time))
+    }
+
+    func press() {
+        wait(16)
+        canvas.mouseDown(with: window.mouse(.leftMouseDown, at: location, clicks: 1, time: time))
+    }
+
+    func drag(to point: CGPoint, speed: CGFloat = 3) {
+        let start = location
+        let steps = max(1, Int((hypot(point.x - start.x, point.y - start.y) / (speed * 16)).rounded(.up)))
+        for step in 1...steps {
+            let t = CGFloat(step) / CGFloat(steps)
+            wait(16)
+            location = CGPoint(x: start.x + (point.x - start.x) * t, y: start.y + (point.y - start.y) * t)
+            canvas.mouseDragged(with: window.mouse(.leftMouseDragged, at: location, time: time))
+        }
+    }
+
+    func release() {
+        wait(16)
+        canvas.mouseUp(with: window.mouse(.leftMouseUp, at: location, clicks: 1, time: time))
+    }
+
+    /// Where row `index` of the table titled `title` is on screen (view points: the camera is at the origin, at 100%).
+    func row(_ title: String, _ index: Int) throws -> CGRect {
+        let id = try require(editor.document.shapes.first { $0[TitleProperty.self] == title }?.id)
+        let rect = try require(editor.shapeContext.geometry(of: id)?.parts[index].rect)
+        return editor.camera.toView(rect)
+    }
+}
+
+/// T3, panel 2: refunds and payments side by side, orders below payments, the order_status enum below refunds.
+let t3Panel2 = #"""
+    table "refunds" columns: "id uuid pk\npayment_id uuid\namount_cents int\nreason text?\ncreated_at timestamptz"
+    table "payments" right of "refunds" (gap: 140) columns: "id uuid pk\norder_id uuid\nstripe_charge_id text unique\namount_cents int"
+    table "orders" below "payments" columns: "id uuid pk\ncustomer_id uuid"
+    enum-type "order_status" below "refunds" values: "pending\npaid"
+    edge "payments".order_id -> "orders".id
+    """#
+
+@MainActor let keyPointerTests = Suite("A key drawn by the pointer (T3, panel 2)", [
+    test("a drag from payment_id's dot onto payments.id: dots on the hovered row only, the tables outlined and not the enum, the row lit, the key drawn row to row in one step") {
+        let w = try KeyDragWindow(t3Panel2)
+        let paymentID = try w.row("refunds", 1), target = try w.row("payments", 0)
+        w.move(to: CGPoint(x: paymentID.midX, y: paymentID.midY))
+        w.move(to: CGPoint(x: paymentID.maxX + 12, y: paymentID.midY))
+        w.press()
+        w.drag(to: CGPoint(x: target.midX + 40, y: target.midY))
+        let refunds = try require(table(w.editor, "refunds")), payments = try require(table(w.editor, "payments"))
+        expectEqual(w.editor.hintedShapeID, payments.id)
+        expectEqual(w.editor.hintedPart, payments.props.columns[0].id, "payments.id lit")
+        w.release()
+        let key = try require(arrows(w.editor).first { $0.props.start.binding?.shapeID == refunds.id })
+        expectEqual(key.props.start.binding?.part, refunds.props.columns[1].id)
+        expectEqual(key.props.end.binding?.part, payments.props.columns[0].id)
+        expectEqual(key[ChannelProperty.self], ForeignKey.id)
+        expectEqual(w.editor.undoHistory.undoName, "Add Arrow")
+        let geometry = try require(w.editor.arrowGeometry(of: key.id))
+        expectEqual(geometry.startHandle.x, w.editor.camera.toWorld(CGPoint(x: paymentID.maxX, y: 0)).x, "leaving payment_id's right side")
+        expectEqual(geometry.endHandle.x, w.editor.camera.toWorld(CGPoint(x: target.minX, y: 0)).x, "into payments.id's left side")
+        expectEqual(w.editor.hintedPart, nil)
+    },
+    test("while it's drawn, payments and orders are outlined, the enum isn't; the dots show at the hovered row's ends only") {
+        let w = try KeyDragWindow(t3Panel2)
+        let paymentID = try w.row("refunds", 1), reason = try w.row("refunds", 3)
+        let size = CGSize(width: 800, height: 600)
+        let plain = renderBitmap(w.editor, size: size)
+        w.move(to: CGPoint(x: paymentID.midX, y: paymentID.midY))
+        let hovered = renderBitmap(w.editor, size: size)
+        for (rect, shows) in [(paymentID, true), (reason, false)] {
+            for x in [rect.minX - 12, rect.maxX + 12] {
+                let dot = CGRect(x: x - 2, y: rect.midY - 2, width: 4, height: 4)
+                expectEqual(changedPixels(plain, hovered, in: dot) > 0, shows, "a dot at \(x), \(rect.midY)")
+            }
+        }
+        w.move(to: CGPoint(x: paymentID.maxX + 12, y: paymentID.midY))
+        w.press()
+        w.drag(to: CGPoint(x: 380, y: 250))
+        let drawing = renderBitmap(w.editor, size: size)
+        @MainActor func top(_ title: String) throws -> CGRect {
+            let id = try require(w.editor.document.shapes.first { $0[TitleProperty.self] == title }?.id)
+            let bounds = w.editor.camera.toView(try require(w.editor.shapeContext.geometry(of: id)?.bounds))
+            return CGRect(x: bounds.minX + 30, y: bounds.minY - 4, width: bounds.width - 60, height: 8)
+        }
+        expect(changedPixels(plain, drawing, in: try top("payments")) > 0, "payments takes keys: outlined")
+        expect(changedPixels(plain, drawing, in: try top("orders")) > 0, "orders too")
+        expectEqual(changedPixels(plain, drawing, in: try top("order_status")), 0, "the enum takes none")
+        w.release()
+        expectEqual(arrows(w.editor).count, 1, "let go on nothing: no key drawn")
+    },
+])
