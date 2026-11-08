@@ -46,6 +46,7 @@ extension SelectorList {
         guard !parser.lexer.atEnd else { return nil }
         let list = try parser.selectorList()
         try parser.finish()
+        try Parser.placeParts(in: list)
         return list
     }
 }
@@ -84,7 +85,44 @@ struct Parser {
         guard !atEnd else { throw QueryError(.emptyQuery, "The query is empty.", hint: "* is every shape.") }
         let list = try selectorList()
         try finish()
+        try Self.placeParts(in: list)
         return list
+    }
+
+    /// Refuses `::part(…)` anywhere but as an edge word's whole anchor (`Word.anchorsRow`), and there anywhere but after a shape's id:
+    /// what it names is a row of one shape, and only an edge's end is at a row.
+    static func placeParts(in list: SelectorList, anchoring word: Word? = nil) throws(QueryError) {
+        for complex in list.selectors { try placeParts(in: complex, anchoring: word) }
+    }
+
+    private static func placeParts(in complex: ComplexSelector, anchoring word: Word?) throws(QueryError) {
+        let isAnchor = word?.anchorsRow == true && complex.compounds.count == 1
+        for compound in complex.compounds { try placeParts(in: compound, isAnchor: isAnchor) }
+    }
+
+    /// One compound: its own row (only as an anchor), then the words it holds, each looked into the same way (`:has(…)` items too).
+    private static func placeParts(in compound: Compound, isAnchor: Bool) throws(QueryError) {
+        if let part = compound.part {
+            guard isAnchor else {
+                throw QueryError(.unsupported, "::part(…) names a row of a shape, and only an edge word's anchor names one.",
+                                 hint: ":\(Word.edgeTo.rawValue)(#<shape>::part(<row>))", span: part.span)
+            }
+            guard case .id? = compound.head, compound.filters.isEmpty else {
+                throw QueryError(.badArgument, "::part(…) follows a shape's id alone: #<shape>::part(<row>).", span: part.span)
+            }
+        }
+        for filter in compound.filters {
+            guard case .pseudo(let pseudo) = filter else { continue }
+            switch pseudo.argument {
+            case .selectors(let inner): try placeParts(in: inner)
+            case .has(let items):
+                for item in items { try placeParts(in: item.compound, isAnchor: false) }
+            case .anchored(let anchors, _):
+                let named = anchors.count == 1 ? pseudo.word : nil
+                for anchor in anchors { try placeParts(in: anchor, anchoring: named) }
+            case .none, .types, .text, .raw: break
+            }
+        }
     }
 
     /// Nothing but whitespace and comments is left.
@@ -195,7 +233,17 @@ struct Parser {
         }
 
         var filters: [Filter] = []
+        var part: PartSelector?
         while let character = current {
+            if character == ":", peek(1) == ":" {
+                // `::part(<row>)`, last: what follows it is no part of the compound.
+                guard part == nil else { throw QueryError(.syntax, "A part of a query names one row: ::part(…) once.", span: span(position..<(position + 2))) }
+                part = try self.part()
+                continue
+            }
+            if part != nil, character == "[" || character == ":" {
+                throw QueryError(.syntax, "::part(…) comes last in its part of a query, after [ and :.", span: span(position..<(position + 1)))
+            }
             if character == "[" {
                 filters.append(.attribute(try attribute()))
             } else if character == ":" {
@@ -210,7 +258,35 @@ struct Parser {
                 break
             }
         }
-        return Compound(head: head, filters: filters, span: span(start..<position))
+        return Compound(head: head, filters: filters, part: part, span: span(start..<position))
+    }
+
+    /// `::part(<row>)` at the position: a row's id between the parentheses. Any other pseudo-element is refused: shapes have none.
+    mutating func part() throws(QueryError) -> PartSelector {
+        let start = position
+        position += 2
+        let name = lexer.identifier()
+        guard asciiLowercased(name) == "part" else {
+            throw QueryError(.unsupported, "::\(name) is a pseudo-element, and shapes have none.", span: span(start..<position))
+        }
+        guard current == "(" else {
+            throw QueryError(.badArgument, "::part takes a row's id: ::part(<row>).", span: span(start..<position))
+        }
+        let open = position
+        position += 1
+        var text = ""
+        while let character = current, character != ")" {
+            guard !character.isNewline else { break }
+            text.append(character)
+            position += 1
+        }
+        guard current == ")" else { throw unclosedParenthesis(start: open, name: "::part") }
+        position += 1
+        let written = text.trimmingCharacters(in: .whitespaces)
+        guard Self.isUUID(written), let id = UUID(uuidString: written) else {
+            throw QueryError(.badArgument, "::part takes a row's id: ::part(<row>), the row's UUID.", span: span(start..<position))
+        }
+        return PartSelector(id: id, span: span(start..<position))
     }
 
     /// A title at the position, `"…"` or `'…'`, refused when it's blank: it would name no shape.
@@ -416,11 +492,6 @@ struct Parser {
     mutating func pseudo() throws(QueryError) -> PseudoClass {
         let start = position
         position += 1
-        if current == ":" {
-            position += 1
-            let name = lexer.identifier()
-            throw QueryError(.unsupported, "::\(name) is a pseudo-element, and shapes have none.", span: span(start..<position))
-        }
         guard lexer.atIdentifier else {
             let colon = span(start..<(start + 1))
             if try lexer.skipSpace(), lexer.atIdentifier {

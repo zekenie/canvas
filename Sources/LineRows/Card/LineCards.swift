@@ -67,6 +67,18 @@ final class LineCards: LineCardShowing {
     }
 }
 
+extension LineCardLine {
+    /// What the line says of `row`, as its stop shows it: its words (a list's lines one under another), "yes" or "no", its option
+    /// (the first, where the row holds none).
+    func printed(_ row: Row, in context: LineContext) -> String {
+        switch kind {
+        case .text(let text): text.lines(row, context).map(\.string).joined(separator: "\n")
+        case .toggle(let get, _): get(row) ? LineCardStyle.yes : LineCardStyle.no
+        case .choice(let options, let get, _): get(row) ?? options.first ?? ""
+        }
+    }
+}
+
 /// A card's view told it's taken down, whatever its rows are.
 @MainActor
 protocol AnyLineCardClosing: AnyObject {

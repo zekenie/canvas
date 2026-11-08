@@ -15,7 +15,9 @@ public struct NeighborGroup: Sendable {
     /// The light's color; nil for a list no light gives (what the shape is inside, what it holds).
     public let color: NSColor?
     let query: @Sendable (String) -> String
-    let caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: ShapeID, _ neighbor: ShapeID) -> String?)?
+    let caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: PartAddress, _ neighbor: ShapeID) -> String?)?
+    /// Whether it lists a shape's connections, a row's, or both (its light's `serves`; what a shape is inside and holds: a shape's).
+    public let serves: NeighborSubjects
 }
 
 /// A shape in one of the lists, as the query engine answered it.
@@ -38,7 +40,7 @@ public struct NeighborListing: Equatable, Sendable {
         public var rows: [NeighborRow]?
     }
 
-    public let subject: ShapeID
+    public let subject: PartAddress
     /// A list for each of `NeighborList.groups`, in their order.
     public var groups: [Group]
     /// Counts the answers shown: every row is drawn again for each, since a row's name and caption
@@ -71,8 +73,9 @@ public struct NeighborLine: Equatable {
 /// outlines, less what runs between (a light's `between`: the arrows), and this module still knows
 /// no kind, edge type or concern.
 ///
-/// **The subject.** The shape whose list is on screen: the panel's view says so as it appears
-/// (`watch`) and as it goes (`unwatch`), so nothing is asked while no list shows.
+/// **The subject.** The shape whose list is on screen, or the row (a row selected as the panel's subject: its connections, asked of
+/// the lights that serve rows, `NeighborLight.serves`, given `#S::part(R)`, and no Inside or Contains): the panel's view says so as it
+/// appears (`watch`) and as it goes (`unwatch`), so nothing is asked while no list shows.
 ///
 /// **Asking.** One ask for a subject: every folded list is counted in one batch of ids, and every
 /// open one is run for its rows (id, kind, title, board), each in the edge view `.resolved` and,
@@ -105,9 +108,9 @@ public final class NeighborList {
     /// The lists, in order: each light's, then what the shape is inside and what it holds.
     @ObservationIgnored public let groups: [NeighborGroup]
 
-    /// The shape whose lists are on screen. Observed: a view of another shape's lists, drawn before
+    /// The shape, or row, whose lists are on screen. Observed: a view of another's lists, drawn before
     /// it has said so, shows nothing of this one's.
-    public private(set) var subject: ShapeID?
+    public private(set) var subject: PartAddress?
     /// The last answer: the subject's once it has landed, the shape before's until then.
     public private(set) var listing: NeighborListing?
     /// What's typed to search the lists: none, each list shows all it has.
@@ -138,13 +141,13 @@ public final class NeighborList {
 
     init(editor: CanvasEditor, lights: [NeighborLight]) {
         self.editor = editor
-        groups = lights.map { NeighborGroup(title: $0.title, color: $0.color, query: $0.query, caption: $0.caption) } + [
+        groups = lights.map { NeighborGroup(title: $0.title, color: $0.color, query: $0.query, caption: $0.caption, serves: $0.serves) } + [
             // What it's inside, outermost first, and what's directly inside it: the language's own
             // words for Topology's one tree, a frame's shapes and a subboard's board alike. What runs
             // between the shapes it holds (a connection that starts at a shape: an arrow) isn't
             // listed, as no list has what runs between.
-            NeighborGroup(title: NeighborStyle.inside, color: nil, query: { ":has(\($0))" }, caption: nil),
-            NeighborGroup(title: NeighborStyle.contains, color: nil, query: { "\($0) > *:not(:starts-at(*))" }, caption: nil),
+            NeighborGroup(title: NeighborStyle.inside, color: nil, query: { ":has(\($0))" }, caption: nil, serves: .shapes),
+            NeighborGroup(title: NeighborStyle.contains, color: nil, query: { "\($0) > *:not(:starts-at(*))" }, caption: nil, serves: .shapes),
         ]
         following = editor.topology?.follow { [weak self] change in
             // A commit's change is heard as the commit is.
@@ -155,15 +158,21 @@ public final class NeighborList {
     // MARK: The subject
 
     /// A list of `id`'s is on screen: it's the subject, and asked about.
-    public func watch(_ id: ShapeID) {
-        guard subject != id else { return }
-        subject = id
+    public func watch(_ id: ShapeID) { watch(PartAddress(id)) }
+
+    /// A list of a row's (or of a shape's, part nil) is on screen: it's the subject, and asked about.
+    public func watch(_ subject: PartAddress) {
+        guard self.subject != subject else { return }
+        self.subject = subject
         if !search.isEmpty { search = "" }
         ask()
     }
 
     /// The list of `id`'s went: nothing is asked until another shows.
-    public func unwatch(_ id: ShapeID) {
+    public func unwatch(_ id: ShapeID) { unwatch(PartAddress(id)) }
+
+    /// The list of a row's (or of a shape's) went: nothing is asked until another shows.
+    public func unwatch(_ id: PartAddress) {
         guard subject == id else { return }
         subject = nil
         // What a shape is called may change while no list shows, with nothing heard of it.
@@ -197,6 +206,21 @@ public final class NeighborList {
         guard text != search else { return }
         search = text
         askIfRowsMissing()
+    }
+
+    /// The lists in the order the panel shows them: `groups`' for a shape; for a row, the lights that serve rows alone first (its own
+    /// relations: what calls an endpoint, what it writes and reads), then those that serve both (what mentions it), then the rest,
+    /// which a row's lists leave empty.
+    public var order: [Int] {
+        guard subject?.part != nil else { return Array(groups.indices) }
+        let rank: (Int) -> Int = { index in
+            switch self.groups[index].serves {
+            case .rows: 0
+            case .both: 1
+            case .shapes: 2
+            }
+        }
+        return groups.indices.sorted { (rank($0), $0) < (rank($1), $1) }
     }
 
     /// Whether a list's rows show: it's unfolded, or the lists are being searched.
@@ -258,7 +282,7 @@ public final class NeighborList {
         // The board shown is observed (a row says where it is); the file isn't: a row is
         // drawn again as an answer lands, never on every commit. What's inside the subject (what a
         // subboard holds) needs no saying.
-        let isElsewhere = row.board != editor.board && row.board != subject.map { BoardID(owner: $0) }
+        let isElsewhere = row.board != editor.board && row.board != subject.map { BoardID(owner: $0.shape) }
         let steps = editor.withoutObservingDocument { place(of: row, isElsewhere: isElsewhere) }
         return editor.withoutObservingDocument {
             NeighborLine(symbol: label.systemImage ?? NeighborStyle.fallbackSymbol,
@@ -293,7 +317,7 @@ public final class NeighborList {
                     steps[index].opensBoard = editor.shape(inFile: id).map { editor.registry.ownsShowableBoard($0) } ?? false
                 }
                 var dropped = 0
-                for held in [editor.board.owner, subject].compactMap({ $0 }) {
+                for held in [editor.board.owner, subject?.shape].compactMap({ $0 }) {
                     let chain = Array(topology.ancestors(of: held).reversed()) + [held]
                     if chain.count > dropped, above.starts(with: chain) { dropped = chain.count }
                 }
@@ -379,8 +403,9 @@ public final class NeighborList {
         }
         // The literal view reads other edges than the resolved one only where a shape stands in.
         let views: [EdgeView] = topology.hasStandIns ? [.resolved, .literal] : [.resolved]
-        let selector = "#\(subject)"
-        let texts = groups.map { $0.query(selector) }
+        let selector = NeighborLight.selector(of: subject)
+        // A list that doesn't serve the subject (a shape's for a row, a row's for a shape) is asked nothing, and is empty.
+        let texts = groups.map { $0.serves.serves(subject) ? $0.query(selector) : nil }
         let open = groups.indices.map(showsRows(of:))
         // The lists shown, if they're the subject's, for the answer to be compared with where it's made.
         // They stay as they are until it lands: only an ask lands one, and a new ask lets go of this.
@@ -389,7 +414,9 @@ public final class NeighborList {
         asked += 1
         #endif
         asking = Task { [weak self, queries] in
-            let answered = await NeighborList.answer(queries, texts: texts, open: open, views: views, subject: subject, shown: shown)
+            // A row's lists leave nothing out: a key from one column of a table to another lists its own table.
+            let answered = await NeighborList.answer(queries, texts: texts, open: open, views: views, subject: subject.part == nil ? subject.shape : nil,
+                                                     shown: shown)
             // One let go of lands nothing: whoever did that asked again, or the list went.
             guard !Task.isCancelled, let self else { return }
             asking = nil
@@ -433,16 +460,17 @@ public final class NeighborList {
     /// the engine's own turns take (a list of 100,000 rows is made, compared and handed over whole, and
     /// costs the main actor what a list of ten does).
     @concurrent
-    nonisolated private static func answer(_ queries: QueryState, texts: [String], open: [Bool], views: [EdgeView], subject: ShapeID,
+    nonisolated private static func answer(_ queries: QueryState, texts: [String?], open: [Bool], views: [EdgeView], subject: ShapeID?,
                                            shown: [NeighborListing.Group]?) async -> Answer {
-        var groups = [NeighborListing.Group](repeating: .init(count: 0, rows: nil), count: texts.count)
-        let closed = texts.indices.filter { !open[$0] }
+        var groups = texts.map { NeighborListing.Group(count: 0, rows: $0 == nil ? [] : nil) }
+        let closed = texts.indices.filter { !open[$0] && texts[$0] != nil }
         await withTaskGroup(of: Answered.self) { tasks in
             if !closed.isEmpty {
-                tasks.addTask { await .counts(NeighborList.counts(queries, closed.map { texts[$0] }, views: views, subject: subject)) }
+                tasks.addTask { await .counts(NeighborList.counts(queries, closed.map { texts[$0]! }, views: views, subject: subject)) }
             }
             for group in texts.indices where open[group] {
-                tasks.addTask { await .rows(group, NeighborList.rows(queries, texts[group], views: views, subject: subject)) }
+                guard let text = texts[group] else { continue }
+                tasks.addTask { await .rows(group, NeighborList.rows(queries, text, views: views, subject: subject)) }
             }
             for await answered in tasks {
                 switch answered {
@@ -458,7 +486,7 @@ public final class NeighborList {
     /// view the answer's own count, and no id asked for). A request the engine refuses (a shape that
     /// holds nothing asked what it holds) counts none.
     @concurrent
-    nonisolated private static func counts(_ queries: QueryState, _ texts: [String], views: [EdgeView], subject: ShapeID) async -> [Int] {
+    nonisolated private static func counts(_ queries: QueryState, _ texts: [String], views: [EdgeView], subject: ShapeID?) async -> [Int] {
         let limit = views.count > 1 ? QueryMatchRequest.every : 1
         let requests = texts.flatMap { text in
             views.map { QueryMatchRequest(text, edges: $0, limit: limit, admitting: { $0.id != subject }) }
@@ -476,8 +504,8 @@ public final class NeighborList {
 
     /// A query's rows, the subject left out: each view's, a shape once, the first view's first.
     @concurrent
-    nonisolated private static func rows(_ queries: QueryState, _ text: String, views: [EdgeView], subject: ShapeID) async -> NeighborListing.Group {
-        var rows: [NeighborRow] = [], seen: Set<ShapeID> = [subject], most = 0
+    nonisolated private static func rows(_ queries: QueryState, _ text: String, views: [EdgeView], subject: ShapeID?) async -> NeighborListing.Group {
+        var rows: [NeighborRow] = [], seen: Set<ShapeID> = Set([subject].compactMap { $0 }), most = 0
         for view in views {
             guard let result = try? await queries.run(QueryRequest(text, limit: QueryRequest.every, properties: .none, edges: view)) else { continue }
             var own = 0

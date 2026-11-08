@@ -3,11 +3,14 @@ import CanvasRPC
 import Foundation
 import Titles
 
-/// One piece of mention text: text as it reads, or a mention of a shape with the name it was
-/// called when the text was last written (its snapshot, shown only while the shape isn't there).
+/// One piece of mention text: text as it reads, or a mention of a shape, or of one of its rows (a part: `PartAddress.part`), with
+/// the name it was called when the text was last written (its snapshot, shown only while what it names isn't there).
 public enum MentionRun: Hashable, Sendable {
     case text(String)
-    case mention(ShapeID, label: String)
+    case mention(PartAddress, label: String)
+
+    /// A mention of a shape as a whole.
+    public static func mention(_ shape: ShapeID, label: String) -> MentionRun { .mention(PartAddress(shape), label: label) }
 }
 
 /// Greeked, zoomed out (`SkeletonTextBars`: a note's skeleton): text as it reads, and a mention as
@@ -36,7 +39,8 @@ extension MentionRun: SkeletonTextRunConvertible {
 }
 
 /// Text that may mention shapes, restricted to what `Scope` admits (`MentionText` admits any
-/// mentionable shape). Stored as one string in which `@[label](shape:UUID)` is a mention: in a
+/// mentionable shape). Stored as one string in which `@[label](shape:UUID)` is a mention, and
+/// `@[label](shape:UUID/row:UUID)` a mention of one of the shape's rows (its part): in a
 /// label, `\]` stands for `]` and `\\` for `\`; in the text, `\@[` is a literal `@[`, and any
 /// backslashes just before an `@[` are doubled. Anything that isn't a whole mention is text, byte
 /// for byte. Its runs are parsed once, as it's made.
@@ -80,9 +84,14 @@ public struct ScopedMentionText<Scope: MentionScope>: Sendable, ExpressibleByStr
         runs = other.runs
     }
 
-    /// Every shape it mentions, in text order, repeats included.
+    /// Every shape it mentions, in text order, repeats included: a row's shape for a mention of a row.
     public var mentioned: [ShapeID] {
-        runs.compactMap { if case .mention(let id, _) = $0 { id } else { nil } }
+        runs.compactMap { if case .mention(let target, _) = $0 { target.shape } else { nil } }
+    }
+
+    /// Every shape and row it mentions, in text order, repeats included.
+    public var mentionedTargets: [PartAddress] {
+        runs.compactMap { if case .mention(let target, _) = $0 { target } else { nil } }
     }
 
     /// Whether it says nothing: no mention, and only whitespace.
@@ -145,13 +154,13 @@ public struct ScopedMentionText<Scope: MentionScope>: Sendable, ExpressibleByStr
     /// What text stored so reads as plain text, as `init(stored:)`'s `plainText(label:)` reads it,
     /// in one pass over its bytes, with no runs made: for what reads many texts once (a query's scan
     /// and its rows). Text without an `@[` reads as it's stored, and costs a pass that finds none.
-    public static func plainText(stored: String, label: (ShapeID) -> String? = { _ in nil }) -> String {
+    public static func plainText(stored: String, label: (PartAddress) -> String? = { _ in nil }) -> String {
         MentionGrammar.plainText(of: stored, label: label)
     }
 
     /// What it reads as plain text: each mention as "@" and its name, the name `label` gives, or,
     /// where it gives none, the label the mention holds.
-    public func plainText(label: (ShapeID) -> String? = { _ in nil }) -> String {
+    public func plainText(label: (PartAddress) -> String? = { _ in nil }) -> String {
         var plain = ""
         for run in runs {
             switch run {
@@ -162,10 +171,10 @@ public struct ScopedMentionText<Scope: MentionScope>: Sendable, ExpressibleByStr
         return plain
     }
 
-    /// What it reads as with each mention spelled as `spelling` says, given its shape and the label
+    /// What it reads as with each mention spelled as `spelling` says, given what it names and the label
     /// it holds (Find's, its name; a type's model's, `@` and a word), and where each spelling
     /// is against the mention's pill in the text as drawn.
-    public func reading(spelling: (ShapeID, String) -> String) -> MentionReading {
+    public func reading(spelling: (PartAddress, String) -> String) -> MentionReading {
         var text = "", mentions: [MentionReading.Mention] = []
         var offset = 0, drawn = 0
         for run in runs {
@@ -267,15 +276,27 @@ extension ScopedMentionText: SchemaDescribed {
 /// property list that holds it, and a copy renames its mentions of the shapes copied with it.
 extension ScopedMentionText: ShapeNaming {
     public func forEachNamedShape(_ body: (ShapeID) -> Void) {
-        for run in runs { if case .mention(let id, _) = run { body(id) } }
+        for run in runs { if case .mention(let target, _) = run { body(target.shape) } }
     }
 
-    /// The same text with the mentions `rename` gives an id for renamed, each keeping its label;
-    /// the stored form is written again only if an id changed.
+    /// The same text with the mentions whose shape `rename` gives an id for renamed, each keeping its label and its row (a
+    /// copy's rows keep their ids); the stored form is written again only if an id changed.
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self {
         var changed = false
         let renamed = runs.map { run -> MentionRun in
-            guard case .mention(let id, let label) = run, let new = rename(id), new != id else { return run }
+            guard case .mention(let target, let label) = run, let new = rename(target.shape), new != target.shape else { return run }
+            changed = true
+            return .mention(PartAddress(new, part: target.part), label: label)
+        }
+        return changed ? Self(renamed) : self
+    }
+
+    /// The same text with each mention of a row that `rename` gives another address for naming it there (a row moved to another
+    /// table), keeping its label; the stored form is written again only if one changed.
+    public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self {
+        var changed = false
+        let renamed = runs.map { run -> MentionRun in
+            guard case .mention(let target, let label) = run, target.part != nil, let new = rename(target), new != target else { return run }
             changed = true
             return .mention(new, label: label)
         }
@@ -312,6 +333,8 @@ enum MentionGrammar {
     private static let close: Unicode.Scalar = "]"
     private static let backslash: Unicode.Scalar = "\\"
     private static let head = Array("](shape:".unicodeScalars)
+    /// What joins a mention's shape to its row: `/row:`, then the row's UUID.
+    private static let rowHead = Array("/row:".unicodeScalars)
 
     static func isLineBreak(_ scalar: Unicode.Scalar) -> Bool { scalar == "\n" || scalar == "\r" }
 
@@ -366,15 +389,25 @@ enum MentionGrammar {
         return (String(label), j)
     }
 
-    /// What a label's `]` at `close` starts when it's a mention's: `](shape:UUID)`, the id and
-    /// where the mention ends; nil for anything else.
-    private static func shapeSuffix(in s: [Unicode.Scalar], at close: Int) -> (ShapeID, Int)? {
+    /// What a label's `]` at `close` starts when it's a mention's: `](shape:UUID)` or `](shape:UUID/row:UUID)`, what it names
+    /// and where the mention ends; nil for anything else.
+    private static func shapeSuffix(in s: [Unicode.Scalar], at close: Int) -> (PartAddress, Int)? {
         guard close + head.count + 37 <= s.count, Array(s[close..<close + head.count]) == head else { return nil }
         let idStart = close + head.count
-        let idScalars = s[idStart..<idStart + 36]
-        guard s[idStart + 36] == ")", idScalars.allSatisfy(\.isASCII),
-              let uuid = UUID(uuidString: String(String.UnicodeScalarView(idScalars))) else { return nil }
-        return (ShapeID(uuid), idStart + 37)
+        guard let shape = uuid(in: s, at: idStart) else { return nil }
+        if s[idStart + 36] == ")" { return (PartAddress(ShapeID(shape)), idStart + 37) }
+        let rowStart = idStart + 36
+        guard rowStart + rowHead.count + 37 <= s.count, Array(s[rowStart..<rowStart + rowHead.count]) == rowHead else { return nil }
+        let partStart = rowStart + rowHead.count
+        guard s[partStart + 36] == ")", let part = uuid(in: s, at: partStart) else { return nil }
+        return (PartAddress(ShapeID(shape), part: PartID(part)), partStart + 37)
+    }
+
+    /// The UUID in the 36 scalars at `start`, as `UUID(uuidString:)` reads one; nil for anything else.
+    private static func uuid(in s: [Unicode.Scalar], at start: Int) -> UUID? {
+        let scalars = s[start..<start + 36]
+        guard scalars.allSatisfy(\.isASCII) else { return nil }
+        return UUID(uuidString: String(String.UnicodeScalarView(scalars)))
     }
 
     /// A whole mention starting at `i` (an `@`): its id, its label, and where it ends. When there's
@@ -382,7 +415,7 @@ enum MentionGrammar {
     /// escapes nothing, or the end), if it began: no `@[` before that point starts a mention either,
     /// since a scan from one would read the same scalars from where this one read them and stop
     /// there the same way.
-    private static func mention(in s: [Unicode.Scalar], at i: Int, labelEnd: inout Int) -> (ShapeID, String, Int)? {
+    private static func mention(in s: [Unicode.Scalar], at i: Int, labelEnd: inout Int) -> (PartAddress, String, Int)? {
         guard i + 1 < s.count, s[i] == at, s[i + 1] == open else { return nil }
         let (label, end) = label(in: s, from: i + 2)
         labelEnd = end
@@ -425,7 +458,7 @@ enum MentionGrammar {
         }
         /// No mention starts before this: a failed scan got this far.
         var ruledOut = 0
-        func mention(at a: Int) -> (ShapeID, String, Int)? {
+        func mention(at a: Int) -> (PartAddress, String, Int)? {
             guard a >= ruledOut else { return nil }
             return Self.mention(in: s, at: a, labelEnd: &ruledOut)
         }
@@ -476,18 +509,19 @@ enum MentionGrammar {
     // MARK: Plain text, from the bytes
 
     private static let headBytes = Array("](shape:".utf8)
+    private static let rowHeadBytes = Array("/row:".utf8)
 
     /// `parse(_:)`'s runs as `plainText(label:)` reads them, from the string's UTF-8 in one pass:
     /// every character the grammar gives a meaning to is ASCII, and no byte of another character is
     /// one, so each is found, and each run of text copied, byte for byte, as the scalar parse finds
     /// and copies them. Text with no `@[` is as it's stored.
-    static func plainText(of string: String, label: (ShapeID) -> String?) -> String {
+    static func plainText(of string: String, label: (PartAddress) -> String?) -> String {
         guard mayHoldMentions(string) else { return string }
         var string = string
         return string.withUTF8 { plainText(of: $0, label: label) }
     }
 
-    private static func plainText(of s: UnsafeBufferPointer<UInt8>, label: (ShapeID) -> String?) -> String {
+    private static func plainText(of s: UnsafeBufferPointer<UInt8>, label: (PartAddress) -> String?) -> String {
         let backslash: UInt8 = 0x5C, at: UInt8 = 0x40, open: UInt8 = 0x5B
         var out: [UInt8] = []
         out.reserveCapacity(s.count)
@@ -536,9 +570,9 @@ enum MentionGrammar {
         return String(decoding: out, as: UTF8.self)
     }
 
-    /// `mention(in:at:labelEnd:)` over bytes: the id, where the label is (escapes and all), and
+    /// `mention(in:at:labelEnd:)` over bytes: what it names, where the label is (escapes and all), and
     /// where the mention ends.
-    private static func mention(in s: UnsafeBufferPointer<UInt8>, at i: Int, labelEnd: inout Int) -> (ShapeID, Range<Int>, Int)? {
+    private static func mention(in s: UnsafeBufferPointer<UInt8>, at i: Int, labelEnd: inout Int) -> (PartAddress, Range<Int>, Int)? {
         let backslash: UInt8 = 0x5C, close: UInt8 = 0x5D
         var j = i + 2
         while j < s.count {
@@ -562,8 +596,14 @@ enum MentionGrammar {
         guard j + headBytes.count + 37 <= s.count else { return nil }
         for k in 0..<headBytes.count where s[j + k] != headBytes[k] { return nil }
         let idStart = j + headBytes.count
-        guard s[idStart + 36] == 0x29, let uuid = uuid(in: s, at: idStart) else { return nil }
-        return (ShapeID(uuid), (i + 2)..<j, idStart + 37)
+        guard let uuid = uuid(in: s, at: idStart) else { return nil }
+        if s[idStart + 36] == 0x29 { return (PartAddress(ShapeID(uuid)), (i + 2)..<j, idStart + 37) }
+        let rowStart = idStart + 36
+        guard rowStart + rowHeadBytes.count + 37 <= s.count else { return nil }
+        for k in 0..<rowHeadBytes.count where s[rowStart + k] != rowHeadBytes[k] { return nil }
+        let partStart = rowStart + rowHeadBytes.count
+        guard s[partStart + 36] == 0x29, let part = Self.uuid(in: s, at: partStart) else { return nil }
+        return (PartAddress(ShapeID(uuid), part: PartID(part)), (i + 2)..<j, partStart + 37)
     }
 
     /// The UUID written in the 36 bytes at `start` as `UUID(uuidString:)` reads one: hex digits in
@@ -696,7 +736,7 @@ enum MentionGrammar {
             }
             let (id, shown) = try resolve(name)
             out.append(contentsOf: s[copied..<a])
-            append(id, label: shown, to: &out)
+            append(PartAddress(id), label: shown, to: &out)
             copied = end + 1
             i = end + 1
         }
@@ -706,14 +746,16 @@ enum MentionGrammar {
     }
 
     /// A mention, written canonically: its label with `]` and `\` escaped (a line break a space),
-    /// and its id in uppercase.
-    private static func append<Out: RangeReplaceableCollection>(_ id: ShapeID, label: String, to out: inout Out) where Out.Element == Unicode.Scalar {
+    /// and its ids in uppercase, a row's after its shape's.
+    private static func append<Out: RangeReplaceableCollection>(_ target: PartAddress, label: String, to out: inout Out) where Out.Element == Unicode.Scalar {
         out.append(contentsOf: "@[".unicodeScalars)
         for c in label.unicodeScalars {
             if c == backslash || c == close { out.append(backslash) }
             out.append(isLineBreak(c) ? " " : c)
         }
-        out.append(contentsOf: "](shape:\(id.rawValue.uuidString))".unicodeScalars)
+        out.append(contentsOf: "](shape:\(target.shape.rawValue.uuidString)".unicodeScalars)
+        if let part = target.part { out.append(contentsOf: "/row:\(part.rawValue.uuidString)".unicodeScalars) }
+        out.append(")")
     }
 
     /// Normalized runs, written canonically.
@@ -721,8 +763,8 @@ enum MentionGrammar {
         var out = String.UnicodeScalarView()
         for (n, run) in runs.enumerated() {
             switch run {
-            case .mention(let id, let label):
-                append(id, label: label, to: &out)
+            case .mention(let target, let label):
+                append(target, label: label, to: &out)
             case .text(let text):
                 let nextIsMention: Bool = if n + 1 < runs.count, case .mention = runs[n + 1] { true } else { false }
                 guard nextIsMention || mayHoldMentions(text) else {

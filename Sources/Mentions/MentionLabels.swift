@@ -8,13 +8,27 @@ import Canvas
 public struct MentionLabels: Sendable {
     /// How each shows, as the state kept it: shared with it until either changes.
     private let resolutions: [ShapeID: MentionResolution]
+    /// How each mentioned row shows, by its shape.
+    private let rows: [ShapeID: [PartID: MentionResolution]]
 
     /// No names: every mention reads as the name it holds.
-    public init() { resolutions = [:] }
+    public init() {
+        resolutions = [:]
+        rows = [:]
+    }
 
-    init(_ resolutions: [ShapeID: MentionResolution]) { self.resolutions = resolutions }
+    init(_ resolutions: [ShapeID: MentionResolution], rows: [ShapeID: [PartID: MentionResolution]]) {
+        self.resolutions = resolutions
+        self.rows = rows
+    }
 
     /// The name a mention of `target` shows: its shape's, while it's live; nil while it's missing or
     /// unavailable (a mention then shows the name it holds), and for a shape nothing mentions.
     public func label(of target: ShapeID) -> String? { resolutions[target]?.appearance?.label }
+
+    /// The name a mention of a row shows (its live full name), or of a shape as a whole (part nil); nil as `label(of:)` says.
+    public func label(of target: PartAddress) -> String? {
+        guard let part = target.part else { return label(of: target.shape) }
+        return rows[target.shape]?[part]?.appearance?.label
+    }
 }

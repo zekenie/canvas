@@ -259,6 +259,38 @@ extension Registry {
         guard let record = lookup(target) else { return .missing }
         return mentionAppearance(of: record).map { .live($0) } ?? .unavailable
     }
+
+    /// What a mention of a row, or of a shape as a whole (part nil), shows now, as `mentionResolution(of:lookup:)` has the shape:
+    /// a row of a shape `lookup` finds is live while the shape has it (`MentionResolution.row`), missing once it doesn't.
+    public func mentionResolution(of target: PartAddress, lookup: (ShapeID) -> AnyShapeRecord?) -> MentionResolution {
+        guard let part = target.part else { return mentionResolution(of: target.shape, lookup: lookup) }
+        guard let record = lookup(target.shape) else { return .missing }
+        return MentionResolution.row(part, of: record, shape: mentionAppearance(of: record), in: self)
+    }
+}
+
+extension MentionResolution {
+    /// What a mention of row `part` of `record` shows, given how the shape shows (`shape`, nil when it can't be mentioned): live
+    /// with the row's appearance (`MentionAppearance.row`) while the shape has the row; missing once it hasn't (the row deleted,
+    /// or moved away: its pill dashed, by the name it holds); unavailable with the shape.
+    @MainActor
+    public static func row(_ part: PartID, of record: AnyShapeRecord, shape: MentionAppearance?, in registry: Registry) -> MentionResolution {
+        guard let shape else { return .unavailable }
+        guard let row = registry.parts(of: record)?.first(where: { $0.id == part }) else { return .missing }
+        return .live(MentionAppearance.row(row, of: shape))
+    }
+}
+
+extension MentionAppearance {
+    /// How a row shows where it's mentioned: by its full name, an endpoint's method and full path ("POST /orders/{id}/refunds"),
+    /// and a row that doesn't stand alone with its shape's name before it ("orders.customer_id", as draw names one and the picker
+    /// finds one); its lead (a method's chip) before the name, else its lead's symbol, else its shape's; its kind word
+    /// ("Endpoint") its kind's name; in its shape's tint.
+    public static func row(_ part: PartName, of shape: MentionAppearance) -> MentionAppearance {
+        let symbol: String = if case .symbol(let name) = part.lead { name } else { shape.systemImage }
+        return MentionAppearance(label: part.standsAlone ? part.name : shape.label + "." + part.name, systemImage: symbol,
+                                 kindName: part.kindWord, detail: part.kindWord, tint: shape.tint, lead: part.lead)
+    }
 }
 
 extension CanvasEditor {

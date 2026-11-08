@@ -2,8 +2,9 @@ import Canvas
 import Topology
 
 /// A mention, as an edge in Topology's graph: from the shape whose text holds it to the shape it
-/// names, in the slot of the property the text is in, counted once for each time the text mentions
-/// it. A root: nothing else is a kind of mention.
+/// names (a mention of a row: to the row's shape, the edge's target part the row), in the slot of the
+/// property the text is in, counted once for each time the text mentions it. A root: nothing else is
+/// a kind of mention.
 public enum MentionEdge {}
 
 extension MentionEdge: EdgeType {
@@ -23,7 +24,10 @@ func registerMentionEdges(into registrar: inout PluginRegistrar) {
                 value.forEachNamingLeaf { leaf in
                     guard let text = leaf as? any MentionTextHolding else { return }
                     text.forEachMentionRun { run in
-                        if case .mention(let id, _) = run { sink.emit(MentionEdge.id, from: record.id, to: id, slot: property) }
+                        // A row's mention reaches its row: the edge ends at the row's shape, its part the row.
+                        if case .mention(let target, _) = run {
+                            sink.emit(MentionEdge.id, from: record.id, to: target.shape, slot: property, toPart: target.part)
+                        }
                     }
                 }
             }

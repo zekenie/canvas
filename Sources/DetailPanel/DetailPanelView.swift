@@ -101,6 +101,9 @@ public struct DetailPanelView: View {
         // table (a list), which `WindowBox.takeCommandPeriod` tells apart.
         .onExitCommand { _ = exitByKey(window.takeCommandPeriod() ? .commandPeriod : .escape, withOption: false) }
         .onChange(of: editor.selectedShapeIDs) { reclaimSoon() }
+        // A row as the subject comes and goes with the shape still selected (the row deleted, Undo, the caret moving out of it):
+        // its panel's views are replaced by the shape's or another row's, and a control that had the keys leaves the window.
+        .onChange(of: editor.detailRow) { reclaimSoon() }
         // The band's controls join the ring first (they are above everything), or leave it; a band that goes with the keyboard
         // in it (Done, pressed) leaves it on the window, which the canvas then has.
         .onChange(of: activeBand?.index) { reclaimSoonOfBand() }
@@ -119,6 +122,13 @@ public struct DetailPanelView: View {
                 let ids = editor.selectedShapeIDs
                 if ids.count > 1 {
                     SelectionSummary(header: state.selectionSummary(of: ids.compactMap { editor.document[$0] }), editor: editor)
+                } else if let id = editor.selection, let record = editor.document[id], let row = editor.detailRow, row.shape == id,
+                          let part = row.part, state.rowLayout(for: record, part: part) != nil {
+                    // One row of the shape is the subject (`detailRow`): its own panel, made again for each row.
+                    RowPanel(state: state, editor: editor, record: record, part: part, isReadOnly: editor.isReadOnly(id), contentChanged: reclaimSoon,
+                             place: window)
+                        .equatable()
+                        .id(row)
                 } else if let id = editor.selection, let record = editor.document[id] {
                     // Status lines and `shownWhile` read services, and whether the shape can change
                     // reads the containers it's in (a locked frame's shapes are locked too: O(its

@@ -114,7 +114,8 @@ private struct Lights {
     let pointsTo, pointedToBy, mentions, mentionedBy, instances, subtypes: NSColor
 
     @MainActor init(_ registry: Registry) throws {
-        let lights = registry.neighborLights
+        // The shapes' lights: the engineering kit's serve rows alone, a row's panel's (EngineeringTests, `rowPanelShippedTests`).
+        let lights = registry.neighborLights.filter { $0.serves != .rows }
         let colors = try require(lights.count == 6 ? lights.map(\.color) : nil, "six lights, not \(lights.count)")
         (pointsTo, pointedToBy, mentions, mentionedBy, instances, subtypes) = (colors[0], colors[1], colors[2], colors[3], colors[4], colors[5])
     }
@@ -175,9 +176,13 @@ private struct Kinds {
         expect(neighbors < arrowLights && arrowLights < mentionLights && mentionLights < typeLights && typeLights < details,
                "Neighbors, then arrows' lights, then mentions', then types', then the tab that lists them")
         expect(registry.report.contains("neighbors"))
-        let lights = registry.neighborLights
+        // After them the engineering kit's, a row's alone; the six of shapes are these.
+        expectEqual(registry.neighborLights.filter { $0.serves == .rows }.map(\.title), ["Calls It", "Writes", "Reads", "Keys To", "Keyed By"])
+        expectEqual(registry.neighborLights.firstIndex { $0.serves == .rows }, 6, "after the six")
+        let lights = registry.neighborLights.filter { $0.serves != .rows }
         expectEqual(lights.count, 6)
         expectEqual(lights.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes"])
+        expectEqual(lights.map(\.serves), [.shapes, .shapes, .shapes, .both, .shapes, .shapes], "what mentions a row too")
         // Each light asks for the shape named by its id, with the edge types' ids the plugins declare.
         let selector = "#\(ShapeID())"
         expectEqual(lights.map { $0.query(selector) }, [":edge-from(\(selector), arrow|stands-for), :end-of(\(selector), arrow)",
@@ -199,7 +204,7 @@ private struct Kinds {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         let all = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel())
-        let faces: Set<PluginID> = [.neighbors, .arrowLights, .mentionLights, .typeLights, .neighborDetails]
+        let faces: Set<PluginID> = [.neighbors, .arrowLights, .mentionLights, .typeLights, "engineering-lights", .neighborDetails]
         let without = try Registry(plugins: all.filter { !faces.contains($0.id) })
         expectEqual(without.neighborLights.count, 0)
         expectThrows(RegistryError.ownerNotInstalled(point: "NeighborLights", owner: .neighbors, contributor: .arrowLights)) {
@@ -211,7 +216,7 @@ private struct Kinds {
         defer { pasteboard.releaseGlobally() }
         let all = ShippedPlugins.plugins(pasteboard: pasteboard, model: ScriptedLanguageModel())
         let without = try Registry(plugins: all.filter { $0.id != .neighborDetails })
-        expectEqual(without.neighborLights.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes"])
+        expectEqual(without.neighborLights.filter { $0.serves != .rows }.map(\.title), ["Points To", "Pointed To By", "Mentions", "Mentioned By", "Instances", "Subtypes"])
         let editor = CanvasEditor(registry: without, document: CanvasDocument(), scheduler: ManualScheduler())
         expect(editor.neighbors != nil, "the hover")
         expect(editor.neighborList == nil, "the list")

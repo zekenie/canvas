@@ -67,7 +67,7 @@ extension MentionState {
             var names: [String] = [], differs = false
             for run in text.runs {
                 guard case .mention(let target, let held) = run else { continue }
-                let live = (resolutions[target] ?? resolve(target)).appearance?.label
+                let live = kept(of: target).appearance?.label
                 names.append(live ?? held)
                 if let live, live != held { differs = true }
             }

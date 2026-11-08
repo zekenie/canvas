@@ -183,7 +183,7 @@ public enum ProseHighlights {
     /// editor fills too, and the pointer is found on, each mention's pill as `resolve` says it shows.
     /// Kept with what the shape shows, for its text box's size and how its pills show.
     public static func lines<T: ProseTarget>(_ target: T.Type, of id: ShapeID, placed: [PlacedHighlight], in placement: MentionTextPlacement,
-                                             resolve: (ShapeID) -> MentionResolution) -> [[CGRect]] {
+                                             resolve: (PartAddress) -> MentionResolution) -> [[CGRect]] {
         guard !placed.isEmpty else { return [] }
         let key = Key(shape: id, target: ObjectIdentifier(target))
         let box = placement.box

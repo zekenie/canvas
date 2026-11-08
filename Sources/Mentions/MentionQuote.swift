@@ -9,7 +9,8 @@ enum MentionQuote {
     /// breaks included, one space; the mention whole, and as much of the text on either side as
     /// makes about `length` characters, half on each side where both have that much, cut between
     /// words where it can be and marked "…" where text is left out.
-    static func quote(_ runs: [MentionRun], around target: ShapeID, length: Int, name: (ShapeID) -> String?) -> String? {
+    /// A mention of a row is the mention of `target` when `target` is that row, or its shape as a whole (part nil).
+    static func quote(_ runs: [MentionRun], around target: PartAddress, length: Int, name: (PartAddress) -> String?) -> String? {
         var before = "", found: String?, after = ""
         for run in runs {
             let plain: String
@@ -18,7 +19,7 @@ enum MentionQuote {
                 plain = text
             case .mention(let id, let label):
                 plain = "@" + (name(id) ?? label)
-                if found == nil, id == target {
+                if found == nil, id.shape == target.shape, target.part == nil || id.part == target.part {
                     found = plain
                     continue
                 }

@@ -4444,6 +4444,7 @@ or status lines name them.
 |---|---|---|
 | `ShapeDetails` | keyed | A header and sections, one contribution per `details` call. Each section claims (target, tab, id), and a header claims its target, so two plugins adding a Color section to a kind's Style tab, or two headers for one kind, are a `conflict`. A kind's own section and a scoped one (an every-box one, say) may share an id; both show. |
 | `DetailStatuses` | list | Status lines, the shape's state rather than its settings, as a `DetailStatusContribution`: where they go (the footer, or a tab) and `@MainActor (AnyShapeRecord, DetailContext) -> [DetailStatus]`. |
+| `RowDetails` | keyed | A row's tabs' sections, for the rows of the kinds its target reaches: when one shape is selected with one of its rows as an item (or the row its editing has the keys on, `editor.editingPart`), that row is the subject (`editor.detailRow`), and the panel shows the row's header (its lead and name, `DetailRowHeader`) and these tabs alone, no status lines. `x.rowDetails(in:id:title:when:) { row in … }` on a kind (the engineering kit's Endpoint and Column), and in a scope (Neighbors' Connections on every kind with parts). |
 
 Plugins write the sugar, not the points:
 
@@ -7891,7 +7892,12 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
   doubled. Anything that isn't a whole mention is text, byte for byte. The schema's definition
   (`mentions.text`, which every scope refers to) says so, for agents; it's a string without bounds,
   and the registry refuses mention text given a length or a pattern (`MentionTextFormat.checkBounds`).
-- **The value.** `runs` (`MentionRun`: `.text(String)`, `.mention(ShapeID, label:)`) are parsed
+- **A row.** `@[name](shape:UUID/row:UUID)` mentions one of a shape's rows (its part, `PartID`: a
+  table's column, an API's endpoint); its pill shows the row's live full name ("orders.customer_id",
+  an endpoint's method in its chip and its full path), dashed once the row is gone. A copy keeps the
+  row's id; a row moved to another shape is renamed where it went (`ShapeNaming.renamingParts`).
+- **The value.** `runs` (`MentionRun`: `.text(String)`, `.mention(PartAddress, label:)`, a shape and a
+  row or none; `.mention(id, label:)` makes a shape's) are parsed
   once, as it's made. `stored` is the string it was made from, and equality compares it, so a
   board's text, or an agent's lowercase id, writes back as it was read; text made from runs
   (`MentionText([.text("Ask "), .mention(id, label: "Ship"), …])`, what every Mentions surface
@@ -10537,8 +10543,10 @@ next step is a warm cache ([Not built yet](#not-built-yet)).
 - **Ranking and meaning.** `:contains` is a substring filter; ranked or semantic search would be a
   horizontal of its own.
 - **CSS with no meaning here.** Shapes have no siblings, order or columns (`+`, `~`, `:nth-child`,
-  `||`), no pseudo-elements, and a query sees no pointer (`:hover`): each is `unsupported`, never read
-  some other way.
+  `||`), no pseudo-elements but one, and a query sees no pointer (`:hover`): each is `unsupported`, never
+  read some other way. The one is `::part(<row>)`: `#<shape>::part(<row>)` names a row of a shape, and only
+  an edge word that reads one edge's end at its anchor takes it (`:edge-to`, `:edge-from`, `:starts-at`,
+  `:ends-at`, `:start-of`, `:end-of`), counting the edges whose end there is that row.
 - **Acting on what it found.** A query selects, reveals and changes nothing. Its rows' ids name the
   shapes in a later query (`#…`), and in a `draw` script a shape that has no title; a script names
   every other shape by its title.
@@ -11862,7 +11870,9 @@ registrar.keyHint("⌥ Hover", "Show What Points to It", while: .pointer)
 // Mentions (MentionLightsPlugin, id `mention-lights`):
 let mention = MentionEdge.id.rawValue, keys: Modifiers = [.control, .option]
 registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, keys: keys, query: { ":edge-from(\($0), \(mention))" })
-registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, query: { ":edge-to(\($0), \(mention))" },
+// What mentions a row too (`serves: .both`): a row's selector is `#S::part(R)`, and the quote is around that row.
+registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, serves: .both,
+                        query: { ":edge-to(\($0), \(mention))" },
                         caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
 registrar.keyHint("⌃⌥ Hover", "Show Mentions", while: .pointer)
 
@@ -11898,6 +11908,11 @@ registrar.keyHint("⌥ Hover a Type", "Show Its Instances and Subtypes", while: 
   query), and the panel never lists it. `caption`, if given, is a line under a listed shape's name,
   from the editor, the shape the list is of and the listed one, asked of the rows in view as each is
   drawn, so it reads what's kept, never a board (Mentions': a mentioner's text around its mention).
+  `serves` says what it's asked about: shapes (the default; hovering asks only these), rows (a row of a
+  table or an API selected as the panel's subject, its selector `#S::part(R)`: the engineering kit's
+  Calls It, Writes, Reads, Keys To and Keyed By), or both (Mentions' Mentioned By). A row's
+  Connections tab lists the lights that serve rows alone, then those that serve both
+  (`NeighborList.order`), and no Inside or Contains.
   Lights are in plugin order, and a plugin's in the
   order it gives them: a shape's first light is its first ring, so the shipped list has arrows' before
   mentions', and types' last. They are the query language's
@@ -16405,11 +16420,12 @@ neighbors            service NeighborState · outlines
 arrow-lights         neighbor light · neighbor light · key hint ⌥ Hover Show What Points to It
 mention-lights       neighbor light · neighbor light · key hint ⌃⌥ Hover Show Mentions
 type-lights          neighbor light · neighbor light · key hint ⌥ Hover a Type Show Its Instances and Subtypes
-neighbor-details     service NeighborList · ShapeDetails in Connections → every shape
+engineering-lights   neighbor light · neighbor light · neighbor light · neighbor light · neighbor light
+neighbor-details     service NeighborList · ShapeDetails in Connections → every shape · RowDetails in Connections → every shape with parts
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · RowDetails in Column first → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · RowDetails in Endpoint first → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 

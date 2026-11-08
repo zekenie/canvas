@@ -271,7 +271,7 @@ extension SyncBench {
         b.write(house, described("A house: its @, and how many bedrooms (required) it has, counted", mentioning: address, as: "Address"))
         let frame = try require(b.editor.document[house]?.box)
         let pills = b.editor.mentionPills(of: house)
-        expectEqual(pills.map(\.target), [address])
+        expectEqual(pills.map(\.target.shape), [address])
         expectEqual(pills.map(\.isLive), [true])
         expect(frame.insetBy(dx: MemoStyle.padding - 0.5, dy: MemoStyle.padding - 0.5).contains(try require(pills.first).frame))
     },

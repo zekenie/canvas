@@ -248,7 +248,7 @@ extension RowBook {
     private func pillWidth(of drawn: ShapeID, label: String, resolution: MentionResolution, limit: CGFloat) -> CGFloat {
         let key = PillWidthKey(label: resolution.shownLabel(stored: label), isLive: resolution.isLive, limit: limit)
         if let known = pillWidths[key] { return known }
-        let attachment = MentionAttachment(target: drawn, storedLabel: label, resolution: resolution, style: RelationPills.style, width: limit)
+        let attachment = MentionAttachment(target: PartAddress(drawn), storedLabel: label, resolution: resolution, style: RelationPills.style, width: limit)
         let width = ceil(attachment.layout.bounds.width)
         if pillWidths.count >= Self.shownCapacity { pillWidths.removeAll(keepingCapacity: true) }
         pillWidths[key] = width

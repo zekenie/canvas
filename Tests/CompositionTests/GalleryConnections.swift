@@ -35,7 +35,7 @@ extension GalleryStage {
         panelWindow.appearance = appearance
         panelWindow.settle()
         let list = try require(editor.neighborList)
-        spinRunLoop(until: { list.subject == id && list.hasLanded && !list.isAsking })
+        spinRunLoop(until: { list.subject?.shape == id && list.hasLanded && !list.isAsking })
         prepare(list)
         spin(0.05)
         spinRunLoop(until: { !list.isAsking })

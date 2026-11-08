@@ -392,7 +392,7 @@ extension EditorHarness {
         let h = try listHarness(town.file())
         h.watch(town.b)
         h.list.unwatch(town.s)
-        expectEqual(h.list.subject, town.b, "another shape's list going changes nothing")
+        expectEqual(h.list.subject?.shape, town.b, "another shape's list going changes nothing")
         h.list.unwatch(town.b)
         expectEqual(h.list.subject, nil)
         expect(!h.list.hasLanded)
@@ -480,22 +480,22 @@ extension EditorHarness {
         window.contentView = NSHostingView(rootView: DetailPanelView(editor: h.editor))
         defer { window.close() }
         h.editor.selection = town.c
-        window.spin { h.list.subject == town.c && h.list.hasLanded }
+        window.spin { h.list.subject?.shape == town.c && h.list.hasLanded }
         expectEqual(h.rows(Lists.wiredTo), [town.s])
         expectEqual(window.searchFields.count, 0, "one shape listed: nothing to search")
         h.editor.selection = town.b                              // wired from Square, to nineteen more
-        window.spin { h.list.subject == town.b && h.list.hasLanded }
+        window.spin { h.list.subject?.shape == town.b && h.list.hasLanded }
         expectEqual(h.count(Lists.wiredTo), 19)
         window.settle()
         expectEqual(window.searchFields.count, 1, "twenty shapes listed, with Square")
         h.editor.selection = nil
-        window.spin { h.list.subject == nil }
+        window.spin { h.list.subject?.shape == nil }
         expect(!h.list.isAsking)
         // The same shape again: its lists, which read as they did, are drawn again all the same.
         #if DEBUG
         let drawn = h.list.linesDrawn
         h.editor.selection = town.b
-        window.spin { h.list.subject == town.b && !h.list.isAsking }
+        window.spin { h.list.subject?.shape == town.b && !h.list.isAsking }
         window.settle()
         expect(h.list.linesDrawn > drawn, "the rows of a shape selected again are drawn")
         #endif
@@ -509,7 +509,7 @@ extension EditorHarness {
         window.contentView = NSHostingView(rootView: DetailPanelView(editor: h.editor))
         defer { window.close() }
         h.editor.selection = hub
-        window.spin(until: { h.list.subject == hub && h.list.hasLanded }, timeout: 10)
+        window.spin(until: { h.list.subject?.shape == hub && h.list.hasLanded }, timeout: 10)
         window.settle()
         expectEqual(h.count(Lists.wiredTo), 3_000)
         expectEqual(h.rows(Lists.wiredTo).count, 3_000, "every one of them, no cut")
@@ -527,7 +527,7 @@ extension EditorHarness {
         window.contentView = NSHostingView(rootView: DetailPanelView(editor: h.editor))
         defer { window.close() }
         h.editor.selection = hub
-        window.spin(until: { h.list.subject == hub && h.list.hasLanded }, timeout: 20)
+        window.spin(until: { h.list.subject?.shape == hub && h.list.hasLanded }, timeout: 20)
         window.settle()
         expectEqual(h.count(Lists.wiredTo), many)
         expectEqual(h.rows(Lists.wiredTo).count, many, "every one of them, none cut at 10,000")

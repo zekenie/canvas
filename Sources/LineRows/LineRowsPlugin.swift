@@ -26,7 +26,14 @@ extension ShapeRegistrar {
                 }
             },
             marked: { record, reading in record.typed(as: Model.Props.self).map { model.marked($0, in: reading) } ?? [] },
-            lineRect: { line, frame in model.lineRect(line, in: frame) }), to: LineRowsKinds.self)
+            lineRect: { line, frame in model.lineRect(line, in: frame) },
+            card: { editor, record, part in
+                guard let shape = record.typed(as: Model.Props.self),
+                      let row = model.rows(of: shape.props).first(where: { model.id(of: $0) == part }) else { return nil }
+                let context = LineContext(editor: editor, shape: record.id, row: part)
+                guard let card = model.card(of: row, in: context) else { return nil }
+                return LineRowCard(name: card.header.name, lines: card.lines.map { LineRowCard.Line(label: $0.label, value: $0.printed(row, in: context)) })
+            }), to: LineRowsKinds.self)
         // Its rows selected on the canvas (Selection's items) and moved as wholes.
         lineRowItems(model)
     }

@@ -81,7 +81,7 @@ public final class DetailPanelState {
         let shownWhile: [ResolvedSection]
     }
 
-    @ObservationIgnored private unowned let editor: CanvasEditor
+    @ObservationIgnored unowned let editor: CanvasEditor
     @ObservationIgnored private var candidates: [ShapeKind: Candidates] = [:]
     private var chosenTabs: [ShapeKind: DetailTabID] = [:]
     /// What the person collapsed or opened, by key; a section they haven't touched is open, unless it's
@@ -206,6 +206,12 @@ public final class DetailPanelState {
     private func shownTabs() -> (kind: ShapeKind, tabs: [DetailTabID], index: Int)? {
         guard editor.selectedShapeIDs.count == 1, let id = editor.selection, let record = editor.document[id],
               editor.registry.activeDetailTakeover(in: editor) == nil else { return nil }
+        // A row as the subject (`detailRow`): its own tabs, chosen apart from the shape's.
+        if let part = editor.detailRow?.part, let rows = rowLayout(for: record, part: part) {
+            let key = Self.rowKind(of: record.kind)
+            guard rows.tabs.count > 1, let current = currentTab(in: rows, for: key), let index = rows.tabs.firstIndex(of: current) else { return nil }
+            return (key, rows.tabs, index)
+        }
         let layout = layout(for: record)
         guard layout.tabs.count > 1, let current = currentTab(in: layout, for: record.kind),
               let index = layout.tabs.firstIndex(of: current) else { return nil }

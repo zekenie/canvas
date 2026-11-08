@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Palette
 
 /// Where mention text is shown, which says how its pills are colored: on a shape's surface (a
 /// note), in the text's own color, since a tint on a tinted shape would vanish; or on a neutral
@@ -66,12 +67,12 @@ public struct MentionTextStyle: @MainActor Hashable {
     /// character (U+FFFC) with them, holding a `MentionAttachment`, the pill, as `resolve` says it
     /// shows now. A pill that isn't live carries a tooltip ("Deleted"), which text views show.
     /// Text without mentions is one plain run, as a string drawn with `attributes` alone would be.
-    public func attributedString<S>(_ text: ScopedMentionText<S>, resolve: (ShapeID) -> MentionResolution) -> NSAttributedString {
+    public func attributedString<S>(_ text: ScopedMentionText<S>, resolve: (PartAddress) -> MentionResolution) -> NSAttributedString {
         attributedString(text, width: nil, resolve: resolve)
     }
 
     /// The same, for text laid out `width` points wide: no pill is wider than that.
-    public func attributedString<S>(_ text: ScopedMentionText<S>, width: CGFloat?, resolve: (ShapeID) -> MentionResolution) -> NSAttributedString {
+    public func attributedString<S>(_ text: ScopedMentionText<S>, width: CGFloat?, resolve: (PartAddress) -> MentionResolution) -> NSAttributedString {
         if text.runs.count == 1, case .text(let only) = text.runs[0] {
             return NSAttributedString(string: only, attributes: madeAttributes)
         }
@@ -107,10 +108,23 @@ public struct MentionTextStyle: @MainActor Hashable {
             if let names, next < names.count { return names[next] }
             return next < held.count ? held[next] : ""
         }
-        // Its symbol is drawn nowhere, so it names none: the slot is the same.
-        return attributedString(text, width: width) { _ in
-            .live(MentionAppearance(label: label(), systemImage: "", kindName: "", detail: ""))
+        // Its symbol is drawn nowhere, so it names none: the slot is the same. A row's lead isn't known from the text alone, so a
+        // row's pill that leads with a word in capitals (an endpoint's "POST /orders") is measured with its chip, which is
+        // narrower than the symbol's slot and the word's letters in the label's size.
+        return attributedString(text, width: width) { target in
+            let shown = label()
+            return .live(MentionAppearance(label: shown, systemImage: "", kindName: "", detail: "",
+                                           lead: target.part == nil ? .none : Self.measuredLead(of: shown)))
         }
+    }
+
+    /// The chip a row's pill measured from its label is taken to lead with: the label's first word, when it's in capitals and
+    /// something follows it ("POST /orders/{id}"); no lead otherwise. Its color is the pill's, not its width.
+    private static func measuredLead(of label: String) -> PartLead {
+        guard let space = label.firstIndex(of: " ") else { return .none }
+        let word = label[..<space]
+        guard word.count >= 2, word.allSatisfy({ $0.isASCII && $0.isUppercase }) else { return .none }
+        return .chip(String(word), fill: RGB(0.5, 0.5, 0.5))
     }
 
     /// Where each of `ranges` of `string` (made by `attributedString`) is when the canvas draws it

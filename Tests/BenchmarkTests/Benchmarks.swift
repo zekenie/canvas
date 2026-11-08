@@ -601,7 +601,7 @@ func camera(centering bounds: CGRect, at zoom: CGFloat, in size: CGSize) -> Came
                 h.move(to: h.view(CGPoint(x: mention.frame.minX + 4 + CGFloat(step % 7), y: mention.frame.midY)))
                 draw(h.editor, into: context, size: viewport)
             }
-            expectEqual(h.editor.hovered, mention.target, "the pill hovers the subboard it names")
+            expectEqual(h.editor.hovered, mention.target.shape, "the pill hovers the subboard it names")
             report(String(format: "%6d shapes: a hover onto a titled note's pill %5.1f ms, onto a mention's pill %5.1f ms (budget %.0f)",
                           size, onPill, onMention, Budget.frame))
             if holdsToBudgets {

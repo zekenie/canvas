@@ -345,4 +345,6 @@ struct CorePlugin: CanvasPlugin {
 struct StandInLookup {
     let lookup: @MainActor (CanvasEditor, ShapeID) -> [ShapeID]
     let names: @MainActor (AnyShapeRecord, Registry) -> ShapeID?
+    /// The shapes whose records name a shape as a value, by the same index.
+    let namers: @MainActor (CanvasEditor, ShapeID) -> [ShapeID]
 }

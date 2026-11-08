@@ -49,7 +49,7 @@ import TestKit
     test("a click on a pill of a jot that isn't selected selects the jot and edits it from the pill's center") {
         let board = try FaceBoard()
         let pill = try require(board.pills.first)
-        expectEqual(pill.target, idA)
+        expectEqual(pill.target.shape, idA)
         expect(pill.isLive)
         board.h.move(to: try board.onPill())
         board.h.click(at: try board.onPill())
@@ -191,7 +191,7 @@ import TestKit
     },
     test("pills on a shape with several, and none on text without mentions") {
         let board = try FaceBoard(text: mentioning([.text("Ask "), .mention(idA, label: "Groceries"), .text(" and "), .mention(idB, label: "Gone")]))
-        expectEqual(board.pills.map(\.target), [idA, idB])
+        expectEqual(board.pills.map(\.target.shape), [idA, idB])
         board.h.click(at: try board.onPill(1))
         expectEqual(board.editor.editingStartPoint, board.center(board.pills[1]))
         let plain = board.editor.add(Jot(CGRect(x: 400, y: 100, width: 200, height: 200), text: "Nothing here"))

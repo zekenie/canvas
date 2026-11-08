@@ -30,7 +30,7 @@ private final class HostedPanel {
     }
 
     /// The shape whose connections are on screen, if any.
-    var listed: ShapeID? { h.editor.neighborList?.subject }
+    var listed: ShapeID? { h.editor.neighborList?.subject?.shape }
 }
 
 @MainActor let panelTests = Suite("The panel on a refused Make Private", [

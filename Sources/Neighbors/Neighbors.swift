@@ -40,17 +40,29 @@ public struct NeighborLight: Sendable {
     /// A line under a listed shape's name, from the shape the list is of and the listed one (a
     /// mentioner's text around its mention). Nil for none. Asked of the rows in view, as each is
     /// drawn, so it reads what's kept, never a board.
-    public var caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: ShapeID, _ neighbor: ShapeID) -> String?)?
+    /// The subject is the shape, or the row (`PartAddress.part`), whose list it is.
+    public var caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: PartAddress, _ neighbor: ShapeID) -> String?)?
+    /// What it's asked about: shapes (hovered, and selected), rows (a row selected, whose panel lists its connections: `#S::part(R)`
+    /// is the selector its query is given), or both. Shapes, by default. Hovering asks only those that serve shapes, and a row's
+    /// list only those that serve rows.
+    public var serves: NeighborSubjects
 
-    public init(_ title: String, color: NSColor, keys: Modifiers = [], query: @escaping @Sendable (String) -> String,
-                between: (@Sendable (String) -> String)? = nil,
-                caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: ShapeID, _ neighbor: ShapeID) -> String?)? = nil) {
+    public init(_ title: String, color: NSColor, keys: Modifiers = [], serves: NeighborSubjects = .shapes,
+                query: @escaping @Sendable (String) -> String, between: (@Sendable (String) -> String)? = nil,
+                caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: PartAddress, _ neighbor: ShapeID) -> String?)? = nil) {
         self.title = title
         self.color = color
         self.keys = keys
+        self.serves = serves
         self.query = query
         self.between = between
         self.caption = caption
+    }
+
+    /// The selector that names a subject in a light's query: `#` and the shape's id, and for a row `::part(` and its id `)`, the
+    /// query language's (an edge word's anchor takes it).
+    public static func selector(of subject: PartAddress) -> String {
+        subject.part.map { "#\(subject.shape)::part(\($0))" } ?? "#\(subject.shape)"
     }
 
     /// The query whose matches are outlined: the shapes at the other end, and what runs between.
@@ -63,6 +75,20 @@ public struct NeighborLight: Sendable {
     /// color.
     public static func color(light: Int, dark: Int) -> NSColor {
         NSColor(light: RGB(hex: UInt32(truncatingIfNeeded: light)), dark: RGB(hex: UInt32(truncatingIfNeeded: dark)))
+    }
+}
+
+/// What a light is asked about: shapes, rows, or both (`NeighborLight.serves`).
+public enum NeighborSubjects: Sendable, Equatable {
+    case shapes, rows, both
+
+    /// Whether it serves this subject: a shape (part nil), or a row.
+    public func serves(_ subject: PartAddress) -> Bool {
+        switch self {
+        case .shapes: subject.part == nil
+        case .rows: subject.part != nil
+        case .both: true
+        }
     }
 }
 
@@ -85,12 +111,16 @@ extension PluginRegistrar {
     /// order, and a plugin's in the order it gives them. A light shown with keys is said beside it
     /// with `registrar.keyHint(…, while: .pointer)`, once for its keys, for the Keyboard Shortcuts
     /// window.
+    ///
+    /// `serves` says whether a shape, a row (a row selected: its panel's Connections tab), or both are what it's asked about: a light
+    /// for rows is given `#S::part(R)`, and hovering never asks it.
     public mutating func neighborLight(
-        _ title: String, color: NSColor, keys: Modifiers = [], query: @escaping @Sendable (String) -> String,
+        _ title: String, color: NSColor, keys: Modifiers = [], serves: NeighborSubjects = .shapes, query: @escaping @Sendable (String) -> String,
         between: (@Sendable (String) -> String)? = nil,
-        caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: ShapeID, _ neighbor: ShapeID) -> String?)? = nil
+        caption: (@MainActor @Sendable (_ editor: CanvasEditor, _ subject: PartAddress, _ neighbor: ShapeID) -> String?)? = nil
     ) {
-        contribute(NeighborLight(title, color: color, keys: keys, query: query, between: between, caption: caption), to: NeighborLights.self)
+        contribute(NeighborLight(title, color: color, keys: keys, serves: serves, query: query, between: between, caption: caption),
+                   to: NeighborLights.self)
     }
 }
 
@@ -108,7 +138,8 @@ public struct NeighborsPlugin: ListedPlugin {
     public var id: PluginID { .neighbors }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.service { NeighborState(editor: $0, lights: $0.registry.neighborLights) }
+        // Hovering asks about a shape: the lights that serve rows alone aren't asked.
+        registrar.service { NeighborState(editor: $0, lights: $0.registry.neighborLights.filter { $0.serves != .rows }) }
         registrar.outlines { $0.neighbors?.outlines ?? Outlines() }
     }
 }
