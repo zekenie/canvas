@@ -17,7 +17,8 @@ import Titles
 // Rows (K11): a board where one shape in ten is a 12-row table and one in a hundred a 60-row table, the rest notes, drawn
 // at 100% and 70% (each table's rows in view only, their text set once) and zoomed out at 30% and 10% (a bar a line in
 // view, one fill a color, none where a row is under 2 points); and ⌃⌘↑ on 1,000 tables with nothing selected, then the
-// frame after (each fold a provided layout input, laid out again only for the tables folded).
+// frame after (each fold a provided layout input, laid out again only for the tables folded); a row moved by ⌥↑ (K8) and
+// one event of a row dragged (K9).
 
 extension Budget {
     /// A frame of the rows board at 100% and at 70%. Never measured before rows were folded: the budget is a frame.
@@ -36,6 +37,10 @@ extension Budget {
     static let rowMoveCommit = 2 * fieldKeystroke
     /// The frame after that key, its table in view with the row selected: a frame (the items' outline reads the kept list).
     static let rowMoveFrame = frame
+    /// One event of a drag of rows (K9) over a board of 10,000 shapes: the shape under the pointer (the spatial grid), the gap
+    /// nearest it, and where the rows would land there worked out through the kind's move. The plan's: within 1 ms. Never
+    /// measured before the drag.
+    static let rowDragEvent = 1.0
 }
 
 /// `count` shapes in a grid 280 apart, each tenth a 12-row titled table, each hundredth a 60-row one, the rest notes.
@@ -135,5 +140,35 @@ extension Budget {
             expect(cost < Budget.rowMoveCommit, "moving a row of a 500-row table took \(cost) ms")
             expect(frameAfter < Budget.rowMoveFrame, "the frame after moving a row of a 500-row table took \(frameAfter) ms")
         }
+    },
+    test("rowDragEvent: one event of a drag of a table's row over a board of 10,000 shapes, from one gap of another table to another, within 1 ms") {
+        let viewport = CGSize(width: 1200, height: 800)
+        let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
+        let board = rowsBoard(10_000)
+        // Tables 10 and 50 of the grid, one above the other (12 rows each): a row of the first dragged over the second's gaps.
+        let source = board[10].id, target = board[50].id
+        let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: board), scheduler: $0) }
+        h.editor.viewportDidResize(to: viewport)
+        h.editor.camera = camera(centering: CGRect(x: 3400, y: 0, width: 300, height: 700), at: 1, in: viewport)
+        let columns = try require(h.editor.document[source]?.typed(as: DatabaseTable.self)?.props.columns)
+        h.editor.selectedShapeIDs = [source]
+        h.editor.selectItems([AnyHashable(columns[3].id)], of: source)
+        let row = try require(h.editor.shapeContext.geometry(of: source)?.parts.frame(columns[3].id)?.rect)
+        let frame = try require(h.editor.shapeContext.frame(of: h.editor.document[target]!))
+        h.press(at: h.view(CGPoint(x: row.midX, y: row.midY)))
+        h.drag(to: h.view(CGPoint(x: row.midX, y: row.midY + 8)))
+        var costs: [Double] = []
+        for run in 0..<measuredRuns(21) {
+            // A gap of its own each event, so none is the one worked out last.
+            let gap = CGFloat(2 + run % 7)
+            let point = h.view(CGPoint(x: frame.midX, y: frame.minY + KitStyle.topInset + gap * KitStyle.rowHeight + 2))
+            costs.append(threadCPUTime { h.drag(to: point, after: 0) }.milliseconds)
+        }
+        expectEqual(h.editor.hintedShapeID, target, "over the other table")
+        h.escape()
+        h.release()
+        let sorted = costs.sorted(), best = sorted[0], middle = sorted[sorted.count / 2]
+        report(String(format: "a drag event of a table's row over 10,000 shapes: %.3f ms best, %.3f median (budget %.0f)", best, middle, Budget.rowDragEvent))
+        if holdsToBudgets { expect(middle < Budget.rowDragEvent, "a drag event took \(middle) ms") }
     },
 ])

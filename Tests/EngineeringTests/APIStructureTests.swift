@@ -81,7 +81,7 @@ private let grouped = ["GET /health", "/users", "GET /{id}", "/orders", "GET /{i
         b.press(.escape)
         expectEqual(Set(b.fullNames(api)), Set(full))
     },
-    test("an endpoint moved above the first header leaves every group and takes its prefix with it; across headers it keeps its own path, as a file moved between folders") {
+    test("an endpoint moved above the first header leaves every group and takes its prefix with it; back under a header that covers it, its full path kept; across headers it keeps its own path, as a file moved between folders") {
         let b = try KitBench()
         let api = b.api("orders API", ["/orders", "GET /{id}", "/customers", "GET /{id}/orders"])
         let ids = b.rows(api).map(\.id)
@@ -92,9 +92,12 @@ private let grouped = ["GET /health", "/users", "GET /{id}", "/orders", "GET /{i
         expectEqual(b.rows(api).map(\.id), [ids[1], ids[0], ids[2], ids[3]])
         expectEqual(b.rows(api).first?.endpoint?.path, "/orders/{id}", "under no header now: its whole path")
         expectEqual(b.fullNames(api).first, "GET /orders/{id}")
-        b.press(Chord(Key.down, .option), times: 2)
+        b.press(Chord(Key.down, .option))
+        expectEqual(b.rows(api).map(\.id), ids, "back under /orders")
+        expectEqual(b.rows(api)[1].endpoint?.path, "/{id}", "a header that covers its full path takes it back: the move back is exact")
+        b.press(Chord(Key.down, .option))
         expectEqual(b.rows(api).map(\.id), [ids[0], ids[2], ids[1], ids[3]])
-        expectEqual(b.fullNames(api).suffix(2), ["GET /customers/orders/{id}", "GET /customers/{id}/orders"], "under /customers: its own path kept, its full path follows its group")
+        expectEqual(b.fullNames(api).suffix(2), ["GET /customers/{id}", "GET /customers/{id}/orders"], "under /customers: its own path kept, its full path follows its group")
         b.press(.escape)
     },
     test("a full path pasted into an API with headers goes under the longest header it starts with, its path as written under it, else at the top; one Paste Endpoints") {

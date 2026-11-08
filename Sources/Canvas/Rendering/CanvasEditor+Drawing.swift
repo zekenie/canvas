@@ -87,10 +87,10 @@ extension CanvasEditor {
                 for record in pending { drawShape(record, in: pendingContext) }
             }
         }
-        // A drag's ghosts (`Session.ghosts`), faint as those are, bare: no overlay decorates them.
+        // A drag's ghosts (`Session.ghosts`), nearly opaque, bare: no overlay decorates them.
         if let ghosts = session?.ghosts, !ghosts.isEmpty {
             let ghostContext = shapes.layingOut(with: ghosts).over(CanvasDocument(shapes: ghosts))
-            Self.drawingPending(in: context) {
+            Self.drawingPending(in: context, opacity: Style.ghostOpacity) {
                 for record in ghosts { drawShape(record, in: ghostContext) }
             }
         }
@@ -304,11 +304,11 @@ extension CanvasEditor {
     /// long ago, or a mark that isn't current), or a shape that could be anywhere changed.
     @_spi(Host) public func damage(since mark: DamageMark) -> CGRect { shapeIndex.damage(since: mark, in: shapeContext) }
 
-    /// Draws as shapes waiting to be placed are drawn: at `Style.pendingOpacity`, as one layer, so
-    /// what overlaps within it (a shape and its shadow) isn't darkened twice.
-    static func drawingPending(in context: CGContext, _ draw: () -> Void) {
+    /// Draws as shapes waiting to be placed are drawn: at `Style.pendingOpacity` (a drag's ghosts at their own), as one
+    /// layer, so what overlaps within it (a shape and its shadow) isn't darkened twice.
+    static func drawingPending(in context: CGContext, opacity: CGFloat = Style.pendingOpacity, _ draw: () -> Void) {
         context.saveGState()
-        context.setAlpha(Style.pendingOpacity)
+        context.setAlpha(opacity)
         context.beginTransparencyLayer(auxiliaryInfo: nil)
         draw()
         context.endTransparencyLayer()

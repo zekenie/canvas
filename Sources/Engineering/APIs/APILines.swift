@@ -297,7 +297,8 @@ struct APILines: LineModel {
     /// What a change does to the rows, keeping each endpoint's full path where the change isn't about it: a header taken out (or
     /// retyped as an endpoint) leaves its members holding the full paths they had, a header moved takes its group with it, and an
     /// endpoint that leaves every group takes its prefix along. A header retyped as a header is the rename, which every member's
-    /// full path follows, as it is typed; an endpoint moved across headers keeps its path under the new one.
+    /// full path follows, as it is typed; an endpoint moved under a header that covers its full path keeps it (so a move back is
+    /// exact), and one moved across to another keeps its own path under the new one.
     func applying(_ change: LineChange<APIRow>, to rows: inout [APIRow]) -> Bool {
         let old = rows
         switch change {
@@ -322,9 +323,9 @@ struct APILines: LineModel {
             let held = rows.remove(at: at)
             let to = min(max(0, index), rows.count)
             rows.insert(held, at: to)
-            // Under a header now it keeps its own path, as a file moved between folders; under none, it keeps its whole path.
-            if case .endpoint(var endpoint) = held, APIGroups.header(of: to, in: rows) == nil, APIGroups.header(of: at, in: old) != nil {
-                endpoint.path = was
+            if case .endpoint(var endpoint) = held, let path = Self.path(of: endpoint, was: was, from: APIGroups.header(of: at, in: old),
+                                                                            to: APIGroups.header(of: to, in: rows)) {
+                endpoint.path = path
                 rows[to] = .endpoint(endpoint)
             }
         }
@@ -364,18 +365,35 @@ struct APILines: LineModel {
         return changes
     }
 
-    /// Rows moved within the API as a block (⌥↑ ⌥↓ on rows selected as items, a drag), each endpoint's full path kept as the line's
-    /// move keeps it: one moved under a header keeps its own path under it (a file moved between folders), one under none takes
-    /// its prefix along, and one a header landed among or left keeps the full path it had, put back where its header is if the
-    /// header it falls under now doesn't cover it.
+    /// Rows moved within the API as a block (⌥↑ ⌥↓ on rows selected as items, a drag), each endpoint's path as the line's move
+    /// leaves it (`path(of:was:from:to:)`), and one a header landed among or left keeping the full path it had, put back where
+    /// its header is if the header it falls under now doesn't cover it.
     func reordering(_ moved: Set<PartID>, to index: Int, in rows: [APIRow]) -> [APIRow] {
         var rest = rows.filter { !moved.contains($0.id) }
         rest.insert(contentsOf: rows.filter { moved.contains($0.id) }, at: min(max(0, index), rest.count))
+        var full: [PartID: (path: String, header: PathHeader?)] = [:]
+        for (at, row) in rows.enumerated() where moved.contains(row.id) && row.header == nil {
+            full[row.id] = (APIGroups.fullPath(of: at, in: rows), APIGroups.header(of: at, in: rows))
+        }
         var kept: Set<PartID> = []
-        for (at, row) in rest.enumerated() where moved.contains(row.id) && row.header == nil && APIGroups.header(of: at, in: rest) != nil {
+        for (at, row) in rest.enumerated() {
+            guard case .endpoint(var endpoint) = row, let was = full[row.id] else { continue }
+            if let path = Self.path(of: endpoint, was: was.path, from: was.header, to: APIGroups.header(of: at, in: rest)) {
+                endpoint.path = path
+                rest[at] = .endpoint(endpoint)
+            }
             kept.insert(row.id)
         }
         return APIGroups.regrouped(rest, from: rows, except: kept)
+    }
+
+    /// The path an endpoint moved from under `from` to under `to` is written with, its full path `was` before; nil to keep it as it
+    /// is. Under none now, its whole path (it takes its prefix along); under a header that covers its full path, the rest of it, so
+    /// its full path is what it was and a move back is exact; under another header, its own path, as a file moved between folders.
+    static func path(of endpoint: Endpoint, was: String, from: PathHeader?, to: PathHeader?) -> String? {
+        guard from?.id != to?.id else { return nil }
+        guard let to else { return was }
+        return APIGroups.isUnder(was, to.prefix) ? APIGroups.relative(was, under: to.prefix) : nil
     }
 
     /// Endpoints taken out are a new API (⌘X then ⌘V on the board, Move Endpoints to New API, a drag onto the board): served where

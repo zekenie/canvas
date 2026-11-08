@@ -63,9 +63,9 @@ public protocol Session: AnyObject {
     /// Draws what the session shows while it runs (a marquee), in world units, above the world
     /// overlays.
     func draw(in context: OverlayContext)
-    /// Shapes not on the board that the drag shows under the pointer (rows dragged, as a card of their own): drawn faint
-    /// as shapes waiting to be placed are (`placeLater`), each laid out where it is, over the board's shapes and under the
-    /// overlays, which don't decorate them. Each under an id of its own, none the board's. Empty for most.
+    /// Shapes not on the board that the drag shows under the pointer (rows dragged, as a card of their own): drawn as one
+    /// layer at `Style.ghostOpacity`, each laid out where it is, over the board's shapes and under the overlays, which don't
+    /// decorate them. Each under an id of its own, none the board's. Empty for most.
     var ghosts: [AnyShapeRecord] { get }
 }
 
