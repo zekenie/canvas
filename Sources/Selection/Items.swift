@@ -181,7 +181,10 @@ extension CanvasEditor {
     /// The items selected inside the only selected shape (`ShapeItems`), as its items show now: one hidden by a fold since it
     /// was selected is the item standing for it. Nil with none. Without the Selection plugin, nil.
     public var selectedItems: ItemSelection? {
-        guard let state = selectionState, let held = state.items else { return nil }
+        guard let state = selectionState else { return nil }
+        // Observed: a view reading this (a panel whose subject is a row) redraws as the items change.
+        _ = state.itemsVersion
+        guard let held = state.items else { return nil }
         return state.shown(held)
     }
 

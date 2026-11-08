@@ -123,11 +123,14 @@ final class SelectionState {
     /// The items selected inside the only selected shape (`ShapeItems`: a table's rows), as they were selected: let go with
     /// any other change of the selection, a part focused, another tool or board, and the shape's editing ending. VoiceOver's
     /// focus follows them.
+    /// Bumped as `items` changes, and observed: what a view that reads `selectedItems` redraws for (a panel whose subject is a row).
+    private(set) var itemsVersion = 0
     /// What `items` shows as, kept between changes (`shown`).
     @ObservationIgnored var keptItems: KeptItems?
     @ObservationIgnored var items: HeldItems? {
         didSet {
             guard items != oldValue else { return }
+            itemsVersion &+= 1
             if items != nil { clearPartFocus() }
             editor.setNeedsDisplay()
             editor.accessibilityFocusDidChange()

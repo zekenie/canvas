@@ -66,7 +66,7 @@ private let e6 = #"""
         w.window.spin { list.subject == row && list.hasLanded && !list.isAsking }
         let lists = list.settled()
         expectEqual(lists.map(\.title), ["Calls It", "Writes", "Reads", "Mentioned By"], "E6's order")
-        expectEqual(lists.map { $0.rows.map(\.name) }, [["storefront"], ["refunds"], ["payments"], ["Partial refunds go through"]])
+        expectEqual(lists.map { $0.rows.map(\.name) }, [["storefront"], ["refunds"], ["payments"], ["Partial refunds go through @POST /orders/{id}/refunds"]])
         expectEqual(lists.last?.rows.first?.id, note)
         expectEqual(lists.last?.rows.first?.caption, "Partial refunds go through @POST /orders/{id}/refunds", "the note around its mention")
         // Another endpoint lists nothing of these; the API as a whole keeps the shipped lists.
@@ -114,7 +114,7 @@ private let e6 = #"""
         defer { w.board.close() }
         let editor = w.editor
         try w.turnKitOn()
-        try w.draw(#"api "orders API" server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /{id}\nPOST /{id}/refunds""#)
+        try w.draw(#"api "orders API" server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /orders/{id}\nPOST /orders/{id}/refunds""#)
         let api = try require(shape(editor, "orders API")).id
         let row = try require(endpoint(editor, api, "POST /orders/{id}/refunds"))
         let note = mentioningNote(editor, row, label: "POST /orders/{id}/refunds")
@@ -122,14 +122,13 @@ private let e6 = #"""
         expectEqual(mentions.resolve(row).appearance?.label, "POST /orders/{id}/refunds")
         expect({ if case .chip("POST", _)? = mentions.resolve(row).appearance?.lead { true } else { false } }(), "its pill leads with the method's chip")
         let header = try require(editor.registry.parts(of: try require(editor.document[api]))?.first { $0.name == "/orders" }).id
+        let walk = w.walk()
         editor.selectedShapeIDs = [api]
         editor.beginEditing(api)
         w.window.settle()
         w.lineRows?.go(to: .row(header))
         w.window.settle()
-        let walk = w.walk()
-        try require(w.lineRows?.field).selectAll(nil)
-        w.type("/purchases", with: walk)
+        w.retype("/purchases", with: walk)
         walk.press(.down)
         w.window.settle()
         expectEqual(editor.registry.parts(of: try require(editor.document[api]))?.first { $0.id == row.part }?.name, "POST /purchases/{id}/refunds")

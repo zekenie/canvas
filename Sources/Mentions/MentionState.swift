@@ -300,6 +300,21 @@ public final class MentionState {
         return MentionResolution.row(part, of: record, shape: appearance(of: record), in: registry)
     }
 
+    /// What mentions of these rows of `shape` show now: the shape looked up, and its rows read, once for them all.
+    private func resolveRows(_ parts: [PartID], of shape: ShapeID) -> [PartID: MentionResolution] {
+        let record = editor.document[shape] ?? (editor.file.board(containing: shape) != nil ? editor.shape(inFile: shape) : nil)
+        guard let record else {
+            let gone: MentionResolution = editor.file.board(containing: shape) == nil ? .missing : .unavailable
+            return Dictionary(uniqueKeysWithValues: parts.map { ($0, gone) })
+        }
+        guard let appearance = appearance(of: record) else { return Dictionary(uniqueKeysWithValues: parts.map { ($0, .unavailable) }) }
+        var names: [PartID: PartName] = [:]
+        for part in registry.parts(of: record) ?? [] where names[part.id] == nil { names[part.id] = part }
+        return Dictionary(uniqueKeysWithValues: parts.map { part in
+            (part, names[part].map { .live(MentionAppearance.row($0, of: appearance)) } ?? .missing)
+        })
+    }
+
     /// What a mention of `target` shows, as kept where it's tracked (every shape and row the file mentions), else resolved now.
     func kept(of target: PartAddress) -> MentionResolution {
         if let part = target.part { return rowResolutions[target.shape]?[part] ?? resolve(target) }
@@ -1080,8 +1095,7 @@ public final class MentionState {
     /// Resolves a tracked target again, and its tracked rows, noting it in `changed` if what it or one of them shows changed.
     private func resolveAgain(_ id: ShapeID, into changed: inout Set<ShapeID>) {
         if let rows = rowResolutions[id] {
-            var now = rows
-            for part in rows.keys { now[part] = resolve(PartAddress(id, part: part)) }
+            let now = resolveRows(Array(rows.keys), of: id)
             if now != rows {
                 rowResolutions[id] = now
                 changed.insert(id)
