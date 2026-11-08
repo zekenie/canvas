@@ -35,6 +35,12 @@ public final class MentionState {
 
     /// How each shape that's mentioned (anywhere in the file) or observed shows now.
     @ObservationIgnored var resolutions: [ShapeID: MentionResolution] = [:]
+    /// How each row that's mentioned or observed shows now, by its shape: resolved again with its shape, so a commit costs the
+    /// rows of the shapes it changed. A row's shape is always among `resolutions` too (a mention of a row is an edge into it).
+    @ObservationIgnored var rowResolutions: [ShapeID: [PartID: MentionResolution]] = [:]
+    /// The rows text views observe (`observe(_:rows:_:)`), each as many times as it's observed: kept resolved though nothing
+    /// mentions them yet (a pill just picked, before its text is written).
+    @ObservationIgnored private var observedRows: [PartAddress: Int] = [:]
     /// The kinds that lay out by the names their mentions show (`registrar.mentionLayout`), and the
     /// shapes of them given names other than the ones their text holds (`MentionLayout.names`).
     @ObservationIgnored lazy var layoutKinds: Set<ShapeKind> = Set(registry.kinds.filter {
@@ -100,9 +106,12 @@ public final class MentionState {
     /// The editor's slash commands, if it has them: what a mention text view hosts for its shape.
     var slashCommandState: SlashCommandState? { editor.service(SlashCommandState.self) }
 
-    /// Resolves every shape that's mentioned anywhere in the file.
+    /// Resolves every shape and row that's mentioned anywhere in the file.
     private func trackMentioned() {
-        for edge in topology?.edges(ofType: mentionEdges) ?? [] { track(edge.target) }
+        for edge in topology?.edges(ofType: mentionEdges) ?? [] {
+            track(edge.target)
+            if let part = edge.targetPart { trackRow(PartAddress(edge.target, part: part)) }
+        }
     }
 
     /// Lays out every shape that mentions anything, as the names show now: what a file put in place
@@ -119,6 +128,12 @@ public final class MentionState {
     /// order (a board's in its order, each board where its owner is, depth first). `target` needn't
     /// be anywhere.
     public func mentioners(of target: ShapeID) -> [ShapeID] {
+        ordered(mentionerSet(of: target), shown: editor.document, in: editor.file)
+    }
+
+    /// The shapes that mention a row (`target.part`), each once, in `mentioners(of:)`'s order; for a shape as a whole (part
+    /// nil), those that mention it or any of its rows, as `mentioners(of:)` says.
+    public func mentioners(of target: PartAddress) -> [ShapeID] {
         ordered(mentionerSet(of: target), shown: editor.document, in: editor.file)
     }
 
@@ -149,10 +164,23 @@ public final class MentionState {
         return place.reversed()
     }
 
-    /// The shapes whose mention text mentions `target`, in no order.
+    /// The shapes whose mention text mentions `target` (or one of its rows), in no order.
     private func mentionerSet(of target: ShapeID) -> Set<ShapeID> {
         guard let topology else { return [] }
         return Set(topology.edges(of: target, .incoming, types: mentionEdges).lazy.map(\.carrier))
+    }
+
+    /// The shapes whose mention text mentions the row (its shape, or any of its rows, for a shape as a whole), in no order.
+    private func mentionerSet(of target: PartAddress) -> Set<ShapeID> {
+        guard let part = target.part else { return mentionerSet(of: target.shape) }
+        guard let topology else { return [] }
+        return Set(topology.edges(of: target.shape, .incoming, types: mentionEdges).lazy.filter { $0.targetPart == part }.map(\.carrier))
+    }
+
+    /// The rows of `shape` that some text mentions.
+    private func mentionedRows(of shape: ShapeID) -> Set<PartID> {
+        guard let topology else { return [] }
+        return Set(topology.edges(of: shape, .incoming, types: mentionEdges).compactMap(\.targetPart))
     }
 
     /// Whether any shape's mention text mentions `target`, anywhere in the file, its own included:
@@ -178,12 +206,19 @@ public final class MentionState {
         topology?.hasEdges(of: target, .incoming, types: mentionEdges) { $0.carrier != target } ?? false
     }
 
-    /// The shapes whose mention text mentions any of `targets`, but the targets themselves (their
-    /// mentions of themselves), each once, in no order.
-    private func mentionersOfAny(_ targets: [ShapeID]) -> Set<ShapeID> {
+    /// Whether another shape mentions the row (`isMentioned(_:)` for a shape as a whole): the row's own shape's text doesn't count.
+    public func isMentioned(_ target: PartAddress) -> Bool {
+        guard let part = target.part else { return isMentioned(target.shape) }
+        return topology?.hasEdges(of: target.shape, .incoming, types: mentionEdges) { $0.carrier != target.shape && $0.targetPart == part } ?? false
+    }
+
+    /// The shapes whose mention text mentions any of `targets` (a row's, only that row; a shape's, it or its rows), but the
+    /// targets' own shapes (their mentions of themselves), each once, in no order.
+    private func mentionersOfAny(_ targets: [PartAddress]) -> Set<ShapeID> {
         var found: Set<ShapeID> = []
         for target in targets {
-            for edge in topology?.edges(of: target, .incoming, types: mentionEdges) ?? [] where edge.carrier != target {
+            for edge in topology?.edges(of: target.shape, .incoming, types: mentionEdges) ?? []
+            where edge.carrier != target.shape && (target.part == nil || edge.targetPart == target.part) {
                 found.insert(edge.carrier)
             }
         }
@@ -197,10 +232,15 @@ public final class MentionState {
     /// in text being edited, going ends the editing that menu's view is part of. Nothing, if nothing
     /// mentions them.
     public func showWhatMentions(_ targets: [ShapeID]) {
+        showWhatMentions(targets.map { PartAddress($0) })
+    }
+
+    /// `showWhatMentions(_:)` of rows, or shapes (part nil): what mentions a row is what mentions that row.
+    public func showWhatMentions(_ targets: [PartAddress]) {
         _ = editor.scheduler.schedule(after: .zero) { [weak self] in self?.goToMentioners(of: targets) }
     }
 
-    private func goToMentioners(of targets: [ShapeID]) {
+    private func goToMentioners(of targets: [PartAddress]) {
         editor.endEditing()                                     // what the text saves as it closes, indexed first
         let mentioners = ordered(mentionersOfAny(targets), shown: editor.document, in: editor.file)
         guard !mentioners.isEmpty else { return }
@@ -213,6 +253,12 @@ public final class MentionState {
     /// light). Nil for a shape that isn't in the file, or whose text doesn't mention it (a pointer,
     /// which is no text). It reads the mentioner's record without observing the file.
     public func quote(of mentioner: ShapeID, around target: ShapeID) -> String? {
+        quote(of: mentioner, around: PartAddress(target))
+    }
+
+    /// The quote around a mentioner's first mention of a row (`target.part`); of a shape as a whole, its first mention of the
+    /// shape or one of its rows.
+    public func quote(of mentioner: ShapeID, around target: PartAddress) -> String? {
         editor.withoutObservingDocument {
             (editor.document[mentioner] ?? editor.file.record(mentioner)).flatMap { quote(of: $0, around: target) }
         }
@@ -220,7 +266,7 @@ public final class MentionState {
 
     /// The quote around a mentioner's first mention of `target`: in the first of its texts that
     /// mentions it, wherever the shape keeps it.
-    private func quote(of record: AnyShapeRecord, around target: ShapeID) -> String? {
+    private func quote(of record: AnyShapeRecord, around target: PartAddress) -> String? {
         guard !record.isOpaque else { return nil }
         var quote: String?
         record.forEachNamingValue(in: registry) { _, value in
@@ -230,9 +276,7 @@ public final class MentionState {
                 var runs: [MentionRun] = []
                 text.forEachMentionRun { runs.append($0) }
                 // Every shape the file mentions is tracked, so its name is kept.
-                quote = MentionQuote.quote(runs, around: target, length: MentionStyle.quoteLength) {
-                    (resolutions[$0] ?? resolve($0)).appearance?.label
-                }
+                quote = MentionQuote.quote(runs, around: target, length: MentionStyle.quoteLength) { kept(of: $0).appearance?.label }
             }
         }
         return quote
@@ -244,6 +288,22 @@ public final class MentionState {
     public func resolve(_ target: ShapeID) -> MentionResolution {
         if let record = editor.document[target] { return resolve(record) }
         return resolve(elsewhere: target, in: editor.file)
+    }
+
+    /// What a mention of a row shows now: its shape's row, by its live full name (an endpoint's method and full path; a column
+    /// with its table's name, "orders.customer_id"), wherever the shape is; missing when the shape is there and the row isn't;
+    /// as its shape's otherwise. A shape as a whole (part nil): `resolve(_:)`.
+    public func resolve(_ target: PartAddress) -> MentionResolution {
+        guard let part = target.part else { return resolve(target.shape) }
+        let record = editor.document[target.shape] ?? (editor.file.board(containing: target.shape) != nil ? editor.shape(inFile: target.shape) : nil)
+        guard let record else { return editor.file.board(containing: target.shape) == nil ? .missing : .unavailable }
+        return MentionResolution.row(part, of: record, shape: appearance(of: record), in: registry)
+    }
+
+    /// What a mention of `target` shows, as kept where it's tracked (every shape and row the file mentions), else resolved now.
+    func kept(of target: PartAddress) -> MentionResolution {
+        if let part = target.part { return rowResolutions[target.shape]?[part] ?? resolve(target) }
+        return resolutions[target.shape] ?? resolve(target.shape)
     }
 
     /// What a mention of a shape that isn't on the board shown shows, in the file as it is.
@@ -273,7 +333,7 @@ public final class MentionState {
     /// they share what the state keeps, which the next change to it (a rename, a shape mentioned
     /// anew) copies once while they're held. They're as of the last commit the state heard: every
     /// commit, but to a service hearing one.
-    public var labels: MentionLabels { MentionLabels(resolutions) }
+    public var labels: MentionLabels { MentionLabels(resolutions, rows: rowResolutions) }
 
     /// A target's revision: +1 each time what a mention of it shows changes. Reading it observes
     /// only that target, so a SwiftUI view of a pill redraws when its own target changes.
@@ -286,15 +346,22 @@ public final class MentionState {
     private subscript(revision target: ShapeID) -> Int { revisions[target] ?? 0 }
 
     /// Calls `changed` with those of `targets` whose resolution a commit changed, once per commit,
-    /// as it hears it (an AppKit view's pills: it updates their images, and transacts nothing).
-    /// Until the observation is cancelled, or let go of.
-    public func observe(_ targets: Set<ShapeID>, _ changed: @escaping @MainActor (Set<ShapeID>) -> Void) -> MentionObservation {
+    /// as it hears it (an AppKit view's pills: it updates their images, and transacts nothing): a
+    /// shape is changed when it or one of its rows `rows` names (a row's pill: its shape is among
+    /// `targets`) shows otherwise. Until the observation is cancelled, or let go of.
+    public func observe(_ targets: Set<ShapeID>, rows: Set<PartAddress> = [], _ changed: @escaping @MainActor (Set<ShapeID>) -> Void) -> MentionObservation {
         let key = nextObservation
         nextObservation += 1
-        observations[key] = Observer(targets: targets, changed: changed)
+        let rows = rows.filter { $0.part != nil }
+        let targets = targets.union(rows.map(\.shape))
+        observations[key] = Observer(targets: targets, rows: rows, changed: changed)
         for target in targets {
             observersByTarget[target, default: []].insert(key)
             track(target)
+        }
+        for row in rows {
+            observedRows[row, default: 0] += 1
+            trackRow(row)
         }
         return MentionObservation(state: self, key: key)
     }
@@ -302,11 +369,16 @@ public final class MentionState {
     /// Ends an observation: its closure isn't called again.
     fileprivate func cancel(_ key: Int) {
         guard let observer = observations.removeValue(forKey: key) else { return }
+        for row in observer.rows {
+            observedRows[row, default: 1] -= 1
+            if observedRows[row] == 0 { observedRows[row] = nil }
+        }
         for target in observer.targets {
             observersByTarget[target]?.remove(key)
             if observersByTarget[target]?.isEmpty == true { observersByTarget[target] = nil }
             untrackIfUnused(target)
         }
+        for row in observer.rows { untrackRowIfUnused(row) }
     }
 
     /// The mentioners whose rows a commit may change without changing them: those of the targets
@@ -361,6 +433,12 @@ public final class MentionState {
     /// ends editing, goes to it or into it; ⌘[ comes back): a click inside the text being edited is
     /// still being tracked by the view that going ends.
     public func follow(_ target: ShapeID) {
+        follow(PartAddress(target))
+    }
+
+    /// Follows a mention of a row (`target.part`): goes to its shape and selects the row there, as an item of its shape; a shape
+    /// as a whole, as `follow(_:)` does.
+    public func follow(_ target: PartAddress) {
         _ = editor.scheduler.schedule(after: .zero) { [weak editor] in editor?.followMention(of: target) }
     }
 
@@ -978,6 +1056,7 @@ public final class MentionState {
     private func follow(_ change: TopologyChange) {
         guard let topology else { return }
         for id in change.touched(types: mentionEdges, in: topology.types) {
+            followRows(of: id)
             guard observersByTarget[id] == nil else { continue }
             let isTracked = resolutions[id] != nil
             let isMentioned = isMentionedAnywhere(id)
@@ -989,8 +1068,25 @@ public final class MentionState {
         }
     }
 
-    /// Resolves a tracked target again, noting it in `changed` if what it shows changed.
+    /// The rows of `shape` tracked again after a change to the mentions into it: those mentioned, and those observed.
+    private func followRows(of shape: ShapeID) {
+        let mentioned = mentionedRows(of: shape)
+        var rows = rowResolutions[shape] ?? [:]
+        for part in rows.keys where !mentioned.contains(part) && observedRows[PartAddress(shape, part: part)] == nil { rows[part] = nil }
+        for part in mentioned where rows[part] == nil { rows[part] = resolve(PartAddress(shape, part: part)) }
+        rowResolutions[shape] = rows.isEmpty ? nil : rows
+    }
+
+    /// Resolves a tracked target again, and its tracked rows, noting it in `changed` if what it or one of them shows changed.
     private func resolveAgain(_ id: ShapeID, into changed: inout Set<ShapeID>) {
+        if let rows = rowResolutions[id] {
+            var now = rows
+            for part in rows.keys { now[part] = resolve(PartAddress(id, part: part)) }
+            if now != rows {
+                rowResolutions[id] = now
+                changed.insert(id)
+            }
+        }
         guard let before = resolutions[id] else { return }
         let now = resolve(id)
         if now != before {
@@ -1022,6 +1118,19 @@ public final class MentionState {
 
     private func untrackIfUnused(_ target: ShapeID) {
         if observersByTarget[target] == nil, !isMentionedAnywhere(target) { resolutions[target] = nil }
+    }
+
+    /// Resolves a row, kept with its shape's (which is tracked too).
+    private func trackRow(_ target: PartAddress) {
+        guard let part = target.part else { return track(target.shape) }
+        track(target.shape)
+        if rowResolutions[target.shape]?[part] == nil { rowResolutions[target.shape, default: [:]][part] = resolve(target) }
+    }
+
+    private func untrackRowIfUnused(_ target: PartAddress) {
+        guard let part = target.part, observedRows[target] == nil, !mentionedRows(of: target.shape).contains(part) else { return }
+        rowResolutions[target.shape]?[part] = nil
+        if rowResolutions[target.shape]?.isEmpty == true { rowResolutions[target.shape] = nil }
     }
 
     // MARK: The catalog
@@ -1146,9 +1255,11 @@ extension MentionState: EditorService {
         lastAffected = []
         guard change.isFileReplaced else { return }
         resolutions = [:]
+        rowResolutions = [:]
         forgetLayout(of: Array(laidOutByNames))
         trackMentioned()
         for target in observersByTarget.keys { track(target) }
+        for row in observedRows.keys { trackRow(row) }
         readCatalog()
         layOutMentioners()
     }
@@ -1163,6 +1274,15 @@ extension CanvasEditor {
     func followMention(of target: ShapeID) {
         let following = file.record(target).flatMap { registry.mentionContribution(for: $0.kind) }?.following
         if following == .opens { goInto(target) } else { goTo([target]) }
+    }
+
+    /// Follows a mention of a row: to its shape (`goTo`, its board shown first), the row then selected as an item of it (Selection's
+    /// `selectItems`); a row that's gone, the shape alone. A shape as a whole, as `followMention(of:)` for its id.
+    func followMention(of target: PartAddress) {
+        guard let part = target.part else { return followMention(of: target.shape) }
+        goTo([target.shape])
+        guard document[target.shape] != nil, registry.parts(of: document[target.shape]!)?.contains(where: { $0.id == part }) == true else { return }
+        selectItems([AnyHashable(part)], of: target.shape)
     }
 }
 
@@ -1199,6 +1319,7 @@ public final class MentionObservation {
 @MainActor
 private struct Observer {
     let targets: Set<ShapeID>
+    let rows: Set<PartAddress>
     let changed: @MainActor (Set<ShapeID>) -> Void
 }
 

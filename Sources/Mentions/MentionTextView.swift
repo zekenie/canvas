@@ -111,7 +111,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// What the host last heard the text is, to tell after an undo whether it changed.
     private var reported: ScopedMentionText<Scope>?
     private var observation: MentionObservation?
-    private var observedTargets: Set<ShapeID> = []
+    private var observedTargets: Set<PartAddress> = []
     private var hoverArea: NSTrackingArea?
     private var toolTipTags: [NSView.ToolTipTag] = []
     private var toolTipsAreStale = true
@@ -189,7 +189,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     }
 
     /// What a mention of `target` shows now; missing without a state to ask.
-    private func resolve(_ target: ShapeID) -> MentionResolution { mentions?.resolve(target) ?? .missing }
+    private func resolve(_ target: PartAddress) -> MentionResolution { mentions?.resolve(target) ?? .missing }
 
     /// The widest a pill may be: the text's line, to a 64th of a point. A view scaled by the zoom
     /// has a frame a hair off its bounds (200.0000000000001 at 60%), which would otherwise make
@@ -200,7 +200,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     }
 
     /// A pill naming `target`, as it shows now, the text's attributes on its character.
-    private func pillString(_ target: ShapeID, storedLabel: String) -> NSAttributedString? {
+    private func pillString(_ target: PartAddress, storedLabel: String) -> NSAttributedString? {
         guard let style else { return nil }
         return style.pill(MentionAttachment(target: target, storedLabel: storedLabel, resolution: resolve(target), style: style, width: pillWidth))
     }
@@ -217,7 +217,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         var runs: [SlashArguments.Run] = []
         storage.enumerateAttribute(.attachment, in: range) { value, run, _ in
             if let pill = value as? MentionAttachment {
-                runs += Array(repeating: .shape(pill.target, label: pill.shownLabel), count: run.length)
+                runs += Array(repeating: .shape(pill.target.shape, label: pill.shownLabel), count: run.length)
             } else {
                 runs.append(.text((storage.string as NSString).substring(with: run)))
             }
@@ -340,7 +340,9 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         guard targets != observedTargets else { return }
         observation?.cancel()
         observedTargets = targets
-        observation = targets.isEmpty ? nil : mentions.observe(targets) { [weak self] changed in self?.refreshPills(of: changed) }
+        observation = targets.isEmpty ? nil : mentions.observe(Set(targets.map(\.shape)), rows: targets.filter { $0.part != nil }) { [weak self] changed in
+            self?.refreshPills(of: changed)
+        }
     }
 
     /// Shows the pills of `targets` (all, if nil) as their targets are now: new images and bounds,
@@ -351,7 +353,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         guard let storage = textStorage else { return }
         var changed: [Int] = []
         storage.beginEditing()
-        for (location, pill) in pills() where targets?.contains(pill.target) ?? true {
+        for (location, pill) in pills() where targets?.contains(pill.target.shape) ?? true {
             let now = resolve(pill.target)
             guard now != pill.resolution else { continue }
             pill.update(now)
@@ -495,7 +497,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         if toolTipsAreStale { updateToolTips() }
         let point = convert(event.locationInWindow, from: nil)
         let target = pillRange(at: point).flatMap { pill(at: $0.location) }
-            .flatMap { $0.resolution.isLive ? $0.target : nil }
+            .flatMap { $0.resolution.isLive ? $0.target.shape : nil }
         if let pointerHover, pointerHover != target { mentions?.endHover(pointerHover) }
         pointerHover = target
         if let target { mentions?.hover(target) }
@@ -619,8 +621,10 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
         guard let mentions, style != nil, isEditable else { return }
         slashCommands?.close()
         let shapes = slashCommands?.admittedShapes(at: location)
+        // Rows too (a table's columns, an API's endpoints) where what's picked is a mention: in a shape's own text, on a plain line.
+        let listsRows = owner != nil && shapes == nil && onShape == nil && onWords == nil
         let picker = MentionPicker(at: location, mentions: mentions, scope: Scope.self, owners: pickerOwners,
-                                   kinds: shapes?.kinds, admitting: shapes?.rule, wordsRow: onWords != nil)
+                                   kinds: shapes?.kinds, admitting: shapes?.rule, listingRows: listsRows, wordsRow: onWords != nil)
         self.picker = picker
         substitutions = CaretListSubstitutions(of: self)
         CaretListSubstitutions.off.apply(to: self)
@@ -734,7 +738,9 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
             mentions?.didPick(candidate.id)
             return onShape(candidate, NSRange(location: picker.location, length: caret - picker.location))
         }
-        guard caret > picker.location, let pill = pillString(candidate.id, storedLabel: candidate.appearance.label) else { return closePicker() }
+        // A row's mention holds the name its pill shows (an endpoint's full path, a column with its table's name).
+        let label = candidate.part == nil ? candidate.appearance.label : mentions?.resolve(candidate.address).appearance?.label ?? candidate.appearance.label
+        guard caret > picker.location, let pill = pillString(candidate.address, storedLabel: label) else { return closePicker() }
         closePicker()
         let replacement = NSMutableAttributedString(attributedString: pill)
         let next: unichar? = caret < storage.length ? (storage.string as NSString).character(at: caret) : nil
@@ -789,7 +795,7 @@ public final class MentionTextView<Scope: MentionScope>: EditingTextView {
     /// mentions it (this text's shape does, unless it is the target, whose own mention doesn't count).
     func canShowWhatMentions(of pill: MentionAttachment) -> Bool {
         guard pill.resolution.isLive, let mentions else { return false }
-        return owner != pill.target || mentions.isMentioned(pill.target)
+        return owner != pill.target.shape || mentions.isMentioned(pill.target)
     }
 
     // MARK: Windows and undo

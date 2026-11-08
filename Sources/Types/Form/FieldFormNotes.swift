@@ -26,7 +26,7 @@ extension FieldFormView {
     func notePill(of cell: FieldCell, width: CGFloat?) -> (attachment: MentionAttachment, target: ShapeID)? {
         guard case .note(let target?) = cell.control else { return nil }
         let resolution = editor.mentions?.resolve(target) ?? .missing
-        let attachment = MentionAttachment(target: target, storedLabel: cell.shown, resolution: resolution, style: noteStyle(wrong: cell.mark == .wrong), width: width)
+        let attachment = MentionAttachment(target: PartAddress(target), storedLabel: cell.shown, resolution: resolution, style: noteStyle(wrong: cell.mark == .wrong), width: width)
         return (attachment, target)
     }
 

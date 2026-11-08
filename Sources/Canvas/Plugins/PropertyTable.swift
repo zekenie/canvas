@@ -103,6 +103,11 @@ struct PropertyCodec: Sendable {
                 guard let names = (value as? Boxed<P.Value>)?.value as? any ShapeNaming,
                       let renamed = names.renamingShapes(rename) as? P.Value else { return value }
                 return Boxed(value: renamed)
+            },
+            renameParts: { value, rename in
+                guard let names = (value as? Boxed<P.Value>)?.value as? any ShapeNaming,
+                      let renamed = names.renamingParts(rename) as? P.Value else { return value }
+                return Boxed(value: renamed)
             }) : nil
     }
 }
@@ -114,6 +119,8 @@ struct AddedNaming: Sendable {
     let value: @Sendable (any AddedValue) -> (any ShapeNaming)?
     /// The value with its names renamed (`ShapeNaming.renamingShapes`).
     let rename: @Sendable (any AddedValue, (ShapeID) -> ShapeID?) -> any AddedValue
+    /// The value with the parts it names renamed (`ShapeNaming.renamingParts`).
+    let renameParts: @Sendable (any AddedValue, (PartAddress) -> PartAddress?) -> any AddedValue
 }
 
 /// Which kinds opt into which added properties, worked out when the registry is built. Each kind's

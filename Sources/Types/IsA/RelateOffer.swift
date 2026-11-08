@@ -48,8 +48,8 @@ enum RelateOffers {
         guard editor.editingShapeID != record.id, let schema = record[TypeSchemaProperty.self], canOffer(on: record, in: editor) else { return [] }
         var named = Set<ShapeID>()
         return editor.mentionPills(of: record.id).compactMap { pill in
-            guard !named.contains(pill.target), let face = offer(pill, on: record, schema: schema, in: editor) else { return nil }
-            named.insert(pill.target)
+            guard !named.contains(pill.target.shape), let face = offer(pill, on: record, schema: schema, in: editor) else { return nil }
+            named.insert(pill.target.shape)
             return face
         }
     }
@@ -71,16 +71,19 @@ enum RelateOffers {
     /// The offer of one pill, or nil: a live pill naming a type that can be embedded, on the board shown or one a pill can stand
     /// for, that the type neither holds in place nor is joined to by a relationship type.
     private static func offer(_ pill: MentionPillFrame, on record: AnyShapeRecord, schema: SchemaText, in editor: CanvasEditor) -> RelateFace? {
-        guard pill.isLive, let types = editor.types, let relationships = editor.relationships, types.canBeEmbedded(pill.target) else { return nil }
+        // A pill of a row (a table's column) names no type.
+        guard pill.isLive, pill.target.part == nil, let types = editor.types, let relationships = editor.relationships else { return nil }
+        let target = pill.target.shape
+        guard types.canBeEmbedded(target) else { return nil }
         // The type the pill names: on the board shown, or on another, which a pill can stand for.
-        if editor.document[pill.target] == nil {
-            guard FarVerdicts(editor).verdict(of: pill.target) != .cannot else { return nil }
+        if editor.document[target] == nil {
+            guard FarVerdicts(editor).verdict(of: target) != .cannot else { return nil }
         }
         // The two that cost: a type that holds the other's fields in place is not related to it, and neither is one that a
         // relationship type already joins to it.
-        if SchemaReferences.refs(in: schema.text).contains(where: { $0.shape == pill.target }) { return nil }
-        guard relationships.graph.relationshipTypes(joining: record.id, and: pill.target).isEmpty else { return nil }
-        return RelateFace(shape: record.id, target: pill.target, frame: pill.frame)
+        if SchemaReferences.refs(in: schema.text).contains(where: { $0.shape == target }) { return nil }
+        guard relationships.graph.relationshipTypes(joining: record.id, and: target).isEmpty else { return nil }
+        return RelateFace(shape: record.id, target: target, frame: pill.frame)
     }
 
     /// What a type is called in an offer: `Layer`, with what a pick of a type on another board does first.

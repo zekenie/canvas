@@ -1358,6 +1358,14 @@ public struct Transaction {
         return found.sorted { $0.id.description < $1.id.description }
     }
 
+    /// The shapes whose records name `shape` as a value (a note whose text mentions one of its rows), with the board each is on
+    /// as this transaction leaves the file: the editor's lookup (`registrar.standInLookup(_:names:namers:)`, Topology's), read as
+    /// the file was before this transaction, so what this transaction wrote naming it isn't among them. None without a lookup. In
+    /// order of id. What `moveParts` renames a moved part's names in (a mention of a row).
+    public func shapesNaming(_ shape: ShapeID) -> [(id: ShapeID, board: BoardID)] {
+        file.namers(shape).compactMap { id in location(of: id).map { (id, $0) } }.sorted { $0.id.description < $1.id.description }
+    }
+
     /// The bindings a part reaches through a pill: for each part of `parts`, each stand-in that names its shape, by the board it
     /// is on, as the address a binding through it names (the pill and the part: a key to a column on another board) with the
     /// part's own address.
@@ -1436,7 +1444,9 @@ public struct Transaction {
 
     /// Parts moved to other places on this board (a row into another table, out into a new one): every shape bound to one
     /// is bound to where it went (`moves`: a part of another shape, or a shape as a whole, part nil), but a read-only one,
-    /// left as it was; then every `partsMoved` handler hears the moves, so what names a part as a value renames it. A part
+    /// left as it was; every shape whose values name one (a note's mention of a row: `ShapeNaming.renamingParts`), found by the
+    /// editor's lookup (`shapesNaming`), names where it went, on any board it may write, but a read-only one; then every
+    /// `partsMoved` handler hears the moves, so what names a part as a value in a way of its own renames it. A part
     /// that moves within its shape keeps its address and needs nothing. A binding that reaches a moved part through a pill
     /// for its shape (`standIns(naming:)`) follows it on the pill's board in this step: to the part moved to, through the same
     /// pill when it stays in that shape, else straight to the shape it went to when that is on the pill's board, else through
@@ -1467,7 +1477,28 @@ public struct Transaction {
                 }
             }
         }
+        renameNamedParts(moves)
         for handler in registry.partsMovedHandlers { handler(moves, &self) }
+    }
+
+    /// The names of moved parts in the values of shapes that name their shapes (`shapesNaming`: the editor's index, as the file
+    /// was before this step), renamed to where they went: on any board this step may write, a read-only shape left as it was.
+    private mutating func renameNamedParts(_ moves: [PartAddress: PartAddress]) {
+        guard !registry.namingKinds.isEmpty else { return }
+        var asked: Set<ShapeID> = [], namers: [(id: ShapeID, board: BoardID)] = [], seen: Set<ShapeID> = []
+        for from in moves.keys where from.part != nil && asked.insert(from.shape).inserted {
+            for namer in shapesNaming(from.shape) where seen.insert(namer.id).inserted { namers.append(namer) }
+        }
+        for namer in namers.sorted(by: { $0.id.description < $1.id.description }) where mayWrite(on: namer.board) && !deleting.contains(namer.id) {
+            guard !climb(namer.board).isTaken, let record = contents(of: namer.board)[namer.id] else { continue }
+            if namer.board == board {
+                guard !isReadOnly(record) else { continue }
+            } else {
+                guard let there = transaction(on: namer.board), !there.isReadOnly(record) else { continue }
+            }
+            guard let renamed = record.renamingNamedParts({ moves[$0] }, in: registry) else { continue }
+            update(namer.id, on: namer.board) { $0 = renamed }
+        }
     }
 
     /// Where a binding through the pill at `pill` (its address names the pill and the moved part) goes once the part went to
@@ -1912,7 +1943,7 @@ public struct Transaction {
         if readingThrough {
             let here = self, file = file
             access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow,
-                                values: file.values, standIns: file.standIns)
+                                values: file.values, standIns: file.standIns, namers: file.namers)
         }
         var there = Transaction(document: contents(of: board), board: board, isBoardReadOnly: isReadOnly(board: board), registry: registry,
                                 camera: camera, keys: keys, file: access, layout: layout)
@@ -1962,6 +1993,9 @@ struct FileAccess {
     /// The stand-ins whose record names a shape, on any board the editor can show, as the editor's lookup has them before
     /// this transaction (`registrar.standInLookup`, Topology's); none without one.
     let standIns: (ShapeID) -> [ShapeID]
+    /// The shapes whose records name a shape as a value, as the editor's lookup has them before this transaction
+    /// (`registrar.standInLookup(_:names:namers:)`, Topology's); none without one.
+    let namers: (ShapeID) -> [ShapeID]
 
     /// Over a file of one's own, whose boards `boardOwningKinds` (the registry's) show.
     init(_ file: CanvasFile, boardOwningKinds: Set<ShapeKind>) {
@@ -1971,17 +2005,19 @@ struct FileAccess {
         canShow = { file.canShow($0, boardOwningKinds: boardOwningKinds) }
         values = { file.fileValues }
         standIns = { _ in [] }
+        namers = { _ in [] }
     }
 
     init(locate: @escaping (ShapeID) -> BoardID?, subtree: @escaping (Set<ShapeID>) -> [BoardID],
          contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool, values: @escaping () -> FileValues,
-         standIns: @escaping (ShapeID) -> [ShapeID] = { _ in [] }) {
+         standIns: @escaping (ShapeID) -> [ShapeID] = { _ in [] }, namers: @escaping (ShapeID) -> [ShapeID] = { _ in [] }) {
         self.locate = locate
         self.subtree = subtree
         self.contents = contents
         self.canShow = canShow
         self.values = values
         self.standIns = standIns
+        self.namers = namers
     }
 }
 

@@ -270,6 +270,12 @@ public final class CanvasEditor {
         }
     }
     public private(set) var editingShapeID: ShapeID?
+    /// While a shape is edited, the part of it the keys are on (a row with the caret, or the one row selected whole while it's
+    /// typed in), as its editing view says; nil while the keys are on none (its title), and once editing ends. What a panel shows
+    /// as its subject: the row, not the shape.
+    public var editingPart: PartID? {
+        didSet { if editingShapeID == nil, editingPart != nil { editingPart = nil } }
+    }
     /// While a shape is edited, where the press that began it was, in world units
     /// (`beginEditing(_:at:)`); nil if none said, and once editing ends.
     public private(set) var editingStartPoint: CGPoint?
@@ -895,7 +901,8 @@ public final class CanvasEditor {
                    contents: { [unowned self] in storedFile[$0] },
                    canShow: { [unowned self] in Self.canShow($0, in: storedFile, registry: registry) },
                    values: { [unowned self] in storedFile.fileValues },
-                   standIns: { [unowned self] in registry.standInLookup?(self, $0) ?? [] })
+                   standIns: { [unowned self] in registry.standInLookup?(self, $0) ?? [] },
+                   namers: { [unowned self] in registry.namingLookup?(self, $0) ?? [] })
     }
 
     /// A board of the file: `document` for the one shown, else its shapes as the file has them
@@ -1665,6 +1672,7 @@ public final class CanvasEditor {
         closeCard(.editing)
         let mayDiscard = discarding && !undoHistory.isInAction
         editingShapeID = nil
+        editingPart = nil
         editingStartPoint = nil
         editingStartClickCount = 1
         shapesDidChangeLayout([id])

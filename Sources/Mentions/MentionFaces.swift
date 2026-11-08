@@ -6,7 +6,8 @@ import Selection
 /// it names, whether that's live, and its center (world units), from which a click edits the shape.
 struct MentionFace: Hashable, Sendable {
     let shape: ShapeID
-    let target: ShapeID
+    /// What the pill names: a shape, or one of its rows.
+    let target: PartAddress
     let isLive: Bool
     let center: CGPoint
 }
@@ -18,7 +19,7 @@ struct MentionFace: Hashable, Sendable {
 ///   pill there: a pill is selected as text is, never followed on a single click. A read-only shape
 ///   (a locked one) isn't asked to, since a refused edit is a try to change it, and a click isn't;
 ///   a kind with no editing view (not `Editable`) refuses, so the click only selects the shape;
-/// - a double-click on a live one goes to what it names (`goTo`), or into it for a kind followed so
+/// - a double-click on a live one goes to what it names (`goTo`; a row's, to its shape, the row selected), or into it for a kind followed so
 ///   (`MentionFollowing.opens`: a subboard shows its board), and Back comes back. On a shape
 ///   that's edited, the click before it opened the text view, which takes the second press, so
 ///   this is what the pill of a read-only shape, or of a kind with no editing view, does. On one
@@ -36,7 +37,7 @@ func registerMentionFaces(into registrar: inout PluginRegistrar) {
                          doubleClick: { face, editor in
                              if face.isLive { editor.followMention(of: face.target) }
                          },
-                         hovering: { face, editor in face.isLive && editor.document[face.target] != nil ? face.target : nil })
+                         hovering: { face, editor in face.isLive && editor.document[face.target.shape] != nil ? face.target.shape : nil })
 }
 
 extension MentionFace {

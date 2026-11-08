@@ -131,7 +131,7 @@ private final class LabelCanvas: NSView {
         let pills = try require(h.editor.arrowLabelFrame(of: id)), bare = try require(h.editor.arrowLabelFrame(of: plain))
         expect(pills.width > bare.width + 60, "the pills are in the label: \(pills) against \(bare)")
         expectEqual(h.editor.mentionPills(of: id).map(\.isLive), [true, true])
-        expectEqual(h.editor.mentionPills(of: id).map(\.target), [groceries, sam])
+        expectEqual(h.editor.mentionPills(of: id).map(\.target.shape), [groceries, sam])
         for pill in h.editor.mentionPills(of: id) {
             expect(pills.insetBy(dx: LabelMetrics.padding, dy: LabelMetrics.padding).contains(pill.frame), "\(pill.frame) is inside the label \(pills)")
         }

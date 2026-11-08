@@ -297,7 +297,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
                 let drawn = renderBitmap(board.editor, size: pictureSize, scale: scale)
                 board.editor.delete(id)
                 let empty = board.picture(of: Scrap(paper, loose: loose), scale: scale)
-                expectEqual(frames.map(\.target), [idA, idB, idC, idA, idB, idC])
+                expectEqual(frames.map(\.target.shape), [idA, idB, idC, idA, idB, idC])
                 expect(frames.allSatisfy(\.isLive))
                 expect(Set(frames.map(\.frame.minY)).count >= 5, "on five lines or more: \(frames.map(\.frame))")
                 expect(frames.allSatisfy { paper.insetBy(dx: ScrapStyle.padding, dy: ScrapStyle.padding).contains($0.frame) })
@@ -314,7 +314,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
             let id = board.place(Scrap(paper, text: text, loose: loose))
             let frames = board.editor.mentionPills(of: id)
             board.editor.delete(id)
-            expectEqual(frames.map(\.target), [idA, idB, idC, idA])
+            expectEqual(frames.map(\.target.shape), [idA, idB, idC, idA])
             expect(Set(frames.map(\.frame.minY)).count >= 3, "on three lines or more: \(frames.map(\.frame))")
             let string = board.string(text, loose: loose)
             let pills = board.easel { draw(string, in: $0) }
@@ -431,7 +431,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
             let frames = board.editor.mentionPills(of: id)
             let drawn = renderBitmap(board.editor, size: pictureSize, scale: 2)
             board.editor.delete(id)
-            expectEqual(frames.map(\.target), [idA, idB], "B, first on the cut line, shows; C, where the \"…\" goes, doesn't")
+            expectEqual(frames.map(\.target.shape), [idA, idB], "B, first on the cut line, shows; C, where the \"…\" goes, doesn't")
             let string = board.string(cutShort, loose: loose)
             let lineHeight = loose ? naturalLineHeight(ScrapStyle.loose.font) : 19
             func twoLines(_ box: CGRect) -> CGRect { CGRect(x: box.minX, y: box.minY, width: box.width, height: 2 * lineHeight + 0.5) }
@@ -445,7 +445,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
         let id = board.place(Scrap(paper, text: tall))
         expectEqual(board.editor.mentionPills(of: id), [])
         board.editor.transact { $0.update(id, as: Scrap.self) { $0.props.frame.size.height = 260 } }
-        expectEqual(board.editor.mentionPills(of: id).map(\.target), [idA], "in a taller box, it fits")
+        expectEqual(board.editor.mentionPills(of: id).map(\.target.shape), [idA], "in a taller box, it fits")
     },
     test("lines limits the lines, with fixed lines and the font's") {
         let board = try DrawingBoard()
@@ -453,7 +453,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
         for loose in [false, true] {
             let three = board.place(Scrap(paper, text: text, loose: loose, lines: 3))
             let two = board.place(Scrap(paper, text: text, loose: loose, lines: 2))
-            expectEqual(board.editor.mentionPills(of: three).map(\.target), [idA], "the pill is on the third line")
+            expectEqual(board.editor.mentionPills(of: three).map(\.target.shape), [idA], "the pill is on the third line")
             expectEqual(board.editor.mentionPills(of: two), [], "two lines hold no pill")
             board.editor.delete(three, two)
             let drawnTwo = board.picture(of: Scrap(paper, text: text, loose: loose, lines: 2))

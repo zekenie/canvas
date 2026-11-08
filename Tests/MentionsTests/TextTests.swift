@@ -263,7 +263,7 @@ private struct LinesDefinition: ShapeDefinition {
         expect(MentionText(plain: " \n\t ").isBlank)
         expect(!MentionText([.mention(idA, label: "")]).isBlank, "a mention is something")
         expectEqual(text.firstLine, "Ask @… about @… and @…", "no name another shape was called")
-        expectEqual(text.plainText { $0 == idA ? "Food" : nil }, "\n  \nAsk @Food about @B and @Food\nsecond line")
+        expectEqual(text.plainText { $0.shape == idA ? "Food" : nil }, "\n  \nAsk @Food about @B and @Food\nsecond line")
         expectEqual(MentionText(plain: " ").firstLine, nil)
         expectEqual(MentionText(plain: String(repeating: "x", count: 120)).firstLine?.count, 80)
         expectEqual(MentionText([.mention(idA, label: "A"), .text(" \n "), .mention(idB, label: "B"), .text(" due\nlater")]).firstLine, "@… due",
@@ -275,7 +275,7 @@ private struct LinesDefinition: ShapeDefinition {
         let idC = ShapeID()
         let text = MentionText([.text("Ask "), .mention(idA, label: "Groceries"), .mention(idB, label: "Bo"), .text(" now "),
                                 .mention(idC, label: ""), .text("!")])
-        let read = text.reading { id, label in id == idA ? "Food" : label }
+        let read = text.reading { id, label in id.shape == idA ? "Food" : label }
         // Drawn: "Ask " (0–4), A's pill 4, B's pill 5, " now " (6–11), C's pill 11, "!" 12.
         expectEqual(read.text, "Ask FoodBo now !")
         expectEqual(read.mentions.map(\.spelling), [4..<8, 8..<10, 15..<15])
@@ -326,7 +326,7 @@ private struct LinesDefinition: ShapeDefinition {
         let names: [ShapeID: String] = [idA: "Live 👍🏽 ]name\\"]
         for (_, stored) in namedCases {
             expectEqual(MentionText.plainText(stored: stored), MentionText(stored: stored).plainText(), stored)
-            expectEqual(MentionText.plainText(stored: stored) { names[$0] }, MentionText(stored: stored).plainText { names[$0] }, stored)
+            expectEqual(MentionText.plainText(stored: stored) { names[$0.shape] }, MentionText(stored: stored).plainText { names[$0.shape] }, stored)
         }
         // Ids as UUID(uuidString:) reads them, and ones it doesn't: mixed case, a letter past f, a hyphen
         // out of place, a character that isn't ASCII or is NUL, one too short.
@@ -344,8 +344,8 @@ private struct LinesDefinition: ShapeDefinition {
             let reference = MentionText(stored: string)
             if !reference.mentioned.isEmpty { mentioning += 1 }
             for live in [false, true] {
-                let fast = MentionText.plainText(stored: string) { live ? names[$0] : nil }
-                let read = reference.plainText { live ? names[$0] : nil }
+                let fast = MentionText.plainText(stored: string) { live ? names[$0.shape] : nil }
+                let read = reference.plainText { live ? names[$0.shape] : nil }
                 if fast != read {
                     failures += 1
                     if failures < 4 { expect(false, "\(string.debugDescription) reads as \(fast.debugDescription), not \(read.debugDescription)") }

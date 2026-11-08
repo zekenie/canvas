@@ -85,7 +85,7 @@ extension InspectorWindow {
 
         w.editor.selection = groceries.id
         let list = try require(w.editor.neighborList)
-        w.window.spin { list.subject == groceries.id && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == groceries.id && list.hasLanded && !list.isAsking }
         let symbol = try require(w.editor.registry.label(of: StickyNote.kind).systemImage)
         expectEqual(list.panel, [ConnectionGroup(title: "Mentioned By", count: 1, rows: [
             ConnectionRow(id: ship.id, name: "Ship it", detail: nil, caption: "Ask @Groceries first, then @Plans", symbol: symbol)])],
@@ -100,7 +100,7 @@ extension InspectorWindow {
         // The subboard has it too, and its panel's other tab is the board's.
         w.editor.selection = plans.id
         panel.choose(.of(NeighborsTab.self), for: Subboard.kind)
-        w.window.spin { list.subject == plans.id && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == plans.id && list.hasLanded && !list.isAsking }
         expectEqual(list.panel.map(\.title), ["Mentioned By"])
         expectEqual(list.panel.first?.rows.map(\.id), [ship.id])
         expectEqual(list.panel.first?.rows.first?.caption, "Ask @Groceries first, then @Plans")

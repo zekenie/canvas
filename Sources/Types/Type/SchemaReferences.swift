@@ -212,7 +212,10 @@ public struct SchemaReferenceNames: Equatable, Sendable {
     public init(words texts: [MentionText], schemas: [String], name: (ShapeID) -> String?, isType: (ShapeID) -> Bool = { _ in true }) {
         for text in texts {
             for run in text.runs {
-                if case .mention(let shape, let label) = run, words[shape] == nil, isType(shape) { add(shape, name: name(shape) ?? label) }
+                // A row's mention (a table's column) names no type.
+                if case .mention(let target, let label) = run, target.part == nil, words[target.shape] == nil, isType(target.shape) {
+                    add(target.shape, name: name(target.shape) ?? label)
+                }
             }
         }
         for schema in schemas {
@@ -261,7 +264,7 @@ public struct SchemaReferenceNames: Equatable, Sendable {
     /// its pill in the words as they're drawn; a mention of anything else (no type: no word) its
     /// label, as the words say it.
     public func modelText(of text: MentionText) -> MentionReading {
-        text.reading { shape, label in words[shape].map { "@" + $0 } ?? label }
+        text.reading { target, label in target.part == nil ? words[target.shape].map { "@" + $0 } ?? label : label }
     }
 
     /// The schema as the model reads it: each `$ref` to a named shape its word.

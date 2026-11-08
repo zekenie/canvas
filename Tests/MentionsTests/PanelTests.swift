@@ -273,7 +273,7 @@ extension MentionTextView {
         view.setSelectedRange(NSRange(location: view.textStorage?.length ?? 0, length: 0))
         expect(view.readSelection(from: board))
         expectEqual(panel.text(jot), MentionText([.text("Buy "), .mention(idA, label: "Groceries"), .text(" today"), .mention(idA, label: "Groceries")]))
-        expectEqual(view.pills.map(\.pill.target), [idA, idA])
+        expectEqual(view.pills.map(\.pill.target.shape), [idA, idA])
     },
 
     test("a rename of a pill's target redraws the pill, and writes nothing") {
@@ -305,7 +305,7 @@ extension MentionTextView {
         panel.window.settle()
         expectEqual(panel.editor.revision, revision + 1, "the undo, and nothing written back")
         expect(panel.editor.canRedo)
-        expectEqual(view.pills.map(\.pill.target), [idA])
+        expectEqual(view.pills.map(\.pill.target.shape), [idA])
         expect(view.pills.first?.pill.resolution.isLive == true)
         expectEqual(view.mentionText, groceries)
         panel.editor.redo()

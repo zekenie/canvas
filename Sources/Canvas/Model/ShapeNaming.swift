@@ -26,15 +26,21 @@ public protocol ShapeNaming: Sendable {
     /// members) go into what they hold. For a plugin that reads its own leaves wherever a shape
     /// keeps them.
     func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void)
+    /// Itself with each part it names (a mention of a table's row) that `rename` gives another address for named there
+    /// instead; nil keeps it. Pure. What a part moved to another shape renames (`Transaction.moveParts`'s handlers): by default
+    /// itself, for a value that names no part; collections and structs go into what they hold, and a leaf that names parts says.
+    func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self
 }
 
 extension ShapeNaming {
     public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) { body(self) }
+    public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self { self }
 }
 
 extension Optional: ShapeNaming where Wrapped: ShapeNaming {
     public func forEachNamedShape(_ body: (ShapeID) -> Void) { self?.forEachNamedShape(body) }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { self.map { $0.renamingShapes(rename) } }
+    public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self { self.map { $0.renamingParts(rename) } }
     public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) { self?.forEachNamingLeaf(body) }
 }
 
@@ -43,6 +49,7 @@ extension Array: ShapeNaming where Element: ShapeNaming {
         for element in self { element.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { map { $0.renamingShapes(rename) } }
+    public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self { map { $0.renamingParts(rename) } }
     public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
         for element in self { element.forEachNamingLeaf(body) }
     }
@@ -54,6 +61,7 @@ extension Set: ShapeNaming where Element: ShapeNaming {
         for element in self { element.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { Set(map { $0.renamingShapes(rename) }) }
+    public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self { Set(map { $0.renamingParts(rename) }) }
     public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
         for element in self { element.forEachNamingLeaf(body) }
     }
@@ -65,6 +73,7 @@ extension Dictionary: ShapeNaming where Key == String, Value: ShapeNaming {
         for value in values { value.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { mapValues { $0.renamingShapes(rename) } }
+    public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self { mapValues { $0.renamingParts(rename) } }
     public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
         for value in values { value.forEachNamingLeaf(body) }
     }
@@ -76,6 +85,7 @@ extension ShapeNaming where Self: SchemaDefined {
         forEachListedNamingValue { _, value in value.forEachNamedShape(body) }
     }
     public func renamingShapes(_ rename: (ShapeID) -> ShapeID?) -> Self { renamingListedNames(rename) }
+    public func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self { renamingListedParts(rename) }
     public func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void) {
         forEachListedNamingValue { _, value in value.forEachNamingLeaf(body) }
     }
@@ -93,6 +103,13 @@ extension SchemaDefined {
     func renamingListedNames(_ rename: (ShapeID) -> ShapeID?) -> Self {
         var renamed = self
         for property in Self.properties.namingProperties { property.naming?.rename(&renamed, rename) }
+        return renamed
+    }
+
+    /// Itself with the parts its listed members name renamed.
+    func renamingListedParts(_ rename: (PartAddress) -> PartAddress?) -> Self {
+        var renamed = self
+        for property in Self.properties.namingProperties { property.naming?.renameParts(&renamed, rename) }
         return renamed
     }
 }
@@ -124,5 +141,19 @@ extension AnyShapeRecord {
             guard let naming = registry.propertyTable.codecs[key]?.naming, let value = added[key] else { continue }
             added[key] = naming.rename(value, rename)
         }
+    }
+
+    /// The record with the parts its props and added values name renamed (`ShapeNaming.renamingParts`: a mention of a row moved
+    /// to another table names it there); nil when nothing it names changed, or its kind holds no names, or it's kept aside.
+    @MainActor
+    public func renamingNamedParts(_ rename: (PartAddress) -> PartAddress?, in registry: Registry) -> AnyShapeRecord? {
+        guard registry.namingKinds.contains(kind), !isOpaque else { return nil }
+        var record = self
+        record.props = props.renamingListedParts(rename)
+        for key in registry.properties(for: kind) {
+            guard let naming = registry.propertyTable.codecs[key]?.naming, let value = added[key] else { continue }
+            record.added[key] = naming.renameParts(value, rename)
+        }
+        return record == self ? nil : record
     }
 }

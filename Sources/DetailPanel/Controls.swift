@@ -18,6 +18,12 @@ public enum DetailStyle {
     static let rootBoardHeading = "Board"
     public static let headerHeight: CGFloat = ChromeStyle.headerHeight
     static let headerSymbolWidth: CGFloat = ChromeStyle.headerSymbolWidth
+    /// A row's header leads with its chip (an endpoint's method, `PartLead.chip`), as the row draws it: its word bold and white at
+    /// 10 points on the chip's color, 6 in, 18 tall, rounded 4.
+    static let rowChipFont = Font.system(size: 10, weight: .bold)
+    static let rowChipPadding: CGFloat = 6
+    static let rowChipHeight: CGFloat = 18
+    static let rowChipRadius: CGFloat = 4
     static let backWidth: CGFloat = 20
     static let stripInset: CGFloat = 10
     static let stripBottom: CGFloat = 6

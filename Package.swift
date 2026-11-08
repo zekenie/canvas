@@ -321,7 +321,7 @@ let package = Package(
         // Horizontals, in the window: the interfaces verticals plug into that a shape shows up on.
         .target(name: "Keyboard", dependencies: ["Canvas"]),                                  // layer: platform
         .target(name: "Selection", dependencies: ["Canvas", "Geometry", "Keyboard", "Palette"]), // layer: platform
-        .target(name: "DetailPanel", dependencies: ["Canvas", "Chrome", "FuzzyMatching", "Keyboard", "Selection", "TextEditing"]), // layer: platform
+        .target(name: "DetailPanel", dependencies: ["Canvas", "Chrome", "FuzzyMatching", "Keyboard", "Palette", "Selection", "TextEditing"]), // layer: platform
         .target(name: "ContextMenus", dependencies: ["Canvas", "Keyboard", "Selection"]),                 // layer: platform
         .target(name: "SlashCommands", dependencies: ["Canvas", "FuzzyMatching", "Geometry", "Keyboard", "Selection", "TextEditing"]), // layer: platform
         .target(name: "TableOfContents", dependencies: ["Canvas", "Chrome", "Selection", "TextEditing"]), // layer: platform
@@ -334,7 +334,7 @@ let package = Package(
         .target(name: "Locking", dependencies: ["Adornments", "Canvas", "ContextMenus", "Keyboard", "SlashCommands", "TableOfContents"]), // layer: platform
         .target(name: "Grouping", dependencies: ["Canvas", "ContextMenus", "Draw", "Keyboard", "Queries", "Selection"]), // layer: platform
         .target(name: "Connections", dependencies: ["Adornments", "Canvas", "CanvasRPC", "ContextMenus", "Draw", "Geometry", "Keyboard", "Mentions", "Selection", "TextEditing", "Topology"]), // layer: platform
-        .target(name: "Mentions", dependencies: ["Boards", "Canvas", "CanvasRPC", "Chrome", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Keyboard", "Neighbors", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
+        .target(name: "Mentions", dependencies: ["Boards", "Canvas", "CanvasRPC", "Chrome", "ContextMenus", "DetailPanel", "Draw", "Find", "FuzzyMatching", "Keyboard", "Neighbors", "Palette", "Queries", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Publishing", dependencies: ["Adornments", "Canvas", "ContextMenus", "DetailPanel", "Neighbors", "Selection", "SlashCommands", "TableOfContents", "Topology"]), // layer: platform
         .target(name: "Boards", dependencies: ["Canvas", "Chrome", "ContextMenus", "DetailPanel", "FuzzyMatching", "Keyboard", "Queries", "Selection", "TableOfContents", "TextEditing", "Titles", "Topology", "Validation"]), // layer: platform
         .target(name: "Transform", dependencies: ["Canvas", "ContextMenus", "SlashCommands"]), // layer: platform

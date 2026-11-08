@@ -145,6 +145,9 @@ public struct Property<Root, Value: Codable & SchemaDescribed & Sendable>: Prope
             value: { $0[keyPath: keyPath] as! any ShapeNaming },
             rename: { root, rename in
                 root[keyPath: keyPath] = (root[keyPath: keyPath] as! any ShapeNaming).renamingShapes(rename) as! Value
+            },
+            renameParts: { root, rename in
+                root[keyPath: keyPath] = (root[keyPath: keyPath] as! any ShapeNaming).renamingParts(rename) as! Value
             }) : nil
         return AnyProperty(
             name: name,
@@ -227,6 +230,8 @@ struct PropertyNaming<Root>: Sendable {
     let value: @Sendable (Root) -> any ShapeNaming
     /// Renames the member's names in `root`, as `ShapeNaming.renamingShapes` does.
     let rename: @Sendable (inout Root, (ShapeID) -> ShapeID?) -> Void
+    /// Renames the parts the member names in `root`, as `ShapeNaming.renamingParts` does.
+    let renameParts: @Sendable (inout Root, (PartAddress) -> PartAddress?) -> Void
 }
 
 @resultBuilder

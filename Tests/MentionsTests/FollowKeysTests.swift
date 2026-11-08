@@ -96,7 +96,7 @@ private let goToMentionChord = Chord(Key.return, [.command, .option])
         session.textView.setSelectedRange(NSRange(location: 4, length: 1))
         try items.choose("Edit", "Remove Mention")
         expectEqual(session.string, "Ask Groceries and \u{FFFC}")
-        expectEqual(session.pills.map(\.pill.target), [idB])
+        expectEqual(session.pills.map(\.pill.target.shape), [idB])
         expect(!(try items.isOn("Edit", "Remove Mention")), "the caret has no pill on it now")
         session.textView.setSelectedRange(NSRange(location: 18, length: 1))
         expectEqual(session.textView.pillOnCaretTarget, idB)
@@ -198,6 +198,6 @@ extension MentionTextView {
     var pillOnCaretTarget: ShapeID? {
         let range = selectedRange()
         guard range.length == 1 else { return nil }
-        return textStorage?.attribute(.attachment, at: range.location, effectiveRange: nil).flatMap { ($0 as? MentionAttachment)?.target }
+        return textStorage?.attribute(.attachment, at: range.location, effectiveRange: nil).flatMap { ($0 as? MentionAttachment)?.target.shape }
     }
 }

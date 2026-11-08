@@ -66,12 +66,12 @@ public struct MentionTextStyle: @MainActor Hashable {
     /// character (U+FFFC) with them, holding a `MentionAttachment`, the pill, as `resolve` says it
     /// shows now. A pill that isn't live carries a tooltip ("Deleted"), which text views show.
     /// Text without mentions is one plain run, as a string drawn with `attributes` alone would be.
-    public func attributedString<S>(_ text: ScopedMentionText<S>, resolve: (ShapeID) -> MentionResolution) -> NSAttributedString {
+    public func attributedString<S>(_ text: ScopedMentionText<S>, resolve: (PartAddress) -> MentionResolution) -> NSAttributedString {
         attributedString(text, width: nil, resolve: resolve)
     }
 
     /// The same, for text laid out `width` points wide: no pill is wider than that.
-    public func attributedString<S>(_ text: ScopedMentionText<S>, width: CGFloat?, resolve: (ShapeID) -> MentionResolution) -> NSAttributedString {
+    public func attributedString<S>(_ text: ScopedMentionText<S>, width: CGFloat?, resolve: (PartAddress) -> MentionResolution) -> NSAttributedString {
         if text.runs.count == 1, case .text(let only) = text.runs[0] {
             return NSAttributedString(string: only, attributes: madeAttributes)
         }

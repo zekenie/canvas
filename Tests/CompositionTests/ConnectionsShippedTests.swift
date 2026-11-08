@@ -590,18 +590,18 @@ extension ConnectionGroup {
         let list = try require(w.editor.neighborList)
         expectEqual(list.subject, nil, "nothing is asked while no list is on screen")
         w.editor.selection = a
-        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == a && list.hasLanded && !list.isAsking }
         expectEqual(list.panel.map(\.names), [["Beta"], ["Gamma"]])
         w.window.spin { w.connectionRows.count == 2 }
         // A click on the first row, Beta, goes to it.
         w.connectionRows[0].performClick(nil)
         w.window.spin { w.editor.selection == b }
-        expectEqual(list.subject, b, "the list is of the shape selected now")
+        expectEqual(list.subject?.shape, b, "the list is of the shape selected now")
         w.editor.goBack()
         expectEqual(w.editor.selection, a)
         // Nothing selected, nothing watched.
         w.editor.selection = nil
-        w.window.spin { list.subject == nil }
+        w.window.spin { list.subject?.shape == nil }
     },
     test("a locked note's Connections rows are enabled all the same: going to what it is connected to changes nothing of it") {
         let (a, b) = (ShapeID(), ShapeID())
@@ -610,7 +610,7 @@ extension ConnectionGroup {
         let w = try InspectorWindow(file: CanvasFile(root: CanvasDocument(shapes: [locked, card(b, "Beta", 2, 0), link(from: a, to: b)])))
         let list = try require(w.editor.neighborList)
         w.editor.selection = a
-        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == a && list.hasLanded && !list.isAsking }
         w.window.spin { w.connectionRows.count == 1 }
         w.connectionRows[0].performClick(nil)
         w.window.spin { w.editor.selection == b }
@@ -625,7 +625,7 @@ extension ConnectionGroup {
             + zip(ids, names).enumerated().map { card($1.0, $1.1, $0 + 1, 1) } + ids.map { link(from: hub, to: $0) })))
         let list = try require(w.editor.neighborList)
         w.editor.selection = hub
-        w.window.spin { list.subject == hub && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == hub && list.hasLanded && !list.isAsking }
         expectEqual(list.total, 20)
         w.window.spin { w.fields.count == 1 }
         w.window.spin { w.connectionRows.count > 0 }
@@ -658,7 +658,7 @@ extension ConnectionGroup {
         ])))
         let list = try require(w.editor.neighborList)
         w.editor.selection = a
-        w.window.spin { list.subject == a && list.hasLanded && !list.isAsking }
+        w.window.spin { list.subject?.shape == a && list.hasLanded && !list.isAsking }
         w.window.spin { w.connectionRows.count == 2 }
         let table = try require(w.connectionTable)
         let driver = KeyDriver(w.window)

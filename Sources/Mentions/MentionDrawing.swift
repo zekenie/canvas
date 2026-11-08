@@ -150,13 +150,13 @@ extension RenderContext {
 }
 
 /// A pill's place on the canvas, in world units, where the shape is (not where a shake draws it):
-/// live, or naming a shape that isn't there or can't be mentioned.
+/// live, or naming a shape that isn't there or can't be mentioned. `target` is what it names: a shape, or one of its rows.
 public struct MentionPillFrame: Hashable, Sendable {
-    public let target: ShapeID
+    public let target: PartAddress
     public let frame: CGRect
     public let isLive: Bool
 
-    public init(target: ShapeID, frame: CGRect, isLive: Bool) {
+    public init(target: PartAddress, frame: CGRect, isLive: Bool) {
         self.target = target
         self.frame = frame
         self.isLive = isLive
@@ -211,9 +211,9 @@ struct MentionResolver {
         self.lookup = lookup
     }
 
-    /// As `registry.mentionResolution(of:lookup:)` has it.
-    mutating func resolve(_ target: ShapeID) -> MentionResolution {
-        guard let record = lookup(target) else { return .missing }
+    /// As `registry.mentionResolution(of:lookup:)` has it: a row's (`MentionResolution.row`), or a shape's as a whole.
+    mutating func resolve(_ target: PartAddress) -> MentionResolution {
+        guard let record = lookup(target.shape) else { return .missing }
         guard !record.isOpaque else { return .unavailable }
         let kindDefaults: MentionKindDefaults
         if let found = defaults[record.kind] {
@@ -222,7 +222,9 @@ struct MentionResolver {
             kindDefaults = MentionKindDefaults(record.kind, in: registry)
             defaults[record.kind] = kindDefaults
         }
-        return registry.mentionAppearance(of: record, defaults: kindDefaults).map { .live($0) } ?? .unavailable
+        let shape = registry.mentionAppearance(of: record, defaults: kindDefaults)
+        if let part = target.part { return MentionResolution.row(part, of: record, shape: shape, in: registry) }
+        return shape.map { .live($0) } ?? .unavailable
     }
 }
 
@@ -473,7 +475,7 @@ public enum MentionDrawingCounts {
 @MainActor
 enum MentionTextLayout {
     struct Pill: Hashable {
-        let target: ShapeID
+        let target: PartAddress
         /// From the box's top-left, flipped (down is +y), as the canvas is.
         let frame: CGRect
         let isLive: Bool

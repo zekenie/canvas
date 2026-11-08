@@ -30,9 +30,9 @@ import TestKit
         let mentioner = h.add(Jot(CGRect(x: 0, y: 0, width: 200, height: 200),
                                   text: MentionText([.text("Buy "), .mention(target, label: "Groceries"), .text(" today")])))
         let caption = try require(h.editor.registry.neighborLights[1].caption)
-        expectEqual(caption(h.editor, target, mentioner), "Buy @Groceries today")
-        expectEqual(caption(h.editor, target, mentioner), h.editor.mentions?.quote(of: mentioner, around: target))
-        expectEqual(caption(h.editor, target, target), nil, "a shape whose text doesn't mention it gets no line")
+        expectEqual(caption(h.editor, PartAddress(target), mentioner), "Buy @Groceries today")
+        expectEqual(caption(h.editor, PartAddress(target), mentioner), h.editor.mentions?.quote(of: mentioner, around: target))
+        expectEqual(caption(h.editor, PartAddress(target), target), nil, "a shape whose text doesn't mention it gets no line")
     },
     test("MentionLightsPlugin needs Neighbors, whose lights it adds to") {
         expectThrows(RegistryError.ownerNotInstalled(point: "NeighborLights", owner: .neighbors, contributor: .mentionLights)) {

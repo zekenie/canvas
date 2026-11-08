@@ -20,7 +20,9 @@ public struct MentionLightsPlugin: ListedPlugin {
     public func register(into registrar: inout PluginRegistrar) {
         let mention = MentionEdge.id.rawValue, keys: Modifiers = [.control, .option]
         registrar.neighborLight(MentionStyle.mentions, color: MentionStyle.mentionsLight, keys: keys, query: { ":edge-from(\($0), \(mention))" })
-        registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, query: { ":edge-to(\($0), \(mention))" },
+        // What mentions a row too: a row's selector names it (`#S::part(R)`), and its list quotes each mentioner around that row.
+        registrar.neighborLight(MentionStyle.mentionedBy, color: MentionStyle.mentionedByLight, keys: keys, serves: .both,
+                                query: { ":edge-to(\($0), \(mention))" },
                                 caption: { editor, subject, mentioner in editor.mentions?.quote(of: mentioner, around: subject) })
         registrar.keyHint("⌃⌥ Hover", "Show Mentions", while: .pointer)
     }

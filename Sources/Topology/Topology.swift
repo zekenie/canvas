@@ -292,7 +292,15 @@ public struct TopologyPlugin: ListedPlugin {
         // Its own: the edge from a stand-in to each shape it stands for.
         registrar.edgeType(StandingEdge.self)
         // The core's part lifecycle reaches a binding through a pill for a part's shape (a key to a column on another board).
+        // And the shapes whose values name a shape (a note's mention of a row), for what renames those names as rows move: the
+        // carriers of the edges into it that a property holds (a connection's is its own record's binding, which the core follows).
         registrar.standInLookup({ editor, shape in editor.topology?.standIns(naming: shape) ?? [] },
-                                names: { record, registry in registry.standIns.directTarget(of: record) })
+                                names: { record, registry in registry.standIns.directTarget(of: record) },
+                                namers: { editor, shape in
+                                    var seen: Set<ShapeID> = []
+                                    return (editor.topology?.edges(of: shape, .incoming, view: .literal) ?? []).compactMap { edge in
+                                        !edge.isConnection && seen.insert(edge.carrier).inserted ? edge.carrier : nil
+                                    }
+                                })
     }
 }

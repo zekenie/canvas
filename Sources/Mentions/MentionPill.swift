@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Palette
 
 /// A mention as one character of text (U+FFFC): the pill. Its target lives on the attachment, not
 /// in an attribute, so text typed beside it never inherits the mention. It draws through `image`
@@ -16,7 +17,8 @@ import Canvas
 /// italic, with no symbol.
 @MainActor
 public final class MentionAttachment: NSTextAttachment {
-    public let target: ShapeID
+    /// What it names: a shape, or one of its rows (`part`).
+    public let target: PartAddress
     /// The name the mention holds: what it shows while its target isn't live.
     public private(set) var storedLabel: String
     public private(set) var resolution: MentionResolution
@@ -29,7 +31,7 @@ public final class MentionAttachment: NSTextAttachment {
         didSet { if isSelected != oldValue { layOut() } }
     }
 
-    public init(target: ShapeID, storedLabel: String, resolution: MentionResolution, style: MentionTextStyle, width: CGFloat? = nil) {
+    public init(target: PartAddress, storedLabel: String, resolution: MentionResolution, style: MentionTextStyle, width: CGFloat? = nil) {
         self.target = target
         self.storedLabel = storedLabel
         self.resolution = resolution
@@ -109,6 +111,8 @@ public struct MentionPillLayout {
     public let label: String
     public let isLive: Bool
     let symbol: NSImage?
+    /// A row's lead in its chip (an endpoint's `POST`), drawn in the symbol's place; nil for none.
+    let chip: Chip?
     let labelFont: NSFont
     let labelRect: CGRect
     let symbolRect: CGRect
@@ -128,7 +132,6 @@ public struct MentionPillLayout {
         let padding = (isOutlined ? MentionStyle.outlinedPadding : MentionStyle.pillPadding) * em
         let appearance = resolution.appearance
         isLive = appearance != nil
-        self.label = label
         cornerRadius = isOutlined ? height / 2 : MentionStyle.cornerRadius * em
         strokeWidth = isLive ? MentionStyle.outlinedStrokeWidth : MentionStyle.missingStrokeWidth
         dash = isLive ? [] : MentionStyle.missingDash
@@ -142,7 +145,19 @@ public struct MentionPillLayout {
         fill = colors.fill
         stroke = colors.stroke
         labelColor = colors.label
-        if let appearance, style.surface != .outlined,
+        // A row's chip lead ("POST /orders/{id}" as the chip and the path), in the symbol's place, on any surface but the outlined.
+        var label = label
+        if let appearance, style.surface != .outlined, case .chip(let word, let rgb) = appearance.lead, label.hasPrefix(word + " ") {
+            let font = NSFont.systemFont(ofSize: MentionStyle.chipLabelSize * em, weight: .bold)
+            let wordWidth = ceil((word as NSString).size(withAttributes: [.font: font]).width)
+            chip = Chip(word: word, font: font, fill: NSColor(rgb), radius: MentionStyle.chipRadius * em,
+                        size: CGSize(width: wordWidth + 2 * MentionStyle.chipPadding * em, height: (MentionStyle.chipHeight * em).rounded()))
+            label = String(label.dropFirst(word.count + 1))
+        } else {
+            chip = nil
+        }
+        self.label = label
+        if chip == nil, let appearance, style.surface != .outlined,
            let image = NSImage(systemSymbolName: appearance.systemImage, accessibilityDescription: nil)?
                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: MentionStyle.symbolSize * em, weight: .semibold)
                    .applying(NSImage.SymbolConfiguration(paletteColors: [colors.symbol]))) {
@@ -151,8 +166,9 @@ public struct MentionPillLayout {
             symbol = nil
         }
         // A live pill's symbol has its slot, whichever symbol it is (or none, if it can't be found); an outlined one has no symbol.
-        let slot = MentionStyle.symbolSlot * em
-        let symbolWidth = isLive && style.surface != .outlined ? slot + MentionStyle.symbolGap * em : 0
+        let slot = chip.map { $0.size.width } ?? MentionStyle.symbolSlot * em
+        let gap = chip == nil ? MentionStyle.symbolGap * em : MentionStyle.chipGap * em
+        let symbolWidth = isLive && style.surface != .outlined ? slot + gap : 0
         let measured = ceil((label as NSString).size(withAttributes: [.font: font]).width)
         let natural = ceil(padding * 2 + symbolWidth + measured)
         let widest = min(MentionStyle.maxWidth * em, widthLimit ?? .infinity)
@@ -162,6 +178,7 @@ public struct MentionPillLayout {
         // Centered in its slot, and no wider: one that's wider is drawn smaller.
         var symbolSize = symbol?.size ?? .zero
         if symbolSize.width > slot { symbolSize = CGSize(width: slot, height: symbolSize.height * slot / symbolSize.width) }
+        if let chip { symbolSize = chip.size }
         symbolRect = CGRect(x: padding + (slot - symbolSize.width) / 2, y: ((height - symbolSize.height) / 2).rounded(),
                             width: symbolSize.width, height: symbolSize.height)
         let lineHeight = ceil(font.ascender - font.descender)
@@ -211,6 +228,13 @@ public struct MentionPillLayout {
         }
         guard Self.deviceScale >= minDetailScale else { return }
         symbol?.draw(in: symbolRect)
+        if let chip {
+            chip.fill.setFill()
+            NSBezierPath(roundedRect: symbolRect, xRadius: chip.radius, yRadius: chip.radius).fill()
+            let word = NSAttributedString(string: chip.word, attributes: [.font: chip.font, .foregroundColor: NSColor.white])
+            let size = word.size()
+            word.draw(at: CGPoint(x: symbolRect.midX - size.width / 2, y: symbolRect.midY - size.height / 2))
+        }
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         (label as NSString).draw(with: labelRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
@@ -230,6 +254,15 @@ public struct MentionPillLayout {
         draw(in: CGRect(origin: .zero, size: frame.size))
         NSGraphicsContext.restoreGraphicsState()
         cg.restoreGState()
+    }
+
+    /// A row's lead as its chip: its word, its font, its color and its size.
+    struct Chip {
+        let word: String
+        let font: NSFont
+        let fill: NSColor
+        let radius: CGFloat
+        let size: CGSize
     }
 
     /// Device pixels per point where it's being drawn now: the canvas's zoom times the screen's.

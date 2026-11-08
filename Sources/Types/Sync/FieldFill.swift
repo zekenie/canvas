@@ -206,7 +206,7 @@ public final class FieldFill {
         var values: JSONObject = [:]
         for key in keys { values[key] = held[key] }
         // A mention reads as its name, as the note shows it.
-        let label = { (shape: ShapeID) in editor.shape(inFile: shape).flatMap { editor.registry.mentionAppearance(of: $0)?.label } }
+        let label = { (target: PartAddress) in editor.registry.mentionResolution(of: target, lookup: { editor.shape(inFile: $0) }).appearance?.label }
         let request = FillPrompts.request(fields: Self.fields(resolved, book: book).pretty, values: SchemaValue(.object(values)).pretty,
                                           today: FillPrompts.day(of: Self.now()), previousWords: previous.plainText(label: label),
                                           words: words.plainText(label: label))

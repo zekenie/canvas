@@ -57,7 +57,7 @@ private let endpoint = ShapeID(UUID(uuidString: "E0E0E0E0-1111-4222-8333-4444444
         guard let storage = field?.textStorage else { return [] }
         var found: [ShapeID] = []
         storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
-            if let pill = value as? MentionAttachment { found.append(pill.target) }
+            if let pill = value as? MentionAttachment { found.append(pill.target.shape) }
         }
         return found
     }
