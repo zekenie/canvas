@@ -2366,6 +2366,7 @@ registrar.apiCommands(placing: placedAPI)                                // /api
 registrar.rowsDraw()                                                     // canvas draw's columns: and values:
 registrar.apiDraw()                                                      // canvas draw's server: and endpoints:
 registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
+registrar.openAPIPaste()                                                 // ⌘V of OpenAPI, "Paste OpenAPI"
 ```
 
 A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
@@ -2509,6 +2510,25 @@ statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `�
 nowhere is left out (a key the column had stays), and the paste lands anyway. The reading holds only the text: a key to a
 table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
 brought into it, and VoiceOver hears what was made and what updated; SQL that reads as nothing says "Nothing to paste".
+
+**Paste OpenAPI.** ⌘V of an OpenAPI 3 file (`.yaml`, `.yml` or `.json`) or its text is the kit's second reader. YAML is
+read by a subset reader of the kit's own (`YAMLReader`) into Types' ordered `SchemaValue`, JSON by Types' reader, so
+endpoints and fields keep the file's order; `OpenAPIReader` (pure) makes the API (title, server line, endpoints grouped
+by `APIGroups.byPrefix`, Group by Prefix's rule) and its types (components' schemas, inline objects named for their
+operation) in JSON Schema 2020-12. The program it writes needs what only the put knows, so its type statements carry late
+values and say which shapes they may find:
+
+```swift
+var type = DrawPut.Shape(kind: editor.newTypeKind()!.rawValue, title: "Refund")   // the kind New Type makes, never a literal
+type.late = [DrawPut.LateValue(key: TypeSchemaProperty.key.rawValue) { names in
+    // `$ref: #/components/schemas/Money` points at Money's note, made or found by this same put:
+    OpenAPIPaste.pointed(schema) { names.shape(kind, called: $0) }.pretty           // and, where names.found, joined
+}]                                                                                  // with what the type holds
+type.admits = { $0[TypeSchemaProperty.self] != nil }                                // a type finds only a type
+```
+
+The API is found by its title and its endpoints by method and full path (`endpoints:`'s writer), a body's words bind to
+the put's type notes (a pill, never an arrow), and a type pasted again keeps its id, its properties joined by name.
 
 ## Rows written as lines
 
@@ -6645,7 +6665,9 @@ giving a shape back the id it had.
   (`registrar.pasteReader("SQL", sniff: { … }) { content, editor in DrawPut? }`, `content` the text,
   or the local files with their small text, files before text): the shapes the file already has by kind
   and title are restated, the nearest first, never refused, the rest made and laid out in rows, landing
-  beside the selection (centered on a click or the pointer), selected, one step, "Paste SQL". A reader
+  beside the selection (centered on a click or the pointer), selected, one step, "Paste SQL". What only
+  the put can know a statement writes as a late value, and it may say which shapes it finds (Paste
+  OpenAPI's type notes: [The engineering kit](#the-engineering-kit)). A reader
   is `.recognizing` (⌘V's, with a cheap `sniff` menus ask) or `.plain` (⌥⇧⌘V, Edit › Paste as Note:
   StickyNotes' makes any text one note). Anything else on the pasteboard (an image, text no reader reads) is left alone. ⌘V, Edit › Paste and
   Paste are there only when something would paste, and the board shown takes shapes (`canPaste`),

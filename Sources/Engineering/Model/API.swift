@@ -148,7 +148,8 @@ public struct PathHeader: SchemaDefined, Hashable, Sendable {
 }
 
 /// One endpoint of an API: a row, its id the API's own. What its line says (method, path, body, its first response, words no
-/// part reads), and what only its card shows (name, summary, auth scope, path parameters' types, more responses, deprecated).
+/// part reads), and what only its card shows (name, summary, auth scope, path parameters' types, more responses, deprecated). Its
+/// query parameters' types, which a paste of OpenAPI gives, are kept after the path's, and its card doesn't show them yet.
 public struct Endpoint: SchemaDefined, Hashable, Sendable {
     public static let properties = Properties<Endpoint>(definition: "api-endpoint") {
         Property("id", \.id).required()
@@ -157,7 +158,7 @@ public struct Endpoint: SchemaDefined, Hashable, Sendable {
         Property("name", \.name).description("What it's called (OpenAPI's operationId): createRefund.")
         Property("summary", \.summary).description("What it does, in a line.")
         Property("authScope", \.authScope).description("The scope a client needs: orders:write.")
-        Property("parameters", \.parameters).description("Its path parameters' types, by name.")
+        Property("parameters", \.parameters).description("Its parameters' types, by name: the path's, then the query's.")
         Property("body", \.body).description("The type note its request's body is, by name.")
         Property("responses", \.responses).description("What it answers, by status, each with the type note its body is.")
         Property("deprecated", \.deprecated).description("Retired: still served, about to go.")
@@ -197,7 +198,7 @@ public struct Endpoint: SchemaDefined, Hashable, Sendable {
 /// Its body's and responses' types may name type notes, which a copy renames.
 extension Endpoint: ShapeNaming {}
 
-/// A path parameter's type: `{id}` is a uuid.
+/// A parameter's type: the path's `{id}` is a uuid; a query's (`limit`, which only a paste of OpenAPI gives so far) after them.
 public struct PathParameter: SchemaDefined, Hashable, Sendable {
     public static let properties = Properties<PathParameter>(definition: "path-parameter") {
         Property("name", \.name).description("As the path writes it, without its braces: id.")
