@@ -1776,7 +1776,12 @@ the two never disagree:
   to: CanvasTesting's `Properties<MemoNote>(definition: "memo-note")` is `canvastesting.memo-note`
   in a schema, named after the module that declares the type, so a type has one name wherever it's
   described, and two modules' definitions never collide. A struct that holds itself (a tree) needs a
-  name, and its definition then refers to itself.
+  name, and its definition then refers to itself. `Properties(readsAs: "name")` says which member a
+  value of the struct reads as where a query compares it as one value (the schema's
+  `x-canvas-reads-as`; it must be one of its properties, or the registry refuses the kind), and
+  `namedBy: "shape"` the member holding the id of a shape whose name it then reads as while that shape
+  has one (`x-canvas-named-by`): the engineering kit's `TypeRef` reads as the name of the enum or type
+  it names now, its words only where none ([What plugins add](#what-plugins-add), Queries).
 - **A dictionary keyed by strings** is an object whose members, named anything, are each its
   value's type (`additionalProperties`).
 - **A type that codes itself by hand** writes its schema by hand, as a `SchemaDescribed`: Arrows'
@@ -2347,8 +2352,9 @@ switched point; EngineeringTests' `kitTests` and CompositionTests' `kitsShippedT
 The first real kit ([`Sources/Engineering`](../Sources/Engineering), product): database tables, their
 enums and the databases that hold them, and REST APIs. One module in parts, `Model` (the kinds' props, `TypeRef`,
 `KitStyle`, how a row is drawn on the paper, the file's tables and enums by name), `Grammar` (the line grammars,
-pure), `Tables` and `APIs` (the kinds drawn, placed and written) and `Readers` (what's pasted: SQL), since an API
-names tables and two products could not see each other. Its plugin joins the kit and gives:
+pure), `Tables` and `APIs` (the kinds drawn, placed and written), `Readers` (what's pasted: SQL, OpenAPI) and
+`Agents` (what agents read: routes, `--ask`'s blocks), since an API names tables and two products could not see
+each other. Its plugin joins the kit and gives:
 
 ```swift
 registrar.join(EngineeringKit.self)
@@ -2369,6 +2375,17 @@ registrar.rowsDraw()                                                     // canv
 registrar.apiDraw()                                                      // canvas draw's server: and endpoints:
 registrar.sqlPaste()                                                     // ⌘V of SQL, "Paste SQL"
 registrar.openAPIPaste()                                                 // ⌘V of OpenAPI, "Paste OpenAPI"
+```
+
+What agents read of it is a plugin value of its own, `EngineeringAgentsPlugin`, after Queries and in no kit, so a file
+with the kit off is asked about its tables as one with it on:
+
+```swift
+registrar.queryPseudoClass("route", …, argument: "route", reads: .file, refusing: RoutePattern.refusal(of:),   // :route("POST /orders/{id}/refunds")
+                           prepare: { _, text in RoutePattern(text) }, matches: …, members: ["routes"], rowMembers: …)
+registrar.queryPartNames(of: DatabaseTable.kind) { record, part in …columns.first { $0.id == part }?.name }   // "row": "customer_id"
+registrar.queryAskFact(tag: "tables") { editor, question in KitAskFacts.tables(in: editor, question: question) }
+registrar.queryAskFact(tag: "apis") { editor, question in KitAskFacts.apis(in: editor, question: question) }
 ```
 
 A table keeps a column a row (`Column`: an id the table's own, a `PartID`; a name, a `TypeRef` type, null,
@@ -10086,8 +10103,9 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
 - **Members inside an attribute: `[a.b.c]`.** `AttributeTest.path` holds the identifier members
   after the attribute's name (a letter or `_`, then letters, digits, `-` and `_`; a quoted name has
   none), and the printer writes them bare, `[meta.owner=Ann i]`. Only an attribute whose schema is an
-  object or any JSON has members (any other is `unknown_attribute`: "note is text, so it has no
-  members"), and the test is **untyped**: an object's members are whatever the shape holds, so each
+  object or any JSON, or a list of them, has members (any other is `unknown_attribute`: "note is text,
+  so it has no members"; "tags is a list" of text has none either), a list at the attribute searched an
+  item at a time as one on the way is (`table[columns.name="email"]`), and the test is **untyped**: an object's members are whatever the shape holds, so each
   test is typed by the JSON value found at the path, shape by shape (`PathTest`, a `.path`
   comparison). A string takes the text operators, `=` and `i`, and `~=` as a word; a number takes `=`
   and the orderings when the literal reads as a decimal number (`[a.b="30"]` is `[a.b=30]`; an
@@ -10095,7 +10113,20 @@ runs on a file of its own, so it can't drift from the app). What a plugin needs 
   `unsupported_operator`); a boolean takes `true` or `false`; an array takes `~=` for an item; any
   other sort of value matches nothing (`[a.b^=3]` on a number). A member that is missing, null, or
   inside something that isn't an object is no value: `[a.b]` is false, `[a.b=""]` true, and `!=`
-  is the `:not` of the test, as everywhere. Typing by the schemas of a shape's types is left for
+  is the `:not` of the test, as everywhere. One thing the schema does say: an object whose schema names
+  the member it reads as (`Properties(readsAs:)`, KindSchema's `x-canvas-reads-as`, `readsAs(_:at:)`)
+  is compared by that member where a path ends at it, so `[columns.type="uuid"]` tests a type's
+  `words`, and a list of such objects compared with no path (an equality, a text operator, `~=`;
+  never an ordering) is searched by it, an item at a time (`enum-type[values="paid"]`, an enum's
+  values read as their `text`): the engine knows no kind's meaning, the kind's schema says it.
+  `Properties(readsAs:namedBy:)` may add the member that holds a shape's id (`x-canvas-named-by`,
+  `KindSchema.namedBy(_:at:)`): the object then reads as that shape's name while it has one, in place of
+  its `readsAs` member, which a rename of that shape changes with nothing written here (a column's
+  type reads as its enum's name now; the words only where the shape is gone, outside the query's range or
+  nameless). The schema is held to its members too: where every object a path goes through is
+  closed (`additionalProperties: false`), a member it doesn't have is `unknown_attribute` with the one
+  nearest and the members (`KindSchema.unknownMember(of:at:)`: `[columns.nam="x"]`), not a quiet
+  answer of none; an object that may hold more (`fieldValues`, any JSON) is left to its plugin's warning. The canonical form stays as written. Typing by the schemas of a shape's types is left for
   later: it would make the vocabulary depend on the file, which today is built once from the
   registry and is `Sendable`.
 - **Text as a person reads it.** A string whose schema names a media type a text format reads
@@ -10350,6 +10381,7 @@ a query does without:
 | Point | Sugar | What a query gets | Without it | Shipped |
 |---|---|---|---|---|
 | `QueryNames` | `registrar.queryNames(attribute:source:named:derived:fold:)` | The attribute names are tested by; per kind, whether its shapes are named, derived or neither; a named shape's name, read anywhere; a derived one's, on the main actor; how a title a query writes is folded | No titles: a title head is `no_names`, and rows have none | TitleQueriesPlugin |
+| `QueryPartNames` | `registrar.queryPartNames(of:_:)` | What a kind's parts (its rows) are called, read off the record anywhere, one plugin a kind: a connection's end bound to a row says it (`QueryEnd.row`, `"row": "customer_id"`) | An end says no row | EngineeringAgentsPlugin (`table`, `enum-type`, `api`) |
 | `QueryBoardNames` | `registrar.queryBoardNames(placeholder:)` | What an untitled owner's board is called, per kind | Its kind's label | BoardQueriesPlugin |
 | `QueryWords` | `registrar.queryPseudoClass(_:_:example:prepare:seeds:matches:onMain:problems:)` (reads the editor; with `reads: .file` and a file-only `prepare`, no `onMain`, and `members:`, `rowMembers:`, `absent:`; with `argument:` too, a word that takes one quoted text), `querySelection(_:_:example:selected:)`, `queryRelation(_:_:example:types:direction:)`, `queryRelation(_:_:example:reads:transitive:namesTypes:prepare:seeds:related:)` | A word: a pseudo-class, the person's selection, a relation over edges of exactly some types, or a relation answered from a fact of the file | The word is `unknown_pseudo_class` | MentionQueriesPlugin, ValidationQueriesPlugin, TypeQueriesPlugin, SelectionQueriesPlugin |
 | `QueryPathChecks` | `registrar.queryPathCheck(attribute:_:)` | What the members of an object attribute can be: the first member of a path a query tests that no shape of the file can hold (`[fieldValues.stauts]`), asked on the main actor, once a path | No warning | TypeQueriesPlugin |
@@ -10357,7 +10389,7 @@ a query does without:
 | `QueryTextFormats` | `registrar.queryTextFormat(mediaType:describes:prepare:read:)` (and with `reads: .file`) | How strings of a `contentMediaType` read, anywhere | Text read as stored | MentionQueriesPlugin |
 | `QueryEngines` | none: `QueriesPlugin`'s mark, which only Queries makes | That the app answers queries (`registry.answersQueries`), for what has a registry and no editor | `canvas query` and `query-vocabulary` answer `no_queries` | QueriesPlugin |
 
-`QueryNames` and `QueryBoardNames` take one contribution each, `QueryWords` one a word,
+`QueryNames` and `QueryBoardNames` take one contribution each, `QueryPartNames` one a kind (`query part names of table`), `QueryWords` one a word,
 `QueryPathChecks` one an attribute, `QueryAskFacts` one a tag and `QueryTextFormats` one a media type (their report lines: `query names`, `query board names`, `query
 word :mentions`, `query path fieldValues`, `ask fact fields`, `query text text/x-canvas-mentions`; `query engine` on queries'). The five
 registrations, whole (each plugin's words are its own nested `enum Word: String`, and
@@ -10442,7 +10474,9 @@ registrar.querySelection(Word.selected.rawValue, "the person has it selected", e
 - **A word with a text, members and absent ids** (`queryPseudoClass(…, argument: "name", reads: .file,
   prepare: { file, text in … }, seeds:, matches:, members: ["tag"], rowMembers:, absent:)`): written
   `:drawn-by("Plans")`, exactly one quoted string (`bad_argument` for none, another sort of thing or
-  two; a word declared without an argument still refuses `:x("…")`). `prepare` is given the text,
+  two; a word declared without an argument still refuses `:x("…")`; `refusing:` says why a text
+  can't be the word's where that shows without the file, `:route("POST")` "says no path", refused as
+  `bad_argument` with the word's example, never an empty answer). `prepare` is given the text,
   and `seeds`, `matches`, `rowMembers` and `absent` see what it made; a query using the word with two
   texts prepares each on its own. `rowMembers(shape, prepared)` adds the members `members` declares
   (never a row's own key: `QueryWords.check` refuses it and the registry report names them) to each
@@ -16465,6 +16499,7 @@ reordering           command bringToFront in ReorderSection · shortcut ] → co
 line-rows            service LineRowsService · service RowFolds · service RowCuts · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
 engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · key hint Space on an Endpoint Change the Endpoint's Method · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · RowDetails in Column first → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · RowDetails in Endpoint first → api · shape endpoint · label Endpoint → endpoint · tint → endpoint · ShapeTitles → endpoint · ContentsTitles → endpoint · mentionable → endpoint · ShapeResizing → endpoint · parts resize handles → endpoint · ContentsRows → endpoint · ShapeDetails → endpoint · accessibility → endpoint · line rows (endpoints) → endpoint · row moves (endpoints) → endpoint · items rows → endpoint · ports calls on rows → endpoint · ports writes on rows → endpoint · ports reads on rows → endpoint · connect picks → endpoint · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · command newVersion · command groupByPrefix · CanvasContextMenu in APIMenuGroup after TransformMenuGroup, RowsMenuGroup after ShapeMenuGroup · /new-version → the command bar's target · /group-by-prefix → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
+engineering-agents   query word :route("…") members routes · query part names of table · query part names of enum-type · query part names of api · ask fact tables · ask fact apis
 ```
 
 The drawing of this repository's own code reads it too: its lens (`.canvas/lens.py`, canvas-ingest's) draws each line as

@@ -35,16 +35,25 @@ public struct Properties<Root: SchemaDefined>: Sendable {
     /// Set, the type's schema is a shared definition of this name (`$defs`), which each use refers
     /// to; otherwise it's written out where it's used.
     public let definition: String?
+    /// Set, a value of the type reads as this member of it where a text compares it as one value (a query's `[a.type="uuid"]`
+    /// reads a type's `words`): the schema says so (`KindSchema.readsAsKeyword`). It must be one of its properties.
+    public let readsAs: String?
+    /// Set with `readsAs`, the member of it that holds the id of a shape whose name now is what the value reads as instead of its
+    /// `readsAs` member, while that shape has a name (`KindSchema.namedByKeyword`): a type as written reads as the name of the type
+    /// it names, which a rename of that shape changes with nothing written here. It must be one of its properties.
+    public let namedBy: String?
     let list: [AnyProperty<Root>]
     /// Those whose members name shapes (`ShapeNaming`), in list order: all that walking or
     /// renaming the type's names looks at, none for most types.
     let namingProperties: [AnyProperty<Root>]
 
-    public init(title: String? = nil, description: String? = nil, definition: String? = nil,
+    public init(title: String? = nil, description: String? = nil, definition: String? = nil, readsAs: String? = nil, namedBy: String? = nil,
                 @PropertyListBuilder<Root> _ properties: () -> [AnyProperty<Root>]) {
         self.title = title
         self.description = description
         self.definition = definition
+        self.readsAs = readsAs
+        self.namedBy = namedBy
         list = properties()
         namingProperties = list.filter { $0.naming != nil }
     }
@@ -74,6 +83,14 @@ public struct Properties<Root: SchemaDefined>: Sendable {
         let required = list.filter(\.isRequired).map { JSONValue.string($0.name) }
         if !required.isEmpty { json["required"] = .array(required) }
         json["additionalProperties"] = false
+        if let readsAs {
+            if properties[readsAs] == nil { definitions.problems.append("\(Root.self) reads as \(readsAs), which isn't one of its properties") }
+            json[KindSchema.readsAsKeyword] = .string(readsAs)
+            if let namedBy {
+                if properties[namedBy] == nil { definitions.problems.append("\(Root.self) is named by \(namedBy), which isn't one of its properties") }
+                json[KindSchema.namedByKeyword] = .string(namedBy)
+            }
+        }
         return json
     }
 }

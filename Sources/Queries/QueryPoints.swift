@@ -69,6 +69,25 @@ extension QueryBoardNames: KeyedExtensionPoint {
     static let label = "query board names"
 }
 
+// MARK: Parts' names
+
+/// What a part of a kind's shapes is called, for queries: a connection's end bound to a row says the row (`QueryEnd.row`,
+/// "customer_id", "POST /orders/{id}/refunds"), read off the main actor from the record, as a named shape's name is. Nil for
+/// a part the record doesn't hold, or one with no name. Only the sugar makes one (`registrar.queryPartNames`).
+public struct QueryPartNaming: Sendable {
+    let name: @Sendable (AnyShapeRecord, PartID) -> String?
+}
+
+/// What names the parts of a kind's shapes for queries: one plugin a kind, contributed for that kind.
+public enum QueryPartNames {}
+
+extension QueryPartNames: KeyedExtensionPoint {
+    public typealias Contribution = QueryPartNaming
+    public static var owner: PluginID { .queries }
+    public static func uniqueKeys(of _: QueryPartNaming, for target: ShapeTarget) -> [AnyHashable] { [QueryPointKey(name: "query part names \(target)")] }
+    public static func summary(of _: QueryPartNaming, for target: ShapeTarget) -> String { "query part names of \(target)" }
+}
+
 // MARK: Words
 
 /// Whether a shape meets a contributed pseudo-class, as far as `matches` can say anywhere: yes, no,
@@ -263,6 +282,8 @@ struct ContributedPseudoClass: Sendable {
     /// main actor as rows are built.
     var rowMembers: (@Sendable (QueryShape, any Sendable) -> [String: JSON])?
     var memberNames: [String] = []
+    /// Why a text can't be its argument, where that shows without the file: the query is refused with it.
+    var refusing: (@Sendable (String) -> String?)?
     /// What its argument names that the file no longer holds, off the main actor.
     var absent: (@Sendable (any Sendable) -> [QueryAbsent])?
     /// Whether a query that holds it waits for answers still arriving (`TopologyIndex.isSettling`), as one that
@@ -552,6 +573,14 @@ extension PluginRegistrar {
         contribute(QueryNaming(attribute: attribute, source: source, named: named, derived: derived, fold: fold), to: QueryNames.self)
     }
 
+    /// What the parts of `kind`'s shapes are called, for queries: `name` is given a shape's record and one of its parts, read
+    /// anywhere (off the main actor, as a query's rows are made), and says the part's whole name, as `PartedShape.parts(of:)`
+    /// does ("customer_id"); nil for a part the record doesn't hold. A connection's end bound to a part says it (`QueryEnd.row`).
+    /// One plugin a kind: the one that defines it.
+    public mutating func queryPartNames(of kind: ShapeKind, _ name: @escaping @Sendable (AnyShapeRecord, PartID) -> String?) {
+        contribute(QueryPartNaming(name: name), to: QueryPartNames.self, for: .kind(kind))
+    }
+
     /// What a board is called while its owner has no name, per board-owning kind, asked once per
     /// kind as the vocabulary is built. A board's name is then its owner's name (the names point),
     /// else this, else the kind's label (`registry.label(of:)`): Boards' own rule. At most one
@@ -643,8 +672,11 @@ extension PluginRegistrar {
     /// "name", `prepare` is given the text, and `seeds`, `matches`, `rowMembers` and `absent` see what it made.
     /// Written `:drawn-by("Plans")`: exactly one string (`bad_argument` for none, another sort of thing or
     /// two). A query may use it with several texts, each prepared, seeded and answered on its own.
+    /// `refusing` says why a text can't be the word's, where it can tell without the file (a route with no path), and the
+    /// query is refused as `bad_argument` with that, the word's example as the hint, rather than matching nothing.
     public mutating func queryPseudoClass<Prepared: Sendable>(
         _ word: String, _ summary: String, example: String, argument: String, reads _: QueryFileReads,
+        refusing: (@Sendable (String) -> String?)? = nil,
         prepare: @escaping @MainActor (QueryFilePreparation, String) -> Prepared,
         seeds: (@Sendable (Prepared) -> Set<ShapeID>)? = nil,
         matches: @escaping @Sendable (QueryShape, Prepared) -> QueryVerdict,
@@ -655,7 +687,7 @@ extension PluginRegistrar {
         contributePseudoClass(word, summary, example: example, argument: argument, reads: .file,
                               prepare: { preparation, text in prepare(preparation.file, text ?? "") },
                               seeds: seeds, matches: matches, onMain: nil, problems: nil, settles: false,
-                              members: members, rowMembers: rowMembers, absent: absent)
+                              members: members, rowMembers: rowMembers, absent: absent, refusing: refusing)
     }
 
     private mutating func contributePseudoClass<Prepared: Sendable>(
@@ -668,7 +700,8 @@ extension PluginRegistrar {
         settles: Bool,
         members: [String] = [],
         rowMembers: (@Sendable (QueryShape, Prepared) -> [String: JSON])? = nil,
-        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil
+        absent: (@Sendable (Prepared) -> [QueryAbsent])? = nil,
+        refusing: (@Sendable (String) -> String?)? = nil
     ) {
         let erasedPrepare: @MainActor (QueryPreparation, String?) -> any Sendable = { prepare($0, $1) }
         let erasedMatches: @Sendable (QueryShape, any Sendable) -> QueryVerdict = { shape, prepared in matches(shape, prepared as! Prepared) }
@@ -686,6 +719,7 @@ extension PluginRegistrar {
                                                  onMain: erasedOnMain, problems: erasedProblems, settles: settles)
         if let rowMembers { pseudoClass.rowMembers = { shape, prepared in rowMembers(shape, prepared as! Prepared) } }
         pseudoClass.memberNames = members
+        pseudoClass.refusing = refusing
         if let absent { pseudoClass.absent = { prepared in absent(prepared as! Prepared) } }
         var declaration = QueryWordDeclaration(word: word, summary: summary, example: example, meaning: .pseudoClass(pseudoClass))
         declaration.argument = argument

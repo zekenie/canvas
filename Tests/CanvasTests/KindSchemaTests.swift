@@ -56,6 +56,100 @@ struct Gauge: BoxShapeProps {
     var items: [Item] = []
 }
 
+/// A value that reads as one of its members where a text compares it as one value, named by a shape's name, written in place.
+struct Measure: SchemaDefined, Equatable {
+    static let properties = Properties<Measure>(readsAs: "unit", namedBy: "ref") {
+        Property("unit", \.unit)
+        Property("ref", \.ref)
+    }
+    var unit = ""
+    var ref: ShapeID?
+}
+
+/// One that is a shared definition, and reads as its label.
+struct Pennant: SchemaDefined, Equatable {
+    static let properties = Properties<Pennant>(definition: "pennant", readsAs: "label") {
+        Property("label", \.label)
+        Property("weight", \.weight)
+    }
+    var label = ""
+    var weight = 0
+}
+
+/// A kind whose properties hold them: one, a list of them, a list of definitions.
+struct Meter: BoxShapeProps {
+    static let kind: ShapeKind = "meter"
+    static let properties = Properties<Meter> {
+        Property("frame", \.frame).required()
+        Property("measure", \.measure)
+        Property("measures", \.measures)
+        Property("markers", \.markers)
+        Property("text", \.text)
+    }
+    var frame: CGRect = .zero
+    var measure = Measure()
+    var measures: [Measure] = []
+    var markers: [Pennant] = []
+    var text = ""
+}
+
+/// A value that says it reads as a member it doesn't have, and one named by a member it doesn't have.
+struct Misreader: SchemaDefined, Equatable {
+    static let properties = Properties<Misreader>(readsAs: "nope") { Property("unit", \.unit) }
+    var unit = ""
+}
+
+struct Misnamer: SchemaDefined, Equatable {
+    static let properties = Properties<Misnamer>(readsAs: "unit", namedBy: "nope") { Property("unit", \.unit) }
+    var unit = ""
+}
+
+struct Faulty: BoxShapeProps {
+    static let kind: ShapeKind = "faulty"
+    static let properties = Properties<Faulty> {
+        Property("frame", \.frame).required()
+        Property("reader", \.reader)
+    }
+    var frame: CGRect = .zero
+    var reader = Misreader()
+}
+
+struct Faultier: BoxShapeProps {
+    static let kind: ShapeKind = "faultier"
+    static let properties = Properties<Faultier> {
+        Property("frame", \.frame).required()
+        Property("reader", \.reader)
+    }
+    var frame: CGRect = .zero
+    var reader = Misnamer()
+}
+
+@MainActor private func misreading<P: BoxShapeProps>(_: P.Type) -> String? {
+    do {
+        _ = try Registry(plugins: [Contributor(id: "kinds") { $0.shape(PlainDefinition<P>()) }])
+        return nil
+    } catch {
+        return "\(error)"
+    }
+}
+
+/// A schema written by hand with branches: a value that is one of two objects, each reading as its own member.
+private let branched = KindSchema(JSONSchema([
+    "type": "object",
+    "properties": [
+        "either": ["oneOf": [
+            ["type": "object", "properties": ["a": ["type": "string"]], "additionalProperties": false, "x-canvas-reads-as": "a"],
+            ["type": "object", "properties": ["b": ["type": "string"], "c": ["type": "string"]], "additionalProperties": false],
+        ]],
+        "open": ["type": "object", "properties": ["a": ["type": "string"]]],
+        "mixed": ["oneOf": [
+            ["type": "object", "properties": ["a": ["type": "string"]], "additionalProperties": false],
+            ["type": "object", "properties": ["b": ["type": "string"]]],
+        ]],
+        "name": ["type": "string"],
+    ],
+]))
+
 /// Whether a gauge is latched: a switch only the shapes it's set on have.
 enum Latch {}
 extension Latch: ShapeProperty {
@@ -241,6 +335,54 @@ private let handWritten = KindSchema(JSONSchema([
         expectEqual(readItem(gauge, "a", quoted: true, of: "items"), .failure(.notA(compactType: "JSON {done, text}")))
         expectEqual(readItem(gauge, "0.5", of: "level"), .failure(.notA(compactType: "number 0…1")), "not a list")
         expectEqual(readItem(gauge, "a", of: "nope"), .failure(.notAProperty))
+    },
+    test("a value that reads as a member says so in its schema, in place or as a definition, and a member it doesn't have is refused") {
+        let registry = try Registry(plugins: [Contributor(id: "meters") { $0.shape(PlainDefinition<Meter>()) }])
+        let json = try require(registry.schema(for: Meter.kind)).json
+        expectEqual(json["properties"]?["measure"]?["x-canvas-reads-as"], "unit", "written out where it's used")
+        expectEqual(json["properties"]?["measure"]?["x-canvas-named-by"], "ref")
+        expectEqual(json["properties"]?["measures"]?["items"]?["x-canvas-reads-as"], "unit")
+        let marker = try require(json["$defs"]?["canvastests.pennant"])
+        expectEqual(marker["x-canvas-reads-as"], "label", "on the shared definition, which each use refers to")
+        expectEqual(marker["x-canvas-named-by"], nil)
+        expectEqual(json["properties"]?["markers"]?["items"], ["$ref": "#/$defs/canvastests.pennant"])
+        expectEqual(json["properties"]?["text"]?["x-canvas-reads-as"], nil, "a string reads as itself")
+        expectEqual(misreading(Faulty.self), "Shapes: faulty (from kinds): Misreader reads as nope, which isn't one of its properties")
+        expectEqual(misreading(Faultier.self), "Shapes: faultier (from kinds): Misnamer is named by nope, which isn't one of its properties")
+    },
+    test("what a value reads as is found through lists, references and branches, from the property or a path inside it; a string, a list of text and a missing step read as none") {
+        let registry = try Registry(plugins: [Contributor(id: "meters") { $0.shape(PlainDefinition<Meter>()) }])
+        let meter = try schema(Meter.kind, in: registry)
+        expectEqual(meter.readsAs("measure", at: []), "unit")
+        expectEqual(meter.namedBy("measure", at: []), "ref")
+        expectEqual(meter.readsAs("measures", at: []), "unit", "a list reads as its items")
+        expectEqual(meter.readsAs("markers", at: []), "label", "through a reference")
+        expectEqual(meter.namedBy("markers", at: []), nil, "named by no shape")
+        expectEqual(meter.readsAs("markers", at: ["label"]), nil, "a string reads as itself")
+        expectEqual(meter.readsAs("measure", at: ["nope"]), nil, "a step the schema doesn't have")
+        expectEqual(meter.readsAs("text", at: []), nil)
+        expectEqual(meter.readsAs("nope", at: []), nil, "a property the kind hasn't")
+        expectEqual(branched.readsAs("either", at: []), "a", "the branch that says it")
+        expectEqual(branched.readsAs("open", at: []), nil)
+        expectEqual(branched.readsAs("name", at: []), nil)
+    },
+    test("a member a schema rules out is found where every object on the way is closed, with the members it has; an open object, any JSON and a string are none of its business") {
+        let registry = try Registry(plugins: [Contributor(id: "meters") { $0.shape(PlainDefinition<Meter>()) }])
+        let meter = try schema(Meter.kind, in: registry)
+        let slip = try require(meter.unknownMember(of: "measures", at: ["unti"]))
+        expectEqual(slip.member, "unti")
+        expectEqual(slip.known, ["ref", "unit"])
+        expectEqual(slip.depth, 0)
+        expectEqual(meter.unknownMember(of: "markers", at: ["label", "x"])?.member, nil, "past a string")
+        expectEqual(meter.unknownMember(of: "measure", at: ["unit"])?.member, nil, "a member it has")
+        expectEqual(meter.unknownMember(of: "markers", at: ["weight"])?.member, nil)
+        expectEqual(meter.unknownMember(of: "nope", at: ["x"])?.member, nil, "a property the kind hasn't")
+        expectEqual(branched.unknownMember(of: "open", at: ["zzz"])?.member, nil, "an object that may hold more")
+        expectEqual(branched.unknownMember(of: "either", at: ["zzz"])?.known, ["a", "b", "c"], "branches, all closed: the members of any")
+        expectEqual(branched.unknownMember(of: "either", at: ["c"])?.member, nil, "a member of one branch is a member")
+        expectEqual(branched.unknownMember(of: "mixed", at: ["zzz"])?.member, nil, "branches, one of them open to more")
+        expectEqual(branched.unknownMember(of: "name", at: ["x"])?.member, nil)
+        expectEqual(handWritten.unknownMember(of: "any", at: ["x"])?.member, nil, "any JSON")
     },
     test("references are followed within the schema: keywords beside one say more, names are escaped as a pointer's, a loop ends") {
         expectEqual(handWritten.resolved(["$ref": "#/$defs/a~1b", "maximum": 9]), ["type": "integer", "minimum": 0, "maximum": 9])

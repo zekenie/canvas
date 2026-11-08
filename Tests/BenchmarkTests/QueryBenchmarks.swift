@@ -760,6 +760,8 @@ let rowsListed = 10_000
         var plugins = shippedPlugins(pasteboard)
         let first = try require(plugins.firstIndex { $0.id == .queries }), last = try require(plugins.firstIndex { $0.id == .queryCommands })
         plugins.removeSubrange(first...last)
+        // And the kit's words for agents, which fill Queries' points from after the kit.
+        plugins.removeAll { $0.id == .engineeringAgents }
         let without = try Registry(plugins: plugins)
         expect(!without.answersQueries && shipped.answersQueries)
         for size in sizes {
@@ -856,7 +858,7 @@ let rowsListed = 10_000
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
         // The shipped list without frames and the engineering kit (its databases), so with no kind that holds shapes, and as it ships.
-        let bare = try Registry(plugins: shippedPlugins(pasteboard).filter { ![.framing, .engineering, .engineeringFind].contains($0.id) })
+        let bare = try Registry(plugins: shippedPlugins(pasteboard).filter { ![.framing, .engineering, .engineeringFind, .engineeringAgents].contains($0.id) })
         let shipped = try Registry(plugins: shippedPlugins(pasteboard))
         let holding = try Registry(plugins: shippedPlugins(pasteboard) + [CorralsPlugin()])
         let scan = #"\#(StickyNote.kind.rawValue)[text*="note" i]:not(:inside(*))"#

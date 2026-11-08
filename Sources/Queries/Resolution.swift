@@ -279,7 +279,8 @@ private struct Resolver {
         var readers: [AttributeReader] = [], refusal: QueryError?
         for (entry, attribute) in having {
             do throws(QueryError) {
-                let typed = test.path.isEmpty ? try typedTest(test, attribute: attribute, of: entry) : try pathTest(test, attribute: attribute)
+                let typed = test.path.isEmpty && !Self.readsItems(test, attribute: attribute, of: entry)
+                    ? try typedTest(test, attribute: attribute, of: entry) : try pathTest(test, attribute: attribute, of: entry)
                 let source: AttributeReader.Source = attribute.isName ? .names : .property(attribute.shape)
                 if let index = readers.firstIndex(where: { $0.source == source && $0.test == typed }) {
                     readers[index] = AttributeReader(kinds: readers[index].kinds.union([entry.kind]), source: source, test: typed)
@@ -516,22 +517,50 @@ private struct Resolver {
         }
     }
 
+    /// Whether a comparison with no path is a path test all the same: on a list of objects, or an object, whose schema says the
+    /// member each reads as (`KindSchema.readsAs`): `[values="paid"]` is `[values.text="paid"]`, an item at a time.
+    static func readsItems(_ test: AttributeTest, attribute: QueryVocabulary.AttributeEntry, of entry: QueryVocabulary.KindEntry) -> Bool {
+        guard test.path.isEmpty, let op = test.op, !op.isOrdering else { return false }
+        switch attribute.shape {
+        case .array, .object: return entry.schema.readsAs(attribute.name, at: []) != nil
+        default: return false
+        }
+    }
+
+    /// Whether what a property holds has members: an object, any JSON, or a list of them, however deep.
+    static func holdsMembers(_ shape: KindSchema.PropertyShape) -> Bool {
+        switch shape {
+        case .object, .json: true
+        case .array(let items): holdsMembers(items)
+        default: false
+        }
+    }
+
     /// `[a.b.c op value flag]`: a test of what's at the members inside an object attribute, typed
     /// later by the value found there (`PathTest`). Only an attribute whose value is an object (or
-    /// any JSON) has members. The literal needs nothing now but an ordering's: a number or a date.
-    func pathTest(_ test: AttributeTest, attribute: QueryVocabulary.AttributeEntry) throws(QueryError) -> TypedTest {
+    /// any JSON), or a list of them, has members; a list, at the attribute or on the way, is searched
+    /// an item at a time. Where the path ends at an object whose schema says the member it reads as
+    /// (`KindSchema.readsAs`: a type as written, its `words`), a comparison compares that member. The
+    /// literal needs nothing now but an ordering's: a number or a date.
+    func pathTest(_ test: AttributeTest, attribute: QueryVocabulary.AttributeEntry, of entry: QueryVocabulary.KindEntry) throws(QueryError) -> TypedTest {
         let name = attribute.name, span = test.span
-        switch attribute.shape {
-        case .object, .json:
-            break
-        default:
+        guard Self.holdsMembers(attribute.shape) else {
             let what = attribute.shape.what(compactType: attribute.compactType)
             throw QueryError(.unknownAttribute, "\(name) is \(what), so it has no members.", hint: "[\(name)] tests it.", span: span)
+        }
+        // A member the kind's schema rules out is a slip, not an empty answer: a schema that lists every member of the objects the
+        // path goes through (closed) is held to them.
+        if let unknown = entry.schema.unknownMember(of: name, at: test.path) {
+            let inside = test.path.prefix(unknown.depth).joined(separator: ".")
+            throw QueryError(.unknownAttribute, "\(inside.isEmpty ? name : "\(name).\(inside)") has no member \(unknown.member).",
+                             hint: sentences(didYouMean(Suggestions.closest(to: unknown.member, among: unknown.known, limit: 1)),
+                                             "Its members: \(unknown.known.joined(separator: ", "))."), span: span)
         }
         guard let op = test.op, let literal = test.value else {
             return TypedTest(comparison: .path(PathTest(members: test.path, op: nil, literal: "", ignoringCase: false)), ignoringCase: false)
         }
-        let written = test.path.joined(separator: ".")
+        let members = test.path + (entry.schema.readsAs(name, at: test.path).map { [$0] } ?? [])
+        let written = members.joined(separator: ".")
         if op.isOrdering {
             if let flag = test.flag {
                 var plain = test
@@ -544,7 +573,8 @@ private struct Resolver {
                                  hint: "\(name).\(written) is compared by its value: a number, or a date as \"2026-10-01\".", span: span)
             }
         }
-        let path = PathTest(members: test.path, op: op, literal: literal.text, ignoringCase: test.flag == .insensitive)
+        let path = PathTest(members: members, op: op, literal: literal.text, ignoringCase: test.flag == .insensitive,
+                            namedBy: members.count > test.path.count ? entry.schema.namedBy(name, at: test.path) : nil)
         return TypedTest(comparison: .path(path), ignoringCase: path.ignoringCase)
     }
 
@@ -699,6 +729,9 @@ private struct Resolver {
             if let argument = declared.argument {
                 do throws(QueryError) {
                     text = try pseudo.text(argument: argument, example: declared.example)
+                    if let text, let why = behavior.refusing?(text) {
+                        throw QueryError(.badArgument, why, hint: declared.example, span: pseudo.span)
+                    }
                 } catch {
                     problem(error)
                     return nil
