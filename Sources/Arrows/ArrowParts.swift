@@ -4,6 +4,7 @@ import CoreGraphics
 import Geometry
 import Mentions
 import Selection
+import Topology
 
 // An arrow's handles by the keys (keyboard navigation's principles 1 and 10: a drag has a keyboard way).
 // With the arrow selected, ⌥Tab goes into its parts (Selection's `ShapeParts`), in reading order: its start,
@@ -121,7 +122,7 @@ enum ArrowParts {
         }
         targeting.updateArrow(id) { $0[end] = .bound(moved) }
         let editor = targeting.editor
-        if let name = editor.accessibleName(of: moved.address) { editor.announce(name) }
+        if let name = editor.accessibleName(readingThrough: moved.address) { editor.announce(name) }
     }
 
     /// ⌥⌘ and an arrow on an end: bound to the nearest shape that way from where the end aims, of those it may
@@ -144,7 +145,7 @@ enum ArrowParts {
         // No drag is under way to outline what the end aims at.
         editor.hintedShapeID = nil
         let bound = targeting.arrow(id)?[end].binding
-        if let name = bound.flatMap({ editor.accessibleName(of: $0.address) }) ?? editor.accessibleDescription(of: target)?.name { editor.announce(name) }
+        if let name = bound.flatMap({ editor.accessibleName(readingThrough: $0.address) }) ?? editor.accessibleDescription(of: target)?.name { editor.announce(name) }
     }
 
     /// Return on the bend: the arrow straight.
@@ -181,7 +182,7 @@ enum ArrowParts {
     static func accessibility(of shape: ShapeRecord<Arrow>, in editor: CanvasEditor) -> AccessibleTraits {
         // A row's end by the row's name, read with its shape's ("id in customers").
         func name(_ end: ArrowEnd) -> String? {
-            shape.props[end].binding.flatMap { editor.accessibleName(of: $0.address) ?? editor.accessibleDescription(of: $0.shapeID)?.name }
+            shape.props[end].binding.flatMap { editor.accessibleName(readingThrough: $0.address) ?? editor.accessibleDescription(of: $0.shapeID)?.name }
         }
         let runs = ArrowStyle.accessibleRun(from: name(.start), to: name(.end))
         let text = shape.props.hasText ? editor.mentions?.plainText(shape.props.text) ?? shape.props.text.plainText() : nil

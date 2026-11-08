@@ -1,3 +1,4 @@
+import Canvas
 import Chrome
 import CoreGraphics
 
@@ -66,6 +67,22 @@ public enum ReferenceEdits {
         let text = max(ReferenceMemo.shared.width(of: label, italic: false), ReferenceMemo.shared.width(of: label, italic: true))
         let line = place.isEmpty ? 0 : style.placeLine(place, room: style.placeRoomMost).width
         return min(style.maxWidth, max(style.minWidth, ceil(style.padding + max(text + trailing, line))))
+    }
+
+    /// Pills for rows that moved (`Transaction.moveParts`: a row into another shape, out into one of its own) stand for where
+    /// each went, on whichever board they are, in the move's step: another shape's row, or a shape as a whole (the row became
+    /// one). Their width is left as it is; a read-only pill stays as it was. Found through the stand-ins that name each row's
+    /// shape (`standIns(naming:)`), so it costs the moved rows' pills.
+    static func follow(_ moves: [PartAddress: PartAddress], in transaction: inout Transaction) {
+        var asked: Set<ShapeID> = []
+        for from in moves.keys where from.part != nil && asked.insert(from.shape).inserted {
+            for pill in transaction.standIns(naming: from.shape) where transaction.mayWrite(on: pill.board) {
+                let there = transaction.contents(of: pill.board)
+                guard let record = there[pill.id]?.typed(as: Reference.self), let target = record.props.target, target.id == from.shape,
+                      let row = target.row, let to = moves[PartAddress(from.shape, part: row)] else { continue }
+                transaction.update(pill.id, on: pill.board, as: Reference.self) { $0.props.target = ReferenceTarget(id: to.shape, label: target.label, row: to.part) }
+            }
+        }
     }
 
     /// Fits the pill to what it says.

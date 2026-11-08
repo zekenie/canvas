@@ -2390,6 +2390,18 @@ transaction.moveParts([PartAddress(orders, part: id): PartAddress(items, part: i
 registrar.partsMoved { moves, transaction in … }                  // a name of a row renamed where it went
 ```
 
+A binding may reach a row through a pill for its shape (a key to a column on another board: the pill, with the
+column on the binding). Both reach those too, on the pill's board and in the same step, through the one stand-in
+lookup a plugin gives the core (Topology's, `standIns(naming:)`):
+
+```swift
+registrar.standInLookup { editor, shape in editor.topology?.standIns(naming: shape) ?? [] }
+transaction.standIns(naming: table)      // [(id, board)]: each pill for the table, where it is
+```
+
+In a step on a board that is not shown (`transact(on:)`) they leave the board shown's bindings as they are, as a handler of
+yours must (`transaction.mayWrite(on: board)`): a write there would drop the whole commit.
+
 **Keys.** A key is an arrow bound to two rows, on the kit's channel. The kit declares the channel, gives
 a table's rows ports on it both ways, and keeps an index of each table's keys that its render reads:
 
@@ -7243,7 +7255,9 @@ one shape at a time, the host, as data-canvas's show on the hovered shape:
 
 An arrow's end may bind a row (`ArrowBinding.part`, arrow version 3): drawn at the middle of the row's
 side facing the other end, unclipped, kept by an arrow moved alone, stepped a row by ↑ ↓ on its ⌥Tab
-part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`). Such an arrow
+part, and reached by the core's `removeParts` and `moveParts` (`boundParts`, `movingParts`). A row named on a
+binding to a shape that lists no rows (a reference pill for the table, a key to a column on another board) is
+ignored by the geometry, the pill met whole, and kept for Topology. Such an arrow
 is a level curve, a cubic (Geometry's `Cubic`) leaving each end along the way out of its side, half the way
 ahead or a C behind, and entering a shape bound as a whole square to the side it meets, or at the entry its
 kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its middle exactly by itself. An
@@ -9383,9 +9397,15 @@ placed where they're wanted. The kind says so, and Topology does the rest; it kn
 ```swift
 x.standsIn(admitting: { registry in { target in … } }) { shape, registry in
     .shapes(shape.props.stands)             // what its record names, on any board
+    // or .row(shape.props.shape, shape.props.row): one row of a shape (a pill for an endpoint)
     // or .provided(ForwardingKey(shape.props.question)): whatever is provided for that key
 }
 ```
+
+- **Rows.** A stand-in for a row (`.row`) stands for its shape, and an edge forwarded through it reaches that row
+  (`Edge.targetPart`), unless the edge names a part there itself: a key bound to a pill for a table with the column on
+  its binding reaches the column. So `edges(of: table, part: column)` counts keys through pills. `directPart(of:)` says
+  a stand-in's row; `makesRow:` beside `makes:` says how one is made for a row (`standIns.make(_:standingFor:row:label:)`).
 
 - **What it stands for** (`effective`, worked out from records alone): what the rule names, in
   order, each once (a name again is left out, the first kept), taking only shapes on a board the
@@ -11407,7 +11427,9 @@ Moving keeps the glue for its `Block` and the commit. Moving keeps the arrows th
 an arrow bound to a shape that moves to another board and one that stays goes where its start goes, with
 the start (ending at a reference pill for the shape that stays, landed beside the start where it lands)
 or staying (ending at a pill for the shape that moved, beside its start); a pill for the same shape the board
-has already is reused, and so is the shape itself where it is there. That is Draw's `CrossingArrows`
+has already is reused, and so is the shape itself where it is there. An end at a row keeps it, on the binding to
+the pill for its shape (a key to a column through its table's pill), or through a pill of the row's own for a row
+that stands alone. That is Draw's `CrossingArrows`
 (`init?(moving:from:to:by:label:in:)` plans from the editor, `rebind(in:)` writes before `Transaction.move` and
 `Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly; a pill
 that stays on the origin is put down by the in-or-out rule in `finish`, once the shapes have gone, so a container that
@@ -11908,8 +11930,9 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
                        fulfilling: { record, registry in registry.makePublic(&record) },
                        calls: { shape, _ in shape.props.target?.label ?? (shape.props.mode == .dynamic ? shape.props.text : nil) },
                        makes: { props, target, label in ReferenceEdits.pick(&props, ReferenceTarget(id: target, label: label)) },
+                       makesRow: { props, target, label in … },   // a pill for a row: ReferenceTarget(id:label:row:)
                        seats: { props, seat, context in … }) { shape, _ in   // fitted to say where its shape is (ReferenceState.place(of:at:in:))
-        if let target = shape.props.target { return .shapes([target.id]) }
+        if let target = shape.props.target { return target.row.map { .row(target.id, $0) } ?? .shapes([target.id]) }
         if let query = shape.props.query { return .provided(ReferenceState.key(query: query, all: shape.props.all)) }
         return nil
     }
@@ -11928,7 +11951,12 @@ registrar.shape(ReferenceDefinition()) { reference in     // ReferenceDefinition
   title, so `canvas kinds` lists it with no edges. The mode is derived, never stored: a target makes it
   direct, words or a query make it dynamic, else it's empty. `ReferenceEdits` writes it: each of `pick`,
   `find(words:query:)` and `clear` keeps one mode and refits the width to what the pill now says. The
-  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member.
+  v0 fixture, `Fixtures/kinds/reference.v0.json`, pins every member; v2's (`reference.v2.json`) a target's `row`.
+- **A pill for a row** (version 2: `ReferenceTarget.row`, absent for a shape as a whole): a row that stands alone (an
+  endpoint) gets a pill of its own, which stands for its shape at that row (`Forwarding.row`), shows the row's live
+  name and lead under its shape's place line (the shape last), is missing once the row is gone from a shape that is
+  there, and follows the row when it moves to another shape (`registrar.partsMoved`). A row that doesn't stand alone
+  (a column) is reached through a pill for its table, the column on the arrow's binding.
 - **Made by name.** `makes` is how `canvas draw` makes a direct reference (`registry.standIns.make`): the
   pill's own writer, `ReferenceEdits.pick`, with the shape's id and the name its title folds to, so it's
   fitted to its label as a picked one is. An edge to a public shape on another board puts one beside the
@@ -16092,12 +16120,12 @@ and a test checks it loads and registers.
 core                 tool hand · command undo · command redo · command insertBeside first in InsertMenu.Shapes · command zoomIn in ViewMenu.Zoom · command zoomOut in ViewMenu.Zoom · command zoomToActualSize in ViewMenu.Zoom · command zoomToFit in ViewMenu.Zoom · command pageUp · command pageDown · command scrollToStart · command scrollToEnd · file property kits · command kit:engineering in FileMenu.KitList
 keyboard             service KeyboardState · tool tips · menu keys · keyboard help · key strokes · key releases · shortcut H → tool hand · shortcut Space → Pan · shortcut ⎋ → Cancel · shortcut ⌘. → Cancel · shortcut ⌘Z → command undo · shortcut ⇧⌘Z → command redo · shortcut Q → Tool Lock · shortcut ⇧↩ → command insertBeside · shortcut ⌘= → command zoomIn · shortcut ⌘- → command zoomOut · shortcut = → command zoomIn · shortcut - → command zoomOut · shortcut ⌘0 → command zoomToActualSize · shortcut ⇧0 → command zoomToActualSize · shortcut ⇧1 → command zoomToFit · shortcut ⇞ → command pageUp · shortcut ⇟ → command pageDown · shortcut ↖ → command scrollToStart · shortcut ↘ → command scrollToEnd · key hint ⇧ Drag Move Along One Axis · key hint ⌘ Scroll Zoom
 selection            service SelectionState · service RefusalShake · tool select · shortcut V → tool select · default tool select · outlines · overlay GroupFocusOverlay · overlay HandlesOverlay · overlay PartFocusOverlay · key hint ⇧ or ⌘ Click Add or Remove From Selection · key hint ⌘ Drag Select Shapes Wholly in the Box · key hint ⌥ Drag Drag a Copy · key hint ⇧ Resize Keep Proportions · key hint ⌥ Resize Resize From the Center · command shapes · accessible order · accessible parts · command delete · shortcut ⌫ → command delete · shortcut ⌦ → command delete · command selectAll · shortcut ⌘A → command selectAll · command goBack in NavigationSection · shortcut ⌘[ → command goBack · shortcut ⌃- → command goBack · command goForward after goBack in NavigationSection · shortcut ⌘] → command goForward · shortcut ⌃_ → command goForward · command openSelection in NavigationSection · shortcut ⌘↓ → command openSelection · shortcut ↩ → Open Selection · shortcut ⌤ → Open Selection · shortcut ⌥↩ → Open Selection · press focused · command zoomToSelection in ViewMenu.Zoom · shortcut ⇧2 → command zoomToSelection · command smartMagnify · shortcut ← → Nudge or Pan · shortcut ⇧← → Nudge or Pan · shortcut → → Nudge or Pan · shortcut ⇧→ → Nudge or Pan · shortcut ↑ → Nudge or Pan · shortcut ⇧↑ → Nudge or Pan · shortcut ↓ → Nudge or Pan · shortcut ⇧↓ → Nudge or Pan · shortcut ⌥← → Resize · shortcut ⌥⇧← → Resize · shortcut ⌥→ → Resize · shortcut ⌥⇧→ → Resize · shortcut ⌥↑ → Resize · shortcut ⌥⇧↑ → Resize · shortcut ⌥↓ → Resize · shortcut ⌥⇧↓ → Resize · shortcut ⌥⇥ → Next Part · shortcut ⌥⇧⇥ → Previous Part · shortcut ⇥ → Next Shape · shortcut ⇧⇥ → Previous Shape · shortcut ⌥⌘← → Select Nearest Shape · shortcut ⌥⇧⌘← → Add Nearest Shape to Selection · shortcut ⌥⌘→ → Select Nearest Shape · shortcut ⌥⇧⌘→ → Add Nearest Shape to Selection · shortcut ⌥⌘↑ → Select Nearest Shape · shortcut ⌥⇧⌘↑ → Add Nearest Shape to Selection · shortcut ⌥⌘↓ → Select Nearest Shape · shortcut ⌥⇧⌘↓ → Add Nearest Shape to Selection
-topology             service TopologyIndex · edge type stands-for
+topology             service TopologyIndex · edge type stands-for · stand-in lookup
 arrows               key hint ⌥ Drag an Arrow's End Bind It Exactly · key hint ⌘ or ⌃ Drag an Arrow's End Leave It Unbound · key hint ⇧ Drag an Arrow's End Snap Its Angle · shape arrow v3 · label Arrow → arrow · ContentsRows → arrow · mention layout → arrow · mention text → arrow · property color → arrow · colorable → arrow · property ignoredRules → arrow · type words → arrow · property is → arrow · property fieldValues → arrow · property autofill → arrow · property endRule → arrow · ShapeOpening → arrow · parts ArrowHandles → arrow · accessibility → arrow · ShapeContextMenus in ShapeMenuGroup first → arrow · service ArrowTargeting · service ArrowRowNesting · overlay BindingHintsOverlay
 sticky-notes         key hint ⌘↩ or ⎋ Finish Editing · key hint ⇧↩ in a Note New Note Beside It · key hint ⇥ or ⇧⇥ in a Note Next or Previous Note · service NoteHops · insert beside by default sticky-note · shape sticky-note v4 · tool sticky-note · command insert:sticky-note in InsertMenu.Shapes · shortcut N → tool sticky-note · made beside → sticky-note · property color → sticky-note · colorable (yellow) → sticky-note · property ignoredRules → sticky-note · tint → sticky-note · DoubleClickPlacement → sticky-note · ShapeResizing → sticky-note · parts resize handles → sticky-note · property title → sticky-note · ShapeTitles → sticky-note · ContentsTitles → sticky-note · title pill look → sticky-note · title cover surface → sticky-note · ShapeDetails in Schema after Connections → sticky-note · ContentsRows → sticky-note · ports note-link → sticky-note · mention text → sticky-note · mentionable → sticky-note · type words → sticky-note · property schema → sticky-note · keeps in step → sticky-note · keeps in step → sticky-note · property relationship → sticky-note · definition walk → sticky-note · property is → sticky-note · property fieldValues → sticky-note · property autofill → sticky-note · type rows → sticky-note · accessibility → sticky-note · channel note-link · edge type note-link · paste reader Note · /bulk-create → the command bar's target · key hint ⌥ Click or ⌥↩ Place Notes in a Row
 subboards            shape subboard v1 · tool subboard · command insert:subboard in InsertMenu.Shapes · shortcut B → tool subboard · tint → subboard · property title → subboard · ShapeTitles → subboard · ContentsTitles → subboard · title cover surface → subboard · board → subboard "Untitled Subboard" · ShapeOpening → subboard · ShapeContextMenus in BoardsMenuGroup before ShapeMenuGroup → subboard · property color → subboard · colorable (indigo) → subboard · mentionable → subboard · ContentsRows → subboard · ShapeDetails in Description first → subboard · ports subboard-link → subboard · ports on every channel → subboard · type words → subboard · property is → subboard · property fieldValues → subboard · property autofill → subboard · accessibility → subboard · channel subboard-link · edge type subboard-link · takes channel container → subboard · CanvasContextMenu in TransformMenuGroup after ActionsMenuGroup · /turn-into-subboard → every shape that can turn into subboard
 framing              key hint ⇧ Drag a Frame Draw It Square · key hint ⌥ Drag a Frame Draw It From the Center · shape frame · tool frame · command insert:frame in InsertMenu.Shapes · shortcut F → tool frame · property color → frame · colorable → frame · tint → frame · property title → frame · ShapeTitles → frame · ContentsTitles → frame · title tab → frame · mentionable → frame · ShapeResizing → frame · parts resize handles → frame · ContentsRows → frame · ShapeDetails → frame · offers channel container → frame · property is → frame · property fieldValues → frame · accessibility → frame · ports frame-link → frame · channel frame-link · edge type frame-link · command createFrame · shortcut ⇧⌘F → command createFrame · CanvasContextMenu in FramesMenuGroup after TransformMenuGroup
-references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · shape reference v1 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
+references           service ReferenceState · overlay ReferenceButtonOverlay · CanvasButtons · command goToOriginal · command interpretReference · DetailStatuses → reference · ShapePopovers · CanvasContextMenu in ReferencesMenuGroup before ShapeMenuGroup · parts moved · shape reference v2 · tool reference · command insert:reference in InsertMenu.Shapes · shortcut R → tool reference · ports on every channel → reference · stands in → reference · parts go → reference · accessibility → reference · ContentsRows → reference · ContentsSections → reference · ShapeDetails in Reference first → reference · ShapeContextMenus in ReferencesMenuGroup before ShapeMenuGroup → reference · ValidationRules → reference
 validation           service ValidationEngine · overlay ValidationOverlay · ValidationRules → every shape · accessibility → every shape
 adornments           service AdornmentState · service ChipFade · layout input adornment-lead · overlay AdornmentOverlay · CanvasButtons · DecorationHits
 detail-panel         service DetailPanelState · host inspector · command nextInspectorTab in ViewMenu.Panels · shortcut ⌥⌘] → command nextInspectorTab · command previousInspectorTab in ViewMenu.Panels · shortcut ⌥⌘[ → command previousInspectorTab · key hint ⇥ or ⇧⇥ Next or Previous Control · key hint ⌥⇥ Type a Tab · key hint ⎋ Back to the Canvas · key hint ⌘↩ Commit · key hint ⌃Space Complete

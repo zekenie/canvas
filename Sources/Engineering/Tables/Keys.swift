@@ -3,6 +3,7 @@ import Canvas
 import Connections
 import Draw
 import LineRows
+import Mentions
 import Palette
 import Titles
 import Topology
@@ -32,7 +33,7 @@ extension ForeignKey: Channel {
 /// it for the tables in view only.
 @MainActor
 final class KeyIndex {
-    private unowned let editor: CanvasEditor
+    unowned let editor: CanvasEditor
     private var following: TopologyFollowing?
     /// The file's folds, which show a table's keys when it's folded to its marks.
     private weak var rowFolds: RowFolds?
@@ -70,7 +71,8 @@ final class KeyIndex {
     private func held(_ table: ShapeID) -> [PartID: Key] {
         if let keys = kept[table] { return keys }
         var keys: [PartID: Key] = [:]
-        editor.topology?.forEachEdge(of: table, .outgoing, types: .only(type), view: .literal) { edge in
+        // Resolved: a key into a pill for a table on another board is a key to the column its binding names, of that table.
+        editor.topology?.forEachEdge(of: table, .outgoing, types: .only(type), view: .resolved) { edge in
             guard edge.isConnection, let part = edge.sourcePart else { return }
             if keys[part] == nil {
                 keys[part] = Key(target: PartAddress(edge.target, part: edge.targetPart), arrows: [edge.carrier])
@@ -131,10 +133,15 @@ enum KeyLooks {
 
 /// A line's key, written with its column in the row's transaction (`TableLines.apply`): the arrow made, its far end moved to the
 /// row the line names (a re-aim keeps the arrow, its bend and its id), or the column's arrows deleted where the line names none.
+/// A row of a table on another board is reached through a pill for that table on this one, the column on the arrow's binding
+/// (T6 panel 3): the board's pill for it in the table's container if it has one, else a new one landed beside the table, in the
+/// row's step, as ⌘L's pick puts one (`StandInRoute.placePill`). Typing never makes a shape public: a table no pill can stand for
+/// as it is makes no key.
 @MainActor
 enum KeyArrows {
     /// Writes `key` for `column` of `table`, as the board has it now (`keys`); false where the arrow can't be made (the connector
-    /// refuses the pair), so the row's commit writes nothing and the table shakes. A column as stored writes nothing.
+    /// refuses the pair, or no pill can reach a table on another board), so the row's commit writes nothing and the table shakes. A
+    /// column as stored writes nothing.
     static func write(_ key: ColumnKey, from column: PartID, of table: ShapeID, keys: KeyIndex?, in transaction: inout Transaction) -> Bool {
         let held = keys?.arrows(of: column, in: table).filter { transaction.document[$0] != nil } ?? []
         let current = keys?.target(of: column, in: table)
@@ -142,34 +149,62 @@ enum KeyArrows {
         case .stored:
             return true
         case .none:
+            // A key the line couldn't print (its table is gone: the pill stands for nothing, or the row is) isn't one the person took
+            // out: the line never showed it, so editing the column leaves it, as it leaves the pill.
+            if let current, let editor = keys?.editor, ColumnLineGrammar.written(current, editor) == nil { return true }
             if !held.isEmpty { transaction.delete(Set(held)) }
             return true
         case .to(let target):
             if current == target, !held.isEmpty { return true }
             let registry = transaction.shapes.registry
-            if let arrow = held.first, let current, let record = transaction.document[arrow],
-               let moved = record.movingParts(in: registry, { $0 == current ? target : $0 }) {
+            // The far end on this board: the row, or a pill for its table with the row on the binding.
+            guard let end = reach(target, from: table, keys: keys, in: &transaction) else { return false }
+            let own = PartAddress(table, part: column)
+            // The arrow's far end as it is bound now (the row, or a pill for its table and the row).
+            if let arrow = held.first, let record = transaction.document[arrow],
+               let bound = record.boundParts(in: registry).first(where: { $0 != own }),
+               let moved = record.movingParts(in: registry, { $0 == bound ? end.address : $0 }) {
                 transaction.update(arrow) { $0 = moved }
-                return transaction.document[arrow]?.boundParts(in: registry).contains(target) == true
+                return transaction.document[arrow]?.boundParts(in: registry).contains(end.address) == true
             }
-            guard let made = registry.drawConnection(from: table, to: target.shape, in: transaction.shapes, parts: (column, target.part)) else { return false }
+            guard let made = registry.drawConnection(from: table, to: end.address.shape, in: transaction.shapes, standingFor: ([], end.standingFor),
+                                                     parts: (column, end.address.part)) else { return false }
             transaction.insert(made)
             return transaction.document[made.id] != nil
         }
     }
+
+    /// Where a key to `target` ends on the transaction's board: the row itself, there; else a pill for its table there (reused, or
+    /// made and put down in the transaction), with the row on the binding, and the kind the pill is read as. Nil where none can be.
+    private static func reach(_ target: PartAddress, from table: ShapeID, keys: KeyIndex?, in transaction: inout Transaction)
+        -> (address: PartAddress, standingFor: [ShapeKind])? {
+        if transaction.document[target.shape] != nil { return (target, []) }
+        // Planned against the board shown as the editor has it, which is the transaction's: a row is written on the board shown.
+        guard let editor = keys?.editor, editor.board == transaction.board else { return nil }
+        let verdicts = FarVerdicts(editor)
+        // What an earlier key of this step put down isn't on the board yet as the editor has it: a pill for the same table is reused,
+        // and a new one lands clear of those already put down.
+        let document = transaction.document, put = document.shapes.compactMap { editor.document[$0.id] == nil ? $0.box : nil }
+        guard verdicts.verdict(of: target.shape) == .reads, let route = verdicts.route, let far = editor.shape(inFile: target.shape),
+              let placed = route.placePill(standingFor: target.shape, label: editor.registry.mentionAppearance(of: far)?.label ?? "",
+                                           beside: table, edgeIs: .from, sharing: .any, avoiding: put, reading: document, verdicts: verdicts,
+                                           in: editor) else { return nil }
+        guard (try? placed.claim(in: &transaction, registry: editor.registry)) != nil, let pill = try? placed.put(in: &transaction) else { return nil }
+        return (PartAddress(pill, part: target.part), [placed.farKind])
+    }
 }
 
-/// What ⌘L's picker means on a table (`ConnectPicks`). Opened on a row being edited (a column), it lists the tables on the board and
-/// their columns, never an enum or any other shape: a column picked is the key's far row, a table its primary key's, and the pick
+/// What ⌘L's picker means on a table (`ConnectPicks`). Opened on a row being edited (a column), it lists the tables of the file a pill can
+/// reach, nearest first, and their columns, never an enum or any other shape: a column picked is the key's far row, a table its primary key's, and the pick
 /// draws the key in place of any the column had ("Connect"). Opened on the table, it lists the tables: one picked makes a key column
 /// for it, named for it (`customer_id` for customers: the name, singular, and `_id`), typed as its primary key, after the table's own
 /// keys, with its key drawn, one step, "Add Key Column".
 @MainActor
 public enum KeyPicks {
-    /// A table on the board shown (a key reaches a table on its own board until pills stand for rows), and from a row, a column of
-    /// one or a table with a primary key; from a table, a table with one.
+    /// A table of the file (one on another board reached through a pill for it, as `editor.connect` reaches one), and from a row, a
+    /// column of one or a table with a primary key; from a table, a table with one.
     static func admits(_ pick: ConnectPick, _ editor: CanvasEditor) -> Bool {
-        guard let far = editor.document[pick.to.shape]?.typed(as: DatabaseTable.self) else { return false }
+        guard let far = editor.shape(inFile: pick.to.shape)?.typed(as: DatabaseTable.self) else { return false }
         if pick.from.part != nil {
             if pick.to.part != nil { return true }
             // A table as a whole is its primary key's row, which a row of its own (the primary key itself) can't key to.
@@ -180,7 +215,7 @@ public enum KeyPicks {
     }
 
     static func plan(_ pick: ConnectPick, _ editor: CanvasEditor) -> ConnectPlan? {
-        guard let far = editor.document[pick.to.shape]?.typed(as: DatabaseTable.self) else { return nil }
+        guard let far = editor.shape(inFile: pick.to.shape)?.typed(as: DatabaseTable.self) else { return nil }
         let table = pick.from.shape, keys = editor.service(KeyIndex.self)
         if let column = pick.from.part {
             guard let row = pick.to.part ?? ColumnLineGrammar.primaryKey(of: far.props)?.id, PartAddress(far.id, part: row) != pick.from.address else { return nil }

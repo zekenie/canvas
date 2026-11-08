@@ -59,6 +59,14 @@ enum CorePoints {
         static var owner: PluginID { .core }
     }
 
+    /// What finds the stand-ins whose record names a shape (a reference pill for a table), on any board the editor can show
+    /// (`registrar.standInLookup`, Topology's): what `removeParts` and `moveParts` reach a binding through. One at most.
+    enum StandInLookups: KeyedExtensionPoint {
+        typealias Contribution = @MainActor (CanvasEditor, ShapeID) -> [ShapeID]
+        static var owner: PluginID { .core }
+        static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the stand-in lookup"] }
+    }
+
     /// What a kind keeps in step as its shapes are written (`ShapeRegistrar.keepsInStep`).
     enum KeepsInStep: ExtensionPoint {
         typealias Contribution = StepRule

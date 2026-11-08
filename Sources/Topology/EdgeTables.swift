@@ -40,6 +40,9 @@ struct EdgeTables: Sendable {
     /// for: what reads the kinds a stand-in stands for (its ports) reads a few kinds, not its shapes.
     private(set) var forwardedKinds: [ShapeID: ShapeKind] = [:]
     private var kindCounts: [ShapeID: [ShapeKind: Int]] = [:]
+    /// The part of its shape each stand-in that stands for one reaches (`Forwarding.row`: a pill for an endpoint), whatever it
+    /// stands for now: an edge forwarded through it reaches that part, unless the edge names one there itself.
+    private(set) var forwardParts: [ShapeID: PartID] = [:]
 
     // MARK: Reading them
 
@@ -188,13 +191,13 @@ struct EdgeTables: Sendable {
         if let sources {
             for source in sources {
                 if let targets {
-                    for target in targets { body(edge.copy(source, target, origin)) }
+                    for target in targets { body(copy(edge, source, target, origin)) }
                 } else {
-                    body(edge.copy(source, edge.target, origin))
+                    body(copy(edge, source, edge.target, origin))
                 }
             }
         } else if let targets {
-            for target in targets { body(edge.copy(edge.source, target, origin)) }
+            for target in targets { body(copy(edge, edge.source, target, origin)) }
         }
     }
 
@@ -260,29 +263,41 @@ struct EdgeTables: Sendable {
             for source in sources ?? [edge.source] {
                 if source == id {
                     if direction == .incoming {
-                        body(edge.copy(id, id, origin))
+                        body(copy(edge, id, id, origin))
                     } else {
-                        for target in targets ?? [edge.target] { body(edge.copy(id, target, origin)) }
+                        for target in targets ?? [edge.target] { body(copy(edge, id, target, origin)) }
                     }
                 } else if direction != .outgoing {
-                    body(edge.copy(source, id, origin))
+                    body(copy(edge, source, id, origin))
                 }
             }
         } else if fromID {
             guard direction != .incoming else { return }
             if let targets {
-                for target in targets { body(edge.copy(id, target, origin)) }
+                for target in targets { body(copy(edge, id, target, origin)) }
             } else {
-                body(edge.copy(id, edge.target, origin))
+                body(copy(edge, id, edge.target, origin))
             }
         } else if toID {
             guard direction != .outgoing else { return }
             if let sources {
-                for source in sources { body(edge.copy(source, id, origin)) }
+                for source in sources { body(copy(edge, source, id, origin)) }
             } else {
-                body(edge.copy(edge.source, id, origin))
+                body(copy(edge, edge.source, id, origin))
             }
         }
+    }
+
+    /// A copy of `edge` with these ends, forwarded as `origin` says: an end forwarded through a stand-in that stands for a part
+    /// of its shape (`Forwarding.row`) reaches that part, unless the edge names one there itself (a binding's part, the column
+    /// of a table a pill stands for, wins).
+    @inline(__always)
+    private func copy(_ edge: Edge, _ source: ShapeID, _ target: ShapeID, _ origin: EdgeOrigin) -> Edge {
+        guard !forwardParts.isEmpty, case .forwarded(let from, let to) = origin else { return edge.copy(source, target, origin) }
+        let parts = EdgeParts(source: edge.parts.source ?? from.flatMap { forwardParts[$0] },
+                              target: edge.parts.target ?? to.flatMap { forwardParts[$0] })
+        return Edge(type: edge.type, source: source, target: target, carrier: edge.carrier, slot: edge.slot, count: edge.count, origin: origin,
+                    parts: parts)
     }
 
     /// A stand-in's edge to a shape it stands for.
@@ -336,6 +351,13 @@ struct EdgeTables: Sendable {
         let changed = Set(old).symmetricDifference(edges)
         // Only their order changed: every end's edges read in another order.
         return changed.isEmpty ? old : Array(changed)
+    }
+
+    /// Says which part of its shape a stand-in reaches (nil: the shape as a whole); whether that changed.
+    mutating func setForwardPart(_ standIn: ShapeID, _ part: PartID?) -> Bool {
+        guard forwardParts[standIn] != part else { return false }
+        forwardParts[standIn] = part
+        return true
     }
 
     /// Says whether `id` is a stand-in (of a stand-in kind, on a board the editor can show), whose own

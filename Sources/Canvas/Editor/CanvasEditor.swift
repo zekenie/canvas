@@ -739,6 +739,7 @@ public final class CanvasEditor {
                                       registry: registry, camera: leftCameras[target] ?? camera, keys: stackingKeys, file: fileAccess,
                                       layout: layoutSource)
         transaction.mayReachBoardShown = false
+        transaction.boardShown = board
         let result: T
         do {
             defer { isTransacting = false }
@@ -893,7 +894,8 @@ public final class CanvasEditor {
                    subtree: { [unowned self] in storedFile.subtree(ownedBy: $0) },
                    contents: { [unowned self] in storedFile[$0] },
                    canShow: { [unowned self] in Self.canShow($0, in: storedFile, registry: registry) },
-                   values: { [unowned self] in storedFile.fileValues })
+                   values: { [unowned self] in storedFile.fileValues },
+                   standIns: { [unowned self] in registry.standInLookup?(self, $0) ?? [] })
     }
 
     /// A board of the file: `document` for the one shown, else its shapes as the file has them

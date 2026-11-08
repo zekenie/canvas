@@ -13,6 +13,38 @@ import Topology
 // `canvas draw` run puts it, so these hold the route's landing against the rect a run gives the
 // same pill, over the Shoal and its relays (DrawStandInTests).
 
+/// A box that stands for a shape, or for one row of it (an endpoint): its record names the shape and, for a row, the row.
+private struct Mark: BoxShapeProps {
+    static let kind: ShapeKind = "mark"
+    static let properties = Properties<Mark> {
+        Property("frame", \.frame).required()
+        Property("stands", \.stands)
+        Property("row", \.row)
+    }
+    var frame: CGRect
+    var stands: Citation?
+    var row: PartID?
+    init(_ frame: CGRect = .zero, stands: ShapeID? = nil, row: PartID? = nil) {
+        self.frame = frame
+        self.stands = stands.map(Citation.init)
+        self.row = row
+    }
+    init() { self.init(.zero) }
+}
+
+private struct MarkDefinition: ShapeDefinition {
+    func render(_ shape: ShapeRecord<Mark>, in context: RenderContext) {}
+}
+
+private let marksPlugin = Contributor(id: "marks") { registrar in
+    registrar.shape(MarkDefinition()) { mark in
+        mark.standsIn { shape, _ in
+            guard let stands = shape.props.stands?.shape else { return nil }
+            return shape.props.row.map { .row(stands, $0) } ?? .shapes([stands])
+        }
+    }
+}
+
 /// The route over an editor's registry.
 @MainActor private func routeOf(_ editor: CanvasEditor) throws -> StandInRoute {
     try require(StandInRoute(editor.registry))
@@ -189,6 +221,30 @@ import Topology
         // The same asked of an index made once.
         let index = route.index(of: document)
         expectEqual(route.existing(for: deep, kind: Relay.kind, sharing: .host(rock), near: rock, in: document, index: index), rocks)
+    },
+    test("existing matches on the shape and its row: a pill for a whole shape is never a row's, and a row's is never the shape's, for any and for host") {
+        let shoal = Shoal(), editor = try shoal.editor([marksPlugin])
+        let route = try routeOf(editor)
+        let hub = try tileID("Hub", in: editor), deep = try tileID("Deep", on: BoardID(owner: shoal.p), in: editor)
+        let row = PartID(), other = PartID()
+        let whole = ShapeID(), forRow = ShapeID()
+        editor.transact("Pills") { tx in
+            tx.insert(AnyShapeRecord(ShapeRecord(id: whole, Mark(CGRect(x: 600, y: 100, width: 60, height: 30), stands: deep))))
+            tx.insert(AnyShapeRecord(ShapeRecord(id: forRow, Mark(CGRect(x: 600, y: 200, width: 60, height: 30), stands: deep, row: row))))
+        }
+        editor.addLink(hub, whole)
+        editor.addLink(hub, forRow)
+        let document = editor.document
+        expectEqual(route.existing(for: deep, kind: Mark.kind, sharing: .any, near: hub, in: document), whole, "no row asked: the shape's own pill")
+        expectEqual(route.existing(for: deep, row: row, kind: Mark.kind, sharing: .any, near: hub, in: document), forRow, "the row asked: its pill")
+        expect(route.existing(for: deep, row: other, kind: Mark.kind, sharing: .any, near: hub, in: document) == nil, "another row has none")
+        expectEqual(route.existing(for: deep, kind: Mark.kind, sharing: .host(hub), near: hub, in: document), whole)
+        expectEqual(route.existing(for: deep, row: row, kind: Mark.kind, sharing: .host(hub), near: hub, in: document), forRow)
+        expect(route.existing(for: deep, row: other, kind: Mark.kind, sharing: .host(hub), near: hub, in: document) == nil)
+        expectEqual(route.row(of: forRow, in: document), row)
+        expectEqual(route.row(of: whole, in: document), nil)
+        let withoutWhole = route.existing(for: deep, kind: Mark.kind, sharing: .any, near: hub, in: document, excluding: [whole])
+        expect(withoutWhole == nil, "the row's pill is not the shape's, even with the shape's gone")
     },
     test("a second typed edge from a shape to the same far shape goes into the pill the first one does: two arrows into one pill") {
         let editor = try bondShoal()

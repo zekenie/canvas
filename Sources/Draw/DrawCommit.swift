@@ -139,9 +139,17 @@ extension Drawing {
             let title = Drawing.title(of: without, names: names, naming: naming, registry: registry)
             changes.append(DrawChange(line: statement.line, did: .updated, kind: record.kind.rawValue, title: title))
             for gone in transaction.removeParts(Set(parts.map { PartAddress(id, part: $0) })).sorted(by: { $0.description < $1.description }) {
-                guard let connection = before.shape(gone) else { continue }
+                // A key on another board, reached through a pill (`removeParts`), was never on this board: it is read, and its ends named,
+                // against its own board as the file had it before the run.
+                var context = before
+                var found = before.shape(gone)
+                if found == nil, let home = editor.file.board(containing: gone), let other = editor.reading(of: home)?.shapes {
+                    context = other
+                    found = other.shape(gone)
+                }
+                guard let connection = found else { continue }
                 if let ends = edging?.ends(connection, registry) {
-                    let from = end(ends.from, in: before, written: [:]), to = end(ends.to, in: before, written: [:])
+                    let from = end(ends.from, in: context, written: [:]), to = end(ends.to, in: context, written: [:])
                     var row = DrawChange(line: statement.line, did: .deleted, kind: connection.kind.rawValue, from: from.name, to: to.name)
                     row.fromID = from.id?.description
                     row.toID = to.id?.description

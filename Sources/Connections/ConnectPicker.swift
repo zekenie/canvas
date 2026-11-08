@@ -52,6 +52,9 @@ public final class ConnectPicker {
     private var context: ShapeContext?
     private var admitted: [ShapeID: FarVerdict?] = [:]
     private var admittedParts: [PartAddress: Bool] = [:]
+    /// What a pill reaching a shape on another board takes, asked once for the commit, whatever the source's kind admits of the shape
+    /// as a whole (a table with no primary key is no pick, though its columns are).
+    private var reached: [ShapeID: FarVerdict] = [:]
 
     /// What the connector can join `source` to: the kinds of shape, and whether itself. Nil where there is nothing to pick for it:
     /// nothing makes connections, or it ends nowhere (a pill that stands for nothing), or it joins no kind of shape and not itself. A kind with ports only on its rows (a table's keys) has none on its sides: it joins
@@ -126,7 +129,12 @@ public final class ConnectPicker {
         let choices = mentions.choicesNamingBoardShown(found.all.filter { $0.part != nil || admits($0.id) })
         let typed = text.contains { !$0.isWhitespace }
         var rows: [Row] = choices.map { choice in
-            if choice.candidate.part == nil, case .fulfils(let needs)? = admitted[choice.candidate.id] { .shape(choice, needs: needs) } else { .shape(choice, needs: nil) }
+            if choice.candidate.part == nil, case .fulfils(let needs)? = admitted[choice.candidate.id] { return .shape(choice, needs: needs) }
+            // A row of a shape on another board, picked, makes its shape what the pill needs too, which the line says first.
+            if choice.candidate.part != nil, editor.document[choice.candidate.id] == nil, case .fulfils(let needs)? = farVerdict(of: choice.candidate.id) {
+                return .shape(choice, needs: needs)
+            }
+            return .shape(choice, needs: nil)
         }
         // Itself is last while anything is listed, or nothing is typed: a typed word that finds nothing leaves the list empty, so a
         // Return on it makes no loop.
@@ -145,6 +153,7 @@ public final class ConnectPicker {
         context = editor.shapeContext
         admitted = [:]
         admittedParts = [:]
+        reached = [:]
     }
 
     /// Whether the list offers a shape: not the source, a pick its kind admits, not one the source holds or is held by, and one that
@@ -165,20 +174,38 @@ public final class ConnectPicker {
     }
 
     /// Whether the rows of a shape may be listed though the shape isn't a pick: one of the board shown, which the source may be joined to
-    /// (the source's own rows too: a column keyed to another of its table's).
+    /// (the source's own rows too: a column keyed to another of its table's), or one on another board a pill can reach (a row there is
+    /// reached through a pill for its shape, or its own: `editor.connect`).
     private func reachesRows(of id: ShapeID) -> Bool {
-        editor.document[id] != nil && context?.mayConnect(source, id) != false
+        if editor.document[id] != nil { return context?.mayConnect(source, id) != false }
+        return farReaches(id)
     }
 
-    /// Whether the list offers a row: one of a shape on the board shown (a row elsewhere is no end until pills stand for rows),
-    /// not the source's own, that the source's kind admits, of a shape it may be joined to.
+    /// Whether the list offers a row: one of a shape on the board shown, or on another board a pill can reach; not the source's own,
+    /// that the source's kind admits, of a shape it may be joined to.
     private func admits(part address: PartAddress) -> Bool {
         if let known = admittedParts[address] { return known }
-        let admitted = editor.document[address.shape] != nil && address != sourceEnd.address
-            && context?.mayConnect(source, address.shape) != false
+        let here = editor.document[address.shape] != nil
+        let admitted = (here ? context?.mayConnect(source, address.shape) != false : farReaches(address.shape)) && address != sourceEnd.address
             && editor.connectPicksAdmit(from: sourceEnd, to: ConnectEnd(address))
         admittedParts[address] = admitted
         return admitted
+    }
+
+    /// Whether a shape on another board can be reached through a pill (as it is, or once a pick makes it what the pill needs).
+    private func farReaches(_ id: ShapeID) -> Bool {
+        switch farVerdict(of: id) {
+        case .reads?, .fulfils?: true
+        default: false
+        }
+    }
+
+    /// What a pick of a shape on another board takes, for the commit the list is judged at.
+    private func farVerdict(of id: ShapeID) -> FarVerdict? {
+        if let known = reached[id] { return known }
+        guard let verdict = verdicts?.verdict(of: id) else { return nil }
+        reached[id] = verdict
+        return verdict
     }
 
     // MARK: The rows

@@ -2,6 +2,7 @@ import Canvas
 import Connections
 import CoreGraphics
 import Geometry
+import Topology
 
 /// Arrow behavior, modeled closely on tldraw's: targeting, binding and the one shared precise timer.
 ///
@@ -138,8 +139,10 @@ final class ArrowTargeting {
         if let opposite, opposite.shapeID == target.id, opposite.normalizedAnchor == normalized {
             normalized.x += 0.05
         }
+        // A pill for a row (an endpoint's) is the row: the binding names it, as one made by name does.
+        let row = editor.topology?.directPart(of: target.id)
         updateArrow(arrowID) {
-            $0[end] = .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: normalized, isPrecise: precise, isExact: isExact))
+            $0[end] = .bound(ArrowBinding(shapeID: target.id, normalizedAnchor: normalized, isPrecise: precise, isExact: isExact, part: row))
             reshape?(&$0)
         }
         editor.hintedShapeID = target.id

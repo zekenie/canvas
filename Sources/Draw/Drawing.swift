@@ -291,7 +291,13 @@ struct Drawing {
         // What stands in for what matters only to a script that joins shapes, or deletes them: the
         // stand-ins a delete's arrows ran into go with them.
         let hasDeletes = script.statements.contains(where: \.isDelete)
-        standIns = (hasDeletes || script.statements.contains(where: \.joinsShapes)) && edgeKind != nil ? registry.standIns : nil
+        // A shape's value may imply edges too (a column's line's `→ customers.id`), to a shape on another board as any edge.
+        let writers = registry.drawValueWriters
+        let implies = script.statements.contains { statement in
+            guard case .shape(let shape) = statement.body else { return false }
+            return shape.attributes.contains { writers[$0.key]?.impliesEdges == true }
+        }
+        standIns = (hasDeletes || implies || script.statements.contains(where: \.joinsShapes)) && edgeKind != nil ? registry.standIns : nil
         // Where the view is headed, if it's gliding (a --reveal a moment ago): the view the drawing
         // is seen in once it settles; on a board not shown, the view it would be shown with. The
         // part of it the host leaves clear (below the path's pill over a subboard), as every fit is.
@@ -799,10 +805,13 @@ struct Drawing {
             // `is:` narrows them by type; an end with none takes any.
             func row(_ name: String?, at found: EdgeEndFound, said: String) throws(DrawError) -> PartID? {
                 guard let name else { return nil }
-                guard case .here(let id, _) = found, let record = target.document[id] else {
-                    throw DrawError(statement, .unsupported, "\(said)\(ShapeName.writtenRow(name)) is on another board, and delete edge reaches a row only on its own",
-                                    hint: "write delete edge \(fromWritten.written) -> \(toWritten.written), which takes every edge between them")
+                // A row on another board: the arrow to it is bound to a pill on this board, the row on its binding.
+                let record: AnyShapeRecord?
+                switch found {
+                case .here(let id, _): record = target.document[id]
+                case .away(let far): record = far.record
                 }
+                guard let record else { throw DrawError(statement, .internal, "\(said) came out naming a shape that isn't on the board") }
                 return try part(named: name, of: record, said: said, statement)
             }
             let rows = EdgeRows(from: try row(fromRow, at: a, said: fromSaid), to: try row(toRow, at: b, said: toSaid))
@@ -1612,9 +1621,9 @@ struct Drawing {
             let record: AnyShapeRecord?
             switch found {
             case .here(let id, let item): record = item.map { items[$0].record } ?? target.document[id]
-            case .away:
-                throw DrawError(statement, .unsupported, "\(named.said)\(ShapeName.writtenRow(row)) is on another board, and an edge reaches a row only on its own",
-                                hint: "draw the edge on the board \(named.said) is on, or to \(named.said) as a whole")
+            // A row on another board is reached through a pill: its shape's, with the row on the arrow's binding, or, for a row
+            // that stands alone (an endpoint), a pill of its own (`routeEdge`).
+            case .away(let far): record = far.record
             }
             guard let record else { throw DrawError(statement, .internal, "\(written) came out naming a shape that isn't on the board") }
             let id = try self.part(named: row, of: record, said: named.said, statement)
@@ -1672,7 +1681,7 @@ struct Drawing {
                             toName: toName, attributes: attributes, settings: settings, identity: identity)
         if !measuring {
             item.standIn = try routeEdge(edge, statement, written: written, from: fromFound, to: toFound, fromName: fromName, toName: toName, via: via,
-                                         identity: identity)
+                                         identity: identity, parts: (fromPart, toPart))
         }
         for (from, to) in edge.bothHeads ? [(from, to), (to, from)] : [(from, to)] { edgesByEnds[EdgeEnds(from: from, to: to), default: []].append(edges.count) }
         edges.append(item)
@@ -1686,8 +1695,10 @@ struct Drawing {
         for connection in boardConnections() where connection.from == from && !deleted.contains(connection.record.id) {
             guard let held = registry.edges(of: connection.record).first(where: \.isConnection), held.parts.source == row else { continue }
             if held.type.rawValue != type { continue }
-            if connection.to == keeping.shape, held.parts.target == keeping.part { continue }
-            if edges.contains(where: { $0.from == from && $0.fromPart == row && $0.to == connection.to && $0.toPart == held.parts.target }) { continue }
+            // An arrow into a pill reaches what the pill stands for (a key to a column of a table on another board).
+            let reaches = standsForShape(connection.to, in: target.document)?.id ?? connection.to
+            if reaches == keeping.shape, held.parts.target == keeping.part { continue }
+            if edges.contains(where: { $0.from == from && $0.fromPart == row && $0.to == reaches && $0.toPart == held.parts.target }) { continue }
             try writable(connection.record, statement, "the edge from this row that \(written) re-aims", so: "it can't be re-aimed")
             gone.append(connection)
         }

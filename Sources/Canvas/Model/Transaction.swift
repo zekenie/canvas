@@ -64,6 +64,14 @@ public struct Transaction {
     /// shown from there is dropped whole (`CanvasEditor.transact(on:)`). A `willDelete` handler that would write
     /// there must leave that part out when this is false (the core does not do it for the handler), or the whole step is lost.
     public internal(set) var mayReachBoardShown = true
+    /// The board the editor shows, in a step on another board (`transact(on:)`): nil in a step on the board shown.
+    /// `mayWrite(on:)` asks it.
+    public internal(set) var boardShown: BoardID?
+    /// Whether this transaction may write on `other`: false for the board the editor shows, from a step on another board
+    /// (`mayReachBoardShown`), where a write would drop the whole commit. A writer that reaches shapes on boards it was not
+    /// given (`removeParts` and `moveParts` through pills, a `partsMoved` handler) leaves that board's shapes as they are
+    /// when this is false.
+    public func mayWrite(on other: BoardID) -> Bool { mayReachBoardShown || other != boardShown }
     let registry: Registry
     let camera: Camera
     let keys: StackingKeyGenerator
@@ -1326,56 +1334,139 @@ public struct Transaction {
 
     // MARK: Parts taken out and moved
 
+    /// The stand-ins whose record names `shape` (a reference pill for a table), with the board each is on as this transaction
+    /// leaves the file: the editor's stand-in lookup (`registrar.standInLookup`, Topology's), read as the file was before this
+    /// transaction (a pill put in by it isn't among them). None without a lookup. In order of id, so the same call on the same file
+    /// makes the same file (the lookup itself has no order).
+    public func standIns(naming shape: ShapeID) -> [(id: ShapeID, board: BoardID)] {
+        file.standIns(shape).compactMap { id in location(of: id).map { (id, $0) } }.sorted { $0.id.description < $1.id.description }
+    }
+
+    /// The bindings a part reaches through a pill: for each part of `parts`, each stand-in that names its shape, by the board it
+    /// is on, as the address a binding through it names (the pill and the part: a key to a column on another board) with the
+    /// part's own address.
+    private func throughStandIns(_ parts: some Sequence<PartAddress>) -> [BoardID: [PartAddress: PartAddress]] {
+        var through: [BoardID: [PartAddress: PartAddress]] = [:]
+        var asked: [ShapeID: [(id: ShapeID, board: BoardID)]] = [:]
+        for address in parts {
+            let pills = asked[address.shape] ?? standIns(naming: address.shape)
+            asked[address.shape] = pills
+            for pill in pills { through[pill.board, default: [:]][PartAddress(pill.id, part: address.part)] = address }
+        }
+        return through
+    }
+
+    /// The shapes on `board` that bind one of `addresses`, but read-only ones, each with the addresses it binds.
+    private func binding(_ addresses: [PartAddress: PartAddress], on board: BoardID) -> [(record: AnyShapeRecord, bound: [PartAddress])] {
+        let kinds = registry.referencingKinds, there = contents(of: board), boardIsReadOnly = board == self.board ? isBoardReadOnly : isReadOnly(board: board)
+        var found: [(record: AnyShapeRecord, bound: [PartAddress])] = []
+        there.shapes.forEach { record in
+            guard kinds.contains(record.kind), !deleting.contains(record.id), !boardIsReadOnly, !registry.isReadOnly(record, in: there) else { return }
+            let bound = record.boundParts(in: registry).filter { addresses[$0] != nil }
+            if !bound.isEmpty { found.append((record, bound)) }
+        }
+        return found
+    }
+
     /// Parts just taken out of their shapes on this board (rows deleted by the writer that writes them): every shape
     /// bound to one of them goes, counted in `deletedAlong`, when the part's shape is of a kind that takes bound shapes
     /// (`TakesBoundShapes`); else it's bound to that shape as a whole. A read-only one stays as it is, still naming the
-    /// part, drawn where the part was. One pass over the board's binding shapes; none for a list of no parts. The writer of
-    /// a kind's parts calls it whenever parts go, so nothing is left bound to a part that's gone. Returns what it deleted.
+    /// part, drawn where the part was. A binding that reaches a part through a pill for its shape (a key to a column on
+    /// another board: the pill, with the part on the binding) is reached the same way, on the pill's board, in this step
+    /// (`standIns(naming:)`): it goes, or is bound to the pill as a whole. One pass over each board's binding shapes; none
+    /// for a list of no parts. The writer of a kind's parts calls it whenever parts go, so nothing is left bound to a part
+    /// that's gone. Returns what it deleted, on whichever board.
     @discardableResult
     public mutating func removeParts(_ parts: Set<PartAddress>) -> Set<ShapeID> {
         let parts = parts.filter { $0.part != nil }
         let kinds = registry.referencingKinds
         guard !parts.isEmpty, !kinds.isEmpty else { return [] }
         let taking = registry.takingBoundKinds
-        var taken: Set<ShapeID> = [], rebound: [AnyShapeRecord] = []
-        document.shapes.forEach { record in
-            guard kinds.contains(record.kind), !deleting.contains(record.id), !isReadOnly(record) else { return }
-            let bound = record.boundParts(in: registry).filter(parts.contains)
-            guard !bound.isEmpty else { return }
-            if bound.contains(where: { document[$0.shape].map { taking.contains($0.kind) } ?? false }) {
-                taken.insert(record.id)
-            } else if let whole = record.movingParts(in: registry, { parts.contains($0) ? PartAddress($0.shape) : $0 }) {
-                rebound.append(whole)
+        var through = throughStandIns(parts)
+        var here = Dictionary(parts.map { ($0, $0) }) { first, _ in first }
+        here.merge(through.removeValue(forKey: board) ?? [:]) { first, _ in first }
+        // What a binding to `addresses` does: goes with a part of a taking shape, else binds the shape (or the pill) as a whole.
+        func plan(_ addresses: [PartAddress: PartAddress], on board: BoardID) -> (taken: Set<ShapeID>, rebound: [AnyShapeRecord]) {
+            var taken: Set<ShapeID> = [], rebound: [AnyShapeRecord] = []
+            for (record, bound) in binding(addresses, on: board) {
+                if bound.contains(where: { address in addresses[address].flatMap { document[$0.shape] }.map { taking.contains($0.kind) } ?? false }) {
+                    taken.insert(record.id)
+                } else if let whole = record.movingParts(in: registry, { addresses[$0] != nil ? PartAddress($0.shape) : $0 }) {
+                    rebound.append(whole)
+                }
             }
+            return (taken, rebound)
         }
-        for record in rebound { update(record.id) { $0 = record } }
-        guard !taken.isEmpty else { return [] }
+        let local = plan(here, on: board)
+        for record in local.rebound { update(record.id) { $0 = record } }
+        var gone: Set<ShapeID> = []
         let wasCascading = isCascading
         isCascading = true
-        delete(taken)
+        if !local.taken.isEmpty {
+            delete(local.taken)
+            gone.formUnion(local.taken)
+        }
+        for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) where mayWrite(on: other) {
+            let far = plan(addresses, on: other)
+            for record in far.rebound { update(record.id, on: other) { $0 = record } }
+            if !far.taken.isEmpty {
+                delete(far.taken, on: other)
+                gone.formUnion(far.taken)
+            }
+        }
         isCascading = wasCascading
-        return taken
+        return gone
     }
 
     /// Parts moved to other places on this board (a row into another table, out into a new one): every shape bound to one
     /// is bound to where it went (`moves`: a part of another shape, or a shape as a whole, part nil), but a read-only one,
     /// left as it was; then every `partsMoved` handler hears the moves, so what names a part as a value renames it. A part
-    /// that moves within its shape keeps its address and needs nothing.
+    /// that moves within its shape keeps its address and needs nothing. A binding that reaches a moved part through a pill
+    /// for its shape (`standIns(naming:)`) follows it on the pill's board in this step: to the part moved to, through the same
+    /// pill when it stays in that shape, else straight to the shape it went to when that is on the pill's board, else through
+    /// a pill there that stands for it; with none of those, it is bound to the pill as a whole (no pill is made here).
     public mutating func moveParts(_ moves: [PartAddress: PartAddress]) {
         let moves = moves.filter { $0.key != $0.value }
         guard !moves.isEmpty else { return }
         let kinds = registry.referencingKinds
         if !kinds.isEmpty {
+            var through = throughStandIns(moves.keys)
+            let local = through.removeValue(forKey: board) ?? [:]
             var moved: [AnyShapeRecord] = []
             document.shapes.forEach { record in
                 guard kinds.contains(record.kind), !deleting.contains(record.id), !isReadOnly(record),
-                      record.boundParts(in: registry).contains(where: { moves[$0] != nil }),
-                      let rebound = record.movingParts(in: registry, { moves[$0] ?? $0 }) else { return }
+                      record.boundParts(in: registry).contains(where: { moves[$0] != nil || local[$0] != nil }),
+                      let rebound = record.movingParts(in: registry, { address in
+                          moves[address] ?? local[address].flatMap { reach(moves[$0], from: address, on: board) } ?? address
+                      }) else { return }
                 moved.append(rebound)
             }
             for record in moved { update(record.id) { $0 = record } }
+            for (other, addresses) in through.sorted(by: { $0.key.description < $1.key.description }) where mayWrite(on: other) {
+                for (record, _) in binding(addresses, on: other) {
+                    guard let rebound = record.movingParts(in: registry, { address in
+                        addresses[address].flatMap { reach(moves[$0], from: address, on: other) } ?? address
+                    }) else { continue }
+                    update(record.id, on: other) { $0 = rebound }
+                }
+            }
         }
         for handler in registry.partsMovedHandlers { handler(moves, &self) }
+    }
+
+    /// Where a binding through the pill at `pill` (its address names the pill and the moved part) goes once the part went to
+    /// `moved`, on `board`, the pill's: see `moveParts`.
+    private func reach(_ moved: PartAddress?, from pill: PartAddress, on board: BoardID) -> PartAddress {
+        guard let moved else { return pill }
+        let pills = file.standIns(moved.shape)
+        // Still in the shape the pill stands for: through the pill.
+        if pills.contains(pill.shape) { return PartAddress(pill.shape, part: moved.part) }
+        if location(of: moved.shape) == board { return moved }
+        // Of several pills there, the same one every time.
+        if let other = pills.filter({ location(of: $0) == board }).min(by: { $0.description < $1.description }) {
+            return PartAddress(other, part: moved.part)
+        }
+        return PartAddress(pill.shape)
     }
 
     // MARK: Turning, and moving to another board
@@ -1782,7 +1873,7 @@ public struct Transaction {
         if readingThrough {
             let here = self, file = file
             access = FileAccess(locate: { here.location(of: $0) }, subtree: file.subtree, contents: { here.contents(of: $0) }, canShow: file.canShow,
-                                values: file.values)
+                                values: file.values, standIns: file.standIns)
         }
         var there = Transaction(document: contents(of: board), board: board, isBoardReadOnly: isReadOnly(board: board), registry: registry,
                                 camera: camera, keys: keys, file: access, layout: layout)
@@ -1791,6 +1882,7 @@ public struct Transaction {
             there.writes.append(id)
         }
         there.mayReachBoardShown = mayReachBoardShown
+        there.boardShown = boardShown
         there.stagedFileValues = stagedFileValues
         return there
     }
@@ -1828,6 +1920,9 @@ struct FileAccess {
     let canShow: (BoardID) -> Bool
     /// The file's own values (`FileProperty`), as the file holds them.
     let values: () -> FileValues
+    /// The stand-ins whose record names a shape, on any board the editor can show, as the editor's lookup has them before
+    /// this transaction (`registrar.standInLookup`, Topology's); none without one.
+    let standIns: (ShapeID) -> [ShapeID]
 
     /// Over a file of one's own, whose boards `boardOwningKinds` (the registry's) show.
     init(_ file: CanvasFile, boardOwningKinds: Set<ShapeKind>) {
@@ -1836,15 +1931,18 @@ struct FileAccess {
         contents = { file[$0] }
         canShow = { file.canShow($0, boardOwningKinds: boardOwningKinds) }
         values = { file.fileValues }
+        standIns = { _ in [] }
     }
 
     init(locate: @escaping (ShapeID) -> BoardID?, subtree: @escaping (Set<ShapeID>) -> [BoardID],
-         contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool, values: @escaping () -> FileValues) {
+         contents: @escaping (BoardID) -> CanvasDocument, canShow: @escaping (BoardID) -> Bool, values: @escaping () -> FileValues,
+         standIns: @escaping (ShapeID) -> [ShapeID] = { _ in [] }) {
         self.locate = locate
         self.subtree = subtree
         self.contents = contents
         self.canShow = canShow
         self.values = values
+        self.standIns = standIns
     }
 }
 

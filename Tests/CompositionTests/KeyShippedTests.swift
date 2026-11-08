@@ -135,52 +135,27 @@ private let shop = #"""
         expectEqual(changes.compactMap { $0["did"]?.stringValue }, ["updated", "deleted", "updated", "deleted"])
         expectEqual(changes.compactMap { $0["line"]?.intValue }, [1, 1, 2, 2])
     },
-    test("a pill standing for a table has no foreign-key ports, and a key to a row on another board is refused, not bound to the pill") {
-        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
-        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
-        _ = try drawnInProcess(#"""
-            table "orders" columns: "id uuid pk\ncustomer_id uuid"
-            subboard "Far" right of "orders"
-            """#, on: editor)
-        _ = try drawnInProcess(#"""
-            table "customers" in "Far" columns: "id uuid pk\nemail text"
-            """#, on: editor)
-        let registry = editor.registry
-        let stands = [DatabaseTable.kind]
-        expect(!registry.hasPorts(Reference.kind, standingFor: stands), "no ports of its own on a table's rows-only channel")
-        expect(!registry.takes(Reference.kind, standingFor: stands, ForeignKey.id, as: .source) && !registry.takes(Reference.kind, standingFor: stands, ForeignKey.id, as: .target))
-        expect(registry.takesOnParts(DatabaseTable.kind, ForeignKey.id, as: .source), "the table itself takes keys on its rows")
-        let orders = try require(table(editor, "orders"))
-        let farBoard = try require(editor.document.shapes.first { $0[TitleProperty.self] == "Far" })
-        let far = try require(editor.file.subtree(ownedBy: [farBoard.id]).lazy.compactMap { board in editor.file[board].shapes.first { $0[TitleProperty.self] == "customers" } }.first)
-        let farID = try require(far.typed(as: DatabaseTable.self)?.props.columns.first?.id)
-        let shapes = editor.document.shapes.count
-        let made = editor.connect(ConnectEnd(orders.id, part: column(editor, "orders", "customer_id")), to: ConnectEnd(far.id, part: farID))
-        expectEqual(made, nil, "refused")
-        expectEqual(editor.document.shapes.count, shapes, "no pill was placed, no arrow drawn")
-    },
-    test("a table moved to another board lets go of the keys that cross, never binding a pill to a row") {
+    test("a table moved to another board keeps the keys that cross through a pill for the table that stays, the column on the binding") {
         let editor = try shopEditor()
         _ = try drawnInProcess(#"subboard "Far" below "customers""#, on: editor)
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
         let customers = try require(table(editor, "customers")), far = try require(editor.document.shapes.first { $0[TitleProperty.self] == "Far" })
+        let id = try require(column(editor, "customers", "id"))
         let contents = try require(editor.tableOfContents)
         expect(contents.beginDrag(from: customers.id) && contents.drop(on: ContentsDropTarget(row: far.id, zone: .on)))
         expectEqual(editor.file.board(containing: customers.id), BoardID(owner: far.id))
         let root = editor.contents(of: .root)
         let loose = root.shapes.compactMap { $0.typed(as: Arrow.self) }
         expectEqual(loose.count, 3, "no arrow was lost, and none rode along")
-        expect(root.shapes.allSatisfy { $0.kind != Reference.kind }, "no pill was made for a row")
-        for arrow in loose {
-            for terminal in [arrow.props.start, arrow.props.end] {
-                guard let binding = terminal.binding else { continue }
-                expect(binding.part == nil || root[binding.shapeID]?.kind == DatabaseTable.kind, "a row end is at a table on its own board")
-            }
-        }
-        expectEqual(loose.filter { $0.props.end.binding != nil }.count, 2, "the key that reached customers has let it go; the other two are whole")
+        let pill = try require(root.shapes.first { $0.kind == Reference.kind }?.typed(as: Reference.self))
+        expectEqual(pill.props.target?.id, customers.id, "a pill for customers where orders' key stays")
+        let key = try require(loose.first { $0.props.end.binding?.shapeID == pill.id })
+        expectEqual(key.props.end.binding?.part, id, "the key keeps customers.id on its binding")
+        expectEqual(loose.filter { $0.props.end.binding != nil }.count, 3, "every key still bound at both ends")
         editor.undo()
         expectEqual(editor.file.board(containing: customers.id), .root)
         expectEqual(keys(editor).count, 3)
+        expect(editor.document.shapes.allSatisfy { $0.kind != Reference.kind }, "and no pill")
     },
     test("⌘L's picker opens on a table, as it did before its rows had ports: the other tables, enums and databases, and a pick draws a plain arrow") {
         let w = try EmptyBoardWindow()

@@ -27,7 +27,7 @@ extension CanvasEditor {
             let near = leavingSegment(of: geometry.outline, from: leaves, around: own)
             // A row at the far end by the row's name, read with its shape's ("Arrow to id in customers").
             let otherPart = edge.otherPart(from: id, leaves ? .outgoing : .incoming)
-            let name = accessibleName(of: PartAddress(otherID, part: otherPart)) ?? accessibleDescription(of: otherID)?.name
+            let name = accessibleName(readingThrough: PartAddress(otherID, part: otherPart)) ?? accessibleDescription(of: otherID)?.name
                 ?? registry.label(of: document[otherID]?.kind ?? kind).name
             let carrier = edge.carrier
             let part = ShapePart(id: carrier, title: (leaves ? ConnectionsStyle.arrowTo : ConnectionsStyle.arrowFrom) + name,

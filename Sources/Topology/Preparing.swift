@@ -66,10 +66,10 @@ public struct ForwardingPreparer: Sendable {
 /// that its kind admits; with their kinds, and every shape named, each once.
 enum Effective {
     static func taking(_ named: [ShapeID], for standIn: ShapeID, isStandIn: (ShapeKind) -> Bool, admits: ForwardAdmission,
-                       shape: (ShapeID) -> AnyShapeRecord?) -> (targets: [ShapeID], kinds: [ShapeKind], named: Set<ShapeID>) {
+                       alsoNeeds: ((AnyShapeRecord) -> Bool)? = nil, shape: (ShapeID) -> AnyShapeRecord?) -> (targets: [ShapeID], kinds: [ShapeKind], named: Set<ShapeID>) {
         var targets: [ShapeID] = [], kinds: [ShapeKind] = [], met: Set<ShapeID> = []
         for target in named where met.insert(target).inserted && target != standIn {
-            guard let record = shape(target), !record.isOpaque, !isStandIn(record.kind), admits(record) else { continue }
+            guard let record = shape(target), !record.isOpaque, !isStandIn(record.kind), admits(record), alsoNeeds?(record) ?? true else { continue }
             targets.append(target)
             kinds.append(record.kind)
         }

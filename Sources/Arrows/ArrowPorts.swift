@@ -136,7 +136,11 @@ enum ArrowConnections {
             for (end, shape, side, part) in [(ArrowEnd.start, request.from, request.fromSide, request.fromPart),
                                              (.end, request.to, request.toSide, request.toPart)]
             where side != nil || arrow.props[end].binding?.shapeID != shape || arrow.props[end].binding?.part != part {
-                if let part {
+                if let part, let connectable = Connectables(shapes: shapes)[shape], connectable.parts.isEmpty {
+                    // A row through a pill for its shape (a column of a table on another board): the pill met as a whole, at its
+                    // middle, the row named on the binding for Topology and the key index.
+                    arrow.props[end] = .bound(ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false, part: part))
+                } else if let part {
                     // A row's end: drawn at its side facing the other end, wherever the two are; kept as its right side's middle
                     // (where it's drawn only while the row is gone), so one made by name is the same wherever its shapes stand.
                     arrow.props[end] = .bound(binding(to: shape, part: part, side: .right, in: shapes)

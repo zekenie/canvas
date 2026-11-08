@@ -63,6 +63,8 @@ struct MadeStandIn {
     let stoodFor: ShapeID
     let container: ShapeID?
     let kind: ShapeKind
+    /// The row it stands for (a row that stands alone: an endpoint); nil for a pill for a shape.
+    var row: PartID? = nil
 }
 
 /// An end of an edge, as the decision whether the edge goes through a stand-in reads it.
@@ -319,8 +321,13 @@ extension Drawing {
     /// end and a stand-in for the far one (it's found as the run applies). Else the stand-in is added to
     /// the run as a shape of its own, placed beside the end that stays: the end that's off the board
     /// the run draws on is stood for, or, with `via:`, the end.
+    ///
+    /// `parts`: the rows the ends name. An arrow to a row on another board is bound to a pill with the row on its binding: the pill
+    /// for the row's shape (a column's table), or, for a row that stands alone (an endpoint), a pill of its own; found again by its
+    /// rows, so a run again draws nothing twice.
     mutating func routeEdge(_ edge: EdgeStatement, _ statement: Statement, written: String, from: EdgeEndFound, to: EdgeEndFound,
-                            fromName: EndName, toName: EndName, via: ShapeKind?, identity: EdgeIdentity?) throws(DrawError) -> NewStandIn? {
+                            fromName: EndName, toName: EndName, via: ShapeKind?, identity: EdgeIdentity?,
+                            parts: (from: PartID?, to: PartID?) = (nil, nil)) throws(DrawError) -> NewStandIn? {
         let drawnTo = "\(written) is drawn to"
         let key = EdgeKey.via.rawValue
         let stoodFor: EdgePlace
@@ -361,7 +368,8 @@ extension Drawing {
         // edge whatever the stand-in's shape can be stood for now, and whether `via:` says so, so it's
         // looked for before anything is decided: a run again is `unchanged` (`connect`).
         let drawn = boardConnections().filter { !deleted.contains($0.record.id) }
-        let matches = addressedMatches(from: from.id, to: to.id, bothHeads: edge.bothHeads, among: drawn, in: target.document, identity: identity)
+        let matches = addressedMatches(from: from.id, to: to.id, bothHeads: edge.bothHeads, among: drawn, in: target.document, identity: identity,
+                                       parts: parts)
         if matches.contains(where: { $0.standIn != nil }) { return nil }
 
         // `via:` puts the stand-in for the end beside the start, which isn't on this board.
@@ -417,11 +425,18 @@ extension Drawing {
         // Drawn straight already, which `via:` has asked to be through one: left as it is (`connect` says).
         guard matches.isEmpty else { return nil }
 
+        // A row that stands alone (an endpoint) at the end stood for gets a pill of its own; any other row rides the binding.
+        let standPart = stoodFor == .from ? parts.from : parts.to
+        let row = standPart.flatMap { part -> PartName? in
+            guard standIns?.makesRows(kind) == true, let named = registry.parts(of: standEnd.record)?.first(where: { $0.id == part }), named.standsAlone else { return nil }
+            return named
+        }
+
         // `share:` reuses a stand-in for the same end rather than make another; a named host that has none
         // is refused, never silently given a stand-in of its own. Said by the edge's row (`shared`).
         let container = containerOfEnd(nearID, item: nearItem)
         if let share = edge.share,
-           let found = try sharedStandIn(share, for: standEnd.record, kind: kind, near: (nearID, nearItem), container: container,
+           let found = try sharedStandIn(share, for: standEnd.record, row: row?.id, kind: kind, near: (nearID, nearItem), container: container,
                                          written: written, standName: standName, nearName: nearName, statement) {
             return NewStandIn(id: found.id, place: stoodFor, kind: kind, shared: true, sharedWith: found.host)
         }
@@ -430,7 +445,7 @@ extension Drawing {
         // arrow between the same two shapes: it goes into the stand-in the near end's other arrows do
         // for this end, never another beside it (two relationships of Ann's with Acme are two arrows
         // into Ann's one pill for Acme). A statement that writes no identity key reaches none of this.
-        if identity != nil, let found = hostStandIn(nearID, for: standEnd.record, kind: kind) {
+        if identity != nil, let found = hostStandIn(nearID, for: standEnd.record, row: row?.id, kind: kind) {
             return NewStandIn(id: found, place: stoodFor, kind: kind, shared: true)
         }
 
@@ -438,11 +453,11 @@ extension Drawing {
         // boards would bury the warnings that need reading.
         // The pill is called what the shape is: its title, else what Mentions calls it (a note with none is called by its words
         // or its values), else its kind's name.
-        let label = standName.title ?? farLabel(of: standEnd.record)
-        let made = try addStandIn(kind, for: standEnd.record, called: label, said: standName.said, beside: nearID, item: nearItem, title: nearName.plain,
-                                  nearIs: nearPlace, side: nearPlace == .from ? edge.fromSide : edge.toSide,
+        let label = row?.name ?? standName.title ?? farLabel(of: standEnd.record)
+        let made = try addStandIn(kind, for: standEnd.record, row: row?.id, called: label, said: standName.said, beside: nearID, item: nearItem,
+                                  title: nearName.plain, nearIs: nearPlace, side: nearPlace == .from ? edge.fromSide : edge.toSide,
                                   placed: (edge.clauses, edge.container), seatedIn: container, statement)
-        madeStandIns.append(MadeStandIn(id: made.id, stoodFor: standEnd.record.id, container: made.holder ?? container, kind: kind))
+        madeStandIns.append(MadeStandIn(id: made.id, stoodFor: standEnd.record.id, container: made.holder ?? container, kind: kind, row: row?.id))
         return NewStandIn(id: made.id, place: stoodFor, kind: kind)
     }
 
@@ -472,21 +487,24 @@ extension Drawing {
         return end.standIn == nil ? nil : end.id
     }
 
-    /// Whether a stand-in, one this run made or one the board has, is of `kind` and stands for `end`.
-    private func stands(_ pill: ShapeID, for end: ShapeID, kind: ShapeKind) -> Bool {
-        standingFor(pill) == end && (madeStandIns.first { $0.id == pill }?.kind ?? target.document[pill]?.kind) == kind
+    /// Whether a stand-in, one this run made or one the board has, is of `kind` and stands for `end` (and `row` of it: nil for the
+    /// shape as a whole).
+    private func stands(_ pill: ShapeID, for end: ShapeID, row: PartID? = nil, kind: ShapeKind) -> Bool {
+        let made = madeStandIns.first { $0.id == pill }
+        let itsRow = made.map(\.row) ?? target.document[pill].flatMap { standIns?.forwarding(of: $0)?.part }
+        return standingFor(pill) == end && itsRow == row && (made?.kind ?? target.document[pill]?.kind) == kind
     }
 
     /// The stand-in of `kind` for `end` that an arrow of `host` already runs into: of the run's own
     /// edges first (a stand-in one made or reused), then the board's (`StandInRoute.existing`).
-    private mutating func hostStandIn(_ host: ShapeID, for end: AnyShapeRecord, kind: ShapeKind) -> ShapeID? {
+    private mutating func hostStandIn(_ host: ShapeID, for end: AnyShapeRecord, row: PartID? = nil, kind: ShapeKind) -> ShapeID? {
         for other in edges {
             guard let standIn = other.standIn, standIn.kind == kind, (standIn.place == .from ? other.to : other.from) == host,
-                  stands(standIn.id, for: end.id, kind: kind) else { continue }
+                  stands(standIn.id, for: end.id, row: row, kind: kind) else { continue }
             return standIn.id
         }
         guard let route else { return nil }
-        return route.existing(for: end.id, kind: kind, sharing: .host(host), near: host, in: target.document, excluding: deleted,
+        return route.existing(for: end.id, row: row, kind: kind, sharing: .host(host), near: host, in: target.document, excluding: deleted,
                               index: standInIndex(route))
     }
 
@@ -494,17 +512,17 @@ extension Drawing {
     /// same end, in the same container as the end that stays, which the board has (the first) or an
     /// earlier edge of the run made; for `share: "A"`, the one A's own arrow goes into, A being in that
     /// container. Nil for `share: true` with none; a named host with none is refused.
-    private mutating func sharedStandIn(_ share: EdgeShare, for end: AnyShapeRecord, kind: ShapeKind, near: (id: ShapeID, item: Int?),
+    private mutating func sharedStandIn(_ share: EdgeShare, for end: AnyShapeRecord, row: PartID? = nil, kind: ShapeKind, near: (id: ShapeID, item: Int?),
                                         container: ShapeID?, written: String, standName: EndName, nearName: EndName,
                                         _ statement: Statement) throws(DrawError) -> (id: ShapeID, host: String?)? {
         let key = EdgeKey.share.rawValue
         switch share {
         case .any:
-            if let route, let pill = route.existing(for: end.id, kind: kind, sharing: .any, container: container, in: target.document,
+            if let route, let pill = route.existing(for: end.id, row: row, kind: kind, sharing: .any, container: container, in: target.document,
                                                     excluding: deleted, index: standInIndex(route)) {
                 return (pill, nil)
             }
-            if let made = madeStandIns.first(where: { $0.stoodFor == end.id && $0.kind == kind && $0.container == container }) {
+            if let made = madeStandIns.first(where: { $0.stoodFor == end.id && $0.row == row && $0.kind == kind && $0.container == container }) {
                 return (made.id, nil)
             }
             return nil
@@ -569,7 +587,7 @@ extension Drawing {
                                 hint: "a reference is shared by shapes in one frame, or none: put them in the same one, or leave \(key): out")
             }
             // The host's arrows: those of the run (a reference it made or shared), then the board's.
-            if let pill = hostStandIn(hostID, for: end, kind: kind) { return (pill, hostPlain) }
+            if let pill = hostStandIn(hostID, for: end, row: row, kind: kind) { return (pill, hostPlain) }
             throw DrawError(statement, .invalidValue, "\(written): \(key): \(hostSaid) has no \(kind) to \(standName.said) beside it",
                             hint: "draw an edge between \(hostSaid) and \(standName.said) above this line, in this run or an earlier one; or write \(key): true, or leave \(key): out")
         }
@@ -590,11 +608,12 @@ extension Drawing {
     /// pick from the list does, however many shapes are called what its shape is: a pill made for one of two `index.ts` says
     /// which, and one for a title that is its shape's alone says where that is as well. Where its placements put it is a guess
     /// until it lands, as `share:`'s container is.
-    private mutating func addStandIn(_ kind: ShapeKind, for target: AnyShapeRecord, called label: String, said: String, beside near: ShapeID, item: Int?,
-                                     title nearTitle: String, nearIs place: EdgePlace, side: EdgeSide?,
+    private mutating func addStandIn(_ kind: ShapeKind, for target: AnyShapeRecord, row: PartID? = nil, called label: String, said: String,
+                                     beside near: ShapeID, item: Int?, title nearTitle: String, nearIs place: EdgePlace, side: EdgeSide?,
                                      placed: (clauses: [Clause], container: ShapeName?), seatedIn container: ShapeID?,
                                      _ statement: Statement) throws(DrawError) -> (id: ShapeID, holder: ShapeID?) {
-        guard let route, var record = route.standIns.make(kind, standingFor: target.id, label: label), record.box != nil else {
+        guard let route, var record = row.map({ route.standIns.make(kind, standingFor: target.id, row: $0, label: label) })
+                ?? route.standIns.make(kind, standingFor: target.id, label: label), record.box != nil else {
             throw DrawError(statement, .internal, "\(indefinite(kind)) couldn't be made to stand for \(said)")
         }
         // A program's run puts it exactly where it says, as a shape statement's shape (`DrawOptions.places`, by the edge's line).

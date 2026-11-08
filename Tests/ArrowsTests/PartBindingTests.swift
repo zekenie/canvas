@@ -50,6 +50,20 @@ import TestKit
 private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
 
 @MainActor let partBindingTests = Suite("An arrow's end bound to a row", [
+    test("a row named on a binding to a shape that lists no rows (a pill for a table) is ignored by geometry: the end meets the shape as a whole, kept for Topology") {
+        let b = try RosterBoard()
+        let pill = b.h.add(Box(CGRect(x: 600, y: 400, width: 120, height: 40)))
+        // As a move re-points a key's far end to a pill: the row's anchor (its right side, exact) and its part kept.
+        let through = b.h.add(Arrow(start: b.end(b.left, 1), end: .bound(ArrowBinding(shapeID: pill, normalizedAnchor: CGPoint(x: 1, y: 0.5),
+                                                                                       isPrecise: true, isExact: true, part: b.rightRows[2].id))))
+        let whole = b.h.add(Arrow(start: b.end(b.left, 1), end: .bound(ArrowBinding(shapeID: pill, normalizedAnchor: CGPoint(x: 0.5, y: 0.5),
+                                                                                     isPrecise: false, isExact: false))))
+        let geometry = try require(b.h.editor.arrowGeometry(of: through)), plain = try require(b.h.editor.arrowGeometry(of: whole))
+        expectEqual(geometry.endHandle, CGPoint(x: 660, y: 420), "the pill's middle, whatever anchor the binding kept")
+        expectEqual(geometry.end, plain.end, "drawn as an end bound to the pill as a whole")
+        expectEqual(geometry.partSide(at: .end), nil, "no row side on the pill")
+        expectEqual(b.arrow(through)?.end.binding?.part, b.rightRows[2].id, "the row stays on the binding")
+    },
     test("a row's end is at the middle of the row's side facing the other end, unclipped, and flips as the far end crosses") {
         let b = try RosterBoard()
         let id = b.h.add(Arrow(start: b.end(b.left, 1), end: .free(CGPoint(x: 800, y: 400))))
