@@ -60,6 +60,9 @@ public protocol LineModel {
     /// The widest the shape is laid out while a line typed in it is wider than it is (world units), past which the line
     /// slides in its field; nil, by default, for no limit.
     var widestLine: CGFloat? { get }
+    /// A row's card, ⌘↓ in its line: what more it holds than the line says (a column's on delete), a line each. Nil, by
+    /// default, for a row with nothing more (an enum's value): ⌘↓ does nothing there.
+    func card(of row: Row, in context: LineContext) -> LineCard<Row>?
 }
 
 extension LineModel {
@@ -67,6 +70,7 @@ extension LineModel {
     public func marked(_ shape: ShapeRecord<Props>, in reading: LayoutReading) -> Set<PartID> { [] }
     public func isHeader(_ row: Row) -> Bool { false }
     public var widestLine: CGFloat? { nil }
+    public func card(of row: Row, in context: LineContext) -> LineCard<Row>? { nil }
 
     public func apply(_ changes: [LineChange<Row>], to id: ShapeID, in transaction: inout Transaction) -> Bool {
         guard let record = transaction.document[id]?.typed(as: Props.self) else { return false }

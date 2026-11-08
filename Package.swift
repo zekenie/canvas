@@ -276,10 +276,11 @@ let parts: KeyValuePairs<String, [String]> = [
     "Types/Rows": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form"],
     "Types/Engines": ["JSON", "Type", "Fields", "Checks", "Sync", "IsA", "Form", "Rows"],
     // LineRows: the line a row is typed in and the grammar its lines are read and printed in; the kinds written as lines
-    // and the lines a shape shows (folds, peeks); the session of a shape being edited, its stops, keys and commits.
+    // and the lines a shape shows (folds, peeks); the session of a shape being edited, its stops, keys and commits; a row's card.
     "LineRows/Field": [],
     "LineRows/Folds": [],
     "LineRows/Session": ["Field", "Folds"],
+    "LineRows/Card": ["Field", "Folds", "Session"],
     // Engineering: the kinds' props and looks' constants; the line grammars a column and an enum's values are
     // written in, read and printed (pure); the table, the enum and the database, drawn, placed and written.
     "Engineering/Model": [],

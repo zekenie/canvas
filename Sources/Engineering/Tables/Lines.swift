@@ -260,7 +260,7 @@ struct ColumnLineGrammar: LineGrammar {
     /// with nothing typed), each table's key columns as `customers.id`; after `customers.`, that table's key columns by name. A key
     /// column is one of its primary key or a unique one (all of a table's, where it has none of those). Each with its type, lit while
     /// it's highlighted, and standing for its row once picked.
-    private func keyOffers(_ typed: String, range: NSRange, _ context: LineContext) -> LineOffers? {
+    func keyOffers(_ typed: String, range: NSRange, _ context: LineContext) -> LineOffers? {
         let editor = context.editor
         func keyColumns(_ id: ShapeID) -> [Column] {
             guard let table = editor.document[id]?.typed(as: DatabaseTable.self)?.props else { return [] }
@@ -297,7 +297,7 @@ struct ColumnLineGrammar: LineGrammar {
     }
 
     /// SQL's types, then the file's enums, each in its purple chip and lit while it's highlighted.
-    private func typeOffers(_ context: LineContext) -> [LineOffer] {
+    func typeOffers(_ context: LineContext) -> [LineOffer] {
         let types = LineLooks.sqlTypes.map { LineOffer(CaretCompletion(label: $0, insert: $0)) }
         let enums = (context.editor.service(KitNames.self)?.enums ?? []).reduce(into: [(id: ShapeID, name: String)]()) { list, found in
             if !list.contains(where: { $0.name == found.name }) { list.append((found.id, found.name)) }
@@ -398,14 +398,15 @@ struct TableLines: LineModel {
     }
 
     /// Add Column, Paste Columns, Rename Column (only its name changed), Add Key, Change Key and Delete Key (only its key changed),
-    /// Change Column, Delete Column, Move Column.
+    /// Change Key Action (only its on delete or on update, from its card), Change Column, Delete Column, Move Column.
     func stepName(of change: LineChange<ColumnLine>) -> String {
         switch change {
         case .add(let rows, _): rows.count == 1 ? TableStyle.addColumnStep : TableStyle.pasteColumnsStep
         case .change(let from, let to):
             switch (held(from), resolved(to)) {
             case let (was, now) where was == now:
-                Self.onlyRenamed(from.column, to.column) ? TableStyle.renameColumnStep : TableStyle.changeColumnStep
+                Self.onlyRenamed(from.column, to.column) ? TableStyle.renameColumnStep
+                    : Self.onlyKeyActions(from.column, to.column) ? TableStyle.changeKeyActionStep : TableStyle.changeColumnStep
             case let (was, now) where from.column == to.column:
                 was == nil ? TableStyle.addKeyStep : now == nil ? TableStyle.deleteKeyStep : TableStyle.changeKeyStep
             default: TableStyle.changeColumnStep
@@ -435,6 +436,14 @@ struct TableLines: LineModel {
     func marked(_ shape: ShapeRecord<DatabaseTable>, in reading: LayoutReading) -> Set<PartID> {
         let keys = reading.service(KeyIndex.self)?.keys(of: shape.id) ?? [:]
         return Set(shape.props.columns.lazy.filter { $0.primaryKey || $0.unique || keys[$0.id] != nil }.map(\.id))
+    }
+
+    /// Whether `to` is `from` with only what its key does on delete or on update changed.
+    static func onlyKeyActions(_ from: Column, _ to: Column) -> Bool {
+        var acted = from
+        acted.onDelete = to.onDelete
+        acted.onUpdate = to.onUpdate
+        return acted == to && (from.onDelete != to.onDelete || from.onUpdate != to.onUpdate)
     }
 
     /// Whether `to` is `from` with only its name changed.
@@ -522,6 +531,12 @@ enum LineLooks {
     /// A key's target in a line: the link's blue, faint behind it, its text in the blue.
     static let keyFill = NSColor(TableStyle.linkColor).withAlphaComponent(TableStyle.keyPillFill)
     static let keyInk = NSColor(TableStyle.linkColor)
+    /// The same pills on a card's bubble, which follows the appearance where the table's paper doesn't: the hues made for the
+    /// canvas, light and dark.
+    static let cardKeyFill = NSColor(Swatch(KitStyle.linkBlue).solid).fading(to: TableStyle.keyPillFill)
+    static let cardKeyInk = NSColor(Swatch(KitStyle.linkBlue).ink)
+    static let cardEnumFill = NSColor(Swatch(KitStyle.enumPurple).solid).fading(to: TableStyle.enumPillFill)
+    static let cardEnumInk = NSColor(Swatch(KitStyle.enumPurple).ink)
 
     /// What's offered after a type: each flag's word, what the list says, what a pick puts in.
     static let flags: [(word: String, label: String, insert: String)] = [
