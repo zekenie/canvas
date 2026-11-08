@@ -67,14 +67,9 @@ extension ArrowDefinition {
         return EndLine(hubEnd: hubEnd, bend: ArrowThrough.bend(from: start, to: end, awayFrom: there))
     }
 
-    /// The arrow as the geometry the editor keeps has it: for an end of a relationship type, its part of the line through the pill.
+    /// The arrow as the geometry the editor keeps has it: for an end of a relationship type, its part of the line through the pill;
+    /// for one with a look (`ArrowDetail`), its marked ends' heads and its width.
     func arrowGeometry(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ArrowGeometry {
-        arrowGeometry(shape.props, line: context.geometry(of: shape.id)?.detail as? EndLine, in: context)
-    }
-
-    func arrowGeometry(_ arrow: Arrow, line: EndLine?, in context: ShapeContext) -> ArrowGeometry {
-        guard let line else { return arrowGeometry(arrow, in: context) }
-        let connectables = Connectables(shapes: context)
-        return ArrowGeometry(arrow: line.drawn(arrow), strokeWidth: ArrowStyle.strokeWidth, minBend: line.bend == nil ? ArrowGeometry.minBend : 0) { connectables[$0] }
+        arrowGeometry(shape.props, detail: context.geometry(of: shape.id)?.arrowDetail, in: context)
     }
 }

@@ -16,6 +16,10 @@ public struct ArrowGeometry: Sendable {
         /// `handleArc` runs through both terminal handles and the bend point. The visible body is
         /// the stretch of it between `startT` and `endT` (0 is the start handle, 1 the end handle).
         case curved(handleArc: Arc, startT: CGFloat, endT: CGFloat)
+        /// An arrow with an end at a row (a part its shape lists): a cubic leaving each end along the way out of its side (a
+        /// departure from tldraw's arc, the frames' level curve). The visible body is the stretch between `startT` and `endT`,
+        /// short of the curve's ends only by a head's gap at an end bound to a shape as a whole.
+        case level(Cubic, startT: CGFloat, endT: CGFloat)
     }
 
     public private(set) var startHandle: CGPoint
@@ -28,6 +32,9 @@ public struct ArrowGeometry: Sendable {
     public private(set) var path: Path
     /// Unit vector perpendicular to the line between the terminal handles; `bend` is measured along it.
     public private(set) var bendAxis: CGPoint
+    /// Where the bend is measured from, along `bendAxis`: the middle of the line between the handles, or of a level arrow's
+    /// curve as it is with no bend, so the bend handle's drag puts the middle where the pointer is.
+    public private(set) var bendOrigin: CGPoint
     public private(set) var startArrowhead: Bool
     public private(set) var endArrowhead: Bool
     /// The side of its part each end is at, for an end bound to a part its shape lists (a row): nil for any other end.
@@ -81,8 +88,44 @@ public struct ArrowGeometry: Sendable {
             }
         }
 
+        if startPart != nil || endPart != nil {
+            // A level curve: each end leaves along the way out of its side, rows' sides worked out above.
+            let (startPoint, endPoint) = (startHandle, endHandle)
+            let partStart = startSide.map { (point: startPoint, normal: Optional($0.normal)) }
+            let partEnd = endSide.map { (point: endPoint, normal: Optional($0.normal)) }
+            let s = partStart ?? Self.levelAnchor(of: arrow.start, in: startShape, handle: startPoint, toward: partEnd?.point ?? endPoint)
+            let e = partEnd ?? Self.levelAnchor(of: arrow.end, in: endShape, handle: endPoint, toward: s.point)
+            let chord = e.point - s.point
+            bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
+            let reachStart = s.normal.map { Self.reach($0, from: s.point, to: e.point) } ?? 0
+            let reachEnd = e.normal.map { Self.reach($0, from: e.point, to: s.point) } ?? 0
+            let plain = Cubic(s.point, s.point + (s.normal ?? .zero) * reachStart, e.point + (e.normal ?? .zero) * reachEnd, e.point)
+            bendOrigin = plain.point(at: 0.5)
+            // tldraw's bend: both controls move by 4/3 of it across the chord, so the middle moves exactly by it.
+            let shift = bendAxis * (arrow.bend * 4 / 3)
+            let cubic = Cubic(plain.start, plain.control1 + shift, plain.control2 + shift, plain.end)
+            // Only an end bound to a shape as a whole, short of an exact binding, stands a head's gap off it, along the curve.
+            func gap(_ end: ArrowEnd, _ shape: BoundShape?) -> CGFloat {
+                guard let shape, !shape.isExact, end == .start ? arrow.startArrowhead : arrow.endArrowhead else { return 0 }
+                return ArrowGeometry.boundGap + strokeWidth / 2
+            }
+            let measure = cubic.measured()
+            let gaps = (gap(.start, startShape), gap(.end, endShape))
+            var (startT, endT): (CGFloat, CGFloat) = (0, 1)
+            if gaps.0 + gaps.1 + ArrowGeometry.minLength < measure.length {
+                startT = measure.parameter(atLength: gaps.0)
+                endT = measure.parameter(atLength: measure.length - gaps.1)
+            }
+            path = .level(cubic, startT: startT, endT: endT)
+            start = cubic.point(at: startT)
+            end = cubic.point(at: endT)
+            middle = cubic.point(at: 0.5)
+            return
+        }
+
         let chord = endHandle - startHandle
         bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
+        bendOrigin = (startHandle + endHandle) / 2
         let bendPoint = (startHandle + endHandle) / 2 + bendAxis * arrow.bend
 
         let clipping = Clipping(
@@ -115,6 +158,47 @@ public struct ArrowGeometry: Sendable {
     /// The side of its part an end is at (nil for an end bound to no part its shape lists): where a curve leaves it and a
     /// mark is drawn.
     public func partSide(at end: ArrowEnd) -> PartSide? { end == .start ? startSide : endSide }
+
+    /// Whether it is drawn as a level curve (an end at a row its shape lists).
+    public var isLevel: Bool { if case .level = path { true } else { false } }
+
+    /// How far a level curve's end reaches out along the way out of its side before it turns, from where it is to the other
+    /// end's: half the way when the other end is ahead, far less when it is behind (a C rather than an S), never under
+    /// `ArrowStyle.levelMinReach`.
+    static func reach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint) -> CGFloat {
+        let along = normal.dot(other - point)
+        let reach = along >= 0 ? along * ArrowStyle.levelAheadShare : ArrowStyle.levelBackReach * (-along).squareRoot()
+        return max(ArrowStyle.levelMinReach, reach)
+    }
+
+    /// Where a level curve meets an end that isn't at a row, and the way out of the shape there: a free end its point, with no
+    /// way (the curve comes straight at it); an end bound to a shape as a whole the entry facing `other` its kind gives (a
+    /// table's first row), else the side of its bounds a line from its anchor to `other` leaves by, at that side's middle (on
+    /// the outline, for a shape that isn't a box), or for a precise or exact binding where that line leaves the outline.
+    private static func levelAnchor(of terminal: ArrowTerminal, in shape: BoundShape?, handle: CGPoint,
+                                    toward other: CGPoint) -> (point: CGPoint, normal: CGPoint?) {
+        guard let shape, let binding = terminal.binding else { return (handle, nil) }
+        let isAimed = binding.isPrecise || binding.isExact
+        if !isAimed, let entry = shape.entries.max(by: { $0.normal.dot(other - $0.point) < $1.normal.dot(other - $1.point) }) {
+            return (entry.point, entry.normal)
+        }
+        let bounds = shape.bounds
+        var direction = other - handle
+        if direction.length == 0 { direction = CGPoint(x: 1, y: 0) }
+        // The side the line from the anchor leaves the bounds by: across, when it runs flatter than the box's diagonal.
+        let isAcross = abs(direction.x) * bounds.height >= abs(direction.y) * bounds.width
+        let normal = isAcross ? CGPoint(x: direction.x >= 0 ? 1 : -1, y: 0) : CGPoint(x: 0, y: direction.y >= 0 ? 1 : -1)
+        if binding.isExact { return (handle, normal) }
+        if binding.isPrecise {
+            let far = handle + direction.normalized * (bounds.width + bounds.height + 1)
+            if let t = intersections(ofSegmentFrom: handle, to: far, withPolygon: shape.outline).min() {
+                return (handle + (far - handle) * t, normal)
+            }
+        }
+        let middle = CGPoint(x: isAcross ? (normal.x > 0 ? bounds.maxX : bounds.minX) : bounds.midX,
+                             y: isAcross ? bounds.midY : (normal.y > 0 ? bounds.maxY : bounds.minY))
+        return (shape.outline.count > 2 ? nearestPointOnPolygon(shape.outline, to: middle) : middle, normal)
+    }
 
     /// Where an end is aimed, with no other end to read it against: a free end's point, a bound one's anchor in its shape (the
     /// middle of its bounds unless precise); nil for one bound to a shape that isn't there.
@@ -155,13 +239,57 @@ public struct ArrowGeometry: Sendable {
         switch path {
         case .straight: start.distance(to: end)
         case .curved(let arc, let startT, let endT): arc.length * abs(endT - startT)
+        case .level(let cubic, let startT, let endT): cubic.trimmed(from: startT, to: endT).length
         }
+    }
+
+    /// A level arrow's visible body, between its ends; nil for any other.
+    public var levelBody: Cubic? {
+        guard case .level(let cubic, let startT, let endT) = path else { return nil }
+        return cubic.trimmed(from: startT, to: endT)
     }
 
     public func distance(to point: CGPoint) -> CGFloat {
         switch path {
         case .straight: distanceToSegment(from: point, start, end)
         case .curved(let arc, let startT, let endT): arc.trimmed(from: startT, to: endT).distance(to: point)
+        case .level(let cubic, let startT, let endT): cubic.trimmed(from: startT, to: endT).distance(to: point)
+        }
+    }
+
+    /// The point `distance` along the visible body from its end at `end` (clamped to the body), and the way on into the arrow
+    /// there, a unit vector: where a mark at that end puts its bars and circle, so they sit on the line as it curves.
+    public func point(_ distance: CGFloat, along end: ArrowEnd) -> (point: CGPoint, inward: CGPoint) {
+        let length = bodyLength
+        guard length > 0, length.isFinite else { return (visiblePoint(at: end), inward(at: end)) }
+        let d = min(max(distance, 0), length)
+        let sign: CGFloat = end == .start ? 1 : -1
+        switch path {
+        case .straight:
+            let way = inward(at: end)
+            return (visiblePoint(at: end) + way * d, way)
+        case .curved(let arc, let startT, let endT):
+            let body = arc.trimmed(from: startT, to: endT), f = end == .start ? d / length : 1 - d / length
+            return (body.point(at: f), body.tangent(at: f) * sign)
+        case .level(let cubic, let startT, let endT):
+            let measure = cubic.trimmed(from: startT, to: endT).measured()
+            let t = measure.parameter(atLength: end == .start ? d : measure.length - d)
+            return (measure.cubic.point(at: t), measure.cubic.tangent(at: t) * sign)
+        }
+    }
+
+    /// The way along the body from its visible end at `end`, into the arrow, a unit vector: where a mark at that end points
+    /// from.
+    public func inward(at end: ArrowEnd) -> CGPoint {
+        switch path {
+        case .straight:
+            return (visiblePoint(at: end.opposite) - visiblePoint(at: end)).normalized
+        case .curved(let arc, let startT, let endT):
+            let body = arc.trimmed(from: startT, to: endT)
+            return end == .start ? body.tangent(at: 0) : body.tangent(at: 1) * -1
+        case .level(let cubic, let startT, let endT):
+            let body = cubic.trimmed(from: startT, to: endT)
+            return end == .start ? body.tangent(at: 0) : body.tangent(at: 1) * -1
         }
     }
 
@@ -171,6 +299,7 @@ public struct ArrowGeometry: Sendable {
         switch path {
         case .straight: !intersections(ofSegmentFrom: start, to: end, withPolygon: polygon).isEmpty
         case .curved(let arc, let startT, let endT): !intersections(of: arc.trimmed(from: startT, to: endT), withPolygon: polygon).isEmpty
+        case .level(let cubic, let startT, let endT): !cubic.trimmed(from: startT, to: endT).intersections(withPolygon: polygon).isEmpty
         }
     }
 
@@ -196,20 +325,29 @@ public struct ArrowGeometry: Sendable {
             return path
         case .curved(let arc, let startT, let endT):
             return arc.trimmed(from: startT, to: endT).cgPath
+        case .level(let cubic, let startT, let endT):
+            return cubic.trimmed(from: startT, to: endT).cgPath
         }
     }
 
     /// Open chevrons at whichever ends have arrowheads.
     public func arrowheadsPath(strokeWidth: CGFloat) -> CGPath {
         let path = CGMutablePath()
-        for end in [ArrowEnd.start, .end] where end == .start ? startArrowhead : endArrowhead {
-            let tip = visiblePoint(at: end)
-            let base = arrowheadBase(at: end, strokeWidth: strokeWidth)
-            path.move(to: base.rotated(around: tip, by: .pi / 6))
-            path.addLine(to: tip)
-            path.addLine(to: base.rotated(around: tip, by: -.pi / 6))
+        for head in arrowheads(strokeWidth: strokeWidth) {
+            path.move(to: head.wing)
+            path.addLine(to: head.tip)
+            path.addLine(to: head.otherWing)
         }
         return path
+    }
+
+    /// Each head it has, as the three points of its chevron, in the order it is drawn: a wing, the tip, the other wing.
+    public func arrowheads(strokeWidth: CGFloat) -> [(wing: CGPoint, tip: CGPoint, otherWing: CGPoint)] {
+        [ArrowEnd.start, .end].filter { $0 == .start ? startArrowhead : endArrowhead }.map { end in
+            let tip = visiblePoint(at: end)
+            let base = arrowheadBase(at: end, strokeWidth: strokeWidth)
+            return (base.rotated(around: tip, by: .pi / 6), tip, base.rotated(around: tip, by: -.pi / 6))
+        }
     }
 
     /// The point the arrowhead's wings are swung from: back along the body from the tip by the
@@ -224,6 +362,10 @@ public struct ArrowGeometry: Sendable {
             let chordAngle = 2 * asin(min(1, length / (2 * arc.radius)))
             let step = chordAngle / abs(arc.sweep)
             return end == .start ? arc.point(at: startT + step) : arc.point(at: endT - step)
+        case .level(let cubic, let startT, let endT):
+            // Along the curve by its length.
+            let measure = cubic.trimmed(from: startT, to: endT).measured()
+            return measure.cubic.point(at: measure.parameter(atLength: end == .start ? length : measure.length - length))
         }
     }
 
@@ -233,7 +375,9 @@ public struct ArrowGeometry: Sendable {
         let handle = handlePoint(at: end)
         let visible = visiblePoint(at: end)
         switch path {
-        case .straight:
+        case .straight, .level:
+            // A level arrow's end on a shape as a whole leaves from its side, not on the line from the anchor: the stub is
+            // that line.
             let length = handle.distance(to: visible)
             guard length > inset else { return nil }
             let path = CGMutablePath()
@@ -256,6 +400,10 @@ public struct ArrowGeometry: Sendable {
             return (visiblePoint(at: end) - handlePoint(at: end)).normalized
         case .curved(let arc, _, _):
             return end == .start ? arc.tangent(at: 0) : arc.tangent(at: 1) * -1
+        case .level(let cubic, _, _):
+            let visible = visiblePoint(at: end), handle = handlePoint(at: end)
+            if visible.distance(to: handle) > 1e-6 { return (visible - handle).normalized }
+            return end == .start ? cubic.tangent(at: 0) : cubic.tangent(at: 1) * -1
         }
     }
 }
@@ -268,6 +416,7 @@ private struct BoundShape {
     var bounds: CGRect
     var outline: [CGPoint]
     var parts: PartFrames
+    var entries: [ShapeEntry]
     var isExact: Bool
     var didIntersect = false
 
@@ -276,6 +425,7 @@ private struct BoundShape {
         bounds = shape.bounds
         outline = shape.outline
         parts = shape.parts
+        entries = shape.entries
         self.isExact = isExact
     }
 }

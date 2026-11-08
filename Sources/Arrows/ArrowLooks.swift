@@ -1,0 +1,195 @@
+import Canvas
+import Connections
+import CoreGraphics
+import Geometry
+
+// How an arrow looks beyond tldraw's: the marks at its ends and its width, which the plugin that owns what the arrow means
+// answers through Connections' `ConnectionLooks` (a key: a crow's foot at its column, two bars or a bar and a circle at the row
+// it references, 2.5 wide), and the level curve an arrow with an end at a row is drawn as. Worked out with the arrow's geometry
+// and kept in it (`ShapeGeometry.detail`), so a frame draws what is kept and asks nothing; the look's reads (a column made
+// nullable) are the geometry's, so they work it out again. An arrow with none of it (no end at a row, no look, not a
+// relationship's end) keeps no detail and is drawn exactly as before: the parity goldens and transcript never see one.
+//
+// Departures from tldraw (checked at v5.0.1: its heads are one of nine stored per end, `TLArrowShape.ts`, drawn in
+// `arrowheads.ts`, and it has no crow's foot, double bar or set-back bar and circle): the marks are worked out from the
+// relation, never stored; a marked end has no gap and ignores the stored head, which is kept; and the line is as wide as the
+// look says (a key 2.5, where tldraw's sizes are 2, 3.5, 5 and 10).
+
+/// The marks an end is drawn with, in world units along the line from the end and across it, measured from the frames
+/// (arrow-look §0). Pure: a mark is strokes at the line's width, set along the way into the arrow from its end.
+enum ArrowMarks {
+    /// A crow's foot: toes this far either side of the line at the end, meeting on it `toeReach` out; the middle toe on the line.
+    static let toeSpread: CGFloat = 8.5
+    static let toeReach: CGFloat = 13
+    /// A bar is this far either side of the line.
+    static let barHalf: CGFloat = 9
+    /// The bars of "one", out from the end; the bar of "zero or one" is the nearer.
+    static let barNear: CGFloat = 12
+    static let barFar: CGFloat = 17.5
+    /// The hollow circle of "zero or one": its radius, and how far out its centre is. The line is cut inside it.
+    static let circleRadius: CGFloat = 5
+    static let circleCentre: CGFloat = 25
+
+    /// How far out along the line a mark reaches from its end: what is long enough to show zoomed out.
+    static func reach(of mark: EndMark) -> CGFloat {
+        switch mark {
+        case .none, .arrowhead: 0
+        case .many: toeReach
+        case .one: barFar
+        case .zeroOrOne: circleCentre + circleRadius
+        }
+    }
+
+    /// Adds the strokes of `mark` at an end to `path`, each set on the line where it is: `along(d)` is the point `d` along
+    /// the line from the end and the way on into the arrow there (`ArrowGeometry.point(_:along:)`), so a curved line's bars
+    /// stand square to it and its circle is on it. Returns the circle the line is cut inside, for "zero or one".
+    @discardableResult
+    static func add(_ mark: EndMark, along: (CGFloat) -> (point: CGPoint, inward: CGPoint), to path: CGMutablePath) -> CGRect? {
+        func bar(at distance: CGFloat) {
+            let (point, inward) = along(distance)
+            path.move(to: point + inward.perpendicular * barHalf)
+            path.addLine(to: point - inward.perpendicular * barHalf)
+        }
+        switch mark {
+        case .none, .arrowhead:
+            return nil
+        case .many:
+            let (tip, inward) = along(0), meet = along(toeReach).point
+            for toe in [tip + inward.perpendicular * toeSpread, tip, tip - inward.perpendicular * toeSpread] {
+                path.move(to: toe)
+                path.addLine(to: meet)
+            }
+            return nil
+        case .one:
+            bar(at: barNear)
+            bar(at: barFar)
+            return nil
+        case .zeroOrOne:
+            bar(at: barNear)
+            let circle = CGRect(center: along(circleCentre).point, size: CGSize(width: circleRadius * 2, height: circleRadius * 2))
+            path.addEllipse(in: circle)
+            return circle
+        }
+    }
+}
+
+/// What an arrow's geometry keeps besides its outline (`ShapeGeometry.detail`): the end line through a relationship type's pill
+/// (`EndLine`, Types'), the look its connection's meaning gives (`ConnectionLook`), the width it is drawn at, and, for an
+/// arrow drawn level or with a look, what is drawn, worked out once. `CGPath` is immutable once made, so sharing it is safe.
+struct ArrowDetail: @unchecked Sendable {
+    let line: EndLine?
+    let look: ConnectionLook?
+    /// Its line's width, world units: the look's, else `ArrowStyle.strokeWidth`.
+    let width: CGFloat
+    /// What a frame draws: nil for an arrow that is only a relationship's end, drawn as it always was.
+    var drawing: ArrowDrawing?
+
+    /// The arrow as it is drawn: a relationship's end's (no head at the pill, its bend), and a marked end's head as the look
+    /// says (none but for `.arrowhead`), the stored flags kept.
+    func drawn(_ stored: Arrow) -> Arrow {
+        var arrow = line?.drawn(stored) ?? stored
+        if let mark = look?.start { arrow.startArrowhead = mark == .arrowhead }
+        if let mark = look?.end { arrow.endArrowhead = mark == .arrowhead }
+        return arrow
+    }
+
+    /// Bends under `ArrowGeometry.minBend` draw straight, but a line through a pill's, worked out from where the pill is.
+    var minBend: CGFloat { line?.bend == nil ? ArrowGeometry.minBend : 0 }
+
+    /// Whether the look says what `end` is drawn with, so its stored head isn't used (nor toggled).
+    func isMarked(_ end: ArrowEnd) -> Bool { look?.mark(atStart: end == .start) != nil }
+
+    /// The mark at `end`, if the look gives one that is drawn as a mark (not a head, not nothing).
+    func mark(at end: ArrowEnd) -> EndMark? {
+        guard let mark = look?.mark(atStart: end == .start), mark != .none, mark != .arrowhead else { return nil }
+        return mark
+    }
+}
+
+/// What a frame draws of an arrow drawn level or with a look, worked out with its geometry.
+struct ArrowDrawing: @unchecked Sendable {
+    /// One end's mark: its strokes, how far out along the line it reaches (world units), and whether the line is cut in it.
+    struct Mark: @unchecked Sendable {
+        let path: CGPath
+        let reach: CGFloat
+        let isCut: Bool
+    }
+
+    /// The visible body, less where a mark's circle cuts it.
+    let body: CGPath
+    /// The visible body whole: zoomed out where no mark that cuts it is drawn.
+    let whole: CGPath
+    /// Its heads' chevrons, at the ends drawn with one.
+    let heads: CGPath
+    /// The same heads closed, as a skeleton fills them.
+    let triangles: CGPath
+    /// Each marked end's mark.
+    let ends: [Mark]
+    /// Every mark's strokes together; empty with none.
+    let marks: CGPath
+
+    init(_ geometry: ArrowGeometry, detail: ArrowDetail) {
+        whole = geometry.bodyPath
+        let heads = CGMutablePath(), triangles = CGMutablePath()
+        for head in geometry.arrowheads(strokeWidth: detail.width) {
+            for path in [heads, triangles] {
+                path.move(to: head.wing)
+                path.addLine(to: head.tip)
+                path.addLine(to: head.otherWing)
+            }
+            triangles.closeSubpath()
+        }
+        self.heads = heads
+        self.triangles = triangles
+        let marks = CGMutablePath()
+        var ends: [Mark] = []
+        var body: CGPath = whole
+        for end in [ArrowEnd.start, .end] {
+            guard let mark = detail.mark(at: end) else { continue }
+            let path = CGMutablePath()
+            let cut = ArrowMarks.add(mark, along: { geometry.point($0, along: end) }, to: path)
+            if let cut { body = body.lineSubtracting(CGPath(ellipseIn: cut, transform: nil)) }
+            ends.append(Mark(path: path, reach: ArrowMarks.reach(of: mark), isCut: cut != nil))
+            marks.addPath(path)
+        }
+        self.ends = ends
+        self.marks = marks
+        self.body = body
+    }
+
+    /// The marks drawn zoomed out at `zoom`, each once it reaches `ArrowStyle.skeletonMarkLength` view points along the line,
+    /// and the body they're drawn on: cut where a circle drawn is, else whole.
+    @MainActor
+    func skeleton(atZoom zoom: CGFloat) -> (body: CGPath, marks: [CGPath]) {
+        let shown = ends.filter { $0.reach * zoom >= ArrowStyle.skeletonMarkLength }
+        return (shown.contains(where: \.isCut) ? body : whole, shown.map(\.path))
+    }
+}
+
+extension ShapeGeometry {
+    /// An arrow's kept detail (`ArrowDetail`); nil for a plain arrow, which keeps none.
+    var arrowDetail: ArrowDetail? { detail as? ArrowDetail }
+}
+
+extension ArrowDefinition {
+    /// How the arrow's connection looks, from the plugins that own its meaning (`ConnectionLooks`), asked with its ends' shapes
+    /// and parts; nil when none answers.
+    func look(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ConnectionLook? {
+        let registry = context.registry
+        guard !registry.contributions(to: ConnectionLooks.self).isEmpty else { return nil }
+        return registry.connectionLook(of: AnyShapeRecord(shape), from: shape.props.start.binding?.address, to: shape.props.end.binding?.address, in: context)
+    }
+
+    /// An arrow's geometry as its detail draws it: a relationship's end's line, a look's heads and width.
+    func arrowGeometry(_ arrow: Arrow, detail: ArrowDetail?, in context: ShapeContext) -> ArrowGeometry {
+        guard let detail else { return arrowGeometry(arrow, in: context) }
+        let connectables = Connectables(shapes: context)
+        return ArrowGeometry(arrow: detail.drawn(arrow), strokeWidth: detail.width, minBend: detail.minBend) { connectables[$0] }
+    }
+}
+
+extension ArrowStyle {
+    /// Zoomed out, an end's marks are drawn once the longest reaches this many view points along the line; shorter, the line
+    /// runs whole to the end.
+    static let skeletonMarkLength: CGFloat = 3
+}

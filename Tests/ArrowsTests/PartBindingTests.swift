@@ -89,7 +89,7 @@ private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
         let folded = b.h.add(Arrow(start: b.end(b.left, 2), end: .free(CGPoint(x: 800, y: 140))))
         expectEqual(try require(b.h.editor.arrowGeometry(of: folded)).startHandle, CGPoint(x: 300, y: RosterBoard.rowMiddle(0, in: RosterBoard.leftFrame)))
     },
-    test("an end with no part is drawn as it always was beside one that has a part") {
+    test("an end with no part beside one that has a part keeps its handle at its anchor, and stands a head's gap off the side it meets") {
         let b = try RosterBoard()
         let whole = ArrowTerminal.bound(ArrowBinding(shapeID: b.right, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false))
         let id = b.h.add(Arrow(start: b.end(b.left, 1), end: whole))

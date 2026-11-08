@@ -10,6 +10,14 @@ enum ArrowStyle {
     /// What an arrow is shown by: its row, its kind's label.
     static let symbol = "arrow.up.right"
     static let strokeWidth: CGFloat = 3.5
+
+    // An arrow with an end at a row is a level curve (`ArrowGeometry.Path.level`): each end leaves along the way out of its
+    // side, reaching this far before it turns, in world units: half the way to the other end when that is ahead, else
+    // `levelBackReach` times the square root of how far behind it is (a C, not a wide loop), never under `levelMinReach`. The
+    // frames' S-curves and React Flow's default edge.
+    nonisolated static let levelMinReach: CGFloat = 24
+    nonisolated static let levelAheadShare: CGFloat = 0.5
+    nonisolated static let levelBackReach: CGFloat = 6.25
     /// How far from an arrow's centerline (beyond its stroke) a click still hits it, in view points.
     static let hitMargin: CGFloat = 3
     /// The bend handle hides when it's this close to an end handle, in view points.

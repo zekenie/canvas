@@ -76,7 +76,9 @@ extension TableDefinition: ShapeDefinition {
     func geometry(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> ShapeGeometry {
         let frame = context.frame(of: shape), rows = KitRows(shape, in: context)
         let parts = shape.props.columns.enumerated().map { PartFrame(id: $1.id, rect: KitStyle.rowRect(rows.line(of: $0), in: frame)) }
-        return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts))
+        // A line to the table as a whole meets its first row, at the side facing it (E8 panel 2, T6 panel 1).
+        let entries = parts.first(where: \.isShown).map { ShapeEntry.sides(of: $0.rect) } ?? []
+        return ShapeGeometry(outline: frame.polygon, bounds: frame, parts: PartFrames(parts), entries: entries)
     }
 
     func indicatorPath(of shape: ShapeRecord<DatabaseTable>, in context: ShapeContext) -> CGPath {

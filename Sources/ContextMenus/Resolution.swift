@@ -145,7 +145,9 @@ enum ContextMenuItems {
     /// claims.
     static func shown(_ entries: [ErasedEntry], for record: AnyShapeRecord, in editor: CanvasEditor) -> [ErasedEntry] {
         var seen = Set<EntryKey>()
-        return entries.filter { seen.insert($0.key).inserted }.filter { $0.isShown(record) && $0.isClaimed(in: editor) }
+        return entries.filter { seen.insert($0.key).inserted }.filter {
+            $0.isShown(record) && ($0.isShownIn?(record.id, editor) ?? true) && $0.isClaimed(in: editor)
+        }
     }
 
     /// An item's title: its own, else its command's (`registry.title(of:)`), else the id it's keyed by.

@@ -50,7 +50,7 @@ enum ArrowParts {
                                    press: { toggleHead(at: end, of: id, in: $0) },
                                    adjust: { adjustEnd(end, of: id, by: $1, in: $0) }))
         }
-        if (context.geometry(of: id)?.detail as? EndLine)?.bend == nil {
+        if context.geometry(of: id)?.arrowDetail?.line?.bend == nil {
             let middle = definition.arrowGeometry(of: shape, in: context).middle
             parts.append(ShapePart(id: Part.handle(.middle), title: ArrowStyle.bendPart, role: .handle, rect: rect(at: middle),
                                    press: { straighten(id, in: $0) },
@@ -66,6 +66,9 @@ enum ArrowParts {
 
     /// Return on an end: its head on or off, the double-click's step.
     static func toggleHead(at end: ArrowEnd, of id: ShapeID, in editor: CanvasEditor) {
+        // A marked end (a key's, `marked-end`): its look says what it is drawn with, so there is no head to toggle, and Return and
+        // Space do nothing.
+        guard !ArrowDefinition.isMarked(end, of: id, in: editor.shapeContext) else { return }
         editor.transact("Toggle Arrowhead") { $0.update(id, as: Arrow.self) { $0.props.toggleArrowhead(at: end) } }
     }
 

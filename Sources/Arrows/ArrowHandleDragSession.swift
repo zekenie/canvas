@@ -105,10 +105,10 @@ extension ArrowHandleDragSession {
         switch handle {
         case .middle:
             // The curve passes through the pointer's projection onto the perpendicular bisector
-            // of the ends; sideways motion does nothing.
+            // of the ends; sideways motion does nothing. A level arrow's middle is the pointer's projection onto the line
+            // across its chord through the middle of its curve unbent (`bendOrigin`).
             let geometry = targeting.geometry(of: arrow)
-            let midpoint = (geometry.startHandle + geometry.endHandle) / 2
-            targeting.updateArrow(arrowID, named: "Bend Arrow") { $0.bend = (point - midpoint).dot(geometry.bendAxis) }
+            targeting.updateArrow(arrowID, named: "Bend Arrow") { $0.bend = (point - geometry.bendOrigin).dot(geometry.bendAxis) }
 
         case .terminal(let end):
             if modifiers.contains(.shift) {
