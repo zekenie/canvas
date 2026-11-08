@@ -132,15 +132,13 @@ enum ArrowConnections {
         } else {
             // A key from a row to itself joins nothing.
             if request.from == request.to, request.fromPart != nil, request.fromPart == request.toPart { return nil }
-            let fromX = partMiddle(request.from, request.fromPart, in: shapes), toX = partMiddle(request.to, request.toPart, in: shapes)
-            for (end, shape, side, part, far) in [(ArrowEnd.start, request.from, request.fromSide, request.fromPart, toX),
-                                                  (.end, request.to, request.toSide, request.toPart, fromX)]
+            for (end, shape, side, part) in [(ArrowEnd.start, request.from, request.fromSide, request.fromPart),
+                                             (.end, request.to, request.toSide, request.toPart)]
             where side != nil || arrow.props[end].binding?.shapeID != shape || arrow.props[end].binding?.part != part {
                 if let part {
-                    // A row's end, aimed at its side facing the other end (where it's drawn, and kept as where it was).
-                    let rect = Connectables(shapes: shapes)[shape]?.parts.frame(part)?.rect
-                    let facing: PartSide = rect.flatMap { rect in far.map { PartSide(facing: $0, from: rect) } } ?? .right
-                    arrow.props[end] = .bound(binding(to: shape, part: part, side: facing, in: shapes)
+                    // A row's end: drawn at its side facing the other end, wherever the two are; kept as its right side's middle
+                    // (where it's drawn only while the row is gone), so one made by name is the same wherever its shapes stand.
+                    arrow.props[end] = .bound(binding(to: shape, part: part, side: .right, in: shapes)
                                               ?? ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: part))
                 } else {
                     arrow.props[end] = .bound(binding(to: shape, side: side))
@@ -182,12 +180,6 @@ enum ArrowConnections {
         let point = side.point(of: rect)
         let anchor = bounds.width > 0 && bounds.height > 0 ? normalizedAnchor(point, in: bounds) : CGPoint(x: 0.5, y: 0.5)
         return ArrowBinding(shapeID: shape, normalizedAnchor: anchor, isPrecise: true, isExact: true, part: part)
-    }
-
-    /// Across, where an end at `part` of `shape` faces from: the row's middle, else the shape's.
-    private static func partMiddle(_ shape: ShapeID, _ part: PartID?, in shapes: ShapeContext) -> CGFloat? {
-        guard let connectable = Connectables(shapes: shapes)[shape] else { return nil }
-        return part.flatMap { connectable.parts.frame($0)?.rect.midX } ?? connectable.bounds.midX
     }
 
     /// The parts an arrow's start and end are bound to (rows), each nil for an end bound to a whole shape or free.
