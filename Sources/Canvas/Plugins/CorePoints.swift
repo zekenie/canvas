@@ -62,7 +62,7 @@ enum CorePoints {
     /// What finds the stand-ins whose record names a shape (a reference pill for a table), on any board the editor can show
     /// (`registrar.standInLookup`, Topology's): what `removeParts` and `moveParts` reach a binding through. One at most.
     enum StandInLookups: KeyedExtensionPoint {
-        typealias Contribution = @MainActor (CanvasEditor, ShapeID) -> [ShapeID]
+        typealias Contribution = StandInLookup
         static var owner: PluginID { .core }
         static func uniqueKeys(of _: Contribution, for _: ShapeTarget) -> [AnyHashable] { ["the stand-in lookup"] }
     }
@@ -337,4 +337,12 @@ struct CorePlugin: CanvasPlugin {
         registrar.command(.scrollToStart, title: "Start of Board", isEnabled: { $0.editor.canScrollToEnds }) { $0.editor.scrollToStart() }
         registrar.command(.scrollToEnd, title: "End of Board", isEnabled: { $0.editor.canScrollToEnds }) { $0.editor.scrollToEnd() }
     }
+}
+
+/// What finds the stand-ins naming a shape (`registrar.standInLookup`): the editor's index of the file as it is, and what one record
+/// names, for a stand-in a transaction put in that no index holds yet.
+@MainActor
+struct StandInLookup {
+    let lookup: @MainActor (CanvasEditor, ShapeID) -> [ShapeID]
+    let names: @MainActor (AnyShapeRecord, Registry) -> ShapeID?
 }

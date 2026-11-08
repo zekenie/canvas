@@ -74,8 +74,8 @@ private struct PillBoard {
             expectEqual(board.lead, nil)
             expectEqual(board.pill, nil)
         }
-        let plain = try PillBoard(words: "calls", relationship: false)
-        let typed = try PillBoard(words: "calls", relationship: false, typed: false)
+        let plain = try PillBoard(words: "scall", relationship: false)
+        let typed = try PillBoard(words: "scall", relationship: false, typed: false)
         expectEqual(plain.label, typed.label, "a plain type changes no frame")
         expectEqual(plain.lead, nil)
     },

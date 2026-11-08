@@ -69,6 +69,23 @@ public struct LineCardLine<Row> {
         LineCardLine(label: label, kind: .choice(options: options, get: get, set: set))
     }
 
+    /// Lines of what a row is joined to but doesn't hold (an endpoint's connections, each its arrow), each typed in `grammar`, as a
+    /// list's are: `get` reads them, and `write` writes the lines' values itself, in a step of its own it names (the row isn't
+    /// written), when a line of them is left changed; false refuses, and what was typed stays, as a row's refused line does. Along with
+    /// the values the lines read, `write` is told how many lines had words and read to none (a name mistyped), so it can refuse to take
+    /// a value out for words that merely don't read.
+    public static func list<Grammar: LineGrammar>(_ label: String, grammar: Grammar,
+                                                  get: @escaping @MainActor (Row, LineContext) -> [Grammar.Row],
+                                                  writing write: @escaping @MainActor ([Grammar.Row], _ unreadLines: Int, Row, LineContext) -> Bool) -> LineCardLine {
+        var text = LineCardText<Row>(grammar: grammar, isList: true, get: get, set: { _, _, _ in })
+        text.writesApart = { lines, row, context in
+            let readings = lines.map { grammar.read($0, id: context.row ?? PartID(), in: context).row }
+            let unread = zip(lines, readings).filter { $0.1 == nil && !$0.0.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+            return write(readings.compactMap { $0 }, unread, row, context)
+        }
+        return LineCardLine(label: label, kind: .text(text))
+    }
+
     /// Lines, each typed in `grammar` (an endpoint's responses): Return after one opens another below it, a line left empty
     /// goes. `get` the values the row holds, in order; `set` the row holding the lines' values.
     public static func list<Grammar: LineGrammar>(_ label: String, grammar: Grammar,
@@ -95,6 +112,9 @@ struct LineCardText<Row> {
     /// The row holding what `lines` say: empty lines are none.
     let write: @MainActor ([LineText], Row, LineContext) -> Row
     let substitutions: [LineSubstitution]
+    /// For lines of what a row doesn't hold (`list(_:grammar:get:writing:)`): writes them in a step of its own; nil for lines the row
+    /// holds, written as the row is.
+    var writesApart: (@MainActor ([LineText], Row, LineContext) -> Bool)?
 
     init<Grammar: LineGrammar>(grammar: Grammar, isList: Bool, get: @escaping @MainActor (Row, LineContext) -> [Grammar.Row],
                                set: @escaping @MainActor (inout Row, [Grammar.Row], LineContext) -> Void) {

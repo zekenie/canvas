@@ -62,12 +62,14 @@ public struct ArrowPortsPlugin: ListedPlugin {
                                   bent.meta = arrow.meta
                                   arrow = bent
                               },
-                              // Released bound: what the arrow is (an end, a relationship, a relationship type
-                              // between two types, or from a type to itself) is Types', in the press's own step.
-                              finished: { editor.connectionDrawn($0) })
+                              // Released bound: the release every connection has (Connections' `connectionMade`: what
+                              // each plugin says it is, a list where several fit), in the press's own step; then the
+                              // relationships count it.
+                              finished: { arrow in
+                                  editor.connectionMade(arrow)
+                                  editor.connectionReleased(arrow)
+                              })
         }
-        // Connect (⌘L) gives the arrow it made the release a drag gives: the same wiring, in its step.
-        registrar.connectionMade { connection, editor in editor.connectionDrawn(connection) }
         // An end binds a row where the arrow's channel is on the rows of the shape it's at, in that end's role (a key's ends,
         // column to column); a plain arrow, or one on a channel the shape takes whole, binds the shape.
         registrar.arrowPartRule { query in

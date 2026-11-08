@@ -45,7 +45,10 @@ import TestKit
     test("the connection-made hook runs once, after the commit and inside the Connect step; a refusal runs none") {
         var heard: [(ShapeID, Bool, String?)] = []
         let hook = Contributor(id: "heard") { registrar in
-            registrar.connectionMade { id, editor in heard.append((id, editor.document[id] != nil, editor.undoHistory.undoName)) }
+            registrar.connectionMade { id, editor in
+                heard.append((id, editor.document[id] != nil, editor.undoHistory.undoName))
+                return .nothing
+            }
         }
         let editor = try edgesEditor(more: [hook])
         let a = add(Tile(CGRect(x: 0, y: 0, width: 100, height: 60), label: "A"), to: editor)

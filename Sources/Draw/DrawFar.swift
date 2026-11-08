@@ -136,8 +136,11 @@ extension StandInRoute {
     ///
     /// `reading`: the board as a transaction in progress leaves it, where a pill is looked for to reuse (one an earlier pick of the
     /// same step put down); the editor's board as it is, without. A caller in such a step passes the boxes it has put down as `avoiding`.
+    ///
+    /// `planned`: the box `near` has in that step where it is a shape the step put down (a row taken out into a shape of its own),
+    /// which the board doesn't show yet: the pill is landed against that box.
     public func placePill(standingFor far: ShapeID, row: PartID? = nil, label: String, beside near: ShapeID, edgeIs place: EdgePlace,
-                          sharing: Sharing, avoiding: [CGRect] = [], reading: CanvasDocument? = nil, verdicts: FarVerdicts,
+                          sharing: Sharing, avoiding: [CGRect] = [], reading: CanvasDocument? = nil, planned: CGRect? = nil, verdicts: FarVerdicts,
                           in editor: CanvasEditor) -> PlacedPill? {
         guard let record = editor.shape(inFile: far), let found = verdicts.kind(for: record) else { return nil }
         let standIns = editor.registry.standIns
@@ -151,7 +154,8 @@ extension StandInRoute {
         seat(&made, beside: near, in: editor)
         guard let size = made.box?.size, let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
         let spot = spot(beside: near, edgeIs: place, side: nil, in: surroundings.reading)
-        guard let landing = landing(of: size, at: spot, in: surroundings, avoiding: avoiding) else { return nil }
+        guard let landing = planned.map({ landing(of: size, at: spot, against: $0, in: surroundings, avoiding: avoiding) })
+                ?? landing(of: size, at: spot, in: surroundings, avoiding: avoiding) else { return nil }
         made.box = landing.rect
         return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: nil, made: made, above: landing.above)
     }

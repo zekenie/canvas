@@ -135,11 +135,11 @@ extension ReferenceCondition {
         }
     }
 
-    /// How a row a pill stands for shows: its name, its lead's symbol (else its shape's), and its kind word ("Endpoint"), in its
-    /// shape's tint.
+    /// How a row a pill stands for shows: its name, its lead's symbol (else its shape's), its lead's chip (an endpoint's method,
+    /// drawn as the row draws it), and its kind word ("Endpoint"), in its shape's tint.
     static func appearance(of part: PartName, on shape: MentionAppearance) -> MentionAppearance {
         let symbol = if case .symbol(let name) = part.lead { name } else { shape.systemImage }
-        return MentionAppearance(label: part.name, systemImage: symbol, kindName: part.kindWord, detail: part.kindWord, tint: shape.tint)
+        return MentionAppearance(label: part.name, systemImage: symbol, kindName: part.kindWord, detail: part.kindWord, tint: shape.tint, lead: part.lead)
     }
 
     /// `of(...).standsForNothing`, without working out a name: the answer a skeleton needs, which is

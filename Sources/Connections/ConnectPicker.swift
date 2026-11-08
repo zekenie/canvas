@@ -37,6 +37,8 @@ public final class ConnectPicker {
     public var sourceEnd: ConnectEnd { ConnectEnd(source, part: sourcePart) }
     /// The kinds of shape it lists.
     public let kinds: Set<ShapeKind>
+    /// The kinds it lists the rows of alone, from a shape: those it joins only at a row that stands alone (an API's endpoints).
+    public let rowKinds: Set<ShapeKind>
     /// Whether the connector can join the source to itself: Itself is listed.
     public let canLoop: Bool
     /// What's typed.
@@ -56,23 +58,34 @@ public final class ConnectPicker {
     /// as a whole (a table with no primary key is no pick, though its columns are).
     private var reached: [ShapeID: FarVerdict] = [:]
 
-    /// What the connector can join `source` to: the kinds of shape, and whether itself. Nil where there is nothing to pick for it:
-    /// nothing makes connections, or it ends nowhere (a pill that stands for nothing), or it joins no kind of shape and not itself. A kind with ports only on its rows (a table's keys) has none on its sides: it joins
-    /// the other kinds with none, as it did before it had any.
-    static func reach(of source: ShapeID, part: PartID? = nil, in editor: CanvasEditor) -> (kinds: Set<ShapeKind>, loops: Bool)? {
+    /// What the connector can join `source` to: the kinds of shape, the kinds it joins only at their rows (an API's endpoints,
+    /// which take `calls` on their rows alone), and whether itself. Nil where there is nothing to pick for it: nothing makes
+    /// connections, or it ends nowhere (a pill that stands for nothing), or it joins no kind of shape and not itself. A row
+    /// starts on its rows' channels (an endpoint's `calls`, `writes`, `reads`), a shape on its sides' dots; a kind with no dots
+    /// where it starts (a table's sides, whose keys are on its rows) joins the other kinds with none, as it did before it had any.
+    static func reach(of source: ShapeID, part: PartID? = nil, in editor: CanvasEditor) -> (kinds: Set<ShapeKind>, rowKinds: Set<ShapeKind>, loops: Bool)? {
         guard editor.registry.drawsConnections, let record = editor.document[source], let ports = editor.service(PortState.self),
               editor.registry.canConnect(source, in: editor.shapeContext), let standing = ports.standingKinds(of: record) else { return nil }
         let registry = editor.registry
         let connector = registry.connectorKind
         let standIns = registry.standIns.kinds
-        func joins(_ kind: ShapeKind) -> Bool {
-            registry.connectionChannel(from: record.kind, fromStandingFor: standing, to: kind) != nil
-                || (!registry.hasPorts(record.kind, standingFor: standing, onParts: false) && !registry.hasPorts(kind, onParts: false))
+        let starts = part != nil ? registry.partDotChannels(of: record.kind, standingFor: standing) : registry.dotChannels(of: record.kind, standingFor: standing)
+        func joins(_ kind: ShapeKind) -> (whole: Bool, rows: Bool) {
+            let whole = starts.contains { registry.takes(kind, $0, as: .target) && !registry.takesOnParts(kind, $0, as: .target) }
+            let rows = starts.contains { registry.takesOnParts(kind, $0, as: .target) }
+            // Plain: neither has dots where a connection would start.
+            let plain = starts.isEmpty && registry.dotChannels(of: kind).isEmpty
+            return (whole || plain, rows)
         }
-        let kinds = Set(registry.kinds.filter { $0 != connector && !standIns.contains($0) && joins($0) })
+        var kinds: Set<ShapeKind> = [], rowKinds: Set<ShapeKind> = []
+        for kind in registry.kinds where kind != connector && !standIns.contains(kind) {
+            let joined = joins(kind)
+            if joined.whole { kinds.insert(kind) } else if joined.rows { rowKinds.insert(kind) }
+        }
         // The connector can join it to itself where it can join its kind to its kind, and the kind admits it.
-        let loops = joins(record.kind) && editor.connectPicksAdmit(from: ConnectEnd(source, part: part), to: ConnectEnd(source))
-        return kinds.isEmpty && !loops ? nil : (kinds, loops)
+        let own = joins(record.kind)
+        let loops = (own.whole || (part != nil && own.rows)) && editor.connectPicksAdmit(from: ConnectEnd(source, part: part), to: ConnectEnd(source))
+        return kinds.isEmpty && rowKinds.isEmpty && !loops ? nil : (kinds, rowKinds, loops)
     }
 
     /// A picker for `source`, a shape of the board shown; nil where there is nothing to pick for it (`reach`).
@@ -84,13 +97,16 @@ public final class ConnectPicker {
     /// the row isn't one of the shape's.
     public init?(editor: CanvasEditor, source: ConnectEnd) {
         if let part = source.part {
-            guard let record = editor.document[source.shape], editor.registry.parts(of: record)?.contains(where: { $0.id == part }) == true else { return nil }
+            guard let record = editor.document[source.shape], editor.registry.parts(of: record)?.contains(where: { $0.id == part }) == true,
+                  editor.registry.isConnectable(part: part, of: record) else { return nil }
         }
         guard let reach = Self.reach(of: source.shape, part: source.part, in: editor) else { return nil }
         self.editor = editor
         self.source = source.shape
         sourcePart = source.part
-        kinds = reach.kinds
+        // From a row, a kind joined at its rows is listed whole too, which its kind's picks make a row of (a table: its primary key).
+        kinds = source.part == nil ? reach.kinds : reach.kinds.union(reach.rowKinds)
+        rowKinds = source.part == nil ? reach.rowKinds : []
         canLoop = reach.loops
         setQuery("")
     }
@@ -122,11 +138,16 @@ public final class ConnectPicker {
         }
         let source = source
         let found = sourcePart == nil
-            ? mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true) { [self] id in admits(id) }
+            ? (rowKinds.isEmpty
+                ? mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true) { [self] id in admits(id) }
+                // A shape lists the rows that stand alone of the kinds it joins only there (a note: an API's endpoints, for `calls`).
+                : mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds.union(rowKinds), listingUnnamed: true,
+                                      admitting: { [self] id in admits(id) || reachesRows(of: id) },
+                                      listingParts: { [self] address in standsAlone(address) && admits(part: address) }))
             : mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true,
                                   admitting: { [self] id in admits(id) || reachesRows(of: id) }, listingParts: { [self] address in admits(part: address) })
         // A shape listed for its rows alone (a table with no primary key, whose columns can be picked and which can't as a whole) is no row.
-        let choices = mentions.choicesNamingBoardShown(found.all.filter { $0.part != nil || admits($0.id) })
+        let choices = mentions.choicesNamingBoardShown(found.all.filter { $0.part != nil || (admits($0.id) && !joinsOnlyRows($0.id)) })
         let typed = text.contains { !$0.isWhitespace }
         var rows: [Row] = choices.map { choice in
             if choice.candidate.part == nil, case .fulfils(let needs)? = admitted[choice.candidate.id] { return .shape(choice, needs: needs) }
@@ -154,6 +175,26 @@ public final class ConnectPicker {
         admitted = [:]
         admittedParts = [:]
         reached = [:]
+        alone = [:]
+    }
+
+    /// The rows of each shape asked about that stand alone (`PartName.standsAlone`), for the commit the list is judged at.
+    private var alone: [ShapeID: Set<PartID>] = [:]
+
+    /// Whether a row stands alone (an endpoint), so a shape's list offers it of a kind joined only at its rows.
+    private func standsAlone(_ address: PartAddress) -> Bool {
+        guard let part = address.part else { return false }
+        if let known = alone[address.shape] { return known.contains(part) }
+        let parts = editor.shape(inFile: address.shape).flatMap { editor.registry.parts(of: $0) } ?? []
+        let found = Set(parts.filter(\.standsAlone).map(\.id))
+        alone[address.shape] = found
+        return found.contains(part)
+    }
+
+    /// Whether a shape is listed for its rows alone: from a shape, one of a kind it joins only at its rows (an API).
+    private func joinsOnlyRows(_ id: ShapeID) -> Bool {
+        guard !rowKinds.isEmpty, let record = editor.shape(inFile: id) else { return false }
+        return rowKinds.contains(record.kind)
     }
 
     /// Whether the list offers a shape: not the source, a pick its kind admits, not one the source holds or is held by, and one that

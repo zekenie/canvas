@@ -2494,6 +2494,29 @@ editor.newType(named: "Problem", besides: typesTheAPINames, givingType: false, e
 TypeChips.label(forType: ref.shape, named: ref.words, in: editor.types, onPaper: true)           // the pill, at rest
 ```
 
+**What an API does.** Writes, reads and calls are three channels the kit declares, each with a title and a tint (its pill
+on the line, its row in the one release list, [ports](#ports)): an endpoint's row writes or reads a table as a whole, and
+calls an endpoint, which anything with dots may call too.
+
+```swift
+public enum Calls {}
+extension Calls: Channel {
+    public static let id: ChannelID = "calls"
+    public static var color: NSColor { NSColor(KitStyle.callsTint) }   // its dots, and its pill's capsule
+    public static var title: String? { KitStyle.callsTitle }
+    public static var anyKindMayStart: Bool { true }                    // a note, a frame, a subboard calls an endpoint
+}
+api.partPorts(Calls.self)                                // both ends of an endpoint's row; a header's part frame is no end
+api.partPorts(Writes.self, role: .source)
+table.ports(Writes.self, role: .target)                  // taken whole, no dots on its sides
+```
+
+A drag from an endpoint's dot onto a table draws the arrow plain and the release offers writes and reads; the card's
+"relations" lines (`writes refunds`, `calls Stripe API.POST /v1/refunds`) are the endpoint's arrows read and written in
+their own steps (LineRows' `list(_:grammar:get:writing:)`), and ⌘L from an endpoint (`EndpointPicks`) reaches tables,
+and endpoints on any board (through a pill for the endpoint, drawing its method's chip); a call ends on an endpoint's row alone
+(`Calls.isOnEveryChannel` is false).
+
 **Paste SQL.** ⌘V of `CREATE TABLE` (or `AS ENUM`, or a `.sql` file) is a paste reader of the kit's, so it's gone
 with the kit off ([the clipboard](#the-clipboard)). The reader parses SQL itself (`SQLReader`, pure: Postgres DDL into
 tables, columns, enums and keys) and writes a draw program for Draw to put down (`DrawPut`), knowing nothing of how
@@ -7338,7 +7361,7 @@ arrow.bend = loop.bend
 The loop is stored as tldraw's own properties, two precise anchors on one side and a bend, so its
 geometry is tldraw's arrow bound twice to one shape (both anchors taken as precise, clipped at the
 outline), a pure function of the arrow that a person reshapes by its handles. The release then says
-what the arrow is, as for any: Types' `connectionDrawn` replaces a type's loop with a relationship
+what the arrow is, as for any: Types' answer to the release replaces a type's loop with a relationship
 type from it to itself, an arrow into it and one out of it. Connect (⌘L) on one shape and `canvas
 draw`'s `edge "A" -> "A"` make the same loop through the connector's maker, on the right side or
 the one a script names.
@@ -7449,7 +7472,10 @@ registrar.connects(Arrow.self, edgeType: ArrowEdge.self, canConnect: { id, shape
                           guard let shape = editor.document[end] else { return }
                           arrow[ChannelProperty.self] = editor.channel(of: connection, endingAt: shape)
                       },
-                      finished: { editor.connectionDrawn($0) })
+                      finished: { arrow in
+                          editor.connectionMade(arrow)        // Connections' one release list
+                          editor.connectionReleased(arrow)
+                      })
 }
 registrar.arrowBindingRule { query in
     guard let channel = query.arrow[ChannelProperty.self], query.registry.declares(channel) else { return true }
@@ -7510,8 +7536,8 @@ and lends any plugin what follows, but for `beginArrow`, which is internal:
   began as a lock landed above the board, whose arrow the transaction would drop). Released bound,
   `complete` gets the arrow's record and the shape its end is bound to, in the transaction that
   finishes it, and `finished`, if given, hears of the arrow after that transaction and before the press
-  ends (so what it changes is the press's step): the connector passes `{ editor.connectionDrawn($0) }`,
-  and every way the drag ends tells Types (`editor.connectionReleased(_:)`).
+  ends (so what it changes is the press's step): the connector passes Connections' release,
+  `editor.connectionMade(_:)`, and every way the drag ends tells Types (`editor.connectionReleased(_:)`).
 - **`BindingHintsOverlay`** draws the hints of the arrow being dragged, else the selected arrow's,
   so an arrow drawn from a port, which leaves the selection alone, hints as a re-aimed one does.
 - **An arrow's label is mention text** (`Arrow.text` is a `MentionText`: a migration escapes what a
@@ -7578,13 +7604,34 @@ picks, one step, Connect, the selection kept (a second between a pair is bent ap
 as a script's is); with one, it opens the picker below (a list without `ConnectPickerPlugin` connects the shape
 to itself at once, the drag back onto it by keys: arrows, a loop on its right side). Both are
 `editor.connect(_:to:plan:fulfil:)`, the one writer, whose step is the plan's name ("Connect") and which runs
-the `ConnectionMade` hooks inside it. A reference pill is an end as what it stands for, as a drag reads its dots, and
+the release every connection has inside it (`editor.connectionMade`, below). A reference pill is an end as what it stands for, as a drag reads its dots, and
 one that stands for nothing now is none. Where the maker refuses the pair (no channel joins them, a
 note and a frame; one holds the other, a frame and a note in it) or the board takes nothing, nothing
 is put down and the shapes shake. `ConnectMenuPlugin` adds the item
 that runs it to a right-click on two shapes (`MenuItem(command: .connect, when:)`), and "Connect To…" on one while the
 picker is installed; a list without ContextMenus leaves them out and keeps the key. PortEdgesTests'
 `connectTests` hold it over fixtures, CompositionTests' `connectShippedTests` over the shipped kinds.
+
+**One release list.** A connection just made, a port's drag let go or Connect's, is given its release:
+`editor.connectionMade(_:)` asks every `ConnectionMade` answer in plugin order (`registrar.connectionMade { id, editor in … }`,
+returning `.nothing`, `.settled` or `.offers([ConnectionChoice], drawnPlain:)`); the first that settles ends it, and offers become one
+list at the connection: each plugin's rows, a rule between plugins, a rule, a gray "Plain arrow", the first highlighted.
+A row is the pill a pick would put on the line (`ConnectionChoice.pill`, an `AdornmentLabel`, shown as an image); an
+answer that says `drawnPlain` has the connection's channel taken off, in the release's step, only once the list opens. Connections answers first for titled channels (`Channel.title`, `tint`: the kit's writes, reads, calls):
+where two or more fit both ends, they're offered (the connection drawn plain until a pick), a pick `setChannel`, "Change Relation";
+one fits and it's the connection's at once. Types answers next with relationship types:
+
+```swift
+public struct TypeReleasePlugin: ListedPlugin {
+    public var id: PluginID { .typeRelease }
+    public func register(into registrar: inout PluginRegistrar) {
+        registrar.connectionMade { connection, editor in editor.relationshipAnswer(connection) }
+    }
+}
+```
+
+A titled channel's pill sits on its connections at the label's lead (`ConnectionPillsPlugin`, `ChannelPill`), in its tint,
+white words; the line stays ink.
 
 **⌘L's picker** (`ConnectPickerPlugin`, id `connect-picker`, after `PortsPlugin` and `MentionsPlugin`;
 [ConnectPicker.swift](../Sources/Connections/ConnectPicker.swift)) is a line under the selected shape (a card
@@ -13915,7 +13962,8 @@ if let block = layout.block { context.drawTypeRows(of: shape, in: block) }
   arrow, its values and the pill it empties, on whichever board, "Remove Relationship"). `FieldValues.name(of:)` is the
   record-only name by values a kind gives its `untitled:`.
 - **The release of a port's drag.** Arrows tells Types the arrow it drew is finished
-  (`ArrowConnecting.finished`, in the press): `editor.connectionDrawn(arrow)` gives an arrow between two notes
+  (`ArrowConnecting.finished`, in the press, through Connections' one release list: Types' answer is its own plugin
+  value, `TypeReleasePlugin`): `editor.relationshipAnswer(arrow)` (and `connectionDrawn`, the same with the list opened) gives an arrow between two notes
   the one relationship type that fits it, in the press's step (`Add Arrow`); opens a list of the types that
   fit at the arrow (`Add Type`, a step of its own) when several do, and selects the arrow while it is open;
   leaves it plain when none is taken (an open type, one with no end drawn, is offered by `/is-a` and never
@@ -16316,10 +16364,12 @@ color-validation     service ColorWarnings · ValidationRules → every shape ho
 color-details        ShapeDetails in Style last → every shape holding color
 type-colors          inherited color → every shape holding is
 snapping             service SnapState · translation adjuster · resize adjuster · key hint ⌘ or ⌃ Drag Move or Resize Without Snapping
-ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · parts arrows → every shape
+ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · connection made · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
 connect-picker       service ConnectPickerHost · SelectionObservers
-arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · connection made · ArrowPartRules · ArrowBindingRules
+connection-pills     adornment ChannelPill → every shape holding channel · accessibility → every shape holding channel
+arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowPartRules · ArrowBindingRules
+type-release         connection made
 language-models      service LanguageModelState
 decision-models      service Decisions
 language-rules       property ignoredRules · type directive $rules · service RuleChecks · service RuleWriter · service RuleChips
@@ -16359,7 +16409,7 @@ neighbor-details     service NeighborList · ShapeDetails in Connections → eve
 moving               /move-to /move-near → every shape with a box · CanvasContextMenu in MoveToMenuGroup before StateMenuGroup → every shape with a box · ContentsMoves
 reordering           command bringToFront in ReorderSection · shortcut ] → command bringToFront · command bringForward in ReorderSection · shortcut ⌥] → command bringForward · command sendBackward in ReorderSection · shortcut ⌥[ → command sendBackward · command sendToBack in ReorderSection · shortcut [ → command sendToBack · ShapeContextMenus in ReorderMenuGroup before StateMenuGroup → every shape painted in document order · /bring-to-front /send-to-back /bring-in-front-of /send-behind → every shape painted in document order
 line-rows            service LineRowsService · service RowFolds · outlines · layout input line-rows-shown · layout input line-rows-width · command foldRows in RowFoldsSection · shortcut ⌃⌘↑ → command foldRows · command unfoldRows in RowFoldsSection · shortcut ⌃⌘↓ → command unfoldRows · ShapeFaces · parts FoldLines → every shape written as lines · CanvasContextMenu in RowsMenuGroup after ShapeMenuGroup
-engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
+engineering          kit engineering · service KitNames · key hint ↩ in a Row Next Row; on an Empty Row, Finish · key hint ⌥↑ ⌥↓ in a Row Move the Row · key hint ⌘⌫ then ⌫ in a Row Delete the Row · key hint ⇧↩ in a Row New Shape Beside It · key hint ⌘L in a Row Connect the Row · key hint ⌘↓ in a Column Show the Column's Details · key hint ⌘↓ in an Endpoint Show the Endpoint's Details · channel foreign-key · edge type foreign-key · channel calls · edge type calls · channel writes · edge type writes · channel reads · edge type reads · service KeyIndex · connection look · shape table · label Table → table · tool table · command insert:table in KitShapes<EngineeringKit> · tint → table · property title → table · ShapeTitles → table · ContentsTitles → table · mentionable → table · ShapeResizing → table · parts resize handles → table · ContentsRows → table · ShapeDetails → table · accessibility → table · line rows (columns) → table · row moves (columns) → table · items rows → table · ports foreign-key on rows → table · ports writes → table · ports reads → table · connect picks → table · shape enum-type · label Enum → enum-type · tool enum-type · command insert:enum-type in KitShapes<EngineeringKit> · tint → enum-type · property title → enum-type · ShapeTitles → enum-type · ContentsTitles → enum-type · title pill look → enum-type · mentionable → enum-type · ShapeResizing → enum-type · parts resize handles → enum-type · ContentsRows → enum-type · ShapeDetails → enum-type · accessibility → enum-type · line rows (values) → enum-type · row moves (values) → enum-type · items rows → enum-type · shape api · label API → api · tool api · command insert:api in KitShapes<EngineeringKit> · tint → api · property title → api · ShapeTitles → api · ContentsTitles → api · mentionable → api · ShapeResizing → api · parts resize handles → api · ContentsRows → api · ShapeDetails → api · accessibility → api · line rows (endpoints) → api · row moves (endpoints) → api · items rows → api · ports calls on rows → api · ports writes on rows → api · ports reads on rows → api · connect picks → api · shape database · label Database → database · tool database · command insert:database in KitShapes<EngineeringKit> · tint → database · property title → database · ShapeTitles → database · ContentsTitles → database · title tab → database · mentionable → database · ShapeResizing → database · parts resize handles → database · ContentsRows → database · ShapeDetails → database · accessibility → database · command createDatabase · CanvasContextMenu in DatabaseMenuGroup after TransformMenuGroup · /database → the command bar's target · /table → the command bar's target · /api → the command bar's target · draw value columns · draw value values · draw value server · draw value endpoints · paste reader SQL · paste reader OpenAPI
 engineering-find     service EnumUsers · findable rows → table · findable row pills → table · findable rows → enum-type
 ```
 

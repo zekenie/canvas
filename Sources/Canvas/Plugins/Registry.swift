@@ -368,6 +368,12 @@ public struct Registry {
         partedDefinitions[shape.kind]?.erasedParts(of: shape)
     }
 
+    /// Whether `part` of `shape` is no part that only heads rows (a path prefix: `PartName.isConnectable`). True for a part the
+    /// shape doesn't list, which a binding through a pill names (the row of the shape it stands for).
+    public func isConnectable(part: PartID, of shape: AnyShapeRecord) -> Bool {
+        parts(of: shape)?.first { $0.id == part }?.isConnectable ?? true
+    }
+
     /// `shape` with these parts taken out (`PartedShape.removing(_:from:)`), keeping its metadata; nil when its kind has
     /// no parts, doesn't take them out by id, or it has none of them. The writer then hands them to `removeParts`.
     public func removing(_ parts: Set<PartID>, from shape: AnyShapeRecord) -> AnyShapeRecord? {
@@ -562,7 +568,11 @@ public struct Registry {
     }
     /// What finds the stand-ins naming a shape, if a plugin gives it (`registrar.standInLookup`).
     var standInLookup: (@MainActor (CanvasEditor, ShapeID) -> [ShapeID])? {
-        contributions(to: CorePoints.StandInLookups.self).first?.value
+        contributions(to: CorePoints.StandInLookups.self).first?.value.lookup
+    }
+    /// What a stand-in's record names, if a plugin says (`registrar.standInLookup(_:names:)`): one shape, nil for any other record.
+    var standInNames: (@MainActor (AnyShapeRecord, Registry) -> ShapeID?)? {
+        contributions(to: CorePoints.StandInLookups.self).first?.value.names
     }
     /// A kind's rules for what its shapes hold (`keepsInStep`), found once a kind: every write of an
     /// added value asks.

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Connections
 import CoreGraphics
 import Selection
 
@@ -290,17 +291,23 @@ extension CanvasEditor {
                 }
                 var moved: [PartAddress: PartAddress] = [:]
                 for row in rows { moved[PartAddress(carrier.id, part: row)] = PartAddress(destination, part: renaming[row] ?? row) }
-                // A paste's arrows, bound to the rows where they landed; one whose other end isn't here is left out (and said), and
-                // one bound to a row of another shape that is gone since is bound to that shape as a whole, as taking the row out does.
+                // A paste's arrows, bound to the rows where they landed; one whose other end is on another board comes back through a
+                // pill for that end here (Connections' `reachingFarEnds`, as a key reaches a table across boards), else it's left out
+                // (and said); and one bound to a row of another shape that is gone since is bound to that shape as a whole, as taking
+                // the row out does.
                 var put: [ShapeID] = []
+                var pills: [CGRect] = []
                 func leaveOut(_ arrow: AnyShapeRecord) {
                     if let at = left.firstIndex(where: { $0.kind == arrow.kind }) { left[at].count += 1 } else { left.append(KindCount(kind: arrow.kind, count: 1)) }
                 }
                 for arrow in arrows {
                     guard var bound = arrow.movingParts(in: registry, { moved[$0] ?? $0 }) ?? Optional(arrow) else { continue }
-                    guard bound.boundParts(in: registry).allSatisfy({ transaction.document[$0.shape] != nil }) else {
-                        leaveOut(arrow)
-                        continue
+                    if !bound.boundParts(in: registry).allSatisfy({ transaction.document[$0.shape] != nil }) {
+                        guard let reached = reachingFarEnds(of: bound, beside: destination, avoiding: &pills, in: &transaction) else {
+                            leaveOut(arrow)
+                            continue
+                        }
+                        bound = reached
                     }
                     bound = bound.movingParts(in: registry, { address in
                         guard let part = address.part, let held = transaction.document[address.shape], let names = registry.parts(of: held),

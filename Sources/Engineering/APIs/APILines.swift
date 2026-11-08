@@ -471,6 +471,10 @@ struct APILines: LineModel {
             .list(APIStyle.responsesLine, grammar: ResponseGrammar(), get: { row, _ in row.endpoint?.responses ?? [] },
                   set: { row, value, _ in row = Self.changing(row) { $0.responses = value } }),
             .toggle(APIStyle.deprecatedLine, get: { $0.endpoint?.deprecated ?? false }, set: { row, on in row = Self.changing(row) { $0.deprecated = on } }),
+            // Its connections, a line each (`writes refunds`): each its arrow, written in a step of the line's own.
+            .list(APIStyle.connectionsLine, grammar: EndpointLinkGrammar(),
+                  get: { row, context in EndpointLinks.shown(row.id, of: context.shape, in: context.editor) },
+                  writing: { links, unread, row, context in EndpointLinks.write(links, unreadLines: unread, for: row.id, of: context.shape, in: context.editor) }),
         ]
         return LineCard(header: LineCardHeader(name: full), lines: lines, width: APIStyle.cardWidth)
     }
@@ -538,4 +542,6 @@ public enum EngineeringAPILines {
     public static var rows: any LineGrammar<APIRow> { APILineGrammar() }
     /// An API's server line.
     public static var server: any LineGrammar<APIServer> { ServerLineGrammar() }
+    /// An endpoint's connection line, in its card: `writes refunds`, `calls Stripe API.POST /v1/refunds`.
+    public static var links: any LineGrammar<EndpointLink> { EndpointLinkGrammar() }
 }

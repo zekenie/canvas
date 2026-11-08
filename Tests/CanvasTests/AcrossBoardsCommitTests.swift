@@ -170,7 +170,7 @@ private struct Isles {
     },
     test("a far delete's handler that deletes a shape the transaction put in, writes one it changed and moves one off: the change set says what happened") {
         let tree = Isles(), log = ChangeLog(), fresh = ShapeID()
-        let writing = Contributor(id: "writes") { r in
+        let writing = Contributor(id: "writer") { r in
             r.willDelete { deleted, tx in
                 guard deleted.contains(tree.r) else { return }
                 tx.delete(inFile: [fresh])
@@ -395,7 +395,7 @@ private struct Isles {
         var ran = 0, skipped = 0
         for _ in 0..<60 {
             let tree = Isles(), tally = Tally()
-            let writing = Contributor(id: "writes") { r in
+            let writing = Contributor(id: "writer") { r in
                 r.willDelete { deleted, tx in
                     if deleted.contains(tree.m) {
                         tally.calls += 1

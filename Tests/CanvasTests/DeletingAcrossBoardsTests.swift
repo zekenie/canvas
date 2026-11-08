@@ -169,7 +169,7 @@ private struct Refused: Error {}
     },
     test("a handler that writes a third board and one that writes the board shown: both land, in the one step") {
         let tree = Isles(), log = ChangeLog()
-        let writing = Contributor(id: "writes") { r in
+        let writing = Contributor(id: "writer") { r in
             r.willDelete { deleted, tx in
                 guard deleted.contains(tree.r) else { return }
                 tx.update(tree.d, on: tree.wBoard, as: Box.self) { $0.props.frame.origin.x = 500 }
@@ -791,7 +791,7 @@ private struct Refused: Error {}
 
     test("a press of own deletes, an update and a move, far deletes with a handler that writes the far board, a third and the board shown, and delete(inFile:) over three boards: one step, exact both ways") {
         let tree = Isles(), log = ChangeLog()
-        let writing = Contributor(id: "writes") { r in
+        let writing = Contributor(id: "writer") { r in
             r.willDelete { deleted, tx in
                 if deleted.contains(tree.r) {
                     slide(&tx, tree.d, on: tree.wBoard, to: 500)
@@ -835,7 +835,7 @@ private struct Refused: Error {}
     },
     test("from transact(on:), delete(inFile:) over the board and two more with a handler writing back on it: its own step, exact, the board shown untouched") {
         let tree = Isles(), log = ChangeLog()
-        let writing = Contributor(id: "writes") { r in
+        let writing = Contributor(id: "writer") { r in
             r.willDelete { deleted, tx in
                 if deleted.contains(tree.d) {
                     slide(&tx, tree.z, on: tree.pBoard, to: 900)
@@ -862,7 +862,7 @@ private struct Refused: Error {}
     },
     test("a far delete, then the far board's owner deleted, with a handler that wrote a board under it and one beside it: exact") {
         let tree = Isles()
-        let writing = Contributor(id: "writes") { r in
+        let writing = Contributor(id: "writer") { r in
             r.willDelete { deleted, tx in
                 if deleted.contains(tree.l) {
                     slide(&tx, tree.c, on: tree.qBoard, to: 500)

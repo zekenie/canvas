@@ -1,3 +1,4 @@
+import AppKit
 import Canvas
 import Topology
 
@@ -59,6 +60,14 @@ struct KindPorts {
                 }()
                 declared = every
                 for channel in every { add(channel, contribution.value) }
+            }
+        }
+        // A channel any kind may start (`Channel.anyKindMayStart`: the kit's `calls`) is started from every kind's dots, after the
+        // channels it has ports on, on the sides its dots are on.
+        if !dots.isEmpty {
+            let sides = PortSide.allCases.filter { dots[$0] != nil }
+            for channel in registry.contributions(to: Channels.self).map(\.value) where channel.anyKindMayStart && roles[channel.id] == nil {
+                add(channel.id, .source, sides, onParts: false)
             }
         }
         guard !entries.isEmpty else { return nil }
@@ -253,6 +262,29 @@ extension Registry {
         contributions(to: Channels.self).contains { $0.value.id == channel }
     }
 
+    /// What a connection on `channel` is called (`Channel.title`: its pill on the line, its row in a release's list); nil for an
+    /// untitled channel, or one no plugin declares.
+    public func channelTitle(_ channel: ChannelID) -> String? {
+        contributions(to: Channels.self).first { $0.value.id == channel }?.value.title
+    }
+
+    /// The capsule of a titled channel's pill (`Channel.tint`, else its dots' color); nil for an untitled one.
+    public func channelTint(_ channel: ChannelID) -> NSColor? {
+        contributions(to: Channels.self).first { $0.value.id == channel }?.value.tint
+    }
+
+    /// The color of a channel's dots (`Channel.color`); nil for one no plugin declares.
+    public func channelColor(_ channel: ChannelID) -> NSColor? {
+        contributions(to: Channels.self).first { $0.value.id == channel }?.value.color
+    }
+
+    /// The parts (rows) a connection's start and end are bound to, by the connector's `parts`: nil each for an end bound to a
+    /// shape as a whole, a free end, or a shape that isn't a connection.
+    public func connectionParts(of record: AnyShapeRecord) -> (from: PartID?, to: PartID?) {
+        guard let connector, record.kind == connector.kind, !record.isOpaque, let parts = connector.parts else { return (nil, nil) }
+        return parts(record)
+    }
+
     /// Whether the connector can start a connection from the shape `id` in `shapes` or end one there
     /// (its `canConnect`): false without a connector, or for a shape `shapes` doesn't have or keeps
     /// aside. Ask it of the document the connection will be in: a transaction's (`transaction.shapes`)
@@ -273,6 +305,10 @@ extension Registry {
     public func connection(_ request: ConnectionRequest, existing: AnyShapeRecord? = nil, in shapes: ShapeContext) -> AnyShapeRecord? {
         guard let connector, let make = connector.make else { return nil }
         if let existing, existing.kind != connector.kind || existing.isOpaque { return nil }
+        // A part that only heads rows (an API's path prefix) is no end, whatever names it.
+        for (shape, part) in [(request.from, request.fromPart), (request.to, request.toPart)] {
+            if let part, let record = shapes.shape(shape), !isConnectable(part: part, of: record) { return nil }
+        }
         guard let made = make(request, existing, shapes) else { return nil }
         if let existing, made == existing.copy(as: existing.id) { return existing }
         return made

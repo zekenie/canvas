@@ -334,7 +334,11 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             return .refused
         }
         var result = CardCommit.unchanged
-        if lines != line.shown {
+        if lines != line.shown, let apart = line.text.writesApart {
+            // What the row doesn't hold (its connections): written by the kind, in a step of its own.
+            guard apart(lines, held, context) else { return .refused }
+            result = .written
+        } else if lines != line.shown {
             let written = line.text.write(lines, held, context)
             result = session.commitCard(written, over: held)
             if result == .refused { return .refused }

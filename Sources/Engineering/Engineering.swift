@@ -51,6 +51,10 @@ public struct EngineeringPlugin: ListedPlugin {
         registrar.keyHint("⌘↓ in an Endpoint", "Show the Endpoint's Details", while: .text)
         // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
         registrar.channel(ForeignKey.self)
+        // What an API does: an endpoint writes or reads a table, and something calls an endpoint; each a pill on its line.
+        registrar.channel(Calls.self)
+        registrar.channel(Writes.self)
+        registrar.channel(Reads.self)
         registrar.service { KeyIndex(editor: $0) }
         // A key's marks and width, from its column: a crow's foot (bars when unique), bars (a bar and a circle when nullable), 2.5.
         registrar.connectionLook(KeyLooks.look)
@@ -71,6 +75,9 @@ public struct EngineeringPlugin: ListedPlugin {
             table.lineRows(TableLines())
             // Its columns take keys both ways: a dot at each end of the row the pointer is on, and a key's end on a row.
             table.partPorts(ForeignKey.self)
+            // An endpoint writes or reads it as a whole: it takes them on its sides, with no dots there.
+            table.ports(Writes.self, role: .target)
+            table.ports(Reads.self, role: .target)
             // ⌘L's picker on a table: from a row, the tables and their columns, a key to the row picked (a table's, its primary key);
             // from the table, a table picked makes the key column for it ("Add Key Column").
             table.connectPicks(admitting: KeyPicks.admits, KeyPicks.plan)
@@ -105,6 +112,13 @@ public struct EngineeringPlugin: ListedPlugin {
             api.accessibility { api, _ in AccessibleTraits(value: APIStyle.accessibleRows(api.props.endpoints.count { $0.endpoint != nil })) }
             // Its server and rows written as lines; an endpoint's card (⌘↓, or the "›" on its row).
             api.lineRows(APILines())
+            // An endpoint's row has a dot at each end: it calls another endpoint (or is called, by anything with dots), writes and
+            // reads tables. Calls first, so its dots are calls' blue and a drag onto another endpoint calls it.
+            api.partPorts(Calls.self)
+            api.partPorts(Writes.self, role: .source)
+            api.partPorts(Reads.self, role: .source)
+            // ⌘L from an endpoint: the tables it may write or read, the endpoints it may call, and what else takes a call.
+            api.connectPicks(admitting: EndpointPicks.admits, EndpointPicks.plan)
         }
         registrar.shape(DatabaseDefinition()) { database in
             database.label(DatabaseStyle.label, systemImage: DatabaseStyle.symbol)

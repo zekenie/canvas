@@ -107,7 +107,7 @@ enum ArrowParts {
     /// leave it as it is.
     private static func stepRow(_ end: ArrowEnd, of id: ShapeID, _ binding: ArrowBinding, by step: PartStep, targeting: ArrowTargeting) {
         guard step.direction.y != 0, let part = binding.part, let shape = targeting.connectables[binding.shapeID] else { return }
-        let shown = shape.parts.filter(\.isShown)
+        let shown = shape.parts.filter { $0.isShown && $0.isConnectable }
         guard let at = shown.firstIndex(where: { $0.id == part }) else { return }
         let next = at + (step.direction.y < 0 ? -1 : 1)
         guard shown.indices.contains(next) else { return }

@@ -87,14 +87,19 @@ public struct MentionAppearance: Hashable, Sendable {
     public var detail: String
     /// The symbol's color on neutral surfaces; nil for none. A dynamic color follows light and dark.
     public var tint: NSColor?
+    /// For a row's (`PartName`), what leads it as the row draws it (an endpoint's method in its chip, `POST`), which a pill for
+    /// the row draws before its name; none for a shape's.
+    public var lead: PartLead
 
-    public init(label: String, isPlaceholder: Bool = false, systemImage: String, kindName: String, detail: String, tint: NSColor? = nil) {
+    public init(label: String, isPlaceholder: Bool = false, systemImage: String, kindName: String, detail: String, tint: NSColor? = nil,
+                lead: PartLead = .none) {
         self.label = label
         self.isPlaceholder = isPlaceholder
         self.systemImage = systemImage
         self.kindName = kindName
         self.detail = detail
         self.tint = tint
+        self.lead = lead
     }
 }
 

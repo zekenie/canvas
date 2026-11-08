@@ -33,6 +33,14 @@ struct ReferenceLook {
 
     var leading: Symbol?
     var label: String
+    /// A row's lead drawn as the row draws it, before the rest of the label: an endpoint's method in its chip (`POST`), white on
+    /// the method's color in both appearances. Nil for a shape's pill, or a row with no chip.
+    var chip: Chip?
+    struct Chip: Equatable {
+        /// The word, which the label starts with.
+        var word: String
+        var fill: NSColor
+    }
     var italic: Bool
     var strength: CGFloat
     var isPlaceholder: Bool
@@ -77,6 +85,7 @@ struct ReferenceLook {
             strength = 1
             dashed = false
             self.place = place
+            chip = Self.chip(of: appearance)
         case .missing(let stored), .unavailable(let stored):
             leading = Symbol(name: ReferenceStyle.missingSymbol, tint: nil, strength: missing, size: ReferenceStyle.symbolSize)
             label = stored
@@ -88,6 +97,7 @@ struct ReferenceLook {
         case .notPublic(let appearance):
             leading = original(missing, appearance)
             label = appearance.label
+            chip = Self.chip(of: appearance)
             italic = true
             strength = missing
             dashed = true
@@ -201,6 +211,12 @@ struct ReferenceLook {
         var badge: CGRect?
     }
 
+    /// The chip a row's lead is (`PartLead.chip`), where the label starts with its word and goes on after it.
+    static func chip(of appearance: MentionAppearance) -> Chip? {
+        guard case .chip(let word, let fill) = appearance.lead, appearance.label.hasPrefix(word + " ") else { return nil }
+        return Chip(word: word, fill: ReferenceMemo.shared.chipFill(fill))
+    }
+
     /// `twoLines`: the pill is drawn at the zoom that has both lines (`ReferenceStyle.placeZoom` and up). With a line to
     /// say the name sits under it; with none, or under that zoom, the name is centered.
     func layout(in frame: CGRect, twoLines: Bool = false) -> Layout {
@@ -306,6 +322,28 @@ final class ReferenceMemo {
         labels[key] = built
         made += 1
         return built
+    }
+
+    private var chipWords: [String: Label] = [:]
+    private var chipFills: [Palette.RGB: NSColor] = [:]
+
+    /// A row's lead's word in its chip: white, the chip's bold small caps font, kept.
+    func chipWord(_ text: String) -> Label {
+        if let found = chipWords[text] { return found }
+        if chipWords.count >= ReferenceStyle.memoCapacity { chipWords.removeAll(keepingCapacity: true) }
+        let string = NSAttributedString(string: text, attributes: [.font: ReferenceStyle.chipFont, .foregroundColor: NSColor.white])
+        let built = Label(string: string, width: ceil(string.size().width))
+        chipWords[text] = built
+        made += 1
+        return built
+    }
+
+    /// A chip's color, one `NSColor` a color, so a look is equal to itself frame to frame.
+    func chipFill(_ rgb: Palette.RGB) -> NSColor {
+        if let found = chipFills[rgb] { return found }
+        let color = NSColor(rgb)
+        chipFills[rgb] = color
+        return color
     }
 
     /// "Deleted" or "Not available", in the place line's stead: the place's color and font, kept.
@@ -454,8 +492,26 @@ extension ReferenceDefinition {
         if let trailing = look.trailing, let rect = layout.trailing { drawSymbol(trailing, in: rect, scale: scale, cg: cg) }
         if let badge = look.badge, let rect = layout.badge { drawBadge(badge, in: rect, strength: look.strength, fill: colors?.badge ?? surface.badge, cg: cg) }
         guard !editing, !look.label.isEmpty else { return }
-        let label = memo.label(look.label, italic: look.italic, strength: look.strength, placeholder: look.isPlaceholder)
-        label.string.draw(with: layout.label, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+        var labelRect = layout.label
+        var text = look.label
+        if let chip = look.chip {
+            // The row's lead as the row draws it: its word white in a chip of its color, then the rest of the name.
+            let word = memo.chipWord(chip.word)
+            let width = word.width + ReferenceStyle.chipPadding * 2
+            let middle = labelRect.minY + ReferenceStyle.labelFont.ascender - ReferenceStyle.labelFont.capHeight / 2
+            let box = CGRect(x: labelRect.minX, y: middle - ReferenceStyle.chipHeight / 2, width: width, height: ReferenceStyle.chipHeight)
+            cg.addPath(CGPath(roundedRect: box, cornerWidth: ReferenceStyle.chipRadius, cornerHeight: ReferenceStyle.chipRadius, transform: nil))
+            cg.setFillColor(chip.fill.withAlphaComponent(look.strength).cgColor)
+            cg.fillPath()
+            let line = ceil(ReferenceStyle.chipFont.ascender - ReferenceStyle.chipFont.descender)
+            word.string.draw(with: CGRect(x: box.minX + ReferenceStyle.chipPadding, y: box.midY - line / 2 - 0.5, width: word.width + 1, height: line),
+                             options: [.usesLineFragmentOrigin])
+            let advance = width + ReferenceStyle.chipGap
+            labelRect = CGRect(x: labelRect.minX + advance, y: labelRect.minY, width: max(0, labelRect.width - advance), height: labelRect.height)
+            text = String(text.dropFirst(chip.word.count + 1))
+        }
+        let label = memo.label(text, italic: look.italic, strength: look.strength, placeholder: look.isPlaceholder)
+        label.string.draw(with: labelRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         if let rect = layout.place {
             let line = look.word.map { memo.word($0) } ?? look.place?.string
             line?.draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])

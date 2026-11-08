@@ -870,10 +870,10 @@ extension CanvasEditor {
     test("an edge's other attributes are the arrow's, and the stand-in's own side is the edge maker's") {
         let h = Harbor(), log = EdgeLog()
         let editor = try h.editor(log: log)
-        let result = try drawn(#"edge "Hub" -> "Deep" tone: warm caption: "calls""#, on: editor)
+        let result = try drawn(#"edge "Hub" -> "Deep" tone: warm caption: "rings""#, on: editor)
         expectEqual(rows(result).last, ["line": 1, "did": "connected", "kind": "link", "from": "Hub", "to": "Deep", "via": "relay", "tone": "warm"])
         let link = try require(editor.document.shapes.first { $0.kind == Link.kind })
-        expectEqual(link[Caption.self], "calls")
+        expectEqual(link[Caption.self], "rings")
         expectEqual(log.requests.last?.attributes, ["tone": "warm"])
     },
 ])
