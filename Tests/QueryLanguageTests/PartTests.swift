@@ -26,6 +26,10 @@ private let row = "5A1E0000-0000-4000-8000-00000000A0B1"
         expectRefused([
             Refused("#\(shape)::part(\(row))", .unsupported, elsewhere, hint: hint, at: 37, 44),
             Refused(":not(#\(shape)::part(\(row)))", .unsupported, elsewhere, hint: hint, at: 42, 44),
+            Refused(":has(> #\(shape)::part(\(row)))", .unsupported, elsewhere, hint: hint, at: 44, 44),
+            Refused(":has(> :connected-to(#\(shape)::part(\(row))))", .unsupported, elsewhere, hint: hint, at: 58, 44),
+            Refused(":has(> :is(#\(shape)::part(\(row))))", .unsupported, elsewhere, hint: hint, at: 48, 44),
+            Refused(":has(> :edge-to(:is(#\(shape)::part(\(row)))))", .unsupported, elsewhere, hint: hint, at: 57, 44),
             Refused(":connected-to(#\(shape)::part(\(row)))", .unsupported, elsewhere, hint: hint, at: 51, 44),
             Refused(":between(#\(shape)::part(\(row)), \"B\")", .unsupported, elsewhere, hint: hint, at: 46, 44),
             Refused(":edge-to(\"orders\"::part(\(row)))", .badArgument, "::part(…) follows a shape's id alone: #<shape>::part(<row>).", at: 17, 44),

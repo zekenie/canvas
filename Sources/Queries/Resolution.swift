@@ -672,7 +672,7 @@ private struct Resolver {
             let filter = terms.map { types($0, in: pseudo, anchors: anchors) } ?? .all
             guard !failed, let filter, let first = lists.first else { return nil }
             // `#S::part(R)`: the parser let a row through only as the whole anchor of a word that reads one edge's end there.
-            let part = anchors.count == 1 ? anchors[0].compounds.last?.part.map { PartID($0.id) } : nil
+            let part = anchors.count == 1 && word.anchorsRow ? anchors[0].compounds.last?.part.map { PartID($0.id) } : nil
             return node(.edges(word: word, anchor: first, second: lists.count > 1 ? lists[1] : nil, types: filter, part: part), span: span)
         default:
             problem(QueryError(.badArgument, ":\(word.rawValue) takes \(word.takes).", hint: word.example, span: span))

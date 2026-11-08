@@ -89,43 +89,38 @@ struct Parser {
         return list
     }
 
-    /// The edge words whose anchor may name a row (`#<shape>::part(<row>)`): those that read one edge's end at the anchor.
-    static let rowAnchored: Set<Word> = [.edgeTo, .edgeFrom, .startsAt, .endsAt, .startOf, .endOf]
-
-    /// Refuses `::part(…)` anywhere but as an edge word's whole anchor (`rowAnchored`), and there anywhere but after a shape's id:
+    /// Refuses `::part(…)` anywhere but as an edge word's whole anchor (`Word.anchorsRow`), and there anywhere but after a shape's id:
     /// what it names is a row of one shape, and only an edge's end is at a row.
     static func placeParts(in list: SelectorList, anchoring word: Word? = nil) throws(QueryError) {
         for complex in list.selectors { try placeParts(in: complex, anchoring: word) }
     }
 
     private static func placeParts(in complex: ComplexSelector, anchoring word: Word?) throws(QueryError) {
-        let isAnchor = word.map(rowAnchored.contains) == true && complex.compounds.count == 1
-        for compound in complex.compounds {
-            if let part = compound.part {
-                guard isAnchor else {
-                    throw QueryError(.unsupported, "::part(…) names a row of a shape, and only an edge word's anchor names one.",
-                                     hint: ":\(Word.edgeTo.rawValue)(#<shape>::part(<row>))", span: part.span)
-                }
-                guard case .id? = compound.head, compound.filters.isEmpty else {
-                    throw QueryError(.badArgument, "::part(…) follows a shape's id alone: #<shape>::part(<row>).", span: part.span)
-                }
+        let isAnchor = word?.anchorsRow == true && complex.compounds.count == 1
+        for compound in complex.compounds { try placeParts(in: compound, isAnchor: isAnchor) }
+    }
+
+    /// One compound: its own row (only as an anchor), then the words it holds, each looked into the same way (`:has(…)` items too).
+    private static func placeParts(in compound: Compound, isAnchor: Bool) throws(QueryError) {
+        if let part = compound.part {
+            guard isAnchor else {
+                throw QueryError(.unsupported, "::part(…) names a row of a shape, and only an edge word's anchor names one.",
+                                 hint: ":\(Word.edgeTo.rawValue)(#<shape>::part(<row>))", span: part.span)
             }
-            for filter in compound.filters {
-                guard case .pseudo(let pseudo) = filter else { continue }
-                switch pseudo.argument {
-                case .selectors(let inner): try placeParts(in: inner)
-                case .has(let items):
-                    for item in items {
-                        if let part = item.compound.part {
-                            throw QueryError(.unsupported, "::part(…) names a row of a shape, and only an edge word's anchor names one.",
-                                             hint: ":\(Word.edgeTo.rawValue)(#<shape>::part(<row>))", span: part.span)
-                        }
-                    }
-                case .anchored(let anchors, _):
-                    let named = anchors.count == 1 ? pseudo.word : nil
-                    for anchor in anchors { try placeParts(in: anchor, anchoring: named) }
-                case .none, .types, .text, .raw: break
-                }
+            guard case .id? = compound.head, compound.filters.isEmpty else {
+                throw QueryError(.badArgument, "::part(…) follows a shape's id alone: #<shape>::part(<row>).", span: part.span)
+            }
+        }
+        for filter in compound.filters {
+            guard case .pseudo(let pseudo) = filter else { continue }
+            switch pseudo.argument {
+            case .selectors(let inner): try placeParts(in: inner)
+            case .has(let items):
+                for item in items { try placeParts(in: item.compound, isAnchor: false) }
+            case .anchored(let anchors, _):
+                let named = anchors.count == 1 ? pseudo.word : nil
+                for anchor in anchors { try placeParts(in: anchor, anchoring: named) }
+            case .none, .types, .text, .raw: break
             }
         }
     }

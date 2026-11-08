@@ -8,7 +8,7 @@ import Foundation
 // compound starts with at most one head: a kind (`card`), `*`, a title in quotes (as `draw` names
 // shapes), a kind with a title right after it (`card"Payments"`, as CSS writes `div#id`) or an id
 // (`#` and a UUID). What CSS has that the canvas has no counterpart for (siblings, columns,
-// pseudo-elements, namespaces, `:nth-*`, nesting) is refused, never approximated.
+// pseudo-elements but `::part(<row>)` on an edge word's anchor, namespaces, `:nth-*`, nesting) is refused, never approximated.
 //
 // This module reads the text into a tree (`SelectorList(parsing:)`), prints it back in its
 // canonical form (`canonical`), and says what's wrong with it (`QueryError`: a reason, a message, a
