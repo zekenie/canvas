@@ -11231,10 +11231,15 @@ the start (ending at a reference pill for the shape that stays, landed beside th
 or staying (ending at a pill for the shape that moved, beside its start); a pill for the same shape the board
 has already is reused, and so is the shape itself where it is there. That is Draw's `CrossingArrows`
 (`init?(moving:from:to:by:label:in:)` plans from the editor, `rebind(in:)` writes before `Transaction.move` and
-`Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly), which asks
-the registry only for the connector kind (`drawEdges`) and the pill kind (`standsIn`): a read-only arrow and an end no
-kind stands for as it is (a private shape: a move never makes a shape public) let go as before. tldraw leaves such an
-arrow unbound; this is a departure ([arrows](../.claude/rules/arrows.md)). `between` is for a shape two arrows will join
+`Rebound.finish(in:)` after it, inside the one "Move" transaction, so Undo takes back both boards exactly; a pill
+that stays on the origin is put down by the in-or-out rule in `finish`, once the shapes have gone, so a container that
+moves cannot take it with it), which asks the registry only for the connector kind (`drawEdges`) and the pill kind
+(`standsIn`): a read-only arrow and an end no kind stands for as it is (a private shape: a move never makes a shape
+public) let go as before. tldraw leaves such an arrow unbound; this is a departure ([arrows](../.claude/rules/arrows.md)).
+Its pills land as a pick's do (the same spot, `StandInRoute.spot` and `landing`), but are not made by `placePill`: that
+one is for the board shown and a start that is on it, and a move's pill is for a board the shapes have not reached yet.
+
+`between` is for a shape two arrows will join
 to the two: in the gap the pair leaves along the axis they are further apart on, centered in it and
 on their middle across, with `room` (default `PlacingStyle.arrowRoom`, 80; a caller whose arrows carry
 names asks for more) kept clear on each side so each arrow shows a body, the two read `growing`
@@ -11335,10 +11340,11 @@ registrar.forShapes(adopting: .box) { boxes in
   commit uses them. On the board shown: `translate` (what a frame holds goes along),
   `move(_:above:)` over what it sits on that paints above it, and `settle` (the in-or-out rule: in
   the frame it's mostly over, out of the one it left, [Containers](#containers)). Onto another
-  board: `move(_:to:)` first, so an arrow bound to it lets go where it was drawn, as after a cut,
-  then `translate(_:by:on:)` there of the shapes and of what the move took along (an arrow bound
-  only to them rides along, and its free end goes as far as they do: the core says what rode,
-  `rodeAlong`, so Moving writes the rule for none of it) and `settle(_:on:)`
+  board: the arrows that cross are kept through pills (`CrossingArrows.rebind`), then `move(_:to:)`, so an
+  arrow still bound across the edge lets go where it was drawn, as after a cut, then `finish`, then `translate(_:by:on:)`
+  there of the shapes and of what the move took along (an arrow bound only to them rides along, and its free end goes
+  as far as they do: the core says what rode, `rodeAlong`, so Moving writes the rule for none of it) and `settle(_:on:)`
+  of the shapes, then of the new pills on their own, so they never decide where the shapes belong
   ([Boards in a file](#the-editor-and-the-file)). `/move-to` commits as a drop does (`Drop.commit()`),
   in the same step: then every shape moved is put in front within the place (`ContentsPlace.restack`).
   A read-only shape in the way (a locked frame it would land in, the owner of a board that takes no
@@ -11384,7 +11390,10 @@ box left out, `1 of 2`, and the places the menu lists taken and no others), and 
 contents' drops: what each takes, every landing, the step and refusals; CompositionTests'
 `movingShippedTests` type both into a note's editor in the app (the picker's list, a pick and the
 run, a subboard's board, Undo Move) and run both for notes selected, and `contentsDragShippedTests`
-drop notes' rows on a frame's, a subboard's and each other's.
+drop notes' rows on a frame's, a subboard's and each other's; `crossingTests` hold the arrows a move keeps over
+relays and links (the start moves, the end moves, a relay reused or the shape itself, a read-only arrow or a private
+end letting go, `/move-near` and a drop from a board not shown, a corral that moves and a relay it must not take along,
+several pills never changing where the shapes land, Undo exact on both boards).
 
 ## Neighbors
 
@@ -11951,12 +11960,12 @@ The modules, one job each:
 | CanvasUI's `CommandServer` | app | The app's end: it listens, describes the app, and answers each request on the main actor. `status`, `boards` and `new` (a new board's file, saved as Save As saves one, `BoardDocument.newFile(at:)`, then opened) are its own; it runs the rest on the board a request names (`--board`: an id, a file or a name), or the one in front, on the board inside that file its window shows, each in a task kept against its board, and a board command's result, when it's an object, gains `board: {id, name, shows, showsPath}`, as `boards` lists it, read in the command's own job just before it runs, so an agent sees which board it worked on (a command that knows better says `shows` and `showsPath` in a `board` object of its own, which the server completes: a query's is the board shown as it took up the file). A client gone is answered `cancelled`, and a board closed (`BoardDocument.close()`) answers its running commands `board_closed`, at once, their tasks cancelled and what they return later dropped. |
 | Automation | platform | The commands plugins give the command line (`AutomationCommands`), its own seven, `draw`, `apply`, `rehearse`, `kinds` and `measure` (each resolving its board, calling the draw engine (Draw) and saying its `DrawError` or `DocumentError` as the wire's `AutomationError`; `apply` draws a program's document by key on every board in one step, drawn on a rehearsal of the editor and taken in with `editor.adopt`; `rehearse` draws several scripts in turn on a copy of the file, Draw's `Rehearsal`, a turn of the main actor each; `measure` takes a script or a document), `show` and `capture`, which borrow Draw's naming (`capture` draws with the core's `BoardPicture`). The app's server takes them from [the host's slot for them](#host-slots) (`registry.hostCommands`, async), which this plugin fills. |
 | Colors | platform | The color a shape of a kind that opted in holds ([Colors](#colors)): the property, the built-in names and a file's own, the book that says what every color looks like, the panel's row, `/color`, Color ▸, and the words draw and queries take; what a color looks like is [Palette](#palette)'s. |
-| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
+| Draw | platform | The engine of `canvas draw`, `apply`, `rehearse`, `measure` and `kinds` ([draw](#draw)), and the ten points it takes what it doesn't own from (`DrawNames`, `DrawLabels`, `DrawEdges`, `DrawEdgeIdentities`, `DrawChecks`, `DrawTextFormats`, `DrawValueWriters`, `DrawReports`, `DrawGroups`, and `DrawRecords`, what keeps drawings), and `CrossingArrows`, the arrows a move of shapes to another board keeps through pills (Moving's): an engine, so any plugin may run it, and it knows no horizontal. Its placement for plugins is here too (`Surroundings`, `Landing`: where a box of shapes lands on a board, beside a shape, in a frame or anywhere, placed as `draw` places one ([Moving](#moving)); Moving's solver, for any plugin that puts shapes down). It checks a query a property holds with Queries, reads which kinds stand in for others with Topology, and how far a title row reaches with Adornments; its error, `DrawError`, is not a wire type (Automation says it as the wire's `AutomationError`), and its mark is `draw engine`. |
 | Drawings | platform | What a program drew, kept by name in the file (`DrawingsProperty`, Draw's `DrawingRecord`: the board its top went on and each shape it made by id, with the program's key and what it last wrote), through Draw's `DrawRecords`, which `canvas apply` and `canvas draw --drawing` write in the step that draws; nothing on the shapes. |
 | DrawScript | core | The language `draw` reads (`Script(parsing:)`), the solver that places what it says (`LayoutProblem.solve()`), and the grid its obstacles are filed in (`ObstacleGrid`: boxes only, which any plugin may use to place a shape among others): pure, it knows no canvas, registry, kind or plugin. |
 | FuzzyMatching | core | What's typed matched against text ([FuzzyMatching](#fuzzymatching)): `FuzzyMatcher` (every list's tiers), `TextSearch` (Find's, over folded texts) and `PathMatcher` (Jump To's, over containment paths): pure, it knows no canvas, registry or plugin. |
 | JumpTo | platform | Jump To (⌘K, [Jump To](#jump-to)): a palette that goes to a shape by its title and where it is, over Titles' titles and the containment tree; no kind opts into it, and nothing imports it. |
-| Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shapes typed for (a shape's text, or the shapes selected, as one block) moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape; no kind opts into it, and nothing imports it. |
+| Moving | platform | `/move-to` and `/move-near` ([Moving](#moving)): the shapes typed for (a shape's text, or the shapes selected, as one block) moved into a frame, onto a subboard's board or beside a shape, on any board, placed with Draw's placement for plugins (DrawScript's solver, over `ObstacleGrid`) as `draw` places a shape, the arrows that cross to another board kept through reference pills (Draw's `CrossingArrows`); no kind opts into it, and nothing imports it. |
 | Neighbors | platform | Hover a shape and what it's connected to is outlined by how ([Neighbors](#neighbors)), and select one and its panel's Connections tab lists them by the same ways, then what it's inside and what it holds (`NeighborDetailsPlugin`, on DetailPanel, its search ranked by FuzzyMatching, a shape with no title called as TableOfContents calls it): its lights are titles, colors and the queries that find their shapes, each contributed by the plugin that owns the edges (Arrows' `ArrowLightsPlugin`, Mentions' `MentionLightsPlugin`, Types' `TypeLightsPlugin`), asked of Queries, placed on the board shown by the file's boards (`shape(on:holding:)`), hovered on the canvas or in the table of contents (Selection's `hovered` and `hoveredElsewhere`). |
 | Palette | core | The color math ([Palette](#palette)): a color as sRGB and OKLCH (`RGB`, `OKLCH`), the seven roles one color is drawn in on the light canvas and the dark (`Swatch`, each a `Tone`), contrast, and the one test for a dark appearance: pure, it knows no canvas, registry, plugin or named color. |
 | QueryCommands | platform | `query` and `query-vocabulary`, and `--ask` as a call to QueryTranslation's translator, its errors said as the wire's (on Automation, Queries, QueryTranslation and the wire; it declares no point). |

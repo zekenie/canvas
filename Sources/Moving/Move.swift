@@ -135,14 +135,15 @@ struct Block {
                     }
                 }
             }
-            // The new pills are where they land: put down with the shapes, not moved with them.
-            switch transaction.settle(ids.union(placed), on: target) {
-            case .settled(let nudges):
-                try finish(&transaction)
-                return target == shown ? nudges : [:]
-            case .refused:
-                throw Transaction.Refused()
+            // The shapes are put down alone, so the pills they bring do not weigh in the verdict on where they belong; the new pills
+            // are where they land, put down after them, not moved with them.
+            guard case .settled(var nudges) = transaction.settle(ids, on: target) else { throw Transaction.Refused() }
+            if !placed.isEmpty {
+                guard case .settled(let pillNudges) = transaction.settle(placed, on: target) else { throw Transaction.Refused() }
+                nudges.merge(pillNudges) { first, _ in first }
             }
+            try finish(&transaction)
+            return target == shown ? nudges : [:]
         }
         // A move that lands where the shapes are commits nothing: nowhere to go, and editing goes on.
         guard let nudges = committed, editor.revision != revision else { return }
