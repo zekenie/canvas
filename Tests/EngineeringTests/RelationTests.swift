@@ -25,7 +25,7 @@ import Titles
         }
         expectEqual(registry.channelTitle(ForeignKey.id), nil, "a key has no pill")
         expect(!Writes.isOnEveryChannel && !Reads.isOnEveryChannel, "only tables take writes and reads: a subboard is no table")
-        expect(Calls.isOnEveryChannel && Calls.anyKindMayStart, "anything with dots calls an endpoint")
+        expect(!Calls.isOnEveryChannel && Calls.anyKindMayStart, "anything with dots calls, and only an endpoint's row is called: a subboard is no endpoint")
     },
     test("an endpoint's row has a dot at each end, calls first, writes and reads after; a table takes writes and reads whole, with no dot") {
         let h = try kitHarness()
@@ -112,6 +112,7 @@ import Titles
         expectEqual(tables.query, "ref")
         expectEqual(tables.items.map(\.completion.label), ["refunds"])
         expectEqual(tables.items.first?.light, PartAddress(refunds))
+        expect(tables.items.first?.completion.detail.isEmpty == false, "each table says its board, the one shown too (E4 panel 1: `refunds  shop`)")
         let calls = try require(offers("calls ref"))
         expectEqual(calls.items.map(\.completion.label), ["POST /v1/refunds"], "the endpoint itself is never offered")
         expectEqual(calls.items.first?.completion.detail, "Stripe API")

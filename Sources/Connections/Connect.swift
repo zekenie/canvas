@@ -56,8 +56,8 @@ extension PluginRegistrar {
                 if editor.editingShapeID == subject.shapes[0], picker.connectsEditedRow?(subject.shapes[0]) == true { return }
                 editor.endEditing()
                 // One row selected as an item of its shape (an endpoint): the picker on the row.
-                if let items = editor.selectedItems, items.shape == subject.shapes[0], items.ids.count == 1, let row = items.ids[0].base as? PartID,
-                   ConnectPicker(editor: editor, source: ConnectEnd(subject.shapes[0], part: row)) != nil {
+                if let items = editor.selectedItems, items.shape == subject.shapes[0], items.ids.count == 1, let row = items.ids[0].base as? PartID {
+                    // A row that is no end (a path prefix) shakes, as a shape with nothing to pick does; it is not the shape's picker.
                     picker.open(on: ConnectEnd(subject.shapes[0], part: row))
                     return
                 }

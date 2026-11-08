@@ -44,6 +44,8 @@ extension Calls: Channel {
     public static var title: String? { KitStyle.callsTitle }
     /// A note, a frame or a subboard calls an API as readily as an endpoint does.
     public static var anyKindMayStart: Bool { true }
+    /// It ends on an endpoint's row alone: a subboard, open to every channel, is no endpoint (and a card's line could not say it).
+    public static var isOnEveryChannel: Bool { false }
 }
 
 extension KitStyle {

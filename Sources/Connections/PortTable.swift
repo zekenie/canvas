@@ -305,6 +305,10 @@ extension Registry {
     public func connection(_ request: ConnectionRequest, existing: AnyShapeRecord? = nil, in shapes: ShapeContext) -> AnyShapeRecord? {
         guard let connector, let make = connector.make else { return nil }
         if let existing, existing.kind != connector.kind || existing.isOpaque { return nil }
+        // A part that only heads rows (an API's path prefix) is no end, whatever names it.
+        for (shape, part) in [(request.from, request.fromPart), (request.to, request.toPart)] {
+            if let part, let record = shapes.shape(shape), !isConnectable(part: part, of: record) { return nil }
+        }
         guard let made = make(request, existing, shapes) else { return nil }
         if let existing, made == existing.copy(as: existing.id) { return existing }
         return made

@@ -2511,7 +2511,8 @@ table.ports(Writes.self, role: .target)                  // taken whole, no dots
 A drag from an endpoint's dot onto a table draws the arrow plain and the release offers writes and reads; the card's
 "relations" lines (`writes refunds`, `calls Stripe API.POST /v1/refunds`) are the endpoint's arrows read and written in
 their own steps (LineRows' `list(_:grammar:get:writing:)`), and ⌘L from an endpoint (`EndpointPicks`) reaches tables,
-endpoints on any board (through a pill for the endpoint, drawing its method's chip) and whatever takes a call.
+and endpoints on any board (through a pill for the endpoint, drawing its method's chip); a call ends on an endpoint's row alone
+(`Calls.isOnEveryChannel` is false).
 
 **Paste SQL.** ⌘V of `CREATE TABLE` (or `AS ENUM`, or a `.sql` file) is a paste reader of the kit's, so it's gone
 with the kit off ([the clipboard](#the-clipboard)). The reader parses SQL itself (`SQLReader`, pure: Postgres DDL into
@@ -7566,11 +7567,11 @@ picker is installed; a list without ContextMenus leaves them out and keeps the k
 
 **One release list.** A connection just made, a port's drag let go or Connect's, is given its release:
 `editor.connectionMade(_:)` asks every `ConnectionMade` answer in plugin order (`registrar.connectionMade { id, editor in … }`,
-returning `.nothing`, `.settled` or `.offers([ConnectionChoice])`); the first that settles ends it, and offers become one
+returning `.nothing`, `.settled` or `.offers([ConnectionChoice], drawnPlain:)`); the first that settles ends it, and offers become one
 list at the connection: each plugin's rows, a rule between plugins, a rule, a gray "Plain arrow", the first highlighted.
-A row is the pill a pick would put on the line (`ConnectionChoice.pill`, an `AdornmentLabel`, shown as an image) with a faint
-note after it. Connections answers first for titled channels (`Channel.title`, `tint`: the kit's writes, reads, calls):
-where two or more fit both ends, the connection is drawn plain and they're offered, a pick `setChannel`, "Change Relation";
+A row is the pill a pick would put on the line (`ConnectionChoice.pill`, an `AdornmentLabel`, shown as an image); an
+answer that says `drawnPlain` has the connection's channel taken off, in the release's step, only once the list opens. Connections answers first for titled channels (`Channel.title`, `tint`: the kit's writes, reads, calls):
+where two or more fit both ends, they're offered (the connection drawn plain until a pick), a pick `setChannel`, "Change Relation";
 one fits and it's the connection's at once. Types answers next with relationship types:
 
 ```swift
@@ -16319,7 +16320,7 @@ snapping             service SnapState · translation adjuster · resize adjuste
 ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · connection made · parts arrows → every shape
 connect-menu         CanvasContextMenu in ShapeMenuGroup first
 connect-picker       service ConnectPickerHost · SelectionObservers
-connection-pills     adornment ChannelPill → every shape holding channel
+connection-pills     adornment ChannelPill → every shape holding channel · accessibility → every shape holding channel
 arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowPartRules · ArrowBindingRules
 type-release         connection made
 language-models      service LanguageModelState

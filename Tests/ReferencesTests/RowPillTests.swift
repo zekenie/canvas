@@ -4,6 +4,7 @@ import CanvasTesting
 import Chrome
 import Geometry
 import Mentions
+import Palette
 import Publishing
 import References
 import TestKit
@@ -15,7 +16,11 @@ import Topology
 // lead under its shape's place line, is missing (dashed) once the row is gone while the shape is there, is made by name as a pick
 // makes one (`standsIn(makesRow:)`), forwards to its shape at that row, and follows the row when it moves to another shape.
 
-/// A ledger: titled, mentionable, public by choice, with entries that stand alone and lead with a bolt.
+/// The chip an entry named for a method leads with (`PUT /v1/refunds`: an API's endpoint, its method in a color).
+private let methodFill = RGB(hex: 0x2C72DB)
+
+/// A ledger: titled, mentionable, public by choice, with entries that stand alone and lead with a bolt, or, where one is named
+/// for a method (`PUT /v1/refunds`), with its method in a chip.
 private struct Ledger: BoxShapeProps {
     static let kind: ShapeKind = "ledger"
     static let properties = Properties<Ledger> {
@@ -35,7 +40,9 @@ private struct LedgerDefinition: ShapeDefinition, PartedShape {
     func render(_ shape: ShapeRecord<Ledger>, in context: RenderContext) {}
 
     func parts(of shape: ShapeRecord<Ledger>) -> [PartName] {
-        shape.props.rows.map { PartName(id: $0.id, name: $0.name, kindWord: "Entry", lead: .symbol("bolt"), standsAlone: true) }
+        shape.props.rows.map {
+            PartName(id: $0.id, name: $0.name, kindWord: "Entry", lead: $0.name.hasPrefix("PUT ") ? .chip("PUT", fill: methodFill) : .symbol("bolt"), standsAlone: true)
+        }
     }
 }
 
@@ -84,6 +91,52 @@ private let ledgers = Contributor(id: "ledgers") { registrar in
         guard case .live(let renamed)? = b.h.state(of: pill) else { return expect(false) }
         expectEqual(renamed.label, "POST /refunds/{id}", "the row's live name")
         expectEqual(b.h.reference(pill)?.target?.label, "POST /refunds", "nothing written to the pill")
+    },
+    test("a row whose lead is a chip is drawn with it in the pill, as the row draws it: the method white on its color in light and dark, the name after it; faint and dashed while the shape is not public") {
+        let fill = [0x2C, 0x72, 0xDB]
+        @MainActor func spots(_ rep: NSBitmapImageRep, in frame: CGRect) -> (chip: CGRect?, white: Int, nameAfter: Int) {
+            var minX = Int.max, maxX = Int.min, minY = Int.max, maxY = Int.min
+            for y in Int(frame.minY)..<Int(frame.maxY) {
+                for x in Int(frame.minX)..<Int(frame.maxX) {
+                    guard zip(pixel(rep, at: CGPoint(x: x, y: y)), fill).allSatisfy({ abs($0 - $1) <= 6 }) else { continue }
+                    (minX, maxX, minY, maxY) = (min(minX, x), max(maxX, x), min(minY, y), max(maxY, y))
+                }
+            }
+            guard minX <= maxX else { return (nil, 0, 0) }
+            let chip = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+            var white = 0, after = 0
+            for y in Int(chip.minY)..<Int(chip.maxY) {
+                for x in Int(chip.minX)..<Int(chip.maxX) where pixel(rep, at: CGPoint(x: x, y: y)).prefix(3).allSatisfy({ $0 > 235 }) { white += 1 }
+            }
+            // Ink after the chip: pixels that aren't the pill's own fill, on the chip's lines.
+            let ground = pixel(rep, at: CGPoint(x: frame.minX + 48, y: frame.minY + 3))
+            for y in Int(chip.minY)..<Int(chip.maxY) {
+                for x in Int(chip.maxX + 4)..<Int(frame.maxX - 12) where zip(pixel(rep, at: CGPoint(x: x, y: y)), ground).contains(where: { abs($0 - $1) > 80 }) { after += 1 }
+            }
+            return (chip, white, after)
+        }
+        for dark in [false, true] {
+            let b = try Books()
+            let put = RosterRow(name: "PUT /v1/refunds")
+            b.h.editor.transact { $0.update(b.ledger, as: Ledger.self) { $0.props.rows.append(put) } }
+            let pill = b.pill(for: put.id, label: "PUT /v1/refunds")
+            b.h.editor.transact { $0.update(pill, as: Reference.self) { $0.props.frame.size.width = 260 } }
+            guard case .live(let appearance)? = b.h.state(of: pill) else { return expect(false, "\(String(describing: b.h.state(of: pill)))") }
+            expectEqual(appearance.lead, .chip("PUT", fill: methodFill), "the row's lead reaches the pill's look")
+            let frame = try require(b.h.editor.document[pill]?.box)
+            let what = dark ? "dark" : "light"
+            let drawn = spots(render(b.h.editor, dark: dark), in: frame)
+            let chip = try require(drawn.chip, "\(what): the chip is drawn in its color")
+            expect(chip.width > 20 && chip.height >= 12 && chip.height <= 18, "\(what): a chip of its size: \(chip)")
+            expect(chip.minX < frame.minX + 60, "\(what): the chip leads the label: \(chip.minX - frame.minX)")
+            expect(drawn.white > 12, "\(what): its word white on it: \(drawn.white) pixels")
+            expect(drawn.nameAfter > 12, "\(what): the name is drawn after the chip: \(drawn.nameAfter) pixels")
+            // The same pill for a shape that is not public: dashed, its chip faint.
+            b.h.editor.transact { $0.update(b.ledger) { $0[PrivateProperty.self] = true } }
+            guard case .notPublic? = b.h.state(of: pill) else { return expect(false, "\(String(describing: b.h.state(of: pill)))") }
+            let faint = spots(render(b.h.editor, dark: dark), in: frame)
+            expect(faint.chip == nil, "\(what): not public, the chip is faint, no longer its full color")
+        }
     },
     test("its row gone while the shape is there: missing, dashed, its stored name; the shape gone: missing too; undone, live again") {
         let b = try Books()

@@ -163,6 +163,13 @@ enum EdgeChannels {
             throw refuse(.invalidValue, "\(request.written) names two sides, from: \(fromSide.rawValue) and to: \(toSide.rawValue), and an edge from a shape to itself is on one",
                          hint: "name one: from: \(fromSide.rawValue), or to: \(toSide.rawValue)")
         }
+        for (name, record, part) in [(request.fromName, fromRecord, request.fromPart), (request.toName, toRecord, request.toPart)] {
+            if let part, !registry.isConnectable(part: part, of: record) {
+                let row = registry.parts(of: record)?.first { $0.id == part }?.name ?? ""
+                throw refuse(.cannotConnect, "\(name)'s \"\(row)\" heads rows and is no end of a connection",
+                             hint: "name one of the rows under it")
+            }
+        }
         let written = try self.written(request, in: registry)
         let channel: ChannelID?
         if let existing {

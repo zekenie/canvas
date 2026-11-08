@@ -216,6 +216,114 @@ private let stripeAPI = #"""
         editor.undo()
         expectEqual(editor.document, start, "one Undo: the arrow and the pill")
     },
+    test("the card keeps an arrow through what its line can't say: a typo in a line keeps the arrow and the typed words, a line changed to another table re-aims the same arrow (its id and bend kept, Change Connection), two lines alike make one") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        w.canvas.menuPresenter = { _, _, _ in }
+        try w.turnKitOn()
+        try w.draw(e4)
+        try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes"#)
+        let api = try require(shape(editor, "orders API")).id, payments = try require(shape(editor, "payments")).id
+        let row = try require(rows(editor, "orders API").dropFirst().first?.id)
+        let arrow = try require(arrows(editor).first).id
+        editor.transact("Bend") { $0.update(arrow, as: Arrow.self) { $0.props.bend = 24 } }
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api]
+        editor.beginEditing(api)
+        w.window.settle()
+        w.lineRows?.go(to: .row(row))
+        w.window.settle()
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.canvas.cardView as? LineCardView)
+        card.go(to: "relations 1")
+        w.window.settle()
+        expectEqual(card.value(of: "relations 1"), "writes refunds", "the line reads the arrow")
+        // A name mistyped: the arrow stays, and so do the words, for the person to mend.
+        let line = try require(card.field(of: "relations 1"))
+        line.selectAll(nil)
+        w.type("writes refundz", with: walk)
+        walk.press(.up)
+        expectEqual(arrows(editor).map(\.id), [arrow], "the arrow kept")
+        expectEqual(editor.document[arrow]?[ChannelProperty.self], Writes.id)
+        expectEqual(card.field(of: "relations 1")?.string, "writes refundz", "what was typed stays")
+        // Mended to another table: the same arrow, re-aimed.
+        let mended = try require(card.field(of: "relations 1"))
+        mended.selectAll(nil)
+        w.type("writes payments", with: walk)
+        walk.press(.up)
+        let moved = try require(arrows(editor).first)
+        expectEqual(arrows(editor).map(\.id), [arrow], "the arrow kept, re-aimed")
+        expectEqual(moved.props.end.binding?.shapeID, payments)
+        expectEqual(moved.props.start.binding?.part, row)
+        expectEqual(moved.props.bend, 24, "its bend kept")
+        expectEqual(moved[ChannelProperty.self], Writes.id)
+        expectEqual(undoTitle(w.window), "Undo Change Connection")
+        editor.undo()
+        expectEqual(arrows(editor).first?.props.end.binding?.shapeID, try require(shape(editor, "refunds")).id, "one Undo re-aims it back")
+    },
+    test("the card lists only the arrows it can change: one leaving a pill of the endpoint on another board is not its line, and its words don't take it out") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        w.canvas.menuPresenter = { _, _, _ in }
+        try w.turnKitOn()
+        try w.draw(e4)
+        try w.draw(stripe)
+        let api = try require(shape(editor, "orders API")).id
+        let row = try require(rows(editor, "orders API").dropFirst().first?.id)
+        let board = BoardID(owner: try require(shape(editor, "payments service")).id)
+        // A table on the subboard's board, written by the endpoint on the root: the arrow is there, from a pill for the endpoint.
+        _ = try drawnInProcess(#"""
+            table "audit" in "payments service" columns: "id uuid pk"
+            edge "orders API"."POST /orders/{id}/refunds" -> "audit" channel: writes
+            """#, on: editor)
+        let far = try require(editor.contents(of: board).shapes.compactMap { $0.typed(as: Arrow.self) }.first, "an arrow on the payments service board, from a pill of the endpoint")
+        expectEqual(far[ChannelProperty.self], Writes.id)
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api]
+        editor.beginEditing(api)
+        w.window.settle()
+        w.lineRows?.go(to: .row(row))
+        w.window.settle()
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.canvas.cardView as? LineCardView)
+        card.go(to: "relations 1")
+        w.window.settle()
+        expectEqual(card.value(of: "relations 1") ?? "", "", "an arrow on another board is that board's")
+        // Writing a line here leaves it be.
+        w.type("writes refunds", with: walk)
+        walk.press(.up)
+        expectEqual(arrows(editor).count, 1, "one arrow on this board, the far one still on its own")
+        expect(editor.contents(of: board).shapes.contains { $0.id == far.id }, "the far arrow still there")
+    },
+    test("calls end on an endpoint's row alone: an edge to a subboard, and an edge from or to a path prefix's header, are refused; ⌘L on a header shakes and opens nothing") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        w.canvas.menuPresenter = { _, _, _ in }
+        try w.turnKitOn()
+        try w.draw(e4)
+        try w.draw(#"""
+            api "grouped API" below "orders API" (gap: 80) endpoints: "/v1\nGET /v1/orders"
+            subboard "web" right of "grouped API" (gap: 80)
+            """#)
+        _ = try refusedInProcess(#"edge "orders API"."POST /orders" -> "web" channel: calls"#, on: editor)
+        _ = try refusedInProcess(#"edge "grouped API"."/v1" -> "refunds" channel: writes"#, on: editor)
+        _ = try refusedInProcess(#"edge "grouped API"."GET /v1/orders" -> "orders API"."/orders" channel: calls"#, on: editor)
+        // A subboard calls an endpoint, as any shape with dots does; nothing is called at the subboard.
+        _ = try drawnInProcess(#"edge "web" -> "grouped API"."GET /v1/orders" channel: calls"#, on: editor)
+        expectEqual(arrows(editor).first?[ChannelProperty.self], Calls.id)
+        let grouped = try require(shape(editor, "grouped API"))
+        let header = try require(rows(editor, "grouped API").first?.id)
+        expect(ConnectPicker(editor: editor, source: ConnectEnd(grouped.id, part: header)) == nil, "a header has nothing to pick for")
+        let walk = w.walk()
+        editor.selectedShapeIDs = [grouped.id]
+        editor.selectItems([AnyHashable(header)], of: grouped.id)
+        walk.press(Chord("l", .command))
+        expect(editor.connectPicker?.isOpen != true, "no picker opens on a header")
+        expect(editor.service(RefusalShake.self)?.isShaking == true, "the shape shakes, as one with nothing to pick for does")
+    },
     test("E7 panels 4 to 7, by the keys: ↑ to the refunds row, ⌘L, ref, ↩ picks refunds, ↩ takes writes, Escape; one Undo the plain arrow, two none") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -337,5 +445,37 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.id, orders.id)
         expectEqual(pill.props.target?.row, orders.props.endpoints[0].id, "a pill for POST /orders itself")
         expect(!undoTitle(w.window).contains("left out"))
+    },
+    test("an endpoint cut on the root and pasted on its own (nothing selected) on another board becomes an API there with its calls arrow through a pill, nothing left out") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        w.canvas.menuPresenter = { _, _, _ in }
+        try w.turnKitOn()
+        _ = try drawnInProcess(#"""
+            api "orders API" endpoints: "POST /orders"
+            api "storefront API" right of "orders API" (gap: 140) endpoints: "GET /checkout\nGET /cart"
+            edge "storefront API"."GET /checkout" -> "orders API"."POST /orders" channel: calls
+            subboard "web" below "orders API" (gap: 200)
+            """#, on: editor)
+        let orders = try require(shape(editor, "orders API")?.typed(as: API.self))
+        let storefront = try require(shape(editor, "storefront API")?.typed(as: API.self))
+        let web = BoardID(owner: try require(shape(editor, "web")).id)
+        editor.undoHistory.seal()
+        let walk = w.walk()
+        editor.selectedShapeIDs = [storefront.id]
+        editor.selectItems([AnyHashable(storefront.props.endpoints[0].id)], of: storefront.id)
+        walk.press(Chord("x", .command))
+        expect(editor.showBoard(web))
+        w.window.makeFirstResponder(w.canvas)
+        editor.selectedShapeIDs = []
+        walk.press(Chord("v", .command))
+        let made = try require(editor.document.shapes.first { $0.typed(as: API.self) != nil }, "the endpoint landed as an API of its own")
+        let call = try require(arrows(editor).first { $0[ChannelProperty.self] == Calls.id }, "the call came back")
+        expectEqual(call.props.start.binding?.shapeID, made.id)
+        let pill = try require(editor.document[try require(call.props.end.binding?.shapeID)]?.typed(as: Reference.self))
+        expectEqual(pill.props.target?.id, orders.id)
+        expectEqual(pill.props.target?.row, orders.props.endpoints[0].id, "a pill for POST /orders itself")
+        expect(!undoTitle(w.window).contains("left out"), "nothing left out: \(undoTitle(w.window))")
     },
 ])

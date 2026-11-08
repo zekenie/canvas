@@ -97,7 +97,8 @@ public final class ConnectPicker {
     /// the row isn't one of the shape's.
     public init?(editor: CanvasEditor, source: ConnectEnd) {
         if let part = source.part {
-            guard let record = editor.document[source.shape], editor.registry.parts(of: record)?.contains(where: { $0.id == part }) == true else { return nil }
+            guard let record = editor.document[source.shape], editor.registry.parts(of: record)?.contains(where: { $0.id == part }) == true,
+                  editor.registry.isConnectable(part: part, of: record) else { return nil }
         }
         guard let reach = Self.reach(of: source.shape, part: source.part, in: editor) else { return nil }
         self.editor = editor

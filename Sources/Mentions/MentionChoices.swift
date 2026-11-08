@@ -66,4 +66,7 @@ extension MentionState {
         guard let board = editor.file.board(containing: id), board != editor.board else { return nil }
         return editor.name(of: board)
     }
+
+    /// The name of a board, the board shown's too (a list that says where each of its rows is, as the frames' offers do).
+    public func boardName(of board: BoardID) -> String { editor.name(of: board) }
 }

@@ -71,13 +71,17 @@ public struct LineCardLine<Row> {
 
     /// Lines of what a row is joined to but doesn't hold (an endpoint's connections, each its arrow), each typed in `grammar`, as a
     /// list's are: `get` reads them, and `write` writes the lines' values itself, in a step of its own it names (the row isn't
-    /// written), when a line of them is left changed; false refuses, and what was typed stays, as a row's refused line does.
+    /// written), when a line of them is left changed; false refuses, and what was typed stays, as a row's refused line does. Along with
+    /// the values the lines read, `write` is told how many lines had words and read to none (a name mistyped), so it can refuse to take
+    /// a value out for words that merely don't read.
     public static func list<Grammar: LineGrammar>(_ label: String, grammar: Grammar,
                                                   get: @escaping @MainActor (Row, LineContext) -> [Grammar.Row],
-                                                  writing write: @escaping @MainActor ([Grammar.Row], Row, LineContext) -> Bool) -> LineCardLine {
+                                                  writing write: @escaping @MainActor ([Grammar.Row], _ unreadLines: Int, Row, LineContext) -> Bool) -> LineCardLine {
         var text = LineCardText<Row>(grammar: grammar, isList: true, get: get, set: { _, _, _ in })
         text.writesApart = { lines, row, context in
-            write(lines.compactMap { grammar.read($0, id: context.row ?? PartID(), in: context).row }, row, context)
+            let readings = lines.map { grammar.read($0, id: context.row ?? PartID(), in: context).row }
+            let unread = zip(lines, readings).filter { $0.1 == nil && !$0.0.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+            return write(readings.compactMap { $0 }, unread, row, context)
         }
         return LineCardLine(label: label, kind: .text(text))
     }

@@ -409,7 +409,7 @@ struct APILines: LineModel {
             // Its connections, a line each (`writes refunds`): each its arrow, written in a step of the line's own.
             .list(APIStyle.connectionsLine, grammar: EndpointLinkGrammar(),
                   get: { row, context in EndpointLinks.shown(row.id, of: context.shape, in: context.editor) },
-                  writing: { links, row, context in EndpointLinks.write(links, for: row.id, of: context.shape, in: context.editor) }),
+                  writing: { links, unread, row, context in EndpointLinks.write(links, unreadLines: unread, for: row.id, of: context.shape, in: context.editor) }),
         ]
         return LineCard(header: LineCardHeader(name: full), lines: lines, width: APIStyle.cardWidth)
     }

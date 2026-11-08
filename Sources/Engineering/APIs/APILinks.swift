@@ -3,6 +3,7 @@ import Canvas
 import Connections
 import Draw
 import LineRows
+import Mentions
 import Palette
 import TextEditing
 import Titles
@@ -139,12 +140,15 @@ struct EndpointLinkGrammar: LineGrammar {
 @MainActor
 enum EndpointLinks {
     /// The arrows leaving `endpoint` (a row of the API `api`) on the three relations, in the order of their edges, each with what it
-    /// goes to (through a pill, what the pill stands for and the row its binding names).
+    /// goes to (through a pill, what the pill stands for and the row its binding names). Only the arrows on the board shown, which
+    /// the card can change (one on another board, from a pill of this row, is not its line), each once: a pill that finds several
+    /// shapes is one arrow, and the first it finds is its line.
     static func held(_ endpoint: PartID, of api: ShapeID, in editor: CanvasEditor) -> [(link: EndpointLink, arrow: ShapeID)] {
         guard let topology = editor.topology else { return [] }
         let types = EndpointRelations.all.map { EdgeTypeID(rawValue: $0.id.rawValue) }
+        var seen: Set<ShapeID> = []
         return topology.edges(of: api, part: endpoint, .outgoing, types: .only(types), view: .resolved).compactMap { edge in
-            guard edge.isConnection, edge.sourcePart == endpoint else { return nil }
+            guard edge.isConnection, edge.sourcePart == endpoint, editor.document[edge.carrier] != nil, seen.insert(edge.carrier).inserted else { return nil }
             return (EndpointLink(channel: ChannelID(rawValue: edge.type.rawValue), target: PartAddress(edge.target, part: edge.targetPart)), edge.carrier)
         }
     }
@@ -156,9 +160,13 @@ enum EndpointLinks {
 
     /// Writes `wanted` as `endpoint`'s connections, one step named by what changed: a link the board doesn't have is made (an arrow on
     /// its relation from the row; one to a shape on another board through a pill here), one the lines no longer say is deleted, and one
-    /// line changed from one to the other is its arrow re-aimed (a relation changed alone keeps the arrow). False, with nothing
-    /// written, where an arrow can't be made (the board takes nothing, the API is locked, no pill can reach the far shape).
-    static func write(_ wanted: [EndpointLink], for endpoint: PartID, of api: ShapeID, in editor: CanvasEditor) -> Bool {
+    /// line changed from one to the other is its arrow re-aimed, keeping its id, label, color and bend (a relation changed alone
+    /// keeps the arrow too). `unreadLines` counts the lines with words that read to no link (a name mistyped): while any is there
+    /// nothing is taken out or re-aimed, so a typo never costs an arrow. False, with nothing written, where an arrow can't be made
+    /// (the board takes nothing, the API is locked, no pill can reach the far shape).
+    static func write(_ links: [EndpointLink], unreadLines: Int = 0, for endpoint: PartID, of api: ShapeID, in editor: CanvasEditor) -> Bool {
+        var wanted: [EndpointLink] = []
+        for link in links where !wanted.contains(link) { wanted.append(link) }
         let held = held(endpoint, of: api, in: editor).filter { EndpointLinkGrammar.written($0.link.target, editor) != nil }
         var removed = held, added: [EndpointLink] = []
         for link in wanted {
@@ -167,7 +175,6 @@ enum EndpointLinks {
         guard !removed.isEmpty || !added.isEmpty else { return true }
         // A line changed: its arrow, re-aimed. Only a relation changed: the arrow keeps everything but its channel.
         var rechanneled: [(arrow: ShapeID, channel: ChannelID)] = []
-        var replaced: [ShapeID] = []
         for (index, link) in added.enumerated().reversed() where !removed.isEmpty {
             if let at = removed.firstIndex(where: { $0.link.target == link.target }) {
                 rechanneled.append((removed[at].arrow, link.channel))
@@ -175,8 +182,14 @@ enum EndpointLinks {
                 added.remove(at: index)
             }
         }
+        if unreadLines > 0 && !removed.isEmpty {
+            editor.refuseChanges(to: [api])
+            return false
+        }
         let pairs = min(removed.count, added.count)
-        replaced = removed.prefix(pairs).map(\.arrow)
+        let reaimed = Array(zip(removed.prefix(pairs).map(\.arrow), added.prefix(pairs)))
+        let gone = Set(removed.dropFirst(pairs).map(\.arrow))
+        let made = Array(added.dropFirst(pairs))
         let step: String = if !rechanneled.isEmpty && added.isEmpty && removed.isEmpty { APIStyle.changeRelationStep }
             else if pairs > 0 { APIStyle.changeConnectionStep }
             else if !added.isEmpty { APIStyle.connectStep }
@@ -187,16 +200,26 @@ enum EndpointLinks {
             for (arrow, channel) in rechanneled {
                 transaction.update(arrow) { $0[ChannelProperty.self] = channel }
             }
-            let gone = Set(removed.map(\.arrow) + replaced)
             if !gone.isEmpty { transaction.delete(gone) }
             var put: [CGRect] = []
-            for link in added {
+            @MainActor func request(_ link: EndpointLink) throws -> ConnectionRequest {
                 guard let end = reach(link.target, from: api, avoiding: put, in: &transaction, editor: editor) else { throw Transaction.Refused([api]) }
                 if let box = transaction.document[end.address.shape]?.box, editor.document[end.address.shape] == nil { put.append(box) }
-                let request = ConnectionRequest(from: api, to: end.address.shape, fromPart: endpoint, toPart: end.address.part, channel: link.channel)
-                guard let made = registry.connection(request, in: transaction.shapes) else { throw Transaction.Refused([api]) }
-                transaction.insert(made)
-                guard transaction.document[made.id] != nil else { throw Transaction.Refused([api]) }
+                return ConnectionRequest(from: api, to: end.address.shape, fromPart: endpoint, toPart: end.address.part, channel: link.channel)
+            }
+            // Re-aimed: the same arrow bound anew at its far end, on its new relation.
+            for (arrow, link) in reaimed {
+                guard var old = transaction.document[arrow] else { throw Transaction.Refused([api]) }
+                old[ChannelProperty.self] = link.channel
+                let aimed = try request(link)
+                guard let remade = registry.connection(aimed, existing: old, in: transaction.shapes) else { throw Transaction.Refused([api]) }
+                transaction.update(arrow) { $0 = remade }
+            }
+            for link in made {
+                let aimed = try request(link)
+                guard let new = registry.connection(aimed, in: transaction.shapes) else { throw Transaction.Refused([api]) }
+                transaction.insert(new)
+                guard transaction.document[new.id] != nil else { throw Transaction.Refused([api]) }
             }
             return true
         }
@@ -223,11 +246,9 @@ enum EndpointLinks {
 }
 
 extension KitNames {
-    /// What a list says of a board: its owner's name, or the file's for the root.
-    func boardName(_ board: BoardID) -> String {
-        guard let owner = board.owner, let record = editor.file.record(owner) else { return "" }
-        return editor.registry.title(of: record) ?? ""
-    }
+    /// What a list says of a board, as Boards calls it (a subboard's title, the file's name for the root), the board shown's too: the
+    /// frames' offers say `refunds  shop` for a table beside the API.
+    func boardName(_ board: BoardID) -> String { editor.mentions?.boardName(of: board) ?? "" }
 
     /// Every endpoint of the file's named APIs, the board shown's first: its address, its full name, its API's name.
     var endpoints: [(address: PartAddress, name: String, api: String)] {

@@ -368,6 +368,12 @@ public struct Registry {
         partedDefinitions[shape.kind]?.erasedParts(of: shape)
     }
 
+    /// Whether `part` of `shape` is no part that only heads rows (a path prefix: `PartName.isConnectable`). True for a part the
+    /// shape doesn't list, which a binding through a pill names (the row of the shape it stands for).
+    public func isConnectable(part: PartID, of shape: AnyShapeRecord) -> Bool {
+        parts(of: shape)?.first { $0.id == part }?.isConnectable ?? true
+    }
+
     /// `shape` with these parts taken out (`PartedShape.removing(_:from:)`), keeping its metadata; nil when its kind has
     /// no parts, doesn't take them out by id, or it has none of them. The writer then hands them to `removeParts`.
     public func removing(_ parts: Set<PartID>, from shape: AnyShapeRecord) -> AnyShapeRecord? {

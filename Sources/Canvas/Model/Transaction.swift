@@ -314,6 +314,8 @@ public struct Transaction {
             for record in records {
                 stagedIDs[record.id] = owned
                 writes.append(record.id)
+                // Brought in by this step like any other: a pill among them is reached by `standIns(naming:)`.
+                inserted.append(record.id)
             }
             changes.boardsAdded.insert(owned)
         }

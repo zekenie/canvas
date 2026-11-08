@@ -186,7 +186,7 @@ import Validation
         ports                property channel · service PortState · overlay PortOverlay · CanvasButtons · command connect in ConnectSection · shortcut ⌘L → command connect · connection made · parts arrows → every shape
         connect-menu         CanvasContextMenu in ShapeMenuGroup first
         connect-picker       service ConnectPickerHost · SelectionObservers
-        connection-pills     adornment ChannelPill → every shape holding channel
+        connection-pills     adornment ChannelPill → every shape holding channel · accessibility → every shape holding channel
         arrow-ports          service ArrowTypeRows · property channel → arrow · edge type arrow · connector → arrow · edges → arrow · ArrowPartRules · ArrowBindingRules
         type-release         connection made
         language-models      service LanguageModelState

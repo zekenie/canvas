@@ -80,7 +80,7 @@ private struct Plank: BoxShapeProps {
     static let crateE = CGRect(x: 80, y: 700, width: 200, height: 200)
     static let crateF = CGRect(x: 460, y: 700, width: 200, height: 200)
 
-    static var plugins: [any CanvasPlugin] {
+    static func plugins(more: [any CanvasPlugin] = []) -> [any CanvasPlugin] {
         let titled = Contributor(id: "titled-channels") { registrar in
             registrar.channel(Feeds.self)
             registrar.channel(Drains.self)
@@ -102,12 +102,12 @@ private struct Plank: BoxShapeProps {
             registrar.ports(Plank.self, on: Feeds.self)
             registrar.ports(Plank.self, on: Drains.self)
         }
-        return PortBoard.plugins(more: [titled, ConnectionPillsPlugin(), DetailPanelPlugin(), DrawPlugin(), PortEdgesPlugin()]).filter { $0.id != "channels" }
+        return PortBoard.plugins(more: [titled, ConnectionPillsPlugin(), DetailPanelPlugin(), DrawPlugin(), PortEdgesPlugin()] + more).filter { $0.id != "channels" }
     }
 
-    init() throws {
+    init(more: [any CanvasPlugin] = []) throws {
         _ = NSApplication.shared
-        h = try EditorHarness(plugins: Self.plugins)
+        h = try EditorHarness(plugins: Self.plugins(more: more))
         h.editor.viewportDidResize(to: CGSize(width: 1400, height: 1400))
         a = h.add(Box(boxA))
         b = h.add(Box(boxB))
@@ -146,8 +146,21 @@ private func middle(_ frame: CGRect) -> CGPoint { CGPoint(x: frame.midX, y: fram
         expectEqual(w.h.editor.selectedShapeIDs, [arrow.id])
         expect(menu.items[0].image != nil && menu.items[1].image != nil, "each row is the pill it would put on the line")
         expectEqual(menu.items[0].image?.accessibilityDescription, "feeds")
+        // The title set after the attributed one leaves it be: the pill draws, with no title beside it, and VoiceOver reads the title.
+        expectEqual(menu.items.prefix(2).map(\.title), ["feeds", "drains"])
+        expectEqual(menu.items.prefix(2).map { $0.attributedTitle?.string }, [" ", " "], "a space after each pill, never its title twice")
+        expectEqual(menu.items[0].accessibilityLabel(), "feeds")
         let plain = try require(menu.items.last)
         expectEqual(plain.attributedTitle?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .secondaryLabelColor)
+    },
+    test("a later plugin that settles the connection keeps the channel it was drawn on: drawn plain only once the list is known to open") {
+        let settler = Contributor(id: "settler") { registrar in registrar.connectionMade { _, _ in .settled } }
+        let w = try ReleaseBoard(more: [settler])
+        w.drag(from: boxA, to: middle(boxB))
+        let arrow = try require(w.arrows.last)
+        expectEqual(arrow[ChannelProperty.self], Feeds.id, "not taken off for a list that never opened")
+        expect(w.h.editor.menuToPopUp == nil, "no list")
+        expectEqual(w.h.editor.undoHistory.undoName, "Add Arrow", "one step")
     },
     test("a pick is its own step, Change Relation: one Undo returns to the plain arrow, a second removes it") {
         let w = try ReleaseBoard()
@@ -218,6 +231,11 @@ private func middle(_ frame: CGRect) -> CGPoint { CGPoint(x: frame.midX, y: fram
         expect(w.h.editor.menuToPopUp == nil, "no list")
         expectEqual(w.h.editor.undoHistory.undoName, "Add Arrow")
         expectEqual(w.h.editor.adornmentFrames(of: arrow.id).map(\.label.text), ["feeds"], "its pill on the line")
+        // VoiceOver hears the relation the pill shows, after the arrow's kind and where it runs; a plain arrow says none.
+        let said = try require(w.h.editor.accessibleDescription(of: arrow.id)).label
+        expect(said.hasPrefix("Arrow") && said.hasSuffix(", feeds"), "the relation is said: \(said)")
+        w.h.editor.transact("Plain") { $0.update(arrow.id) { $0[ChannelProperty.self] = nil } }
+        expect(try require(w.h.editor.accessibleDescription(of: arrow.id)).label.contains("feeds") == false, "none for a plain arrow")
     },
     test("a crate to a crate (a subboard to a subboard) is drawn on its own untitled channel and never asks, though both take the titled ones") {
         let w = try ReleaseBoard()

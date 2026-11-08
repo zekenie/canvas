@@ -47,6 +47,10 @@ public struct ConnectionPillsPlugin: ListedPlugin {
             connections.adornment(ChannelPill.self) { shape, context in
                 shape[ChannelProperty.self].flatMap { ChannelPills.label(of: $0, in: context.registry) }
             }
+            // VoiceOver: the relation the pill shows, said as a label part after the connection's kind ("Arrow, from X to Y, writes").
+            connections.accessibility { shape, editor in
+                shape[ChannelProperty.self].flatMap { editor.registry.channelTitle($0) }.map { AccessibleTraits(labelParts: [$0]) }
+            }
         }
     }
 }

@@ -92,13 +92,17 @@ public struct PartName: Hashable, Sendable {
     /// Whether it stands alone, so a pill for it is a pill for it (an endpoint), or is read with its shape (a
     /// column, "id in orders").
     public var standsAlone: Bool
+    /// False for a part nothing is bound to, which heads rows (an API's path prefix): no end of a connection, by a drag, ⌘L or a
+    /// name (`PartFrame.isConnectable` is the same on the board).
+    public var isConnectable: Bool
 
-    public init(id: PartID, name: String, kindWord: String, lead: PartLead = .none, standsAlone: Bool = false) {
+    public init(id: PartID, name: String, kindWord: String, lead: PartLead = .none, standsAlone: Bool = false, isConnectable: Bool = true) {
         self.id = id
         self.name = name
         self.kindWord = kindWord
         self.lead = lead
         self.standsAlone = standsAlone
+        self.isConnectable = isConnectable
     }
 }
 

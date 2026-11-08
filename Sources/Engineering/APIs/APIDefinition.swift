@@ -104,7 +104,7 @@ extension APIDefinition: PartedShape {
             switch row {
             case .header(let header):
                 prefix = header.prefix
-                return PartName(id: header.id, name: header.prefix, kindWord: APIStyle.prefixWord)
+                return PartName(id: header.id, name: header.prefix, kindWord: APIStyle.prefixWord, isConnectable: false)
             case .endpoint(let endpoint):
                 return PartName(id: endpoint.id, name: APIGroups.fullName(method: endpoint.method, path: APIGroups.joined(prefix, endpoint.path)),
                                 kindWord: APIStyle.endpointWord, lead: endpoint.method.isEmpty ? .none : .chip(endpoint.method, fill: APIStyle.chipRGB(endpoint.method)), standsAlone: true)

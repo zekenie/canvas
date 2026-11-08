@@ -24,8 +24,10 @@ public enum ConnectionAnswer {
     case nothing
     /// It gave the connection what it is (one relationship type, one titled channel): no one else is asked, and no list opens.
     case settled
-    /// What it could be, in this plugin's order: rows of the one list.
-    case offers([ConnectionChoice])
+    /// What it could be, in this plugin's order: rows of the one list. `drawnPlain` asks that the connection's channel be taken off,
+    /// in the release's own step, once the list is known to open (no later plugin settles it), so an Undo of a pick returns to the
+    /// plain arrow and a connection some other plugin settled keeps the channel it was drawn on.
+    case offers([ConnectionChoice], drawnPlain: Bool = false)
 }
 
 /// One row of the list a release opens: the pill a pick would put on the line, and what the pick does.
@@ -35,17 +37,14 @@ public struct ConnectionChoice {
     public var title: String
     /// The pill it would put on the line (`writes` in its pink; a relationship type's name in the type's color).
     public var pill: AdornmentLabel
-    /// Drawn faint after the pill: what a relationship type's first value would say.
-    public var note: String?
     /// Whether a rule comes before it, inside its plugin's offers (a relationship type's open types after the taken ones).
     public var isSetOff: Bool
     /// What a pick does: its own step. It asks again whether the connection still wants it (a stale pick changes nothing).
     public var pick: @MainActor (CanvasEditor) -> Void
 
-    public init(title: String, pill: AdornmentLabel, note: String? = nil, isSetOff: Bool = false, pick: @escaping @MainActor (CanvasEditor) -> Void) {
+    public init(title: String, pill: AdornmentLabel, isSetOff: Bool = false, pick: @escaping @MainActor (CanvasEditor) -> Void) {
         self.title = title
         self.pill = pill
-        self.note = note
         self.isSetOff = isSetOff
         self.pick = pick
     }
@@ -85,14 +84,21 @@ extension CanvasEditor {
     @discardableResult
     public func connectionMade(_ connection: ShapeID) -> ConnectionRelease {
         var groups: [[ConnectionChoice]] = []
+        var plain = false
         for answer in registry.contributions(to: ConnectionMade.self) {
             switch answer.value(connection, self) {
             case .nothing: continue
             case .settled: return .settled
-            case .offers(let choices): if !choices.isEmpty { groups.append(choices) }
+            case .offers(let choices, let drawnPlain):
+                if !choices.isEmpty {
+                    groups.append(choices)
+                    plain = plain || drawnPlain
+                }
             }
         }
         guard !groups.isEmpty else { return .plain }
+        // The list opens: drawn plain until a pick, in the release's own step.
+        if plain { transact(ConnectionsStyle.changeRelation) { $0.update(connection) { $0[ChannelProperty.self] = nil } } }
         presentConnectionChoices(groups, for: connection)
         return .offered
     }
@@ -100,7 +106,7 @@ extension CanvasEditor {
     /// The one list at a connection: each group's choices (a plugin's offers), a rule between two groups, a rule, a gray Plain arrow
     /// that changes nothing; the first row highlighted, so Return takes it; under the connection's adornment row (its label's lead,
     /// else the middle of its outline); the connection selected while it is open. Each row is the pill a pick would put on the line,
-    /// its first value faint after it, the row's title its pill's words (type-select and VoiceOver). What a plugin's own list opens
+    /// the row's title its pill's words (type-select and VoiceOver). What a plugin's own list opens
     /// as well (a relationship type's dashed pill).
     /// `below` is where it hangs from, world units, where that isn't the connection's label (a pill clicked).
     public func presentConnectionChoices(_ groups: [[ConnectionChoice]], for connection: ShapeID, below rect: CGRect? = nil) {
@@ -115,12 +121,11 @@ extension CanvasEditor {
                     choice.pick(self)
                 }
                 item.image = choice.pill.image
-                // The note shown after the pill (a space where there is none, so the pill alone shows); the title, set after it,
-                // stays what type-select and VoiceOver read.
-                item.attributedTitle = NSAttributedString(string: choice.note.map { " " + $0 } ?? " ",
-                                                          attributes: [.foregroundColor: ConnectionsStyle.noteInk])
+                // The pill alone shows (a space for the attributed title that stands in for its words); the title, set after it, stays
+                // what type-select and VoiceOver read, and NSMenuItem keeps the attributed one when the title is set.
+                item.attributedTitle = NSAttributedString(string: " ")
                 item.title = choice.title
-                item.setAccessibilityLabel(choice.note.map { "\(choice.title), \($0)" } ?? choice.title)
+                item.setAccessibilityLabel(choice.title)
                 menu.addItem(item)
             }
         }
@@ -192,10 +197,8 @@ enum ChannelRelease {
         }
         let fits = editor.titledChannels(of: record)
         guard fits.count >= 2 else { return .settled }
-        // Drawn plain until a pick, in the release's own step: an Undo of the pick returns to the plain arrow, never to a relation
-        // nobody chose.
-        editor.transact(ConnectionsStyle.changeRelation) { $0.update(connection) { $0[ChannelProperty.self] = nil } }
-        guard editor.document[connection]?[ChannelProperty.self] == nil else { return .settled }
+        // Drawn plain until a pick (`drawnPlain`, once the list is known to open): an Undo of the pick returns to the plain arrow,
+        // never to a relation nobody chose.
         return .offers(fits.compactMap { fit in
             guard let pill = ChannelPills.label(of: fit, in: editor.registry), let title = editor.registry.channelTitle(fit) else { return nil }
             return ConnectionChoice(title: title, pill: pill) { editor in
@@ -203,7 +206,7 @@ enum ChannelRelease {
                 guard let held = editor.document[connection], held[ChannelProperty.self] == nil else { return }
                 editor.setChannel(fit, of: connection)
             }
-        })
+        }, drawnPlain: true)
     }
 }
 
@@ -212,6 +215,4 @@ extension ConnectionsStyle {
     public static let plainArrow = "Plain arrow"
     /// A pick of a channel in the list.
     public static let changeRelation = "Change Relation"
-    /// A row's faint first value, after its pill.
-    static var noteInk: NSColor { .secondaryLabelColor }
 }
