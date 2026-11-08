@@ -886,7 +886,9 @@ extension CanvasEditor {
         let box = selectedShapeIDs.count > 1 ? selectionBounds : nil
         // A shape whose items are selected (and listed) is outlined by them (`ItemsOverlay`), inside it.
         let outlined = selectedItems.map { held in selectedShapeIDs.filter { $0 != held.shape || editingShapeID == held.shape } } ?? selectedShapeIDs
-        return Outlines(shapes: outlined, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
+        // A focused part that stands for a shape (an arrow from the table, ⌥Tab) lights it as a selected one is drawn.
+        let lit = selectionState?.focusedPartLights.filter { !outlined.contains($0) } ?? []
+        return Outlines(shapes: outlined + lit, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
                         color: selectionOutlineColor)
     }
 

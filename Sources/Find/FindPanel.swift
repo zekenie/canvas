@@ -244,7 +244,12 @@ private struct FindRow: View {
                 Image(systemName: symbol.systemImage ?? "square")
                     .foregroundStyle(symbol.tint.map { Color(nsColor: $0) } ?? Color.secondary)
                     .frame(width: FindStyle.rowSymbolWidth)
-                Text(FindSnippet.attributed(of: result, in: find)).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
+                // A titled shape's row names it first, the hit's snippet after it, faint (T6: "products  weight_grams int").
+                if let name = find.rowName(of: result) {
+                    Text(FindSnippet.named(name, of: result, in: find)).lineLimit(1).truncationMode(.tail)
+                } else {
+                    Text(FindSnippet.attributed(of: result, in: find)).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
+                }
                 Spacer(minLength: 0)
                 if result.hitCount > 1 {
                     Text(isCurrent ? "\((find.current?.ordinal ?? 0) + 1)/\(result.hitCount)" : "\(result.hitCount)")
@@ -309,6 +314,18 @@ extension FindSnippet {
         }
         if cursor < to { snippet += plain(text.substring(with: NSRange(location: cursor, length: to - cursor))) }
         return snippet
+    }
+
+    /// A titled shape's row: its name, then the snippet faint, its hits still bold.
+    public static func named(_ name: String, of result: FindResult, in find: FindState) -> AttributedString {
+        var named = AttributedString(name)
+        named.font = FindStyle.rowName
+        var snippet = attributed(of: result, in: find)
+        for run in snippet.runs where run.font == nil { snippet[run.range].font = FindStyle.snippet }
+        snippet.foregroundColor = .secondary
+        var gap = AttributedString(FindStyle.nameGap)
+        gap.font = FindStyle.snippet
+        return named + gap + snippet
     }
 
     /// The same, as plain text, for VoiceOver.

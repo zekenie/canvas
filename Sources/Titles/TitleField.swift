@@ -33,11 +33,14 @@ public final class TitleField: NSView, NSTextViewDelegate {
     private let chip: AdornmentLabel
     /// The pill as it's drawn while nothing is typed: its placeholder, dimmed, where the kind gives one.
     private let empty: AdornmentLabel?
+    /// What the pill says, dimmed, while nothing is typed ("Table", "Enum"): nil for none, where the field is a caret's room.
+    public let placeholder: String?
 
     /// A field holding `title`, its caret at the end, over a pill with `systemImage` first and in `tint` (nil: the
     /// pill's gray); while it holds nothing, the pill's `placeholder` shows dimmed after the caret, as the pill under it
     /// says it, so nothing moves as typing starts. `name` is what VoiceOver calls it.
     public init(title: String?, systemImage: String?, tint: AdornmentTint?, placeholder: String? = nil, name: String) {
+        self.placeholder = placeholder
         let blank = AdornmentLabel(" ", systemImage: systemImage)
         chip = tint.map { blank.tinted($0) } ?? blank
         empty = placeholder.map { placeholder in

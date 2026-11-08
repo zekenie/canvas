@@ -106,7 +106,7 @@ extension EnumDefinition: Editable {
 
     func makeEditingView(for shape: ShapeRecord<DatabaseEnum>, context: EditContext<DatabaseEnum>) -> EditingView {
         LineRowsView.make(shape, context: context, model: EnumLines(), title: LineTitle { title in
-            TitleField(title: title, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, name: EnumStyle.titleFieldName)
+            TitleField(title: title, systemImage: EnumStyle.symbol, tint: EnumStyle.titleTint, placeholder: EnumStyle.label, name: EnumStyle.titleFieldName)
         })
     }
 

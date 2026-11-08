@@ -95,14 +95,18 @@ public struct ShapePart {
     /// What an arrow key does to it, for a part that is moved (a handle): whether it took the step. Nil, or a
     /// step it doesn't take, nudges the shape as the arrow keys do.
     public var adjust: (@MainActor (CanvasEditor, PartStep) -> Bool)?
+    /// Shapes the part stands for, outlined as the selection is while it has the focus, besides its ring (a connection's
+    /// arrow, drawn whole in the focus color, so the ring at its end is read as the arrow's).
+    public var lights: [ShapeID]
 
-    public init<ID: Hashable & Sendable>(id: ID, title: String, role: PartRole = .button, rect: CGRect,
+    public init<ID: Hashable & Sendable>(id: ID, title: String, role: PartRole = .button, rect: CGRect, lights: [ShapeID] = [],
                                          press: @escaping @MainActor (CanvasEditor) -> Void,
                                          adjust: (@MainActor (CanvasEditor, PartStep) -> Bool)? = nil) {
         self.id = AnyHashable(id)
         self.title = title
         self.role = role
         self.rect = rect
+        self.lights = lights
         self.press = press
         self.adjust = adjust
     }
@@ -279,7 +283,7 @@ extension SelectionState {
     func focusPart(_ part: ShapePart, of shape: ShapeID) {
         items = nil
         partFocus = PartFocus(shape: shape, part: part.id)
-        focusedPartRing = PartRing(rect: part.rect, revision: editor.revision, layout: editor.layoutRevision, zoom: editor.camera.zoom)
+        focusedPartRing = PartRing(rect: part.rect, lights: part.lights, revision: editor.revision, layout: editor.layoutRevision, zoom: editor.camera.zoom)
         editor.setNeedsDisplay()
     }
 
@@ -296,13 +300,18 @@ extension SelectionState {
     /// Where the focused part is drawn, in world units: kept from the last listing until the board, the layout
     /// or the zoom changes (an adornment's size is in view points), then listed again. Nil with none focused, one
     /// that is gone, and while the shape is edited.
-    var focusedPartRect: CGRect? {
+    var focusedPartRect: CGRect? { focusedRing?.rect }
+
+    /// What the focused part lights besides its ring (`ShapePart.lights`), outlined with the selection. Empty with none.
+    var focusedPartLights: [ShapeID] { focusedRing?.lights ?? [] }
+
+    private var focusedRing: PartRing? {
         guard let focus = partFocus, editor.editingShapeID == nil else { return nil }
         let revision = editor.revision, layout = editor.layoutRevision, zoom = editor.camera.zoom
-        if let ring = focusedPartRing, ring.revision == revision, ring.layout == layout, ring.zoom == zoom { return ring.rect }
-        let rect = editor.shapeParts(of: focus.shape).first { $0.id == focus.part }?.rect
-        focusedPartRing = rect.map { PartRing(rect: $0, revision: revision, layout: layout, zoom: zoom) }
-        return rect
+        if let ring = focusedPartRing, ring.revision == revision, ring.layout == layout, ring.zoom == zoom { return ring }
+        let part = editor.shapeParts(of: focus.shape).first { $0.id == focus.part }
+        focusedPartRing = part.map { PartRing(rect: $0.rect, lights: $0.lights, revision: revision, layout: layout, zoom: zoom) }
+        return focusedPartRing
     }
 
     /// A commit has been taken in by every service: a focused part it took away (a lock chip whose shape was
@@ -325,6 +334,7 @@ struct PartFocus: Equatable {
 /// Where the focused part's ring was drawn, and what that was worked out from.
 struct PartRing {
     let rect: CGRect
+    let lights: [ShapeID]
     let revision: Int
     let layout: Int
     let zoom: CGFloat

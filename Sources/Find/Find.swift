@@ -98,6 +98,8 @@ public struct FindableTextsContribution {
     let affected: (@MainActor (ChangeSet, FindContext) -> Set<ShapeID>)?
     let followsZoom: Bool
     let look: FindLook
+    /// Its text names the shape (a title): a row of Find's list for a hit elsewhere in the shape leads with it.
+    var names = false
 }
 
 /// How Find marks a hit where a contribution's text is drawn.
@@ -132,17 +134,20 @@ extension ScopedRegistrar {
     ///   units, where the shape is; nil, or none given, for the shape's bounds.
     /// - `affected`: the shapes each commit changes the texts of without changing them (a note
     ///   showing another shape's live name); it must cost what the commit changed.
+    /// - `names`: the text names the shape (its title): the shape's row in Find's list leads with it, the
+    ///   snippet of a hit elsewhere in the shape after it, faint ("products  weight_grams int").
     public mutating func findableTexts(
         _ name: String,
         look: FindLook = .marker,
         followsZoom: Bool = false,
+        names: Bool = false,
         affected: (@MainActor (ChangeSet, FindContext) -> Set<ShapeID>)? = nil,
         zoomedOut: (@MainActor (AnyShapeRecord, String, FindContext) -> CGRect?)? = nil,
         texts: @escaping @MainActor (AnyShapeRecord, FindContext) -> [FindableText],
         rects: @escaping @MainActor (AnyShapeRecord, String, [Range<Int>], FindContext) -> [[CGRect]]
     ) {
         contribute(FindableTextsContribution(name: name, texts: texts, rects: rects, zoomedOut: zoomedOut,
-                                             affected: affected, followsZoom: followsZoom, look: look),
+                                             affected: affected, followsZoom: followsZoom, look: look, names: names),
                    to: FindableTexts.self)
     }
 }
@@ -155,12 +160,13 @@ extension PluginRegistrar {
         of _: P.Type,
         look: FindLook = .marker,
         followsZoom: Bool = false,
+        names: Bool = false,
         affected: (@MainActor (ChangeSet, FindContext) -> Set<ShapeID>)? = nil,
         zoomedOut: (@MainActor (ShapeRecord<P>, String, FindContext) -> CGRect?)? = nil,
         texts: @escaping @MainActor (ShapeRecord<P>, FindContext) -> [FindableText],
         rects: @escaping @MainActor (ShapeRecord<P>, String, [Range<Int>], FindContext) -> [[CGRect]]
     ) {
-        contribute(FindableTextsContribution(typed: P.self, name: name, look: look, followsZoom: followsZoom, affected: affected,
+        contribute(FindableTextsContribution(typed: P.self, name: name, look: look, followsZoom: followsZoom, names: names, affected: affected,
                                              zoomedOut: zoomedOut, texts: texts, rects: rects),
                    to: FindableTexts.self, for: .kind(P.kind))
     }
@@ -184,7 +190,7 @@ extension ShapeRegistrar {
 }
 
 extension FindableTextsContribution {
-    init<P: ShapeProps>(typed _: P.Type, name: String, look: FindLook, followsZoom: Bool,
+    init<P: ShapeProps>(typed _: P.Type, name: String, look: FindLook, followsZoom: Bool, names: Bool = false,
                         affected: (@MainActor (ChangeSet, FindContext) -> Set<ShapeID>)?,
                         zoomedOut: (@MainActor (ShapeRecord<P>, String, FindContext) -> CGRect?)?,
                         texts: @escaping @MainActor (ShapeRecord<P>, FindContext) -> [FindableText],
@@ -205,7 +211,7 @@ extension FindableTextsContribution {
             }
         }
         self.init(name: name, texts: typedTexts, rects: typedRects, zoomedOut: typedZoomedOut,
-                  affected: affected, followsZoom: followsZoom, look: look)
+                  affected: affected, followsZoom: followsZoom, look: look, names: names)
     }
 }
 
