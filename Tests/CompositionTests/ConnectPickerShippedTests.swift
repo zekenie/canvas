@@ -1,9 +1,11 @@
 import AppKit
 import Arrows
+import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
 import Connections
+import Locking
 import CoreGraphics
 import Mentions
 import Publishing
@@ -30,6 +32,7 @@ extension NestedWindow {
     }
 
     var picker: ConnectPickerHost? { editor.connectPicker }
+    func canOpenPicker(on shape: ShapeID) -> Bool { picker?.canOpen(on: shape) == true }
     var pickerField: EditingTextView? { picker?.field }
     var pickerHasKeyboard: Bool { pickerField.map { window.firstResponder === $0 } ?? false }
 
@@ -93,7 +96,7 @@ extension NestedWindow {
         expectEqual(w.arrows.last.flatMap { ends(w.editor, $0) }, [a, b])
         expectEqual(w.editor.undoHistory.undoName, "Connect")
     },
-    test("typing narrows the list as the @ picker ranks it; two shapes called alike say where each is, the board shown's without a place") {
+    test("typing narrows the list as the @ picker ranks it; two shapes called alike say where each is, the board shown's by its own name") {
         let w = try NestedWindow()
         defer { w.board.close() }
         let (a, b) = w.nest.notes(on: 1)
@@ -102,7 +105,10 @@ extension NestedWindow {
         w.title(inPlans, "Checkout", on: w.nest.sBoard)
         try w.openPicker(on: a)
         let alike = w.lines.filter { $0.title == "Checkout" }
-        expectEqual(alike.map(\.detail), ["Note", "Note · Plans"], "the board shown's first, then the one in Plans: \(w.lines.map { [$0.title, $0.detail ?? ""] })")
+        let shown = w.editor.name(of: w.editor.board)
+        expectEqual(alike.map(\.detail), ["Note · \(shown)", "Note · Plans"], "the board shown's first, then the one in Plans: \(w.lines.map { [$0.title, $0.detail ?? ""] })")
+        let lone = try require(w.lines.first { $0.title == "Plans, second" })
+        expectEqual(lone.detail, "Plans", "a name that is alone says only where it is")
         w.window.type("checkout")
         w.window.settle()
         expectEqual(w.titles, ["Checkout", "Checkout", "Itself"])
@@ -194,6 +200,14 @@ extension NestedWindow {
         w.editor.undo()
         expectEqual(w.pills.count, 0, "one Undo takes back the arrow and the pill the first pick made")
         expectEqual(w.arrows.count, before)
+        w.editor.redo()
+        expectEqual(w.pills.count, 1, "and one Redo puts both back")
+        expectEqual(w.arrows.count, before + 1)
+        let again = try require(w.pills.first)
+        expectEqual(again.id, pill.id)
+        expectEqual(again.box, pill.box, "the pill where it was")
+        expectEqual(again.kind, pill.kind)
+        expectEqual(w.arrows.last.flatMap { ends(w.editor, $0) }, [a, pill.id], "the arrow joining the same ends")
     },
     test("a private far shape is listed `will be made public`, and its pick makes it public in the step, one Undo back") {
         let w = try NestedWindow()
@@ -215,6 +229,38 @@ extension NestedWindow {
         w.editor.undo()
         expectEqual(w.editor.shape(inFile: far)?[PrivateProperty.self], true, "private again with the arrow gone")
         expectEqual(w.pills.count, 0)
+        w.editor.redo()
+        expectEqual(w.editor.shape(inFile: far)?[PrivateProperty.self], nil, "public again with the pill and the arrow back")
+        expectEqual(w.pills.count, 1)
+        expectEqual(w.arrows.count, 2)
+    },
+    test("a private far shape that is locked, or on a board that cannot be written, is not listed, and a pick of it made all the same is refused at the step") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let (a, _) = w.nest.notes(on: 1)
+        let (locked, open) = w.nest.notes(on: 2)
+        let (inside, _) = w.nest.notes(on: 3)
+        w.editor.transact(on: w.nest.sBoard, "Lock") { $0.update(locked) { record in
+            record[PrivateProperty.self] = true
+            record[LockedProperty.self] = true
+        } }
+        w.editor.transact(on: w.nest.tBoard, "Make Private") { $0.update(inside) { $0[PrivateProperty.self] = true } }
+        // The board of T is not writable: its owner is locked.
+        w.editor.transact(on: w.nest.sBoard, "Lock") { $0.update(w.nest.t) { $0[LockedProperty.self] = true } }
+        try w.openPicker(on: a)
+        expect(!w.titles.contains("Plans, first"), "a locked private shape cannot be made public: \(w.titles)")
+        expect(!w.titles.contains("Inside, first"), "nor one on a board that takes no writes: \(w.titles)")
+        expect(w.titles.contains("Plans, second"), "a public one is listed")
+        _ = open
+        w.window.pressEscape()
+        w.window.spin { w.picker?.isOpen == false }
+        // A pick made all the same (the list was drawn before it was locked): refused, no step, no pill, the shapes shake.
+        let steps = w.editor.undoHistory.undoName
+        let shapes = w.editor.document.shapes.count
+        expect(w.editor.connect(ConnectEnd(a), to: ConnectEnd(locked), fulfil: true) == nil)
+        expectEqual(w.editor.undoHistory.undoName, steps, "no step")
+        expectEqual(w.editor.document.shapes.count, shapes, "no pill, no arrow")
+        expect(w.editor.service(RefusalShake.self)?.isShaking == true, "the shapes shake")
     },
     test("a pick the kind's plan refuses shakes the shape and leaves no step; a plan names the step, writes first inside it, and a kind can leave picks out of the list") {
         let blocked = NestedFile().notes(on: 1).1
@@ -255,6 +301,24 @@ extension NestedWindow {
         w.editor.undo()
         expect(w.editor.document[key.id] == nil, "one Undo takes back the note and the arrow")
         expectEqual(w.pills.count, 0)
+    },
+    test("a plan's prepare may change the near end, which the arrow then joins as that shape; one that changes the far end of a pick on another board refuses it whole") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let (a, b) = w.nest.notes(on: 1)
+        let (far, _) = w.nest.notes(on: 2)
+        let steps = w.editor.undoHistory.undoName
+        let shapes = w.editor.document.shapes.count
+        let changesFar = ConnectPlan(step: "Swap", from: ConnectEnd(a), to: ConnectEnd(far)) { _ in (ConnectEnd(a), ConnectEnd(b)) }
+        expect(w.editor.connect(ConnectEnd(a), to: ConnectEnd(far), plan: changesFar, fulfil: true) == nil, "refused")
+        expectEqual(w.editor.undoHistory.undoName, steps, "no step")
+        expectEqual(w.editor.document.shapes.count, shapes, "no pill, no arrow")
+        let before = w.arrows.count
+        let swaps = ConnectPlan(step: "Swap", from: ConnectEnd(a), to: ConnectEnd(b)) { _ in (ConnectEnd(b), ConnectEnd(a)) }
+        let made = try require(w.editor.connect(ConnectEnd(a), to: ConnectEnd(b), plan: swaps))
+        expectEqual(w.arrows.count, before + 1)
+        expectEqual(w.editor.document[made].flatMap { w.editor.registry.connectionEnds(of: $0) }.map { [$0.from, $0.to] }, [b, a], "the ends the plan returned")
+        expectEqual(w.editor.undoHistory.undoName, "Swap")
     },
     test("⌘L in a note's words ends editing, its words kept, and opens the picker; Escape then gives the canvas the keyboard") {
         let w = try NestedWindow()
@@ -300,6 +364,10 @@ extension NestedWindow {
             walk.press(.up)
             expectEqual(list.highlighted, (count - step) % count, "↑ \(step)")
         }
+        walk.press(Chord("n", .control))
+        expectEqual(list.highlighted, 1, "⌃N moves down")
+        walk.press(Chord("p", .control))
+        expectEqual(list.highlighted, 0, "⌃P moves up")
         walk.press(.down)
         walk.press(Chord.backTab)
         expectEqual(list.highlighted, 0, "⇧Tab moves the highlight up")
@@ -341,6 +409,86 @@ extension NestedWindow {
         expect(w.picker?.isOpen == false)
         expectEqual(w.editor.undoHistory.undoName, "Connect", "Tab picked the first line")
         expectEqual(w.editor.selectedShapeIDs, [a])
+    },
+    test("⌘L pressed in the open picker's field does nothing to it: one picker, one list, its words and the keyboard kept; Escape then leaves nothing behind") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
+        for item in menus.main.items.compactMap(\.submenu).flatMap(\.items) { item.target = w.controller }
+        let (a, _) = w.nest.notes(on: 1)
+        try w.openPicker(on: a)
+        w.window.type("plans")
+        w.window.settle()
+        let field = try require(w.pickerField)
+        let lines = w.titles
+        for _ in 0..<2 {
+            expect(menus.main.performKeyEquivalent(with: w.window.keyEvent("l", code: 37, modifiers: .command)), "the menu bar's key")
+            w.window.settle()
+            expect(w.picker?.isOpen == true && w.pickerField === field, "the same picker, the same field")
+            expect(w.pickerHasKeyboard, "the keyboard is in it")
+            expectEqual(w.pickerField?.string, "plans")
+            expectEqual(w.titles, lines)
+            expect(w.editor.card != nil, "its card shows")
+            expect(field.caretListWindow != nil, "its list window")
+        }
+        w.window.pressEscape()
+        w.window.spin { w.picker?.isOpen == false && w.window.firstResponder === w.canvas }
+        expect(w.editor.card == nil, "no card")
+        expect(field.caretListWindow == nil, "no list window left")
+        expect(w.window.firstResponder === w.canvas, "the canvas has the keyboard")
+        expectEqual(w.editor.selectedShapeIDs, [a])
+    },
+    test("a commit while the picker is open lists again but keeps the highlight on the line it was on; a commit that takes its shape closes it") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let (a, _) = w.nest.notes(on: 1)
+        try w.openPicker(on: a)
+        let list = try require(w.picker?.picker?.list)
+        let field = try require(w.pickerField)
+        w.window.press(.down)
+        w.window.press(.down)
+        expectEqual(list.highlighted, 2)
+        let held = try require(w.picker?.picker?.target(row: 2))
+        w.title(a, "Renamed", on: .root)
+        w.window.settle()
+        expect(w.picker?.isOpen == true, "still open")
+        expectEqual(list.highlighted, 2, "the highlight stays")
+        expectEqual(w.picker?.picker?.target(row: try require(list.highlighted)), held, "on the same shape")
+        // The line it was on is gone: the first.
+        let heldBoard = try require(w.editor.file.board(containing: held))
+        w.editor.transact(on: heldBoard, "Delete") { $0.delete([held]) }
+        w.window.settle()
+        expect(w.picker?.isOpen == true)
+        expectEqual(list.highlighted, 0, "the first line when the one held is no longer listed")
+        // The shape it was opened on is deleted by a commit: it closes.
+        w.editor.transact(on: .root, "Delete") { $0.delete([a]) }
+        w.window.spin { w.picker?.isOpen == false }
+        expect(w.picker?.isOpen == false && w.editor.card == nil, "closed with its shape")
+        expect(field.caretListWindow == nil, "no list window left")
+    },
+    test("Connect To… from the Shape menu opens the picker with the keyboard in its field; ⌘L in a shape's arrow label, which has nothing to pick, leaves the edit as it is") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let (a, _) = w.nest.notes(on: 1)
+        w.editor.selection = a
+        let menu = try require(w.editor.menuForSelection(omitting: []))
+        let item = try require(menu.item(withTitle: "Connect To…"))
+        menu.performActionForItem(at: menu.index(of: item))
+        w.window.spin { w.pickerHasKeyboard }
+        expect(w.pickerHasKeyboard, "the field has the keyboard")
+        w.window.pressEscape()
+        w.window.spin { w.picker?.isOpen == false }
+        // An arrow joins nothing as a source: ⌘L in its words is off, and the edit stays.
+        let menus = BoardMenus.make(appName: "Infinite Canvas", registry: w.editor.registry)
+        for item in menus.main.items.compactMap(\.submenu).flatMap(\.items) { item.target = w.controller }
+        let arrow = w.nest.arrow(on: 1)
+        w.editor.selection = arrow
+        expect(!w.canOpenPicker(on: arrow))
+        expect(w.editor.beginEditing(arrow), "an arrow's label is edited")
+        w.window.spin { w.window.firstResponder is NSText }
+        _ = menus.main.performKeyEquivalent(with: w.window.keyEvent("l", code: 37, modifiers: .command))
+        expectEqual(w.editor.editingShapeID, arrow, "still editing")
+        expect(w.picker?.isOpen == false)
     },
     test("the Shape menu has Connect To… with ⌘L on one shape, Connect on two") {
         let w = try NestedWindow()

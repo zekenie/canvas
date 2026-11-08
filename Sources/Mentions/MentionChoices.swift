@@ -46,6 +46,19 @@ extension MentionState {
         candidates.map { MentionChoice(candidate: $0, place: $0.place ?? place(ofShape: $0.id)) }
     }
 
+    /// The same, where two called alike on the board shown would otherwise read alike: a shape on the board shown, called as another
+    /// is, says the board's name as its place, as the other says its own. A name that is alone has no place, as in `choices(_:)`.
+    public func choicesNamingBoardShown(_ candidates: [MentionCandidate]) -> [MentionChoice] {
+        let all = choices(candidates)
+        var counts: [String: Int] = [:]
+        for choice in all { counts[choice.candidate.appearance.label.lowercased(), default: 0] += 1 }
+        let board = MentionPlace(board: editor.name(of: editor.board))
+        return all.map { choice in
+            guard choice.place == nil, counts[choice.candidate.appearance.label.lowercased(), default: 0] > 1 else { return choice }
+            return MentionChoice(candidate: choice.candidate, place: board)
+        }
+    }
+
     /// The name of the board a shape is on, nil on the board shown: what Boards calls it
     /// (`editor.name(of:root:)`: its owner's title, else its kind's placeholder, "Untitled Subboard",
     /// else its kind's name), the file's name for the root ("Board" when it has none).

@@ -29,7 +29,9 @@ extension PluginRegistrar {
                 isEnabled: { subject in
                     let editor = subject.editor
                     guard (1...2).contains(subject.shapes.count), editor.registry.drawsConnections else { return false }
-                    return editor.editingShapeID == nil || (subject.shapes.count == 1 && editor.connectPicker != nil)
+                    if editor.editingShapeID == nil { return true }
+                    // A shape being edited: its edit ends only for a picker that can open on it.
+                    return subject.shapes.count == 1 && editor.connectPicker?.canOpen(on: subject.shapes[0]) == true
                 }) { subject in
             let editor = subject.editor
             if subject.shapes.count == 1, let picker = editor.connectPicker {
@@ -154,12 +156,26 @@ extension CanvasEditor {
         return undoHistory.group(step) {
             let made: ShapeID? = transactWhole(step, shaking: ids) { transaction in
                 var ends = (from: source, to: target)
-                if let prepare = plan?.prepare { ends = try prepare(&transaction) }
+                var standingFor = (from: from, to: to)
+                if let prepare = plan?.prepare {
+                    ends = try prepare(&transaction)
+                    // The ends it returns are the arrow's: what each stands for is read again for an end it changed, and the far
+                    // end, reached through a pill, is not one a plan may change.
+                    if pill != nil, ends.to != target { throw Transaction.Refused() }
+                    if ends.from != source {
+                        guard let record = transaction.document[ends.from.shape], let kinds = ports?.standingKinds(of: record) else { throw Transaction.Refused() }
+                        standingFor.from = kinds
+                    }
+                    if ends.to != target {
+                        guard let record = transaction.document[ends.to.shape], let kinds = ports?.standingKinds(of: record) else { throw Transaction.Refused() }
+                        standingFor.to = kinds
+                    }
+                }
                 if let pill {
                     try pill.claim(in: &transaction, registry: registry)
                     ends.to = ConnectEnd(try pill.put(in: &transaction))
                 }
-                guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: (from, to))
+                guard let made = registry.drawConnection(from: ends.from.shape, to: ends.to.shape, in: transaction.shapes, standingFor: standingFor)
                 else { throw Transaction.Refused() }
                 transaction.insert(made)
                 guard transaction.document[made.id] != nil else { throw Transaction.Refused() }

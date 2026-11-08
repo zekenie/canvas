@@ -7267,7 +7267,8 @@ picker is installed; a list without ContextMenus leaves them out and keeps the k
 about no shape's content, `showsZoomedOut`) holding a one-line field with a faint `→` and a caret list under it
 (`CaretListWindow`, as Jump To and References show theirs). It ranks Mentions' catalog, so the lines, their places
 (two shapes called alike say where each is) and the recent picks are the `@` picker's, over the kinds the port
-table can join the source to (`registry.connectionChannel`), on every board of the file, and **Itself** is last: the loop.
+table can join the source to (`registry.connectionChannel`), on every board of the file, and **Itself** is last while anything is listed or nothing is typed (a word that finds nothing
+leaves the list empty, so a Return there makes no loop): the loop.
 Return and Tab pick, ↑ ↓ ⌃P ⌃N and the page keys move, Escape and ⌘. give the keyboard back to the canvas with the
 selection as it was. A pick on another board is reached through a reference pill on the board shown, reused
 or made and landed as `canvas draw` lands one (`StandInRoute.placePill`), with the arrow, in one step; a private far
