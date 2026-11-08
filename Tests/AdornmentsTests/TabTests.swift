@@ -119,6 +119,14 @@ private func turned(_ x: CGFloat, _ y: CGFloat, _ length: CGFloat) -> Tab {
         let narrow = AdornmentLayout.frames(of: [text(60), Item(.aboveTopLeft, width: 60, isText: true)], width: 45)
         expectEqual(narrow[1], CGRect(x: 10, y: -31, width: 35, height: 18), "text at the left end gives way in the room after the inset")
     },
+    test("a row that gives way to a container's tab starts its left end past it, its right end where it was, its text cut in the room left") {
+        let title = Item(.aboveTopLeft, width: 80, isText: true), lock = Item(.aboveTopRight, width: 18, isText: false)
+        let frames = AdornmentLayout.frames(of: [title, lock], width: 200, leftStart: 70)
+        expectEqual(frames[0], CGRect(x: 70, y: -27, width: 80, height: 18), "from where it may start")
+        expectEqual(frames[1], CGRect(x: 182, y: -27, width: 18, height: 18), "the right end where it was")
+        expectEqual(AdornmentLayout.frames(of: [title, lock], width: 140, leftStart: 70)[0]?.width, 140 - 18 - 4 - 70, "cut in the room left")
+        expectEqual(AdornmentLayout.frames(of: [title], width: 90, leftStart: 70)[0], nil, "no room for any of it: left out")
+    },
     test("a point is on a tab as its rounded rect is drawn: its corners are a tab's, not a capsule's") {
         let frame = CGRect(x: 0, y: 0, width: 100, height: 18)
         expect(AdornmentLayout.distance(from: CGPoint(x: 1.5, y: 1.5), to: frame, radius: 5) < 0, "inside a corner a capsule cuts off")
