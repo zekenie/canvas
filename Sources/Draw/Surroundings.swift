@@ -32,22 +32,27 @@ public struct PutBeside: Sendable, Equatable {
     public var above: CGFloat
     /// World units kept in from the view's edges.
     public var margin: CGFloat
+    /// Whether the view will be panned to what's put down (Insert's: the selection is brought into view, the shape it's beside
+    /// kept with it), so a side counts as seen when the two fit in the clear part together; else (a note put down settled, the
+    /// keyboard staying where it is) only one in the clear part as it is.
+    public var panned: Bool
 
-    public init(above: CGFloat, margin: CGFloat) {
+    public init(above: CGFloat, margin: CGFloat, panned: Bool = false) {
         self.above = above
         self.margin = margin
+        self.panned = panned
     }
 
     /// The row above a shape (Adornments' `rowGap + rowHeight`, 27 view points) and `PlacingStyle.viewMargin`, at `zoom`.
     @MainActor
-    public static func inView(at zoom: CGFloat) -> PutBeside {
+    public static func inView(at zoom: CGFloat, panned: Bool = false) -> PutBeside {
         let zoom = zoom > 0 && zoom.isFinite ? zoom : 1
-        return PutBeside(above: (AdornmentLayout.rowGap + AdornmentLayout.rowHeight) / zoom, margin: PlacingStyle.viewMargin / zoom)
+        return PutBeside(above: (AdornmentLayout.rowGap + AdornmentLayout.rowHeight) / zoom, margin: PlacingStyle.viewMargin / zoom, panned: panned)
     }
 
     /// The same at the zoom `editor`'s camera is headed for.
     @MainActor
-    public static func inView(of editor: CanvasEditor) -> PutBeside { inView(at: editor.cameraTarget.zoom) }
+    public static func inView(of editor: CanvasEditor, panned: Bool = false) -> PutBeside { inView(at: editor.cameraTarget.zoom, panned: panned) }
 
     /// The part of `view` (world units) a box goes in, with its row above: in from the edges by the margin.
     func clear(of view: CGRect) -> CGRect {
@@ -55,10 +60,16 @@ public struct PutBeside: Sendable, Equatable {
         return inset.isEmpty ? view : inset
     }
 
-    /// Whether `rect`, with its row above, is in `clear`.
-    func shows(_ rect: CGRect, in clear: CGRect) -> Bool {
-        clear.contains(CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above))
+    /// Whether `rect`, with its row above, is seen in `clear`: in it, or, `panned`, able to be panned into it with `beside`
+    /// (the shape it's put down beside, with its row above too).
+    func shows(_ rect: CGRect, in clear: CGRect, beside: CGRect? = nil) -> Bool {
+        let shown = withRow(rect)
+        guard panned, let beside else { return clear.contains(shown) }
+        let both = shown.union(withRow(beside))
+        return both.width <= clear.width && both.height <= clear.height
     }
+
+    private func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
 }
 
 /// The constants of placing for plugins.
@@ -165,7 +176,7 @@ public struct Surroundings {
                                      fixed: fixed, avoiding: avoiding)
             else { continue }
             let gap = Self.gap(from: bounds, to: placed.rect, side)
-            let seen = view.map { put?.shows(placed.rect, in: $0) ?? true } ?? true
+            let seen = view.map { put?.shows(placed.rect, in: $0, beside: bounds) ?? true } ?? true
             // A side in view beats one out of it; among sides alike that way, the nearer, the earlier on a tie.
             let better = best.map { best in seen != best.seen ? seen : gap < best.gap - Self.slack } ?? true
             if better { best = (placed.rect, gap, placed.zones, seen) }
@@ -249,6 +260,16 @@ public struct Surroundings {
                        above: [container])
     }
 
+    /// Whether a box landed at `rect` shows in the clear part of the view as `put` asks (with its row above, in from the edges):
+    /// what a caller that puts a shape down settled, never panned to, checks a landing beside a shape by before it falls back
+    /// to `anywhere(put:)`. True with no view.
+    public func shows(_ rect: CGRect, put: PutBeside) -> Bool {
+        guard let view = reading.view else { return true }
+        var settled = put
+        settled.panned = false
+        return settled.shows(rect, in: put.clear(of: view))
+    }
+
     /// Anywhere on the board, as draw puts the one shape a script says nothing about the place of (no
     /// placements, and not on the board yet): at the middle of the view the board would be shown with,
     /// or the nearest spot around it clear of what's there, ring by ring; failing that, at the middle
@@ -276,7 +297,8 @@ public struct Surroundings {
         guard let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
         let containers = Set(shapes.map { editor.shapeContext.container(of: $0) })
         let holder = containers.count == 1 ? containers.first ?? nil : nil
-        let put = PutBeside.inView(of: editor)
+        // Selected and brought into view once put down, with what it's beside kept in view (Selection's).
+        let put = PutBeside.inView(of: editor, panned: true)
         switch shapes.count {
         case 0: return surroundings.reading.view == nil ? nil : surroundings.anywhere(put: put).rect
         case 1: return surroundings.near(shapes[0], within: holder, put: put)?.rect

@@ -212,7 +212,9 @@ public final class CanvasEditor {
     var laidOutViewport: CGRect { unobscuredViewport(on: board, edges: coveredEdges) }
 
     func unobscuredViewport(on target: BoardID) -> CGRect {
-        unobscuredViewport(on: target, edges: coveredEdgesAhead?() ?? coveredEdges)
+        // While a service takes a change in, what the host's rule reads (the selection) may be half taken in: the edges as laid out.
+        let ahead = hearing.contains(where: \.isBusy) ? nil : coveredEdgesAhead?()
+        return unobscuredViewport(on: target, edges: ahead ?? coveredEdges)
     }
 
     private func unobscuredViewport(on target: BoardID, edges: CoveredEdges) -> CGRect {

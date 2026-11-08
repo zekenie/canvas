@@ -236,7 +236,13 @@ extension CanvasEditor {
                 surroundings.near(box, avoiding: owners.compactMap { shapes.geometry(of: $0)?.bounds }, put: put)
             }
         }
-        guard let landing else { return nil }
+        guard var landing else { return nil }
+        // No side of them in view: the nearest clear spot in view instead, so the type made is seen (one edited is brought
+        // into view as it's selected, wherever it lands).
+        if !editing, !surroundings.shows(landing.rect, put: put) {
+            let anywhere = surroundings.anywhere(put: put)
+            if surroundings.shows(anywhere.rect, put: put) { landing = anywhere }
+        }
         return undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) {
             place(placement, in: landing.rect)
             guard let id = made.id, document[id] != nil else { return nil }
