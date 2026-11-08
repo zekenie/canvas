@@ -83,6 +83,42 @@ extension EmptyBoardWindow {
         walk.press(.escape)
         expectEqual(tables(editor).last?.props.columns.map(ColumnGrammar.print), ["id uuid pk", "customer_id uuid"])
     },
+    test("Edit ▸ Undo and Redo in a line: the board's step once the line has nothing of its own; an uncommitted draft is not written back by the undo that ends editing") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        let walk = w.walk()
+        walk.press(Chord("/"))
+        w.type("table customers", with: walk)
+        walk.press(.return)
+        let id = try require(tables(editor).first).id
+        let columns = { @MainActor in tables(editor).first?.props.columns.map(ColumnGrammar.print) }
+        let board = try require(w.window as? BoardWindow)
+        w.type("email text unique", with: walk)
+        walk.press(.return)
+        expectEqual(columns(), ["id uuid pk", "email text unique"])
+        board.undo(nil)
+        expectEqual(columns(), ["id uuid pk"], "the column's step taken back")
+        expect(editor.document[id] != nil)
+        expectEqual(undoTitle(w.window), "Undo Add Table", "the next step back")
+        board.redo(nil)
+        expectEqual(columns(), ["id uuid pk", "email text unique"], "and put again")
+        // A rename, then Undo: the line shown is not written back as the editing ends.
+        editor.endEditing()
+        editor.beginEditing(id)
+        w.window.settle()
+        w.lineRows?.go(to: .row(try require(tables(editor).first?.props.columns.last?.id)))
+        w.lineRows?.field.setSelectedRange(NSRange(location: 5, length: 0))
+        w.type("2", with: walk)
+        walk.press(.down)
+        expectEqual(columns(), ["id uuid pk", "email2 text unique"])
+        expectEqual(undoTitle(w.window), "Undo Rename Column")
+        board.undo(nil)
+        expectEqual(columns(), ["id uuid pk", "email text unique"], "the rename taken back, not written again by the line's teardown")
+        board.redo(nil)
+        expectEqual(columns(), ["id uuid pk", "email2 text unique"], "redo has it")
+    },
     test("the first minute by the keys (P12): a table (T1) and its columns (T2) take no more presses than clicks, typing aside") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

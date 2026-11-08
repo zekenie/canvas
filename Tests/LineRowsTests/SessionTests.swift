@@ -199,6 +199,19 @@ import TextEditing
         b.field.paste(text: "one line")
         expectEqual(b.field.string, "one line", "one line is typed")
     },
+    test("a block pasted over an emptied row takes its place, and the step is still Paste Entries, one undo") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green", "blue"])
+        b.begin(id)
+        b.press(.up, times: 2)
+        expectEqual(b.focus, "row green")
+        b.press(.commandDelete)
+        b.field.paste(text: "one 1\ntwo 2")
+        expectEqual(b.labels(id), ["red", "one", "two", "blue"])
+        expectEqual(b.undoName, "Paste Entries", "named for the block, not for the row it replaced")
+        b.editor.undo()
+        expectEqual(b.labels(id), ["red", "green", "blue"], "one step")
+    },
     test("Tab and ⇧Tab walk the stops; past the last, the next tally in reading order, edited at its first stop; ⇧Tab comes back to the last") {
         let b = try Bench()
         let a = b.tally("a", ["x", "y"], at: CGPoint(x: 100, y: 100))

@@ -535,7 +535,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
             guard commitDraft() != nil else { return }
             show(.waiting, at: .end, waitingAt: at + 1)
         case .row(let row):
-            commitDraft()
+            // A refused commit (the shape locked meanwhile) keeps the draft where it is, the shape shaking.
+            guard commitDraft() != nil else { return }
             let at = index(of: row).map { $0 + 1 } ?? rows.count
             show(.waiting, at: .end, waitingAt: at)
         }
@@ -645,7 +646,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             return true
         }
         let blank = field.string.trimmingCharacters(in: .whitespaces).isEmpty
-        var changes: [LineChange<Row>] = []
+        var gone: Row?
         var at: Int
         switch focus {
         case .waiting:
@@ -657,7 +658,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .row(let row):
             guard let index = index(of: row), let current = rows.first(where: { model.id(of: $0) == row }) else { return true }
             if blank {
-                changes.append(.delete([current]))
+                // The block first, so the step is named for it ("Paste Columns"), and the emptied row goes after.
+                gone = current
                 at = index
             } else {
                 commitDraft()
@@ -669,7 +671,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let grammar = model.grammar(for: shape.map { model.roleOfNewRow(at: at, in: $0.props) } ?? "")
         let made = lines.compactMap { grammar.read(LineText($0), id: PartID(), in: lineContext()).row }
         guard !made.isEmpty else { return true }
-        changes.append(.add(made, at: at))
+        var changes: [LineChange<Row>] = [.add(made, at: at)]
+        if let gone { changes.append(.delete([gone])) }
         isMoving = true
         defer { isMoving = false }
         guard write(changes) else { return true }
