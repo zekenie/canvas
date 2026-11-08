@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Find
 import Geometry
 @_spi(Host) import CanvasUI
 import Keyboard
@@ -241,5 +242,16 @@ struct TalliesPlugin: CanvasPlugin {
             tally.tool(label: "Tally", systemImage: "number", placing: tally.editingPlacement(size: CGSize(width: 240, height: 40)) { Tally() })
             tally.lineRows(TallyLines())
         }
+    }
+}
+
+/// A tally's entries, for Find: a text an entry, its label, by its id.
+struct TallyFindPlugin: CanvasPlugin {
+    var id: PluginID { "tally-find" }
+
+    func register(into registrar: inout PluginRegistrar) {
+        registrar.findableTexts("entries", of: Tally.self, texts: { shape, _ in
+            shape.props.rows.map { FindableText(field: $0.id.description, text: $0.label) }
+        }, rects: { _, _, ranges, _ in ranges.map { _ in [] } })
     }
 }

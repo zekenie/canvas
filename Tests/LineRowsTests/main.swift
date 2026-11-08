@@ -1,3 +1,3 @@
 import TestKit
 
-runTests([sessionTests, offerTests, referenceUndoTests, voiceOverTests, keyWalkTests])
+runTests([sessionTests, offerTests, referenceUndoTests, voiceOverTests, keyWalkTests, foldTests])

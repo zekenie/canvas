@@ -44,37 +44,24 @@ extension TableDefinition: ShapeDefinition {
         } else if column.unique {
             RowMarks.draw(TableStyle.uniqueSymbol, color: TableStyle.uniqueColor, centeredAt: CGPoint(x: row.minX + KitStyle.gutterMiddle, y: middle))
         }
-        var end = row.maxX - KitStyle.trailingInset
-        if column.nullable {
-            let null = RowText.line(TableStyle.nullMark, .null)
-            end -= null.width
-            RowText.draw(null, at: end, middle: middle, in: cg)
-        }
-        let start = row.minX + KitStyle.nameInset
-        if let pill = enumPill(of: column, in: context) {
-            let size = pill.contentSize
-            end = max(start, end - size.width)
-            pill.draw(at: CGPoint(x: end, y: middle - size.height / 2), in: cg)
-        } else if !column.type.words.isEmpty {
-            let type = RowText.line(column.type.words, .type)
-            let room = max(0, end - start - KitStyle.nameGap - RowText.line(column.name, .name).width)
-            let width = min(type.width, max(room, (end - start) / 2))
-            end -= width
-            RowText.draw(type, at: end, middle: middle, room: width, in: cg)
-        }
-        RowText.draw(RowText.line(column.name, .name), at: start, middle: middle, room: end - KitStyle.nameGap - start, in: cg)
+        let laid = ColumnRow(column, in: row, pill: Self.enumPill(of: column, registry: context.shapes.registry, inFile: context.shape(inFile:)))
+        if let null = laid.null { RowText.draw(null.line, at: null.x, middle: middle, in: cg) }
+        if let pill = laid.pill { pill.label.draw(at: pill.rect.origin, in: cg) }
+        if let type = laid.type { RowText.draw(type.line, at: type.x, middle: middle, room: type.width, in: cg) }
+        RowText.draw(laid.name.line, at: laid.name.x, middle: middle, room: laid.name.width, in: cg)
     }
 
     /// An enum-typed column's pill: the enum its type names, while it's in the file, by its name now.
-    private func enumPill(of column: Column, in context: RenderContext) -> AdornmentLabel? {
-        guard let record = enumRecord(of: column, in: context) else { return nil }
-        let name = context.shapes.registry.title(of: record) ?? column.type.words
+    static func enumPill(of column: Column, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?) -> AdornmentLabel? {
+        guard let name = enumName(of: column, registry: registry, inFile: inFile) else { return nil }
         return AdornmentLabel(name).tinted(TableStyle.enumPill)
     }
 
-    /// The enum a column's type names, while it's in the file: what makes the type a pill, at rest and zoomed out.
-    private func enumRecord(of column: Column, in context: RenderContext) -> AnyShapeRecord? {
-        column.type.shape.flatMap { context.shape(inFile: $0) }.flatMap { $0.kind == DatabaseEnum.kind ? $0 : nil }
+    /// The name of the enum a column's type names, now, while it's in the file: what makes the type a pill, at rest and
+    /// zoomed out, and what Find finds in it.
+    static func enumName(of column: Column, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?) -> String? {
+        guard let record = column.type.shape.flatMap(inFile), record.kind == DatabaseEnum.kind else { return nil }
+        return registry.title(of: record) ?? column.type.words
     }
 
     /// Its laid-out frame, and a part a row.
@@ -151,7 +138,7 @@ extension TableDefinition: CustomSkeleton {
             let type = KitPaper.bar(columns: SkeletonText.columns(of: column.type.words, upTo: TableStyle.skeletonMostColumns),
                                     column: TableStyle.skeletonTypeColumn, at: end, trailing: true, in: row, room: (end - start) / 2)
             if let type {
-                if enumRecord(of: column, in: context) != nil { pills.append(type) } else { text.append(type) }
+                if Self.enumName(of: column, registry: context.shapes.registry, inFile: context.shape(inFile:)) != nil { pills.append(type) } else { text.append(type) }
             }
             if let name = KitPaper.bar(columns: SkeletonText.columns(of: column.name, upTo: TableStyle.skeletonMostColumns), column: TableStyle.skeletonNameColumn,
                                        at: start, in: row, room: max(0, (type?.minX ?? end) - KitStyle.nameGap - start)) {
@@ -179,4 +166,53 @@ extension TableDefinition: Editable {
     }
 
     var editingStepName: String? { TableStyle.renameStep }
+}
+
+/// Where a column's row puts what it says, world units: at the right its nullable's `?`, then its type (an enum's pill, or
+/// grey text, which wins the room over the name), and its name from the names' inset, cut short where it meets the type.
+/// What the render draws and what Find rings and marks.
+@MainActor
+struct ColumnRow {
+    /// A line of text, from `x`, as wide as it may be drawn (`width`; past it, cut short).
+    struct Text {
+        let line: RowText.Line
+        let x: CGFloat
+        let width: CGFloat
+    }
+
+    let name: Text
+    let type: Text?
+    let pill: (label: AdornmentLabel, rect: CGRect)?
+    let null: Text?
+
+    init(_ column: Column, in row: CGRect, pill label: AdornmentLabel?) {
+        let middle = row.midY
+        var end = row.maxX - KitStyle.trailingInset
+        if column.nullable {
+            let null = RowText.line(TableStyle.nullMark, .null)
+            end -= null.width
+            self.null = Text(line: null, x: end, width: null.width)
+        } else {
+            null = nil
+        }
+        let start = row.minX + KitStyle.nameInset
+        let name = RowText.line(column.name, .name)
+        if let label = label {
+            let size = label.contentSize
+            end = max(start, end - size.width)
+            pill = (label, CGRect(x: end, y: middle - size.height / 2, width: size.width, height: size.height))
+            type = nil
+        } else if !column.type.words.isEmpty {
+            let line = RowText.line(column.type.words, .type)
+            let room = max(0, end - start - KitStyle.nameGap - name.width)
+            let width = min(line.width, max(room, (end - start) / 2))
+            end -= width
+            type = Text(line: line, x: end, width: width)
+            pill = nil
+        } else {
+            type = nil
+            pill = nil
+        }
+        self.name = Text(line: name, x: start, width: end - KitStyle.nameGap - start)
+    }
 }

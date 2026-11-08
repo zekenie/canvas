@@ -7,6 +7,7 @@ import ContextMenus
 import DetailPanel
 import Draw
 import Engineering
+import Find
 import Keyboard
 import LineRows
 import Mentions
@@ -21,10 +22,11 @@ import Transform
 /// Every plugin the kit's kinds contribute to (Selection's resizing; Titles, and through it Adornments and slash commands;
 /// Mentions, and through it the panel, the context menu and Topology; the table of contents; Draw, whose writers it gives;
 /// the keys), the kit's own plugin, CanvasTesting's fixtures (boxes) and its freezing (a locked shape, without Locking).
-@MainActor func kitPlugins(_ refusals: RefusalLog = RefusalLog()) -> [any CanvasPlugin] {
+/// With `find`, Find and the kit's rows as its texts too.
+@MainActor func kitPlugins(_ refusals: RefusalLog = RefusalLog(), find: Bool = false) -> [any CanvasPlugin] {
     [KeyboardPlugin(), SelectionPlugin(), TopologyPlugin(), FixturesPlugin(), DrawPlugin(), AdornmentsPlugin(), DetailPanelPlugin(), ContextMenusPlugin(),
-     SlashCommandsPlugin(), TableOfContentsPlugin(), TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TransformPlugin(), LineRowsPlugin(),
-     EngineeringPlugin(), FreezingPlugin(log: refusals)]
+     SlashCommandsPlugin(), TableOfContentsPlugin()] + (find ? [FindPlugin()] : []) + [TitlesPlugin(), MentionsPlugin(), PortsPlugin(), TransformPlugin(), LineRowsPlugin(),
+     EngineeringPlugin()] + (find ? [EngineeringFindPlugin()] : []) + [FreezingPlugin(log: refusals)]
 }
 
 /// An empty board of `kitPlugins`, its view 1000 × 800 at 100% (view points are world units), the kit on unless `on` is false.
