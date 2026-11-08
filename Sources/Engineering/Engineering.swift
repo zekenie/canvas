@@ -65,6 +65,9 @@ public struct EngineeringPlugin: ListedPlugin {
             table.lineRows(TableLines())
             // Its columns take keys both ways: a dot at each end of the row the pointer is on, and a key's end on a row.
             table.partPorts(ForeignKey.self)
+            // ⌘L's picker on a table: from a row, the tables and their columns, a key to the row picked (a table's, its primary key);
+            // from the table, a table picked makes the key column for it ("Add Key Column").
+            table.connectPicks(admitting: KeyPicks.admits, KeyPicks.plan)
         }
         registrar.shape(EnumDefinition()) { type in
             type.label(EnumStyle.label, systemImage: EnumStyle.symbol)

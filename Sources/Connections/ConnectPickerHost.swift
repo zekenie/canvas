@@ -63,16 +63,24 @@ public final class ConnectPickerHost {
     /// shows for, it does nothing (⌘L pressed in its field: the field keeps the keyboard and what's typed); on another it is taken
     /// down first, so its field and its list go with it.
     public func open(on shape: ShapeID) {
+        open(on: ConnectEnd(shape))
+    }
+
+    /// Opens it on a shape or a row of one (a row being edited: ⌘L in its line), as `open(on:)` does a shape, hung under the row,
+    /// listing rows too (`ConnectPicker`). `returningKeyboardTo` is what has the keyboard back as it closes (the row's line, so the
+    /// shape stays edited), else what the core gives it back to.
+    public func open(on source: ConnectEnd, returningKeyboardTo: NSResponder? = nil) {
+        let shape = source.shape
         if let shown {
-            if shown.picker.source == shape { return }
+            if shown.picker.sourceEnd == source { return }
             close()
         }
-        guard let picker = ConnectPicker(editor: editor, source: shape) else {
+        guard let picker = ConnectPicker(editor: editor, source: source) else {
             editor.refuseChanges(to: [shape])
             return
         }
         editor.revealIfOffscreen([shape])
-        guard let anchor = anchor(of: shape) else { return }
+        guard let anchor = anchor(of: source) else { return }
         let field = ConnectPickerTextView(picker: picker)
         // Each acts only while its own field is the picker's: a field being taken down is not heard as the one that replaced it.
         field.onEscape = { [weak self, weak field] in self?.close(ifFieldIs: field) }
@@ -84,7 +92,8 @@ public final class ConnectPickerHost {
         field.closeByList = { [weak self, weak field] in self?.close(ifFieldIs: field) }
         let name = editor.accessibleDescription(of: shape)?.name ?? ""
         let view = ConnectPickerView(field: field)
-        let card = CanvasCard(id: ConnectPickerCard(), about: shape, anchor: anchor, view: view, firstResponder: field, showsZoomedOut: true,
+        let card = CanvasCard(id: ConnectPickerCard(), about: shape, anchor: anchor, view: view, firstResponder: field,
+                              returnsKeyboardTo: returningKeyboardTo, showsZoomedOut: true,
                               accessibilityLabel: ConnectionsStyle.cardLabel(name),
                               size: { room in CGSize(width: min(ConnectionsStyle.pickerFieldWidth, room.width), height: ConnectionsStyle.pickerFieldHeight) },
                               didClose: { [weak self, weak field] reason in self?.didClose(field, reason) })
@@ -123,18 +132,18 @@ public final class ConnectPickerHost {
     /// A pick of a row, as Return on it is: it closes first, so the connection is made from the canvas as from a key, then what the pick means is done
     /// (`ConnectPlan`), in one step, and said.
     public func pick(row: Int) {
-        guard let shown, let target = shown.picker.pick(row: row) else { return }
-        let source = shown.picker.source
+        guard let shown, let target = shown.picker.pickEnd(row: row) else { return }
+        let source = shown.picker.sourceEnd
         close()
         commit(from: source, to: target)
     }
 
     /// What a pick of `target` on `source` is: its plan (the kind's, else a plain connection) made, a person's pick being allowed to
     /// make a private far shape public in its step.
-    func commit(from source: ShapeID, to target: ShapeID) {
+    func commit(from source: ConnectEnd, to target: ConnectEnd) {
         switch editor.connectPlan(from: source, to: target) {
         case .refused:
-            editor.refuseChanges(to: [source])
+            editor.refuseChanges(to: [source.shape])
         case .plan(let plan):
             let before = editor.revision
             if editor.connect(plan.from, to: plan.to, plan: plan, fulfil: true) != nil, editor.revision != before {
@@ -146,9 +155,10 @@ public final class ConnectPickerHost {
     // MARK: Where it hangs
 
     /// The shape's bounds out to the outline drawn round it (none zoomed out, where outlines stand off nothing), so it sits clear of
-    /// the selection's line.
-    private func anchor(of shape: ShapeID) -> CGRect? {
-        guard let bounds = editor.shapeContext.bounds(of: [shape]) else { return nil }
+    /// the selection's line; a row's own rect, for a picker opened on a row.
+    private func anchor(of source: ConnectEnd) -> CGRect? {
+        if let part = source.part, let row = editor.shapeContext.geometry(of: source.shape)?.parts.frame(part) { return row.rect }
+        guard let bounds = editor.shapeContext.bounds(of: [source.shape]) else { return nil }
         let zoom = editor.cameraTarget.zoom
         let gap = editor.drawsSkeletons || zoom <= 0 ? 0 : editor.outlineGap / zoom
         return bounds.insetBy(dx: -gap, dy: -gap)
@@ -161,7 +171,7 @@ extension ConnectPickerHost: EditorService {
     public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
         guard let shown, editor.card?.id == AnyHashable(ConnectPickerCard()) else { return }
         shown.picker.relistAfterCommit(shown.field.string)
-        if let anchor = anchor(of: shown.picker.source) { editor.moveCard(to: anchor) }
+        if let anchor = anchor(of: shown.picker.sourceEnd) { editor.moveCard(to: anchor) }
     }
 }
 

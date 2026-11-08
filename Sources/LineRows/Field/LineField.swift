@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Connections
 import FuzzyMatching
 import TextEditing
 
@@ -27,6 +28,8 @@ public enum LineKey: Equatable, Sendable {
     case addBeside
     /// ⌫ on an empty line: the row goes.
     case deleteEmpty
+    /// ⌘L, Connect's key: the line written, the picker opens on its row.
+    case connect
 }
 
 @MainActor
@@ -50,6 +53,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     public var onPasteLines: ((String) -> Bool)?
     /// The keyboard left it.
     public var onBlur: (() -> Void)?
+    /// The keyboard came to it (back from a card the line opened: the picker).
+    public var onFocus: (() -> Void)?
     /// Whether the line holds words not yet written as a row (asked by Undo and Redo, which are the line's then).
     public var draft: () -> Bool = { false }
     public var holdsDraft: Bool { draft() }
@@ -275,6 +280,16 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
 
     // MARK: Keys
 
+    /// ⌘L, Connect's key, comes as a key equivalent, which the field answers before the menu bar does (the menu's Connect would end
+    /// editing and act on the shape): the row's, while the field has the keyboard.
+    public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if window?.firstResponder === self, ConnectKey.isPressed(by: event) {
+            if event.isARepeat { return true }
+            return key(.connect, closing: true)
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     /// The keys a text view's bindings never send as one command: ⌥↑ ⌥↓, ⇧↩, ⌘↩, ⌘↑ (and ⌘↓, nothing yet: the row's card
     /// comes later), a held Return once, and a held ⌫ stopping at the row it removed.
     private func lineKey(_ event: NSEvent) -> Bool {
@@ -369,6 +384,12 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     }
 
     // MARK: The keyboard
+
+    public override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocus?() }
+        return became
+    }
 
     public override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()

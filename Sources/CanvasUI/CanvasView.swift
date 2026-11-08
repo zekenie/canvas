@@ -683,12 +683,16 @@ extension CanvasView: NSMenuItemValidation {
         return responder === host || responder.isDescendant(of: host)
     }
 
-    /// Takes the card down: the keyboard goes back to the editing view, else the canvas, if the card had
-    /// it, and the pointer over it is on the canvas again (the tool hears it when it next moves).
+    /// Takes the card down: the keyboard goes back to what the card says (a row's line in the editing view), else the editing
+    /// view, else the canvas, if the card had it, and the pointer over it is on the canvas again (the tool hears it when it next
+    /// moves).
     private func removeCardHost() {
         guard let host = cardHost else { return }
         // First, so a field being typed in ends its edit as the keyboard leaves it.
-        if cardHasKeyboard { window?.makeFirstResponder(editingView?.firstResponder ?? self) }
+        if cardHasKeyboard {
+            let back = host.returnsKeyboardTo.flatMap { responder in (responder as? NSView)?.window === window ? responder : nil }
+            window?.makeFirstResponder(back ?? editingView?.firstResponder ?? self)
+        }
         host.removeFromSuperview()
         cardHost = nil
         stopWatchingPresses()

@@ -1,5 +1,6 @@
 import AppKit
 import Canvas
+import Connections
 import Selection
 import TextEditing
 import Titles
@@ -122,6 +123,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
     private var slide: CGFloat = 0
     /// The elements VoiceOver reads for the rows without the caret, by stop.
     private var elements: [LineStop: LineRowElement] = [:]
+    /// ⌘L opened the picker on the row with the caret: its line is printed again as the keyboard comes back, with what the pick made.
+    private var awaitsPicker = false
 
     init(shape: ShapeRecord<Model.Props>, context: EditContext<Model.Props>, model: Model, title: LineTitle?, service: LineRowsService) {
         id = shape.id
@@ -136,6 +139,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         field.onChange = { [weak self] in self?.lineChanged() }
         field.onPasteLines = { [weak self] text in self?.paste(text) ?? false }
         field.onBlur = { [weak self] in self?.blurred() }
+        field.onFocus = { [weak self] in self?.focused() }
         field.offering = { [weak self] in self?.offers() }
         field.draft = { [weak self] in self?.hasDraft ?? false }
         field.onLight = { [weak service] light in service?.setLight(light) }
@@ -565,8 +569,39 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .moveDown: move(by: 1)
         case .addBeside: addBeside()
         case .deleteEmpty: return deleteEmpty()
+        case .connect: return connect()
         }
         return true
+    }
+
+    /// ⌘L: the line written, then, on a row, ⌘L's picker opens on the row, the shape still edited and the keyboard back on the line
+    /// once it closes (picked or not); on the title, or a waiting line with nothing on it, editing ends and the picker opens on the
+    /// shape as a whole, as Connect does. Without the picker the key goes on.
+    private func connect() -> Bool {
+        guard let picker = editor.connectPicker else { return false }
+        commitDraft()
+        if case .row(let row) = focus, index(of: row) != nil {
+            awaitsPicker = true
+            picker.open(on: ConnectEnd(id, part: row), returningKeyboardTo: field)
+            if !picker.isOpen { awaitsPicker = false }
+            return true
+        }
+        let id = id
+        context.end()
+        picker.open(on: id)
+        return true
+    }
+
+    /// The keyboard back on the line from the picker: the row printed again as it's stored now, a key the pick drew in it.
+    private func focused() {
+        guard awaitsPicker, !isMoving else { return }
+        awaitsPicker = false
+        guard case .row(let row) = focus, !hasDraft, let stored = rows.first(where: { model.id(of: $0) == row }) else { return }
+        held = stored
+        field.show(grammar.print(stored, in: lineContext(row)))
+        lineChanged(reportingChange: false)
+        shown = (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored)
+        place()
     }
 
     /// Return: on the title, the waiting line; on a line with words, the line committed and a waiting line under it; on an

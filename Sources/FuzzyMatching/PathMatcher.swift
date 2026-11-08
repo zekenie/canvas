@@ -45,11 +45,17 @@ public struct PathMatcher: Sendable {
     /// The query of pieces `a..<b` (1 ≤ b ≤ count, a < b), joined by spaces, at `groups[a][b - 1]`.
     private let groups: [[FuzzyMatcher.Query]]
 
-    public init(_ text: String) {
+    /// `splittingDots`: a dot followed by a letter splits a piece too, as whitespace does (`orders.cust` is `orders cust`), for a
+    /// picker whose shapes' parts are listed under their shapes (a table's columns), where a dot is how a part is written after
+    /// its shape; a dot followed by anything else (`v1.2`, a trailing `orders.`) stays in its piece.
+    public init(_ text: String, splittingDots: Bool = false) {
         var pieces: [String] = []
         var current = ""
-        for character in text {
-            if character.isWhitespace {
+        let characters = Array(text)
+        for (index, character) in characters.enumerated() {
+            let splitsHere = splittingDots && character == "." && !current.isEmpty
+                && characters.indices.contains(index + 1) && characters[index + 1].isLetter
+            if character.isWhitespace || splitsHere {
                 if !current.isEmpty { pieces.append(current) }
                 current = ""
             } else {
