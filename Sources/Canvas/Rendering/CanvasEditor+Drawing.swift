@@ -87,6 +87,13 @@ extension CanvasEditor {
                 for record in pending { drawShape(record, in: pendingContext) }
             }
         }
+        // A drag's ghosts (`Session.ghosts`), faint as those are, bare: no overlay decorates them.
+        if let ghosts = session?.ghosts, !ghosts.isEmpty {
+            let ghostContext = shapes.layingOut(with: ghosts).over(CanvasDocument(shapes: ghosts))
+            Self.drawingPending(in: context) {
+                for record in ghosts { drawShape(record, in: ghostContext) }
+            }
+        }
         let overlayContext = OverlayContext(cg: context, editor: self, shapes: shapes, visibleRect: world, drawsSkeletons: skeletons,
                                             tintedRings: tinted, pendingShapes: pending, pendingContext: pendingContext)
         for overlay in registry.overlays where overlay.space == .world {

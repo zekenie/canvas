@@ -312,6 +312,15 @@ struct TableLines: LineModel {
     }
     var takeOutEditsTitle: Bool { true }
 
+    /// A column's lead is its mark in the gutter (a primary key's key, a key's link, a unique column's "1"): a press there drags
+    /// the column, selected or not. A column with no mark has none: its row drags once it's selected.
+    func lead(of row: ColumnLine, at index: Int, among rows: [ColumnLine], line: CGRect, in context: LineContext) -> CGRect? {
+        let column = row.column
+        guard column.primaryKey || column.unique || context.editor.service(KeyIndex.self)?.keys(of: context.shape)[column.id] != nil else { return nil }
+        let side = KitStyle.leadSide
+        return CGRect(x: line.minX + KitStyle.gutterMiddle - side / 2, y: line.midY - side / 2, width: side, height: side)
+    }
+
     /// What a line doesn't say stays: on delete, on update.
     func merged(_ read: ColumnLine, onto held: ColumnLine) -> ColumnLine {
         var line = read

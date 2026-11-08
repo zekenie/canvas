@@ -69,7 +69,7 @@ import TestKit
                 },
                 lead: { _, shape, point in
                     guard log.hasLead, let f = shape.box, point.x >= f.minX, point.x < f.minX + 40, point.y >= f.minY, point.y < f.minY + 20 else { return nil }
-                    return ItemLead(item: "r0") { _ in log.led.append("r0") }
+                    return ItemLead(item: "r0") { _, _ in log.led.append("r0") }
                 },
                 selectedWords: { count in
                     log.said.append(count)

@@ -30,7 +30,9 @@ extension TableDefinition: ShapeDefinition {
                 continue
             }
             guard let index = rows.row(atLine: line), columns[index].id != rows.focused else { continue }
-            drawColumn(columns[index], isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
+            rows.drawing(columns[index].id, in: context.cg) {
+                drawColumn(columns[index], isKey: keys[columns[index].id] != nil, in: KitStyle.rowRect(line, in: frame), context)
+            }
         }
     }
 

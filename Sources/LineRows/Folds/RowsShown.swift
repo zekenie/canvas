@@ -155,6 +155,9 @@ public enum LineRowsLayout {
     /// The kind's fixed line has the caret (`LineFixedLine`): the kind draws it not at all, since the field draws it as it's
     /// typed. Nil at rest and while the title or a row has it.
     public static let fixed = LayoutInputKey<Bool>("line-rows-fixed")
+    /// The rows a drag is taking (`RowDragSession`), while it runs: the kind draws them where they are, faded to
+    /// `RowDragStyle.fadedOpacity`, as rows leaving. A look read as `focused` is; nil at rest.
+    public static let faded = LayoutInputKey<Set<PartID>>("line-rows-faded")
 
     /// The line row `index` is drawn on while the waiting line is at `waiting` (nil: none): the rows after it a line down.
     public static func line(of index: Int, waiting: Int?) -> Int {

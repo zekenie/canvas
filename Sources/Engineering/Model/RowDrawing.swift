@@ -161,8 +161,8 @@ enum KitPaper {
 
 /// Where a shape's rows go: while it's edited (LineRows' layout inputs, set only on the shape being edited), a line left for
 /// the waiting line, the rows after it a line down, the row the field draws, which the shape doesn't, and a width as wide
-/// as the typed line needs; folded (`LineRowsLayout.shown`), the lines it shows, a hidden row standing at the "+N ›" line.
-/// None of it at rest.
+/// as the typed line needs; folded (`LineRowsLayout.shown`), the lines it shows, a hidden row standing at the "+N ›" line;
+/// while its rows are dragged, those rows faded. None of it at rest.
 @MainActor
 struct KitRows {
     /// The waiting line's line, nil at rest.
@@ -173,12 +173,26 @@ struct KitRows {
     let shown: RowsShown?
     /// How wide it's laid out while a line typed in it is wider than it stores.
     let width: CGFloat?
+    /// The rows a drag is taking, drawn faded where they are.
+    let faded: Set<PartID>?
 
     init<P: ShapeProps>(_ shape: ShapeRecord<P>, in context: ShapeContext) {
         waiting = context.layoutInput(LineRowsLayout.waiting, of: shape)
         focused = context.layoutInput(LineRowsLayout.focused, of: shape)
         shown = context.layoutInput(LineRowsLayout.shown, of: shape)
         width = context.layoutInput(LineRowsLayout.width, of: shape)
+        faded = context.layoutInput(LineRowsLayout.faded, of: shape)
+    }
+
+    /// Draws row `id` with `draw`: faded, as one layer, while a drag takes it (`RowDragStyle.fadedOpacity`), else as it is.
+    func drawing(_ id: PartID, in cg: CGContext, _ draw: () -> Void) {
+        guard let faded, faded.contains(id) else { return draw() }
+        cg.saveGState()
+        cg.setAlpha(RowDragStyle.fadedOpacity)
+        cg.beginTransparencyLayer(auxiliaryInfo: nil)
+        draw()
+        cg.endTransparencyLayer()
+        cg.restoreGState()
     }
 
     /// How many lines `rows` rows take: the fold's, else one more while the waiting line is drawn.

@@ -141,11 +141,14 @@ extension CanvasEditor {
     public func moveRows(_ rows: [PartID], of shape: ShapeID, to place: RowPlace, coalescing key: AnyHashable? = nil) -> ShapeID? {
         guard let record = document[shape], let moving = registry.rowMoving(of: record.kind) else { return nil }
         let order = moving.rows(record) ?? []
-        let wanted = Set(rows)
+        // A header goes with the rows it heads.
+        let wanted = withGroups(Set(rows), of: record)
         let ids = order.filter(wanted.contains)
         guard !ids.isEmpty else { return nil }
         if case .into(let target, let before) = place, target == shape {
-            return reorderRows(ids, of: shape, before: before, order: order, moving: moving, coalescing: key) ? shape : nil
+            let selected = Set(rows)
+            return reorderRows(ids, of: shape, before: before, order: order, moving: moving, selecting: ids.filter(selected.contains),
+                               coalescing: key) ? shape : nil
         }
         guard let carrier = moving.carrier(record, ids) else { return nil }
         let step: String = if case .into = place { RowSteps.move(moving.noun, count: ids.count) } else {
@@ -155,27 +158,32 @@ extension CanvasEditor {
     }
 
     /// ⌥↑ (-1) ⌥↓ (+1): `rows` of `shape` moved a place as a block, past the row shown before the first or after the last, so a
-    /// press of a folded shape changes what it shows: rows its fold hides are stepped over, and a closed header takes the
-    /// rows it hides along. Nothing at the ends. Held or repeated, one step (`coalescing`).
+    /// press of a folded shape changes what it shows: rows its fold hides are stepped over. A header takes the rows it heads
+    /// along, open or closed, and a block with one passes a whole group, the one before it or after it (none past the first
+    /// or the last: nothing). Nothing at the ends. Held or repeated, one step (`coalescing`).
     @discardableResult
     public func moveRows(_ rows: [PartID], of shape: ShapeID, by delta: Int, coalescing key: AnyHashable? = nil) -> Bool {
         guard let record = document[shape], let moving = registry.rowMoving(of: record.kind) else { return false }
         let order = moving.rows(record) ?? []
         let shown = shapeContext.layoutInput(LineRowsLayout.shown, of: record)
-        var block = Set(rows)
-        if let shown {
-            // A closed header moves with the rows behind it.
-            for (index, id) in order.enumerated() where block.contains(id) {
-                let line = shown.line(standingFor: index)
-                guard case .header(let header, _) = shown.lines[line], header == index else { continue }
-                for other in order.indices where other != index && shown.line(standingFor: other) == line { block.insert(order[other]) }
-            }
-        }
+        let heads = registry.lineRows(of: record.kind)?.rows(record)?.map(\.isHeader) ?? []
+        func isHeader(_ index: Int) -> Bool { heads.indices.contains(index) && heads[index] }
+        let block = withGroups(Set(rows), of: record)
         let indices = order.indices.filter { block.contains(order[$0]) }
         guard let first = indices.first, let last = indices.last else { return false }
         func isShown(_ index: Int) -> Bool { shown?.isShown(index) ?? true }
         let before: PartID?
-        if delta < 0 {
+        if indices.contains(where: isHeader) {
+            // A group passes a group: up, above the header before it; down, below the whole group after it.
+            if delta < 0 {
+                guard let above = (0..<first).last(where: { isHeader($0) && !block.contains(order[$0]) }) else { return false }
+                before = order[above]
+            } else {
+                guard let next = ((last + 1)..<order.count).first(where: { isHeader($0) && !block.contains(order[$0]) }) else { return false }
+                let end = ((next + 1)..<order.count).first(where: isHeader) ?? order.count
+                before = end < order.count ? order[end] : nil
+            }
+        } else if delta < 0 {
             guard let above = (0..<first).last(where: { !block.contains(order[$0]) && isShown($0) }) else { return false }
             before = order[above]
         } else {
@@ -185,20 +193,19 @@ extension CanvasEditor {
             if let shown { while after < order.count, shown.line(standingFor: after) == shown.line(standingFor: below) { after += 1 } }
             before = after < order.count ? order[after] : nil
         }
-        return moveRows(Array(block), of: shape, to: .into(shape, before: before), coalescing: key ?? AnyHashable(RowMoveRun(shape: shape, rows: Set(rows)))) != nil
+        return moveRows(rows, of: shape, to: .into(shape, before: before), coalescing: key ?? AnyHashable(RowMoveRun(shape: shape, rows: Set(rows)))) != nil
     }
 
-    /// The rows as a block before `before` in their shape: one step, the rows selected as items after (unless the shape is
-    /// edited, whose session keeps its own).
+    /// The rows as a block before `before` in their shape, as the kind reorders them: one step, `selecting` selected as items
+    /// after (the rows as they were selected, a header without its group, so a held key's presses are one run), unless the
+    /// shape is edited, whose session keeps its own. No step where the kind's reordering changes nothing.
     private func reorderRows(_ ids: [PartID], of shape: ShapeID, before: PartID?, order: [PartID], moving: LineRowsMoving,
-                             coalescing key: AnyHashable?) -> Bool {
+                             selecting: [PartID], coalescing key: AnyHashable?) -> Bool {
         let moved = Set(ids)
         if let before, moved.contains(before) { return false }
         let rest = order.filter { !moved.contains($0) }
         let index = before.flatMap { rest.firstIndex(of: $0) } ?? rest.count
-        var next = rest
-        next.insert(contentsOf: ids, at: index)
-        guard next != order else { return false }
+        guard let record = document[shape], let reordered = moving.reordering(record, ids, index), reordered != record else { return false }
         let step = RowSteps.move(moving.noun, count: ids.count)
         let done: Bool? = transactWhole(step, coalescing: key, shaking: [shape]) { transaction in
             guard let fresh = transaction.document[shape], let reordered = moving.reordering(fresh, ids, index) else { throw Transaction.Refused([shape]) }
@@ -206,7 +213,7 @@ extension CanvasEditor {
             return true
         }
         guard done == true else { return false }
-        if editingShapeID != shape { selectItems(ids.map(AnyHashable.init), of: shape) }
+        if editingShapeID != shape { selectItems((selecting.isEmpty ? ids : selecting).map(AnyHashable.init), of: shape) }
         announce(step)
         return true
     }
@@ -366,8 +373,19 @@ extension CanvasEditor {
         return moved
     }
 
+    /// `rows` of `record`, and the rows each header among them heads (those after it, up to the next header): a header moves
+    /// with its group.
+    func withGroups(_ rows: Set<PartID>, of record: AnyShapeRecord) -> Set<PartID> {
+        guard let all = registry.lineRows(of: record.kind)?.rows(record), all.contains(where: \.isHeader) else { return rows }
+        var block = rows, heading = false
+        for row in all {
+            if row.isHeader { heading = rows.contains(row.id) } else if heading { block.insert(row.id) }
+        }
+        return block
+    }
+
     /// How big `record` is laid out, as a shape of its own.
-    private func laidOutSize(of record: AnyShapeRecord) -> CGSize? {
+    func laidOutSize(of record: AnyShapeRecord) -> CGSize? {
         ShapeContext(document: CanvasDocument(shapes: [record]), registry: registry).bounds(of: [record.id])?.size ?? record.box?.size
     }
 }

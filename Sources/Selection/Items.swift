@@ -82,12 +82,13 @@ public struct ItemSelection: Equatable {
 }
 
 /// Where a press on a kind's item takes it before anything else (its lead: an endpoint's method chip), and what a click
-/// there does.
+/// there does, told whether the item's shape was the only one selected before the press (the press selects it, so a click
+/// that goes a level at a time goes on to the item only then).
 public struct ItemLead {
     public var item: AnyHashable
-    public var click: @MainActor (CanvasEditor) -> Void
+    public var click: @MainActor (CanvasEditor, _ wasSelected: Bool) -> Void
 
-    public init<ID: Hashable & Sendable>(item: ID, click: @escaping @MainActor (CanvasEditor) -> Void) {
+    public init<ID: Hashable & Sendable>(item: ID, click: @escaping @MainActor (CanvasEditor, _ wasSelected: Bool) -> Void) {
         self.item = AnyHashable(item)
         self.click = click
     }
@@ -466,11 +467,14 @@ final class PointingLeadSession {
     let shape: ShapeID
     let lead: ItemLead
     let press: CGPoint
+    /// Whether the shape was the only one selected before the press.
+    let wasSelected: Bool
 
-    init(shape: ShapeID, lead: ItemLead, press: CGPoint) {
+    init(shape: ShapeID, lead: ItemLead, press: CGPoint, wasSelected: Bool) {
         self.shape = shape
         self.lead = lead
         self.press = press
+        self.wasSelected = wasSelected
     }
 }
 
@@ -486,7 +490,7 @@ extension PointingLeadSession: Session {
 
     func end(_ pointer: Pointer, in editor: CanvasEditor) {
         editor.session = nil
-        lead.click(editor)
+        lead.click(editor, wasSelected)
     }
 
     func cancel(in editor: CanvasEditor) -> Bool { true }

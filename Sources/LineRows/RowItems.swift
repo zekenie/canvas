@@ -32,27 +32,23 @@ extension ShapeRegistrar {
             noun: model.noun,
             takes: { $0 == kind },
             rows: { record in typed(record).map { model.rows(of: $0.props).map(model.id(of:)) } },
+            // Each change through the kind's own (`applying`, `placing`, `reordering`), so what a row says by its neighbors
+            // stays said wherever it goes (an API's endpoint its full path).
             carrier: { record, ids in
                 guard let shape = typed(record) else { return nil }
                 let wanted = Set(ids)
                 var props = shape.props
-                model.setRows(model.rows(of: props).filter { wanted.contains(model.id(of: $0)) }, in: &props)
+                let all = model.rows(of: props)
+                model.setRows(model.removing(Set(all.map(model.id(of:)).filter { !wanted.contains($0) }), from: all), in: &props)
                 // Only the rows: no title, no other value the shape held.
                 return AnyShapeRecord(ShapeRecord(id: shape.id, props))
             },
-            removing: { record, ids in with(record, rows: rows(record).filter { !ids.contains(model.id(of: $0)) }) },
+            removing: { record, ids in with(record, rows: model.removing(ids, from: rows(record))) },
             inserting: { record, carrier, index, renaming in
-                var held = rows(record)
                 let added = rows(carrier).map { row in renaming[model.id(of: row)].map { model.renaming(row, to: $0) } ?? row }
-                held.insert(contentsOf: added, at: min(max(0, index), held.count))
-                return with(record, rows: held)
+                return model.inserting(added, at: index, into: rows(record)).flatMap { with(record, rows: $0) }
             },
-            reordering: { record, ids, index in
-                let all = rows(record), moved = Set(ids)
-                var rest = all.filter { !moved.contains(model.id(of: $0)) }
-                rest.insert(contentsOf: all.filter { moved.contains(model.id(of: $0)) }, at: min(max(0, index), rest.count))
-                return with(record, rows: rest)
-            },
+            reordering: { record, ids, index in with(record, rows: model.reordering(Set(ids), to: index, in: rows(record))) },
             takeOut: { carrier in
                 guard let shape = typed(carrier) else { return nil }
                 return AnyShapeRecord(ShapeRecord(model.takeOut(model.rows(of: shape.props), from: shape)))
@@ -90,6 +86,21 @@ extension ShapeRegistrar {
             },
             open: { editor, shape, id, point in RowItems.open(id, of: shape, at: point, in: editor) },
             setOpen: { editor, shape, id, open in RowItems.setOpen(id, of: shape, open, in: editor) },
+            drag: { editor, shape, ids, origin in
+                // What the keys act on: a line standing for rows a fold hides drags those rows, never itself.
+                let acting = editor.selectedItems.flatMap { $0.shape == shape ? $0.acting : nil } ?? ids
+                return RowDragSession(rows: acting.compactMap { $0.base as? PartID }, of: shape, from: origin, in: editor)
+            },
+            lead: { editor, record, point in
+                guard let shape = typed(record) else { return nil }
+                let all = model.rows(of: shape.props)
+                guard let item = RowItems.items(of: record, in: editor, title: { _ in "" }).first(where: { $0.rect.contains(point) }),
+                      let id = item.id.base as? PartID, let index = all.firstIndex(where: { model.id(of: $0) == id }),
+                      let rect = model.lead(of: all[index], at: index, among: all, line: item.rect,
+                                            in: LineContext(editor: editor, shape: record.id, row: id)),
+                      rect.contains(point) else { return nil }
+                return ItemLead(item: id) { editor, wasSelected in RowItems.clickLead(id, of: record.id, wasSelected: wasSelected, in: editor) }
+            },
             selectedWords: { LineFieldStyle.selected(model.noun.counted($0)) }))
     }
 }
@@ -135,6 +146,12 @@ enum RowItems {
         }
         guard let row = id.base as? PartID else { return }
         editor.service(LineRowsService.self)?.edit(row, of: shape, at: point)
+    }
+
+    /// A click on a row's lead: what a click there would do without one, a level at a time: on the shape that was the only one
+    /// selected, the row selected; else the shape, which the press selected.
+    static func clickLead(_ row: PartID, of shape: ShapeID, wasSelected: Bool, in editor: CanvasEditor) {
+        if wasSelected { editor.selectItems([AnyHashable(row)], of: shape) }
     }
 
     /// → ← Space on a header or the "+N ›" line: opened or closed; the selection stays on it.

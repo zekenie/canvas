@@ -23,7 +23,9 @@ extension EnumDefinition: ShapeDefinition {
             }
             guard let index = rows.row(atLine: line), values[index].id != rows.focused else { continue }
             let row = KitStyle.rowRect(line, in: frame), start = row.minX + KitStyle.nameInset
-            RowText.draw(RowText.line(values[index].text, .value), at: start, middle: row.midY, room: row.maxX - KitStyle.trailingInset - start, in: context.cg)
+            rows.drawing(values[index].id, in: context.cg) {
+                RowText.draw(RowText.line(values[index].text, .value), at: start, middle: row.midY, room: row.maxX - KitStyle.trailingInset - start, in: context.cg)
+            }
         }
     }
 

@@ -136,7 +136,7 @@ extension SelectTool: Tool {
         let onLabel = isReached && hit.isOnShape && editor.isOnLabel(id, at: pointer.world)
         // An item's lead (an endpoint's method chip) is pressed before faces: a click runs it, a drag drags its item.
         if isPlain, pointer.clickCount == 1, isReached, hit.isOnShape, let lead = editor.itemLead(on: id, at: pointer.world) {
-            editor.session = PointingLeadSession(shape: id, lead: lead, press: pointer.view)
+            editor.session = PointingLeadSession(shape: id, lead: lead, press: pointer.view, wasSelected: wasOnlySelection)
             return
         }
         // A face waits for the drag threshold, even on a lone box: released within it, it clicks.
