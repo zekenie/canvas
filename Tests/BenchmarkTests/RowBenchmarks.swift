@@ -4,6 +4,7 @@ import CanvasTesting
 import CoreGraphics
 import Engineering
 import Foundation
+import Geometry
 import LanguageModels
 import LineRows
 import ShippedTesting
@@ -21,8 +22,10 @@ extension Budget {
     static let rowsFrame = frame
     /// A frame of the rows board zoomed out, at 30% and 10%: what a frame zoomed out may cost.
     static let rowsSkeleton = zoomedOut
-    /// ⌃⌘↑ on 1,000 tables with nothing selected, and the frame after: within a frame.
-    static let foldMany = frame
+    /// ⌃⌘↑ on 1,000 tables with nothing selected, and the frame after. Never measured before folds: a release build did
+    /// 21 to 29 ms on a busy machine on 2026-11-07, the fold itself 3, the rest the frame that lays the 1,000 out again,
+    /// which costs 16 to 18 ms with no fold at all (the core's relayout of 1,000 tables, the floor); the budget two frames.
+    static let foldMany = 2 * frame
 }
 
 /// `count` shapes in a grid 280 apart, each tenth a 12-row titled table, each hundredth a 60-row one, the rest notes.
@@ -72,21 +75,22 @@ extension Budget {
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let tables = rowsBoard(10_000).filter { $0.kind == DatabaseTable.kind }
         expectEqual(tables.count, 1_000)
-        var cost = 0.0
+        var cost = 0.0, folding = 0.0, frame = 0.0, relaid = 0.0
         for _ in 0..<measuredRuns(5) {
             let h = EditorHarness { CanvasEditor(registry: registry, document: CanvasDocument(shapes: tables), scheduler: $0) }
             h.editor.viewportDidResize(to: viewport)
             h.editor.camera = camera(centering: CGRect(x: 0, y: 0, width: 4 * 340, height: 3 * 360), at: 1, in: viewport)
             draw(h.editor, into: context, size: viewport)
-            h.editor.selectedShapeIDs = []
-            let run = threadCPUTime {
-                _ = h.editor.perform(.foldRows)
-                draw(h.editor, into: context, size: viewport)
-            }.milliseconds
+            let ids = h.editor.document.shapes.map(\.id)
+            let bare = threadCPUTime { h.editor.shapesDidChangeLayout(ids); draw(h.editor, into: context, size: viewport) }.milliseconds
+            relaid = relaid == 0 ? bare : min(relaid, bare)
+            let fold = threadCPUTime { _ = h.editor.perform(.foldRows) }.milliseconds
+            let after = threadCPUTime { draw(h.editor, into: context, size: viewport) }.milliseconds
             expectEqual(h.editor.rowFolds?.folded.count, 1_000)
-            cost = cost == 0 ? run : min(cost, run)
+            if cost == 0 || fold + after < cost { (cost, folding, frame) = (fold + after, fold, after) }
         }
-        report(String(format: "⌃⌘↑ on 1,000 tables and the frame after: %.1f ms (budget %.0f)", cost, Budget.foldMany))
+        report(String(format: "⌃⌘↑ on 1,000 tables and the frame after: %.1f ms (the fold %.1f, the frame %.1f; the 1,000 laid out again unfolded and a frame %.1f; budget %.0f)",
+                      cost, folding, frame, relaid, Budget.foldMany))
         if holdsToBudgets { expect(cost < Budget.foldMany, "folding 1,000 tables took \(cost) ms") }
     },
 ])

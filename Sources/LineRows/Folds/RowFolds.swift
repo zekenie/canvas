@@ -29,14 +29,20 @@ public final class RowFolds {
     /// (`generation`) are as they were.
     private var kept: [ShapeID: (revision: Int, generation: Int, shown: RowsShown?)] = [:]
 
-    /// The view value folds are saved in: each folded shape and its fold, the latest last.
-    static let memory = ViewValueKey<[SavedFold]>("line-rows.folds")
+    /// The view value folds are saved in: the shapes folded to their marks and the closed headers of each, the latest
+    /// folded last.
+    static let memory = ViewValueKey<SavedFolds>("line-rows.folds")
     /// How many folds a file saves: the latest folded.
     public static let savedLimit = 2000
 
-    struct SavedFold: Codable, Hashable {
-        let shape: ShapeID
-        let fold: RowFold
+    /// The folds as saved: a list of ids for the common case (folded to marks), so a thousand folds encode in a moment.
+    struct SavedFolds: Codable, Hashable {
+        /// Every folded shape, the latest folded last.
+        var shapes: [ShapeID] = []
+        /// Those not folded to their marks (only headers closed).
+        var unmarked: [ShapeID] = []
+        /// The closed headers of the shapes that have any.
+        var closed: [ShapeID: [PartID]] = [:]
     }
 
     init(editor: CanvasEditor) {
@@ -80,10 +86,13 @@ public final class RowFolds {
             guard !fold.toMarked else { continue }
             fold.toMarked = true
             folds[id] = fold
-            order.removeAll { $0 == id }
-            order.append(id)
             changed.append(id)
         }
+        guard !changed.isEmpty else { return }
+        // The latest folded last, once each: one pass however many are folded.
+        let moved = Set(changed)
+        order.removeAll { moved.contains($0) }
+        order += changed
         didChange(changed)
     }
 
@@ -198,20 +207,27 @@ public final class RowFolds {
 
     /// The folds the file's view keeps (`RowFolds.memory`): the shapes in the file, the latest `savedLimit` folded.
     private func save() {
-        let saved = order.filter { editor.shape(inFile: $0) != nil }.suffix(Self.savedLimit).compactMap { id in
-            folds[id].map { SavedFold(shape: id, fold: $0) }
+        var saved = SavedFolds()
+        for id in order.filter({ editor.shape(inFile: $0) != nil }).suffix(Self.savedLimit) {
+            guard let fold = folds[id] else { continue }
+            saved.shapes.append(id)
+            if !fold.toMarked { saved.unmarked.append(id) }
+            if !fold.closed.isEmpty { saved.closed[id] = Array(fold.closed) }
         }
-        editor.setViewValue(Self.memory, saved.isEmpty ? nil : Array(saved))
+        editor.setViewValue(Self.memory, saved.shapes.isEmpty ? nil : saved)
     }
 
     /// Takes the folds the file's view kept: those of shapes gone are dropped as they're read.
     private func load() {
-        let saved = editor.viewValue(Self.memory) ?? []
+        let saved = editor.viewValue(Self.memory) ?? SavedFolds()
+        let unmarked = Set(saved.unmarked)
         folds = [:]
         order = []
-        for entry in saved where !entry.fold.isEmpty && folds[entry.shape] == nil {
-            folds[entry.shape] = entry.fold
-            order.append(entry.shape)
+        for id in saved.shapes where folds[id] == nil {
+            let fold = RowFold(toMarked: !unmarked.contains(id), closed: Set(saved.closed[id] ?? []))
+            guard !fold.isEmpty else { continue }
+            folds[id] = fold
+            order.append(id)
         }
     }
 }

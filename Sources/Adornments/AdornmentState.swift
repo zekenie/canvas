@@ -419,12 +419,15 @@ final class AdornmentState {
     /// `spacing`, as tabs give way to each other; any kind's row, in any container with a tab.
     func giveWay(of id: ShapeID, anchor anchored: Anchored, scale: CGFloat, overTab: Bool, tabs: PlacedTabs) -> CGFloat {
         guard anchored.slope == nil, !tabs.tabs.isEmpty else { return 0 }
-        let document = editor.document, shapes = editor.shapeContext, anchor = anchored.rect
+        let document = editor.document, kinds = editor.registry.containingKinds
+        // Most shapes are in no container: a lookup, and nothing more.
+        guard document.container(of: id, containingKinds: kinds) != nil else { return 0 }
+        let shapes = editor.shapeContext, anchor = anchored.rect
         var start: CGFloat = 0
         let rowTop = anchor.minY - AdornmentLayout.rowReach * scale
         let rowBottom = anchor.minY - (AdornmentLayout.rowGap + (overTab ? AdornmentLayout.tabRowLift : 0)) * scale
         let gap = AdornmentLayout.spacing * scale
-        for container in document.containers(of: id, containingKinds: editor.registry.containingKinds) {
+        for container in document.containers(of: id, containingKinds: kinds) {
             guard let tab = tabs.tabs[container], let bounds = shapes.geometry(of: container)?.bounds, !bounds.isNull else { continue }
             let unit = tabs.unit
             let rect = CGRect(x: bounds.minX + tab.frame.minX * unit, y: bounds.minY + tab.frame.minY * unit,
@@ -437,6 +440,7 @@ final class AdornmentState {
 
     /// `giveWay` for a shape on the board shown, at the zoom now, against the tabs placed around it: world units.
     func rowStart(of id: ShapeID) -> CGFloat {
+        guard editor.document.container(of: id, containingKinds: editor.registry.containingKinds) != nil else { return 0 }
         let zoom = editor.camera.zoom, scale = AdornmentLayout.scale(atZoom: zoom)
         guard let anchored = Self.anchored(of: id, in: editor.shapeContext, zoom: zoom) else { return 0 }
         let tabs = tabs(in: tabRegion(around: anchored.rect))
@@ -478,8 +482,9 @@ final class AdornmentState {
         guard !skeleton || hasTabs, let laidOut = laidOut(record, tabsOnly: skeleton),
               let anchored = Self.anchored(of: record.id, in: shapes, zoom: zoom) else { return [] }
         let anchor = anchored.rect, scale = AdornmentLayout.scale(atZoom: zoom)
-        // Every placed tab, not only its own: its row gives way to a container's.
-        let tabs = hasTabs ? self.tabs(in: tabRegion(around: anchor)) : nil
+        // Every placed tab, not only its own: its row gives way to a container's (asked only of a shape in one).
+        let inContainer = editor.document.container(of: record.id, containingKinds: editor.registry.containingKinds) != nil
+        let tabs = laidOut.hasTab || (hasTabs && inContainer) ? self.tabs(in: tabRegion(around: anchor)) : nil
         var slots: [AdornmentLayout.Slot?] = []
         self.slots(of: laidOut, id: record.id, anchored: anchored, scale: scale, tabs: tabs, into: &slots)
         return laidOut.shown.indices.compactMap { index in
