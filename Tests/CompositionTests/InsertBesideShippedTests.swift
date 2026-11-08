@@ -4,6 +4,7 @@ import CanvasTesting
 import CanvasUI
 import Foundation
 import Frames
+import Geometry
 import LanguageModels
 import Mentions
 import Selection
@@ -47,6 +48,23 @@ import TestKit
         expect(h.key(Chord(.return, .shift)))
         expectEqual(kinds(editor), [Subboard.kind, Frame.kind, Frame.kind])
         expectEqual(editor.undoHistory.undoName, "Add Frame")
+    },
+    test("⇧↩ beside a shape at the view's edge brings the new shape into view, as every other key that moves the focus does") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let h = harness(pasteboard)
+        let editor = h.editor
+        // At the right edge of a 1600-wide view: the new shape goes beside it, outside the view.
+        let frame = ShapeRecord(Frame(frame: CGRect(x: 1250, y: 300, width: 300, height: 300)))
+        editor.transact { $0.insert(frame) }
+        editor.selectedShapeIDs = [frame.id]
+        let view = editor.camera.toWorld(editor.unobscuredViewport)
+        expect(view.contains(CGRect(x: 1250, y: 300, width: 300, height: 300)), "the frame is in view")
+        expect(h.key(Chord(.return, .shift)))
+        let made = try require(editor.document.shapes.last)
+        let bounds = try require(made.box)
+        expect(!view.contains(bounds), "the new frame lands past the view's edge: \(bounds) \(view)")
+        expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(bounds), "and the camera is headed to show it")
     },
     test("nothing selected, mixed kinds, or a kind no tool places: a note; an off kit's kind too, a table beside a table with the kit on") {
         let pasteboard = NSPasteboard.withUniqueName()

@@ -16,7 +16,7 @@ final class NoteHops {
         self.editor = editor
     }
 
-    /// ⇧↩ in `id`'s editor: a new note beside `id`, as ⇧↩ on the canvas with `id` selected puts one (Insert › Note,
+    /// ⇧↩ in `id`'s editor: a new note beside `id`, as ⇧↩ on the canvas with `id` selected puts one (Insert › New Shape Beside,
     /// `editor.insert`: where Placing puts a note's box beside a shape, the side that lands nearest, the right one
     /// first, in the container `id` is in, in the color `id` has of its own, tldraw's adjacent notes'); edited at
     /// once, one step, "Add Note". With nowhere to put it, or a board that takes nothing, nothing is put down and

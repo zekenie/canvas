@@ -162,7 +162,7 @@ final class ClipboardState {
     /// container is whole without what it holds, which a deletion leaves); nil with none.
     /// The shapes of a kind that takes bound shapes (`TakesBoundShapes`) among them take along what is bound only to
     /// shapes copied (`ShapeContext.takenAlong(by:)`: an arrow from one copied table to another, selected or not),
-    /// which is `along`, those that can be copied; a cut deletes them with the rest.
+    /// which is `along`, those that can be copied; a cut does not ask for them: the core's deletion takes the ones bound to a shape that really goes.
     private func gather(_ ids: [ShapeID]) -> (file: CanvasFile, copied: [ShapeID], whole: Set<ShapeID>, along: Set<ShapeID>)? {
         var records = copyable(ids)
         let document = editor.document
@@ -228,16 +228,17 @@ final class ClipboardState {
     func cut(_ ids: [ShapeID]) {
         let copied = copyReportingWhole(ids, cut: true), whole = copied.whole
         guard !whole.isEmpty else { return }
-        // What went with what was cut: the shapes the copy took along (an arrow between cut tables) and what the
-        // delete took besides (an arrow to a table not cut), so the step says it ("Cut Table and 3 Arrows").
+        // What went with what was cut, so the step says it ("Cut Table and 3 Arrows"): what the delete took besides (an arrow to
+        // a table not cut, one between tables cut) and what a container held that left with it. The shapes the copy took along
+        // are not asked for: the core's deletion takes the ones bound to a shape that really goes (a read-only shape refused, or
+        // one that owns a board holding one, stays, and its arrows with it).
         let document = editor.document
         let asked = Set(ids).intersection(whole)
-        let along = copied.along.intersection(whole).subtracting(ids)
+        let along = copied.along.subtracting(ids)
         editor.transact("Cut") { tx in
-            tx.delete(whole)
-            // Only what left: a read-only shape asked for, or taken along by the copy, stays and isn't named.
+            tx.delete(whole.subtracting(along))
             var counts = tx.deletedAlong
-            for id in along where tx.document[id] == nil {
+            for id in whole.subtracting(asked).subtracting(along) where tx.document[id] == nil {
                 guard let kind = document[id]?.kind else { continue }
                 if let at = counts.firstIndex(where: { $0.kind == kind }) { counts[at].count += 1 } else { counts.append(KindCount(kind: kind, count: 1)) }
             }

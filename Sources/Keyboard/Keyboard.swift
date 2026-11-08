@@ -278,7 +278,7 @@ extension Registry {
     /// command's title (`title(of:)`) or a shortcut's own title says, in the order they were
     /// registered. Keys under one name are one row (⌘↓, Return and Enter all open the selection),
     /// filed with the command if one of them runs it, but a tool's keys never share a row with what
-    /// isn't a tool (the Note tool's N, Insert › Note's ⇧↩), and the four arrows held with the same
+    /// isn't a tool (the Note tool's N, Insert › New Shape Beside's ⇧↩), and the four arrows held with the same
     /// modifiers are written as one ("←↑→↓", "⇧←↑→↓").
     public var keyboardHelpRows: [KeyboardHelpRow] { keyboardHelpRows(kitsOn: Set(kits.map(\.id))) }
 

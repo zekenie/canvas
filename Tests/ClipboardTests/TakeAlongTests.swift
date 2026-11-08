@@ -4,6 +4,7 @@ import CanvasTesting
 import Clipboard
 import CoreGraphics
 import Foundation
+import Selection
 import TestKit
 
 // Shapes that take what is bound to them (`TakesBoundShapes`, CanvasTesting's ledgers) are copied with what is bound only to
@@ -102,10 +103,11 @@ import TestKit
         expectEqual(linkProps(h.editor, between), Link(from: a, to: b), "the link between them is back, bound, under its id")
         expect(h.editor.document[toBox] == nil)
     },
-    test("a locked link cut with its ledgers stays, letting go, and the step doesn't name it") {
+    test("a locked link cut with its ledgers stays, letting go, and the step doesn't name it; it is not asked for, so nothing shakes, and a paste brings back a link of its own") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
-        let h = try harness(pasteboard, [LedgersPlugin(), FreezingPlugin()])
+        let log = RefusalLog()
+        let h = try harness(pasteboard, [LedgersPlugin(), FreezingPlugin(log: log)])
         let a = h.add(Ledger(slot(0))), b = h.add(Ledger(slot(1)))
         let between = h.add(Link(from: a, to: b))
         h.editor.freeze([between])
@@ -113,6 +115,66 @@ import TestKit
         expect(h.editor.document[a] == nil && h.editor.document[b] == nil, "the ledgers went")
         expectEqual(linkProps(h.editor, between), Link(from: nil, to: nil), "the locked link stayed, let go of both")
         expectEqual(h.editor.undoHistory.undoName, "Cut", "nothing went along")
+        expectEqual(log.refusals, [], "the link was never asked for, so it doesn't shake")
+        let before = h.editor.document
+        h.editor.paste()
+        let links = h.editor.shapes(since: before).filter { $0.kind == Link.kind }
+        expectEqual(links.count, 1, "the paste has its own link between the ledgers, as it has for a locked shape that stays")
+    },
+    test("two ledgers that cannot be cut keep the link between them: nothing is deleted, no step") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [LedgersPlugin(), FreezingPlugin()])
+        let a = h.add(Ledger(slot(0))), b = h.add(Ledger(slot(1)))
+        let between = h.add(Link(from: a, to: b))
+        h.editor.freeze([a, b])
+        let before = h.editor.document, step = h.editor.undoHistory.undoName
+        h.editor.cut([a, b])
+        expectEqual(h.editor.document, before, "the ledgers stay, and the link between them with them")
+        expectEqual(linkProps(h.editor, between), Link(from: a, to: b))
+        expectEqual(h.editor.undoHistory.undoName, step, "no step")
+    },
+    test("a cut of a corral names what left with it: the shapes it held and the links bound to them") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try harness(pasteboard, [LedgersPlugin(), CorralsPlugin()])
+        let pen = h.add(Corral(CGRect(x: 0, y: 0, width: 600, height: 300)))
+        let held = h.add(Ledger(CGRect(x: 40, y: 40, width: 100, height: 60))), box = h.add(Box(CGRect(x: 200, y: 40, width: 100, height: 60)))
+        h.editor.transact { $0.setContainer([held, box], to: pen) }
+        let outside = h.add(Box(slot(5)))
+        h.add(Link(from: held, to: outside))
+        h.editor.cut([pen])
+        expectEqual(h.editor.undoHistory.undoName, "Cut corral, Ledger, box and link")
+    },
+    test("Delete and Cut in a right-click menu name the step as their keys do, with what went along") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try ledgers(pasteboard)
+        let a = h.add(Ledger(slot(0))), c = h.add(Box(slot(2)))
+        h.add(Link(from: a, to: c))
+        h.add(Link(from: c, to: a))
+        let middle = CGPoint(x: slot(0).midX, y: slot(0).midY)
+        h.editor.selection = a
+        try require(h.secondaryClick(at: middle)).choose("Cut")
+        expectEqual(h.editor.undoHistory.undoName, "Cut Ledger and 2 links")
+        h.editor.undo()
+        h.editor.selection = a
+        try require(h.secondaryClick(at: middle)).choose("Delete")
+        expectEqual(h.editor.undoHistory.undoName, "Delete Ledger and 2 links")
+    },
+    test("a link bound at one end only to a ledger copied is taken along: the paste binds its one end to the copy") {
+        let pasteboard = privatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        let h = try ledgers(pasteboard)
+        let a = h.add(Ledger(slot(0)))
+        let dangling = h.add(Link(from: a, to: nil))
+        let before = h.editor.document
+        expectEqual(h.editor.copy([a]).count, 2, "the ledger and the link with a free end")
+        h.editor.paste()
+        let added = h.editor.shapes(since: before)
+        let copy = try require(added.first { $0.kind == Ledger.kind }), link = try require(added.first { $0.kind == Link.kind })
+        expectEqual(link.typed(as: Link.self)?.props, Link(from: copy.id, to: nil), "one end on the copy, the other free")
+        expectEqual(link.copiedFrom, dangling)
     },
     test("a cut that took nothing along is just Cut: a box whose links let go, a ledger with none") {
         let pasteboard = privatePasteboard()

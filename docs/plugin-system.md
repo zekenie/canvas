@@ -2091,10 +2091,10 @@ concern, references between shapes. The first is bindings, the `ShapeReferencing
 | Adopted by | a kind's definition | a value, wherever a shape keeps it |
 | For | an arrow's bound ends | a mention |
 | The shape it's bound to, or names | must be on the board | may be on any board of the file, or gone |
-| Deleting it | lets go of it, in the deleting transaction | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
-| Copying without it | lets go of it (an arrow's end stays where it's drawn) | keeps naming the original |
+| Deleting it | lets go of it, in the deleting transaction (deletes it, for a kind that takes bound shapes: `TakesBoundShapes`) | changes nothing: no delete looks for names, so the name stays, and names the shape again if it comes back with its id |
+| Copying without it | lets go of it (an arrow's end stays where it's drawn), unless the copy takes it along (a kind that takes bound shapes copies the arrows bound only to shapes copied) | keeps naming the original |
 | Copying with it | is bound to its copy | names its copy, on whatever board of the copied tree it is |
-| Cutting it, then pasting it (a move: [the clipboard](#the-clipboard)) | lets go of it at the cut, as a delete does; the paste doesn't bind it again | names it again once it's pasted, on whatever board, since it keeps its id |
+| Cutting it, then pasting it (a move: [the clipboard](#the-clipboard)) | lets go of it at the cut, as a delete does (deleted, for a kind that takes bound shapes); the paste doesn't bind it again | names it again once it's pasted, on whatever board, since it keeps its id |
 | `canvas draw` with one that isn't there | refused (`invalid_value`: `the pin on line 1 is bound to a shape that isn't on this board`, or `… on another board of the file`) | made, with a warning if it's in no board of the file (or the script deletes it), or on a board the app can't show |
 
 ```swift
@@ -3196,8 +3196,8 @@ Something a person can ask for in more than one way (a key, the menu bar, a righ
 in a shape's text, a chip, a button in the panel) is a command, declared once by the plugin it
 belongs to, and every way in runs that declaration
 ([`Sources/Canvas/Plugins/Commands.swift`](../Sources/Canvas/Plugins/Commands.swift)). The core
-knows what a command is and never which exist, as it knows kinds and tools: its own are undo, redo
-and the four zooms, and the window and the app name no plugin's command.
+knows what a command is and never which exist, as it knows kinds and tools: its own are undo, redo,
+the four zooms and Insert beside (⇧↩), and the window and the app name no plugin's command.
 
 ```swift
 extension CanvasCommand { public static let group: CanvasCommand = "group" }
@@ -6356,7 +6356,7 @@ giving a shape back the id it had.
   of the shapes left out of the copy, and pasting asks it to bind the copies of those copied with it. So
   two notes and the arrow between them paste as two notes and an arrow between the copies, and an
   arrow copied alone pastes free, ending where it was drawn, as it would if its notes were deleted.
-  tldraw's copy does the same. A shape that can't let go of one it can't find (an arrow bound to a
+  tldraw's copy does the same, except for a kind that takes bound shapes (`TakesBoundShapes`: a table), whose copy takes along the arrows bound only to shapes copied, selected or not, and whose cut deletes the arrows bound to it: a departure from tldraw. A shape that can't let go of one it can't find (an arrow bound to a
   shape its board keeps aside, or one a paste can't read) is left out, rather than copied wrong.
 - **Shapes that only name shapes** ([`ShapeNaming`](#values-that-name-shapes), a mention) go through
   the same call, `record.remappingReferences`, which renames their names too: a copy names the
