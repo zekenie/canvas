@@ -405,4 +405,30 @@ public enum APIGroups {
     public static func isMember(_ index: Int, in rows: [APIRow]) -> Bool {
         rows.indices.contains(index) && rows[index].header == nil && rows[..<index].contains { $0.header != nil }
     }
+
+    /// `endpoints` (each path whole, in order) grouped by prefix, the kit's one rule (Group by Prefix's, and a paste of OpenAPI's):
+    /// a header for each first path segment two or more of them share (`/orders` for `/orders` and `/orders/{id}`), in the order
+    /// each is first met, its endpoints after it in their order, each path written relative to it; the endpoints that share
+    /// their first segment with none first, in their order, whole. So three endpoints under three segments stay ungrouped (E1),
+    /// and sixty under seven make seven groups (E8).
+    public static func byPrefix(_ endpoints: [Endpoint]) -> [APIRow] {
+        func segment(_ path: String) -> String? { path.split(separator: "/", omittingEmptySubsequences: true).first.map(String.init) }
+        var counts: [String: Int] = [:], order: [String] = []
+        for endpoint in endpoints {
+            guard let first = segment(endpoint.path) else { continue }
+            if counts[first] == nil { order.append(first) }
+            counts[first, default: 0] += 1
+        }
+        let shared = Set(order.filter { counts[$0, default: 0] > 1 })
+        var rows: [APIRow] = endpoints.filter { segment($0.path).map { !shared.contains($0) } ?? true }.map(APIRow.endpoint)
+        for first in order where shared.contains(first) {
+            let prefix = "/" + first
+            rows.append(.header(PathHeader(prefix: prefix)))
+            for var endpoint in endpoints where segment(endpoint.path) == first {
+                endpoint.path = relative(endpoint.path, under: prefix)
+                rows.append(.endpoint(endpoint))
+            }
+        }
+        return rows
+    }
 }

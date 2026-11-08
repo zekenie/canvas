@@ -116,8 +116,11 @@ enum APIWords {
     private static func bound(_ type: [String: JSONValue], _ context: DrawTextContext) throws(DrawError) -> [String: JSONValue] {
         guard type["shape"] == nil, let words = type["words"]?.stringValue, !words.isEmpty else { return type }
         do throws(DrawError) {
-            // A type is a note that holds a schema: one the same script draws is one, though the file's index hasn't heard of it yet.
-            let found = try context.shape(called: words, admitting: { $0[TypeSchemaProperty.self] != nil ? nil : "which isn't a type" })
+            // A type is a note that holds a schema: one the same script draws with `schema:` is one, though its record has none yet
+            // and the file's index hasn't heard of it.
+            let found = try context.shape(called: words, admitting: { record, writing in
+                record[TypeSchemaProperty.self] != nil || writing.contains(TypeSchemaProperty.key.rawValue) ? nil : "which isn't a type"
+            })
             var bound = type
             bound["shape"] = .string(found.id.description)
             return bound

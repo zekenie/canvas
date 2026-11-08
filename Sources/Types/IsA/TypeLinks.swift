@@ -245,8 +245,9 @@ extension CanvasEditor {
     func ownerRelates(_ owner: ShapeID) -> Bool { document[owner].map { registry.relates($0.kind) } ?? false }
 
     /// The kind a new type beside `owners` is: the kind of the first that can be a type; for owners that all relate, the first
-    /// kind that can hold the mark as well; else the first that can be a type.
-    func newTypeKind(for owners: [ShapeID]) -> ShapeKind? {
+    /// kind that can hold the mark as well; else the first that can be a type (with no owners, the kind any new type is: a
+    /// note, as shipped). What a plugin that makes types names the kind by, never a literal (the kit's OpenAPI paste).
+    public func newTypeKind(for owners: [ShapeID] = []) -> ShapeKind? {
         func usable(_ kind: ShapeKind) -> Bool { registry.canBeType(kind) && registry.placement(for: kind) != nil }
         if let kind = owners.lazy.compactMap({ self.document[$0]?.kind }).first(where: { registry.canBeType($0) }) { return kind }
         if !owners.isEmpty, owners.allSatisfy(ownerRelates), let kind = registry.kinds.first(where: { usable($0) && registry.canBeRelationshipType($0) }) { return kind }

@@ -30,7 +30,7 @@ extension PluginID {
 
 /// The kit's plugin: the `table`, `enum-type`, `api` and `database` kinds; the Table, Enum, API and Database tools, each a new
 /// shape whose name is typed in its pill as it lands (a database's tab), "Add Table"; `/table NAME`, `/api [NAME]`, `/database
-/// NAME` and Create Database; ⌘V of SQL ("Paste SQL"); and `canvas draw`'s `columns:`, `values:`, `server:` and `endpoints:`,
+/// NAME` and Create Database; ⌘V of SQL ("Paste SQL") and of OpenAPI ("Paste OpenAPI"); and `canvas draw`'s `columns:`, `values:`, `server:` and `endpoints:`,
 /// lines in their grammars. Its kinds opt into Titles (the name in
 /// the pill, bars zoomed out), Mentions, the table of contents and the detail panel's header; Locking, Publishing and
 /// Grouping are every shape's.
@@ -126,7 +126,8 @@ public struct EngineeringPlugin: ListedPlugin {
         if let placedAPI { registrar.apiCommands(placing: placedAPI) }
         registrar.rowsDraw()
         registrar.apiDraw()
-        // ⌘V of SQL: its tables and enums put down by names, the kit's (gone with it off).
+        // ⌘V of SQL, and of OpenAPI: tables and enums, an API and its types, put down by names, the kit's (gone with it off).
         registrar.sqlPaste()
+        registrar.openAPIPaste()
     }
 }
