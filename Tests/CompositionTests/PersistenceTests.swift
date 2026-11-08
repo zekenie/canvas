@@ -64,7 +64,7 @@ import Types
         let registry = try ShippedPlugins.registry(model: ScriptedLanguageModel())
         let codec = BoardCodec(registry: registry)
         let directory = "Tests/CompositionTests/Fixtures/kinds"
-        expectEqual(codec.version(of: Arrow.kind), 2)
+        expectEqual(codec.version(of: Arrow.kind), 3)
         let before = try Data(contentsOf: URL(fileURLWithPath: "\(directory)/arrow.v1.json"))
         let old = try require(codec.decodeRecord(props: before, kind: Arrow.kind, version: 1).typed(as: Arrow.self))
         expectEqual(old.props.text.runs, [.text("Calls")])

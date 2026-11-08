@@ -166,7 +166,7 @@ extension ShapePorts: KeyedExtensionPoint {
         [PortKey(target: target, channel: ports.channel)]
     }
     public static func summary(of ports: PortContribution, for target: ShapeTarget) -> String {
-        "ports " + (ports.channel.map(\.rawValue) ?? "on every channel") + (target == .any ? "" : " → \(target)")
+        "ports " + (ports.channel.map(\.rawValue) ?? "on every channel") + (ports.onParts ? " on rows" : "") + (target == .any ? "" : " → \(target)")
     }
 
     /// Every channel a kind has ports on is declared, and the connector's own kind has none: a
