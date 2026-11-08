@@ -62,14 +62,52 @@ public struct LineRowsContribution {
     let marked: @MainActor (AnyShapeRecord, LayoutReading) -> Set<PartID>
     /// Line n of a shape laid out at a frame, world units.
     let lineRect: @MainActor (Int, CGRect) -> CGRect
+    /// A row's card, printed (`CanvasEditor.lineRowCard(of:)`); nil for a row with none.
+    let card: @MainActor (CanvasEditor, AnyShapeRecord, PartID) -> LineRowCard?
 
     public init(noun: LineNoun, rows: @escaping @MainActor (AnyShapeRecord) -> [FoldRow]?,
                 marked: @escaping @MainActor (AnyShapeRecord, LayoutReading) -> Set<PartID>,
-                lineRect: @escaping @MainActor (Int, CGRect) -> CGRect) {
+                lineRect: @escaping @MainActor (Int, CGRect) -> CGRect,
+                card: @escaping @MainActor (CanvasEditor, AnyShapeRecord, PartID) -> LineRowCard? = { _, _, _ in nil }) {
         self.noun = noun
         self.rows = rows
         self.marked = marked
         self.lineRect = lineRect
+        self.card = card
+    }
+}
+
+/// A row's card as text, for what shows what a row holds away from its card (a row's tab in the panel): its header's name, and
+/// each line's label and what it says, as the card prints it ("type" "uuid"; "deprecated" "no"; a list's lines one under another).
+public struct LineRowCard: Equatable, Sendable {
+    public struct Line: Equatable, Sendable {
+        public var label: String
+        /// What the line says; empty for a line that holds nothing (an empty field, a list with no lines).
+        public var value: String
+
+        public init(label: String, value: String) {
+            self.label = label
+            self.value = value
+        }
+    }
+
+    public var name: String
+    public var lines: [Line]
+
+    public init(name: String, lines: [Line]) {
+        self.name = name
+        self.lines = lines
+    }
+}
+
+extension CanvasEditor {
+    /// What a row's card says, printed: its name and each line's label and value, as the card would show them now; nil for a row
+    /// of a kind not written as lines, a row its shape doesn't have, or one with no card (an enum's value). The shape on any board
+    /// the editor can show.
+    public func lineRowCard(of address: PartAddress) -> LineRowCard? {
+        guard let part = address.part, let record = document[address.shape] ?? shape(inFile: address.shape),
+              let lines = registry.lineRows(of: record.kind) else { return nil }
+        return lines.card(self, record, part)
     }
 }
 

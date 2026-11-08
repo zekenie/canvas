@@ -36,6 +36,8 @@ public struct RowDetailContribution {
     let tab: DetailTabID
     let id: String
     let title: String?
+    /// Which rows it's for (an endpoint, not the path prefix over it): all, by default.
+    let when: @MainActor (PartName) -> Bool
     let content: @MainActor (DetailRow) -> AnyView
 }
 
@@ -53,6 +55,11 @@ extension RowDetails: KeyedExtensionPoint {
         [DetailSectionKey(target: target, tab: contribution.tab, section: RowDetailContribution.sectionPrefix + contribution.id)]
     }
 
+    /// Two tabs with one title would show as two identical tabs, a shape's and a row's alike.
+    public static func check(_ registry: Registry) throws(RegistryError) {
+        try DetailTabID.checkTabs(in: registry, point: "\(Self.self)")
+    }
+
     /// "RowDetails in Connections → every shape with parts".
     public static func summary(of contribution: RowDetailContribution, for target: ShapeTarget) -> String {
         "\(Self.self) in \(contribution.tab.reported)" + (target == .any ? "" : " → \(target)")
@@ -68,10 +75,14 @@ extension ShapeRegistrar {
     /// A section of a tab this kind's rows show when one is the panel's subject (one shape selected and one of its rows, as an item or
     /// the one its editing is on): the row's own details ("Endpoint": what its card holds), in plugin order within the tab.
     ///
+    /// `when` says which rows have it (an API's endpoints, not its path prefixes): all, by default.
+    ///
     ///     api.rowDetails(in: EndpointTab.self, id: "endpoint") { row in EndpointDetails(row: row) }
     public mutating func rowDetails<Tab: DetailTab, Content: View>(in tab: Tab.Type, id: String, title: String? = nil,
+                                                                  when: @escaping @MainActor (PartName) -> Bool = { _ in true },
                                                                   @ViewBuilder _ content: @escaping @MainActor (DetailRow) -> Content) {
-        contribute(RowDetailContribution(tab: DetailTabID(Tab.self), id: id, title: title, content: { AnyView(content($0)) }), to: RowDetails.self)
+        contribute(RowDetailContribution(tab: DetailTabID(Tab.self), id: id, title: title, when: when, content: { AnyView(content($0)) }),
+                   to: RowDetails.self)
     }
 }
 
@@ -79,8 +90,10 @@ extension ScopedRegistrar {
     /// A section of a tab the rows of every kind the scope reaches show (`ShapeRegistrar.rowDetails`): what a feature shows of a row
     /// of a shape it doesn't define (Neighbors' Connections, on the kinds with parts).
     public mutating func rowDetails<Tab: DetailTab, Content: View>(in tab: Tab.Type, id: String, title: String? = nil,
+                                                                  when: @escaping @MainActor (PartName) -> Bool = { _ in true },
                                                                   @ViewBuilder _ content: @escaping @MainActor (DetailRow) -> Content) {
-        contribute(RowDetailContribution(tab: DetailTabID(Tab.self), id: id, title: title, content: { AnyView(content($0)) }), to: RowDetails.self)
+        contribute(RowDetailContribution(tab: DetailTabID(Tab.self), id: id, title: title, when: when, content: { AnyView(content($0)) }),
+                   to: RowDetails.self)
     }
 }
 
@@ -120,7 +133,7 @@ extension DetailPanelState {
     /// shape doesn't list, or a kind with no row tabs.
     public func rowLayout(for record: AnyShapeRecord, part id: PartID) -> DetailLayout? {
         guard let part = editor.registry.parts(of: record)?.first(where: { $0.id == id }) else { return nil }
-        let ordered = editor.registry.contributions(to: RowDetails.self, reaching: record.kind)
+        let ordered = editor.registry.contributions(to: RowDetails.self, reaching: record.kind).filter { $0.value.when(part) }
         guard !ordered.isEmpty else { return nil }
         let isReadOnly = editor.isReadOnly(record.id)
         let sections = ordered.map { contribution in

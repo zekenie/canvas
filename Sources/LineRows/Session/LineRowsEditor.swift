@@ -562,6 +562,9 @@ final class LineSession<Model: LineModel>: LineRowsView {
             editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)
         }
         editor.setLayoutInput(LineRowsLayout.fixed, focus == .fixed ? true : nil, for: id)
+        // The row the keys are on, for the panel's subject (the row's own tabs): the caret's row, or the one row selected whole.
+        let keysOn: PartID? = if band != nil { selectedRows.count == 1 ? selectedRows[0] : nil } else if case .row(let row) = focus { row } else { nil }
+        if editor.editingShapeID == id, editor.editingPart != keysOn { editor.editingPart = keysOn }
         // A waiting line opened between rows moves the ones below it with nothing committed: a card under one goes with it.
         service.cards?.follow(nil)
     }

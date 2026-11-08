@@ -40,15 +40,32 @@ public enum Combinator: Sendable, Equatable {
 }
 
 /// One shape's conditions, all of which it meets: at most one head, first, then filters. Never
-/// empty: a compound with no head has a filter.
+/// empty: a compound with no head has a filter. Last, CSS's pseudo-element `::part(<row>)`: one row of
+/// the shape (`#<shape>::part(<row>)`), which only an edge word's anchor takes (the parser refuses it
+/// anywhere else).
 public struct Compound: Sendable, Equatable {
     public var head: Head?
     public var filters: [Filter]
+    /// `::part(<row>)`: a row of the shape the compound names, by its id.
+    public var part: PartSelector?
     public var span: QuerySpan
 
-    public init(head: Head? = nil, filters: [Filter] = [], span: QuerySpan) {
+    public init(head: Head? = nil, filters: [Filter] = [], part: PartSelector? = nil, span: QuerySpan) {
         self.head = head
         self.filters = filters
+        self.part = part
+        self.span = span
+    }
+}
+
+/// `::part(7C1E2A04-…)`: a row of a shape (a table's column, an API's endpoint), by the row's id, the shape's own. Its span holds
+/// the `::` through the `)`.
+public struct PartSelector: Sendable, Equatable {
+    public var id: UUID
+    public var span: QuerySpan
+
+    public init(id: UUID, span: QuerySpan) {
+        self.id = id
         self.span = span
     }
 }

@@ -226,7 +226,10 @@ let ships = [
     // from the plugins that own the edges, in the order a shape's rings go: arrows' (points to, pointed to by), then
     // mentions' (mentions, mentioned by), then types' (instances). Then the same ways as lists in a shape's panel, its Connections
     // tab, with what the shape is inside and what it holds: after the detail panel, whose tab it is.
-    "Neighbors.NeighborsPlugin", "Arrows.ArrowLightsPlugin", "Mentions.MentionLightsPlugin", "Types.TypeLightsPlugin", "Neighbors.NeighborDetailsPlugin",
+    // The engineering kit's lights are a row's alone (an endpoint's Calls It, Writes and Reads; a column's Keys To and Keyed By), listed
+    // in a selected row's Connections tab before what mentions it, as E6 draws them; hovering asks none of them.
+    "Neighbors.NeighborsPlugin", "Arrows.ArrowLightsPlugin", "Engineering.EngineeringLightsPlugin", "Mentions.MentionLightsPlugin", "Types.TypeLightsPlugin",
+    "Neighbors.NeighborDetailsPlugin",
     // `/move-to` and `/move-near`: a shape moved into a frame, onto a subboard's board or beside a shape, on any board,
     // placed as `canvas draw` places one. After every plugin whose every-shape commands a note lists before them.
     "Moving.MovingPlugin",
@@ -396,7 +399,7 @@ let package = Package(
         .target(name: "StickyNotes", dependencies: ["Canvas", "Clipboard", "Colors", "Connections", "DetailPanel", "Draw", "Keyboard", "LanguageRules", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Types"]), // layer: product
         .target(name: "Subboards", dependencies: ["Boards", "Canvas", "Colors", "Connections", "DetailPanel", "Keyboard", "Mentions", "Palette", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
         .target(name: "Frames", dependencies: ["Canvas", "Colors", "Connections", "ContextMenus", "DetailPanel", "Geometry", "Keyboard", "Mentions", "Palette", "Selection", "TableOfContents", "Titles", "Transform", "Types"]), // layer: product
-        .target(name: "Engineering", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Find", "Geometry", "LineRows", "Mentions", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Transform", "Types"]), // layer: product
+        .target(name: "Engineering", dependencies: ["Adornments", "Canvas", "CanvasRPC", "Clipboard", "Connections", "ContextMenus", "DetailPanel", "Draw", "Find", "Geometry", "LineRows", "Mentions", "Neighbors", "Palette", "Selection", "SlashCommands", "TableOfContents", "TextEditing", "Titles", "Topology", "Transform", "Types"]), // layer: product
 
         .target(name: "TestKit", dependencies: [], path: "Tests/TestKit"),                                        // layer: testsupport
         .target(name: "CanvasTesting", dependencies: ["Canvas", "CanvasRPC", "Geometry", "TestKit"], path: "Tests/CanvasTesting"), // layer: testsupport

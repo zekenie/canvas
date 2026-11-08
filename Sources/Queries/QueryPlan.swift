@@ -124,8 +124,9 @@ indirect enum PlanOp: Sendable {
     /// ends (`QueryMatchRequest.scope`). The plan holds the word, never the id.
     case scope(ScopeWord)
     /// One of the language's edge words (`:edge-to` … `:between`): its anchors (`second` only for
-    /// `:between`) and the edge types it follows.
-    case edges(word: Word, anchor: PlanList, second: PlanList?, types: PlanEdgeTypes)
+    /// `:between`) and the edge types it follows; `part`, the row its anchor names (`#S::part(R)`), whose
+    /// edges alone count: those whose end at the anchor is that row.
+    case edges(word: Word, anchor: PlanList, second: PlanList?, types: PlanEdgeTypes, part: PartID?)
     /// A plugin's relation answered from a fact of the file (`:is-a(S)`): the result is related to a
     /// shape the anchor matches, as the plugin's `related` says, however far when it's transitive.
     case fileRelation(word: String, anchor: PlanList)
@@ -351,8 +352,8 @@ extension QueryPlan: CustomStringConvertible {
             case .topLevel: lines.append(indent + "top level")
             case .currentBoard: lines.append(indent + "on the board shown")
             case .scope(let word): lines.append(indent + word.written)
-            case .edges(let word, let anchor, let second, let types):
-                lines.append(indent + "\(word.rawValue) \(types.planDescription)")
+            case .edges(let word, let anchor, let second, let types, let part):
+                lines.append(indent + "\(word.rawValue) \(types.planDescription)" + (part.map { " at row \($0)" } ?? ""))
                 list(anchor, depth + 1)
                 if let second { list(second, depth + 1) }
             case .relation(let word, let anchor, let types, let direction):

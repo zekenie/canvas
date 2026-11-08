@@ -81,6 +81,8 @@ public struct EngineeringPlugin: ListedPlugin {
             // ⌘L's picker on a table: from a row, the tables and their columns, a key to the row picked (a table's, its primary key);
             // from the table, a table picked makes the key column for it ("Add Key Column").
             table.connectPicks(admitting: KeyPicks.admits, KeyPicks.plan)
+            // A column selected as the panel's subject: its own tab, what its card holds, beside its Connections.
+            table.rowDetails(in: ColumnTab.self, id: "column") { RowCardDetails(row: $0) }
         }
         registrar.shape(EnumDefinition()) { type in
             type.label(EnumStyle.label, systemImage: EnumStyle.symbol)
@@ -119,6 +121,9 @@ public struct EngineeringPlugin: ListedPlugin {
             api.partPorts(Reads.self, role: .source)
             // ⌘L from an endpoint: the tables it may write or read, the endpoints it may call, and what else takes a call.
             api.connectPicks(admitting: EndpointPicks.admits, EndpointPicks.plan)
+            // An endpoint selected as the panel's subject (E6): its own tab, what its card holds, beside its Connections. A path
+            // prefix has no card, so none.
+            api.rowDetails(in: EndpointTab.self, id: "endpoint", when: \.isConnectable) { RowCardDetails(row: $0) }
         }
         registrar.shape(DatabaseDefinition()) { database in
             database.label(DatabaseStyle.label, systemImage: DatabaseStyle.symbol)
