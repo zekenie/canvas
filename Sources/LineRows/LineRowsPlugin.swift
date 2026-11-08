@@ -52,7 +52,12 @@ public struct LineRowsPlugin: ListedPlugin {
     public var id: PluginID { .lineRows }
 
     public func register(into registrar: inout PluginRegistrar) {
-        registrar.service { LineRowsService(editor: $0) }
+        registrar.service { editor in
+            let service = LineRowsService(editor: editor)
+            // A row's card (⌘↓): the Card part's, shown for the session.
+            service.cards = LineCards(editor: editor)
+            return service
+        }
         registrar.service { RowFolds(editor: $0) }
         registrar.outlines { editor in editor.service(LineRowsService.self)?.outlines() ?? Outlines() }
         // What a folded shape shows, asked as it's laid out, and how wide one is while a line typed in it is wider.

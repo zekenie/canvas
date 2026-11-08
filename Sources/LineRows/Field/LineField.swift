@@ -20,8 +20,12 @@ public enum LineKey: Equatable, Sendable {
     case up, down
     /// Tab, ⇧Tab: the next, the previous stop.
     case next, previous
-    /// Escape, ⌘↩, ⌘↑, ⌘.: editing ends, the draft kept.
+    /// Escape, ⌘↑, ⌘.: out of the line, the draft kept (editing ends; in a row's card, the row has the keyboard back).
     case end
+    /// ⌘↩: editing ends, the draft kept.
+    case finish
+    /// ⌘↓: the row's card.
+    case card
     /// ⌥↑ ⌥↓: the row one place up, down.
     case moveUp, moveDown
     /// ⇧↩: editing ends, a shape of the kind beside.
@@ -290,8 +294,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         return super.performKeyEquivalent(with: event)
     }
 
-    /// The keys a text view's bindings never send as one command: ⌥↑ ⌥↓, ⇧↩, ⌘↩, ⌘↑ (and ⌘↓, nothing yet: the row's card
-    /// comes later), a held Return once, and a held ⌫ stopping at the row it removed.
+    /// The keys a text view's bindings never send as one command: ⌥↑ ⌥↓, ⇧↩, ⌘↩, ⌘↑, ⌘↓ (the row's card), a held Return once,
+    /// and a held ⌫ stopping at the row it removed.
     private func lineKey(_ event: NSEvent) -> Bool {
         if !(event.isARepeat && event.keyCode == 51) { swallowsDeleteRepeats = false }
         if event.isARepeat, event.keyCode == 51, swallowsDeleteRepeats { return true }
@@ -301,8 +305,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         case (.up, [.option]): return key(.moveUp, closing: true)
         case (.down, [.option]): return key(.moveDown, closing: true)
         case (.up, [.command]): return key(.end, closing: true)
-        case (.down, [.command]): return true
-        case (.finish, _): return key(.end, closing: true)
+        case (.down, [.command]): return key(.card, closing: true) || true
+        case (.finish, _): return key(.finish, closing: true)
         case (.activate, [.shift]):
             if event.isARepeat { return true }
             return key(.addBeside, closing: true)

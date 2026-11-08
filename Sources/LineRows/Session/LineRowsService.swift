@@ -18,6 +18,10 @@ public final class LineRowsService {
     weak var awaitingReprint: LineRowsView?
     /// How wide the shape being edited is laid out while its typed line is wider than it stores (`LineRowsLayout.width`).
     private var widths: [ShapeID: CGFloat] = [:]
+    /// What shows a row's card (the Card part's), given by the plugin.
+    var cards: (any LineCardShowing)?
+    /// The session of the shape being edited, as it started.
+    weak var session: LineRowsView?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -65,6 +69,21 @@ public final class LineRowsService {
         return true
     }
 
+    /// The card of a row (`address`), as a click on its "›" opens it: the shape edited at the row, if it isn't, then the card
+    /// shown under the row. False where none shows (no such row, a row with nothing more, a shape that can't be edited).
+    @discardableResult
+    public func openCard(of address: PartAddress) -> Bool {
+        guard let part = address.part, let record = editor.document[address.shape], editor.registry.lineRows(of: record.kind) != nil,
+              editor.registry.lineRows(of: record.kind)?.rows(record)?.contains(where: { $0.id == part }) == true else { return false }
+        if editor.editingShapeID != address.shape {
+            editor.selectedShapeIDs = [address.shape]
+            guard editor.beginEditing(address.shape) else { return false }
+        }
+        guard let session, editor.editingShapeID == address.shape else { return false }
+        session.go(to: .row(part))
+        return session.openCard()
+    }
+
     /// Where `id`'s session starts when Tab or ⇧Tab hopped to it, as its editing view is made: asked once.
     func startingStop(_ id: ShapeID) -> End? {
         guard let hopped, hopped.id == id else { return nil }
@@ -76,6 +95,7 @@ public final class LineRowsService {
 extension LineRowsService: EditorService {
     /// A pick that a session's line waits for is in: the line printed again, with what it drew.
     public func documentDidSettle(_ changes: ChangeSet, in editor: CanvasEditor) {
+        cards?.follow()
         guard let session = awaitingReprint else { return }
         awaitingReprint = nil
         session.reprint()

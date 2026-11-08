@@ -170,12 +170,11 @@ import TextEditing
         expectEqual(b.labels(id).last, "d", "written as the keyboard leaves")
         expectEqual(b.undoName, "Add Entry")
     },
-    test("⌘↓ does nothing yet; ⌥↩ and ⌃↩ type no line break; / and @ are letters") {
+    test("⌥↩ and ⌃↩ type no line break; / and @ are letters") {
         let b = try Bench()
         let id = b.tally("apples", ["red"])
         b.begin(id)
         b.type("a/b@c")
-        b.press(.commandDown)
         b.press(Chord(Key.return, .option))
         b.press(Chord(Key.return, .control))
         expectEqual(b.field.string, "a/b@c")
@@ -569,7 +568,7 @@ import TextEditing
             .init(.return, [.forward, .elsewhere, .acted], exception: "line-return"),
         ])
         walk.expectMeanings(of: surface, stops: ["tally/row x", "tally/row y", "tally/waiting"], at: 1,
-                            depth: { _ in b.editor.editingShapeID != nil ? 2 : b.editor.selectedShapeIDs.isEmpty ? 0 : 1 }, reset: reset)
+                            depth: { _ in b.editor.card != nil ? 3 : b.editor.editingShapeID != nil ? 2 : b.editor.selectedShapeIDs.isEmpty ? 0 : 1 }, reset: reset)
     },
 ])
 

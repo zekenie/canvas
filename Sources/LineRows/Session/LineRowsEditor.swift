@@ -82,6 +82,11 @@ public class LineRowsView: NSView {
 
     /// Prints the row with the caret again as it's stored, where the line holds nothing of the person's.
     func reprint() {}
+
+    /// ⌘↓: the line written, then the card of the row with the caret shown under it; false where there's none (the title, an
+    /// empty waiting line, a row with nothing more).
+    @discardableResult
+    public func openCard() -> Bool { false }
 }
 
 extension LineRowsView {
@@ -204,6 +209,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     // MARK: Starting
 
     override func start() {
+        service.session = self
         // A folded shape shows every row while it's edited: laid out so before a press finds its row. The press itself was
         // made against the fold, so its row is found there.
         let folded = editor.rowFolds?.foldedLines(of: id)
@@ -568,7 +574,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// One step of `changes`, named as the kind names the first (and what a delete took along); heard by VoiceOver. A
     /// refusal (a locked shape) writes nothing and shakes the shape.
     @discardableResult
-    private func write(_ changes: [LineChange<Row>], coalescing key: AnyHashable? = nil) -> Bool {
+    func write(_ changes: [LineChange<Row>], coalescing key: AnyHashable? = nil) -> Bool {
         var name = ""
         let model = model, id = id, registry = editor.registry
         let written: Bool? = editor.transactWhole(nil, coalescing: key, shaking: [id]) { transaction in
@@ -598,7 +604,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .down: step(by: 1)
         case .next: tab(by: 1)
         case .previous: tab(by: -1)
-        case .end: end()
+        case .end, .finish: end()
+        case .card: openCard()
         case .moveUp: move(by: -1)
         case .moveDown: move(by: 1)
         case .addBeside: addBeside()
@@ -719,7 +726,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     }
 
     /// Escape, ⌘↩, ⌘↑: the line written, editing ends.
-    private func end() {
+    func end() {
         commitDraft()
         context.end()
     }
@@ -835,6 +842,39 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .tab: tab(by: 1)
         case .backTab: tab(by: -1)
         }
+    }
+
+    // MARK: The row's card
+
+    @discardableResult
+    override func openCard() -> Bool {
+        commitDraft()
+        guard case .row(let row) = focus, let stored = storedRow(row), let cards = service.cards,
+              let card = model.card(of: stored, in: lineContext(row)) else { return false }
+        return cards.show(card, of: row, in: self)
+    }
+
+    /// A row as it's stored now.
+    func storedRow(_ id: PartID) -> Row? { rows.first { model.id(of: $0) == id } }
+
+    /// What a card's lines are read in: the row's own context.
+    func cardContext(_ row: PartID) -> LineContext { lineContext(row) }
+
+    /// How the kind's lines look.
+    var style: LineStyle { model.style }
+
+    /// A row's rect as it's laid out now, world units: what its card hangs from.
+    func worldRect(of row: PartID) -> CGRect? { editor.shapeContext.geometry(of: id)?.parts.frame(row)?.rect }
+
+    /// A line of the row's card left changed: `row` written over `held`, as a row's line is, one step the kind names by what
+    /// changed ("Change Column", "Change Key Action"), heard by VoiceOver; the row's line printed again as it's stored. False
+    /// where nothing was written: nothing changed, the row is gone, or the shape refused (and shook).
+    @discardableResult
+    func commitCard(_ row: Row, over held: Row) -> Bool {
+        guard row != held, editor.canTransact, storedRow(model.id(of: held)) != nil else { return false }
+        guard write([.change(from: held, to: row)]) else { return false }
+        reprint()
+        return true
     }
 
     // MARK: VoiceOver

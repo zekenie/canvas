@@ -39,7 +39,8 @@ struct Tally: BoxShapeProps {
     static let rowHeight: CGFloat = 20
 }
 
-/// An entry: its label, its count, the tally it names, and the words nothing read.
+/// An entry: its label, its count, the tally it names, and the words nothing read; and what only its card shows: whether it's
+/// starred, its color, its notes.
 struct TallyRow: SchemaDefined, Hashable, Sendable {
     static let properties = Properties<TallyRow>(definition: "tally-row") {
         Property("id", \.id).required()
@@ -47,12 +48,18 @@ struct TallyRow: SchemaDefined, Hashable, Sendable {
         Property("count", \.count)
         Property("ref", \.ref)
         Property("unread", \.unread)
+        Property("starred", \.starred)
+        Property("color", \.color)
+        Property("notes", \.notes)
     }
     var id: PartID
     var label: String
     var count: Int?
     var ref: ShapeID?
     var unread: String
+    var starred = false
+    var color: String?
+    var notes: [String] = []
 
     init(id: PartID = PartID(), _ label: String, count: Int? = nil, ref: ShapeID? = nil, unread: String = "") {
         self.id = id
@@ -218,6 +225,33 @@ struct TallyLines: LineModel {
     }
     func isHeader(_ row: TallyRow) -> Bool { row.label.hasSuffix("/") }
 
+    /// What a line doesn't say stays: the card's.
+    func merged(_ read: TallyRow, onto held: TallyRow) -> TallyRow {
+        var row = read
+        row.starred = held.starred
+        row.color = held.color
+        row.notes = held.notes
+        return row
+    }
+
+    /// An entry's card: its count (numbers offered), starred, its color, its notes a line each. A header has none.
+    func card(of row: TallyRow, in context: LineContext) -> LineCard<TallyRow>? {
+        guard !isHeader(row) else { return nil }
+        return LineCard(header: LineCardHeader(name: row.label, mark: row.count == 0 ? LineMark(symbol: "circle", color: .systemRed) : nil), lines: [
+            .field("count", grammar: CountGrammar(), get: { row, _ in row.count }, set: { row, count, _ in row.count = count }),
+            .toggle("starred", get: \.starred, set: { $0.starred = $1 }),
+            .choice("color", options: ["red", "green", "blue"], get: \.color, set: { $0.color = $1 }),
+            .list("notes", grammar: NoteGrammar(), get: { row, _ in row.notes }, set: { row, notes, _ in row.notes = notes }),
+        ])
+    }
+
+    /// Whether `to` is `from` with only `member` changed.
+    static func only<Value: Equatable>(_ member: WritableKeyPath<TallyRow, Value>, _ from: TallyRow, _ to: TallyRow) -> Bool {
+        var changed = from
+        changed[keyPath: member] = to[keyPath: member]
+        return from[keyPath: member] != to[keyPath: member] && changed == to
+    }
+
     static func line(_ line: Int, in frame: CGRect) -> CGRect {
         CGRect(x: frame.minX, y: frame.minY + Tally.head + CGFloat(line) * Tally.rowHeight, width: frame.width, height: Tally.rowHeight)
     }
@@ -225,7 +259,9 @@ struct TallyLines: LineModel {
     func stepName(of change: LineChange<TallyRow>) -> String {
         switch change {
         case .add(let rows, _): rows.count == 1 ? "Add Entry" : "Paste Entries"
-        case .change(let from, let to): from.label != to.label && { var renamed = from; renamed.label = to.label; return renamed == to }() ? "Rename Entry" : "Change Entry"
+        case .change(let from, let to):
+            if Self.only(\.label, from, to) { "Rename Entry" } else if Self.only(\.starred, from, to) { "Star Entry" }
+            else if Self.only(\.color, from, to) { "Color Entry" } else { "Change Entry" }
         case .delete: "Delete Entry"
         case .move: "Move Entry"
         }
@@ -255,4 +291,33 @@ struct TallyFindPlugin: CanvasPlugin {
             shape.props.rows.map { FindableText(field: $0.id.description, text: $0.label) }
         }, rects: { _, _, ranges, _ in ranges.map { _ in [] } })
     }
+}
+
+/// A count, in a card: a number, numbers offered.
+struct CountGrammar: LineGrammar {
+    func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<Int> {
+        let text = line.string.trimmingCharacters(in: .whitespaces)
+        return LineReading(row: Int(text), spans: text.isEmpty ? [] : [LineSpan(NSRange(location: 0, length: (line.string as NSString).length), .code)])
+    }
+
+    func print(_ count: Int, in context: LineContext) -> LineText { LineText(String(count)) }
+
+    func offers(at caret: Int, in line: LineText, reading: LineReading<Int>, context: LineContext) -> LineOffers? {
+        LineOffers(range: NSRange(location: 0, length: (line.string as NSString).length), query: line.string,
+                   items: ["10", "12", "20"].map { LineOffer(CaretCompletion(label: $0, insert: $0)) })
+    }
+
+    func spoken(_ count: Int, in context: LineContext) -> String { String(count) }
+}
+
+/// A note, in a card's list: words, as typed, trimmed.
+struct NoteGrammar: LineGrammar {
+    func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<String> {
+        let text = line.string.trimmingCharacters(in: .whitespaces)
+        return LineReading(row: text.isEmpty ? nil : text)
+    }
+
+    func print(_ note: String, in context: LineContext) -> LineText { LineText(note) }
+
+    func spoken(_ note: String, in context: LineContext) -> String { note }
 }

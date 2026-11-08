@@ -71,8 +71,18 @@ final class Bench {
         }
     }
 
+    /// The menus a row's card asked to pop up: never put on screen, where one would wait for a click.
+    var menus: [NSMenu] = []
+
+    /// A row's card showing has its menus given to `menus`.
+    func holdMenus() {
+        guard let card = canvas.cardView as? LineCardView, card.menuPresenter == nil else { return }
+        card.menuPresenter = { [weak self] in self?.menus.append($0) }
+    }
+
     func press(_ chord: Chord, times: Int = 1) {
         for _ in 0..<times {
+            holdMenus()
             window.press(chord)
             window.settle()
         }
