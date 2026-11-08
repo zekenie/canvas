@@ -323,7 +323,7 @@ struct Drawing {
         }
         // Every title the script draws, restates or renames to is known: a text may name them now.
         let formats = registry.drawTextFormats
-        if !formats.isEmpty || !registry.drawValueWriters.isEmpty {
+        if !formats.isEmpty || !registry.drawValueWriters.isEmpty || !options.implied.isEmpty {
             let lookup = DrawTextLookup(editor: namesBeyond ?? editor, target: target, naming: naming, items: items, itemsByTitle: itemsByTitle,
                                         unresolved: unresolved, deleted: deletedShapes, fileNames: fileNames, keys: options.keys,
                                         nearest: options.naming == .nearest)

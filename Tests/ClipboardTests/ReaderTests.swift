@@ -95,7 +95,7 @@ extension EditorHarness {
         expect(h.editor.document.shapes.last?.copiedFrom == box, "this app's shape, not a reader's, though text is a reader's too")
         expectEqual(reads.recognizing, 1, "the reader after was not asked about the copy")
     },
-    test("text no recognizing reader sniffs leaves Paste dimmed and ⌘V alone; each pasteboard change is read once") {
+    test("text no recognizing reader sniffs leaves Paste dimmed and ⌘V alone; each pasteboard change is read once while the file is as it was") {
         let pasteboard = privatePasteboard()
         defer { pasteboard.releaseGlobally() }
         let reads = Reads()
@@ -108,14 +108,18 @@ extension EditorHarness {
         pasteboard.setString("tiles 1", forType: .string)
         expect(h.editor.canPaste)
         h.editor.paste()
+        expectEqual(reads.recognizing, 1)
         h.editor.paste()
         expect(h.editor.canPaste)
-        expectEqual(reads.recognizing, 1, "read once for the change, however many times it's asked")
-        expectEqual(tilesOnBoard(h.editor).count, 2, "pasted twice from the one read")
+        expectEqual(reads.recognizing, 2, "read again: the paste changed the file, which a reader is handed and may read")
+        expectEqual(tilesOnBoard(h.editor).count, 2, "pasted twice")
+        expect(h.editor.canPasteAsNote)
+        expect(h.editor.canPasteAsNote)
+        expectEqual(reads.plain, 1, "read once for the change and the file, however many times it's asked")
         pasteboard.clearContents()
         pasteboard.setString("tiles 3", forType: .string)
         h.editor.paste()
-        expectEqual(reads.recognizing, 2, "a change is read again")
+        expectEqual(reads.recognizing, 3, "a change is read again")
     },
     test("a paste lands beside the selection, selected, announced, in one step called Paste and the reader's name; the context menu's centers on its click and ⇧⌘V on the pointer") {
         let pasteboard = privatePasteboard()

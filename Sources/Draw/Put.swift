@@ -241,10 +241,12 @@ private struct Putting {
                 throw DrawError("the board changed while it was put down, so nothing was", reason: ScriptError.Reason.busy.rawValue, hint: "try again")
             }
         }
-        // What it made or restated on the board shown: the shapes it named, and any it made without a name to find them by.
+        // What it made or restated on the board shown: the shapes it named, and any it made without a name to find them by; not the
+        // arrows its edges drew between them (a table's keys), which go with what they join.
         var seen: Set<ShapeID> = []
         let named = planned.compactMap(\.id).filter { editor.document[$0] != nil && seen.insert($0).inserted }
-        return named + editor.document.shapes.map(\.id).filter { before[$0] == nil && seen.insert($0).inserted }
+        let edgeKind = editor.registry.drawEdging.flatMap { $0.kind(editor.registry) }
+        return named + editor.document.shapes.filter { before[$0.id] == nil && $0.kind != edgeKind && seen.insert($0.id).inserted }.map(\.id)
     }
 
     // MARK: Names
