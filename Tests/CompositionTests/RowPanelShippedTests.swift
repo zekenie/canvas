@@ -4,6 +4,7 @@ import CanvasTesting
 import CanvasUI
 import DetailPanel
 import Engineering
+import Find
 import LineRows
 import Mentions
 import Neighbors
@@ -75,6 +76,117 @@ private let e6 = #"""
         expectEqual(list.settled().map(\.title), [])
         let whole = try editor.connections(of: api)
         expect(whole.allSatisfy { !["Calls It", "Writes", "Reads"].contains($0.title) }, "a whole API keeps the shipped lists: \(whole.map(\.title))")
+    },
+    test("W-evolve-7: a closed path prefix's Connections are its endpoints', under the same lights, never No Connections beside its bundles; Mentioned By quotes each row's own mention") {
+        let w = try InspectorWindow()
+        let editor = w.editor
+        _ = try drawnInProcess(#"""
+            api "orders API" server: "api.shop.dev/v1 bearer" endpoints: "GET /health\n/orders\nGET /orders/{id}\nPOST /orders\nPOST /orders/{id}/refunds"
+            table "refunds" right of "orders API" (gap: 140) columns: "id uuid pk\namount_cents int"
+            table "payments" below "refunds" (gap: 40) columns: "id uuid pk\namount_cents int"
+            subboard "storefront" left of "orders API" (gap: 140)
+            edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
+            edge "orders API"."POST /orders" -> "payments" channel: reads
+            edge "storefront" -> "orders API"."POST /orders" channel: calls
+            """#, on: editor)
+        let api = try require(shape(editor, "orders API")).id
+        let record = try require(editor.document[api]?.typed(as: API.self))
+        let header = try require(record.props.endpoints.first { $0.header?.prefix == "/orders" }).id
+        editor.rowFolds?.setClosed(true, header: header, of: api)
+        editor.selectedShapeIDs = [api]
+        editor.selectItems([AnyHashable(header)], of: api)
+        expectEqual(editor.detailRow, PartAddress(api, part: header))
+        let state = try require(editor.detailPanel)
+        let list = try require(editor.neighborList)
+        state.choose(.of(NeighborsTab.self), for: ShapeKind(rawValue: API.kind.rawValue + "#row"))
+        w.window.spin { list.subject == PartAddress(api, part: header) && list.hasLanded && !list.isAsking }
+        let lists = list.settled()
+        expectEqual(lists.map(\.title), ["Calls It", "Writes", "Reads"], "its rows' lights")
+        expectEqual(lists.map { $0.rows.map(\.name) }, [["storefront"], ["refunds"], ["payments"]])
+        // Two mentions in one note: each row's quote shows its own, in what a caption line holds.
+        let refunds = try require(endpoint(editor, api, "POST /orders/{id}/refunds")), post = try require(endpoint(editor, api, "POST /orders"))
+        let note = ShapeRecord(StickyNote(frame: CGRect(x: 300, y: 600, width: 240, height: 120),
+                                          text: MentionText([.text("Partial refunds go through "), .mention(refunds, label: "POST /orders/{id}/refunds"),
+                                                             .text(" Checkout posts to "), .mention(post, label: "POST /orders")])))
+        editor.transact("Add Note") { $0.insert(note) }
+        let quote = try require(editor.mentions?.quote(of: note.id, around: post))
+        expect(quote.hasSuffix("@POST /orders") && quote.count <= 44, "the quote ends on the row's own mention, short enough for a caption line: \(quote)")
+    },
+    test("W-connect-1: a key's pill and the table it stands for are one row of Connections, counted once") {
+        let w = try InspectorWindow()
+        let editor = w.editor
+        _ = try drawnInProcess(#"""
+            subboard "billing"
+            table "customers" right of "billing" (gap: 140) columns: "id uuid pk"
+            """#, on: editor)
+        _ = try drawnInProcess(#"table "statements" in "billing" columns: "id uuid pk\ncustomer_id uuid → customers.id""#, on: editor)
+        let billing = try require(shape(editor, "billing"))
+        expect(editor.showBoard(BoardID(owner: billing.id)))
+        let statements = try require(shape(editor, "statements")).id
+        let listed = try editor.connections(of: statements)
+        let pointsTo = try require(listed.first { $0.title == "Points To" })
+        expectEqual(pointsTo.rows.map(\.name), ["customers"], "the pill is the table's way, no row of its own")
+        expectEqual(pointsTo.count, 1)
+    },
+    test("W-evolve-3, W-evolve-4 in the window: ⌥Tab into a folded API's rows, ↓ to a closed header, → opens it said with its count; Return on a row edits it, Home to the first row, Escape back on the row") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"api "shop API" endpoints: "GET /health\n/purchases\nGET /purchases/{id}\nPOST /purchases\n/customers\nGET /customers/{id}""#)
+        let api = try require(shape(editor, "shop API"))
+        let rows = try require(api.typed(as: API.self)).props.endpoints
+        editor.rowFolds?.fold([api.id])
+        editor.selectedShapeIDs = [api.id]
+        w.window.makeFirstResponder(w.canvas)
+        w.window.settle()
+        let walk = KeyWalk(w.window, editor: editor, readers: [.canvas(w.canvas, editor: editor, names: [api.id: "shop API"])], settle: .runLoop)
+        walk.driver.send(.optionTab)
+        expectEqual(editor.selectedItems?.ids, [AnyHashable(rows[0].id)], "⌥Tab: the first row, an item")
+        expect(!editor.hasFocusedPart, "not a resize handle")
+        walk.driver.send(.down)
+        let purchases = rows[1].id
+        expectEqual(editor.selectedItems?.ids, [AnyHashable(purchases)], "↓: the closed header")
+        let before = editor.document[api.id]?.box
+        walk.driver.send(.right)
+        w.window.settle()
+        expectEqual(editor.rowFolds?.fold(of: api.id)?.closed.contains(purchases), false, "→ opened it")
+        expectEqual(editor.announcements.last, "/purchases opened, 2 endpoints")
+        expectEqual(editor.document[api.id]?.box, before, "nothing nudged")
+        walk.driver.send(.down)
+        walk.driver.send(.down)
+        expectEqual(editor.selectedItems?.ids, [AnyHashable(rows[3].id)], "↓ ↓: POST /purchases")
+        walk.driver.send(.return)
+        w.window.settle()
+        let view = try require(w.lineRows)
+        expectEqual(view.focus, .row(rows[3].id), "Return edits that row")
+        walk.driver.send(Chord(Key.home))
+        expectEqual(view.focus, .row(rows[0].id), "Home: the first row")
+        walk.driver.send(Chord(Key.end))
+        expectEqual(view.focus, .row(rows[rows.count - 1].id), "End: the last")
+        walk.driver.send(.escape)
+        w.window.settle()
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(editor.selectedItems?.acting, [AnyHashable(rows[rows.count - 1].id)],
+                    "Escape: one level out, the row the caret was on selected (shown as /customers, closed again, standing for it)")
+    },
+    test("R47: Find's step in a table names the table, and says the words around the hit stepped to, not the table's first hit's again") {
+        let w = try InspectorWindow()
+        let editor = w.editor
+        _ = try drawnInProcess(#"table "products" columns: "id uuid pk\nprice_cents int\nlist_price int""#, on: editor)
+        let id = try require(shape(editor, "products")).id
+        let find = try require(editor.find)
+        find.open()
+        find.query = "price"
+        w.window.spin { !find.isIndexing && find.isSettled }
+        _ = try awaitResult { await find.settled() }
+        expectEqual(find.results.map(\.id), [id])
+        let first = try require(find.announcement)
+        expect(first.hasPrefix("Hit 1 of 2, products, Table, ") && first.contains("price_cents"), first)
+        find.step(forward: true)
+        let second = try require(find.announcement)
+        expect(second.hasPrefix("Hit 2 of 2, products, Table, ") && second.contains("list_price") && !second.contains("price_cents"), second)
+        find.close()
     },
     test("in the app's window a row's Connections list is one Tab stop the arrows walk: the line lights its shape, Return goes to it") {
         let w = try InspectorWindow()

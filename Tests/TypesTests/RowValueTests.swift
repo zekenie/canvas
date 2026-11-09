@@ -174,6 +174,19 @@ private let locale = Locale(identifier: "en_US")
         expectEqual(try t.content(id, "nick"), .empty("add nick"))
         expectEqual(try t.content(id, "done"), .box(false))
     },
+    test("a type's long field name takes the row its kinds' words leave, not cut at its share with room beside it (paste 5: amount_ce…)") {
+        let t = try Bench()
+        let schema = #"{"type": "object", "properties": {"amount_in_minor_units": {"type": "integer"}, "currency": {"type": "string"}}, "required": ["amount_in_minor_units"]}"#
+        let money = t.editor.addSlipType(schema, words: "Money.", at: CGPoint(x: 40, y: 900))
+        let rows = t.book.rows(of: money)
+        let long = try require(rows.first { $0.name.hasPrefix("amount") })
+        expect(long.nameRect.width > TypesStyle.nameShare * long.rect.width, "past its share: \(long.nameRect.width) of \(long.rect.width)")
+        expect(long.valueRect.minX > long.nameRect.maxX, "the kind's words still after it")
+        // A note's values are typed, of no known width: its names keep to their share.
+        let note = t.note([money], ["amount_in_minor_units": 1250, "currency": "EUR"])
+        let noted = try require(t.book.rows(of: note).first { $0.name.hasPrefix("amount") })
+        expect(noted.nameRect.width <= TypesStyle.nameShare * noted.rect.width + 0.5, "a note's: \(noted.nameRect.width) of \(noted.rect.width)")
+    },
     test("a note of two types has each field once, in the chain's order") {
         let t = try Bench()
         let id = t.note([FieldFixtures.employeeID, FieldFixtures.addressID])

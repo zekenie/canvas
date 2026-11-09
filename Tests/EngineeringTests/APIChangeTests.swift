@@ -153,6 +153,7 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
         try menu.choose("Group by Prefix")
         expectEqual(b.lines(three), e1Three)
         expectEqual(b.undoName, nil, "no step")
+        expectEqual(b.editor.announcements.last, "Nothing to group", "but never silence: the keys and VoiceOver hear why nothing moved")
         let api = b.api("orders API", ["GET /customers/{id}", "GET /customers", "/orders", "GET /{id}", "/orders/{id}", "GET /refunds"], at: CGPoint(x: 100, y: 400))
         let header = b.rows(api)[2].id, deeper = b.rows(api)[4].id
         b.editor.selectedShapeIDs = [api]
@@ -275,8 +276,11 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
         b.strap(PartAddress(storefront), PartAddress(api, part: rows[3].id), on: Calls.id)
         b.editor.selectedShapeIDs = [api]
         expect(b.h.offered.contains("new-version"), "\(b.h.offered)")
+        let heard = b.editor.announcements.count
         expect(b.h.slash("new-version", ""))
+        b.h.wait(10)
         expectEqual(b.undoName, "New Version")
+        expectEqual(b.editor.announcements.dropFirst(heard).filter { $0 == "New Version" }.count, 1, "said once: \(b.editor.announcements.dropFirst(heard))")
         let old = try require(b.editor.document[api]?.typed(as: API.self))
         expect(old.props.deprecated, "the old one deprecated")
         let made = try require(b.editor.selectedShapeIDs.first)

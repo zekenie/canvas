@@ -3529,8 +3529,12 @@ registrar.forShapes(adopting: .lineRows) { kinds in
 - **The keys.** ↑ ↓ step them, ⇧↑ ⇧↓ draw the run, ⌥↑ ⌥↓ move them (the chord resizes a shape with none), ← →
   and Space open and close an item that hides others (`ItemOutline`), and Space presses the lead of one that hides
   nothing where its kind gives `pressLead` (an endpoint's chip: its method menu; VoiceOver hears it as a button after the
-  item, `leadTitles`; Space on a shape selected whole that is its one item (an endpoint of its own) does the same, `pressWhole`), ⌫ deletes them, Return opens the first, ⌘A selects every item, Escape goes back to the shape.
-  Clipboard cuts, copies and pastes them before the shape.
+  item, `leadTitles`; Space on a shape selected whole that is its one item (an endpoint of its own) does the same, `pressWhole`), ⌫ deletes them, Return opens the first, ⌘A selects every item, Escape and ⌘↑ go back to the shape.
+  Clipboard cuts, copies and pastes them before the shape. The way in by keys is ⌥Tab: a shape's items are the first
+  stop of its ⌥Tab ring, one stop (its first item), before its parts, and ⌥⇧Tab back from the first part lands on the
+  item left; Tab and ⇧Tab (and ⌥⌘ arrows) from an item come back to it.
+- **Items that head others.** `heads` lists the items one heads, shown or hidden (a header's rows); read with
+  `editor.itemsHeaded(by:of:)`, while the shape is edited too. A row's panel lists a header's rows' connections.
 - **Hidden items.** An item that stands for hidden ones (`stands`: a fold's "+N ›" line) shows selected while one
   of those is, and gives it back as it shows again.
 - **Read it** as `editor.selectedItems` (the shape, the ids in its order, the anchor, and `acting`: what the keys
