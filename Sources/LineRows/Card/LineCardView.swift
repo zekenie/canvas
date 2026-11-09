@@ -557,11 +557,15 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     /// The row's rect now, world units; nil where it's gone.
     func anchorNow() -> CGRect? { session?.worldRect(of: row) }
 
-    /// How large it wants to be in `room`, view points.
+    /// How large it wants to be in `room`, view points: the kind's width, and never narrower than the row it hangs from as the
+    /// shape is laid out now (a table laid out wider while a long line is typed), so no words of the row peek out beside it.
     func size(in room: CGSize) -> CGSize {
         let count = card.lines.indices.reduce(0) { $0 + max(texts[$1]?.fields.count ?? 1, 1) }
         let height = LineCardStyle.padding * 2 + LineCardStyle.headerHeight + LineCardStyle.headerGap + CGFloat(count) * LineCardStyle.lineHeight
-        return CGSize(width: min(card.width ?? LineCardStyle.width, room.width), height: min(height, room.height))
+        // The editing view is the shape's world laid over the canvas: its frame over its bounds is the zoom.
+        let zoom = session.map { $0.bounds.width > 0 ? $0.frame.width / $0.bounds.width : 1 } ?? 1
+        let row = (anchorNow()?.width ?? 0) * zoom
+        return CGSize(width: min(max(card.width ?? LineCardStyle.width, row), room.width), height: min(height, room.height))
     }
 
     /// The rect of a stop's line, view points.

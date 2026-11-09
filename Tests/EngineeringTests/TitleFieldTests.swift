@@ -35,7 +35,7 @@ import Titles
         let typed = try require(view.titleField)
         expect(editing.firstResponder === typed.field, "the caret in the name")
         expectEqual(typed.field.accessibilityLabel(), "Table name")
-        expectEqual(typed.placeholder, "Table", "the pill says what it is, dimmed, while nothing is typed")
+        expectEqual(typed.placeholder, "Untitled Table", "the pill says what the panel and the contents call it, dimmed, while nothing is typed")
         type("ord", into: typed)
         type("ers", into: typed)
         expectEqual(h.editor.document[table.id]?[TitleProperty.self], "orders")
@@ -82,14 +82,14 @@ import Titles
         again.field.doCommand(by: #selector(NSResponder.insertNewline(_:)))
         expectEqual(h.editor.document[table]?[TitleProperty.self], nil, "a blank name is none")
     },
-    test("an enum put down by its tool is named the same way, its pill saying Enum dimmed until typed; its field in its pill's purple, Add Enum") {
+    test("an enum put down by its tool is named the same way, its pill saying Untitled Enum dimmed until typed; its field in its pill's purple, Add Enum") {
         let h = try kitHarness()
         h.editor.setTool(ToolID(placing: DatabaseEnum.kind))
         h.click(at: CGPoint(x: 400, y: 300))
         let made = try require(h.shapes(DatabaseEnum.kind).first)
         let typed = try field(h)
         expectEqual(typed.field.accessibilityLabel(), "Enum name")
-        expectEqual(typed.placeholder, "Enum", "as a table's says Table, never a caret over half the word")
+        expectEqual(typed.placeholder, "Untitled Enum", "as a table's says Untitled Table, never a caret over half the word")
         type("order_status", into: typed)
         typed.field.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
         expectEqual(h.editor.document[made.id]?[TitleProperty.self], "order_status")

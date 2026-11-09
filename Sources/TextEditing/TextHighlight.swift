@@ -17,13 +17,20 @@ public struct TextHighlight: Equatable {
     public var stroke: NSColor?
     /// Whether that line is dashed: what's named but matches nothing yet (a body's type before its note exists).
     public var isDashed: Bool
+    /// How tall it is and how round its corners, where the owner draws the same mark at rest in a shape of its own (an
+    /// endpoint's method chip, 18 tall with corners of 3), so nothing moves as editing starts; nil: a pill's, from the font.
+    public var height: CGFloat?
+    public var cornerRadius: CGFloat?
 
-    public init(range: NSRange, fill: NSColor, symbol: String? = nil, stroke: NSColor? = nil, isDashed: Bool = false) {
+    public init(range: NSRange, fill: NSColor, symbol: String? = nil, stroke: NSColor? = nil, isDashed: Bool = false,
+                height: CGFloat? = nil, cornerRadius: CGFloat? = nil) {
         self.range = range
         self.fill = fill
         self.symbol = symbol
         self.stroke = stroke
         self.isDashed = isDashed
+        self.height = height
+        self.cornerRadius = cornerRadius
     }
 }
 
@@ -45,7 +52,7 @@ extension EditingTextView {
         let highlightHeight = (highlightFontSize * TextEditingStyle.highlightHeight).rounded()
         var frames: [CGRect] = []
         layout.enumerateTextSegments(in: range, type: .standard, options: []) { _, segment, _, _ in
-            let height = min(segment.height, highlightHeight)
+            let height = highlight.height ?? min(segment.height, highlightHeight)
             let frame = CGRect(x: segment.minX - padding + origin.x, y: segment.midY - height / 2 + origin.y,
                                width: segment.width + 2 * padding, height: height)
             // A line can come in more than one segment (a wrapped line's trailing space, a run of other
@@ -67,6 +74,7 @@ extension EditingTextView {
         let radius = (highlightFontSize * TextEditingStyle.highlightCornerRadius).rounded(.up)
         let room = symbolRoom
         for highlight in highlights {
+            let radius = highlight.cornerRadius ?? radius
             var frames = frames(of: highlight)
             var image: NSImage?
             var symbolCenter: CGFloat?

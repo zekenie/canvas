@@ -359,7 +359,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let inset = style.textInset + indent(of: focus)
         let clipFrame = CGRect(x: line.minX + inset, y: line.minY, width: max(1, line.width - inset - style.trailingInset - chevronRoom), height: line.height)
         if clip.frame != clipFrame { clip.frame = clipFrame }
-        let height = ceil(field.layoutManagerLineHeight(style))
+        // As tall as a chip the kind draws taller than the text (an endpoint's method), the text kept where it was in its middle:
+        // a view draws nothing past its edges, and the chip with the caret would be cut flat.
+        let (lineHeight, height) = style.fieldHeight
+        let chipInset = NSSize(width: 0, height: (height - lineHeight) / 2)
+        if field.textContainerInset != chipInset { field.textContainerInset = chipInset }
         let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(), width: max(textWidth + LineFieldStyle.textSlack, clipFrame.width + slide), height: height)
         if field.frame != fieldFrame { field.frame = fieldFrame }
         keepCaretInClip()
@@ -1356,12 +1360,6 @@ final class LineRowElement: NSAccessibilityElement {
     }
 }
 
-extension LineField {
-    /// How tall its line is in the kind's fonts: what it's centered in a row by.
-    func layoutManagerLineHeight(_ style: LineStyle) -> CGFloat {
-        max(style.font.ascender - style.font.descender + style.font.leading, style.codeFont.ascender - style.codeFont.descender + style.codeFont.leading)
-    }
-}
 
 /// What the session draws beside a row's line: the "›" of a row with a card, and a fixed line's placeholder. World units.
 @MainActor

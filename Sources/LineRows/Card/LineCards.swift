@@ -20,6 +20,8 @@ final class LineCards: LineCardShowing {
     private var anchorNow: (@MainActor () -> CGRect?)?
     /// Shows what the row holds now, true where its size changed.
     private var reload: (@MainActor () -> Bool)?
+    /// How wide the row it hangs from was laid out when last followed.
+    private var anchorWidth: CGFloat?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -36,6 +38,7 @@ final class LineCards: LineCardShowing {
                               didClose: { [weak self, weak view] _ in self?.closed(view) })
         shown = view
         shownID = id
+        anchorWidth = anchor.width
         anchorNow = { [weak view] in view?.anchorNow() }
         reload = { [weak view] in view?.reload() ?? false }
         guard editor.showCard(made) else {
@@ -50,8 +53,11 @@ final class LineCards: LineCardShowing {
         guard let rect = anchorNow?() else { return editor.closeCard() }
         // Every commit, not only the card's shape's: the lines read what other shapes hold (the key an arrow is, an enum's name).
         let resized = changes != nil ? reload?() ?? false : false
+        // A row laid out wider or narrower: the card is at least its width (`LineCardView.size(in:)`).
+        let widened = anchorWidth.map { $0 != rect.width } ?? false
+        anchorWidth = rect.width
         editor.moveCard(to: rect)
-        if resized { editor.cardDidResize() }
+        if resized || widened { editor.cardDidResize() }
     }
 
     private func closed(_ view: LineCardView?) {
@@ -64,6 +70,7 @@ final class LineCards: LineCardShowing {
         shownID = nil
         anchorNow = nil
         reload = nil
+        anchorWidth = nil
     }
 }
 

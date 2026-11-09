@@ -187,7 +187,7 @@ import Topology
         _ = try awaitResult { await find.settled() }
         expect(find.texts(of: table).contains("order_status") && !find.texts(of: table).contains("status order_status"), "a pill again: \(find.texts(of: table))")
     },
-    test("The +38 › line of a real folded table opens with a click; ⌥Tab reaches it among the table's other parts, ⌥⇧Tab undoes each step, Return and Space open it") {
+    test("The +38 › line of a real folded table opens with a click; ⌥Tab reaches it after the table's rows, among its other parts, ⌥⇧Tab undoes each step, Return and Space open it") {
         let b = try KitBench()
         let id = b.h.add(products(), titled: "products")
         b.editor.rowFolds?.fold([id])
@@ -202,13 +202,14 @@ import Topology
         expect(titles.contains("38 more columns"), "+N is a part with a name: \(titles)")
         let names = [id: "T"]
         let walk = KeyWalk(b.window, editor: b.editor, readers: [.canvas(b.canvas, selection: { [b] in b.editor.selectedShapeIDs.map { names[$0] ?? "?" } },
-                                                                          part: { [b] in b.editor.focusedPart?.title },
+                                                                          part: { [b] in b.editor.focusedPart?.title ?? b.editor.selectedItems.map { _ in "rows" } },
                                                                           frame: { [b] in
                                                                               guard let rect = b.editor.focusedPart?.rect ?? b.editor.selectionBounds else { return nil }
                                                                               return b.editor.shownFrame(ofWorld: rect, in: b.canvas)
                                                                           })],
                            settle: .both(b.h.scheduler))
-        let ids = titles.map { "canvas/T/\($0)" }
+        // The columns as items are ⌥Tab's first stop, then the parts.
+        let ids = ["canvas/T/rows"] + titles.map { "canvas/T/\($0)" }
         walk.go(ids[0], by: .optionTab)
         let cycle = walk.expectCycle(ids, wraps: .closed, forward: .optionTab, back: .optionBackTab)
         walk.expectShows(cycle.stops, by: .optionTab)

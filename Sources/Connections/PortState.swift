@@ -318,6 +318,13 @@ extension PortState: EditorService {
         hostPart = nil
     }
 
+    /// Editing ended (and went elsewhere, a shape placed beside by keys): the row whose dots and band showed under a pointer
+    /// left at rest isn't where the person is any more; the next move finds whose show.
+    func editingDidEnd(_ id: ShapeID, in editor: CanvasEditor) {
+        host = nil
+        hostPart = nil
+    }
+
     func documentDidChange(_ changes: ChangeSet, in editor: CanvasEditor) {
         if let host, changes.removed.contains(host) {
             self.host = nil

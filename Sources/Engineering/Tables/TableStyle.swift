@@ -10,7 +10,8 @@ import Palette
 enum TableStyle {
     static let label = "Table"
     static let symbol = "tablecells"
-    /// Its row in the table of contents and its panel's header while it has no title.
+    /// What it's called while it has no title, one name everywhere: its pill (dimmed) and the field typed in it, its row in
+    /// the table of contents, its panel's header.
     static let placeholder = "Untitled Table"
     /// A new table's width.
     static let width: CGFloat = 260
@@ -115,9 +116,8 @@ enum EnumStyle {
 enum DatabaseStyle {
     static let label = "Database"
     static let symbol = "cylinder"
+    /// What it's called while it has no title, its tab (dimmed) as its panel's header and its row.
     static let placeholder = "Untitled Database"
-    /// What its tab says while it has no title, dimmed.
-    static let pillPlaceholder = "Database"
     static let createStep = "Create Database"
     /// What a click with its tool, or a database made around nothing, is.
     static let defaultSize = CGSize(width: 640, height: 400)

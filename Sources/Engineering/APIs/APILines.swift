@@ -603,6 +603,8 @@ enum APILooks {
                               trailingInset: KitStyle.trailingInset, gutterMiddle: APIStyle.inset / 2, markSize: KitStyle.markSize,
                               band: LineStyle.defaultBand.withAlphaComponent(APIStyle.bandAlpha))
         style.chipFont = KitStyle.chipFont
+        style.chipHeight = APIStyle.chipHeight
+        style.chipRadius = APIStyle.chipRadius
         return style
     }()
 }

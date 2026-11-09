@@ -280,6 +280,19 @@ import TextEditing
         expectEqual(b.editor.editingShapeID, made.first?.id)
         expectEqual(b.undoName, "Add Tally")
     },
+    test("⇧↩ in a row: the tally left keeps no row's highlight, no waiting line and no width while the new one is edited") {
+        let b = try Bench()
+        let a = b.tally("a", ["x", "y"])
+        b.begin(a)
+        b.press(.up)
+        expectEqual(b.focus, "row y")
+        b.press(.shiftReturn)
+        b.window.settle()
+        expect(b.editor.editingShapeID != a)
+        let drawn = b.editor.shapeContext
+        expectEqual(drawn.layoutInput(LineRowsLayout.focused, for: a), nil, "the row's band went with the editing")
+        expectEqual(drawn.layoutInput(LineRowsLayout.waiting, for: a), nil)
+    },
     test("a locked tally isn't edited; one locked mid-session refuses the commit and shakes") {
         let b = try Bench()
         let a = b.tally("a", ["x"])
