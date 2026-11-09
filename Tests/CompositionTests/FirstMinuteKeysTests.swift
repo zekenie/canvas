@@ -3,6 +3,7 @@ import AppKit
 import CanvasTesting
 import CanvasUI
 import Frames
+import Geometry
 import LanguageModels
 import Mentions
 import Selection
@@ -95,5 +96,25 @@ let firstMinutePending: [String] = []
         expectEqual(editor.holder(of: person), nil, "the type stays out of it")
         walk.pending = firstMinutePending
         walk.expectGaps(gaps)
+    },
+    test("a chain of ⇧Return notes reads on in one row, right of the last each time, the view panning; none lands under the minimap (UX walk 4 firstminute-4-2, 4-1)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let walk = w.walk()
+        let editor = w.editor
+        expect(editor.coveredCorners.bottomLeft.width > 0, "the window's minimap is told the editor")
+        for word in ["One", "Two", "Three", "Four", "Five"] {
+            walk.press(Chord(Key.return, .shift))
+            w.type(word, with: walk)
+            w.window.settle()
+            let id = try require(editor.editingShapeID)
+            let box = try require(editor.document[id]?.box)
+            expect(!editor.clearView.covered.contains { $0.intersects(editor.cameraTarget.toView(box)) }, "\(word) clear of the minimap's corner")
+        }
+        walk.press(.escape)
+        let boxes = w.notes.compactMap(\.box)
+        expectEqual(boxes.count, 5)
+        expect(Set(boxes.map(\.minY)).count == 1, "one row, tops aligned: \(boxes)")
+        expectEqual(boxes.map(\.minX), boxes.map(\.minX).sorted(), "each right of the one before: \(boxes)")
     },
 ])
