@@ -2,6 +2,7 @@ import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+@_spi(Host) import CanvasUI
 import Connections
 import ContextMenus
 import Engineering
@@ -44,6 +45,69 @@ private let billing = #"""
 }
 
 @MainActor let keyLookShippedTests = Suite("Keys look right, shipped", [
+    test("UX walk 3 tables-1: three keys between tables 75 apart, two fanned into one row, each run one way across with its marks level, drawn in the window") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\nemail text unique\nname text"
+            table "orders" right of "customers" (gap: 75) columns: "id uuid pk\ncustomer_id uuid\nbilling_customer_id uuid\nshipping_customer_id uuid null"
+            edge "orders".customer_id -> "customers".id
+            edge "orders".billing_customer_id -> "customers".id
+            edge "orders".shipping_customer_id -> "customers".email
+            """#)
+        w.window.settle()
+        let editor = w.editor
+        let keys = editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }
+        expectEqual(keys.count, 3)
+        let left = try require(editor.shapeContext.geometry(of: try table(editor, "customers").id)?.bounds)
+        let right = try require(editor.shapeContext.geometry(of: try table(editor, "orders").id)?.bounds)
+        expectClose(right.minX - left.maxX, 75, within: 1)
+        var bounds = CGRect.null
+        for arrow in keys {
+            let geometry = try require(editor.arrowGeometry(of: arrow.id)), body = try require(geometry.levelBody)
+            let xs = body.flattened().map(\.x)
+            expect(zip(xs, xs.dropFirst()).allSatisfy { $1 <= $0 + 1e-6 }, "one way across, never back behind its start: \(xs.max() ?? 0)…\(xs.min() ?? 0)")
+            for distance: CGFloat in [12, 17.5] {
+                expectClose(geometry.point(distance, along: .end).inward.y, 0, within: 1e-6)
+                expectClose(geometry.point(distance, along: .start).inward.y, 0, within: 1e-6)
+            }
+            bounds = bounds.union(body.bounds)
+        }
+        editor.camera = Camera(origin: CGPoint(x: bounds.minX - 40, y: bounds.minY - 40), zoom: 1)
+        let rep = renderBitmap(editor, size: CGSize(width: bounds.width + 80, height: bounds.height + 80))
+        for arrow in keys {
+            let middle = try require(editor.arrowGeometry(of: arrow.id)?.levelBody).measured().point(atFraction: 0.5)
+            let p = pixel(rep, at: editor.camera.toView(middle))
+            expect(p[0] < 120, "each key drawn in the gap: \(p) at \(middle)")
+        }
+    },
+    test("UX walk 3 structure-1: a key passing under a table it isn't bound to is drawn faint across that table, so it doesn't read as ending at its row") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\nemail text"
+            table "orders" right of "customers" (gap: 60) columns: "id uuid pk\nstatus text\ntotal_cents int\nplaced_at timestamptz"
+            table "payments" right of "orders" (gap: 60) columns: "id uuid pk\namount_cents int\ncustomer_id uuid"
+            edge "payments".customer_id -> "customers".id
+            """#)
+        w.window.settle()
+        let editor = w.editor
+        let orders = try require(editor.shapeContext.geometry(of: try table(editor, "orders").id)?.bounds)
+        let key = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first)
+        let body = try require(editor.arrowGeometry(of: key.id)?.levelBody)
+        let under = try require(body.flattened(segments: 400).min { abs($0.x - orders.midX) < abs($1.x - orders.midX) })
+        expect(orders.insetBy(dx: 4, dy: 4).contains(under), "the key passes under orders: \(under) in \(orders)")
+        editor.camera = Camera(origin: CGPoint(x: orders.minX - 40, y: orders.minY - 40), zoom: 1)
+        let rep = renderBitmap(editor, size: CGSize(width: orders.width + 80, height: orders.height + 80))
+        // Beside the line, the paper; on it, something darker than the paper and lighter than the line itself.
+        var paperPoint = under + CGPoint(x: 0, y: 8)
+        if !orders.insetBy(dx: 4, dy: 4).contains(paperPoint) { paperPoint = under - CGPoint(x: 0, y: 8) }
+        let on = pixel(rep, at: editor.camera.toView(under)), paper = pixel(rep, at: editor.camera.toView(paperPoint))
+        expect(on[0] < paper[0] - 15, "drawn across the table, faint: \(on) on paper \(paper)")
+        expect(on[0] > 90, "but faint, under its words: \(on)")
+    },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {
         let editor = try billingEditor()
         let unique = try key(editor, from: "payments", "order_id"), nullable = try key(editor, from: "refunds", "payment_id")
