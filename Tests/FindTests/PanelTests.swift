@@ -386,6 +386,7 @@ final class FindWindow {
         let result = try require(w.find.results.first)
         expectEqual(w.find.rowName(of: result), "Basket")
         expectEqual(String(FindSnippet.named("Basket", of: result, in: w.find).characters), "Basket  pear one")
+        expectEqual(String(FindSnippet.faint(of: result, in: w.find).characters), "pear one", "the snippet is a text of its own, which a long name never cuts away")
         expectEqual(w.find.rowLabel(of: 0), "Basket, pear one, memo, hit 1 of 1", "VoiceOver hears the name first too")
         w.find.query = "bask"
         w.window.spin { w.find.total == 1 && w.find.isSettled }

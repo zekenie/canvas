@@ -377,15 +377,15 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
     }
 
     /// The list's keys first (↑ ↓ and the page keys move it, Tab picks, Return does an action and otherwise goes on to the
-    /// line, ⇧Tab and Escape close it; over a word typed whole, open only while longer offers extend it, its ↑ ↓ and Escape
-    /// are the line's while that word is highlighted); then the line's: Return, ↑ ↓, Tab ⇧Tab, Escape, and ⌫ on an empty line. Never a
+    /// line, ⇧Tab and Escape close it; over a word typed whole, open only while longer offers extend it, its ↑ ↓ are the
+    /// line's while that word is highlighted: `line-list-word`; Escape still only closes it); then the line's: Return, ↑ ↓, Tab ⇧Tab, Escape, and ⌫ on an empty line. Never a
     /// line break (⌥↩ and ⌃↩ do nothing).
     public override func doCommand(by selector: Selector) {
         if let open, let row = open.list.highlighted, open.listed.indices.contains(row), open.listed[row].item.label == open.offers.query,
            let reading = KeyMeaning.Reading(command: selector), reading.modifiers.isEmpty,
-           reading.meaning == .up || reading.meaning == .down || reading.meaning == .back {
-            // The word typed whole, highlighted: the arrows and Escape are the line's, as with no list (T4's ↓ to the next row;
-            // Escape ends the line, writing it, as it did when the list closed at the word).
+           reading.meaning == .up || reading.meaning == .down {
+            // The word typed whole, highlighted: the arrows are the line's, as with no list (T4's ↓ to the next row), so what
+            // is typed is what stays. Escape is the list's, as any list's: it closes it, and the next ends the line.
             closeOffers()
             return route(selector)
         }

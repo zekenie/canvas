@@ -164,6 +164,19 @@ let columnCorpus = [
         expect(b.field.offerList == nil, "↓ on the word typed whole goes on, as T4's uuid typed over as int")
         expectEqual(b.lines(orders), ["id uuid pk", "customer_id int"])
     },
+    test("Escape over a word typed whole that longer types extend closes the list and no more; the next Escape ends the line, writing it") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        b.begin(orders)
+        b.type("created_at time")
+        expectEqual(b.field.highlightedOffer, "time")
+        b.press(.escape)
+        expect(b.field.offerList == nil, "the list closed")
+        expectEqual(b.editor.editingShapeID, orders, "one level at a time: the line is still being typed")
+        b.press(.escape)
+        expectEqual(b.editor.editingShapeID, nil, "the next ends it")
+        expectEqual(b.lines(orders), ["id uuid pk", "created_at time"], "the line as typed")
+    },
     test("the file's enums are offered after a name, each a purple chip lit on the board while it's highlighted; picked, the column is bound to it") {
         let b = try KitBench()
         let status = b.enumType("order_status", ["pending", "paid"])

@@ -246,7 +246,11 @@ private struct FindRow: View {
                     .frame(width: FindStyle.rowSymbolWidth)
                 // A titled shape's row names it first, the hit's snippet after it, faint (T6: "products  weight_grams int").
                 if let name = find.rowName(of: result) {
-                    Text(FindSnippet.named(name, of: result, in: find)).lineLimit(1).truncationMode(.tail)
+                    // Two texts, the snippet first in line for room: a long name is cut in its middle, never the hit away.
+                    HStack(spacing: FindStyle.nameSpacing) {
+                        Text(name).font(FindStyle.rowName).lineLimit(1).truncationMode(.middle)
+                        Text(FindSnippet.faint(of: result, in: find)).lineLimit(1).truncationMode(.tail).layoutPriority(1)
+                    }
                 } else {
                     Text(FindSnippet.attributed(of: result, in: find)).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
                 }
@@ -320,12 +324,17 @@ extension FindSnippet {
     public static func named(_ name: String, of result: FindResult, in find: FindState) -> AttributedString {
         var named = AttributedString(name)
         named.font = FindStyle.rowName
+        var gap = AttributedString(FindStyle.nameGap)
+        gap.font = FindStyle.snippet
+        return named + gap + faint(of: result, in: find)
+    }
+
+    /// The snippet after a name: faint, its hits still bold.
+    public static func faint(of result: FindResult, in find: FindState) -> AttributedString {
         var snippet = attributed(of: result, in: find)
         for run in snippet.runs where run.font == nil { snippet[run.range].font = FindStyle.snippet }
         snippet.foregroundColor = .secondary
-        var gap = AttributedString(FindStyle.nameGap)
-        gap.font = FindStyle.snippet
-        return named + gap + snippet
+        return snippet
     }
 
     /// The same, as plain text, for VoiceOver.

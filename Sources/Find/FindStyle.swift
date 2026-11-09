@@ -76,6 +76,8 @@ public enum FindStyle {
     /// A titled shape's name, leading its row before the snippet of a hit elsewhere in it, and what comes between them.
     static let rowName = Font.system(size: 11, weight: .medium)
     static let nameGap = "  "
+    /// The same between a row's name and its snippet, as two texts in the row.
+    static let nameSpacing: CGFloat = 6
     static let boardTitle = Font.system(size: 11, weight: .semibold)
     static let tally = Font.system(size: 10).monospacedDigit()
     static let noMatchesFont = Font.system(size: 13)
