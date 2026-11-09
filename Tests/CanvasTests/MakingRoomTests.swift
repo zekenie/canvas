@@ -2,6 +2,7 @@
 import CanvasTesting
 import CoreGraphics
 import Foundation
+import Geometry
 import TestKit
 
 // Making room below a shape that grows (`Transaction.makeRoom()`, which `transact` runs as a step finishes), with
@@ -143,20 +144,94 @@ extension EditorHarness {
         expectEqual(h.y(under), 120)
         expectEqual(h.y(open), 90)
     },
-    test("a shape the step put in or moved stays where the step put it") {
+    test("a shape the step put in or moved is pushed as any is, when the growth reaches where it put it") {
         let h = try roomHarness()
-        let pile = h.pile(0, 0, layers: 2)
+        let pile = h.pile(0, 0, layers: 2)                  // bottom 40
         let moved = h.box(400, 0)
+        var added: ShapeID?, far: ShapeID?
+        h.editor.transact("Add Layer") { transaction in
+            transaction.update(pile, as: Pile.self) { $0.props.layers = 4 }       // +40: reaches 112
+            transaction.update(moved) { $0.box?.origin = CGPoint(x: 0, y: 50) }
+            let id = ShapeID(), other = ShapeID()
+            transaction.insert(ShapeRecord(id: id, Box(CGRect(x: 0, y: 100, width: 100, height: 50))))
+            transaction.insert(ShapeRecord(id: other, Box(CGRect(x: 0, y: 400, width: 100, height: 50))))
+            added = id
+            far = other
+        }
+        expectEqual(h.y(moved), 90, "pushed from where the step moved it")
+        expectEqual(added.flatMap { h.y($0) }, 140, "and one it put in")
+        expectEqual(far.flatMap { h.y($0) }, 400, "what the growth doesn't reach stays")
+    },
+    test("a shape the step puts below what it pushes is pushed with it, never run into") {
+        let h = try roomHarness()
+        let pile = h.pile(0, 0, layers: 2)                  // bottom 40
+        let first = h.box(0, 80)                            // 40 under it: not reached by +20 alone
         var added: ShapeID?
         h.editor.transact("Add Layer") { transaction in
-            transaction.update(pile, as: Pile.self) { $0.props.layers = 4 }
-            transaction.update(moved) { $0.box?.origin = CGPoint(x: 0, y: 50) }
+            transaction.update(pile, as: Pile.self) { $0.props.layers = 5 }       // +60
             let id = ShapeID()
-            transaction.insert(ShapeRecord(id: id, Box(CGRect(x: 0, y: 120, width: 100, height: 50))))
+            transaction.insert(ShapeRecord(id: id, Box(CGRect(x: 0, y: 150, width: 100, height: 50))))   // 20 under the first
             added = id
         }
-        expectEqual(h.y(moved), 50)
-        expectEqual(added.flatMap { h.y($0) }, 120)
+        expectEqual(h.y(first), 140)
+        expectEqual(added.flatMap { h.y($0) }, 210, "its gap under the first kept")
+    },
+    test("a shape the step both moved and grew pushes nothing: it is where the step meant it") {
+        let h = try roomHarness()
+        let pile = h.pile(0, 0, layers: 2)
+        let near = h.box(0, 400)
+        h.editor.transact("Add Layer") { transaction in
+            // At 300 and four layers tall it ends at 380, 20 above the box: the step wrote that gap.
+            transaction.update(pile, as: Pile.self) { $0.props.layers = 4; $0.props.frame.origin.y = 300 }
+        }
+        expectEqual(h.y(near), 400)
+    },
+    test("a pile that grows wider and taller pushes what is under its new width too") {
+        let h = try roomHarness()
+        let pile = h.pile(0, 0, layers: 2, width: 100)      // 0…100 across, bottom 40
+        let under = h.box(120, 50, 50)                      // under the width it takes next
+        h.editor.transact("Add Layer") { transaction in
+            transaction.update(pile, as: Pile.self) { $0.props.layers = 3; $0.props.frame.size.width = 200 }
+        }
+        expectEqual(h.y(under), 70)
+    },
+    test("with the editor's index kept, the push finds what it reaches on the board as without it") {
+        for kept in [false, true] {
+            let h = try roomHarness()
+            let pile = h.pile(0, 0, layers: 2)
+            let first = h.box(0, 50), second = h.box(20, 110), aside = h.box(300, 60)
+            var crowd: [ShapeID] = []
+            for index in 0..<120 { crowd.append(h.box(CGFloat(1000 + index * 120), 5000, 100, 50)) }
+            if kept { _ = h.editor.paintOrder(in: CGRect(x: -10_000, y: -10_000, width: 40_000, height: 40_000)) }
+            var added: ShapeID?
+            h.editor.transact("Add Layer") { transaction in
+                transaction.update(pile, as: Pile.self) { $0.props.layers = 5 }   // +60
+                let id = ShapeID()
+                transaction.insert(ShapeRecord(id: id, Box(CGRect(x: 40, y: 190, width: 100, height: 50))))
+                added = id
+            }
+            expectEqual([h.y(first), h.y(second), h.y(aside)], [110, 170, 60], kept ? "index kept" : "index cold")
+            expectEqual(added.flatMap { h.y($0) }, 250, "the shape put in under the column, \(kept ? "index kept" : "index cold")")
+            expect(crowd.allSatisfy { h.y($0) == 5000 }, "the crowd far away stays")
+            h.editor.undo()
+            expectEqual([h.y(first), h.y(second)], [50, 110])
+        }
+    },
+    test("a member carried by a pushed container is not taken for one the step placed: grown later, it makes room") {
+        let h = try roomHarness()
+        let pen = h.add(Corral(CGRect(x: 0, y: 100, width: 300, height: 300)))
+        let inner = h.pile(16, 116, layers: 2)              // bottom 156
+        let held = h.box(16, 170, 100, 40)
+        h.editor.put([inner, held], in: pen)
+        let pile = h.pile(0, 0, layers: 2)                  // bottom 40, the pen 60 under it
+        h.editor.transact("Add Layer") { transaction in
+            transaction.update(pile, as: Pile.self) { $0.props.layers = 5 }       // +60: the pen is 60 under, and carried
+            transaction.makeRoom()
+            transaction.update(inner, as: Pile.self) { $0.props.layers = 3 }      // +20 inside the pen
+        }
+        expectEqual(h.y(pen), 160)
+        expectEqual(h.y(inner), 176)
+        expectEqual(h.y(held), 250, "pushed inside the pen by the pile grown after the pen was carried: 230 + 20")
     },
     test("asked again in the same step, it makes room once; madeRoom says what it moved") {
         let h = try roomHarness()
@@ -183,6 +258,64 @@ extension EditorHarness {
         let pushed = column.filter { h.y($0) != 50 + CGFloat(column.firstIndex(of: $0)!) * 30 }
         expectEqual(pushed.count, 200)
         expectEqual(pushed, Array(column.prefix(200)), "from the top")
+    },
+    test("a push is the same at any zoom: the reach is in world units, never what the view makes of it") {
+        var results: [[CGFloat?]] = []
+        for zoom in [1, 0.5, 0.35] as [CGFloat] {
+            let h = try roomHarness()
+            h.editor.camera.setZoom(zoom, around: .zero)
+            let pile = h.pile(0, 0, layers: 2)              // bottom 40
+            let near = h.box(0, 60), far = h.box(0, 200)
+            h.editor.setLayers(3, of: pile)
+            results.append([h.y(near), h.y(far)])
+        }
+        expectEqual(results, [[80, 200], [80, 200], [80, 200]])
+    },
+    test("what grows on another board, written in this step, makes room there: one step, one Undo") {
+        let pocket = ShapeID(), pile = ShapeID(), under = ShapeID(), aside = ShapeID()
+        func shape(_ props: some ShapeProps, _ id: ShapeID) -> AnyShapeRecord { AnyShapeRecord(ShapeRecord(id: id, props)) }
+        let file = CanvasFile(
+            root: CanvasDocument(shapes: [shape(Pocket(CGRect(x: 0, y: 0, width: 100, height: 100)), pocket)]),
+            children: [pocket: CanvasDocument(shapes: [shape(Pile(CGRect(x: 0, y: 0, width: 100, height: 20), layers: 2), pile),
+                                                       shape(Box(CGRect(x: 0, y: 60, width: 100, height: 50)), under),
+                                                       shape(Box(CGRect(x: 300, y: 60, width: 100, height: 50)), aside)])])
+        let h = try EditorHarness(plugins: [FixturesPlugin(), PocketsPlugin(), PilesPlugin(), FreezingPlugin()], file: file)
+        @MainActor func y(_ id: ShapeID) -> CGFloat? { h.file.record(id)?.box?.minY }
+        let there = BoardID(owner: pocket)
+        let before = (try? BoardCodec(registry: h.editor.registry).encode(h.file)) ?? Data()
+        var made: [ShapeID: CGPoint] = [:]
+        h.editor.transact("Add Layer") { transaction in
+            transaction.update(pile, on: there, as: Pile.self) { $0.props.layers = 3 }   // bottom 60, the box 60 under it
+            made = transaction.madeRoom
+        }
+        expectEqual([y(under), y(aside)], [80, 60])
+        expectEqual(made[under], CGPoint(x: 0, y: 20), "the step says what it moved there")
+        expectEqual(h.editor.undoHistory.undoName, "Add Layer")
+        h.editor.undo()
+        expectEqual(y(under), 60)
+        expectEqual((try? BoardCodec(registry: h.editor.registry).encode(h.file)) ?? Data(), before, "one Undo, exact")
+        h.editor.redo()
+        expectEqual(y(under), 80)
+        // A pile the step moved there first is where the step meant it, as on the board shown.
+        h.editor.undo()
+        h.editor.transact("Add Layer") { transaction in
+            transaction.translate([pile], by: CGPoint(x: 0, y: 200), on: there)
+            transaction.update(pile, on: there, as: Pile.self) { $0.props.layers = 6 }
+        }
+        expectEqual(y(under), 60, "nothing pushed by a growth that was moved there")
+    },
+    test("a container made read-only in the step doesn't grow, and what's in it isn't pushed") {
+        let h = try roomHarness()
+        let pen = h.add(Corral(CGRect(x: 0, y: 0, width: 300, height: 120)))
+        let pile = h.pile(16, 16, layers: 2)                // bottom 56
+        let held = h.box(16, 80, 100, 20)                   // bottom 100, 20 inside the pen's bottom
+        h.editor.put([pile, held], in: pen)
+        h.editor.transact("Add Layer") { transaction in
+            transaction.update(pile, as: Pile.self) { $0.props.layers = 5 }       // +60: would push the box, and grow the pen
+            transaction.update(pen) { $0[Frozen.self] = true }
+        }
+        expectEqual(h.y(held), 80)
+        expectEqual(h.editor.document[pen]?.box?.height, 120)
     },
     test("a kind that doesn't make room grows over what's below, as before") {
         let h = try roomHarness()

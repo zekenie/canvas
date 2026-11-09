@@ -66,10 +66,11 @@ public final class RowFolds {
     /// Every folded shape, in the order they were folded.
     public var folded: [ShapeID] { order }
 
-    /// The lines `record` shows, as `reading` lays it out: nil for a shape showing every row (unfolded, edited, of a kind
+    /// The lines `record` shows, as `reading` lays it out: nil for a shape showing every row (unfolded, edited unless the
+    /// reading is at rest (`LayoutReading.isResting`: a fold isn't peeled back for what a step writes), of a kind
     /// not written as lines). What `LineRowsLayout.shown` is provided from; kept for the editor's own reading.
     public func shown(of record: AnyShapeRecord, in reading: LayoutReading) -> RowsShown? {
-        guard editor.editingShapeID != record.id else { return nil }
+        guard reading.isResting || editor.editingShapeID != record.id else { return nil }
         return lines(of: record, in: reading)
     }
 

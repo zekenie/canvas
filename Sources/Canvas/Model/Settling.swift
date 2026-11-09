@@ -125,6 +125,7 @@ extension Transaction {
         guard board != self.board else { return settle(ids) }
         guard var there = transaction(on: board) else { return .settled(nudges: [:]) }
         let settlement = there.settle(ids)
+        placedElsewhere.formUnion(there.changes.changed)
         take(there)
         return settlement
     }

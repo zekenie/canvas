@@ -41,6 +41,36 @@ import TestKit
         expectEqual(b.frame(beside)?.origin, CGPoint(x: 360, y: 100))
         b.press(.escape)
     },
+    test("a line wider than the tally, committed, pushes only what is under the tally at rest, never what is under its widening") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green"])                                  // 100…360 across, ends at 160
+        let under = b.tally("pears", ["bosc"], at: CGPoint(x: 100, y: 180))          // under it
+        let wideSide = b.tally("plums", ["fig"], at: CGPoint(x: 380, y: 185))        // under only what typing widens it to
+        b.begin(id)
+        b.type(String(repeating: "w", count: 60))
+        expect((b.frame(id)?.width ?? 0) > 280, "laid out wider than it stores, so wide it covers the plums' column")
+        b.press(.return)
+        expectEqual(b.frame(under)?.minY, 200, "what is under the tally pushed by the line")
+        expectEqual(b.frame(wideSide)?.minY, 185, "not under it at rest: never pushed for a widening")
+        b.press(.escape)
+        expectEqual(b.frame(wideSide)?.minY, 185)
+    },
+    test("a row committed into a folded tally pushes by what its fold gains, not by the every row it shows while edited") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 3", "green", "blue 2", "pink", "gold"])    // 120 tall, 80 folded: ends at 180
+        b.editor.selectedShapeIDs = [id]
+        b.press(.controlCommandUp)
+        let below = b.tally("pears", ["bosc"], at: CGPoint(x: 100, y: 200))          // a gap of 20 under the fold
+        b.begin(id)
+        b.type("plain")
+        b.press(.return)
+        expectEqual(b.frame(below)?.minY, 200, "a row the fold hides gains the folded tally nothing")
+        b.type("plum 7")
+        b.press(.return)
+        b.press(.escape)
+        expectEqual(b.frame(id)?.maxY, 200, "folded back to its marks, one more")
+        expectEqual(b.frame(below)?.minY, 220, "pushed by the line the fold gained, the gap of 20 kept")
+    },
     test("a fold and an unfold move nothing, nor does editing a folded tally show its every row") {
         let b = try Bench()
         let id = b.tally("apples", ["red 3", "green", "blue 2", "pink", "gold"])    // 120 tall: ends at 220

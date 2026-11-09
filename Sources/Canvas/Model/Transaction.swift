@@ -87,6 +87,12 @@ public struct Transaction {
     var roomBaselines: [ShapeID: (origin: CGPoint, frame: CGRect)] = [:]
     /// What `makeRoom()` moved down so far, by how far (world units): the shapes it pushed, not what they carried.
     public internal(set) var madeRoom: [ShapeID: CGPoint] = [:]
+    /// Whether `makeRoom()` makes room at all: off for a body that put every shape where it goes (a program's draw:
+    /// `canvas apply` and the digest, whose plan lays each shape out at the size it will have).
+    public var makesRoom = true
+    /// The shapes a transaction that made this one over another board moved or settled there, before: put where that step
+    /// meant, as the shapes this one moved are (`makeRoom()` grows nothing it placed).
+    var placedElsewhere: Set<ShapeID> = []
     /// Boards going in with the shapes inserted here that own them, and the boards under those: what
     /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
     /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
@@ -1739,6 +1745,7 @@ public struct Transaction {
         guard board != self.board else { return translate(ids, by: delta) }
         guard var there = transaction(on: board) else { return }
         there.translate(ids, by: delta)
+        placedElsewhere.formUnion(there.changes.changed)
         take(there)
     }
 
@@ -1928,6 +1935,8 @@ public struct Transaction {
             there.changes.added.insert(id)
             there.writes.append(id)
         }
+        there.placedElsewhere = placedElsewhere
+        there.makesRoom = makesRoom
         there.mayReachBoardShown = mayReachBoardShown
         there.boardShown = boardShown
         there.stagedFileValues = stagedFileValues
@@ -1948,6 +1957,8 @@ public struct Transaction {
         // What it grew there makes room there, as a step on that board would.
         var there = there
         there.makeRoom()
+        for (id, delta) in there.madeRoom { madeRoom[id, default: .zero].y += delta.y }
+        placedElsewhere.formUnion(there.placedElsewhere)
         refused.formUnion(there.refused)
         takeInWrites(of: there)
         takeFileValues(of: there)
