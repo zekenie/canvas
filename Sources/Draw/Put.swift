@@ -31,16 +31,21 @@ public struct DrawPut: Sendable {
     /// only a note that is a type): one it doesn't admit is no match, and a new shape is made.
     public var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool]
     /// The size a statement's shape is drawn at when the put makes it, by its `line` (an API wide enough for its paths, a note as
-    /// tall as its rows): a shape the file has keeps its own, which a person may have given it.
+    /// tall as its rows): a shape the file has keeps its own, which a person may have given it, but where the size `widens` it: then
+    /// it is made as wide where it is narrower, never narrower (a table pasted again, its new lines read whole).
     public var sizes: [Int: Dimensions]
     /// A size a statement gives its shape: a width, and a height or, left out, the kind's own at that width.
     public struct Dimensions: Sendable, Equatable {
         public var width: CGFloat
         public var height: CGFloat?
+        /// Whether a shape the file has is widened to `width` where it is narrower (its height the kind's own at that width), in
+        /// the put's step; never narrowed, so a width a person set stays unless the new values need more.
+        public var widens: Bool
 
-        public init(width: CGFloat, height: CGFloat? = nil) {
+        public init(width: CGFloat, height: CGFloat? = nil, widens: Bool = false) {
             self.width = width
             self.height = height
+            self.widens = widens
         }
     }
 
@@ -319,23 +324,47 @@ private struct Putting {
 
         let program = "canvas"
         let before = editor.document
-        if scripts.count == 1 {
-            var run = options
-            run.board = shown
-            run.implied = implied[shown] ?? [:]
-            _ = try draw(parsed: scripts[0].script, dryRun: false, reveal: false, program: program, options: run, in: editor)
-        } else {
-            let copy = editor.rehearsal()
-            for item in scripts {
-                var run = options
-                run.board = item.board
-                run.implied = implied[item.board] ?? [:]
-                if item.board != shown { run.places = [:] }
-                _ = try draw(parsed: item.script, dryRun: false, reveal: false, program: program, options: run, in: copy)
+        // The shapes the file has that a size widens, as they are before the put: one it changes is widened after it.
+        var widens: [(item: Planned, record: AnyShapeRecord, width: CGFloat)] = []
+        for item in planned where !item.isNew {
+            guard let id = item.id, let size = block.sizes[item.original], size.widens, let record = editor.shape(inFile: id) else { continue }
+            widens.append((item, record, size.width))
+        }
+        let ready = options, editor = editor, shown = shown, step = step
+        func drawn() throws(DrawError) {
+            if scripts.count == 1 {
+                var run = ready
+                run.board = shown
+                run.implied = implied[shown] ?? [:]
+                _ = try draw(parsed: scripts[0].script, dryRun: false, reveal: false, program: program, options: run, in: editor)
+            } else {
+                let copy = editor.rehearsal()
+                for item in scripts {
+                    var run = ready
+                    run.board = item.board
+                    run.implied = implied[item.board] ?? [:]
+                    if item.board != shown { run.places = [:] }
+                    _ = try draw(parsed: item.script, dryRun: false, reveal: false, program: program, options: run, in: copy)
+                }
+                guard editor.adopt(copy, named: step, byAgent: false) else {
+                    throw DrawError("the board changed while it was put down, so nothing was", reason: ScriptError.Reason.busy.rawValue, hint: "try again")
+                }
             }
-            guard editor.adopt(copy, named: step, byAgent: false) else {
-                throw DrawError("the board changed while it was put down, so nothing was", reason: ScriptError.Reason.busy.rawValue, hint: "try again")
+            // A shape it changed that its size widens is made that wide where it is narrower (its new lines read whole), never
+            // narrower, in the put's step; one it found and left as it was keeps the width a person gave it.
+            for (item, was, width) in widens {
+                guard let id = item.id, let now = editor.shape(inFile: id), now != was, let box = now.box, box.width < width else { continue }
+                let wider = CGRect(origin: box.origin, size: CGSize(width: width.rounded(.up), height: box.height))
+                editor.transact(on: item.board, step) { $0.update(id) { $0.box = wider } }
             }
+        }
+        // One step with the widening, where a caller hasn't grouped the put already.
+        do {
+            try editor.undoHistory.group(step) { try drawn() }
+        } catch let error as DrawError {
+            throw error
+        } catch {
+            throw DrawError("\(error)", reason: ScriptError.Reason.internal.rawValue)
         }
         // What it made or restated on the board shown: the shapes it named, and any it made without a name to find them by; not the
         // arrows its edges drew between them (a table's keys), which go with what they join.

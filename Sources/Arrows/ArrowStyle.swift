@@ -24,6 +24,20 @@ enum ArrowStyle {
     nonisolated static func levelClearReach(ofMark reach: CGFloat) -> CGFloat {
         reach > 0 ? (reach + levelMarkClearance) / 0.75 : 0
     }
+    /// The steepest the line may be where an end's mark stops (and its clearance), rise over run: an end that carries a mark
+    /// reaches out far enough that its mark lies on the level stretch, however far across the other end is, so two keys at one
+    /// row's end draw their marks on top of each other.
+    nonisolated static let levelMarkSlope: CGFloat = 0.2
+    /// The reach of an end carrying a mark that reaches `reach` along the line, with the other end `across` to the side of its
+    /// way out: at least `levelClearReach(ofMark:)`, and as far as keeps the line's slope at the mark's clearance under
+    /// `levelMarkSlope` (a cubic with its control `r` out, whose other end is `h` across, is at slope about `2dh / 3r²` a length
+    /// `d` along; the other control's pull back along the way steepens it, so the reach is worked out for half the slope).
+    /// 0 for an end with no mark.
+    nonisolated static func levelMarkReach(ofMark reach: CGFloat, across: CGFloat) -> CGFloat {
+        guard reach > 0 else { return 0 }
+        let clear = reach + levelMarkClearance
+        return max(levelClearReach(ofMark: reach), (4 * clear * abs(across) / (3 * levelMarkSlope)).squareRoot())
+    }
     /// How far from an arrow's centerline (beyond its stroke) a click still hits it, in view points.
     static let hitMargin: CGFloat = 3
     /// The bend handle hides when it's this close to an end handle, in view points.

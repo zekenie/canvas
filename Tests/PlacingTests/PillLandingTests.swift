@@ -79,6 +79,37 @@ private let row = CGRect(x: 0, y: 100, width: 400, height: 24)
         let under = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: last, of: a))
         expect(under.rect.minY >= 600, "below the shape: \(under.rect)")
     },
+    test("a line between rows (a key, level): level with the row first, left of the shape, then right (T3 panel 4, T6 panel 3)") {
+        let a = ShapeID(), left = ShapeID()
+        let h = try harness(box(a, near))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a, level: true))
+        expectEqual(landing.rect, CGRect(x: -reach - 200, y: 92, width: 200, height: 40), "left, the line leaving the row's side straight")
+        let walled = try harness(box(a, near), box(left, CGRect(x: -180, y: 60, width: 100, height: 100)))
+        let right = try require(Surroundings(on: .root, moving: pill, in: walled.editor)?.landing(of: pill, joinedFrom: row, of: a, level: true))
+        expectEqual(right.rect, CGRect(x: 400 + reach, y: 92, width: 200, height: 40), "a shape on the line to the left: right, level")
+    },
+    test("a key with both sides of its row taken: below, slid out past the row's end by the mark's room, never under the end") {
+        let a = ShapeID(), right = ShapeID(), left = ShapeID()
+        let h = try harness(box(a, near), box(right, CGRect(x: 480, y: 60, width: 100, height: 100)), box(left, CGRect(x: -180, y: 60, width: 100, height: 100)))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: row, of: a, level: true))
+        expect(landing.rect.minY >= near.maxY, "below the shape: \(landing.rect)")
+        expect(landing.rect.maxX <= row.minX - PlacingStyle.markRoom || landing.rect.minX >= row.maxX + PlacingStyle.markRoom,
+               "out past the end by the mark's room: \(landing.rect)")
+        // The last row too, where an endpoint's pill would go straight under its end.
+        let last = CGRect(x: 0, y: 176, width: 400, height: 24)
+        let under = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: last, of: a, level: true))
+        expect(under.rect.maxX <= last.minX - PlacingStyle.markRoom || under.rect.minX >= last.maxX + PlacingStyle.markRoom, "\(under.rect)")
+    },
+    test("a pill there already joins clean where its line from the row crosses no shape, the shape and the pill itself aside") {
+        let a = ShapeID(), other = ShapeID(), standIn = ShapeID()
+        let far = CGRect(x: 0, y: 500, width: 200, height: 40)
+        let h = try harness(box(a, near), box(other, CGRect(x: 300, y: 300, width: 300, height: 120)), box(standIn, far))
+        let surroundings = try require(Surroundings(on: .root, moving: pill, in: h.editor))
+        expect(surroundings.joinsClean(row, of: a, to: far, standIn: standIn), "from the row's left end down to it: clear")
+        let across = CGRect(x: 700, y: 500, width: 200, height: 40)
+        expect(!surroundings.joinsClean(row, of: a, to: across), "from its right end, through the other shape")
+        expect(!surroundings.joinsClean(row, of: a, to: far, avoiding: [CGRect(x: -100, y: 300, width: 200, height: 50)]), "through a box planned")
+    },
     test("walled in on every side: nil, for the caller to land it as draw does") {
         let a = ShapeID(), below = ShapeID(), right = ShapeID(), left = ShapeID()
         let h = try harness(box(a, near), box(below, CGRect(x: -800, y: 260, width: 2000, height: 1000)),

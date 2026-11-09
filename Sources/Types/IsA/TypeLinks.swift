@@ -1,5 +1,6 @@
 import Canvas
 import Draw
+import Selection
 import SlashCommands
 import Titles
 
@@ -210,8 +211,11 @@ extension CanvasEditor {
     /// the caller's: an endpoint's body), and `editing` false puts it down settled, nothing selected and nothing edited, so the
     /// keyboard stays where it is (the core's `Placement.settled()`). Either way one step, "New Type", into which the caller
     /// may write what names it, in a group of its own of that name.
+    ///
+    /// Put down settled where no clear spot in view is left (the view full), it lands where it can and the view pans the least
+    /// to show it, `keeping` (else the owners) in view as well where both fit (Selection's `revealIfOffscreen`).
     @discardableResult
-    public func newType(named name: String, besides owners: [ShapeID], givingType: Bool, editing: Bool) -> ShapeID? {
+    public func newType(named name: String, besides owners: [ShapeID], givingType: Bool, editing: Bool, keeping: [ShapeID] = []) -> ShapeID? {
         var seen = Set<ShapeID>()
         let owners = owners.filter { seen.insert($0).inserted && file.board(containing: $0) == board }
         guard !owners.isEmpty, let kind = newTypeKind(for: owners), let base = registry.placement(for: kind) else { return nil }
@@ -243,12 +247,16 @@ extension CanvasEditor {
             let anywhere = surroundings.anywhere(put: put)
             if surroundings.shows(anywhere.rect, put: put) { landing = anywhere }
         }
-        return undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) {
+        let inView = editing || surroundings.shows(landing.rect, put: put)
+        let newID = undoHistory.group(marks ? TypesStyle.newRelationshipType : TypesStyle.newType) { () -> ShapeID? in
             place(placement, in: landing.rect)
             guard let id = made.id, document[id] != nil else { return nil }
             if givingType { giveType(id, to: owners) }
             return id
         }
+        // Nowhere clear in view: brought into view by the least pan, what it was made for kept in view where both fit.
+        if let id = newID, !inView { revealIfOffscreen([id], keeping: keeping.isEmpty ? owners : keeping) }
+        return newID
     }
 
     /// Whether the owner is an arrow of a kind that relates, whose new type is a relationship type.

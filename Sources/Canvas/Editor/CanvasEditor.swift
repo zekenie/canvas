@@ -1749,12 +1749,33 @@ public final class CanvasEditor {
         let positions = shapeIndex.positions(touching: rect, in: context)
         guard !positions.isEmpty else { return }
         let list = shapeIndex.paintList(in: context), shapes = document.shapes, only = drawnShapes
+        // The shape being edited, laid out wider than it stores (a line typed longer than it is), is painted after the rest, so
+        // what its widening now overlaps (a shape put down beside it) never covers its rows while the caret is in it. Nothing
+        // moves: it is back in its place in the order as it stops being wider, or edited.
+        let lifted = liftedWhileEdited(in: context)
+        var held: (record: AnyShapeRecord, extent: CGRect)?
         for position in positions {
             let record = shapes[list.order[position]]
             if let only, !only.contains(record.id) { continue }
+            if record.id == lifted {
+                held = (record, list.extents[position])
+                continue
+            }
             body(record, list.extents[position])
         }
+        if let held { body(held.record, held.extent) }
     }
+
+    /// The shape edited, where it is laid out wider than its stored box and holds no shapes (a container's would be covered):
+    /// painted, and hit, above the shapes in its way until it is back to its width or no longer edited.
+    private func liftedWhileEdited(in context: ShapeContext) -> ShapeID? {
+        guard let id = editingShapeID, let record = document[id], let box = record.box, !registry.isContainer(record),
+              let frame = context.frame(of: record), frame.width > box.width + Self.liftSlack else { return nil }
+        return id
+    }
+
+    /// How much wider than it stores an edited shape is laid out before it is painted above the rest, world units.
+    private static let liftSlack: CGFloat = 0.5
 
     /// The shapes of the board shown that are drawn, nil for all of them: a picture of some of a
     /// board's shapes (Edit › Copy as Image, `BoardPicture(file:registry:board:showing:)`), whose
@@ -1772,6 +1793,12 @@ public final class CanvasEditor {
         let positions = shapeIndex.positions(mayHit: point, zoom: camera.zoom, in: context)
         guard !positions.isEmpty else { return nil }
         let list = shapeIndex.paintList(in: context), shapes = document.shapes
+        // The shape edited, painted above what its widening overlaps, is hit first there too.
+        if let lifted = liftedWhileEdited(in: context), let record = document[lifted], let index = document.index(of: lifted),
+           positions.contains(list.positions[index]), include(record),
+           registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
+            return lifted
+        }
         for position in positions {
             let record = shapes[list.order[position]]
             if include(record), registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {

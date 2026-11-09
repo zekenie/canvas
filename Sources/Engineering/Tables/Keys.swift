@@ -186,7 +186,7 @@ enum KeyArrows {
         // and a new one lands clear of those already put down.
         let document = transaction.document, put = document.shapes.compactMap { editor.document[$0.id] == nil ? $0.box : nil }
         guard verdicts.verdict(of: target.shape) == .reads, let route = verdicts.route, let far = editor.shape(inFile: target.shape),
-              let placed = route.placePill(standingFor: target.shape, label: editor.registry.mentionAppearance(of: far)?.label ?? "",
+              let placed = route.placePill(standingFor: target.shape, onBinding: target.part, label: editor.registry.mentionAppearance(of: far)?.label ?? "",
                                            beside: table, from: column, edgeIs: .from, sharing: .any, avoiding: put, reading: document, verdicts: verdicts,
                                            in: editor) else { return nil }
         guard (try? placed.claim(in: &transaction, registry: editor.registry)) != nil, let pill = try? placed.put(in: &transaction) else { return nil }

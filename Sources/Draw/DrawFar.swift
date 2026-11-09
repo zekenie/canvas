@@ -143,26 +143,42 @@ extension StandInRoute {
     /// `from`: the row of `near` the arrow is joined to (a column's key, an endpoint's call): the pill lands where its line from that
     /// row is clean (`Surroundings.landing(of:joinedFrom:of:)`: below `near`, then right, then left level with the row), and as
     /// draw lands one where no spot is. The row and `near` are measured on `reading` where the caller is in a step, so a row the
-    /// step adds, and a shape it grows, count.
-    public func placePill(standingFor far: ShapeID, row: PartID? = nil, label: String, beside near: ShapeID, from nearRow: PartID? = nil,
-                          edgeIs place: EdgePlace, sharing: Sharing, avoiding: [CGRect] = [], reading: CanvasDocument? = nil,
+    /// step adds, and a shape it grows, count. A pill there already is reused only where its line from the row is clean too
+    /// (`Surroundings.joinsClean`); else a fresh one is put down.
+    ///
+    /// `onBinding`: the row of `far` the arrow ends at where it rides the binding (a column, through a pill for its table): a line
+    /// between two rows, a key, whose ends carry marks, is landed level with its row first (`landing(of:joinedFrom:of:)`'s
+    /// `level`). A row a kind makes no pill for is on the binding too.
+    public func placePill(standingFor far: ShapeID, row: PartID? = nil, onBinding farRow: PartID? = nil, label: String, beside near: ShapeID,
+                          from nearRow: PartID? = nil, edgeIs place: EdgePlace, sharing: Sharing, avoiding: [CGRect] = [], reading: CanvasDocument? = nil,
                           planned: CGRect? = nil, verdicts: FarVerdicts, in editor: CanvasEditor) -> PlacedPill? {
         guard let record = editor.shape(inFile: far), let found = verdicts.kind(for: record) else { return nil }
         let standIns = editor.registry.standIns
         // A kind that makes no pill for a row stands for the row's shape, the row on the binding.
+        let asked = row
         let row = row.flatMap { standIns.makesRows(found.kind) ? $0 : nil }
-        if let existing = existing(for: far, row: row, kind: found.kind, sharing: sharing, near: near, in: reading ?? editor.document) {
-            return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: existing, made: nil, above: [])
+        let level = farRow != nil || (asked != nil && row == nil)
+        let document = reading ?? editor.document
+        // The row and `near` as the step leaves them (a column or an endpoint it adds is not on the board shown yet, and a table it
+        // adds rows to is taller), not as the board shows them.
+        let camera = editor.shapeContext.camera
+        let after = ShapeContext(document: document, registry: editor.registry, camera: camera)
+        let line = nearRow.flatMap { after.geometry(of: near)?.parts.frame($0)?.rect }
+        if let existing = existing(for: far, row: row, kind: found.kind, sharing: sharing, near: near, in: document) {
+            // Reused where its line from the row crosses nothing; where it would, a fresh pill is put down.
+            let clean = line.map { line in
+                guard let box = after.geometry(of: existing)?.bounds, let surroundings = Surroundings(on: editor.board, moving: box.size, in: editor)
+                else { return true }
+                return surroundings.joinsClean(line, of: near, bounds: planned ?? after.geometry(of: near)?.bounds, to: box, standIn: existing, avoiding: avoiding)
+            } ?? true
+            if clean { return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: existing, made: nil, above: []) }
         }
         guard var made = row.map({ standIns.make(found.kind, standingFor: far, row: $0, label: label) }) ?? standIns.make(found.kind, standingFor: far, label: label)
         else { return nil }
         seat(&made, beside: near, in: editor)
         guard let size = made.box?.size, let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
-        // The row and `near` as the step leaves them (a column or an endpoint it adds is not on the board shown yet, and a table it
-        // adds rows to is taller), not as the board shows them.
-        let after = ShapeContext(document: reading ?? editor.document, registry: editor.registry, camera: surroundings.reading.shapes.camera)
-        if let nearRow, let geometry = after.geometry(of: near), let line = geometry.parts.frame(nearRow)?.rect,
-           let clean = surroundings.landing(of: size, joinedFrom: line, of: near, bounds: planned ?? geometry.bounds, avoiding: avoiding) {
+        if let line, let geometry = after.geometry(of: near),
+           let clean = surroundings.landing(of: size, joinedFrom: line, of: near, bounds: planned ?? geometry.bounds, avoiding: avoiding, level: level) {
             made.box = clean.rect
             return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: nil, made: made, above: clean.above)
         }

@@ -130,7 +130,8 @@ enum APITypes {
 
     /// A type note called `name`, made for the API `api`: beside the types it names already that are on the board shown (else
     /// beside it), made an instance of nothing and edited by no one (put down settled), in Types' step, "New Type", which the
-    /// words that name it then join. Nil where none could be made.
+    /// words that name it then join; where the view has no clear spot left, revealed by the least pan with the API kept in view
+    /// where both fit. Nil where none could be made.
     static func make(named name: String, for api: ShapeID, in editor: CanvasEditor) -> ShapeID? {
         let board = editor.board
         var named: [ShapeID] = []
@@ -143,7 +144,7 @@ enum APITypes {
                 }
             }
         }
-        return editor.newType(named: name, besides: named.isEmpty ? [api] : named, givingType: false, editing: false)
+        return editor.newType(named: name, besides: named.isEmpty ? [api] : named, givingType: false, editing: false, keeping: [api])
     }
 }
 

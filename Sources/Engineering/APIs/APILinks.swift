@@ -238,7 +238,7 @@ enum EndpointLinks {
         let alone = target.part.flatMap { part in editor.registry.parts(of: far)?.first { $0.id == part } }.map(\.standsAlone) == true
         let label = target.part.flatMap { part in editor.registry.parts(of: far)?.first { $0.id == part }?.name } ?? editor.registry.title(of: far) ?? ""
         guard verdicts.verdict(of: target.shape) == .reads, let route = verdicts.route,
-              let placed = route.placePill(standingFor: target.shape, row: alone ? target.part : nil, label: label, beside: api, from: row, edgeIs: .from,
+              let placed = route.placePill(standingFor: target.shape, row: alone ? target.part : nil, onBinding: alone ? nil : target.part, label: label, beside: api, from: row, edgeIs: .from,
                                            sharing: .any, avoiding: put, reading: transaction.document, verdicts: verdicts, in: editor),
               (try? placed.claim(in: &transaction, registry: editor.registry)) != nil, let pill = try? placed.put(in: &transaction) else { return nil }
         return (PartAddress(pill, part: target.part), placed.farKind)

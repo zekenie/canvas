@@ -437,6 +437,50 @@ extension Seeded {
         expectEqual(h.editor.paintOrder().count, h.editor.document.shapes.count)
         #endif
     },
+    test("several shapes painted below their anchors, added in one commit (a paste's keys), each go just before their own anchor, as a full build puts them") {
+        #if DEBUG
+        let h = try EditorHarness(plugins: [FixturesPlugin(), UnderlaysPlugin()])
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
+        var random = Seeded(seed: 41)
+        var boxes: [ShapeID] = []
+        for i in 0..<60 { boxes.append(h.add(Box(CGRect(x: CGFloat(i % 10) * 150, y: CGFloat(i / 10) * 150, width: 100, height: 80)))) }
+        let area = CGRect(x: -100, y: -100, width: 1_700, height: 1_000)
+        _ = h.editor.paintOrder()
+        let built = h.editor.paintListsBuilt
+        // Out of the anchors' order, two under one anchor, and one under a plain shape the same commit adds, between the others.
+        var unders: [ShapeID] = [], plain: ShapeID?
+        h.editor.transact("Paste") { transaction in
+            for (n, target) in [boxes[40], boxes[10], boxes[25], boxes[10]].enumerated() {
+                let under = ShapeRecord(Underlay(target: target))
+                transaction.insert(under)
+                unders.append(under.id)
+                if n == 1 {
+                    let box = ShapeRecord(Box(CGRect(x: 40, y: 1_000, width: 60, height: 60)))
+                    transaction.insert(box)
+                    plain = box.id
+                    let beneath = ShapeRecord(Underlay(target: box.id))
+                    transaction.insert(beneath)
+                    unders.append(beneath.id)
+                }
+            }
+        }
+        let kept = h.editor.paintOrder().map(\.id)
+        expectEqual(h.editor.paintListsBuilt, built, "spliced into the list kept")
+        @MainActor func before(_ id: ShapeID, _ count: Int) -> [ShapeID] {
+            let at = kept.firstIndex(of: id)!
+            return Array(kept[(at - count)..<at])
+        }
+        expectEqual(before(boxes[40], 1), [unders[0]], "each under its own anchor")
+        expectEqual(before(boxes[10], 2), [unders[1], unders[4]], "two under one, in document order")
+        expectEqual(before(boxes[25], 1), [unders[3]])
+        expectEqual(before(plain!, 1), [unders[2]], "under a shape the commit added")
+        expectSearchesAgree(h, area: area, random: &random, "after the paste")
+        h.editor.undo()
+        h.editor.redo()
+        expectEqual(h.editor.paintOrder().map(\.id), kept, "the order a full build gives")
+        expect(h.editor.paintListsBuilt > built, "which the undo did")
+        #endif
+    },
     test("shapes that came in elsewhere in the stack, went, moved in it, or came back by an undo, a redo or a move from another board, build the paint list again") {
         #if DEBUG
         let h = try spatialHarness()

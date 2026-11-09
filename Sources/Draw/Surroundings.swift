@@ -89,6 +89,16 @@ public enum PlacingStyle {
     public static let pillReach: CGFloat = 120
     /// How many reaches out a pill is tried at, on each side, before it's landed as draw lands one.
     public static let pillSteps = 3
+    /// How far out from a row's end the mark at a line's end there reaches, with the room the line needs to turn after it (the
+    /// longest, a bar and a circle, 30, and 6): a pill a line between rows (a key) joins below the shape is slid out past it, so the
+    /// line leaves the row's side level and bends after its mark (`landing(of:joinedFrom:of:)`'s `level`).
+    public static let markRoom: CGFloat = 36
+    /// The line a pill stands at the end of shows this much either side of the label it carries (a channel's pill: `reads`), its
+    /// head's run and its own: a pill put down for such an arrow is at least the label's width and twice this from its start.
+    public static let labelEndRoom: CGFloat = 24
+    /// Between two such labels on lines from one start to pills one above the other: the pills are spaced so the labels, halfway
+    /// along, are this far apart.
+    public static let labelSpacing: CGFloat = 8
 }
 
 /// A board shapes land on, as `canvas draw` reads the board it places shapes on: read in place
@@ -348,8 +358,13 @@ public struct Surroundings {
     /// clear of what is on the board (but `near` and what holds it) and of `avoiding` by draw's clearances, and its line crosses
     /// none of them. `bounds`: `near`'s where the caller's step changes them (rows added), else the board's. Nil where none does: the
     /// caller lands it as draw does (`landing(of:at:)`).
+    ///
+    /// `level`, for a line between two rows (a key, the far row on the binding of a pill for its shape: its ends carry marks):
+    /// level with the row first, left of `near` then right (T3 panel 4, T6 panel 3), so the line leaves the row's side straight;
+    /// then below, the pill slid out past the row's end by the mark's room (`PlacingStyle.markRoom`), never under the end, so the
+    /// line leaves the side and turns after its mark.
     public func landing(of size: CGSize, joinedFrom row: CGRect, of near: ShapeID, bounds nearBounds: CGRect? = nil,
-                        avoiding: [CGRect] = []) -> Landing? {
+                        avoiding: [CGRect] = [], level: Bool = false) -> Landing? {
         guard size.width.isFinite, size.height.isFinite, row.isFinite, !row.isNull,
               let bounds = nearBounds ?? reading.shapes.geometry(of: near)?.bounds, bounds.isFinite, !bounds.isNull else { return nil }
         let own = obstacle(near)
@@ -362,32 +377,47 @@ public struct Surroundings {
         // The rows of `near` under the one the arrow leaves: a line slid in under the shape must not cut across them.
         let below = CGRect(x: bounds.minX, y: row.maxY, width: bounds.width, height: max(0, bounds.maxY - row.maxY))
         var spots: [(rect: CGRect, from: CGPoint, to: CGPoint)] = []
-        for step in 1...PlacingStyle.pillSteps {
-            let out = reach * CGFloat(step)
-            for end in [row.minX, row.maxX] {
-                let outward: CGFloat = end == row.minX ? -1 : 1
-                // Under the row's end, else slid out from under the shape, else in: the line still meets the top, steep as it is, but
-                // only where it leaves the shape's body alone (the row is its last): straight down from the end of a row with rows
-                // under it runs along the shape's own side, so there the pill goes beside the row instead.
-                for (slide, inward) in [(CGFloat(0), false), (outward * width / 2, false), (-outward * width / 2, true), (outward * width, false)] {
-                    let middle = end + slide
-                    // The row leaves by the end facing the pill's middle: this one.
-                    guard (middle < row.midX) == (end == row.minX) else { continue }
-                    let rect = CGRect(x: middle - width / 2, y: bounds.maxY + out, width: width, height: height)
-                    let from = CGPoint(x: end, y: row.midY), to = CGPoint(x: middle, y: rect.minY)
-                    if inward, Self.crosses(from, to, below) { continue }
-                    if slide == 0, below.height > row.height / 2 { continue }
-                    spots.append((rect, from, to))
+        func belowSpots() {
+            // A line between rows leaves the row's side level for its mark's room before it turns: never under the end, nor in.
+            let room = PlacingStyle.markRoom
+            let slides: [(CGFloat, Bool)] = level ? [(room + width / 2, false), (room + width, false)]
+                : [(0, false), (width / 2, false), (-width / 2, true), (width, false)]
+            for step in 1...PlacingStyle.pillSteps {
+                let out = reach * CGFloat(step)
+                for end in [row.minX, row.maxX] {
+                    let outward: CGFloat = end == row.minX ? -1 : 1
+                    // Under the row's end, else slid out from under the shape, else in: the line still meets the top, steep as it is,
+                    // but only where it leaves the shape's body alone (the row is its last): straight down from the end of a row
+                    // with rows under it runs along the shape's own side, so there the pill goes beside the row instead.
+                    for (amount, inward) in slides {
+                        let slide = outward * amount, middle = end + slide
+                        // The row leaves by the end facing the pill's middle: this one.
+                        guard (middle < row.midX) == (end == row.minX) else { continue }
+                        let rect = CGRect(x: middle - width / 2, y: bounds.maxY + out, width: width, height: height)
+                        let from = CGPoint(x: end, y: row.midY), to = CGPoint(x: middle, y: rect.minY)
+                        if inward, Self.crosses(from, to, below) { continue }
+                        if slide == 0, below.height > row.height / 2 { continue }
+                        spots.append((rect, from, to))
+                    }
                 }
             }
         }
-        for side: CGFloat in [1, -1] {
-            for step in 1...PlacingStyle.pillSteps {
-                let out = reach * CGFloat(step)
-                let x = side > 0 ? bounds.maxX + out : bounds.minX - out - width
-                let rect = CGRect(x: x, y: row.midY - height / 2, width: width, height: height)
-                spots.append((rect, CGPoint(x: side > 0 ? row.maxX : row.minX, y: row.midY), CGPoint(x: side > 0 ? rect.minX : rect.maxX, y: row.midY)))
+        func levelSpots() {
+            for side: CGFloat in level ? [-1, 1] : [1, -1] {
+                for step in 1...PlacingStyle.pillSteps {
+                    let out = reach * CGFloat(step)
+                    let x = side > 0 ? bounds.maxX + out : bounds.minX - out - width
+                    let rect = CGRect(x: x, y: row.midY - height / 2, width: width, height: height)
+                    spots.append((rect, CGPoint(x: side > 0 ? row.maxX : row.minX, y: row.midY), CGPoint(x: side > 0 ? rect.minX : rect.maxX, y: row.midY)))
+                }
             }
+        }
+        if level {
+            levelSpots()
+            belowSpots()
+        } else {
+            belowSpots()
+            levelSpots()
         }
         let planned = avoiding.filter(\.isFinite)
         for spot in spots {
@@ -406,6 +436,27 @@ public struct Surroundings {
             return Landing(board: reading.board, rect: spot.rect, above: holders)
         }
         return nil
+    }
+
+    /// Whether a line from row `row` of `near` (its rect, world units) to a pill already at `pill` reads clean, as a pill landed by
+    /// `landing(of:joinedFrom:of:)` does: the straight line from the row's end facing the pill's middle to the pill's nearest point
+    /// crosses no shape of the board but `near`, what holds it and `standIn` (the pill itself, where it is on the board), nor any of
+    /// `avoiding`. What a pill reused for a later line (a key, a move's rebinding) is asked before it is: where it isn't, a fresh
+    /// one is put down. `bounds`: `near`'s where the caller's step changes them (or `near` is not on this board yet), else the
+    /// board's.
+    public func joinsClean(_ row: CGRect, of near: ShapeID, bounds nearBounds: CGRect? = nil, to pill: CGRect, standIn: ShapeID? = nil,
+                           avoiding: [CGRect] = []) -> Bool {
+        guard row.isFinite, !row.isNull, pill.isFinite, !pill.isNull,
+              let bounds = nearBounds ?? reading.shapes.geometry(of: near)?.bounds, bounds.isFinite, !bounds.isNull else { return true }
+        let own = obstacle(near), standing = standIn.flatMap(obstacle)
+        let middle = CGPoint(x: pill.midX, y: pill.midY)
+        let from = CGPoint(x: middle.x < row.midX ? row.minX : row.maxX, y: row.midY)
+        let to = CGPoint(x: min(max(from.x, pill.minX), pill.maxX), y: min(max(from.y, pill.minY), pill.maxY))
+        let line = CGRect(x: min(from.x, to.x), y: min(from.y, to.y), width: abs(to.x - from.x), height: abs(to.y - from.y)).insetBy(dx: -1, dy: -1)
+        let crossed = grid.obstacles(in: line).contains { obstacle in
+            obstacle.id != own && obstacle.id != standing && !obstacle.rect.contains(bounds) && Self.crosses(from, to, obstacle.rect)
+        }
+        return !crossed && !avoiding.filter { $0.isFinite && !$0.contains(bounds) }.contains { Self.crosses(from, to, $0) }
     }
 
     /// Whether the segment from `a` to `b` passes through `rect`'s inside (touching its edge isn't crossing): Liang and Barsky's

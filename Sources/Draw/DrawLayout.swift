@@ -53,7 +53,7 @@ extension Drawing {
             guard others.contains(where: { $0.intersects(wanted) }) || near.map({ $0.intersects(rect) }) == true,
                   let line = context.geometry(of: from.near)?.parts.frame(from.row)?.rect,
                   let surroundings = Surroundings(on: target.board, moving: rect.size, in: editor),
-                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: near, avoiding: others) else { continue }
+                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: near, avoiding: others, level: from.level) else { continue }
             items[index].exact = clean.rect.origin
             items[index].placed = clean.rect
         }
@@ -378,7 +378,7 @@ extension Drawing {
             }
             let others = items.indices.filter { $0 != index && $0 != itemOf[from.near] }.compactMap { items[$0].placed }
             guard let surroundings = Surroundings(on: target.board, moving: rect.size, in: editor),
-                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: bounds, avoiding: others) else { continue }
+                  let clean = surroundings.landing(of: rect.size, joinedFrom: line, of: from.near, bounds: bounds, avoiding: others, level: from.level) else { continue }
             items[index].placed = clean.rect
             items[index].zones = clean.above
             items[index].record.box = CGRect(origin: CGPoint(x: clean.rect.minX - items[index].roomOffset.x, y: clean.rect.minY - items[index].roomOffset.y),

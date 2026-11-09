@@ -131,13 +131,14 @@ public enum SQLPaste {
         shape.json = [(key: "columns", text: json(columns))]
         shape.edges = edges
         // As wide as its columns read whole (a pg_dump's `character varying(255)`), as a commit widens a table (Tables'), an enum
-        // the paste makes or the file has measured as the pill it is drawn as, not as its words; a table the file has keeps its width.
+        // the paste makes or the file has measured as the pill it is drawn as, not as its words; a table the file has is widened to
+        // it where it is narrower, in the paste's step, and never narrowed, so a width a person set stays unless the new lines need more.
         shape.size = DrawPut.Dimensions(width: TableDefinition.wholeWidth(of: table.columns.map { column in
             let words = typeWords(column.type.words, in: schema, from: table.name.schema)
             let named = pastedEnum(named: column.type.words, in: schema, from: table.name.schema)?.name.name ?? (fileEnums.contains(words) ? words : nil)
             let pill = named.map { AdornmentLabel($0).tinted(TableStyle.enumPill) }
             return TableDefinition.WholeRow(name: column.name, type: words, pill: pill, nullable: column.nullable)
-        }))
+        }), widens: true)
         return shape
     }
 
