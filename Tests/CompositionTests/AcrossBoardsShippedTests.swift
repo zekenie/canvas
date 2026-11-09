@@ -125,6 +125,10 @@ private let shop = #"""
         try expectClean(arrow.id, from: statements.id, row: try require(column(editor, "statements", "customer_id")), in: editor, view: false, "⌘L's key")
         let frame = try require(pill.frame(in: editor))
         expect(!frame.intersects(statements.props.frame), "clear of the start")
+        // A key's pill: level with its row, left of the table (T6 panel 3), so the crow's foot lies on a straight line.
+        let keyRow = try require(editor.shapeContext.geometry(of: statements.id)?.parts.frame(try require(column(editor, "statements", "customer_id")))?.rect)
+        expect(abs(frame.midY - keyRow.midY) < 1, "level with customer_id: \(frame) \(keyRow)")
+        expect(frame.maxX <= statements.props.frame.minX, "left of statements: \(frame)")
         expectEqual(keys(editor), ["orders.customer_id -> customers.id", "payments.order_id -> orders.id", "refunds.payment_id -> payments.id",
                                    "statements.customer_id -> customers.id"], "read as a key to the column")
         editor.connect(ConnectEnd(statements.id, part: column(editor, "statements", "account_id")),
@@ -188,6 +192,11 @@ private let shop = #"""
         // The column and its pill arrive in one step: the pill is landed by the row as the step leaves it (connect 24).
         let key = try require(arrows(w.editor, on: board).first { $0.props.end.binding?.shapeID == pill.id })
         try expectClean(key.id, from: statements.id, row: try require(column(w.editor, "statements", "customer_id")), in: w.editor, lastRow: true, "a typed key")
+        // Level with the row, left of statements, as T6 panel 3 draws it: never hooked straight down from the row's side (connect new-1).
+        let typedRow = try require(w.editor.shapeContext.geometry(of: statements.id)?.parts.frame(try require(column(w.editor, "statements", "customer_id")))?.rect)
+        let pillFrame = try require(pill.frame(in: w.editor))
+        expect(abs(pillFrame.midY - typedRow.midY) < 1, "level with customer_id: \(pillFrame) \(typedRow)")
+        expect(pillFrame.maxX <= typedRow.minX, "left of the row: \(pillFrame) \(typedRow)")
         w.editor.undo()
         expectEqual(pills(w.editor, on: board).count, 0, "one undo takes the column, its key and the pill")
         expect(!keys(w.editor).contains { $0.hasPrefix("statements.") })
@@ -233,6 +242,31 @@ private let shop = #"""
         editor.undo()
         expectEqual(editor.file[billing], before[billing], "billing as it was")
         expectEqual(editor.file[.root], before[.root], "the root as it was")
+    },
+    test("a key moved onto a board with a pill for its table already there reuses it only where its line crosses no table; else a fresh pill, level with the row (connect new-1)") {
+        let (editor, billing) = try shopEditor()
+        _ = try drawnInProcess(#"table "invoices" below "payments" columns: "id uuid pk\ncustomer_id uuid\ntotal_cents int""#, on: editor)
+        _ = try drawnInProcess(#"edge "invoices".customer_id -> "customers".id"#, on: editor)
+        expect(editor.showBoard(billing))
+        let statements = try require(table(editor, "statements")), customers = try require(table(editor, "customers"))
+        editor.connect(ConnectEnd(statements.id, part: column(editor, "statements", "customer_id")),
+                       to: ConnectEnd(customers.id, part: column(editor, "customers", "id")))
+        expect(editor.showBoard(.root))
+        let invoices = try require(table(editor, "invoices")), owner = try require(billing.owner)
+        expect(editor.slashCommands?.run("move-to", on: invoices.id, with: SlashArguments([.shape(owner, label: "billing")])) ?? false)
+        expectEqual(editor.file.board(containing: invoices.id), billing)
+        expect(keys(editor).contains("invoices.customer_id -> customers.id"), "\(keys(editor))")
+        expect(editor.showBoard(billing))
+        // Every key through a pill on billing runs clean from its row: across no table.
+        let tables = editor.document.shapes.filter { $0.kind == DatabaseTable.kind }
+        for arrow in arrows(editor, on: billing) {
+            guard let start = arrow.props.start.binding, let part = start.part, let end = arrow.props.end.binding,
+                  let row = editor.shapeContext.geometry(of: start.shapeID)?.parts.frame(part)?.rect,
+                  let pill = editor.shapeContext.geometry(of: end.shapeID)?.bounds else { continue }
+            let surroundings = try require(Surroundings(on: billing, moving: pill.size, in: editor))
+            expect(surroundings.joinsClean(row, of: start.shapeID, to: pill, standIn: end.shapeID),
+                   "a key from \(editor.document[start.shapeID]?[TitleProperty.self] ?? "?") crosses a table: \(row) to \(pill), tables \(tables.compactMap(\.box))")
+        }
     },
     test("a staying table's key reaches the moved one through a pill on its own board, the column kept: orders moved to billing") {
         let (editor, billing) = try shopEditor()

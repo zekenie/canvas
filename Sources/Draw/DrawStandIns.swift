@@ -455,7 +455,7 @@ extension Drawing {
         // or its values), else its kind's name.
         let label = row?.name ?? standName.title ?? farLabel(of: standEnd.record)
         let made = try addStandIn(kind, for: standEnd.record, row: row?.id, called: label, said: standName.said, beside: nearID, item: nearItem,
-                                  from: nearPlace == .from ? parts.from : parts.to,
+                                  from: nearPlace == .from ? parts.from : parts.to, level: standPart != nil && row == nil,
                                   title: nearName.plain, nearIs: nearPlace, side: nearPlace == .from ? edge.fromSide : edge.toSide,
                                   placed: (edge.clauses, edge.container), seatedIn: container, statement)
         madeStandIns.append(MadeStandIn(id: made.id, stoodFor: standEnd.record.id, container: made.holder ?? container, kind: kind, row: row?.id))
@@ -610,7 +610,8 @@ extension Drawing {
     /// which, and one for a title that is its shape's alone says where that is as well. Where its placements put it is a guess
     /// until it lands, as `share:`'s container is.
     private mutating func addStandIn(_ kind: ShapeKind, for target: AnyShapeRecord, row: PartID? = nil, called label: String, said: String,
-                                     beside near: ShapeID, item: Int?, from nearRow: PartID? = nil, title nearTitle: String, nearIs place: EdgePlace, side: EdgeSide?,
+                                     beside near: ShapeID, item: Int?, from nearRow: PartID? = nil, level: Bool = false, title nearTitle: String,
+                                     nearIs place: EdgePlace, side: EdgeSide?,
                                      placed: (clauses: [Clause], container: ShapeName?), seatedIn container: ShapeID?,
                                      _ statement: Statement) throws(DrawError) -> (id: ShapeID, holder: ShapeID?) {
         guard let route, var record = row.map({ route.standIns.make(kind, standingFor: target.id, row: $0, label: label) })
@@ -669,13 +670,13 @@ extension Drawing {
            let line = self.target.shapes.geometry(of: near)?.parts.frame(nearRow)?.rect,
            let surroundings = Surroundings(on: self.target.board, moving: size, in: editor),
            let clean = surroundings.landing(of: size, joinedFrom: line, of: near,
-                                            avoiding: items.compactMap { item in item.exact.map { CGRect(origin: $0, size: item.room) } }) {
+                                            avoiding: items.compactMap { item in item.exact.map { CGRect(origin: $0, size: item.room) } }, level: level) {
             var standIn = ShapeItem(statement: statement, shape: ShapeStatement(word: kind.rawValue, clauses: []), kind: kind, title: nil,
                                     existing: nil, record: record, size: size, room: size)
             standIn.standsFor = said
             standIn.implied = true
             standIn.exact = clean.rect.origin
-            standIn.landedFrom = (near, nearRow)
+            standIn.landedFrom = (near, nearRow, level)
             items.append(standIn)
             return (record.id, nil)
         }
@@ -688,7 +689,7 @@ extension Drawing {
         standIn.standsFor = said
         standIn.implied = true
         // From a row, naming no side: landed again where its line is clean once the run's shapes are placed (`place()`).
-        if side == nil, let nearRow { standIn.landedFrom = (item.map { items[$0].record.id } ?? near, nearRow) }
+        if side == nil, let nearRow { standIn.landedFrom = (item.map { items[$0].record.id } ?? near, nearRow, level) }
         items.append(standIn)
         return (record.id, nil)
     }

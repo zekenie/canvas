@@ -86,7 +86,8 @@ public struct StandInSpot: Equatable, Sendable {
     /// The last pill of the column already beside `near` on that side, which the new one goes past;
     /// nil for the first.
     public var after: ShapeID?
-    /// How far past `after` (`LayoutProblem.impliedListStep`), else the normal gap from `near`.
+    /// How far past `after` (`LayoutProblem.impliedListStep`), else the gap from `near` (draw's normal one, or more for a pill
+    /// whose line carries a label).
     public var step: CGFloat
     /// What it lines up with in the column: the left edge of a column right of `near`, the right edge
     /// of one left of it; none above and below it, where the middles do.
@@ -104,7 +105,12 @@ public struct StandInSpot: Equatable, Sendable {
     /// what it is solved against, are Draw's): beside `near` named `nearName`, or, past `after`
     /// named `afterName`, a step below it (above, in a column above `near`) and lined up with it.
     func clauses(near nearName: String, after afterName: String?) -> [Clause] {
-        guard after != nil, let afterName else { return [Clause(relation: .direction(direction), targets: [Target(.title(nearName))])] }
+        guard after != nil, let afterName else {
+            // The normal gap is draw's own for a placement that says none; any other is said.
+            let gap = step == GapName.normal.value ? nil : Gap.units(step)
+            return [Clause(relation: .direction(direction), targets: [Target(.title(nearName))], gap: gap,
+                           written: gap.map { Clause.written(.direction(direction), naming: [nearName], gap: $0) })]
+        }
         let way: Direction = direction == .above ? .above : .below, gap = Gap.units(step)
         var clauses = [Clause(relation: .direction(way), targets: [Target(.title(afterName))], gap: gap,
                               written: Clause.written(.direction(way), naming: [afterName], gap: gap))]

@@ -3,6 +3,7 @@ import Adornments
 import CanvasTesting
 import CoreGraphics
 import Foundation
+import Geometry
 import LanguageModels
 import Mentions
 import Selection
@@ -235,6 +236,29 @@ private struct NewChitsPlugin: CanvasPlugin {
         let box = try require(editor.document[made]?.box)
         expect(CGRect(x: 0, y: 0, width: 1200, height: 700).contains(box), "in view: \(box)")
         expect(box.minY - 27 >= 0, "its title's row in view too")
+    },
+    test("a type made settled with the view full lands where it can and the view pans the least to show it, what it was made for kept in view") {
+        let editor = try typeEditor()
+        editor.viewportDidResize(to: CGSize(width: 1200, height: 700))
+        let height = memo().frame.height
+        // Memos ten apart over the whole view and past it: no clear spot in view for a note.
+        var owner: ShapeID?
+        for column in 0..<6 {
+            for row in 0..<Int((900 / (height + 10)).rounded(.up)) {
+                let id = editor.add(memo("m", at: CGPoint(x: -60 + CGFloat(column) * 250, y: -60 + CGFloat(row) * (height + 10))))
+                if column == 2, row == 3 { owner = id }
+            }
+        }
+        let api = try require(owner)
+        let view = { editor.cameraTarget.toWorld(editor.unobscuredViewport) }
+        let before = view()
+        let made = try require(editor.newType(named: "Problem", besides: [api], givingType: false, editing: false, keeping: [api]))
+        let box = try require(editor.document[made]?.box)
+        expect(!before.contains(box), "nowhere clear in view: landed where it could, \(box)")
+        expect(view().contains(box), "brought into view: \(box) in \(view())")
+        expect(view().contains(try require(editor.document[api]?.box)), "what it was made for kept in view")
+        expectEqual(editor.cameraTarget.zoom, 1, "a pan, not a zoom")
+        expectEqual(editor.selectedShapeIDs, [], "settled: nothing selected")
     },
     test("a type's chip by its id, for another plugin: its name now in its color; a shape that is no type, or none, the words in a dashed pill") {
         let editor = try typeEditor()

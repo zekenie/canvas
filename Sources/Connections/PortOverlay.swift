@@ -18,6 +18,8 @@ enum PortStyle {
     /// A dot at rest is its channel's color at this opacity, and at full opacity when it's hovered or
     /// pressed, as data-canvas's are.
     static let restingOpacity: CGFloat = 0.6
+    /// How near (world units) a connection's end must be to a row's end for that side to count as taken: its resting dot isn't drawn.
+    static let endSlack: CGFloat = 1.5
     static let haloOpacity: CGFloat = 0.24
     /// Below this zoom there are no ports, as the other chips shrink from here: a shape is too small
     /// on screen for its dots to be told from its neighbors'.
@@ -73,6 +75,9 @@ struct PortOverlay: CanvasOverlay {
             let dot = placed.dot, center = placed.center
             let point = CGPoint(x: center.x + offset.x, y: center.y + offset.y)
             let isLit = dot == hovered || dot == pressed
+            // A row's dot at rest isn't drawn on a side where a connection ends at that row already (a key, whose mark is drawn
+            // there): it would sit on the mark and read as one. Hovered or pressed, it shows, for a drag of another.
+            if !isLit, let part = dot.part, Self.isTaken(placed, of: PartAddress(host, part: part), in: editor) { continue }
             let color = state.color(of: dot)
             func circle(_ radius: CGFloat) -> CGRect {
                 CGRect(x: point.x - radius / zoom, y: point.y - radius / zoom, width: radius * 2 / zoom, height: radius * 2 / zoom)
@@ -87,6 +92,19 @@ struct PortOverlay: CanvasOverlay {
             cg.setStrokeColor(PortStyle.ring.cgColor)
             cg.setLineWidth(PortStyle.ringWidth / zoom)
             cg.strokeEllipse(in: circle(radius))
+        }
+    }
+
+    /// Whether a connection bound to `row` ends where `placed` stands out from (its row's end on that side): one of the shapes
+    /// painted there (arrows at rows paint beneath the cards they join, so the search is of that one spot) bound to the row, its
+    /// outline starting or ending at the dot's edge point.
+    static func isTaken(_ placed: PlacedDot, of row: PartAddress, in editor: CanvasEditor) -> Bool {
+        let registry = editor.registry, shapes = editor.shapeContext, edge = placed.edge, slack = PortStyle.endSlack
+        let spot = CGRect(x: edge.x - slack, y: edge.y - slack, width: slack * 2, height: slack * 2)
+        return editor.paintOrder(in: spot).contains { record in
+            guard record.id != row.shape, registry.connectionEnds(of: record) != nil, record.boundParts(in: registry).contains(row),
+                  let outline = shapes.geometry(of: record.id)?.outline, let first = outline.first, let last = outline.last else { return false }
+            return first.distance(to: edge) <= slack || last.distance(to: edge) <= slack
         }
     }
 

@@ -5,10 +5,13 @@ import CanvasTesting
 import CanvasUI
 import Connections
 import Engineering
+import Geometry
 import LanguageModels
 import LineRows
+import Mentions
 import Selection
 import ShippedTesting
+import StickyNotes
 import TestKit
 import TextEditing
 import Titles
@@ -505,5 +508,46 @@ private let models = #"""
         let json = try require(apis(editor).first)
         expectEqual(json.props.endpoints.suffix(2).map(EndpointGrammar.print), ["/customers", "GET /{id} (Order)"])
         expectEqual(json.props.endpoints.last?.endpoint?.name, "getCustomer")
+    },
+    test("apis 44: New type from a row with the view full of shapes lands where it can and the view pans the least to it, the API kept in view") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"api "orders API" endpoints: "GET /orders/{id}""#)
+        let api = try require(apis(editor).first)
+        let apiFrame = try require(editor.shapeContext.frame(of: api.id))
+        editor.camera = Camera(origin: CGPoint(x: apiFrame.minX - 200, y: apiFrame.minY - 120), zoom: 1)
+        w.window.settle()
+        // Notes ten apart over the whole view, but on the API and its pill's row: no clear spot in view is left.
+        let view = editor.camera.toWorld(editor.unobscuredViewport)
+        let kept = apiFrame.insetBy(dx: -30, dy: -60)
+        var notes: [AnyShapeRecord] = []
+        for x in stride(from: view.minX - 10, to: view.maxX + 10, by: 210) {
+            for y in stride(from: view.minY - 10, to: view.maxY + 10, by: 210) {
+                let frame = CGRect(x: x, y: y, width: 200, height: 200)
+                if !frame.intersects(kept) { notes.append(AnyShapeRecord(ShapeRecord(StickyNote(frame: frame, text: "full")))) }
+            }
+        }
+        editor.transact("Fill") { transaction in for note in notes { transaction.insert(note) } }
+        editor.undoHistory.seal()
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.type("POST /refunds -> 409 Problem", with: walk)
+        expectEqual(try require(w.line).highlightedOffer, "New type Problem")
+        walk.press(.return)
+        let problem = try require(titled(editor, "Problem")).id
+        let box = try require(editor.shapeContext.frame(of: problem))
+        expect(!view.contains(box), "nowhere clear in view: put down past its edge, \(box)")
+        let shown = editor.cameraTarget.toWorld(editor.unobscuredViewport)
+        expect(shown.contains(box), "the new type in view: \(box) in \(shown)")
+        let apiNow = try require(editor.shapeContext.frame(of: api.id))
+        expect(shown.contains(apiNow), "the API kept in view: \(apiNow) in \(shown), the type \(box)")
+        expectEqual(editor.cameraTarget.zoom, 1, "a pan, not a zoom")
+        expectEqual(editor.editingShapeID, api.id, "the caret kept in the API")
+        walk.press(.escape)
+        walk.press(.escape)
     },
 ])

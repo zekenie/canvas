@@ -31,16 +31,22 @@ public struct DrawPut: Sendable {
     /// only a note that is a type): one it doesn't admit is no match, and a new shape is made.
     public var admits: [Int: @MainActor @Sendable (AnyShapeRecord) -> Bool]
     /// The size a statement's shape is drawn at when the put makes it, by its `line` (an API wide enough for its paths, a note as
-    /// tall as its rows): a shape the file has keeps its own, which a person may have given it.
+    /// tall as its rows): a shape the file has keeps its own, which a person may have given it, but where the size `widens` it: then
+    /// it is made as wide where it is narrower, never narrower (a table pasted again, its new lines read whole).
     public var sizes: [Int: Dimensions]
     /// A size a statement gives its shape: a width, and a height or, left out, the kind's own at that width.
     public struct Dimensions: Sendable, Equatable {
         public var width: CGFloat
         public var height: CGFloat?
+        /// Whether a shape the file has that the put changes is widened to `width` where it is narrower (its height as it is: a
+        /// table's doesn't go by its width), in the put's step before the rest is laid out beside it, so what lands by it is
+        /// placed against the width it keeps; never narrowed, so a width a person set stays unless the new values need more.
+        public var widens: Bool
 
-        public init(width: CGFloat, height: CGFloat? = nil) {
+        public init(width: CGFloat, height: CGFloat? = nil, widens: Bool = false) {
             self.width = width
             self.height = height
+            self.widens = widens
         }
     }
 
@@ -315,27 +321,44 @@ private struct Putting {
             scripts.append((board, Script(statements: statements, styles: board == shown ? block.script.styles : []), lines))
         }
 
-        try layOut(planned, scripts, options: &options)
-
         let program = "canvas"
         let before = editor.document
-        if scripts.count == 1 {
-            var run = options
-            run.board = shown
-            run.implied = implied[shown] ?? [:]
-            _ = try draw(parsed: scripts[0].script, dryRun: false, reveal: false, program: program, options: run, in: editor)
-        } else {
-            let copy = editor.rehearsal()
-            for item in scripts {
-                var run = options
-                run.board = item.board
-                run.implied = implied[item.board] ?? [:]
-                if item.board != shown { run.places = [:] }
-                _ = try draw(parsed: item.script, dryRun: false, reveal: false, program: program, options: run, in: copy)
+        // The shapes the file has that a size widens, and the put changes (a restated one it leaves as it is keeps the width a
+        // person gave it), narrower than the width its new lines need: made that wide first, so the block and the pills laid out
+        // beside it are placed against the width it will have, never under it.
+        let widening = widenings(planned, scripts, implied: implied, options: options)
+        let editor = editor, shown = shown, step = step
+        func drawn(_ ready: DrawOptions) throws(DrawError) {
+            if scripts.count == 1 {
+                var run = ready
+                run.board = shown
+                run.implied = implied[shown] ?? [:]
+                _ = try draw(parsed: scripts[0].script, dryRun: false, reveal: false, program: program, options: run, in: editor)
+            } else {
+                let copy = editor.rehearsal()
+                for item in scripts {
+                    var run = ready
+                    run.board = item.board
+                    run.implied = implied[item.board] ?? [:]
+                    if item.board != shown { run.places = [:] }
+                    _ = try draw(parsed: item.script, dryRun: false, reveal: false, program: program, options: run, in: copy)
+                }
+                guard editor.adopt(copy, named: step, byAgent: false) else {
+                    throw DrawError("the board changed while it was put down, so nothing was", reason: ScriptError.Reason.busy.rawValue, hint: "try again")
+                }
             }
-            guard editor.adopt(copy, named: step, byAgent: false) else {
-                throw DrawError("the board changed while it was put down, so nothing was", reason: ScriptError.Reason.busy.rawValue, hint: "try again")
+        }
+        // One step with the widening, where a caller hasn't grouped the put already.
+        do {
+            try editor.undoHistory.group(step) {
+                for (id, board, box) in widening { editor.transact(on: board, step) { $0.update(id) { $0.box = box } } }
+                try layOut(planned, scripts, options: &options)
+                try drawn(options)
             }
+        } catch let error as DrawError {
+            throw error
+        } catch {
+            throw DrawError("\(error)", reason: ScriptError.Reason.internal.rawValue)
         }
         // What it made or restated on the board shown: the shapes it named, and any it made without a name to find them by; not the
         // arrows its edges drew between them (a table's keys), which go with what they join.
@@ -492,6 +515,32 @@ private struct Putting {
     }
 
     // MARK: Laying out
+
+    /// The shapes of the file a size widens that the put changes, by their id and board, with the box each is made: as wide as its
+    /// new lines read whole where it is narrower than that. Which it changes is the draw's to say (`Drawing.changes`), asked of
+    /// each run as it will be drawn; one that it can't read is left to the draw, which says why.
+    private func widenings(_ planned: [Planned], _ scripts: [(board: BoardID, script: Script, lines: [Int: Int])],
+                           implied: [BoardID: [Int: [DrawImpliedEdge]]], options: DrawOptions) -> [(ShapeID, BoardID, CGRect)] {
+        var wanted: [ShapeID: CGFloat] = [:]
+        for item in planned where !item.isNew {
+            guard let id = item.id, let size = block.sizes[item.original], size.widens, let box = editor.shape(inFile: id)?.box, box.width < size.width else { continue }
+            wanted[id] = size.width
+        }
+        guard !wanted.isEmpty else { return [] }
+        var found: [(ShapeID, BoardID, CGRect)] = []
+        for item in scripts {
+            var run = options
+            run.board = item.board
+            run.implied = implied[item.board] ?? [:]
+            guard let (board, names) = try? Drawing.board(for: item.script, in: editor, pinned: item.board), let reading = editor.reading(of: board),
+                  let drawing = try? Drawing(item.script, editor: editor, on: reading, fileNames: names, options: run, program: "canvas") else { continue }
+            for (id, width) in wanted where !found.contains(where: { $0.0 == id }) {
+                guard planned.contains(where: { $0.id == id && $0.board == item.board }), drawing.changes(id), let box = editor.shape(inFile: id)?.box else { continue }
+                found.append((id, item.board, CGRect(origin: box.origin, size: CGSize(width: width.rounded(.up), height: box.height))))
+            }
+        }
+        return found
+    }
 
     /// Measures the new shapes, lays the block's out in rows at draw's normal gap, lands the box around them as Insert lands a
     /// shape, and gives each its place (`DrawOptions.places`, by the line of its run's statement).

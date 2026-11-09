@@ -65,11 +65,14 @@ public struct CrossingArrows {
         guard !crossing.isEmpty else { return nil }
         var plan = Plan(editor: editor, route: route, movers: movers, source: source, destination: destination, delta: delta,
                         sourceDoc: sourceDoc, label: label)
+        plan.crossing = Set(crossing.map(\.id))
         for record in crossing {
             guard let end = ends[record.id] else { continue }
-            // The row the far end is at, which the end keeps wherever it is re-pointed (the binding's part rides `remappingReferences`).
-            let row = record.boundParts(in: registry).first { $0.shape == end.to }?.part
-            plan.add(record.id, from: end.from, to: end.to, row: row)
+            // The row the far end is at, which the end keeps wherever it is re-pointed (the binding's part rides `remappingReferences`),
+            // and the row the start is at, which the pill's line leaves from.
+            let bound = record.boundParts(in: registry)
+            let row = bound.first { $0.shape == end.to }?.part
+            plan.add(record.id, from: end.from, to: end.to, row: row, startRow: bound.first { $0.shape == end.from }?.part)
         }
         guard !plan.repoints.isEmpty else { return nil }
         self.source = source
@@ -151,6 +154,14 @@ public struct CrossingArrows {
 
     // MARK: Planning
 
+    /// What a crossing arrow's line is, for where its pill goes: the arrow, the row its start is at (if one), and whether it is a
+    /// line between rows (a key: the far row on the binding of a pill for its shape).
+    fileprivate struct Line {
+        let arrow: ShapeID
+        let startRow: PartID?
+        let level: Bool
+    }
+
     /// The decisions for every crossing arrow, in order, with what they share: the pills made for a shape serve every arrow that
     /// needs one, and each lands past the last beside the same start.
     @MainActor
@@ -170,6 +181,8 @@ public struct CrossingArrows {
 
         var pills: [(record: AnyShapeRecord, moves: Bool, placed: Bool)] = []
         var repoints: [Repoint] = []
+        /// The arrows this plan re-points: their labels are not where they are now once they are.
+        var crossing: Set<ShapeID> = []
         /// The pills this plan puts on the destination (`new`) and keeps on the origin (`away`), by the shape (and the row, for a pill
         /// for a row) each stands for.
         private var new: [PartAddress: ShapeID] = [:], away: [PartAddress: ShapeID] = [:], carriers: [ShapeID: ShapeID] = [:]
@@ -205,7 +218,9 @@ public struct CrossingArrows {
 
         /// Plans one arrow: the arrow goes where its start goes, so the end that is not the start is the one re-pointed. `part` is the
         /// row the end is at, if it is at one: kept on the binding wherever the end goes, and a pill of its own when it stands alone.
-        mutating func add(_ arrow: ShapeID, from start: ShapeID, to end: ShapeID, row part: PartID?) {
+        /// `startRow` is the row the start is at, if one: a pill already there is reused only where the line from that row to it
+        /// crosses no shape (else a fresh one is put down), and a pill for a row on the binding (a key) lands level with it first.
+        mutating func add(_ arrow: ShapeID, from start: ShapeID, to end: ShapeID, row part: PartID?, startRow: PartID? = nil) {
             let startMoves = movers.contains(start)
             // An end that is a pill is the shape it stands for.
             let subject = route.stoodFor(end, in: sourceDoc)?.shape ?? end
@@ -215,6 +230,8 @@ public struct CrossingArrows {
             let named = part.flatMap { part in editor.registry.parts(of: far)?.first { $0.id == part } }
             let row = named?.standsAlone == true && kind.map(editor.registry.standIns.makesRows) == true ? named : nil
             let key = PartAddress(subject, part: row?.id)
+            // A line between rows (the far row rides the binding): its pill lands level with the start's row first.
+            let line = Line(arrow: arrow, startRow: startRow, level: part != nil && row == nil)
             func repoint(to carrier: ShapeID, after: ShapeID? = nil) { repoints.append(Repoint(arrow: arrow, old: end, carrier: carrier, after: after)) }
             if startMoves {
                 // On the destination: the shape if it is there, a pill for it already there, else a new one beside the start.
@@ -226,11 +243,11 @@ public struct CrossingArrows {
                 let holder = finalContainer(of: start)
                 if let have = destinationPills(for: subject).first(where: {
                     destDoc[$0]?.kind == kind && route.row(of: $0, in: destDoc) == row?.id && containerOf($0) == holder
-                }) {
+                }), joinsClean(line, from: start, startMoves: true, to: have) {
                     if let carrier = carrier(for: subject, standing: far, in: kind) { repoint(to: carrier, after: have) }
-                } else if let made = new[key] {
+                } else if let made = new[key], joinsClean(line, from: start, startMoves: true, toPlanned: made) {
                     repoint(to: made)
-                } else if let made = newPill(for: far, row: row, kind: kind, beside: start, startMoves: true, container: holder) {
+                } else if let made = newPill(for: far, row: row, kind: kind, beside: start, startMoves: true, container: holder, line: line) {
                     new[key] = made
                     repoint(to: made)
                 }
@@ -243,11 +260,11 @@ public struct CrossingArrows {
                 guard let kind else { return }
                 let holder = kinds.isEmpty ? nil : sourceDoc.container(of: start, containingKinds: kinds)
                 if let have = route.existing(for: subject, row: row?.id, kind: kind, sharing: .any, near: start, in: sourceDoc, excluding: movers,
-                                             index: index()) {
+                                             index: index()), joinsClean(line, from: start, startMoves: false, to: have) {
                     repoint(to: have)
-                } else if let made = away[key] {
+                } else if let made = away[key], joinsClean(line, from: start, startMoves: false, toPlanned: made) {
                     repoint(to: made)
-                } else if let made = newPill(for: far, row: row, kind: kind, beside: start, startMoves: false, container: holder) {
+                } else if let made = newPill(for: far, row: row, kind: kind, beside: start, startMoves: false, container: holder, line: line) {
                     away[key] = made
                     repoint(to: made)
                 }
@@ -316,9 +333,12 @@ public struct CrossingArrows {
 
         /// A new pill for `far`, landed beside `start` (the start of the arrow, where it lands if it moves), clear of the shapes
         /// moved and of the pills planned already; its id, or nil where it can't be put down (no room, or a read-only frame it
-        /// would sit in).
+        /// would sit in). A pill for a line between rows (a key) lands where its line from the start's row is clean, level with
+        /// the row first (`Surroundings.landing(of:joinedFrom:of:)`), as a key's pill does; failing that, and for any other, in
+        /// the column beside the start, far enough out that the label its arrow carries (a channel's pill) shows with its line
+        /// either side of it, and a pill below another far enough down that their labels, halfway along, don't touch.
         private mutating func newPill(for far: AnyShapeRecord, row: PartName? = nil, kind: ShapeKind, beside start: ShapeID, startMoves: Bool,
-                                      container: ShapeID?) -> ShapeID? {
+                                      container: ShapeID?, line: Line? = nil) -> ShapeID? {
             let standIns = editor.registry.standIns
             guard canInsert, var made = row.map({ standIns.make(kind, standingFor: far.id, row: $0.id, label: $0.name) })
                     ?? standIns.make(kind, standingFor: far.id, label: label(far)) else { return nil }
@@ -327,20 +347,35 @@ public struct CrossingArrows {
             editor.registry.standIns.seat(&made, at: .file(container: container, board: board), in: surroundings.reading.shapes)
             guard let size = made.box?.size else { return nil }
             let nearBox = startMoves ? finalBox(of: start) : nil
-            let spot: StandInSpot, against: CGRect?
+            var avoiding = planned[board] ?? []
+            if startMoves { avoiding += movedFrames().filter { $0 != nearBox } }
+            if let line, line.level, let rowRect = rowRect(line, of: start, startMoves: startMoves),
+               let bounds = startMoves ? nearBox : surroundings.reading.shapes.geometry(of: start)?.bounds,
+               let clean = surroundings.landing(of: size, joinedFrom: rowRect, of: start, bounds: bounds, avoiding: avoiding, level: true,
+                                                labels: labels(at: start, startMoves: startMoves), inView: false),
+               !clean.above.contains(where: { isReadOnly($0, in: startMoves ? destDoc : sourceDoc) }) {
+                made.box = clean.rect
+                planned[board, default: []].append(clean.rect)
+                pills.append((made, startMoves, true))
+                return made.id
+            }
+            // The label the arrow carries (a channel's pill), as it is drawn now: the line shows either side of it.
+            let label = line.flatMap { sourceSurroundings()?.reading.shapes.geometry(of: $0.arrow)?.label }
+            let gap = max(GapName.normal.value, label.map { $0.width + 2 * PlacingStyle.labelEndRoom } ?? 0)
+            let below = max(LayoutProblem.impliedListStep, label.map { 2 * ($0.height + PlacingStyle.labelSpacing) - size.height } ?? 0)
+            var spot: StandInSpot, against: CGRect?
             if let previous = last[start] {
-                spot = StandInSpot(near: start, direction: .right, after: start, step: LayoutProblem.impliedListStep, level: .left)
+                spot = StandInSpot(near: start, direction: .right, after: start, step: below, level: .left)
                 against = previous
             } else if startMoves {
                 guard let nearBox else { return nil }
-                spot = StandInSpot(near: start, direction: .right, step: GapName.normal.value)
+                spot = StandInSpot(near: start, direction: .right, step: gap)
                 against = nearBox
             } else {
                 spot = route.spot(beside: start, edgeIs: .from, side: nil, in: surroundings.reading, staying: { !movers.contains($0) }, index: index())
+                spot.step = spot.after == nil ? max(spot.step, gap) : max(spot.step, below)
                 against = nil
             }
-            var avoiding = planned[board] ?? []
-            if startMoves { avoiding += movedFrames() }
             let landing = against.map { route.landing(of: size, at: spot, against: $0, in: surroundings, avoiding: avoiding) }
                 ?? route.landing(of: size, at: spot, in: surroundings, avoiding: avoiding)
             // A pill that would sit in a frame nobody may change goes unmade, rather than stopping the move.
@@ -351,6 +386,48 @@ public struct CrossingArrows {
             pills.append((made, startMoves, true))
             return made.id
         }
+
+        /// The row of `start` a line leaves from, where it will be (moved by the move's offset where the start moves).
+        private func rowRect(_ line: Line, of start: ShapeID, startMoves: Bool) -> CGRect? {
+            guard let part = line.startRow, let rect = editor.reading(of: source)?.shapes.geometry(of: start)?.parts.frame(part)?.rect else { return nil }
+            return startMoves ? rect.offsetBy(dx: delta.x, dy: delta.y) : rect
+        }
+
+        /// Whether `line` from `start`'s row to the pill `pill` already on the board it ends up on crosses no shape (the shapes moved
+        /// where they land among them): a pill is reused only then. A line from no row (an end at a shape as a whole) always is.
+        private mutating func joinsClean(_ line: Line, from start: ShapeID, startMoves: Bool, to pill: ShapeID) -> Bool {
+            guard line.startRow != nil, let rowRect = rowRect(line, of: start, startMoves: startMoves),
+                  let surroundings = surroundings(on: startMoves ? destination : source),
+                  let box = surroundings.reading.shapes.geometry(of: pill)?.bounds else { return true }
+            let bounds = startMoves ? finalBox(of: start) : surroundings.reading.shapes.geometry(of: start)?.bounds
+            return surroundings.joinsClean(rowRect, of: start, bounds: bounds, to: box, standIn: pill,
+                                           avoiding: (startMoves ? movedFrames() : []) + (planned[startMoves ? destination : source] ?? []).filter { $0 != box },
+                                           labels: labels(at: start, startMoves: startMoves), level: line.level)
+        }
+
+        /// The same for a pill this plan puts down already (for another arrow of the same shape).
+        private mutating func joinsClean(_ line: Line, from start: ShapeID, startMoves: Bool, toPlanned made: ShapeID) -> Bool {
+            guard line.startRow != nil, let rowRect = rowRect(line, of: start, startMoves: startMoves),
+                  let box = pills.first(where: { $0.record.id == made })?.record.box,
+                  let surroundings = surroundings(on: startMoves ? destination : source) else { return true }
+            let bounds = startMoves ? finalBox(of: start) : surroundings.reading.shapes.geometry(of: start)?.bounds
+            return surroundings.joinsClean(rowRect, of: start, bounds: bounds, to: box,
+                                           avoiding: (startMoves ? movedFrames() : []) + (planned[startMoves ? destination : source] ?? []).filter { $0 != box },
+                                           labels: labels(at: start, startMoves: startMoves), level: line.level)
+        }
+
+        /// The labels the arrows at `start` that this move leaves as they are carry (the ones that cross are re-pointed, and their
+        /// labels are not where they are now), where they will be: a pill's line keeps clear of them.
+        private mutating func labels(at start: ShapeID, startMoves: Bool) -> [CGRect] {
+            guard let surroundings = surroundings(on: source) else { return [] }
+            let offset = startMoves ? delta : .zero
+            return (index().tied[start] ?? []).compactMap { tie in
+                crossing.contains(tie.arrow) ? nil : surroundings.reading.shapes.geometry(of: tie.arrow)?.label?.offsetBy(dx: offset.x, dy: offset.y)
+            }
+        }
+
+        /// The origin read, for what an arrow carries as it is drawn there now (its label).
+        private mutating func sourceSurroundings() -> Surroundings? { surroundings(on: source) }
 
         /// The boxes of what moves, where they will be: what a pill landing beside one of them keeps clear of.
         private mutating func movedFrames() -> [CGRect] {

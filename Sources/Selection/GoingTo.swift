@@ -92,12 +92,13 @@ extension CanvasEditor {
     /// the least pan that brings them in, `SelectionStyle.revealMargin` in from the edges, at the zoom it has
     /// (`animateCamera(toShow:…)`), never centering them, so what was beside them in view stays there; and
     /// `keeping` (the shape a new one was put down beside), when the two fit in view together, is kept in view
-    /// with them. Shapes too big to fit at that zoom are fitted, farther out (never closer, which `reveal`
+    /// with them; failing that, `orKeeping` (a part of it: the row a card hangs from) where that fits. Shapes too big to fit at that zoom are fitted, farther out (never closer, which `reveal`
     /// brings small shapes to); with `zoomingOut` false they are panned to, their top-left in view, and the
     /// zoom kept. Does nothing before the view has a size, or when none of the shapes has bounds.
-    public func revealIfOffscreen(_ ids: [ShapeID], keeping: [ShapeID] = [], zoomingOut: Bool = true) {
+    public func revealIfOffscreen(_ ids: [ShapeID], keeping: [ShapeID] = [], orKeeping second: CGRect? = nil, zoomingOut: Bool = true) {
         guard let bounds = shapeContext.bounds(of: ids),
-              revealIfOffscreen(rect: bounds, keeping: shapeContext.bounds(of: keeping), withRowAbove: true, zoomingOut: zoomingOut, settling: false)
+              revealIfOffscreen(rect: bounds, keeping: shapeContext.bounds(of: keeping), orKeeping: second, withRowAbove: true, zoomingOut: zoomingOut,
+                                settling: false)
         else { return }
         settleIfSelected(ids)
     }
@@ -116,8 +117,8 @@ extension CanvasEditor {
     /// then is, `settling`), answering whether it moved the camera; the row above it counted only `withRowAbove`
     /// (a shape's, never a part's).
     @discardableResult
-    func revealIfOffscreen(rect bounds: CGRect, keeping neighbour: CGRect? = nil, withRowAbove: Bool = false, zoomingOut: Bool = true,
-                           settling: Bool = true) -> Bool {
+    func revealIfOffscreen(rect bounds: CGRect, keeping neighbour: CGRect? = nil, orKeeping second: CGRect? = nil, withRowAbove: Bool = false,
+                           zoomingOut: Bool = true, settling: Bool = true) -> Bool {
         let view = unobscuredViewport, camera = cameraTarget
         guard !view.isEmpty, !bounds.isNull, bounds.isFinite else { return false }
         let above = withRowAbove ? SelectionStyle.revealRowAbove / camera.zoom : 0
@@ -129,6 +130,7 @@ extension CanvasEditor {
         func fits(_ rect: CGRect) -> Bool { rect.width * camera.zoom <= room.width && rect.height * camera.zoom <= room.height }
         if fits(shown) {
             let together = neighbour.map { withRow($0.union(bounds)) }.flatMap { fits($0) ? $0 : nil }
+                ?? second.map { withRow($0.union(bounds)) }.flatMap { fits($0) ? $0 : nil }
             animateCamera(toShow: together ?? shown, margin: margin, duration: SelectionStyle.revealDuration)
         } else if zoomingOut {
             animateCamera(toFit: bounds, inset: SelectionStyle.revealInset, maxZoom: camera.zoom, duration: SelectionStyle.revealDuration)

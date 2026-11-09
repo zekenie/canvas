@@ -29,7 +29,8 @@ extension CanvasEditor {
             let row = bound.first { $0.shape == far }?.part
             let name = row.flatMap { part in registry.parts(of: farRecord)?.first { $0.id == part } }
             let label = name?.name ?? registry.mentionAppearance(of: farRecord)?.label ?? ""
-            guard let placed = route.placePill(standingFor: far, row: name?.standsAlone == true ? row : nil, label: label, beside: near,
+            guard let placed = route.placePill(standingFor: far, row: name?.standsAlone == true ? row : nil, onBinding: name?.standsAlone == true ? nil : row,
+                                               label: label, beside: near,
                                                from: bound.first { $0.shape == near }?.part, edgeIs: place, sharing: .any, avoiding: avoiding, reading: transaction.document,
                                                planned: planned, verdicts: verdicts, in: self),
                   (try? placed.claim(in: &transaction, registry: registry)) != nil, let pill = try? placed.put(in: &transaction),

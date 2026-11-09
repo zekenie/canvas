@@ -41,6 +41,42 @@ import TestKit
         expectEqual(b.frame(beside)?.origin, CGPoint(x: 360, y: 100))
         b.press(.escape)
     },
+    test("a tally laid out wider while it's typed is painted, and hit, above the tally beside it that its widening overlaps, back in its place as editing ends") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green"])
+        let beside = b.tally("pears", ["bosc"], at: CGPoint(x: 360, y: 100))
+        let overlap = CGRect(x: 360, y: 100, width: 40, height: 40)
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [beside], "apart at rest")
+        b.begin(id)
+        b.type("w")
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [beside], "not wider yet: nothing of it where the pears are")
+        b.type(String(repeating: "w", count: 60))
+        expect((b.frame(id)?.width ?? 0) > 300, "laid out across the pears")
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [beside, id], "painted above what it now overlaps")
+        expectEqual(b.editor.shape(at: CGPoint(x: 370, y: 125)), id, "and hit there first")
+        expectEqual(b.frame(beside)?.origin, CGPoint(x: 360, y: 100), "nothing moved")
+        b.press(.escape)
+        expectEqual(b.editor.paintOrder(in: CGRect(x: 100, y: 100, width: 400, height: 60)).map(\.id), [id, beside], "back in its place")
+    },
+    test("a tally laid out taller by its waiting line is painted, and hit, above the tally under it, and says where its room beyond its box is, for what is drawn over the shapes (pills) to leave out; back as editing ends") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green"])                                  // stored 240 by 40, laid out to 160
+        let below = b.tally("pears", ["bosc"], at: CGPoint(x: 100, y: 170))
+        let overlap = CGRect(x: 120, y: 165, width: 40, height: 10)
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [below], "apart at rest")
+        expect(b.editor.editedShapeOverflow == nil, "nothing edited: no room beyond a box")
+        b.begin(id)
+        expectEqual(try require(b.frame(id)).maxY, 180, "the waiting line drawn: a line taller")
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [below, id], "painted above what its waiting line overlaps")
+        expectEqual(b.editor.shape(at: CGPoint(x: 130, y: 170)), id, "and hit there first")
+        let overflow = try require(b.editor.editedShapeOverflow)
+        expectEqual(overflow.id, id)
+        expectEqual(overflow.areas, [CGRect(x: 100, y: 140, width: 240, height: 40)], "its room under the box it stores, the waiting line's")
+        expectEqual(b.frame(below)?.origin, CGPoint(x: 100, y: 170), "nothing moved")
+        b.press(.escape)
+        expectEqual(b.editor.paintOrder(in: overlap).map(\.id), [below], "back in its place")
+        expect(b.editor.editedShapeOverflow == nil)
+    },
     test("a line wider than the tally, committed, pushes only what is under the tally at rest, never what is under its widening") {
         let b = try Bench()
         let id = b.tally("apples", ["red", "green"])                                  // 100…360 across, ends at 160

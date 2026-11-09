@@ -5,13 +5,16 @@ import Arrows
 import CanvasTesting
 @_spi(Host) import CanvasUI
 import Connections
+import Draw
 import Engineering
 import Geometry
+import LanguageModels
 import LineRows
 import Palette
 import References
 import Selection
 import ShippedTesting
+import SlashCommands
 import TestKit
 import TextEditing
 import Titles
@@ -433,9 +436,47 @@ private let stripeAPI = #"""
         let row = try require(rows(editor, "orders API").last?.id)
         let calls = try require(arrows(editor).first { $0[ChannelProperty.self] == Calls.id })
         try expectClean(calls.id, from: api, row: row, in: editor, view: false, "draw's edge")
+        // connect new-4: the calls line runs under no label another arrow at the API carries (the writes pill), or it reads as labeled by it.
+        if case .level(let cubic, _, _) = try require(editor.arrowGeometry(of: calls.id)).path {
+            for other in arrows(editor) where other.id != calls.id {
+                guard let label = editor.shapeContext.geometry(of: other.id)?.label else { continue }
+                expect(!cubic.flattened().contains { label.insetBy(dx: 1, dy: 1).contains($0) }, "the calls line under another arrow's label \(label)")
+            }
+        }
         let ids = Set(editor.document.shapes.map(\.id))
         try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls"#)
         expectEqual(Set(editor.document.shapes.map(\.id)), ids, "drawn again: nothing twice")
+    },
+    test("connect new-3: the API moved to storefront, the pills standing for refunds and payments land far enough out that each line shows either side of its channel's label, and the labels of the stacked lines don't touch") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"""
+            api "orders API" server: "api.shop.dev/v1 bearer" endpoints: "GET /orders/{id}\nPOST /orders/{id}/refunds"
+            table "refunds" right of "orders API" (gap: 140) columns: "id uuid pk\namount_cents int"
+            table "payments" below "refunds" (gap: 40) columns: "id uuid pk\namount_cents int"
+            subboard "storefront" below "orders API" (gap: 120)
+            edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
+            edge "orders API"."POST /orders/{id}/refunds" -> "payments" channel: reads
+            """#, on: editor)
+        let api = try require(shape(editor, "orders API")), storefront = try require(shape(editor, "storefront"))
+        expect(editor.slashCommands?.run("move-to", on: api.id, with: SlashArguments([.shape(storefront.id, label: "storefront")])) ?? false)
+        let board = try require(editor.file.board(containing: api.id))
+        expect(board != .root, "the API is on storefront's board")
+        expect(editor.showBoard(board))
+        let start = try require(editor.shapeContext.geometry(of: api.id)?.bounds)
+        let channeled = arrows(editor).filter { $0[ChannelProperty.self] != nil }
+        expectEqual(channeled.count, 2, "writes and reads kept")
+        var labels: [CGRect] = []
+        for arrow in channeled {
+            let label = try require(editor.shapeContext.geometry(of: arrow.id)?.label, "the channel's pill")
+            let pill = try require(editor.shapeContext.geometry(of: try require(arrow.props.end.binding?.shapeID))?.bounds)
+            expect(pill.minX - start.maxX >= label.width + 2 * PlacingStyle.labelEndRoom - 1, "room for the label and a line either side: \(pill.minX - start.maxX) for \(label.width)")
+            labels.append(label)
+        }
+        labels.sort { $0.minY < $1.minY }
+        // The pills are spaced so the labels halfway along the lines are `labelSpacing` apart; the lines' ends are not exactly at the
+        // pills' middles, so a little less: never touching, which the first walk's picture had them.
+        expect(labels[1].minY - labels[0].maxY >= PlacingStyle.labelSpacing / 2, "the stacked labels apart: \(labels)")
     },
     test("connect 24: in one script, a clean pill is in the way of a later pill, and of a note the script restates taller afterwards: neither lands on it") {
         let w = try EmptyBoardWindow()

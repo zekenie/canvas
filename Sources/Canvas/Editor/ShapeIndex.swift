@@ -524,17 +524,21 @@ final class ShapeIndex {
             grid?.addPosition()
         }
         paintList!.lastPlain = lastPlain
-        // Each below-anchored shape goes in just before its anchor, after any other there already (the order a build gives).
-        // Everything from there on moves up a place, costing the arrays' length and no shape's extent; the grid, which
-        // files positions, is made again when next a search needs it.
+        // Each below-anchored shape goes in just before its anchor, after any other there already (the order a build gives),
+        // in document order: each is moved from where it is now, never whatever is last (with several in one commit, the last
+        // is another of them). Everything between the two places moves a place, costing the arrays' length and no shape's
+        // extent; the grid, which files positions, is made again when next a search needs it.
         for (index, anchor) in beneath {
             guard let at = document.index(of: anchor.shape) else { continue }
-            let place = paintList!.positions[at]
-            let last = paintList!.order.removeLast()
-            paintList!.order.insert(last, at: place)
-            paintList!.extents.insert(paintList!.extents.removeLast(), at: place)
-            paintList!.hitMargins.insert(paintList!.hitMargins.removeLast(), at: place)
-            for position in place..<paintList!.order.count { paintList!.positions[paintList!.order[position]] = position }
+            let from = paintList!.positions[index]
+            let order = paintList!.order.remove(at: from), extent = paintList!.extents.remove(at: from)
+            let margin = paintList!.hitMargins.remove(at: from)
+            // The anchor's place once this one is out of the list.
+            let anchorPlace = paintList!.positions[at], place = anchorPlace > from ? anchorPlace - 1 : anchorPlace
+            paintList!.order.insert(order, at: place)
+            paintList!.extents.insert(extent, at: place)
+            paintList!.hitMargins.insert(margin, at: place)
+            for position in min(from, place)...max(from, place) { paintList!.positions[paintList!.order[position]] = position }
             paintList!.anchors[document.shapes[index].id] = .some(anchor)
             grid = nil
         }

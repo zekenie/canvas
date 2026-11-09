@@ -319,6 +319,54 @@ private let payments = """
         let t3 = try require(table(editor, "t3"))
         expectEqual(t3.props.columns.map(\.name), ["id", "name"], "the change undone, not an empty step")
     },
+    test("paste new-1: a schema's keys pasted in one step are each painted just under their own table, as the whole list built again puts them; none above a card it crosses") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        pasteboardHolds("""
+            CREATE TABLE categories (id uuid PRIMARY KEY, parent_id uuid REFERENCES categories (id), name text);
+            CREATE TABLE customers (id uuid PRIMARY KEY, email character varying(255) NOT NULL, full_name text);
+            CREATE TABLE addresses (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers (id), line1 text);
+            CREATE TABLE products (id uuid PRIMARY KEY, category_id uuid REFERENCES categories (id), sku text);
+            CREATE TABLE orders (id uuid PRIMARY KEY, customer_id uuid NOT NULL REFERENCES customers (id),
+                shipping_address_id uuid REFERENCES addresses (id), total_cents int);
+            CREATE TABLE order_items (id uuid PRIMARY KEY, order_id uuid NOT NULL REFERENCES orders (id),
+                product_id uuid NOT NULL REFERENCES products (id), qty int);
+            """)
+        expect(commandV(w))
+        let kept = editor.paintOrder().map(\.id)
+        let arrows = editor.document.shapes.filter { $0.kind == Arrow.kind }
+        expectEqual(arrows.count, 7, "every key drawn")
+        for arrow in arrows {
+            guard let typed = arrow.typed(as: Arrow.self), let from = typed.props.start.binding?.shapeID, let to = typed.props.end.binding?.shapeID,
+                  let at = kept.firstIndex(of: arrow.id), let a = kept.firstIndex(of: from), let b = kept.firstIndex(of: to) else { continue }
+            expect(at < min(a, b) || from == to, "a key under both its tables")
+            expectEqual(editor.document[kept[at + 1]]?.kind == Arrow.kind || [from, to].contains(kept[at + 1]), true, "just under one of its own")
+        }
+        editor.undo()
+        editor.redo()
+        expectEqual(editor.paintOrder().map(\.id), kept, "the order the list built afresh gives")
+    },
+    test("paste new-2: pasted again with a column retyped longer, the table it updates is widened to read whole, in Paste SQL's step; never narrowed") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        pasteboardHolds("CREATE TABLE shipments (id uuid PRIMARY KEY, tracking_number character varying(64) NOT NULL);")
+        expect(commandV(w))
+        let shipments = try require(table(editor, "shipments")).id
+        editor.transact { $0.update(shipments) { $0.box?.size.width = 260 } }
+        editor.undoHistory.seal()
+        pasteboardHolds("CREATE TABLE shipments (id uuid PRIMARY KEY, tracking_number character varying(64) NOT NULL, delivered_at timestamp with time zone);")
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Updated Table")
+        let width = try require(editor.document[shipments]?.box?.width)
+        expect(width > 260, "widened to its new widest line: \(width)")
+        expectEqual(undoTitle(w.window), "Undo Paste SQL")
+        editor.undo()
+        expectEqual(editor.document[shipments]?.box?.width, 260, "one Undo takes the update and the widening")
+    },
     test("paste 04: pasted again with only a key re-aimed or added, the table the key starts from is what changed: said \"Updated Table\", and it alone selected") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

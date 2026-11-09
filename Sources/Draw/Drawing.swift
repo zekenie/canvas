@@ -81,8 +81,9 @@ struct ShapeItem {
     /// pushed or pushing, and put down in or out of the containers it lands on as any shape is.
     var exact: CGPoint?
     /// For a pill landed where its line from a row of a board shape is clean (`Surroundings.landing(of:joinedFrom:of:)`): the shape
-    /// and the row, so it can be landed again where a shape the run restates, said after it, grows into the spot.
-    var landedFrom: (near: ShapeID, row: PartID)?
+    /// and the row, so it can be landed again where a shape the run restates, said after it, grows into the spot; and whether its
+    /// line is one between rows (a key: its far row on the binding), landed level with the row first.
+    var landedFrom: (near: ShapeID, row: PartID, level: Bool)?
 
     /// A box a placement names, found.
     enum Found {

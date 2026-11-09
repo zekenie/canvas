@@ -94,6 +94,32 @@ let musterM = CGRect(x: 460, y: 400, width: 200, height: 80)
         b.h.release()
         expectEqual(b.h.editor.hintedPart, nil)
     },
+    test("a row's resting dot isn't drawn on a side where an arrow ends at that row (its mark is there); the other side's is, and hovered it shows") {
+        let b = try RowBoard()
+        b.drag(fromRow: 1, to: RowBoard.row(0, of: rosterR))
+        expectEqual(b.board.arrows.count, 1)
+        b.h.editor.selection = nil
+        let size = CGSize(width: 800, height: 600), row = RowBoard.row(1, of: rosterL)
+        let right = CGPoint(x: rosterL.maxX + 12, y: row.y), left = CGPoint(x: rosterL.minX - 12, y: row.y)
+        let middle = { (center: CGPoint) in CGRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4) }
+        b.h.move(to: CGPoint(x: 380, y: 520))
+        let away = renderBitmap(b.h.editor, size: size)
+        b.h.move(to: row)
+        let shown = renderBitmap(b.h.editor, size: size)
+        expect(changedPixels(away, shown, in: middle(left)) > 0, "the left dot, where nothing ends, at rest")
+        expectEqual(changedPixels(away, shown, in: middle(right)), 0, "none on the right, where the arrow leaves the row")
+        // The other roster's row, where the arrow ends on its left: the same.
+        let far = RowBoard.row(0, of: rosterR)
+        b.h.move(to: far)
+        let farShown = renderBitmap(b.h.editor, size: size)
+        expectEqual(changedPixels(away, farShown, in: middle(CGPoint(x: rosterR.minX - 12, y: far.y))), 0, "none where it ends")
+        expect(changedPixels(away, farShown, in: middle(CGPoint(x: rosterR.maxX + 12, y: far.y))) > 0, "the free side's")
+        // Hovered, the taken side's dot shows, for a drag of another arrow from it.
+        b.h.move(to: row)
+        b.h.move(to: right)
+        let hovered = renderBitmap(b.h.editor, size: size)
+        expect(changedPixels(away, hovered, in: middle(right)) > 0, "hovered, it shows")
+    },
     test("let go on its own row it draws nothing; on another row of its roster, a key with both ends on the right") {
         let b = try RowBoard()
         b.drag(fromRow: 1, to: RowBoard.row(1, of: rosterL))

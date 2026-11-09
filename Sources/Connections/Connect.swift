@@ -157,7 +157,7 @@ extension CanvasEditor {
                     return nil
                 }
                 let alone = part?.standsAlone == true && verdicts.kind(for: far).map { registry.standIns.makesRows($0.kind) } == true
-                guard let placed = route.placePill(standingFor: target.shape, row: alone ? part?.id : nil,
+                guard let placed = route.placePill(standingFor: target.shape, row: alone ? part?.id : nil, onBinding: alone ? nil : part?.id,
                                                    label: alone ? part?.name ?? "" : registry.mentionAppearance(of: far)?.label ?? "",
                                                    beside: source.shape, from: source.part, edgeIs: .from, sharing: .any, verdicts: verdicts, in: self) else {
                     refuseChanges(to: ids)

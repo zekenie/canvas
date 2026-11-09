@@ -565,6 +565,9 @@ struct AdornmentOverlay: CanvasOverlay {
         }
         var slots: [AdornmentLayout.Slot?] = []
         let isDark = AdornmentStyle.isDarkAppearance()
+        // The shape being edited, laid out beyond its box (a line typed longer, its waiting line), draws over what it overlaps: no
+        // other shape's adornment is drawn across that room until the caret leaves, which would cover its outline and rows.
+        let overflow = editing == nil ? nil : context.editor.editedShapeOverflow
         for record in records {
             let skeleton = context.drawsSkeleton(of: record.id), hasTab = tabs?.tabs[record.id] != nil
             // The area is the widest reach any shape has: nothing is made for a shape whose own does not reach the view.
@@ -584,6 +587,7 @@ struct AdornmentOverlay: CanvasOverlay {
                 let placed = slot.lead == nil ? slot.worldRect(in: drawn, scale: scale) : slot.worldRect(in: anchor, scale: scale).offsetBy(dx: offset.x, dy: offset.y)
                 guard placed.insetBy(dx: -AdornmentLayout.slotMargin * unit, dy: -AdornmentLayout.slotMargin * unit)
                     .intersects(context.visibleRect) else { continue }
+                if let overflow, record.id != overflow.id, overflow.areas.contains(where: { $0.intersects(placed) }) { continue }
                 let adornment = laidOut.shown[index]
                 var look = AdornmentStyle.Look.normal
                 if adornment.isClickable, adornment.isButton(pressed, on: record.id, isOverflow: slot.isOverflow) {

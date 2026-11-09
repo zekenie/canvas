@@ -114,8 +114,9 @@ public struct ArrowGeometry: Sendable {
             let chord = e.point - s.point
             bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
             let clear = ArrowStyle.levelClearReach(ofMark: max(markReach.start, markReach.end))
-            let reachStart = s.normal.map { Self.reach($0, from: s.point, to: e.point, clearing: clear) } ?? 0
-            let reachEnd = e.normal.map { Self.reach($0, from: e.point, to: s.point, clearing: clear) } ?? 0
+            // An end with a mark of its own reaches far enough for its mark to lie on the level stretch, the other end ahead or not.
+            let reachStart = s.normal.map { max(Self.reach($0, from: s.point, to: e.point, clearing: clear), Self.markReach($0, from: s.point, to: e.point, mark: markReach.start)) } ?? 0
+            let reachEnd = e.normal.map { max(Self.reach($0, from: e.point, to: s.point, clearing: clear), Self.markReach($0, from: e.point, to: s.point, mark: markReach.end)) } ?? 0
             let plain = Cubic(s.point, s.point + (s.normal ?? .zero) * reachStart, e.point + (e.normal ?? .zero) * reachEnd, e.point)
             bendOrigin = plain.point(at: 0.5)
             // tldraw's bend: both controls move by 4/3 of it across the chord, so the middle moves exactly by it.
@@ -178,6 +179,16 @@ public struct ArrowGeometry: Sendable {
 
     /// Whether it is drawn as a level curve (an end at a row its shape lists).
     public var isLevel: Bool { if case .level = path { true } else { false } }
+
+    /// How far a level curve's end that carries a mark reaching `mark` along the line reaches at least, whatever is ahead: far
+    /// enough that the line is still level where the mark stops, but never so far that the curve leaves the way between the
+    /// ends or loops wide (`ArrowStyle.levelMarkReach`), from how far across and ahead its way out the other end is. 0 for an
+    /// end with no mark.
+    static func markReach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint, mark: CGFloat) -> CGFloat {
+        guard mark > 0 else { return 0 }
+        let offset = other - point
+        return ArrowStyle.levelMarkReach(ofMark: mark, across: normal.x * offset.y - normal.y * offset.x, along: normal.dot(offset))
+    }
 
     /// How far a level curve's end reaches out along the way out of its side before it turns, from where it is to the other
     /// end's: half the way when the other end is ahead, far less when it is behind (a C rather than an S), never under

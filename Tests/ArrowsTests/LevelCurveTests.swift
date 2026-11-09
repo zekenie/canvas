@@ -396,6 +396,51 @@ private let scale: CGFloat = 2
         let id = plain.h.add(Arrow(start: plain.end(plain.left, 0), end: plain.end(plain.left, 1)))
         expectEqual(try curve(plain.geometry(id)).control1.x, 324)
     },
+    test("an end with a mark reaches far enough that its mark lies level even with the other end far across, so two keys at one row end lay their bars on each other") {
+        // Two keys from S's rows, 330 below L and draw's normal gap (80) past it, end at L's row 1 (both at its right side, (300, 140)).
+        let b = try LevelBoard(looks: true)
+        let rows = ["a_id", "b_id"].map { RosterRow(name: $0) }
+        let far = b.h.add(Roster(CGRect(x: 380, y: 460, width: 200, height: 60), rows: rows))
+        let end = { (index: Int) -> ArrowTerminal in
+            .bound(ArrowBinding(shapeID: far, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: rows[index].id))
+        }
+        let keys = [b.h.add(Arrow(start: end(0), end: b.end(b.left, 1))), b.h.add(Arrow(start: end(1), end: b.end(b.left, 1)))]
+        var inwards: [CGPoint] = [], bars: [CGPoint] = []
+        for key in keys {
+            let geometry = try b.geometry(key)
+            expectEqual(geometry.end, CGPoint(x: 300, y: 140), "at L's row's right side")
+            // Where the bars and their clearance stop, 17.5 + 6 in: still level (rise over run at most 0.2).
+            let (_, inward) = geometry.point(23.5, along: .end)
+            expect(abs(inward.y) <= 0.2 * abs(inward.x) + 1e-6, "level where the bars stop: \(inward)")
+            inwards.append(inward)
+            bars.append(geometry.point(17.5, along: .end).point)
+        }
+        expect(bars[0].distance(to: bars[1]) < 1, "the far bars of both keys on each other: \(bars)")
+        expect(abs(inwards[0].y - inwards[1].y) < 0.1, "and square to the same line: \(inwards)")
+        // Their crow's feet at S's rows lie level too.
+        for key in keys {
+            let (_, inward) = try b.geometry(key).point(19, along: .start)
+            expect(abs(inward.y) <= 0.2 * abs(inward.x) + 1e-6, "the crow's foot level: \(inward)")
+        }
+    },
+    test("a marked end's reach never takes the line past the sides it runs between: tables 30 apart stay tilted rather than overshot, and a C between two right sides stays small") {
+        let b = try LevelBoard(looks: true)
+        let rows = ["a_id"].map { RosterRow(name: $0) }
+        // Facing sides 30 apart, 330 across: the line keeps between them.
+        let near = b.h.add(Roster(CGRect(x: 330, y: 460, width: 200, height: 60), rows: rows))
+        let side = { (shape: ShapeID, anchor: CGFloat) -> ArrowTerminal in
+            .bound(ArrowBinding(shapeID: shape, normalizedAnchor: CGPoint(x: anchor, y: 0.5), isPrecise: true, isExact: true, part: rows[0].id))
+        }
+        let across = b.h.add(Arrow(start: side(near, 0), end: b.end(b.left, 1)))
+        let xs = try curve(b.geometry(across)).flattened().map(\.x)
+        expect((xs.min() ?? 0) >= 300 - 1 && (xs.max() ?? 0) <= 330 + 1, "between L's side (300) and the table's (330): \(xs.min() ?? 0) to \(xs.max() ?? 0)")
+        // A C: another table whose right side is at L's, 320 below: the loop reaches out less than twice the clearing reach.
+        let stacked = b.h.add(Roster(CGRect(x: 100, y: 460, width: 200, height: 60), rows: rows))
+        let loop = b.h.add(Arrow(start: side(stacked, 1), end: b.end(b.left, 1)))
+        let loopXs = try curve(b.geometry(loop)).flattened().map(\.x)
+        let swing = max((loopXs.max() ?? 0) - 300, 100 - (loopXs.min() ?? 0))
+        expect(swing <= 64, "the C swings out \(swing) past the tables' side, not wide")
+    },
     test("VoiceOver says what the marks say after where the arrow runs: many to one, one to one, many to zero or one") {
         var b = try LevelBoard(looks: true)
         let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2)))
