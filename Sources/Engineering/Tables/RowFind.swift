@@ -15,18 +15,6 @@ extension PluginID {
     public static let engineeringFind: PluginID = "engineering-find"
 }
 
-/// The kit's rows, for Find: a plugin value of its own, after Find and the kit's plugin, so a list without Find leaves it
-/// out.
-public struct EngineeringFindPlugin: ListedPlugin {
-    public init() {}
-    public var id: PluginID { .engineeringFind }
-
-    public func register(into registrar: inout PluginRegistrar) {
-        registrar.service { EnumUsers(editor: $0) }
-        RowFind.register(into: &registrar)
-    }
-}
-
 /// Which tables of the file name which shapes in a column's type (an enum, whether it is in the file or not), so a commit
 /// that reaches a shape reads again the tables that name it, wherever they are, at the cost of what the commit touched.
 /// Built from the file when Find first asks, and followed on every commit after; a file put in place is read afresh.

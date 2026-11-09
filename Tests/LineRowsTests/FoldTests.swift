@@ -223,9 +223,9 @@ import TextEditing
     },
     test("Keys walk a fold's lines: ⌥Tab visits a closed header and +N in reading order, ⌥⇧Tab undoes each, Escape goes back to the shape; each shows, named") {
         let b = try Bench()
-        let id = b.tally("fruit", ["fruit/", "red 3", "green", "veg/", "kale 2", "plum"])
+        // Three rows under no header (the first two kept, the third behind +N) and two groups, each closed by ⌃⌘↑.
+        let id = b.tally("fruit", ["pear", "fig", "kiwi", "fruit/", "red 3", "green", "veg/", "kale 2", "plum"])
         b.editor.rowFolds?.fold([id])
-        b.editor.rowFolds?.setClosed(true, header: b.rows(id)[0].id, of: id)
         b.editor.selectedShapeIDs = [id]
         let titles = b.editor.shapeParts(of: id).map(\.title)
         expect(titles.count >= 2, "a closed header and +N are parts: \(titles)")

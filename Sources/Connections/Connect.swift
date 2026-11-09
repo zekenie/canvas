@@ -212,6 +212,10 @@ extension CanvasEditor {
 
 @MainActor
 public enum ConnectionsStyle {
+    /// A bundle's lead's pill: its channel's title and how many it draws for, "writes · 9".
+    public static func bundleTitle(_ title: String, count: Int) -> String { "\(title) · \(count)" }
+    /// What VoiceOver calls a bundle's lead in its kind's place: "9 arrows".
+    public static func bundleKind(_ count: Int) -> String { "\(count) arrows" }
     static let connect = "Connect"
     /// The picker's item in the Shape menu, on one shape.
     static let connectTo = "Connect To…"

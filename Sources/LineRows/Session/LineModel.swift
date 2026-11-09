@@ -57,6 +57,9 @@ public protocol LineModel {
     /// Whether a row heads the rows after it, up to the next that does (a path prefix's header): a fold can close it. By
     /// default none does.
     func isHeader(_ row: Row) -> Bool
+    /// Whether row `index` of `rows`, folded away, shows while Find is open for hits at `ranges` of its found text (UTF-16): by
+    /// default for any. An API's endpoint doesn't for hits only in its group's prefix, which are drawn on the group's header.
+    func peeks(_ row: Row, at index: Int, of rows: [Row], hitAt ranges: [Range<Int>]) -> Bool
     /// The widest the shape is laid out while a line typed in it is wider than it is (world units), past which the line
     /// slides in its field; nil, by default, for no limit.
     var widestLine: CGFloat? { get }
@@ -135,6 +138,7 @@ extension LineModel {
     public func merged(_ read: Row, onto held: Row) -> Row { read }
     public func marked(_ shape: ShapeRecord<Props>, in reading: LayoutReading) -> Set<PartID> { [] }
     public func isHeader(_ row: Row) -> Bool { false }
+    public func peeks(_ row: Row, at index: Int, of rows: [Row], hitAt ranges: [Range<Int>]) -> Bool { true }
     public var widestLine: CGFloat? { nil }
     public func wholeWidth(of props: Props, in editor: CanvasEditor) -> CGFloat? { nil }
 

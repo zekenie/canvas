@@ -500,6 +500,9 @@ public struct AdornmentContext {
     let editor: CanvasEditor
     public var registry: Registry { editor.registry }
     public func service<S: EditorService>(_: S.Type) -> S? { editor.service(S.self) }
+    /// A layout input of the shape, as the editor lays it out now: read only by one whose provider tells Adornments when it
+    /// changes (a connection's bundle: `editor.adornmentsDidChange(for:)`).
+    public func layoutInput<V>(_ key: LayoutInputKey<V>, of record: AnyShapeRecord) -> V? { editor.shapeContext.layoutInput(key, of: record) }
 }
 
 // MARK: The extension point

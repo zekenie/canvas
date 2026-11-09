@@ -238,9 +238,13 @@ enum ArrowLabels {
 
     /// The label of a shape as its context lays it out: the names its mentions show now, and the lead Adornments says
     /// the arrow has.
-    static func laid(of shape: ShapeRecord<Arrow>, on geometry: ArrowGeometry, in context: ShapeContext, editing: Bool = false) -> Laid? {
-        laid(of: shape.props, on: geometry, names: context.mentionNames(of: shape.id), editing: editing,
-             lead: context.layoutInput(AdornmentLead.faces, of: shape)?.sizes)
+    /// `position`: where along the body it goes in place of the arrow's own (a fanned arrow's, slid toward its other end).
+    static func laid(of shape: ShapeRecord<Arrow>, on geometry: ArrowGeometry, in context: ShapeContext, editing: Bool = false,
+                     position: CGFloat? = nil) -> Laid? {
+        var arrow = shape.props
+        if let position { arrow.labelPosition = position }
+        return laid(of: arrow, on: geometry, names: context.mentionNames(of: shape.id), editing: editing,
+                    lead: context.layoutInput(AdornmentLead.faces, of: shape)?.sizes)
     }
 
     /// The label as a shape's kept geometry has it: nil for none.

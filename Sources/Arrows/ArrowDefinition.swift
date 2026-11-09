@@ -74,12 +74,19 @@ extension ArrowDefinition: ShapeDefinition {
     /// Open: arrows never bind to arrows. Its label is part of it (`label`), and its bounds hold
     /// it, as tldraw's geometry does.
     func geometry(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> ShapeGeometry {
+        // How it is drawn among the connections sharing its path (Connections' `ConnectionBundle`): a bundle's member is drawn by
+        // its lead, its outline the lead's (never empty, which would reach everywhere) and hidden: not drawn, hit or spoken.
+        let bundle = context.layoutInput(ConnectionBundle.input, of: shape)
+        if let lead = bundle?.lead, let led = context.geometry(of: lead), !led.outline.isEmpty {
+            return ShapeGeometry(outline: led.outline, bounds: led.bounds, isClosed: false, isHidden: true)
+        }
         // An end of a relationship type is half of a line through its pill, with no head at it and no words (`EndLine`).
         let line = endLine(of: shape, in: context)
         // How its connection's meaning says it looks (its ends' marks, its width), asked here, kept, never per frame.
         let look = look(of: shape, in: context)
-        var detail: ArrowDetail? = line == nil && look == nil ? nil
-            : ArrowDetail(line: line, look: look, width: look?.lineWidth ?? ArrowStyle.strokeWidth)
+        let spread = Self.spread(of: bundle)
+        var detail: ArrowDetail? = line == nil && look == nil && bundle == nil ? nil
+            : ArrowDetail(line: line, look: look, width: look?.lineWidth ?? ArrowStyle.strokeWidth, spread: spread, bundle: bundle)
         let geometry = arrowGeometry(shape.props, detail: detail, in: context)
         // A level arrow, or one with a look, keeps what a frame draws (a plain one keeps nothing, and is drawn as ever).
         if look != nil || geometry.isLevel {
@@ -88,10 +95,24 @@ extension ArrowDefinition: ShapeDefinition {
             detail = kept
         }
         var bounds = geometry.bodyPath.boundingBoxOfPath
-        let laid = line == nil ? ArrowLabels.laid(of: shape, on: geometry, in: context) : nil
+        // Fanned at one end only (rows into one table): its pill slides toward its other end, where the lines are apart (E8 panel 2),
+        // unless the person placed it.
+        let slid = bundle.flatMap { Self.fannedLabelPosition($0, of: shape.props) }
+        let laid = line == nil ? ArrowLabels.laid(of: shape, on: geometry, in: context, position: slid) : nil
         if let laid { bounds = bounds.union(laid.frame) }
         return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: laid?.frame,
-                             labelLead: laid?.lead, detail: detail)
+                             labelLead: laid?.lead, detail: detail, isHidden: bundle?.lead != nil)
+    }
+
+    /// Where a fanned arrow's label goes: toward the end that isn't fanned, as near it as its clearance lets; nil where it's fanned
+    /// at both ends or neither, or the person moved its label off halfway.
+    static func fannedLabelPosition(_ bundle: ConnectionBundle, of arrow: Arrow) -> CGFloat? {
+        guard arrow.labelPosition == ArrowLabelLayout.defaultPosition else { return nil }
+        switch (bundle.fan(at: .start) != nil, bundle.fan(at: .end) != nil) {
+        case (false, true): return 0
+        case (true, false): return 1
+        default: return nil
+        }
     }
 
     /// Where its label is, as its geometry has it (kept, so measured once): its text's, and the pill that leads it.
@@ -101,6 +122,8 @@ extension ArrowDefinition: ShapeDefinition {
 
     /// On the body, or anywhere on its label (tldraw's filled label rectangle).
     func hitTest(_ point: CGPoint, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
+        // A bundle's member is hit as its lead.
+        if context.geometry(of: shape.id)?.isHidden == true { return false }
         let margin = ArrowStyle.hitMargin / context.zoom + ArrowStyle.strokeWidth / 2
         if arrowGeometry(of: shape, in: context).distance(to: point) <= margin { return true }
         return labelFrame(of: shape, in: context)?.contains(point) ?? false
@@ -112,6 +135,8 @@ extension ArrowDefinition: ShapeDefinition {
     /// The body and its heads; with a label, the body less the label's cut, and the cut's outline
     /// (tldraw's indicator).
     func indicatorPath(of shape: ShapeRecord<Arrow>, in context: ShapeContext) -> CGPath {
+        // A bundle's member is outlined by its lead's outline.
+        if context.geometry(of: shape.id)?.isHidden == true { return CGMutablePath() }
         let detail = context.geometry(of: shape.id)?.arrowDetail
         // A level arrow's, or one with a look's, as it is kept: its marks are outlined too (as tldraw's indicator holds its heads).
         let geometry = detail?.drawing == nil ? arrowGeometry(of: shape, in: context) : nil
@@ -154,6 +179,7 @@ extension ArrowDefinition: BrushHitTesting {
     /// select it (arrows are open, as in tldraw), nor does one over only the hidden stub inside a
     /// bound shape. A brush that reaches its label selects it too, as tldraw's filled label does.
     func brushHitTest(_ brush: CGRect, on shape: ShapeRecord<Arrow>, in context: ShapeContext) -> Bool {
+        if context.geometry(of: shape.id)?.isHidden == true { return false }
         let geometry = arrowGeometry(of: shape, in: context)
         if geometry.crosses(brush.polygon) { return true }
         return labelFrame(of: shape, in: context)?.intersects(brush) ?? false

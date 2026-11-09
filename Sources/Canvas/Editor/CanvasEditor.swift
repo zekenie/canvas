@@ -1752,6 +1752,8 @@ public final class CanvasEditor {
         for position in positions {
             let record = shapes[list.order[position]]
             if let only, !only.contains(record.id) { continue }
+            // Drawn as part of another (`ShapeGeometry.isHidden`: an arrow bundled under its lead): never shown on its own.
+            if context.geometry(of: record.id)?.isHidden == true { continue }
             body(record, list.extents[position])
         }
     }
@@ -1774,6 +1776,8 @@ public final class CanvasEditor {
         let list = shapeIndex.paintList(in: context), shapes = document.shapes
         for position in positions {
             let record = shapes[list.order[position]]
+            // A shape drawn as part of another is hit as that one (its lead), never itself.
+            guard context.geometry(of: record.id)?.isHidden != true else { continue }
             if include(record), registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
                 return record.id
             }

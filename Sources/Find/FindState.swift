@@ -171,6 +171,18 @@ public final class FindState {
         return fields
     }
 
+    /// The ranges hit in each field of a shape's texts that holds hits (UTF-16, of the field's text): what a plugin that hides some
+    /// of a shape's texts reads to show only those whose hits are drawn where they are (an endpoint's row, never for a hit in its
+    /// group's prefix, which is drawn on the group's header). Costs the shape's hits; empty while Find is closed.
+    public func rangesHit(of id: ShapeID) -> [String: [Range<Int>]] {
+        guard isActive, places[id] != nil, let entry = index.entries[id] else { return [:] }
+        var ranges: [String: [Range<Int>]] = [:]
+        for (text, hits) in hits(of: id).enumerated() where entry.texts.indices.contains(text) && !hits.isEmpty {
+            ranges[entry.texts[text].field, default: []] += hits.map(\.range)
+        }
+        return ranges
+    }
+
     /// Runs `body` each time what `fieldsHit(of:)` answers may have changed: new results, a commit's patch of them, Find
     /// opened or closed. Called after the change, never during a search; a plugin that lays shapes out by the answer says
     /// so then (`shapesDidChangeLayout`).

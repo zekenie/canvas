@@ -32,6 +32,11 @@ struct SpotDefinition {}
 
 extension SpotDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Spot>, in context: RenderContext) {}
+
+    /// A spot named "member…" is drawn as part of another (`ShapeGeometry.isHidden`, a bundle's member's): its box kept, hidden.
+    func geometry(of shape: ShapeRecord<Spot>, in context: ShapeContext) -> ShapeGeometry {
+        ShapeGeometry(outline: shape.props.frame.polygon, isHidden: shape.props.name.hasPrefix("member"))
+    }
 }
 
 /// A box edited in two fields, as a typed note is in its words and its rows: an editing view with more than one control.
@@ -75,7 +80,8 @@ extension DuoDefinition: ShapeDefinition, Editable {
         r.shape(DuoDefinition()) { duo in duo.label("Duo", systemImage: "square") }
         r.shape(SpotDefinition()) { spot in
             spot.label("Spot", systemImage: "circle")
-            spot.accessibility { record, _ in AccessibleTraits(name: record.props.name) }
+            // A spot named "lead…" draws for three (a bundle's lead): said as "3 arrows" in its kind's place.
+            spot.accessibility { record, _ in AccessibleTraits(name: record.props.name, kind: record.props.name.hasPrefix("lead") ? "3 arrows" : nil) }
         }
         r.commandShapes({ _ in probe.selection }, select: { editor, ids in
             probe.selection = ids
@@ -158,6 +164,20 @@ extension DuoDefinition: ShapeDefinition, Editable {
         expectEqual(shapeChildren(canvas).map { $0.isAccessibilitySelected() }, [true, false, false])
         expectEqual(canvas.accessibilitySelectedChildren()?.count, 1)
         _ = alpha
+    },
+    test("a shape drawn as part of another (a bundle's member, hidden) is no child, in view or selected; its lead is said as what it draws for") {
+        let probe = AccessibilityProbeState()
+        let (h, _, canvas) = try accessibleCanvas(probe)
+        let lead = h.add(Spot("lead", at: CGPoint(x: 100, y: 100)))
+        let member = h.add(Spot("member", at: CGPoint(x: 100, y: 100)))
+        _ = h.add(Spot("Beta", at: CGPoint(x: 400, y: 100)))
+        expectEqual(labels(shapeChildren(canvas)), ["lead, 3 arrows", "Beta, Spot"], "the member is no element: its lead says it")
+        select([lead, member], h)
+        expectEqual(labels(shapeChildren(canvas)), ["lead, 3 arrows", "Beta, Spot"], "selected with its lead, still none")
+        expect(!h.editor.accessibleShapes(limit: 500).contains(member))
+        expectEqual(h.editor.shape(at: CGPoint(x: 150, y: 150)), lead, "hit as its lead, never itself, though it is in front")
+        expect(!h.editor.paintOrder(in: CGRect(x: 0, y: 0, width: 800, height: 600)).map(\.id).contains(member), "never drawn")
+        expectEqual(h.editor.shapeContext.geometry(of: member)?.outline.isEmpty, false, "its outline kept, so it reaches no further than it is")
     },
     test("past 500, those nearest the selection, the selection always among them") {
         let probe = AccessibilityProbeState()

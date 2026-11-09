@@ -1,4 +1,5 @@
 import Canvas
+import Connections
 import ContextMenus
 import CoreGraphics
 import Keyboard
@@ -33,6 +34,12 @@ extension ShapeRegistrar {
                 let context = LineContext(editor: editor, shape: record.id, row: part)
                 guard let card = model.card(of: row, in: context) else { return nil }
                 return LineRowCard(name: card.header.name, lines: card.lines.map { LineRowCard.Line(label: $0.label, value: $0.printed(row, in: context)) })
+            },
+            peeks: { record, part, ranges in
+                guard let shape = record.typed(as: Model.Props.self) else { return true }
+                let rows = model.rows(of: shape.props)
+                guard let index = rows.firstIndex(where: { model.id(of: $0) == part }) else { return true }
+                return model.peeks(rows[index], at: index, of: rows, hitAt: ranges)
             }), to: LineRowsKinds.self)
         // Its rows selected on the canvas (Selection's items) and moved as wholes.
         lineRowItems(model)
@@ -69,7 +76,13 @@ public struct LineRowsPlugin: ListedPlugin {
             return service
         }
         registrar.service { RowFolds(editor: $0) }
+        // How the connections at shapes written as lines are drawn among those sharing their path (after the folds, which say
+        // where each row's connections end): bundles, slots, fans and entries, Connections' `ConnectionBundle`.
+        registrar.service { RowBundles(editor: $0) }
         registrar.service { RowCuts(editor: $0) }
+        registrar.layoutInput(ConnectionBundle.input) { record, reading in reading.service(RowBundles.self)?.answer(for: record, in: reading) }
+        // A press on a bundle's line selects every connection it draws for.
+        registrar.selectionUnits { editor, id in editor.service(RowBundles.self)?.unit(of: id) }
         registrar.outlines { editor in editor.service(LineRowsService.self)?.outlines() ?? Outlines() }
         // What a folded shape shows, asked as it's laid out, and how wide one is while a line typed in it is wider.
         registrar.layoutInput(LineRowsLayout.shown) { record, reading in reading.service(RowFolds.self)?.shown(of: record, in: reading) }
@@ -77,7 +90,7 @@ public struct LineRowsPlugin: ListedPlugin {
         // ⌃⌘↑ ⌃⌘↓: a view, no step; never while a shape is edited (it shows every row then), so the text keeps the keys.
         registrar.command(.foldRows, title: LineFoldStyle.foldTitle, in: RowFoldsSection.self,
                           shortcut: KeyChord(KeyChord.upArrow.key, [.control, .command]), runs: .whenIdle,
-                          isEnabled: { subject in Folding.targets(subject).contains { subject.editor.rowFolds?.fold(of: $0)?.toMarked != true } }) { subject in
+                          isEnabled: { subject in Folding.targets(subject).contains { subject.editor.rowFolds?.isFoldedWhole($0) == false } }) { subject in
             Folding.fold(Folding.targets(subject), in: subject.editor)
         }
         registrar.command(.unfoldRows, title: LineFoldStyle.unfoldTitle, in: RowFoldsSection.self,
@@ -130,8 +143,15 @@ enum Folding {
             return (record, shown)
         }
         if hiding.count == 1, let (record, shown) = hiding.first, let kind = editor.registry.lineRows(of: record.kind) {
-            let total = kind.rows(record)?.count ?? 0
-            editor.announce(LineFoldStyle.folded(editor.registry.title(of: record), shown: shown.shownRows, of: total, noun: kind.noun))
+            let rows = kind.rows(record) ?? []
+            let closed = shown.lines.filter { if case .header = $0 { true } else { false } }.count
+            if closed > 0 {
+                // An API's groups: "orders API folded, 7 groups closed".
+                editor.announce(LineFoldStyle.foldedGroups(editor.registry.title(of: record), closed: closed))
+            } else {
+                let total = rows.count
+                editor.announce(LineFoldStyle.folded(editor.registry.title(of: record), shown: shown.shownRows, of: total, noun: kind.noun))
+            }
         } else if hiding.isEmpty {
             editor.announce(LineFoldStyle.nothingToFold)
         } else {
@@ -209,6 +229,12 @@ enum LineFoldStyle {
     /// "products folded, 3 of 40 columns shown".
     static func folded(_ name: String?, shown: Int, of total: Int, noun: LineNoun) -> String {
         let what = "\(shown) of \(noun.counted(total)) shown"
+        return name.map { "\($0) folded, \(what)" } ?? "Folded, \(what)"
+    }
+
+    /// "orders API folded, 7 groups closed".
+    static func foldedGroups(_ name: String?, closed: Int) -> String {
+        let what = "\(LineNoun("group").counted(closed)) closed"
         return name.map { "\($0) folded, \(what)" } ?? "Folded, \(what)"
     }
 

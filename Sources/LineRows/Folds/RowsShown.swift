@@ -83,24 +83,29 @@ public struct RowsShown: Hashable, Sendable {
     /// How many rows a fold that keeps none of a kind's marks keeps: the first two (an enum's `pending`, `paid`, "+4 ›").
     public static let unmarkedKept = 2
 
-    /// The lines `rows` show under `fold`: a closed header's rows hidden behind it, then, folded to its marks, the rows
-    /// `marked` names (the first `unmarkedKept` where it names none) and a "+N ›" line last for the rest. Rows in `peeked`
+    /// The lines `rows` show under `fold`: a closed header's rows hidden behind it (an open one's all shown), then, folded to its
+    /// marks, the rows under no header that `marked` names (the first `unmarkedKept` where it names none) and a "+N ›" line last
+    /// for the rest. Rows in `peeked`
     /// show in their place whatever hides them (Find's hits). Nil where nothing is hidden: the shape shows every row.
     public static func make(rows: [FoldRow], fold: RowFold, marked: Set<PartID>, peeked: Set<PartID> = []) -> RowsShown? {
         guard !fold.isEmpty, !rows.isEmpty else { return nil }
         // Which header hides each row (none for a row in no closed group), and which rows the marks keep.
         var hidingHeader = [Int?](repeating: nil, count: rows.count)
-        var header: Int?
+        // Rows under a header: their header says whether they show (open, all of them; closed, none), not the marks.
+        var grouped = [Bool](repeating: false, count: rows.count)
+        var header: Int?, inGroup = false
         for (index, row) in rows.enumerated() {
             if row.isHeader {
                 header = fold.closed.contains(row.id) ? index : nil
-            } else if let header, !peeked.contains(row.id) {
-                hidingHeader[index] = header
+                inGroup = true
+            } else {
+                grouped[index] = inGroup
+                if let header, !peeked.contains(row.id) { hidingHeader[index] = header }
             }
         }
         var kept = Set<Int>()
         if fold.toMarked {
-            let lines = rows.indices.filter { !rows[$0].isHeader }
+            let lines = rows.indices.filter { !rows[$0].isHeader && !grouped[$0] }
             let marks = lines.filter { marked.contains(rows[$0].id) }
             kept = Set(marks.isEmpty ? Array(lines.prefix(unmarkedKept)) : marks)
         }
@@ -117,7 +122,7 @@ public struct RowsShown: Hashable, Sendable {
                 headerLine[index] = lines.count
                 standing[index] = lines.count
                 lines.append(fold.closed.contains(row.id) ? .header(index, hiding: 0) : .row(index))
-            } else if !fold.toMarked || kept.contains(index) || peeked.contains(row.id) {
+            } else if !fold.toMarked || grouped[index] || kept.contains(index) || peeked.contains(row.id) {
                 standing[index] = lines.count
                 lines.append(.row(index))
             } else {

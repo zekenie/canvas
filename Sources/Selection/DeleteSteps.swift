@@ -10,8 +10,11 @@ public enum DeleteSteps {
     /// first, the most of a kind first, then the kinds that went along; just `verb` when nothing went along. A
     /// kind in both counts once, with both.
     @MainActor
-    public static func name(_ verb: String = "Delete", asked: [ShapeKind], along: [KindCount], in registry: Registry) -> String {
-        guard along.contains(where: { $0.count > 0 }) else { return verb }
+    /// `namesAsked`: the asked are named even when nothing went along, as where some of them weren't seen (the arrows a bundle's
+    /// lead draws for: "Delete 9 Arrows").
+    public static func name(_ verb: String = "Delete", asked: [ShapeKind], along: [KindCount], namesAsked: Bool = false,
+                            in registry: Registry) -> String {
+        guard along.contains(where: { $0.count > 0 }) || (namesAsked && !asked.isEmpty) else { return verb }
         var counts: [KindCount] = []
         func add(_ batch: [KindCount]) {
             for item in batch.sorted(by: { ($0.count, label($1.kind)) > ($1.count, label($0.kind)) }) {

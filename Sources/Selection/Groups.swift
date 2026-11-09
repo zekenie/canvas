@@ -35,7 +35,35 @@ extension PluginRegistrar {
     }
 }
 
+/// Shapes a plugin says are selected as one before any group is asked (a bundle of arrows a fold draws as one line: a press
+/// on it selects them all, as Delete, the marquee, Tab and ⌥Tab then take them). A list: the first plugin that names a unit
+/// for a shape says it; a shape no plugin names goes on to the groups.
+public enum SelectionUnits {}
+
+extension SelectionUnits: ExtensionPoint {
+    /// The shapes `id` is selected with (itself among them), back to front; nil for none.
+    public typealias Contribution = @MainActor (CanvasEditor, ShapeID) -> [ShapeID]?
+    public static var owner: PluginID { .selection }
+    public static func summary(of _: Contribution, for _: ShapeTarget) -> String { "selection units" }
+}
+
+extension PluginRegistrar {
+    /// Shapes selected as one, before groups (`SelectionUnits`): `unit` names the shapes `id` is taken with, or nil.
+    public mutating func selectionUnits(_ unit: @escaping @MainActor (CanvasEditor, ShapeID) -> [ShapeID]?) {
+        contribute(unit, to: SelectionUnits.self)
+    }
+}
+
 extension SelectionState {
+    /// The shapes a plugin selects `id` with before any group (`SelectionUnits`): those of them that can be selected; nil for none.
+    func pluginUnit(of id: ShapeID) -> [ShapeID]? {
+        for unit in editor.registry.contributions(to: SelectionUnits.self) {
+            guard let shapes = unit.value(editor, id), shapes.count > 1, shapes.contains(id) else { continue }
+            return shapes.filter(isSelectable(id:))
+        }
+        return nil
+    }
+
     /// Where the groups come from (`SelectionGroups`): found once, or none.
     var groupSource: (any SelectionGroupSource)? {
         if let found = groupSourceFound { return found }
@@ -59,6 +87,7 @@ extension SelectionState {
     /// past the groups it shares with `focus`, all of it, or the shape alone when it's in no group
     /// past them (tldraw's getOutermostSelectableShape).
     func unit(of id: ShapeID, within focus: [AnyHashable]) -> [ShapeID] {
+        if let unit = pluginUnit(of: id) { return unit }
         let path = groups(of: id)
         let shared = path.sharedPrefixCount(with: focus)
         guard shared < path.count else { return [id] }
@@ -69,6 +98,8 @@ extension SelectionState {
     /// What a click on `id` selects once what `unit(of:within:)` gives is selected: the part of it
     /// under the pointer, one level in.
     func unit(inside id: ShapeID, within focus: [AnyHashable]) -> [ShapeID] {
+        // A plugin's unit has no inside: a click on it selected selects it again, whole.
+        if let unit = pluginUnit(of: id) { return unit }
         let path = groups(of: id)
         let shared = path.sharedPrefixCount(with: focus)
         guard shared + 1 < path.count else { return [id] }
@@ -87,13 +118,14 @@ extension SelectionState {
     /// click on it would select with the selection inside `focus` (its group, whole), and with
     /// `mustContain` (⌘) a group only if the marquee holds every one of its shapes. Each once.
     func units(of hits: [ShapeID], mustContain: Bool, within focus: [AnyHashable]) -> [ShapeID] {
-        guard groupSource != nil else { return hits }
+        guard groupSource != nil || !editor.registry.contributions(to: SelectionUnits.self).isEmpty else { return hits }
         let reached = mustContain ? Set(hits) : []
         var seen = Set<ShapeID>(), units: [ShapeID] = []
         for id in hits where !seen.contains(id) {
             let unit = unit(of: id, within: focus)
             seen.formUnion(unit)
-            if mustContain, !unit.allSatisfy(reached.contains) { continue }
+            // A shape drawn as part of another (a bundle's member) is held as its lead is.
+            if mustContain, !unit.allSatisfy({ reached.contains($0) || editor.shapeContext.geometry(of: $0)?.isHidden == true }) { continue }
             units += unit
         }
         return units

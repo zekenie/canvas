@@ -29,9 +29,13 @@ public struct ShapeGeometry: Sendable {
     /// its edge and the way out of it there. A connector drawn level (an arrow with an end at a row) enters the shape at the one
     /// facing its other end; empty, at the side it meets. Kept with the rest, so it follows the shape and its parts.
     public var entries: [ShapeEntry]
+    /// Drawn as part of another shape (an arrow bundled under its lead, which draws once for all of them): the canvas doesn't
+    /// draw it, hit it or show it to VoiceOver, though it keeps its outline (an empty one would reach everywhere). False for
+    /// every shape but those a plugin hides so.
+    public var isHidden: Bool
 
     public init(outline: [CGPoint], bounds: CGRect? = nil, isClosed: Bool = true, label: CGRect? = nil, labelLead: CGRect? = nil,
-                detail: (any Sendable)? = nil, parts: PartFrames = PartFrames(), entries: [ShapeEntry] = []) {
+                detail: (any Sendable)? = nil, parts: PartFrames = PartFrames(), entries: [ShapeEntry] = [], isHidden: Bool = false) {
         self.outline = outline
         self.bounds = bounds ?? CGRect(enclosing: outline)
         self.isClosed = isClosed
@@ -40,6 +44,7 @@ public struct ShapeGeometry: Sendable {
         self.detail = detail
         self.parts = parts
         self.entries = entries
+        self.isHidden = isHidden
     }
 }
 

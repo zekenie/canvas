@@ -64,16 +64,20 @@ public struct LineRowsContribution {
     let lineRect: @MainActor (Int, CGRect) -> CGRect
     /// A row's card, printed (`CanvasEditor.lineRowCard(of:)`); nil for a row with none.
     let card: @MainActor (CanvasEditor, AnyShapeRecord, PartID) -> LineRowCard?
+    /// Whether a row folded away shows while Find is open for hits at these ranges of its text (`LineModel.peeks`).
+    let peeks: @MainActor (AnyShapeRecord, PartID, [Range<Int>]) -> Bool
 
     public init(noun: LineNoun, rows: @escaping @MainActor (AnyShapeRecord) -> [FoldRow]?,
                 marked: @escaping @MainActor (AnyShapeRecord, LayoutReading) -> Set<PartID>,
                 lineRect: @escaping @MainActor (Int, CGRect) -> CGRect,
-                card: @escaping @MainActor (CanvasEditor, AnyShapeRecord, PartID) -> LineRowCard? = { _, _, _ in nil }) {
+                card: @escaping @MainActor (CanvasEditor, AnyShapeRecord, PartID) -> LineRowCard? = { _, _, _ in nil },
+                peeks: @escaping @MainActor (AnyShapeRecord, PartID, [Range<Int>]) -> Bool = { _, _, _ in true }) {
         self.noun = noun
         self.rows = rows
         self.marked = marked
         self.lineRect = lineRect
         self.card = card
+        self.peeks = peeks
     }
 }
 

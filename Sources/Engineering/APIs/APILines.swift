@@ -263,6 +263,12 @@ struct APILines: LineModel {
     func grammar(for role: LineRole) -> any LineGrammar<APIRow> { APILineGrammar() }
     func lineRect(_ line: Int, in frame: CGRect) -> CGRect { APIRows.rowRect(line, in: frame) }
     func isHeader(_ row: APIRow) -> Bool { row.header != nil }
+    /// A folded endpoint shows while Find is open for hits in its method or its own path; a hit only in its group's prefix is drawn
+    /// on the header, which stays closed (E8 panel 3).
+    func peeks(_ row: APIRow, at index: Int, of rows: [APIRow], hitAt ranges: [Range<Int>]) -> Bool {
+        guard let text = EndpointText.of(index, in: rows) else { return true }
+        return ranges.contains(where: text.isOnRow)
+    }
     /// A row under another id: one moved into an API that holds its id already (rows moved as wholes, LineRows' `Moves`).
     func renaming(_ row: APIRow, to id: PartID) -> APIRow {
         switch row {

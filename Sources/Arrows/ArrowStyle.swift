@@ -24,6 +24,17 @@ enum ArrowStyle {
     nonisolated static func levelClearReach(ofMark reach: CGFloat) -> CGFloat {
         reach > 0 ? (reach + levelMarkClearance) / 0.75 : 0
     }
+    // Connections drawn together (Connections' `ConnectionBundle`): those with the same two ends bow apart by a slot each, far
+    // enough that their pills sit on lines of their own; those fanned into one place come in at angles of their own, spread
+    // `fanStep` apart up to `fanSpread` in all, a marked end (a key's bars) also `fanMarkShift` apart along its side, so two keys
+    // into one row meet it apart.
+    nonisolated static let slotSpacing: CGFloat = 30
+    nonisolated static let fanStep: CGFloat = 25 * .pi / 180
+    nonisolated static let fanSpread: CGFloat = 70 * .pi / 180
+    nonisolated static let fanMarkShift: CGFloat = 8
+    /// A level curve's end keeps this far inside the container both its ends are in (a database's edge), where it can.
+    nonisolated static let containerClearance: CGFloat = 8
+
     /// How far from an arrow's centerline (beyond its stroke) a click still hits it, in view points.
     static let hitMargin: CGFloat = 3
     /// The bend handle hides when it's this close to an end handle, in view points.

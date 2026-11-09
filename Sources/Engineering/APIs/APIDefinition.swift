@@ -133,7 +133,8 @@ extension APIDefinition: PartedShape {
     }
 }
 
-/// Zoomed out: its paper, a bar for its server, and a bar a row (a method's and its path's, a header's prefix), one fill.
+/// Zoomed out: its paper, a bar for its server, and a bar a row (a header's prefix, an endpoint's path) in one fill, each
+/// endpoint's method a bar in its chip's color, one fill a color (E8 panel 4); a row under three view points, the paper alone.
 extension APIDefinition: CustomSkeleton {
     func renderSkeleton(_ shape: ShapeRecord<API>, in context: RenderContext) {
         let frame = context.shapes.frame(of: shape)
@@ -141,6 +142,8 @@ extension APIDefinition: CustomSkeleton {
         let api = shape.props, rows = KitRows(shape, in: context.shapes)
         guard KitStyle.rowHeight * context.zoom >= KitStyle.skeletonLeastRow else { return }
         var bars: [CGRect] = [], faded: [CGRect] = [], retired: [CGRect] = []
+        // The methods' bars by their chips' colors, in the order first met: at most one fill a method.
+        var methods: [String: [CGRect]] = [:], methodOrder: [String] = []
         let server = APIRows.serverRect(in: frame)
         let start = frame.minX + APIStyle.inset, end = frame.maxX - KitStyle.trailingInset
         if let bar = KitPaper.bar(columns: SkeletonText.columns(of: api.server.host, upTo: KitStyle.skeletonMostColumns), column: APIStyle.skeletonColumn,
@@ -170,13 +173,33 @@ extension APIDefinition: CustomSkeleton {
                                           at: x, in: rect, room: end - x) { bars.append(bar) }
             case .endpoint(let endpoint):
                 let chip = APIStyle.chipLeast
-                if !endpoint.method.isEmpty { bars.append(CGRect(x: x, y: rect.midY - KitStyle.skeletonBarHeight / 2, width: chip, height: KitStyle.skeletonBarHeight)) }
+                if !endpoint.method.isEmpty {
+                    let bar = CGRect(x: x, y: rect.midY - KitStyle.skeletonBarHeight / 2, width: chip, height: KitStyle.skeletonBarHeight)
+                    // A row taken or retired keeps its method bar grey with the rest of it; any other, in its method's color.
+                    if taken || gone {
+                        bars.append(bar)
+                    } else {
+                        if methods[endpoint.method] == nil { methodOrder.append(endpoint.method) }
+                        methods[endpoint.method, default: []].append(bar)
+                    }
+                }
                 let path = x + chip + APIStyle.gap
                 if let bar = KitPaper.bar(columns: SkeletonText.columns(of: endpoint.path, upTo: KitStyle.skeletonMostColumns), column: APIStyle.skeletonColumn,
                                           at: path, in: rect, room: end - path) { bars.append(bar) }
             }
         }
-        APIDrawing.fading(api.deprecated, in: context.cg, over: frame) { context.fillSkeletonText(bars) }
+        APIDrawing.fading(api.deprecated, in: context.cg, over: frame) {
+            context.fillSkeletonText(bars)
+            let cg = context.cg
+            for method in methodOrder {
+                guard let rects = methods[method] else { continue }
+                cg.saveGState()
+                cg.addRects(rects)
+                cg.setFillColor(APIStyle.chipFill(method).cgColor)
+                cg.fillPath()
+                cg.restoreGState()
+            }
+        }
         if !retired.isEmpty { APIDrawing.fading(true, in: context.cg, over: frame) { context.fillSkeletonText(retired) } }
         rows.fillFaded(text: faded, in: context) {}
     }
