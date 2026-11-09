@@ -116,8 +116,10 @@ final class PortState {
     }
 
     /// Whether a shape shows dots: its kind has some, and the connector can start from it (asked of
-    /// the editor's document).
+    /// the editor's document); while a shape is edited, only that one, so a row's band and dots under a pointer left at rest
+    /// don't stay on a table the keys went on from (UX walk paste 9).
     func hasDots(_ id: ShapeID) -> Bool {
+        if let editing = editor.editingShapeID, editing != id { return false }
         guard let connector, let record = editor.document[id], !record.isOpaque,
               ports(of: record)?.hasDots == true else { return false }
         return connector.canConnect(id, editor.shapeContext)

@@ -292,6 +292,10 @@ enum LineFoldStyle {
     /// The "+N ›" line opened: "37 more columns shown".
     static func moreShown(_ count: Int, noun: LineNoun) -> String { "\(more(count, noun: noun)) shown" }
 
-    /// A closed item's title, as VoiceOver reads it among the shape's rows: "/orders, closed, 4 endpoints".
-    static func closedItem(_ title: String, hiding: Int, noun: LineNoun) -> String { "\(title), closed, \(noun.counted(hiding))" }
+    /// A closed item's title, as VoiceOver reads it among the shape's rows: "/orders, path prefix, 4 endpoints, closed" where the
+    /// kind's words count its rows already, else "fruit/, closed, 2 entries".
+    static func closedItem(_ title: String, hiding: Int, noun: LineNoun) -> String {
+        let counted = noun.counted(hiding)
+        return title.contains(counted) ? "\(title), closed" : "\(title), closed, \(counted)"
+    }
 }
