@@ -2506,7 +2506,8 @@ taking the nearest it covers. An endpoint is written `METHOD /path/{param} [(Bod
 (`EndpointGrammar`); its part's name is its method and full path. A body names a type note and is drawn as that type's
 pill, live, dashed while it names none; "New type Problem", last in the caret list and highlighted while no type is called
 or starts so (`LineOffer.action(_:_:isDefault:)`), makes the note through Types,
-which puts it down settled (`Placement.settled()`) and makes nothing an instance of it. Words written before their type was made are bound
+which puts it down settled (`Placement.settled()`) and makes nothing an instance of it (with the view full, at the clear
+spot nearest the row its card hangs from, the view panned the least to it, the API or that row kept in view). Words written before their type was made are bound
 at rest, a name of several words is quoted after a status:
 
 ```swift
@@ -2642,7 +2643,9 @@ shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes
 line, ⇧↩ puts a shape beside. A line typed wider than the shape lays it out as wide as the line needs
 (`LineRowsLayout.width`, provided), nothing written; a kind that says how wide its rows read whole at rest
 (`wholeWidth(of:in:)`) has a commit that leaves it narrower write that width in the same step, so the shape
-keeps it as the caret leaves. [line rows](../.claude/rules/line-rows.md) is the whole of it.
+keeps it as the caret leaves. While it is laid out wider than it stores, the core paints and hits the shape edited
+above what its widening overlaps, so a shape beside it never covers its rows. [line rows](../.claude/rules/line-rows.md) is
+the whole of it.
 
 **A row's card.** ⌘↓ in a row writes its line and shows what more the row holds than its line says, a line
 each, in a core card hung from the row (LineRows' Card part). The kind gives it, and each line reads the row and
@@ -3350,7 +3353,8 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
   selection just made counted before it slides in (`unobscuredViewport` as the chrome is headed): it pans
   by as little as brings the shapes in, 40 points from the edges, at the zoom it has, never centering them,
   so what was beside them stays in view (`keeping:` a shape to keep in view with them when both fit: the
-  one Insert put the new shape beside); farther out only where they do not fit, never closer. One in view
+  one Insert put the new shape beside; `orKeeping:` a rect to keep where that doesn't fit, the row a card hangs from, as a
+  type made from an endpoint's card with the view full is revealed); farther out only where they do not fit, never closer. One in view
   leaves it alone. Escape and ⌘↑ to a group or a container move nothing while any of it is in view, and
   otherwise pan to it, never zooming out (`revealEnclosure`).
 - **For a plugin.** `editor.shape(.next, from: id, among: { record in … })` (`.previous` too) is the
@@ -7511,7 +7515,9 @@ arrow with no row end is drawn as it always was. How a connection looks, its end
 crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLooks` when the geometry is
 worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
 head, and Toggle Arrowhead leaves it. A curve between ends too near for the marks runs out far enough to turn
-clear of them, VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
+clear of them, and an end with a mark reaches far enough, however far across the other end is, that the line is still
+level where its mark stops, so two keys at one row end lay their marks on each other; a row's resting port dot is not
+drawn where a connection ends at that row's side (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
 with the channel it will be released on (`registry.connectionLook(…, channel:)`), so its marks show as it is dragged.
 
 The ports code never learns what a connection is. One plugin draws them, the connector
@@ -7718,7 +7724,9 @@ leaves the list empty, so a Return there makes no loop): the loop.
 Return and Tab pick, ↑ ↓ ⌃P ⌃N and the page keys move, Escape and ⌘. give the keyboard back to the canvas with the
 selection as it was. A pick on another board is reached through a reference pill on the board shown, reused
 or made and landed as `canvas draw` lands one (`StandInRoute.placePill`; from a row, where its line from the row is clean,
-`Surroundings.landing(of:joinedFrom:of:)`: below the shape, else level with the row), with the arrow, in one step; a private far
+`Surroundings.landing(of:joinedFrom:of:)`: below the shape, else level with the row; a key, a line between rows, level
+with its row first, left then right, then below slid out past its mark; a pill there already reused only where its line
+from the row crosses no shape, `joinsClean`), with the arrow, in one step; a private far
 shape is listed `will be made public` and made so in the step, since it is a person's pick.
 
 A kind that means more by a pick says so, once, in `ConnectPicks` (a keyed extension point, owner `.ports`, one
@@ -11726,7 +11734,10 @@ Moving keeps the glue for its `Block` and the commit. Moving keeps the arrows th
 an arrow bound to a shape that moves to another board and one that stays goes where its start goes, with
 the start (ending at a reference pill for the shape that stays, landed beside the start where it lands)
 or staying (ending at a pill for the shape that moved, beside its start); a pill for the same shape the board
-has already is reused, and so is the shape itself where it is there. An end at a row keeps it, on the binding to
+has already is reused where the line from the start's row to it crosses no shape (else a fresh one is put down), and so is
+the shape itself where it is there. A fresh pill for a key lands level with the start's row first, as a key's pill does; any
+other far enough out that its arrow's label (a channel's pill) shows with its line either side, and one under another far
+enough down that their labels don't touch. An end at a row keeps it, on the binding to
 the pill for its shape (a key to a column through its table's pill), or through a pill of the row's own for a row
 that stands alone. That is Draw's `CrossingArrows`
 (`init?(moving:from:to:by:label:in:)` plans from the editor, `rebind(in:)` writes before `Transaction.move` and
@@ -14913,7 +14924,7 @@ it, the core or a horizontal.
 | `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc and its heads, where its kept geometry is three points) |
 | `StrokedShape` | A kind drawn as a line, an open shape, saying how wide its line is, in world units: `lineWidth(of:in:)`. What a tinted outline of it (`Outlines.tinted`, a plugin's own colors: Neighbors' lights) covers, drawn in full: as wide on screen as the line and a point more, round, so the shape's own line and heads don't show along the middle of the outline, a stripe in a thick line at 200% and wider than a thin one at 50%. Zoomed out, where the skeleton is a point-wide line, a tint is its plain width, and the selection's and a hover's outlines stay thin whatever it says. Found once per kind (`registry.strokedShapes`), so no other kind's shape is asked; `registry.lineWidth(of:in:)` reads it, for what decorates along a line. | Arrows (3.5, `ArrowStyle.strokeWidth`); CanvasTesting's `Cable` |
-| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document, or just below it (`paintsBelowAnchor`, false by default). The anchor follows from the shape's own props and the document's order (and containment, which re-places it when a shape joins a container), since the paint order is kept until one of those changes. | Arrows (above the shapes they join; one with an end at a row, below the lower of them, so cards cover it, or above the container of the higher end when one lies after the lower, so its surface never hides the end) |
+| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document, or just below it (`paintsBelowAnchor`, false by default). Several below-anchored shapes added in one commit go each under its own anchor, as a full build puts them. The anchor follows from the shape's own props and the document's order (and containment, which re-places it when a shape joins a container), since the paint order is kept until one of those changes. | Arrows (above the shapes they join; one with an end at a row, below the lower of them, so cards cover it, or above the container of the higher end when one lies after the lower, so its surface never hides the end) |
 | `LaidOutBox` | A box kind laid out larger or smaller than the box it stores, by `laidOutSize(of:in:)` over its layout inputs: the laid-out frame has the stored origin and the size the kind answers (the box's own for one that isn't finite and above zero), and everything that asks how much room the shape takes (`context.frame(of:)`) goes by it; its geometry, outline and editing frame default to it. Not a container. | the core's geometry, hit testing, settling and enclosing, snapping, selection |
 | `ShapeContaining` | Each shape of the box kind holds shapes on its board, a frame: what names it as its container (`AnyShapeRecord.container`) moves, restacks, locks and is let go with it, and nothing put down sits across its edge (`Transaction.settle`). Nothing to implement. [Containers](#containers). | CanvasTesting's `Corral` |
 | `TakesBoundShapes` | Each shape of the kind takes the shapes bound to it (`ShapeReferencing`: an arrow's ends) along. Deleting one deletes them (the delete's cascade, `Transaction.takeBound`), but a read-only one, which lets go where it's drawn as for any kind; copying one copies what is bound only to shapes copied with it (`ShapeContext.takenAlong(by:)`: Clipboard's copy, duplicate, ⌥-drag and cut). What went along is `Transaction.deletedAlong`, and a body names its step from it (`transaction.stepName`). Nothing to implement; a kind that doesn't adopt it keeps tldraw's rule (an arrow bound to a deleted shape stays, free at that end). | CanvasTesting's `Ledger` |
