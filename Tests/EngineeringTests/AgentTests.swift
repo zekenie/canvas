@@ -133,6 +133,15 @@ extension EditorHarness {
         ], "one with no path yet: its name alone")
         expect(try h.fact("apis", "what does createRefund do?").hasPrefix("createRefund (endpoint)\n"), "the endpoints the question names first")
     },
+    test("<apis> ranks by what a question names of an endpoint taken out, never by the word endpoint its heading says") {
+        let h = try agentHarness()
+        h.api("quiet API", ["GET /health"])
+        h.add(StandaloneEndpoint(frame: CGRect(x: 100, y: 700, width: 420, height: 44), endpoint: Endpoint(method: "POST", path: "/refunds", name: "createRefund")))
+        h.api("billing API", ["GET /invoices"], at: 800)
+        let block = try h.fact("apis", "which endpoint lists invoices?").split(separator: "\n").map(String.init)
+        expectEqual(block.first, "billing API", "the API whose route the question names, before the endpoint that only is one: \(block)")
+        expect(try h.fact("apis", "what does createRefund do?").hasPrefix("createRefund (endpoint)\n"), "and one the question names by its name still first")
+    },
     test("a test inside a list attribute holds when any item holds; a column's type reads as its words, an enum's value as its text") {
         let h = try agentHarness()
         let customers = h.table("customers", ["id uuid pk", "email text unique"])

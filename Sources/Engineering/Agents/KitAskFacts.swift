@@ -90,7 +90,8 @@ enum KitAskFacts {
                 let name = self.name(of: record, registry)
                 var lines = ["\(name) (\(StandaloneEndpoint.kind))"]
                 if let line = self.line(of: alone.props.endpoint, in: record, snapshot, editor) { lines.append(line) }
-                entries.append(Entry(name: name, lines: lines, words: words(in: lines.joined(separator: " "))))
+                // What a question can name: its name and its route, never the "(endpoint)" tag, which every question about endpoints says.
+                entries.append(Entry(name: name, lines: lines, words: words(in: ([name] + lines.dropFirst()).joined(separator: " "))))
             }
         })
         return block(entries, question: question, noun: ("API", "APIs"))
