@@ -25,6 +25,12 @@ public final class LineRowsService {
     /// The rows its session has selected whole (⇧↑ ⇧↓), and their shape: what's selected as items on the canvas as editing
     /// ends.
     var band: (shape: ShapeID, rows: [PartID])?
+    /// The shape edited from a row selected as an item (Return on it, a click on the only selected one): Escape, ⌘↑ and ⌘↩ out
+    /// of a row there end with that row selected as an item again, one level out (`endsOnRow`), as editing entered from
+    /// the shape ends on the shape.
+    private var enteredAtItem: ShapeID?
+    /// The row the caret was on as editing entered from an item ended by a key: selected as an item as editing ends.
+    var endsOnRow: (shape: ShapeID, row: PartID)?
 
     init(editor: CanvasEditor) {
         self.editor = editor
@@ -93,11 +99,19 @@ public final class LineRowsService {
     @discardableResult
     public func edit(_ row: PartID, of shape: ShapeID, at point: CGPoint?) -> Bool {
         if editor.selectedShapeIDs != [shape] { editor.selectedShapeIDs = [shape] }
-        if let point { return editor.beginEditing(shape, at: point) }
+        if let point {
+            guard editor.beginEditing(shape, at: point) else { return false }
+            enteredAtItem = shape
+            return true
+        }
         guard editor.beginEditing(shape), let session, editor.editingShapeID == shape else { return false }
+        enteredAtItem = shape
         session.go(to: .row(row))
         return true
     }
+
+    /// Whether `id`'s editing was entered from a row selected as an item.
+    func wasEnteredAtItem(_ id: ShapeID) -> Bool { enteredAtItem == id }
 
     /// Where `id`'s session starts when Tab or ⇧Tab hopped to it, as its editing view is made: asked once.
     func startingStop(_ id: ShapeID) -> End? {
@@ -124,7 +138,12 @@ extension LineRowsService: EditorService {
         if let band, band.shape == id {
             self.band = nil
             if editor.document[id] != nil { editor.selectItems(band.rows.map(AnyHashable.init), of: id) }
+        } else if let ends = endsOnRow, ends.shape == id, editor.document[id] != nil, editor.selectedShapeIDs == [id] {
+            // Entered from a row selected as an item: one level out of the row is the row selected again.
+            editor.selectItems([AnyHashable(ends.row)], of: id)
         }
+        if enteredAtItem == id { enteredAtItem = nil }
+        endsOnRow = nil
         setLight(nil)
         editor.setLayoutInput(LineRowsLayout.waiting, nil, for: id)
         editor.setLayoutInput(LineRowsLayout.focused, nil, for: id)

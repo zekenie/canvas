@@ -182,6 +182,33 @@ import TestKit
         expectEqual(w.editor.document[w.a]?.box?.origin, CGPoint(x: 100, y: 100), "the arrows nudge nothing")
         walk.expectEscapeLadder(["canvas/A", "canvas"])
     },
+    test("⌥Tab goes into a shape's items first, one stop (its first item), then its parts; ⌥⇧Tab back to the items left; the ring comes round to them") {
+        let w = try ItemsWindow()
+        let walk = w.walk()
+        w.editor.selectedShapeIDs = [w.a]
+        expectEqual(walk.press(.optionTab).id, "canvas/A/r0", "the first item: the rows are one level in, by keys")
+        expectEqual(walk.press(.down).id, "canvas/A/r1", "↓ walks them")
+        let part = walk.press(.optionTab).id
+        expect(part.hasPrefix("canvas/A/") && w.items.isEmpty, "on to the first part, the items let go: \(part)")
+        expectEqual(walk.press(.optionBackTab).id, "canvas/A/r1", "⌥⇧Tab back to the item left, not the first")
+        let ringLast = walk.press(.optionBackTab).id
+        expect(ringLast != "canvas/A/r1" && w.items.isEmpty, "⌥⇧Tab from the items: the ring's last part: \(ringLast)")
+        expectEqual(walk.press(.optionTab).id, "canvas/A/r1", "⌥Tab its way back, to the item left")
+        expectEqual(walk.press(.escape).id, "canvas/A", "Escape: back to the shape, the items forgotten")
+        let last = walk.press(.optionBackTab).id
+        expect(last != "canvas/A/r0" && w.items.isEmpty, "⌥⇧Tab from the shape: its last part, as ever: \(last)")
+        expectEqual(walk.press(.optionTab).id, "canvas/A/r0", "⌥Tab from the last part comes round to the items")
+        walk.expectEscapeLadder(["canvas/A", "canvas"])
+    },
+    test("Tab and ⇧Tab, and ⌥⌘ arrows, from an item: the opposite key comes back to the item, not only its shape") {
+        let w = try ItemsWindow()
+        let walk = w.walk()
+        w.editor.selectItems(["r2"], of: w.a)
+        expectEqual(walk.press(.tab).id, "canvas/B")
+        expectEqual(walk.press(.backTab).id, "canvas/A/r2", "⇧Tab undoes Tab exactly")
+        expectEqual(walk.press(Chord(Key.right, [.option, .command])).id, "canvas/B")
+        expectEqual(walk.press(Chord(Key.left, [.option, .command])).id, "canvas/A/r2", "and ⌥⌘← ⌥⌘→")
+    },
     test("Delete goes to the items, as the kind deletes them; never to a focused part; Undo restores the items with the step") {
         let w = try ItemsWindow()
         let walk = w.walk()

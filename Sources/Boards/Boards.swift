@@ -87,7 +87,7 @@ public struct BoardsPlugin: ListedPlugin {
         // is named for the step it takes (Enclosing Group, Enclosing Frame, Enclosing Board).
         registrar.command(.enclosingBoard, title: BoardsStyle.enclosingBoard, in: NavigationSection.self, placed: .after(.goForward),
                           shortcut: KeyChord(KeyChord.upArrow.key, .command), runs: .whenIdle, menuTitle: { $0.enclosingTitle },
-                          isEnabled: { $0.editor.selectionEnclosure != nil || !$0.editor.board.isRoot }) { $0.editor.goToEnclosing() }
+                          isEnabled: { $0.editor.canStepItems || $0.editor.selectionEnclosure != nil || !$0.editor.board.isRoot }) { $0.editor.goToEnclosing() }
         // Up to the board above whatever is selected: the table of contents' header button.
         registrar.command(.goUpBoard, title: BoardsStyle.enclosingBoard, runs: .whenIdle,
                           isEnabled: { !$0.editor.board.isRoot }) { $0.editor.goToEnclosingBoard() }
@@ -105,19 +105,21 @@ public struct BoardsPlugin: ListedPlugin {
 }
 
 extension CanvasEditor {
-    /// ⌘↑ and `.enclosingBoard`: one step out. The group the selection is inside, selected whole as
-    /// Escape selects it, else the container all the selected shapes are in, selected (Selection's
-    /// `selectEnclosure`, which brings it into view if it is not); else the board above
-    /// (`goToEnclosingBoard`).
+    /// ⌘↑ and `.enclosingBoard`: one step out. Items selected inside a shape (a table's rows) let go, the shape still
+    /// selected, as Escape does; else the group the selection is inside, selected whole as Escape selects it, else the
+    /// container all the selected shapes are in, selected (Selection's `selectEnclosure`, which brings it into view if it
+    /// is not); else the board above (`goToEnclosingBoard`). Never two levels at once.
     public func goToEnclosing() {
+        if stepOutOfItems() { return }
         if !selectEnclosure() { goToEnclosingBoard() }
     }
 
     /// What the Go item that runs `.enclosingBoard` is called now, for the step ⌘↑ would take: Enclosing
     /// Group, "Enclosing " and what the container's kind is called (`registry.label(of:)`: Enclosing Frame),
-    /// else Enclosing Board.
+    /// else Enclosing Board; with items selected inside a shape, that shape's ("Enclosing Table").
     var enclosingTitle: String {
-        switch selectionEnclosure {
+        if canStepItems, let id = selection, let record = document[id] { return BoardsStyle.enclosing + registry.label(of: record.kind).name }
+        return switch selectionEnclosure {
         case .group?: BoardsStyle.enclosingGroup
         case .container(let id)?: document[id].map { BoardsStyle.enclosing + registry.label(of: $0.kind).name } ?? BoardsStyle.enclosingBoard
         case nil: BoardsStyle.enclosingBoard

@@ -331,7 +331,7 @@ import TextEditing
             expectEqual(b.editor.shapeContext.layoutInput(LineRowsLayout.waiting, for: id), nil, "the waiting line's room is given back")
         }
     },
-    test("a row taken out by another writer while it has the caret: its line, which the keyboard leaving writes, is added as a row, not lost") {
+    test("a row taken out by another writer while it has the caret: its line is a draft on the waiting line, the keyboard kept, written only as the caret leaves") {
         let b = try Bench()
         let id = b.tally("apples", ["red", "green"])
         b.begin(id)
@@ -340,12 +340,17 @@ import TextEditing
         b.type(" 9")
         b.editor.transact("Take Out") { $0.update(id, as: Tally.self) { $0.props.rows.removeAll { $0.label == "green" } } }
         b.window.settle()
-        expectEqual(b.labels(id), ["red", "green"], "the draft was written as a row, not lost")
+        expectEqual(b.labels(id), ["red"], "nothing written while the caret stays")
+        expectEqual(b.undoName, "Take Out", "no step the person didn't ask for")
+        expectEqual(b.focus, "waiting", "the draft is on the waiting line")
+        expectEqual(b.field.string, "green 9", "its words kept")
+        expect(b.window.firstResponder === b.field, "the line keeps the keyboard")
+        let drawn = b.editor.shapeContext
+        expectEqual(drawn.layoutInput(LineRowsLayout.focused, for: id), nil, "no row the line stands for")
+        b.press(.return)
+        expectEqual(b.labels(id), ["red", "green"], "the caret leaving writes it as a row")
         expectEqual(b.rows(id).last?.count, 9)
         expectEqual(b.undoName, "Add Entry")
-        let drawn = b.editor.shapeContext
-        expectEqual(drawn.layoutInput(LineRowsLayout.waiting, for: id), nil, "no waiting line's room kept for a caret that isn't there")
-        expectEqual(drawn.layoutInput(LineRowsLayout.focused, for: id), b.rows(id).last?.id, "the row the line stands for is the field's")
     },
     test("a line break dropped into the line is a space, put in as typing is: the text's undo takes out what went in") {
         let b = try Bench()

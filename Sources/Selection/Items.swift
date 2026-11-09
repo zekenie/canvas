@@ -217,6 +217,13 @@ extension CanvasEditor {
     /// Whether the keys go to selected items: there are some, and nothing's under way or edited.
     public var canStepItems: Bool { session == nil && editingShapeID == nil && selectedItems != nil }
 
+    /// ⌘↑ with items selected: they let go, the shape still selected (as Escape), one level out. Whether there were any.
+    @discardableResult
+    public func stepOutOfItems() -> Bool {
+        guard canStepItems, let state = selectionState else { return false }
+        return state.clearItems()
+    }
+
     /// Says how many items are selected now (the kind's words) when a key or click changed a run of them: more than one now,
     /// or fewer than before. VoiceOver's focus change says a single item moved to; a run has no one element to say it.
     func announceItems(from before: Int) {
@@ -282,6 +289,7 @@ extension SelectionState {
     /// Drops the items: whether there were any.
     @discardableResult
     func clearItems() -> Bool {
+        itemsLeft = nil
         guard items != nil else { return false }
         items = nil
         return true

@@ -209,21 +209,42 @@ extension CanvasEditor {
     public var canFocusParts: Bool { session == nil && editingShapeID == nil && selection != nil }
 
     /// ⌥Tab (`.next`) and ⌥⇧Tab (`.previous`): with no part focused, the only selected shape's first or
-    /// last part; with one, the next or previous, round from the last to the first. Brought into view if
-    /// it is not (`revealIfOffscreen`). A shape with no parts focuses none. Any other direction does nothing.
+    /// last stop; with one, the next or previous, round from the last to the first. A shape with items (`ShapeItems`: a
+    /// table's rows) has them as its first stop, one stop whose items ↑ ↓ walk, as a list is one stop of a panel's loop:
+    /// ⌥Tab from the shape selects its first item, and from the items goes on to its first part; coming back to the items
+    /// (⌥⇧Tab from the first part, ⌥Tab round from the last) selects the items that were left, so each key's opposite lands
+    /// where it was. Brought into view if it is not (`revealIfOffscreen`). A shape with no parts and no items focuses none.
+    /// Any other direction does nothing.
     public func focusAdjacentPart(_ direction: AdjacentDirection) {
         guard canFocusParts, let id = selection, let state = selectionState, direction == .next || direction == .previous else { return }
         let parts = shapeParts(of: id)
-        guard !parts.isEmpty else { return }
+        let items = shapeItems(of: id)
+        // The ring: the items as one stop (0) where the shape lists any, then each part.
+        let first = items.isEmpty ? 0 : 1, count = first + parts.count
+        guard count > 0 else { return }
         let forward = direction == .next
-        let index: Int
-        if let focus = state.partFocus, focus.shape == id, let at = parts.firstIndex(where: { $0.id == focus.part }) {
-            index = (at + (forward ? 1 : parts.count - 1)) % parts.count
+        let at: Int?
+        if !items.isEmpty, let held = state.items, held.shape == id {
+            at = 0
+        } else if let focus = state.partFocus, focus.shape == id, let part = parts.firstIndex(where: { $0.id == focus.part }) {
+            at = first + part
         } else {
-            index = forward ? 0 : parts.count - 1
+            at = nil
         }
-        state.focusPart(parts[index], of: id)
-        revealIfOffscreen(rect: parts[index].rect)
+        let index = at.map { ($0 + (forward ? 1 : count - 1)) % count } ?? (forward ? 0 : count - 1)
+        guard index != at else { return }
+        if index < first {
+            // Back to the items: those left by ⌥Tab, while the shape still lists one of them; else its first.
+            let left = state.itemsLeft.flatMap { $0.shape == id ? $0 : nil }
+            state.setItems(left?.ids ?? [items[0].id], of: id, anchor: left?.anchor)
+            if selectedItems == nil { state.setItems([items[0].id], of: id, anchor: nil) }
+            if let rect = items.first(where: { selectedItems?.ids.first == $0.id })?.rect { revealIfOffscreen(rect: rect) }
+            return
+        }
+        if at == 0, first == 1 { state.itemsLeft = state.items }
+        let part = parts[index - first]
+        state.focusPart(part, of: id)
+        revealIfOffscreen(rect: part.rect)
     }
 
     /// Presses the focused part, as a click on it does: whether there was one to press. The focus stays on

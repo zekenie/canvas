@@ -40,6 +40,12 @@ extension ShapeRegistrar {
                 let rows = model.rows(of: shape.props)
                 guard let index = rows.firstIndex(where: { model.id(of: $0) == part }) else { return true }
                 return model.peeks(rows[index], at: index, of: rows, hitAt: ranges)
+            },
+            opener: { record, index, line in
+                // The line up to where the header's words start: its chevron, drawn in its indent.
+                let rows = record.typed(as: Model.Props.self).map { model.rows(of: $0.props) } ?? []
+                let start = model.style.textInset + (rows.indices.contains(index) ? model.indent(at: index, of: rows, isNew: false) : 0)
+                return CGRect(x: line.minX, y: line.minY, width: min(line.width, start), height: line.height)
             }), to: LineRowsKinds.self)
         // Its rows selected on the canvas (Selection's items) and moved as wholes.
         lineRowItems(model)
@@ -98,7 +104,8 @@ public struct LineRowsPlugin: ListedPlugin {
                           isEnabled: { subject in Folding.targets(subject).contains { subject.editor.rowFolds?.isFolded($0) == true } }) { subject in
             Folding.unfold(Folding.targets(subject), in: subject.editor)
         }
-        // The "+N ›" line and a closed header: a click opens it; reached with ⌥Tab, Return or Space opens it.
+        // The "+N ›" line and a closed header's opener (its chevron): a click opens it; reached with ⌥Tab, Return or Space
+        // opens it. A click on a closed header's words selects it as an item, which → and Space open.
         registrar.shapeFaces(at: { editor, record, point in Folding.line(at: point, on: record, in: editor) },
                              click: { line, editor in Folding.open(line, in: editor) })
         registrar.forShapes(adopting: .lineRows) { kinds in
@@ -173,7 +180,10 @@ enum Folding {
         for (index, line) in shown.lines.enumerated() where kind.lineRect(index, frame).contains(point) {
             switch line {
             case .more: return Line(shape: record.id, header: nil, epoch: epoch)
-            case .header(let row, _): return Line(shape: record.id, header: shown.ids[row], epoch: epoch)
+            case .header(let row, _):
+                // Only its opener (the chevron) opens it: a click on its words is the item ladder's, selecting the header.
+                guard kind.opener(record, row, kind.lineRect(index, frame)).contains(point) else { return nil }
+                return Line(shape: record.id, header: shown.ids[row], epoch: epoch)
             case .row: return nil
             }
         }
@@ -182,12 +192,36 @@ enum Folding {
 
     static func open(_ line: Line, in editor: CanvasEditor) {
         guard let folds = editor.rowFolds else { return }
+        let said = toggled(line.header, of: line.shape, opening: true, in: editor)
         if let header = line.header {
             folds.setClosed(false, header: header, of: line.shape)
         } else {
             folds.openMore(of: line.shape)
         }
-        editor.announce(LineFoldStyle.unfolded)
+        editor.announce(said)
+    }
+
+    /// What VoiceOver hears as a header or the "+N ›" line (`header` nil) of `shape` opens or closes, worked out before it does:
+    /// "/refunds opened, 6 endpoints", "/refunds closed", "37 more columns shown".
+    static func toggled(_ header: PartID?, of shape: ShapeID, opening: Bool, in editor: CanvasEditor) -> String {
+        guard let record = editor.document[shape], let kind = editor.registry.lineRows(of: record.kind) else {
+            return opening ? LineFoldStyle.unfolded : LineFoldStyle.closed
+        }
+        let shown = editor.shapeContext.layoutInput(LineRowsLayout.shown, of: record)
+        guard let header else {
+            return LineFoldStyle.moreShown(shown?.more?.count ?? 0, noun: kind.noun)
+        }
+        let name = editor.registry.parts(of: record)?.first { $0.id == header }?.name ?? ""
+        guard opening else { return LineFoldStyle.headerClosed(name) }
+        // How many it hides now, closed; an open one's members (under it until the next header) where it isn't.
+        let rows = kind.rows(record) ?? []
+        var count = 0
+        if let shown, let line = shown.line(standingFor: header), case .header(_, let hiding) = shown.lines[line] {
+            count = hiding
+        } else if let at = rows.firstIndex(where: { $0.id == header }) {
+            count = rows[(at + 1)...].prefix { !$0.isHeader }.count
+        }
+        return LineFoldStyle.headerOpened(name, members: count, noun: kind.noun)
     }
 
     /// A folded shape's lines a click opens, as parts the keys reach (⌥Tab, then Return or Space): its closed headers and
@@ -246,4 +280,18 @@ enum LineFoldStyle {
 
     /// A closed header: "/orders, 4 endpoints hidden".
     static func header(_ name: String, hiding: Int, noun: LineNoun) -> String { "\(name), \(noun.counted(hiding)) hidden" }
+
+    /// A header opened (→, Space, its chevron): "/refunds opened, 6 endpoints".
+    static func headerOpened(_ name: String, members: Int, noun: LineNoun) -> String {
+        name.isEmpty ? "Opened, \(noun.counted(members))" : "\(name) opened, \(noun.counted(members))"
+    }
+
+    /// A header closed (←, Space): "/refunds closed".
+    static func headerClosed(_ name: String) -> String { name.isEmpty ? closed : "\(name) closed" }
+
+    /// The "+N ›" line opened: "37 more columns shown".
+    static func moreShown(_ count: Int, noun: LineNoun) -> String { "\(more(count, noun: noun)) shown" }
+
+    /// A closed item's title, as VoiceOver reads it among the shape's rows: "/orders, closed, 4 endpoints".
+    static func closedItem(_ title: String, hiding: Int, noun: LineNoun) -> String { "\(title), closed, \(noun.counted(hiding))" }
 }

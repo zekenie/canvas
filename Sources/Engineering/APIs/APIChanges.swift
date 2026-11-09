@@ -222,7 +222,8 @@ extension CanvasEditor {
         guard let made else { return [] }
         selectedShapeIDs = made
         revealIfOffscreen(made)
-        announce(APIStyle.newVersionStep)
+        // Said once: `/new-version`'s bar says the step it ran itself.
+        if !isSayingStep { announce(APIStyle.newVersionStep) }
         return made
     }
 
@@ -239,7 +240,7 @@ extension CanvasEditor {
 
     /// Group by Prefix on each API of `ids` (`/group-by-prefix`, Shape ▸ Group by Prefix), one step: its endpoints by their full
     /// paths, in order, under a header for each first path segment two or more of them share (`APIGroups.byPrefix`), a header of
-    /// a prefix it had keeping its id; an API it changes nothing in is left as it is, and none changed makes no step. A read-only
+    /// a prefix it had keeping its id; an API it changes nothing in is left as it is, and none changed makes no step and says "Nothing to group". A read-only
     /// API refuses it all, and shakes. Whether anything changed.
     @discardableResult
     public func groupByPrefix(_ ids: [ShapeID]) -> Bool {
@@ -251,7 +252,11 @@ extension CanvasEditor {
             let kept = Set(grouped.map(\.id))
             changes.append((id, grouped, Set(api.props.endpoints.filter { !kept.contains($0.id) }.map { PartAddress(id, part: $0.id) })))
         }
-        guard !changes.isEmpty else { return false }
+        guard !changes.isEmpty else {
+            // No step, as a paste that changes nothing, but never silence: the keys and VoiceOver hear why nothing moved.
+            announce(APIStyle.nothingToGroup, priority: .low)
+            return false
+        }
         let done: Bool? = transactWhole(APIStyle.groupByPrefixStep, shaking: Set(changes.map(\.id))) { transaction in
             for change in changes {
                 transaction.update(change.id, as: API.self) { $0.props.endpoints = change.rows }
