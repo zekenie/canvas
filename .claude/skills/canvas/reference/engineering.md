@@ -1,3 +1,4 @@
+<!-- ids: 7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11 -->
 # Tables, enums, databases and APIs
 
 The engineering kit draws a database's tables and a REST API the way an engineer sketches them: a **table** is a card of columns, a line each (`id uuid pk`); an **enum** is a card of values, a line each; a **database** is a region that holds them, as a frame does; an **api** is a card of endpoints, a line each (`POST /orders/{id}/refunds (NewRefund) → 201 Refund`), under its server. A person turns the kit on in a file (File ▸ Kits ▸ Engineering) to get its tools and commands; `canvas draw` and `canvas query` reach its kinds in every file, on or off. [kinds.md](kinds.md) has each kind's size and attributes; this page is how their rows are written.
@@ -15,6 +16,12 @@ A statement joins its lines onto the table's columns by name: a column it names 
 
 ```draw
 table "orders" columns: "placed_at timestamptz null\ntotal_cents int"
+```
+
+JSON items name a column's members (`name`, `type`, `nullable`, `unique`, `default`, `primaryKey`, `onDelete`, `onUpdate`), joined by name the same way, and only the members an item gives change. A `type` is its words, `"type": "char(3)"`, as a line's is:
+
+```draw
+table "orders" columns: [{"name": "currency", "type": "char(3)", "nullable": true}]
 ```
 
 The table is as wide as it's drawn (`size: 320x`) and as tall as its rows; a height in `size:` is its rows' anyway.
@@ -63,8 +70,14 @@ delete "orders".placed_at
 `values:` takes the values as lines, one a value, joined onto what the enum holds by text, a new one after the value written before it. A column whose type is an enum's title shows it in a pill.
 
 ```draw
-enum-type "order_status" below "orders" values: "pending\npaid\nrefunded"
+enum-type "order_status" below "orders" values: "pending\npaid\nrefunded\nvoid"
 table "orders" columns: "status order_status"
+```
+
+A value is taken out as a column is, `delete` and the enum's title, a dot and the value:
+
+```draw
+delete "order_status".void
 ```
 
 ## Tables in a database
@@ -90,10 +103,10 @@ sticky-note "Refund" right of "NewRefund" schema: "{\"type\": \"object\", \"prop
 api "orders API" below "NewRefund" (gap: wide) server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /orders/{id} → Refund\nPOST /orders/{id}/refunds (NewRefund) → 201 Refund\nGET /health"
 ```
 
-A body or a response names a type, a note with a `schema:`, by its title: it's drawn as that type's pill, never an arrow, and a name no type has stays words, in a dashed pill, until one does. JSON items take the card's fields too, a header as `{"header": "/orders"}`:
+A body or a response names a type, a note with a `schema:`, by its title: it's drawn as that type's pill, never an arrow, and a name no type has stays words, in a dashed pill, until one does. JSON items take the card's fields too, a header as `{"header": "/orders"}`, and a new row's `id` if you give it one (else it gets its own; a query's `endpoints` say each row's):
 
 ```draw
-api "orders API" endpoints: [{"header": "/customers"}, {"method": "GET", "path": "/customers/{id}/orders", "name": "listCustomerOrders", "responses": [{"status": "200", "type": "Refund"}]}]
+api "orders API" endpoints: [{"header": "/customers"}, {"method": "GET", "path": "/customers/{id}/orders", "name": "listCustomerOrders", "id": "E1C4A7B2-3D5F-4A8E-9B6C-0F2D4E6A8C1B", "responses": [{"status": "200", "type": "Refund"}]}]
 ```
 
 ## What an API does
@@ -104,6 +117,7 @@ An endpoint **writes** or **reads** a table, and **calls** another endpoint: eac
 table "refunds" right of "orders API" (gap: wide) columns: "id uuid pk\namount_cents int"
 edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
 edge "orders API"."GET /orders/{id}" -> "refunds" channel: reads
+edge "orders API"."GET /customers/{id}/orders" -> "orders" channel: reads
 api "Stripe API" below "orders API" (gap: wide) endpoints: "POST /v1/refunds"
 edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
 ```
@@ -118,7 +132,28 @@ An endpoint is retired with `"deprecated": true` in its item (the app draws its 
 api "orders API" endpoints: [{"method": "GET", "path": "/orders/{id}", "deprecated": true}]
 ```
 
-What a person does in the app reads back the same way: New Version marks an API `deprecated` and puts a copy beside it titled with its version bumped (`orders API v2`), its server's `/v1` now `/v2`, the same rows, and the arrows its rows start; Group by Prefix puts the endpoints under a header for each first path segment two or more share; and one endpoint taken out of an API is an `endpoint` of its own, its card drawn open, its arrows still bound to its row, which is named as an API's row is (`"createRefund"."POST /orders/{id}/refunds"`). No statement draws an `endpoint`; to put one back, write its row into an API's `endpoints:`.
+An endpoint is taken out of its API with `delete`, the API's title, a dot and the endpoint's whole name; the arrows at it go with it:
+
+```draw
+delete "orders API"."GET /health"
+```
+
+What a person does in the app reads back the same way: New Version marks an API `deprecated` and puts a copy beside it titled with its version bumped (`orders API v2`), its server's `/v1` now `/v2`, the same rows, and the arrows its rows start; Group by Prefix puts the endpoints under a header for each first path segment two or more share; and one endpoint taken out of an API is an `endpoint` of its own, its card drawn open, its arrows still bound to its row, which is named as an API's row is (`"createRefund"."POST /orders/{id}/refunds"`). It is read as the row it was: `:route` finds it (the `endpoint` itself, not an API), an arrow's `row` at it names it, and `--ask` is told it as an API of one route. No statement draws an `endpoint`, and none puts one back: writing its row into an API's `endpoints:` makes a second endpoint of that route, the arrows staying on the one of its own. Only a person puts it back, by dragging its chip onto the API, or cutting it and pasting it there.
+
+## A note that mentions a row
+
+A note's text mentions a row as a script names one, after its shape's title and a dot: `@["orders".customer_id]`, `@["orders API"."POST /orders/{id}/refunds"]` (in a script's string, each quote inside it `\"`). The note keeps the row: its pill shows `orders.customer_id`, live, and it follows the row through a rename of either. A query reads it back as `@orders.customer_id`; restating the text, write each row mention this way again, or it becomes words. A row the shape hasn't is `unknown_row`, with the ones it's like.
+
+```draw
+sticky-note "Refund flow" below "Stripe API" (gap: wide) text: "@[\"orders API\".\"POST /orders/{id}/refunds\"] writes @[refunds] for @[\"orders\".customer_id]"
+```
+
+It is a mention of each row's shape:
+
+```query
+/* matches: "Refund flow" */
+sticky-note:edge-to("orders", mention)
+```
 
 ## Asking
 
@@ -177,7 +212,21 @@ arrow[channel=writes]:ends-at("refunds")
 api:edge-to("refunds", writes)
 ```
 
-`:route("…")` is the APIs with an endpoint of that method and whole path: a parameter in braces stands for any parameter, and a path with no method for any method. Each row says the endpoints it matched, `"routes": ["POST /orders/{id}/refunds"]`:
+A question about one row, rather than its shape, names the row as an edge word's anchor: `#<shape>::part(<row>)`, the shape's id as a query's rows give it and the row's as its `endpoints` (or a table's `columns`) do. The tables listCustomerOrders reads, of all the orders API reads:
+
+```query
+/* matches: "orders" */
+table:edge-from(#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11::part(E1C4A7B2-3D5F-4A8E-9B6C-0F2D4E6A8C1B), reads)
+```
+
+Only an edge word takes a row (`:edge-to`, `:edge-from`, `:starts-at`, `:ends-at`, `:start-of`, `:end-of`); anywhere else it's refused:
+
+```query-error
+/* reason: unsupported */
+#7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11::part(E1C4A7B2-3D5F-4A8E-9B6C-0F2D4E6A8C1B)
+```
+
+`:route("…")` is the APIs with an endpoint of that method and whole path, and the endpoints taken out of one that are it: a parameter in braces stands for any parameter, and a path with no method for any method. Each row says the endpoints it matched, `"routes": ["POST /orders/{id}/refunds"]`:
 
 ```query
 /* matches: "orders API" */
