@@ -158,7 +158,7 @@ import TestKit
         guard case .free(let point)? = b.arrow(two)?.end else { return expect(false, "the end is free") }
         expect(point.distance(to: drawn.visiblePoint(at: .end)) < 1e-6, "\(point) against \(drawn.visiblePoint(at: .end))")
     },
-    test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart; their labels slide to their starts") {
+    test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart and level, turning after their marks; their labels slide to their starts") {
         let answers = BundleAnswers()
         let b = try bundleBoard(answers, looks: true)
         let ids = (0..<3).map { b.h.add(Arrow(start: b.end(b.left, $0), end: b.end(b.right, 1), text: "k")) }
@@ -168,9 +168,11 @@ import TestKit
         for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: index, count: 3)]) }
         b.h.editor.connectionBundlesDidChange(Set(ids))
         let fanned = try ids.map { try b.geometry($0) }
-        expect(fanned[0].inward(at: .end).y < -0.2, "the first comes in from above: \(fanned[0].inward(at: .end))")
-        expectClose(fanned[1].inward(at: .end).y, 0, within: 1e-6)  // the middle one level
-        expect(fanned[2].inward(at: .end).y > 0.2, "the last from below")
+        // Marked, each comes in level where its mark is (UX walk 3 tables-2: a fan tilted the bars), and turns after it.
+        expect(fanned.allSatisfy { abs($0.inward(at: .end).y) < 1e-6 }, "level at the row: \(fanned.map { $0.inward(at: .end) })")
+        let beyond = fanned.map { $0.point(40, along: .end).inward }
+        expect(beyond[0].y < beyond[1].y - 0.2, "the first comes in from above the middle one: \(beyond)")
+        expect(beyond[2].y > beyond[1].y + 0.2, "the last from below it: \(beyond)")
         let ends = fanned.map(\.end.y)
         expect(ends[0] < ends[1] && ends[1] < ends[2], "marked ends meet the row apart: \(ends)")
         expect(ends.allSatisfy { abs($0 - 180) <= 10 }, "within the row: \(ends)")

@@ -17,7 +17,7 @@ public struct ArrowBody: Sendable {
     /// Nil for a straight body.
     public let arc: Arc?
     /// A level arrow's curve, measured by its length (so a fraction along it is by length, as an arc's is); nil for any other.
-    public let curve: CubicMeasure?
+    public let curve: ChainMeasure?
 
     public init(start: CGPoint, end: CGPoint, arc: Arc?) {
         self.start = start
@@ -26,13 +26,16 @@ public struct ArrowBody: Sendable {
         curve = nil
     }
 
-    /// A level arrow's visible body.
-    public init(curve: Cubic) {
+    /// A level arrow's visible body: its stubs and its curve.
+    public init(curve: CubicChain) {
         start = curve.start
         end = curve.end
         arc = nil
         self.curve = curve.measured()
     }
+
+    /// A level curve with no stubs.
+    public init(curve: Cubic) { self.init(curve: CubicChain(curve)) }
 
     public var length: CGFloat { curve?.length ?? arc?.length ?? start.distance(to: end) }
 
@@ -60,7 +63,7 @@ public struct ArrowBody: Sendable {
     func crossings(of polygon: [CGPoint]) -> [CGFloat] {
         if let curve {
             let length = curve.length
-            return length > 0 ? curve.cubic.intersections(withPolygon: polygon).map { curve.length(at: $0) / length } : []
+            return length > 0 ? curve.chain.intersections(withPolygon: polygon).map { curve.length(at: $0) / length } : []
         }
         if let arc { return intersections(of: arc, withPolygon: polygon) }
         return intersections(ofSegmentFrom: start, to: end, withPolygon: polygon)
@@ -73,7 +76,7 @@ extension ArrowGeometry {
         switch path {
         case .straight: ArrowBody(start: start, end: end, arc: nil)
         case .curved(let arc, let startT, let endT): ArrowBody(start: start, end: end, arc: arc.trimmed(from: startT, to: endT))
-        case .level(let cubic, let startT, let endT): ArrowBody(curve: cubic.trimmed(from: startT, to: endT))
+        case .level(let cubic, let startT, let endT): ArrowBody(curve: levelLine ?? CubicChain(cubic.trimmed(from: startT, to: endT)))
         }
     }
 }

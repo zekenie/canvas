@@ -95,16 +95,20 @@ struct PortOverlay: CanvasOverlay {
         }
     }
 
-    /// Whether a connection bound to `row` ends where `placed` stands out from (its row's end on that side): one of the shapes
-    /// painted there (arrows at rows paint beneath the cards they join, so the search is of that one spot) bound to the row, its
-    /// outline starting or ending at the dot's edge point.
+    /// Whether a connection bound to `row` ends on the side `placed` stands out from (its row's end on that side): one of the
+    /// shapes painted there (arrows at rows paint beneath the cards they join, so the search is of that side's stretch of the
+    /// row) bound to the row, its outline starting or ending on that stretch, anywhere along the row's height, so an end a fan or
+    /// a slot moved along the side counts as one at its middle (review R21).
     static func isTaken(_ placed: PlacedDot, of row: PartAddress, in editor: CanvasEditor) -> Bool {
         let registry = editor.registry, shapes = editor.shapeContext, edge = placed.edge, slack = PortStyle.endSlack
-        let spot = CGRect(x: edge.x - slack, y: edge.y - slack, width: slack * 2, height: slack * 2)
+        let band = row.part.flatMap { shapes.geometry(of: row.shape)?.parts.frame($0)?.rect }
+        let (low, high) = band.map { (min($0.minY, edge.y), max($0.maxY, edge.y)) } ?? (edge.y, edge.y)
+        let spot = CGRect(x: edge.x - slack, y: low - slack, width: slack * 2, height: high - low + slack * 2)
+        func on(_ point: CGPoint) -> Bool { abs(point.x - edge.x) <= slack && point.y >= low - slack && point.y <= high + slack }
         return editor.paintOrder(in: spot).contains { record in
             guard record.id != row.shape, registry.connectionEnds(of: record) != nil, record.boundParts(in: registry).contains(row),
                   let outline = shapes.geometry(of: record.id)?.outline, let first = outline.first, let last = outline.last else { return false }
-            return first.distance(to: edge) <= slack || last.distance(to: edge) <= slack
+            return on(first) || on(last)
         }
     }
 

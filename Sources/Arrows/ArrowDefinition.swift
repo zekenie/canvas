@@ -35,7 +35,7 @@ extension ArrowDefinition: ShapeDefinition {
         cg.saveGState()
         if let drawing = detail?.drawing {
             // A level arrow, or one with a look: what its kept geometry drew, its body, heads and marks, worked out nothing again.
-            let laid = context.isEditing ? ArrowLabels.laid(of: shape, on: arrowGeometry(of: shape, in: context.shapes), in: context.shapes, editing: true)
+            let laid = context.isEditing ? editedLabel(of: shape, on: arrowGeometry(of: shape, in: context.shapes), in: context.shapes)
                                          : kept.flatMap(ArrowLabels.laid(from:))
             if let laid { clip(cg, around: laid.frame, reaching: drawing.whole.boundingBoxOfPath, width: width) }
             cg.addPath(drawing.body)
@@ -45,7 +45,7 @@ extension ArrowDefinition: ShapeDefinition {
             // As the kept geometry has it: an end of a relationship type is its part of the line through the pill (`EndLine`), worked out once.
             let geometry = arrowGeometry(shape.props, detail: detail, in: context.shapes)
             // The label as the kept geometry has it (asked of Adornments' layout input once, not each frame); while it is edited, as it is edited.
-            let laid = context.isEditing ? ArrowLabels.laid(of: shape, on: geometry, in: context.shapes, editing: true)
+            let laid = context.isEditing ? editedLabel(of: shape, on: geometry, in: context.shapes)
                                          : kept.flatMap(ArrowLabels.laid(from:))
             if let laid { clip(cg, around: laid.frame, reaching: geometry.bodyPath.boundingBoxOfPath, width: width) }
             cg.addPath(geometry.bodyPath)
@@ -96,8 +96,9 @@ extension ArrowDefinition: ShapeDefinition {
         }
         var bounds = geometry.bodyPath.boundingBoxOfPath
         // Fanned at one end only (rows into one table): its pill slides toward its other end, where the lines are apart (E8 panel 2),
-        // unless the person placed it.
-        let slid = bundle.flatMap { Self.fannedLabelPosition($0, of: shape.props) }
+        // unless the person placed it. Kept, so its label is edited there too.
+        let slid = bundle.flatMap { Self.fannedLabelPosition($0, of: shape.props, length: geometry.bodyLength) }
+        detail?.labelPosition = slid
         let laid = line == nil ? ArrowLabels.laid(of: shape, on: geometry, in: context, position: slid) : nil
         if let laid { bounds = bounds.union(laid.frame) }
         return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: laid?.frame,
@@ -105,14 +106,29 @@ extension ArrowDefinition: ShapeDefinition {
     }
 
     /// Where a fanned arrow's label goes: toward the end that isn't fanned, as near it as its clearance lets; nil where it's fanned
-    /// at both ends or neither, or the person moved its label off halfway.
-    static func fannedLabelPosition(_ bundle: ConnectionBundle, of arrow: Arrow) -> CGFloat? {
+    /// at both ends or neither, or the person moved its label off halfway. Where that end is one a row's connections part from to
+    /// other places (`ConnectionBundle.parting`: a row's writes and reads to two tables), each after the first is
+    /// `ArrowStyle.partingLabelStep` further along its line (`length` long), so their pills don't stack at the row (UX walk 3
+    /// evolve-5), never past halfway.
+    static func fannedLabelPosition(_ bundle: ConnectionBundle, of arrow: Arrow, length: CGFloat) -> CGFloat? {
         guard arrow.labelPosition == ArrowLabelLayout.defaultPosition else { return nil }
+        let toward: ConnectionBundle.End
         switch (bundle.fan(at: .start) != nil, bundle.fan(at: .end) != nil) {
-        case (false, true): return 0
-        case (true, false): return 1
+        case (false, true): toward = .start
+        case (true, false): toward = .end
         default: return nil
         }
+        var along: CGFloat = 0
+        if let parting = bundle.parting, parting.end == toward, parting.index > 0, length > 0 {
+            along = min(0.5, CGFloat(parting.index) * ArrowStyle.partingLabelStep / length)
+        }
+        return toward == .start ? along : 1 - along
+    }
+
+    /// Its label as it is edited, at the size what's typed needs, where the kept geometry lays it (a fanned arrow's slid toward
+    /// its other end), so the editor and the body's cut are where the label is drawn (review R22).
+    func editedLabel(of shape: ShapeRecord<Arrow>, on geometry: ArrowGeometry, in context: ShapeContext) -> ArrowLabels.Laid? {
+        ArrowLabels.laid(of: shape, on: geometry, in: context, editing: true, position: context.geometry(of: shape.id)?.arrowDetail?.labelPosition)
     }
 
     /// Where its label is, as its geometry has it (kept, so measured once): its text's, and the pill that leads it.

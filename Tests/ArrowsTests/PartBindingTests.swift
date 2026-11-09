@@ -1,6 +1,7 @@
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
 import Keyboard

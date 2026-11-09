@@ -85,6 +85,9 @@ struct ArrowDetail: @unchecked Sendable {
     /// for one drawn as ever.
     var spread: ArrowSpread? = nil
     var bundle: ConnectionBundle? = nil
+    /// Where its label is laid instead of where it is stored (a fanned arrow's, slid toward its other end): kept, so the label
+    /// is edited where it is drawn.
+    var labelPosition: CGFloat? = nil
     /// What a frame draws: nil for an arrow that is only a relationship's end, drawn as it always was.
     var drawing: ArrowDrawing?
 
@@ -205,12 +208,15 @@ extension ArrowDefinition {
     }
 
     /// How an arrow's bundle answer draws it (`ConnectionBundle`): its slot's bow, its fans, the rows it comes in at; nil for none.
-    /// An arrow imprecise at both ends is one of a pair that `ArrowConnections.pairBend` bowed apart when it was made (the later
-    /// one holds a bend of its own, whose sign a slot's bow could cancel), so it takes no slot's bow: its own bend is its slot.
+    /// An arrow bound at both ends to shapes as wholes is one of a pair that `ArrowConnections.pairBend` bowed apart when it was
+    /// made (the later one holds a bend of its own, whose sign a slot's bow could cancel), so it takes no slot's bow: its own bend
+    /// is its slot.
     static func spread(of bundle: ConnectionBundle?, for arrow: Arrow) -> ArrowSpread? {
         guard let bundle, !bundle.isPlain else { return nil }
         var spread = ArrowSpread()
-        let paired = [arrow.start, arrow.end].allSatisfy { $0.binding.map { !$0.isPrecise } ?? false }
+        // Decided by what the arrow holds, never by its ends' precision, which a nudge or a move alone sets: bound at both ends to
+        // shapes as wholes, it is one of a pair (review R39: made precise by a move, it took a slot's bow and jumped).
+        let paired = [arrow.start, arrow.end].allSatisfy { $0.binding.map { $0.part == nil } ?? false }
         if !paired {
             spread.bend = CGFloat(bundle.slotOffset) * ArrowStyle.slotSpacing
             spread.slotShift = CGFloat(bundle.slotOffset) * ArrowStyle.slotEndShift

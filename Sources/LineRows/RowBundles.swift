@@ -267,8 +267,11 @@ final class RowBundles {
             }
             for fan in part.fans where answer.fan(at: fan.end) == nil { answer.fans.append(fan) }
             answer.entries.merge(part.entries) { first, _ in first }
+            if answer.parting == nil { answer.parting = part.parting }
             joined = answer
         }
+        // Parting says something only beside a fan (it spaces pills a fan slides): alone, the connection is drawn as ever.
+        if joined?.fans.isEmpty == true { joined?.parting = nil }
         let answer = joined.flatMap { $0.isPlain ? nil : $0 }
         let before = state.answers[arrow]
         state.answers[arrow] = answer
@@ -314,11 +317,13 @@ final class RowBundles {
         var answers: [ShapeID: ConnectionBundle] = [:], bundles: [ShapeID: [ShapeID]] = [:]
         for item in drawn { answers[item.arrow] = ConnectionBundle() }
 
-        // Sharing both drawn ends: a bundle of a channel where a fold hides an end, then a slot each for what is drawn.
-        struct Path: Hashable { let start: Standing; let end: Standing }
+        // Sharing both drawn ends, whichever way each runs (a call and its callback between two rows): a bundle of a channel where a
+        // fold hides an end, of those running one way, then a slot each for what is drawn. An arrow running the other way from the
+        // path's first takes the mirror of its slot, since its bow is measured across its own chord, the other way (review R23).
+        struct Path: Hashable { let ends: Set<Standing> }
         var paths: [Path: [Drawn]] = [:], pathOrder: [Path] = []
         for item in drawn {
-            let path = Path(start: item.start, end: item.end)
+            let path = Path(ends: [item.start, item.end])
             if paths[path] == nil { pathOrder.append(path) }
             paths[path, default: []].append(item)
         }
@@ -326,10 +331,12 @@ final class RowBundles {
         for path in pathOrder {
             guard let sharing = paths[path], sharing.count > 1 else { continue }
             var shown: [ShapeID] = []
-            var channels: [EdgeTypeID: [Drawn]] = [:], channelOrder: [EdgeTypeID] = []
+            struct Way: Hashable { let channel: EdgeTypeID; let start: Standing }
+            var channels: [Way: [Drawn]] = [:], channelOrder: [Way] = []
             for item in sharing where item.hidden {
-                if channels[item.channel] == nil { channelOrder.append(item.channel) }
-                channels[item.channel, default: []].append(item)
+                let way = Way(channel: item.channel, start: item.start)
+                if channels[way] == nil { channelOrder.append(way) }
+                channels[way, default: []].append(item)
             }
             for channel in channelOrder {
                 guard let bundle = channels[channel], bundle.count > 1, let lead = bundle.first else { continue }
@@ -340,10 +347,14 @@ final class RowBundles {
                     members.insert(member.arrow)
                 }
             }
-            for item in sharing where !members.contains(item.arrow) { shown.append(item.arrow) }
+            var reversed = Set<ShapeID>()
+            for item in sharing where !members.contains(item.arrow) {
+                shown.append(item.arrow)
+                if item.start != sharing[0].start { reversed.insert(item.arrow) }
+            }
             guard shown.count > 1 else { continue }
             for (slot, arrow) in shown.enumerated() {
-                answers[arrow]?.slot = slot
+                answers[arrow]?.slot = reversed.contains(arrow) ? shown.count - 1 - slot : slot
                 answers[arrow]?.slots = shown.count
             }
         }
@@ -366,6 +377,27 @@ final class RowBundles {
             }
         }
 
+        // Parting: those with their end here at one line and their other ends at different places (a row's writes and reads to two
+        // tables), ordered by where those are, top to bottom; their pills, slid toward this end by a fan at the other, are spaced
+        // apart along their lines rather than stacked (UX walk 3 evolve-5).
+        struct Here: Hashable { let here: Standing; let end: ConnectionBundle.End }
+        var parting: [Here: [(arrow: ShapeID, far: Standing)]] = [:]
+        for item in drawn where !members.contains(item.arrow) && item.source != item.target {
+            let (here, far, end): (Standing, Standing, ConnectionBundle.End) =
+                item.source == shape ? (item.start, item.end, .start) : (item.end, item.start, .end)
+            guard here.line != nil else { continue }
+            parting[Here(here: here, end: end), default: []].append((item.arrow, far))
+        }
+        func height(of far: Standing) -> (CGFloat, Int) { (document[far.shape]?.box?.midY ?? 0, far.line ?? -1) }
+        for (here, group) in parting {
+            let fars = Array(Set(group.map(\.far))).sorted { height(of: $0) < height(of: $1) }
+            guard fars.count > 1 else { continue }
+            for (arrow, far) in group {
+                guard let index = fars.firstIndex(of: far) else { continue }
+                answers[arrow]?.parting = ConnectionBundle.Fan(end: here.end, index: index, count: fars.count)
+            }
+        }
+
         // A connection to this shape as a whole: a row clear of the rows others end at on its side. Read from the boxes of the
         // shapes at its other ends (`reads`: when one moves, this is worked out again).
         var reads: Set<ShapeID> = []
@@ -373,28 +405,43 @@ final class RowBundles {
             (item.source == shape && item.sourcePart == nil) || (item.target == shape && item.targetPart == nil)
         }
         if !wholes.isEmpty, let entries = reader.entryRows(of: record), let box = record.box {
-            // Which side of this shape an end at it is on (true: the right), by the boxes at rest as Arrows sides them: two row
-            // ends whose shapes' spans across overlap both leave the right; any other end faces the shape at its other end.
-            func side(toward far: ShapeID, bothRows: Bool) -> Bool {
+            // Which side of this shape an end at it is on (true: the right), by the one rule the connector draws by (Connections'
+            // `PartSide`): rows sided together by the boxes at rest, else facing the other end; inside a container both are in, a
+            // side with no room flipped; an end here at the shape as a whole, joined to a row of a shape whose span overlaps, comes
+            // in at the side that row leaves by.
+            func row(_ id: ShapeID, _ part: PartID?) -> CGRect? { part.flatMap { context.geometry(of: id)?.parts.frame($0)?.rect } }
+            func container(of id: ShapeID) -> CGRect? {
+                guard let holder = document[id]?.container, let record = document[holder],
+                      registry.containingKinds.contains(record.kind), !record.isOpaque else { return nil }
+                return context.geometry(of: holder)?.bounds
+            }
+            func side(here part: PartID?, toward far: ShapeID, farPart: PartID?) -> Bool {
                 reads.insert(far)
                 guard let other = document[far]?.box else { return true }
-                if bothRows, box.minX < other.maxX, other.minX < box.maxX { return true }
+                let shared = container(of: shape).flatMap { mine in container(of: far).flatMap { $0 == mine ? mine : nil } }
+                let hereRow = row(shape, part), farRow = row(far, farPart)
+                if let hereRow {
+                    let drawn = PartSide.drawn(start: (hereRow, box, hereRow.midX), end: (farRow, other, farRow?.midX ?? other.midX), container: shared)
+                    return drawn.start != .left
+                }
+                let farSide = farRow.flatMap { PartSide.drawn(start: ($0, other, $0.midX), end: (nil, box, box.midX), container: shared).start }
+                if let entered = PartSide.entered(box, joinedTo: other, leavingBy: farSide) { return entered == .right }
                 return other.midX >= box.midX
             }
             var taken: [Bool: Set<Int>] = [:]
             for item in drawn {
                 if item.source == shape, item.sourcePart != nil, let line = item.start.line {
-                    taken[side(toward: item.target, bothRows: item.targetPart != nil), default: []].insert(line)
+                    taken[side(here: item.sourcePart, toward: item.target, farPart: item.targetPart), default: []].insert(line)
                 }
                 if item.target == shape, item.targetPart != nil, let line = item.end.line {
-                    taken[side(toward: item.source, bothRows: item.sourcePart != nil), default: []].insert(line)
+                    taken[side(here: item.targetPart, toward: item.source, farPart: item.sourcePart), default: []].insert(line)
                 }
             }
             for item in wholes {
                 let far = item.source == shape ? item.target : item.source
                 // Joined to a row of the other shape: sided with it, as Arrows comes in (`ArrowGeometry`).
                 let farPart = item.source == shape ? item.targetPart : item.sourcePart
-                guard let lines = taken[side(toward: far, bothRows: farPart != nil)], !lines.isEmpty else { continue }
+                guard let lines = taken[side(here: nil, toward: far, farPart: farPart)], !lines.isEmpty else { continue }
                 reads.insert(far)
                 let below = (document[far]?.box?.midY ?? .infinity) > box.midY
                 guard let row = RowBundles.clear(entries, taken: lines, fromTheEnd: below) else { continue }
