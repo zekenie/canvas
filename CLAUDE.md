@@ -64,7 +64,7 @@ Each topic file starts with what it covers, the topics it touches, and its secti
 - [editing](.claude/rules/editing.md): editing in place (`Editable`, the editing view, `EditContext`), and an editor's text held to its shape's render.
 - [undo](.claude/rules/undo.md): steps, groups and coalescing, `DocumentDelta`, one history across boards.
 - [boards in a file](.claude/rules/boards-in-a-file.md): `CanvasFile`, board revisions, the delete cascade, `transact(on:)`, and showing a board.
-- [containers](.claude/rules/containers.md): shapes holding shapes on a board, settling what's put down, and putting a container down around shapes.
+- [containers](.claude/rules/containers.md): shapes holding shapes on a board, settling what's put down, making room below a shape that grows (the push, `MakesRoomAsItGrows`), and putting a container down around shapes.
 - [boards on disk](.claude/rules/boards-on-disk.md): `BoardDocument` and `BoardCodec`: formats, migrations and fixtures, what's kept aside, the view memory (and the view values it saves), autosave.
 - [drawing](.claude/rules/drawing.md): what a frame may cost, the dot grid, skeletons, board previews, the minimap, the pointer over the views the canvas hosts.
 - [accessibility](.claude/rules/accessibility.md): what VoiceOver hears of the canvas: a shape's description (`ShapeAccessibility`, `accessibleDescription(of:)`, its title first), the order and parts one plugin claims, `announce`, the selection as the focus, and CanvasUI's `ShapeElement`s (nothing runs until an assistive app asks).

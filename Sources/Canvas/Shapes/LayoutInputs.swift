@@ -60,6 +60,13 @@ final class LayoutSource {
     /// Which log this is: sources of one run, made as it went on, have the same number and each one's log
     /// begins with the entries of the earlier; 0 for the editor's.
     let run: Int
+    /// Whether this source lays shapes out at rest: as they are when nothing is handling them, whatever a plugin shows
+    /// or sets for the shape while it is (the editing view's waiting line and width, a fold peeled back while its shape is
+    /// edited). What `Transaction.makeRoom()` measures a growth by.
+    let isResting: Bool
+    /// The shapes whose kept extent touches a rect, on a board, as the editor's committed index has them (nil: it
+    /// has none for that board, or none made yet); only on the editor's own source.
+    let nearby: (@MainActor (BoardID, CGRect) -> [ShapeID]?)?
 
     private static var runs = 0
     /// A number no other log has had.
@@ -71,7 +78,10 @@ final class LayoutSource {
     init(inputs: LayoutInputs, sizes: LaidOutSizes, lend: @escaping @MainActor (ObjectIdentifier) -> (any EditorService)?,
          shape: @escaping @MainActor (ShapeID) -> AnyShapeRecord?, board: @escaping @MainActor (ShapeID) -> BoardID?,
          fileValues: @escaping @MainActor () -> FileValues, isChanged: (@MainActor (ShapeID) -> Bool)? = nil,
-         writes: [ShapeID] = [], run: Int = 0) {
+         writes: [ShapeID] = [], run: Int = 0, isResting: Bool = false,
+         nearby: (@MainActor (BoardID, CGRect) -> [ShapeID]?)? = nil) {
+        self.isResting = isResting
+        self.nearby = nearby
         self.inputs = inputs
         self.sizes = sizes
         self.lend = lend
@@ -183,6 +193,11 @@ public struct LayoutReading {
     /// Whether the file read is the editor's as committed. False mid-transaction: what a service
     /// keeps is of the file before, so answer from `shape(inFile:)` there.
     public var isCommitted: Bool { source.isCommitted }
+
+    /// Whether the shape is laid out at rest: as it is when nothing is handling it. A provider that answers something the
+    /// editing view shows (more rows while a folded shape is edited, a width while a line is typed) answers as at rest
+    /// here, for what measures a shape by what a step writes (`Transaction.makeRoom()`).
+    public var isResting: Bool { source.isResting }
 
     /// Whether this reading's shape differs from the editor's committed one (always false when
     /// `isCommitted`): one the reader added, changed other than by moving it, or laid in

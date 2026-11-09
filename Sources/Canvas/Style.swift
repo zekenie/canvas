@@ -158,6 +158,13 @@ public enum Style {
     /// How far inside a container's edge a shape nudged in ends, and how far outside one nudged out,
     /// in world units (`Transaction.settle`): the edge stays clear to grab.
     nonisolated static let containerGap: CGFloat = 16
+    /// How near the bottom of a shape that grows (`MakesRoomAsItGrows`) may come to the top of one below it before it
+    /// pushes that one down, in world units (`Transaction.makeRoom()`): twice the containers' gap, which clears what is
+    /// drawn over a shape's top edge (a title's row reaches 27 world units above it at 100%).
+    nonisolated static var roomReach: CGFloat { containerGap * 2 }
+    /// The most shapes one step's push moves, and containers it grows (`Transaction.makeRoom()`): past that it leaves
+    /// the rest where they are, for the person.
+    nonisolated static let roomMoves = 200
     /// The glide (`CanvasEditor.glide`): a shape settling nudged in or out, or a refused drop going
     /// back, eases there from where it was drawn over this long, a frame every `glideFrame`...
     static let glideDuration: Duration = .milliseconds(250)

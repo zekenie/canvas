@@ -73,7 +73,7 @@ public struct LineRowsPlugin: ListedPlugin {
         registrar.outlines { editor in editor.service(LineRowsService.self)?.outlines() ?? Outlines() }
         // What a folded shape shows, asked as it's laid out, and how wide one is while a line typed in it is wider.
         registrar.layoutInput(LineRowsLayout.shown) { record, reading in reading.service(RowFolds.self)?.shown(of: record, in: reading) }
-        registrar.layoutInput(LineRowsLayout.width) { record, reading in reading.service(LineRowsService.self)?.width(of: record.id) }
+        registrar.layoutInput(LineRowsLayout.width) { record, reading in reading.isResting ? nil : reading.service(LineRowsService.self)?.width(of: record.id) }
         // ⌃⌘↑ ⌃⌘↓: a view, no step; never while a shape is edited (it shows every row then), so the text keeps the keys.
         registrar.command(.foldRows, title: LineFoldStyle.foldTitle, in: RowFoldsSection.self,
                           shortcut: KeyChord(KeyChord.upArrow.key, [.control, .command]), runs: .whenIdle,

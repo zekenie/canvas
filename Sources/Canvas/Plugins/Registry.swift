@@ -41,6 +41,9 @@ public struct Registry {
     /// Kinds whose shapes contain shapes on their own board (`ShapeContaining`: a frame). Without
     /// one, nothing is in a container, and the core does nothing of containment (Containment.swift).
     public let containingKinds: Set<ShapeKind>
+    /// Kinds whose shapes make room below them as they grow (`MakesRoomAsItGrows`): what `Transaction.makeRoom()`
+    /// looks for among what a step changed. Without one, it does nothing.
+    public let roomMakingKinds: Set<ShapeKind>
     /// Kinds that draw a skeleton of their own (`CustomSkeleton`), found once: a frame zoomed out
     /// asks for every shape it draws.
     let customSkeletons: [ShapeKind: any CustomSkeleton]
@@ -120,6 +123,7 @@ public struct Registry {
         takingBoundKinds = Set(definitions.filter { $0.value is any TakesBoundShapes }.keys)
         boardOwningKinds = Set(definitions.filter { $0.value is any BoardOwning }.keys)
         containingKinds = Set(definitions.filter { $0.value is any ShapeContaining }.keys)
+        roomMakingKinds = Set(definitions.filter { $0.value is any MakesRoomAsItGrows }.keys)
         laidOutBoxes = definitions.compactMapValues { $0 as? any LaidOutBox }
         partedDefinitions = definitions.compactMapValues { $0 as? any PartedShape }
         // A container's edge is its box: what it holds is judged by it, and a resize edits it.

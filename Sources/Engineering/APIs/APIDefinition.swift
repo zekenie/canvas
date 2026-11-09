@@ -86,6 +86,9 @@ extension APIDefinition: LaidOutBox {
     }
 }
 
+/// Makes room as its rows grow: an API gaining an endpoint pushes what is below it down, in the same step.
+extension APIDefinition: MakesRoomAsItGrows {}
+
 /// Its stored height is kept in step with its rows wherever it's made from properties (`canvas draw`).
 extension APIDefinition: DerivedProps {
     func derive(_ api: inout API) {

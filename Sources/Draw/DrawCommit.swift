@@ -200,6 +200,10 @@ extension Drawing {
             for index in order.filter({ !registry.isContainer(items[$0].record) }) + holding {
                 let item = items[index]
                 if let existing = item.existing, !item.moves, item.record.box?.size == existing.box?.size { continue }
+                // One that grew where it is (a table given columns) is left to making room, which grows the container
+                // holding it, rather than nudged up over the shape above it (and grows the shapes below it).
+                if let existing = item.existing, !item.moves, transaction.makesRoom, registry.roomMakingKinds.contains(item.record.kind),
+                   item.record.box?.origin == existing.box?.origin { continue }
                 var column: [ShapeItem] = []
                 if item.implied, let members = columns[ColumnKey(item)], members.count > 1 {
                     guard members[0] == index else { continue }
@@ -211,6 +215,10 @@ extension Drawing {
 
         // Groups and ungroups, in script order: every shape and edge the script draws is in the transaction, so one may be named.
         changes += try applyGroups(in: &transaction)
+
+        // Room made below what the run grew (a table given columns), now, so what's read back is where it ends and the
+        // report says what moved; the step's own run after the body finds nothing more.
+        let pushed = transaction.makeRoom()
 
         // What it did, and what it should say, read from one context taken once every write is done (a context
         // is a snapshot, and anything worked out over one is worked out again for the next).
@@ -230,12 +238,16 @@ extension Drawing {
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
                                  title: naming?.name(now, registry), id: now.id.description, at: at)
             if let existing = item.existing {
+                // As it was before making room pushed it: a shape only the push moved is the script's unchanged (`moved` lists it).
+                var unpushed = now
+                let shift = transaction.roomShift(of: now.id)
+                if shift != .zero, let box = now.box { unpushed.box = box.offsetBy(dx: 0, dy: -shift.y) }
                 if item.rename != nil {
                     row.did = .renamed
                     row.was = item.title
-                } else if now.box != existing.box {
+                } else if unpushed.box != existing.box {
                     row.did = .moved
-                } else if now != existing {
+                } else if unpushed != existing {
                     row.did = .updated
                 } else {
                     row.did = .unchanged
@@ -321,7 +333,14 @@ extension Drawing {
 
         let rows = changes.enumerated().sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }.map(\.element)
         let said = warnings.enumerated().sorted { ($0.element.line ?? .max, $0.offset) < ($1.element.line ?? .max, $1.offset) }.map(\.element)
-        return DrawResult(changes: rows, warnings: said, nudges: nudges)
+        var moved: [DrawMoved] = []
+        for (id, delta) in pushed {
+            guard let record = transaction.document[id] else { continue }
+            moved.append(DrawMoved(kind: record.kind.rawValue, title: naming?.name(record, registry), id: id.description,
+                                   at: shapes.frame(of: record), down: delta.y))
+        }
+        moved.sort { ($0.at?.minY ?? 0, $0.id) < ($1.at?.minY ?? 0, $1.id) }
+        return DrawResult(changes: rows, warnings: said, nudges: nudges, moved: moved)
     }
 
     /// A restated shape as the statement leaves it: what it says, and where it's placed. A

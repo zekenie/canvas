@@ -19,6 +19,8 @@ table "orders" columns: "placed_at timestamptz null\ntotal_cents int"
 
 The table is as wide as it's drawn (`size: 320x`) and as tall as its rows; a height in `size:` is its rows' anyway.
 
+A table, enum or API that gains rows makes room below it: in the same step, what's under it in its database (or on the board) that its new bottom comes within 32 of moves down as far as it grew (a shape the script put there too), keeping its gap, and pushes what's under that; a database the push takes past its bottom grows. The report lists what moved, `"moved": [{"kind", "title", "id", "at", "down"}]`, only when something did. A locked shape stops it, and nothing moves up when rows go: lay out what it can't by hand. A document applied with `canvas apply` makes no room: its plan places every shape.
+
 A person can paste SQL into the app (⌘V of `CREATE TABLE …` with the kit on), and it lands as these statements would, joined by name the same way; that's the person's way in, and `canvas draw` stays yours.
 
 ## Keys

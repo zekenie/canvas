@@ -121,6 +121,9 @@ struct TallyDefinition: ShapeDefinition, LaidOutBox {
     }
 }
 
+/// Makes room as its entries grow, as the kit's kinds do (`Transaction.makeRoom()`).
+extension TallyDefinition: MakesRoomAsItGrows {}
+
 extension TallyDefinition: Editable {
     func makeEditingView(for shape: ShapeRecord<Tally>, context: EditContext<Tally>) -> EditingView {
         LineRowsView.make(shape, context: context, model: TallyLines(), title: nil)

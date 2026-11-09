@@ -15874,7 +15874,7 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   the size its layout inputs say, larger or smaller, else its box), read before anything changes, and a container's own
   edge is always its stored box (a kind that holds shapes can't be a `LaidOutBox`). One that grows
   later, by an input changing, is not settled again: it stays where it is and may overlap a
-  neighbor or hang over an edge. Create Frame's frame goes around the laid-out frames too.
+  neighbor or hang over an edge (but for a kind that makes room as it grows: making room, below). Create Frame's frame goes around the laid-out frames too.
   Both hand back what they nudged, by how far, what that carries included (`Settlement.nudges`), for
   the glide. O(the board), at a gesture's end. `transaction.settle(ids, on: board)` is the rule on
   another board of the file, against that board as the transaction leaves it: what `move(_:to:)`
@@ -15882,6 +15882,31 @@ extension CorralDefinition: ShapeContaining {}       // its shapes hold shapes o
   what it lands on there, and what the transaction brought there isn't held, as what it adds isn't.
   A refusal changes nothing there, and the caller throws, dropping the move; the nudges are that
   board's, where nothing glides. On the transaction's own board it's `settle(_:)`.
+- **Making room** (`MakingRoom.swift`) is settling's one exception to "a shape that grows later
+  stays where it is", for the kinds that opt in (`MakesRoomAsItGrows`, a capability with no
+  requirements: the engineering kit's table, enum and API). When a step writes such a shape taller
+  at rest (laid out without the values plugins set for it while it's handled, `setLayoutInput`: an
+  editing view's waiting line, a drag's fade, so only a write pushes; a provider answers as at rest,
+  `LayoutReading.isResting`: the width while typing nothing, a fold kept for the shape being
+  edited), each shape below it in its container (or on the board) that
+  was below its old bottom, overlaps it across (its widest, before and after), and that its new
+  bottom comes nearer than `Style.roomReach` (32 world units whatever the zoom, twice the containers'
+  gap, which clears a title's row at 84% zoom and up) moves down by as much
+  as its bottom went down, and pushes what it reaches the same way, one pass top to bottom (a shape
+  two reach moves by the larger). What a container holds goes with it, arrows bound to it follow. A
+  container whose members the push takes past its bottom less the gap grows to hold them the gap
+  inside, and pushes in its own container; innermost first. Where it stops the person takes over:
+  read-only shapes stay and push nothing, a read-only container doesn't grow, a shape the step put in
+  or moved is pushed as any is when the growth reaches it (and grows nothing by that put), a step
+  moves at most `Style.roomMoves` (200), shrinking pulls nothing up, and nothing moves sideways.
+  A program's document (`canvas apply`, the digest) makes no room: `Transaction.makesRoom` is off
+  for it, its plan having put every shape at the size it will have. `editor.transact` (and `transact(on:)`, and a step on
+  another board taken in) runs `transaction.makeRoom()` as the body finishes, before the commit, so
+  the growth and the moves are one step under its own name and one Undo; a body that must say what
+  moved (`canvas draw`'s `moved`) runs it first and reads `transaction.madeRoom`, and the step's own
+  run finds nothing more (each growth makes room once). O(what it reaches) on the board shown (the
+  editor's index finds the band), O(the container) in one, nothing where nothing that makes room
+  grew.
 - **A drag**, once past the drag threshold, outlines the container what it moves would go into as
   the hint (`hintedShapeID`), never a read-only one, finding the containers once and costing what
   they are on each event; its release settles what was dropped, in the press's step (a click, short

@@ -239,6 +239,15 @@ final class ShapeIndex {
         return positions
     }
 
+    /// The ids of the shapes whose kept extent touches `rect`, in paint order; nil while no paint list is kept (a push
+    /// that goes by the index never builds one: it would cost more than going through the shapes).
+    func ids(touching rect: CGRect, in context: ShapeContext) -> [ShapeID]? {
+        guard paintList != nil else { return nil }
+        let positions = positions(touching: rect, in: context)
+        let list = paintList!, shapes = context.storedDocument.shapes
+        return positions.map { shapes[list.order[$0]].id }
+    }
+
     /// The paint positions of the shapes a point may hit (`mayHit`, by their own margins), front to back.
     func positions(mayHit point: CGPoint, zoom: CGFloat, in context: ShapeContext) -> [Int] {
         refresh(in: context)

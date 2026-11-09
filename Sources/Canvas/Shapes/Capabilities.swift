@@ -32,6 +32,15 @@ extension LaidOutBox {
     }
 }
 
+/// A kind whose shapes make room below them as they grow: when a step writes one taller (a table gaining a row), the
+/// shapes below it in its container (or on the board) that its new bottom reaches move down by as much, in the same
+/// step, so the gap they had stays; a container they would hang out of grows, and each pushes in its turn
+/// (`Transaction.makeRoom()`, MakingRoom.swift). How tall it is, for this, is its frame at rest: laid out without what a
+/// plugin sets for it while it's handled (`editor.setLayoutInput`: an editing view's waiting line), so only a write
+/// pushes. A best effort with clear limits, never a layout engine: read-only shapes stop it, and shrinking pulls
+/// nothing up. Conform in an extension, like every capability.
+public protocol MakesRoomAsItGrows: ShapeDefinition {}
+
 /// Edited in place: from an editing placement, or by any plugin that calls `editor.beginEditing`
 /// (Selection's double-click and Return). The view is laid over the shape's editing frame (a box
 /// kind's box; a kind without one says where, an arrow its label's), with bounds in world units
