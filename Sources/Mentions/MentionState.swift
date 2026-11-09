@@ -489,9 +489,10 @@ public final class MentionState {
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             listingUnnamed: Bool = false,
                                             admitting rule: (@MainActor (ShapeID) -> Bool)? = nil,
-                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil) -> MentionCandidates {
+                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil,
+                                            ownRows: OwnRows = .both) -> MentionCandidates {
         candidates(matching: query, in: scope, for: owner.map { [$0] } ?? [], kinds: kinds, among: among, listingUnnamed: listingUnnamed,
-                   admitting: rule, listingParts: parts)
+                   admitting: rule, listingParts: parts, ownRows: ownRows)
     }
 
     /// What the `@` picker lists for `query` in text of `scope`, for `owners`: the text's shape, which
@@ -550,11 +551,14 @@ public final class MentionState {
     /// before its name, in the path's band (`orders cust`). The query's words split at a dot followed by a letter too
     /// (`orders.cust`), for shapes as for rows. A row that doesn't stand alone is never matched by its name alone: a column is
     /// listed under its table's name, so `id` doesn't list every table's.
+    ///
+    /// `ownRows` says what lists a shape that is all its one row is (an endpoint taken out of its API: `PartName.isItsShape`).
     public func candidates<S: MentionScope>(matching query: String, in scope: S.Type, for owners: [ShapeID],
                                             kinds: Set<ShapeKind>? = nil, among: [ShapeID]? = nil,
                                             listingUnnamed: Bool = false,
                                             admitting rule: (@MainActor (ShapeID) -> Bool)? = nil,
-                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil) -> MentionCandidates {
+                                            listingParts parts: (@MainActor (PartAddress) -> Bool)? = nil,
+                                            ownRows: OwnRows = .both) -> MentionCandidates {
         refreshStale()
         let document = editor.document, file = editor.file, registry = registry
         let admitsAll = S.self == AnyMentionable.self
@@ -776,12 +780,19 @@ public final class MentionState {
             var merged: [(band: MatchBand, score: Int, length: Int, make: () -> MentionCandidate)] = []
             var listed: Set<ShapeID> = []
             for found in ranked.prefix(MentionRanking.maxMatches) {
-                merged.append((found.band, found.score, entries[found.slot].labelLength, { shapeCandidate(found) }))
-                listed.insert(entries[found.slot].id)
+                let id = entries[found.slot].id
+                // A shape that is all its row is (an endpoint taken out of an API) is listed once, with `ownRows`: as the row where
+                // the list takes it at its row (found by the shape's name, the row is what is listed, the name in its place).
+                if ownRows == .row, let own = partCatalog.rows(of: id).first(where: { $0.part.isItsShape }), parts(PartAddress(id, part: own.part.id)),
+                   let slot = partCatalog.slot(of: id, part: own.part.id) {
+                    merged.append((found.band, found.score, entries[found.slot].labelLength, { self.partCandidate(slot, band: found.band == .path ? .path : .name, q, matcher) }))
+                } else {
+                    merged.append((found.band, found.score, entries[found.slot].labelLength, { shapeCandidate(found) }))
+                }
+                listed.insert(id)
             }
-            // A shape whose one row stands alone is that row (an endpoint taken out of an API): listed once, as the shape when
-            // it's found, its row only when it isn't (found by its path, while it's called by its name).
-            for row in rows where !(listed.contains(partCatalog.entries[row.slot].shape) && partCatalog.isItsOwnRow(row.slot)) {
+            // The row of such a shape that is found with it is the same entry: left out, as the shape is listed once.
+            for row in rows where !(ownRows != .both && listed.contains(partCatalog.entries[row.slot].shape) && partCatalog.isItsOwnRow(row.slot)) {
                 merged.append((row.band, row.score, partCatalog.entries[row.slot].labelLength, { self.partCandidate(row.slot, band: row.band, q, matcher) }))
             }
             // Stable: within a band and score, the shorter name, then shapes before rows as each list had them.
@@ -1450,6 +1461,14 @@ private final class ScopeMembers {
 
 /// Where a query of several words ranks a match: by its name (a tier from a substring up), by its path (a word or more in the
 /// containers the shape is inside), or by its name loosely (a subsequence, a typo). A query of one word has the first alone.
+/// What a list that names shapes and rows lists of a shape that is all its one row is (`PartName.isItsShape`, an endpoint taken out
+/// of its API): `.both` the shape and the row, `.shape` the shape (the `@` picker's, where a pick of either is a mention of it,
+/// the row only where just its path is found), `.row` the row (⌘L's: the shape is no end of a connection, its row is, so the
+/// shape's name finds the row).
+public enum OwnRows: Sendable {
+    case both, shape, row
+}
+
 private enum MatchBand: Comparable {
     case name, path, loose
 }

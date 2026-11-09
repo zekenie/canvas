@@ -10,6 +10,7 @@ import Engineering
 import Geometry
 import LanguageModels
 import LineRows
+import Mentions
 import Palette
 import References
 import Selection
@@ -566,6 +567,44 @@ private let stripeAPI = #"""
         expectEqual(editor.document[arrow.id]?[ChannelProperty.self], nil, "one Undo: the plain arrow")
         editor.undo()
         expectEqual(editor.document, start, "two: none")
+    },
+    test("⌘L lists an endpoint taken out of its API by its name and by its method and path, from an API's endpoint row and from a subboard: its row, which is what calls end on (the @ picker lists it once, ⌘L's list its row)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "orders API" endpoints: "GET /orders"
+            subboard "web" below "orders API" (gap: 120)
+            """#)
+        let named = editor.add(StandaloneEndpoint(frame: CGRect(x: 600, y: 0, width: 420, height: 44),
+                                                  endpoint: Endpoint(method: "POST", path: "/orders/{id}/refunds", name: "createRefund")))
+        let row = try require(editor.document[named]?.typed(as: StandaloneEndpoint.self)?.props.endpoint.id)
+        let orders = try require(shape(editor, "orders API")), web = try require(shape(editor, "web"))
+        let ends = [("an endpoint row", ConnectEnd(orders.id, part: try require(rows(editor, "orders API").first?.id))), ("a subboard", ConnectEnd(web.id))]
+        for (what, source) in ends {
+            let picker = try require(ConnectPicker(editor: editor, source: source), what)
+            for query in ["createRefund", "POST /orders/{id}/refunds"] {
+                picker.setQuery(query)
+                let found = picker.rows.compactMap { row -> PartAddress? in if case .shape(let choice, _) = row { return choice.candidate.address } else { return nil } }
+                expectEqual(found, [PartAddress(named, part: row)], "\(what): \(query) lists the endpoint's row, once")
+            }
+        }
+    },
+    test("the @ picker lists an API's only endpoint beside the API when both match: an endpoint of an API is not an endpoint of its own") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "orders API" endpoints: "GET /orders"
+            """#)
+        let api = try require(shape(editor, "orders API")).id
+        let only = try require(rows(editor, "orders API").first?.id)
+        let mentions = try require(editor.mentions)
+        let listed = mentions.candidates(matching: "orders", in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: .shape).matches.map(\.address)
+        expect(listed.contains(PartAddress(api)), "the API: \(listed)")
+        expect(listed.contains(PartAddress(api, part: only)), "and its endpoint: \(listed)")
     },
     test("a column cut on the root and pasted into a table on another board brings its key back through a pill for the table it references, the column on the binding") {
         let w = try EmptyBoardWindow()

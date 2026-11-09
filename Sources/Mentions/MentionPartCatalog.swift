@@ -31,11 +31,11 @@ struct MentionPartCatalog {
     /// A shape's rows, in its order.
     func rows(of shape: ShapeID) -> [Entry] { (slots[shape] ?? []).map { entries[$0] } }
 
-    /// Whether the row at `slot` is all its shape is: its shape's one row, standing alone (an endpoint of its own).
-    func isItsOwnRow(_ slot: Int) -> Bool {
-        let entry = entries[slot]
-        return entry.part.standsAlone && slots[entry.shape]?.count == 1
-    }
+    /// The slot of a shape's row.
+    func slot(of shape: ShapeID, part: PartID) -> Int? { (slots[shape] ?? []).first { entries[$0].part.id == part } }
+
+    /// Whether the row at `slot` is all its shape is (an endpoint of its own: `PartName.isItsShape`).
+    func isItsOwnRow(_ slot: Int) -> Bool { entries[slot].part.isItsShape }
 
     /// A shape's rows, put in or read again: nothing changes while their names, kind words, leads and order are as held.
     mutating func set(_ shape: ShapeID, parts: [PartName]) {

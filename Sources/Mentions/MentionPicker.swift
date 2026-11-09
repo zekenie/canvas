@@ -112,7 +112,7 @@ public final class MentionPicker {
         // mentions the row.
         self.init(at: location, wordsRow: wordsRow) { [weak mentions] query in
             guard let mentions else { return MentionCandidates() }
-            if listingRows { return mentions.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits, listingParts: { _ in true }) }
+            if listingRows { return mentions.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits, listingParts: { _ in true }, ownRows: .shape) }
             return mentions.candidates(matching: query, in: scope, for: owners, kinds: kinds, admitting: admits)
         }
     }

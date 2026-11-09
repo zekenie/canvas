@@ -180,7 +180,7 @@ extension EndpointDefinition: PartedShape {
     func parts(of shape: ShapeRecord<StandaloneEndpoint>) -> [PartName] {
         let endpoint = shape.props.endpoint
         return [PartName(id: endpoint.id, name: APIGroups.fullName(method: endpoint.method, path: endpoint.path), kindWord: APIStyle.endpointWord,
-                         lead: endpoint.method.isEmpty ? .none : .chip(endpoint.method, fill: APIStyle.chipRGB(endpoint.method)), standsAlone: true)]
+                         lead: endpoint.method.isEmpty ? .none : .chip(endpoint.method, fill: APIStyle.chipRGB(endpoint.method)), standsAlone: true, isItsShape: true)]
     }
 }
 
