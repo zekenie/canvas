@@ -56,6 +56,73 @@ private func ownWords(_ line: String) -> [String] {
         expectEqual(ColumnGrammar.print(Column(name: "placed_at", type: TypeRef("timestamptz"), nullable: true, default: "now()", unread: "→ x.y")),
                     "placed_at timestamptz null default now() → x.y")
     },
+    test("SQL's types of several words read as SQL writes them, a ? after the last word null; a default that casts to one too") {
+        expectEqual(said(ColumnGrammar.read("created_at timestamp with time zone not null default now()")), "created_at|timestamp with time zone|false|false|false|now()|")
+        expectEqual(said(ColumnGrammar.read("at TIMESTAMP(3) WITHOUT TIME ZONE")), "at|TIMESTAMP(3) WITHOUT TIME ZONE|false|false|false|-|", "as typed, any case")
+        expectEqual(said(ColumnGrammar.read("note character varying(255)?")), "note|character varying(255)|true|false|false|-|")
+        expectEqual(said(ColumnGrammar.read("ratio double precision unsigned")), "ratio|double precision unsigned|false|false|false|-|")
+        expectEqual(said(ColumnGrammar.read("span interval day to second(3) pk")), "span|interval day to second(3)|false|false|true|-|")
+        expectEqual(said(ColumnGrammar.read("code national character varying(10)")), "code|national character varying(10)|false|false|false|-|")
+        expectEqual(said(ColumnGrammar.read("bits bit varying(8)[]")), "bits|bit varying(8)[]|false|false|false|-|")
+        expectEqual(said(ColumnGrammar.read("t timestamp with time")), "t|timestamp|false|false|false|-|with time", "with time zone whole or not at all")
+        expectEqual(said(ColumnGrammar.read("t timestamp? with time zone")), "t|timestamp|true|false|false|-|with time zone", "a ? ends the type")
+        expectEqual(said(ColumnGrammar.read("name text default ''::character varying null")), "name|text|true|false|false|''::character varying|")
+        expectEqual(said(ColumnGrammar.read("at timestamp default '2020-01-01 00:00'::timestamp without time zone")),
+                    "at|timestamp|false|false|false|'2020-01-01 00:00'::timestamp without time zone|")
+    },
+    test("a name, a type and a default in double quotes are the words between them, a doubled quote a quote; a quoted literal's doubled quote stays in it") {
+        expectEqual(said(ColumnGrammar.read("\"order date\" date")), "order date|date|false|false|false|-|")
+        expectEqual(said(ColumnGrammar.read("status \"Order Status\"? default 'new'")), "status|Order Status|true|false|false|'new'|")
+        expectEqual(said(ColumnGrammar.read("due date default \"now() + interval '1 day'\" pk")), "due|date|false|false|true|now() + interval '1 day'|")
+        expectEqual(said(ColumnGrammar.read("say text default \"a \"\"b\"\"\"")), "say|text|false|false|false|a \"b\"|")
+        expectEqual(said(ColumnGrammar.read("note text default 'it''s a test' unique")), "note|text|false|true|false|'it''s a test'|", "SQL's own escape keeps the literal one word")
+        let read = try require(ColumnGrammar.scan("status \"Order Status\" null").typeRange)
+        expectEqual(read, NSRange(location: 8, length: 12), "the type's words without their quotes: what an enum's pill stands on")
+    },
+    test("a print quotes only a part that wouldn't read back alone: a name or an enum's of several words, a default of several no cast explains") {
+        expectEqual(ColumnGrammar.print(Column(name: "created_at", type: TypeRef("timestamp with time zone"), default: "''::character varying")),
+                    "created_at timestamp with time zone default ''::character varying")
+        expectEqual(ColumnGrammar.print(Column(name: "order date", type: TypeRef("Order Status"), nullable: true)), "\"order date\" \"Order Status\" null")
+        expectEqual(ColumnGrammar.print(Column(name: "due", type: TypeRef("date"), default: "now() + interval '1 day'")), "due date default \"now() + interval '1 day'\"")
+        expectEqual(ColumnGrammar.print(Column(name: "x", type: TypeRef("varchar(255) binary"))), "x \"varchar(255) binary\"", "a type SQL's words don't explain")
+        expectEqual(ColumnGrammar.print(Column(name: "x", type: TypeRef("null"))), "x \"null\"", "a type that's a word of the grammar's")
+        expectEqual(ColumnGrammar.print(Column(name: "x", type: TypeRef("text"), default: "\"quoted\"")), "x text default \"\"\"quoted\"\"\"", "a default that's a quoted run itself")
+        expectEqual(ColumnGrammar.print(Column(name: "x", type: TypeRef("int"), unread: "→ y.id"), key: "customers.id").line, "x int → customers.id → y.id",
+                    "a key's words before the words kept, so the line's first arrow is the key's")
+    },
+    test("every column the SQL reader writes (pg_dump's, MySQL's, quoted names, spaced enums) prints as a line that reads back as it") {
+        let schema = SQLReader.read(#"""
+            CREATE TYPE public."Order Status" AS ENUM ('new', 'paid');
+            CREATE TABLE public."Line Items" (
+                id integer NOT NULL,
+                "order date" timestamp(6) without time zone DEFAULT '2020-01-01 00:00:00'::timestamp without time zone,
+                name character varying(255) DEFAULT ''::character varying NOT NULL,
+                code national character varying(10),
+                ratio double precision DEFAULT (1.0 / 3),
+                due date DEFAULT (now() + '1 day'::interval),
+                late timestamp with time zone DEFAULT now() + interval '1 day',
+                span interval day to second(3),
+                bits bit varying(8)[],
+                status public."Order Status" DEFAULT 'new'::public."Order Status",
+                note text DEFAULT 'it''s a test',
+                "say ""hi""" text,
+                place geography(Point, 4326),
+                flag "char" DEFAULT 'a'::"char"
+            );
+            CREATE TABLE legacy (
+                id int(11) unsigned NOT NULL AUTO_INCREMENT,
+                total decimal(10,2) unsigned zerofill DEFAULT '0.00',
+                label varchar(255) binary DEFAULT NULL,
+                PRIMARY KEY (id)
+            );
+            """#)
+        let columns = schema.tables.flatMap(\.columns)
+        expectEqual(columns.count, 17)
+        for column in columns {
+            let line = ColumnGrammar.print(column)
+            expectEqual(said(ColumnGrammar.read(line)), said(column), "\(said(column) ?? "") → \(line)")
+        }
+    },
     test("a block of lines is a column a line, blank lines passed over, each its own id; printed, a line a column") {
         let columns = ColumnGrammar.read(lines: "id uuid pk\n\n  \ncustomer_id uuid\n")
         expectEqual(columns.map(\.name), ["id", "customer_id"])

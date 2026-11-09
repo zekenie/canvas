@@ -52,6 +52,8 @@ enum APIStyle {
     static let addPrefixStep = "Add Path Prefix"
     static let renamePrefixStep = "Rename Path Prefix"
     static let deletePrefixStep = "Delete Path Prefix"
+    static let deletePrefixesStep = "Delete Path Prefixes"
+    static let pastePrefixesStep = "Paste Path Prefixes"
     static let movePrefixStep = "Move Path Prefix"
     /// An endpoint's connection lines written (its card): one made, one's relation changed alone, one re-aimed, one taken out.
     static let connectStep = "Connect"

@@ -1218,7 +1218,12 @@ struct Drawing {
             built.box = box
             built = registry.derived(built)
         }
-        if !settings.isEmpty || item.existing == nil { built = try record(built, setting: settings, item, vocabulary) }
+        if !settings.isEmpty || item.existing == nil {
+            built = try record(built, setting: settings, item, vocabulary)
+            // A kind as wide as what it holds reads whole (a table's columns: `DrawnWhole`), written at no size of the statement's,
+            // is made that wide where it's narrower, as a commit of its rows makes it.
+            if shape.size == nil { built = registry.drawnWhole(built, in: target.shapes) }
+        }
         // A size written whole (`size: 300x200`) is given as a resize gives one: as the kind takes a frame
         // (`registry.sized`; a note keeps the height as the least it is, and is as tall as its words past it).
         let sizedWhole = shape.size?.height != nil

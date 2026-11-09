@@ -126,7 +126,7 @@ struct APILineGrammar: LineGrammar {
         if let word, word.text.hasPrefix("/"), index == 1, EndpointGrammar.method(words[0].text) != nil {
             return pathOffers(typed, word: word, context)
         }
-        let stems = APITypes.stems(ofPath: reading.row?.endpoint?.path ?? "")
+        let stems = APITypes.stems(ofPath: APITypes.fullPath(reading.row?.endpoint?.path ?? "", in: context))
         let scan = EndpointGrammar.scan(line.string)
         // A body's type, after its bracket: its words, as far as they're typed.
         let bodyWords = scan.words.filter { $0.role == .body }
@@ -422,7 +422,7 @@ struct APILines: LineModel {
     static func path(of endpoint: Endpoint, was: String, from: PathHeader?, to: PathHeader?) -> String? {
         guard from?.id != to?.id else { return nil }
         guard let to else { return was }
-        return APIGroups.isUnder(was, to.prefix) ? APIGroups.relative(was, under: to.prefix) : nil
+        return APIGroups.fits(was, under: to.prefix) ? APIGroups.relative(was, under: to.prefix) : nil
     }
 
     /// Endpoints taken out are a new API (⌘X then ⌘V on the board, Move Endpoints to New API, a drag onto the board): served where
@@ -477,12 +477,14 @@ struct APILines: LineModel {
         return row.endpoint?.deprecated == true ? "\(said), \(APIStyle.deprecatedState)" : said
     }
 
-    /// Add Endpoint (Add Path Prefix for a header), Paste Endpoints, Change Method (the method alone changed), Rename Path Prefix (a
-    /// header retyped), Change Endpoint, Delete Endpoint, Move Endpoint.
+    /// Add Endpoint (Add Path Prefix for a header), Paste Endpoints (Paste Path Prefixes, every row a header), Change Method (the
+    /// method alone changed), Rename Path Prefix (a header retyped), Change Endpoint, Delete Endpoint (Delete Path Prefix, and Delete
+    /// Endpoints or Delete Path Prefixes for several, as `headerNoun` names a block of headers), Move Endpoint.
     func stepName(of change: LineChange<APIRow>) -> String {
         switch change {
         case .add(let rows, _):
-            rows.count == 1 ? (rows[0].header == nil ? APIStyle.addEndpointStep : APIStyle.addPrefixStep) : APIStyle.pasteEndpointsStep
+            rows.count == 1 ? (rows[0].header == nil ? APIStyle.addEndpointStep : APIStyle.addPrefixStep)
+                : rows.allSatisfy({ $0.header != nil }) ? APIStyle.pastePrefixesStep : APIStyle.pasteEndpointsStep
         case .change(let from, let to):
             switch (from, to) {
             case (.header, .header): APIStyle.renamePrefixStep
@@ -493,7 +495,8 @@ struct APILines: LineModel {
             default: APIStyle.changeEndpointStep
             }
         case .delete(let rows):
-            rows.count == 1 ? (rows[0].header == nil ? APIStyle.deleteEndpointStep : APIStyle.deletePrefixStep) : APIStyle.deleteEndpointsStep
+            rows.count == 1 ? (rows[0].header == nil ? APIStyle.deleteEndpointStep : APIStyle.deletePrefixStep)
+                : rows.allSatisfy({ $0.header != nil }) ? APIStyle.deletePrefixesStep : APIStyle.deleteEndpointsStep
         case .move(let row, _): row.header == nil ? APIStyle.moveEndpointStep : APIStyle.movePrefixStep
         }
     }
@@ -517,8 +520,10 @@ struct APILines: LineModel {
     func card(of row: APIRow, in context: LineContext) -> LineCard<APIRow>? {
         guard case .endpoint(let endpoint) = row else { return nil }
         let rows = context.editor.document[context.shape]?.typed(as: API.self)?.props.endpoints ?? []
-        let full = rows.firstIndex { $0.id == row.id }.map { APIGroups.fullName(of: $0, in: rows) }
-            ?? APIGroups.fullName(method: endpoint.method, path: endpoint.path)
+        let held = rows.firstIndex { $0.id == row.id }
+        let full = held.map { APIGroups.fullName(of: $0, in: rows) } ?? APIGroups.fullName(method: endpoint.method, path: endpoint.path)
+        // Its parameters are its full path's, its header's prefix's too (`/{workspace}`): each a line, in the path's order.
+        let path = held.map { APIGroups.fullPath(of: $0, in: rows) } ?? endpoint.path
         var lines: [LineCardLine<APIRow>] = [
             .field(APIStyle.nameLine, grammar: WordsGrammar(), get: { row, _ in row.endpoint.flatMap { $0.name.isEmpty ? nil : $0.name } },
                    set: { row, value, _ in row = Self.changing(row) { $0.name = value ?? "" } }),
@@ -528,10 +533,10 @@ struct APILines: LineModel {
             .field(APIStyle.authLine, grammar: WordsGrammar(code: true), get: { row, _ in row.endpoint.flatMap { $0.authScope.isEmpty ? nil : $0.authScope } },
                    set: { row, value, _ in row = Self.changing(row) { $0.authScope = value ?? "" } }),
         ]
-        for name in EndpointGrammar.parameterNames(in: endpoint.path) {
+        for name in EndpointGrammar.parameterNames(in: path) {
             lines.append(.field("{\(name)}", grammar: WordsGrammar(code: true),
                                 get: { row, _ in row.endpoint?.parameters.first { $0.name == name }.flatMap { $0.type.isEmpty ? nil : $0.type } },
-                                set: { row, value, _ in row = Self.changing(row) { Self.setParameter(name, to: value, in: &$0) } }))
+                                set: { row, value, _ in row = Self.changing(row) { Self.setParameter(name, to: value, in: &$0, path: path) } }))
         }
         lines += [
             .field(APIStyle.bodyLine, grammar: TypeNameGrammar(), get: { row, _ in row.endpoint?.body },
@@ -558,13 +563,14 @@ struct APILines: LineModel {
         return .endpoint(endpoint)
     }
 
-    /// A path parameter's type set (none: taken out).
-    static func setParameter(_ name: String, to type: String?, in endpoint: inout Endpoint) {
+    /// A path parameter's type set (none: taken out), the parameters kept in the order of `path`, the endpoint's full path (its own
+    /// where it's under no header).
+    static func setParameter(_ name: String, to type: String?, in endpoint: inout Endpoint, path: String? = nil) {
         // The first of that name only: a query parameter that shares it (a card shows the path's) stays.
         if let at = endpoint.parameters.firstIndex(where: { $0.name == name }) { endpoint.parameters.remove(at: at) }
         guard let type, !type.isEmpty else { return }
         endpoint.parameters.append(PathParameter(name: name, type: type))
-        let order = EndpointGrammar.parameterNames(in: endpoint.path)
+        let order = EndpointGrammar.parameterNames(in: path ?? endpoint.path)
         endpoint.parameters.sort { (order.firstIndex(of: $0.name) ?? .max) < (order.firstIndex(of: $1.name) ?? .max) }
     }
 }

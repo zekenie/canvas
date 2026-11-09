@@ -225,6 +225,7 @@ public enum KeyPicks {
             return ConnectPlan(from: pick.from, to: target) { transaction in
                 let gone = Set(held.filter { transaction.document[$0] != nil })
                 if !gone.isEmpty { transaction.delete(gone) }
+                droppingKeyWords(of: column, in: table, &transaction)
                 return (pick.from, target)
             }
         }
@@ -239,10 +240,24 @@ public enum KeyPicks {
             // After the table's own keys: its primary key's columns and those that have a key already.
             let after = columns.lastIndex { $0.primaryKey || keyed.contains($0.id) }.map { $0 + 1 } ?? 0
             columns.insert(made, at: after)
-            transaction.update(table, as: DatabaseTable.self) { $0.props.columns = columns }
+            // As wide as its columns read whole at rest, as a line's commit widens it (`TableLines.wholeWidth`), never narrower.
+            let whole = TableDefinition.wholeWidth(of: columns, in: table, registry: editor.registry, inFile: editor.shape(inFile:), names: editor.service(KitNames.self))
+            transaction.update(table, as: DatabaseTable.self) {
+                $0.props.columns = columns
+                if whole > $0.props.frame.width { $0.props.frame.size.width = whole }
+            }
             guard transaction.document[table]?.typed(as: DatabaseTable.self)?.props.columns == columns else { throw Transaction.Refused([table]) }
             return (ConnectEnd(table, part: made.id), target)
         }
+    }
+
+    /// `column` of `table` without the key's words its line kept (`→ customers.id`, typed before customers was made): once a key is
+    /// drawn for it, the key says where it goes, and the words would only say it again, or somewhere else.
+    static func droppingKeyWords(of column: PartID, in table: ShapeID, _ transaction: inout Transaction) {
+        guard let held = transaction.document[table]?.typed(as: DatabaseTable.self),
+              let at = held.props.columns.firstIndex(where: { $0.id == column }),
+              let words = ColumnGrammar.key(in: held.props.columns[at].unread) else { return }
+        transaction.update(table, as: DatabaseTable.self) { $0.props.columns[at].unread = words.rest }
     }
 
     /// A key column's name for a table: its name, singular, and `_id` (`customers` → `customer_id`, `categories` → `category_id`,

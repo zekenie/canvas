@@ -99,6 +99,11 @@ enum APIWords {
         guard case .object(var members) = item else { throw DrawError("\(item.compactText) isn't a row it takes", reason: reason) }
         if members["id"] == nil { members["id"] = .string(UUID().uuidString) }
         if let method = members["method"]?.stringValue { members["method"] = .string(method.uppercased()) }
+        // A path (a header's prefix too) is written from its leading slash, as a line reads one (`orders` is `/orders`), so it reads
+        // back and groups as one.
+        for key in ["path", "header"] {
+            if let path = members[key]?.stringValue, !path.isEmpty, !path.hasPrefix("/") { members[key] = .string("/" + path) }
+        }
         if let body = members["body"]?.stringValue { members["body"] = .object(["words": .string(body)]) }
         if let responses = members["responses"]?.arrayValue {
             members["responses"] = .array(responses.map { response in
