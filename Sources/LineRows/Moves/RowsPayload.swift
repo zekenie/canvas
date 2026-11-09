@@ -245,11 +245,12 @@ extension CanvasEditor {
     /// Whether a cut's rows have been pasted already, or were never gone: the shape it took them from holds them again (the cut
     /// undone), or the shape its first paste put them in does. Not whether some shape holds rows of those ids: `/new-version`
     /// copies an API under the same row ids, and its twin holding them is no paste. Each shape's rows are read as its own kind
-    /// reads them (a cut API row pasted on the board is an endpoint).
+    /// reads them (a cut API row pasted on the board is an endpoint). Both are looked up file-wide: a paste on another board than
+    /// the source's, or than the first paste's, is still a copy while either holds the rows.
     private func isPastedAlready(_ payload: RowsPayload, rows: [PartID]) -> Bool {
         let wanted = Set(rows)
         func holds(_ id: ShapeID) -> Bool {
-            guard let record = document[id], let moving = registry.rowMoving(of: record.kind) else { return false }
+            guard let record = document[id] ?? shape(inFile: id), let moving = registry.rowMoving(of: record.kind) else { return false }
             return (moving.rows(record) ?? []).contains(where: wanted.contains)
         }
         if holds(payload.carrier.id) { return true }

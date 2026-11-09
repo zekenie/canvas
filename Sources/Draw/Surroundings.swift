@@ -99,6 +99,28 @@ public enum PlacingStyle {
     /// Between two such labels on lines from one start to pills one above the other: the pills are spaced so the labels, halfway
     /// along, are this far apart.
     public static let labelSpacing: CGFloat = 16
+
+    /// The sides of `bounds` a shape whose arrows reach `reached` may go on so they run clean: the one facing it (along the axis
+    /// it lies further out on; overlapping, the way its middle lies, by each axis's share of `bounds`), then below; facing above,
+    /// above, then left and right. Never the far side of `bounds` from what the arrows reach (New Version's copy, UX walk 3 evolve-1).
+    public static func sides(of bounds: CGRect, facing reached: CGRect) -> [Direction] {
+        let dx = reached.minX >= bounds.maxX ? reached.minX - bounds.maxX : reached.maxX <= bounds.minX ? reached.maxX - bounds.minX : 0
+        let dy = reached.minY >= bounds.maxY ? reached.minY - bounds.maxY : reached.maxY <= bounds.minY ? reached.maxY - bounds.minY : 0
+        let facing: Direction
+        if dx == 0 && dy == 0 {
+            let cx = reached.midX - bounds.midX, cy = reached.midY - bounds.midY
+            facing = abs(cx) / max(bounds.width, 1) >= abs(cy) / max(bounds.height, 1) ? (cx >= 0 ? .right : .left) : (cy >= 0 ? .below : .above)
+        } else if abs(dx) >= abs(dy) {
+            facing = dx > 0 ? .right : .left
+        } else {
+            facing = dy > 0 ? .below : .above
+        }
+        switch facing {
+        case .above: return [.above, .left, .right]
+        case .below: return [.below]
+        default: return [facing, .below]
+        }
+    }
 }
 
 /// A board shapes land on, as `canvas draw` reads the board it places shapes on: read in place
@@ -155,16 +177,20 @@ public struct Surroundings {
     /// it): top-aligned with it on its right or left (`top level with`, as two tables side by side are drawn), and on a side
     /// in the clear part of the view where one is (`PutBeside.inView`), the nearest of those, so it is never put down out of
     /// sight or under the inspector while a side in view is free.
-    public func near(_ target: ShapeID, within holder: ShapeID? = nil, put: PutBeside? = nil) -> Landing? {
+    ///
+    /// `sides` are the sides tried, in order (all four by default): a caller that knows which way the shape's arrows run (New
+    /// Version's copy, toward what its copied arrows reach) names only those that keep them clean.
+    public func near(_ target: ShapeID, within holder: ShapeID? = nil, put: PutBeside? = nil, sides: [Direction] = PlacingStyle.sides) -> Landing? {
         guard let bounds = reading.shapes.geometry(of: target)?.bounds else { return nil }
-        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [], put: put)
+        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [], sides: sides, put: put)
     }
 
     /// Beside a box that is not a shape of the board yet (or not there any more): as `near(_:within:)`
     /// lands beside a shape with these bounds. `avoiding` are boxes a caller has planned and not put
     /// down, which the landing keeps clear of as of any shape there.
-    public func near(_ rect: CGRect, avoiding: [CGRect] = [], within holder: ShapeID? = nil, put: PutBeside? = nil) -> Landing? {
-        near(rect, obstacle: nil, within: holder, avoiding: avoiding, put: put)
+    public func near(_ rect: CGRect, avoiding: [CGRect] = [], within holder: ShapeID? = nil, put: PutBeside? = nil,
+                     sides: [Direction] = PlacingStyle.sides) -> Landing? {
+        near(rect, obstacle: nil, within: holder, avoiding: avoiding, sides: sides, put: put)
     }
 
     private func near(_ bounds: CGRect, obstacle targetObstacle: Int?, within holder: ShapeID?, avoiding: [CGRect],
@@ -198,8 +224,15 @@ public struct Surroundings {
         }
         guard let best else {
             if let holder, held != nil { return inside(holder) }
+            // None placed: on the first side asked (right, by default), the normal gap off it, centered, over what's there.
             let gap = GapName.normal.value
-            return Landing(board: reading.board, rect: CGRect(x: bounds.maxX + gap, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
+            let rect: CGRect = switch sides.first ?? .right {
+            case .left: CGRect(x: bounds.minX - gap - size.width, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
+            case .below: CGRect(x: bounds.midX - size.width / 2, y: bounds.maxY + gap, width: size.width, height: size.height)
+            case .above: CGRect(x: bounds.midX - size.width / 2, y: bounds.minY - gap - size.height, width: size.width, height: size.height)
+            default: CGRect(x: bounds.maxX + gap, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
+            }
+            return Landing(board: reading.board, rect: rect)
         }
         return Landing(board: reading.board, rect: best.rect, above: best.zones + (held == nil ? [] : [holder].compactMap { $0 }))
     }

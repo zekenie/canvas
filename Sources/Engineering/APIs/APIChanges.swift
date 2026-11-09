@@ -188,24 +188,27 @@ extension CanvasEditor {
         var plans: [(old: ShapeID, copy: AnyShapeRecord, arrows: [AnyShapeRecord])] = []
         var chosen: [CGRect] = []
         for id in apis {
-            guard let record = document[id], let api = record.typed(as: API.self), let size = shapeContext.frame(of: record)?.size,
-                  let frame = copyFrame(of: id, size: size, avoiding: chosen) else { continue }
+            guard let record = document[id], let api = record.typed(as: API.self), let size = shapeContext.frame(of: record)?.size else { continue }
+            let copyID = ShapeID()
+            let rows = Set(api.props.endpoints.map(\.id))
+            var arrows: [AnyShapeRecord] = [], seen: Set<ShapeID> = [], reached = CGRect.null
+            topology?.forEachEdge(of: id, .outgoing, view: .literal) { edge in
+                guard edge.isConnection, let part = edge.sourcePart, rows.contains(part), seen.insert(edge.carrier).inserted,
+                      let carrier = document[edge.carrier] else { return }
+                let moved = carrier.copy(as: ShapeID()).movingParts(in: registry) { $0.shape == id ? PartAddress(copyID, part: $0.part) : $0 }
+                guard let moved else { return }
+                arrows.append(moved)
+                if edge.target != id, let far = shapeContext.geometry(of: edge.target)?.bounds, !far.isNull, !far.isInfinite { reached = reached.union(far) }
+            }
+            guard let frame = copyFrame(of: id, size: size, avoiding: chosen, toward: reached.isNull ? nil : reached) else { continue }
             chosen.append(frame)
             var next = api
             next.props.deprecated = false
             next.props.server.host = APIVersions.bumpedHost(next.props.server.host)
             next.props.version = APIVersions.bumpedVersion(next.props.version)
             next.props.frame.origin = frame.origin
-            var copy = AnyShapeRecord(next).copy(as: ShapeID())
+            var copy = AnyShapeRecord(next).copy(as: copyID)
             copy[TitleProperty.self] = APIVersions.bumpedTitle(record[TitleProperty.self])
-            let rows = Set(api.props.endpoints.map(\.id))
-            var arrows: [AnyShapeRecord] = [], seen: Set<ShapeID> = []
-            topology?.forEachEdge(of: id, .outgoing, view: .literal) { edge in
-                guard edge.isConnection, let part = edge.sourcePart, rows.contains(part), seen.insert(edge.carrier).inserted,
-                      let carrier = document[edge.carrier] else { return }
-                let moved = carrier.copy(as: ShapeID()).movingParts(in: registry) { $0.shape == id ? PartAddress(copy.id, part: $0.part) : $0 }
-                if let moved { arrows.append(moved) }
-            }
             plans.append((id, copy, arrows))
         }
         guard !plans.isEmpty else { return [] }
@@ -227,14 +230,21 @@ extension CanvasEditor {
     }
 
     /// Where the copy of API `id` goes: beside it as Insert puts one, and clear of the frames chosen for the copies before it (they
-    /// are not on the board yet, so the board alone would put two on the same spot).
-    private func copyFrame(of id: ShapeID, size: CGSize, avoiding chosen: [CGRect]) -> CGRect? {
-        guard !chosen.isEmpty else { return insertionFrame(of: size, beside: [id]) }
-        guard let surroundings = Surroundings(on: board, moving: size, in: self), let bounds = surroundings.reading.shapes.geometry(of: id)?.bounds,
-              let landing = surroundings.near(bounds, avoiding: chosen, within: shapeContext.container(of: id)) else {
-            return insertionFrame(of: size, beside: [id])
+    /// are not on the board yet, so the board alone would put two on the same spot). With arrows copied onto it (`toward`, the box
+    /// around the shapes they reach), on the side of `id` that faces those shapes, or below it, never on its far side from them:
+    /// the copy's arrows then run clean, never across the old version's rows (UX walk 3 evolve-1). Insert's spot only with none.
+    private func copyFrame(of id: ShapeID, size: CGSize, avoiding chosen: [CGRect], toward reached: CGRect?) -> CGRect? {
+        guard chosen.isEmpty, reached == nil else {
+            guard let surroundings = Surroundings(on: board, moving: size, in: self), let bounds = surroundings.reading.shapes.geometry(of: id)?.bounds
+            else { return insertionFrame(of: size, beside: [id]) }
+            let holder = shapeContext.container(of: id), put = PutBeside.inView(of: self, panned: true)
+            let sides = reached.map { PlacingStyle.sides(of: bounds, facing: $0) } ?? PlacingStyle.sides
+            let landing = chosen.isEmpty
+                ? surroundings.near(id, within: holder, put: put, sides: sides)
+                : surroundings.near(bounds, avoiding: chosen, within: holder, put: reached == nil ? nil : put, sides: sides)
+            return landing?.rect ?? insertionFrame(of: size, beside: [id])
         }
-        return landing.rect
+        return insertionFrame(of: size, beside: [id])
     }
 
     /// Group by Prefix on each API of `ids` (`/group-by-prefix`, Shape ▸ Group by Prefix), one step: its endpoints by their full
