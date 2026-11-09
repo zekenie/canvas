@@ -103,7 +103,7 @@ private let stickyNoteSchema = #"""
     },
     "mentions.text" : {
       "contentMediaType" : "text/x-canvas-mentions",
-      "description" : "Text that may mention shapes. A mention is @[name](shape:ID): ID is the id of a shape in the same file (a UUID, any case), and name is what it was called when the text was written; the app shows the shape's current name, and this one only if the shape isn't there. In a name, \\] stands for ] and \\\\ for \\. In the text, \\@[ is a literal @[, and any backslashes just before @[ are doubled: \\\\@[ is one backslash, then a mention. @[](shape:ID) mentions a shape without a name. Anything else is text as written.",
+      "description" : "Text that may mention shapes. A mention is @[name](shape:ID): ID is the id of a shape in the same file (a UUID, any case), and name is what it was called when the text was written; the app shows the shape's current name, and this one only if the shape isn't there. In a name, \\] stands for ] and \\\\ for \\. In the text, \\@[ is a literal @[, and any backslashes just before @[ are doubled: \\\\@[ is one backslash, then a mention. @[](shape:ID) mentions a shape without a name. A row of a shape is mentioned after it: @[name](shape:ID/row:ROW), ROW the row's id. Anything else is text as written.",
       "type" : "string"
     },
     "types.field-values" : {
