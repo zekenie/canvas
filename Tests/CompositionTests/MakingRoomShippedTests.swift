@@ -79,6 +79,37 @@ private let shop = """
         editor.undo()
         expectEqual(try frame(editor, products).minY, try frame(editor, customers).maxY + 90, "back as drawn")
     },
+    test("tables new-1: a long key typed in orders, the enum put down beside it: orders is painted and hit above the enum while it's wider, nothing moves, and back as the caret leaves") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"table "orders" columns: "id uuid pk\ntotal_cents int\ncustomer_id uuid""#)
+        try w.draw(#"enum-type "order_status" right of "orders" (gap: 80) values: "pending\npaid\nshipped""#)
+        let orders = try tableID(editor, "orders")
+        let status = try require(editor.document.shapes.first { $0[TitleProperty.self] == "order_status" }?.id)
+        let rest = try frame(editor, orders), beside = try frame(editor, status)
+        editor.camera = Camera(origin: CGPoint(x: rest.minX - 60, y: rest.minY - 80), zoom: 1)
+        w.window.settle()
+        let walk = w.walk()
+        w.mouseClick(at: CGPoint(x: rest.midX, y: rest.minY + 8))
+        walk.press(.return)
+        expectEqual(editor.editingShapeID, orders)
+        let overlap = CGRect(x: beside.minX + 4, y: beside.minY + 4, width: 20, height: 20)
+        expectEqual(editor.paintOrder(in: overlap).map(\.id).last, status, "at rest the enum is on top where they would meet")
+        w.type("billing_customer_id uuid null -> customers.email", with: walk)
+        w.window.settle()
+        let typed = try frame(editor, orders)
+        expect(typed.maxX > beside.minX + 20, "laid out across the enum while the line is typed: \(typed) \(beside)")
+        expectEqual(editor.paintOrder(in: overlap).map(\.id).last, orders, "orders painted above the enum it now overlaps")
+        expectEqual(editor.shape(at: CGPoint(x: overlap.midX, y: overlap.midY)), orders, "and hit there")
+        expectEqual(try frame(editor, status), beside, "the enum not moved")
+        walk.press(.escape)
+        walk.press(.escape)
+        w.window.settle()
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(editor.paintOrder(in: overlap).map(\.id).last, status, "back in its place once the caret leaves")
+    },
     test("Paste SQL again with a column more pushes the table below it down, in the step; Undo Paste SQL takes both") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

@@ -86,6 +86,26 @@ import Topology
         h.editor.undo()
         try expectFile(h, before, "both boards as they were")
     },
+    test("a relay on the destination whose line from the start's row would cross a shape is not reused: a fresh one is put down, level with the row") {
+        let d = Ledger(), x = ShapeID()
+        // On the pocket, a relay for R walled in by four rosters: a line to it from anywhere outside crosses one.
+        let walls = [CGRect(x: -10, y: 470, width: 100, height: 260), CGRect(x: 210, y: 470, width: 100, height: 260),
+                     CGRect(x: -10, y: 470, width: 320, height: 100), CGRect(x: -10, y: 630, width: 320, height: 100)]
+            .map { AnyShapeRecord(ShapeRecord(id: ShapeID(), Roster($0, rows: d.rows))) }
+        let h = try d.harness(d.file(onPocket: [relay(x, at(100, 580, 100, 40), stands: d.r)] + walls))
+        expect(h.run("move-to", on: d.l, with: d.p))
+        let lBox = try require(h.file.record(d.l)?.box), relays = h.relays(on: d.pBoard)
+        let end = try require(d.strap(h)?.to)
+        expectEqual(end.part, d.rows[2].id, "the row kept on the binding")
+        expect(end.shape != x, "the relay across the roster not reused")
+        expectEqual(relays.count, 2, "a fresh one beside the moved roster")
+        expect(try require(h.file.record(end.shape)?.box).maxX <= lBox.minX, "left of it, as T6 panel 3 draws one")
+        let fresh = try require(h.file.record(end.shape)?.box)
+        let row = CGRect(x: lBox.minX, y: lBox.minY + Roster.head, width: lBox.width, height: Roster.rowHeight)
+        expectEqual(fresh.midY, row.midY, "level with the start's row: \(fresh) \(row)")
+        let surroundings = try require(Surroundings(on: d.pBoard, moving: fresh.size, in: h.editor))
+        expect(surroundings.joinsClean(row, of: d.l, to: fresh, standIn: end.shape), "its line from the row crosses nothing")
+    },
     test("an end at a relay with a row, moved to the board its roster is on: the strap goes straight to the row, and the relay stays") {
         let d = Ledger(), x = ShapeID()
         let far = AnyShapeRecord(ShapeRecord(id: d.r, Roster(CGRect(x: 100, y: 100, width: 160, height: 80), rows: d.rows)))
