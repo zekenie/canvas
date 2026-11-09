@@ -12806,7 +12806,11 @@ against the board as the run starts:
    what its tool places (`placement.shape(at:)`), and every shape's attributes are set by the core
    (`registry.shape(_:setting:)`), so the registry builds every record, and what the kind derives
    from them (a note's height, from its text, `DerivedProps`) is the size it's
-   placed at, unless the statement gives one; given a width alone (`size: 300x`, a `Size` with no
+   placed at, unless the statement gives one; a kind whose shapes are as wide as what they hold
+   reads whole (Draw's `DrawnWhole`, conformed in an extension: the engineering kit's table, for its
+   columns' lines, and enum, for its values) is made that wide where it's narrower, never narrower,
+   when the statement makes it or sets a value of it and gives no size, as a commit of its rows
+   widens it (LineRows' `widening`); given a width alone (`size: 300x`, a `Size` with no
    height), the shape is built at that width and what the kind derives is put in step there,
    whether any property is set or not (`registry.derived(_:)`), so a note is that wide and as tall
    as its text in one run, and a kind that derives nothing keeps its height; given whole

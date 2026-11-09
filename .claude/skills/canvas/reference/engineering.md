@@ -4,10 +4,10 @@ The engineering kit draws a database's tables and a REST API the way an engineer
 
 ## A table and its columns
 
-`columns:` takes the columns as lines in quotes, one a column, `\n` between them, each `name type [null] [unique] [default …] [pk] [→ table.column]`: its name, its type as SQL writes it, then any of `null` (it may be null; a `?` after the type says it too), `unique`, `default` and the word after it, `pk` (part of the primary key), and a key, `→` (or `->`) and the column it references (below), in any order. Words a line can't place stay in the column as written, shown plain. A new table drawn with no `columns:` has one, `id uuid pk`.
+`columns:` takes the columns as lines in quotes, one a column, `\n` between them, each `name type [null] [unique] [default …] [pk] [→ table.column]`: its name, its type as SQL writes it, then any of `null` (it may be null; a `?` after the type says it too), `unique`, `default` and the word after it, `pk` (part of the primary key), and a key, `→` (or `->`) and the column it references (below), in any order. Words a line can't place stay in the column as written, shown plain. A type of several words is written as SQL writes it (`timestamp with time zone`, `character varying(255)`, `double precision`), and so is a default that casts to one (`''::character varying`); a name, an enum's name or a default of several words otherwise goes in double quotes (`\"order date\"`, written `\"` inside the quoted lines), a quote in it doubled. A new table drawn with no `columns:` has one, `id uuid pk`.
 
 ```draw
-table "customers" columns: "id uuid pk\nemail text unique\nname text\ncreated_at timestamptz default now()"
+table "customers" columns: "id uuid pk\nemail text unique\nname text\ncreated_at timestamp with time zone default now()\n\"display name\" character varying(255) default ''::character varying"
 table "orders" right of "customers" columns: "id uuid pk\ncustomer_id uuid\nplaced_at timestamptz?"
 ```
 
@@ -17,7 +17,7 @@ A statement joins its lines onto the table's columns by name: a column it names 
 table "orders" columns: "placed_at timestamptz null\ntotal_cents int"
 ```
 
-The table is as wide as it's drawn (`size: 320x`) and as tall as its rows; a height in `size:` is its rows' anyway.
+The table is as wide as its lines read whole (an enum as its values do), at most 560, unless the statement gives a width (`size: 320x`), and as tall as its rows; a height in `size:` is its rows' anyway.
 
 A table, enum or API that gains rows makes room below it: in the same step, what's under it in its database (or on the board) that its new bottom comes within 32 of moves down as far as it grew (a shape the script put there too), keeping its gap, and pushes what's under that; a database the push takes past its bottom grows. The report lists what moved, `"moved": [{"kind", "title", "id", "at", "down"}]`, only when something did. A locked shape stops it, and nothing moves up when rows go: lay out what it can't by hand. A document applied with `canvas apply` makes no room: its plan places every shape.
 
@@ -31,7 +31,7 @@ A key is an arrow from a column to the column it references, bound to both rows,
 edge "orders".customer_id -> "customers".id
 ```
 
-A column's line can say its key itself: `→ customers.id` draws the same edge, on the statement's line, and the column keeps no words of it. `→ customers` alone is its primary key, for a table already drawn (one the same script draws needs the column named). Writing the edge as well is the same key, drawn once; a line without `→` leaves the column's key alone; a line whose `→` goes elsewhere than the column's key re-aims it (the old key goes, the new one is drawn: a column has the one key its line says; an `edge` you write yourself stays).
+A column's line can say its key itself: `→ customers.id` draws the same edge, on the statement's line, and the column keeps no words of it. Only the line's first `→` is its key. `→ customers` alone is its primary key, for a table already drawn (one the same script draws needs the column named). Writing the edge as well is the same key, drawn once; a line without `→` leaves the column's key alone; a line whose `→` goes elsewhere than the column's key re-aims it (the old key goes, the new one is drawn: a column has the one key its line says; an `edge` you write yourself stays).
 
 ```draw
 table "orders" columns: "billing_id uuid → customers.id\nshipping_id uuid -> customers.id"
