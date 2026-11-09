@@ -28,7 +28,8 @@ public enum MentionTextFormat {
         + "same file (a UUID, any case), and name is what it was called when the text was written; the app shows the shape's "
         + "current name, and this one only if the shape isn't there. In a name, \\] stands for ] and \\\\ for \\. In the text, "
         + "\\@[ is a literal @[, and any backslashes just before @[ are doubled: \\\\@[ is one backslash, then a mention. "
-        + "@[](shape:ID) mentions a shape without a name. Anything else is text as written."
+        + "@[](shape:ID) mentions a shape without a name. A row of a shape is mentioned after it: @[name](shape:ID/row:ROW), ROW "
+        + "the row's id. Anything else is text as written."
 
     /// The migration step for a member that was plain text and now may hold mentions: rewrites
     /// `props[member]` so it reads back as the text it was, however it was written (a look-alike
@@ -86,6 +87,15 @@ public enum MentionTextFormat {
     /// included, and what it throws is thrown, with nothing written; text with no `@[` costs one
     /// pass over its bytes and is returned as it is.
     public static func resolvingNames<E: Error>(in text: String, _ resolve: (String) throws(E) -> (id: ShapeID, label: String)) throws(E) -> String {
+        try MentionGrammar.resolvingNames(in: text) { name throws(E) in
+            let (id, label) = try resolve(name)
+            return (PartAddress(id), label)
+        }
+    }
+
+    /// As `resolvingNames(in:_:)`, where a name may stand for a row as well as a shape: `resolve` gives the shape, or the shape
+    /// and its row, and the mention is written with the row after its shape's id (`@[label](shape:ID/row:ROW)`).
+    public static func resolvingMentions<E: Error>(in text: String, _ resolve: (String) throws(E) -> (target: PartAddress, label: String)) throws(E) -> String {
         try MentionGrammar.resolvingNames(in: text, resolve)
     }
 

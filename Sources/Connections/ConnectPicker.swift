@@ -143,9 +143,9 @@ public final class ConnectPicker {
                 // A shape lists the rows that stand alone of the kinds it joins only there (a note: an API's endpoints, for `calls`).
                 : mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds.union(rowKinds), listingUnnamed: true,
                                       admitting: { [self] id in admits(id) || reachesRows(of: id) },
-                                      listingParts: { [self] address in standsAlone(address) && admits(part: address) }))
+                                      listingParts: { [self] address in standsAlone(address) && admits(part: address) }, ownRows: .row))
             : mentions.candidates(matching: text, in: AnyMentionable.self, for: source, kinds: kinds, listingUnnamed: true,
-                                  admitting: { [self] id in admits(id) || reachesRows(of: id) }, listingParts: { [self] address in admits(part: address) })
+                                  admitting: { [self] id in admits(id) || reachesRows(of: id) }, listingParts: { [self] address in admits(part: address) }, ownRows: .row)
         // A shape listed for its rows alone (a table with no primary key, whose columns can be picked and which can't as a whole) is no row.
         let choices = mentions.choicesNamingBoardShown(found.all.filter { $0.part != nil || (admits($0.id) && !joinsOnlyRows($0.id)) })
         let typed = text.contains { !$0.isWhitespace }

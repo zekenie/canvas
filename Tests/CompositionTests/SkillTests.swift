@@ -1,8 +1,10 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasRPC
+import CanvasTesting
 import CanvasUI
 import DrawScript
+import Engineering
 import Foundation
 import LanguageModels
 import QueryLanguage
@@ -23,7 +25,8 @@ import TestKit
 // lists, in order (an untitled one by its kind in brackets, nothing after the colon for none), or
 // `/* count: N */`; one tagged `query-error` must be refused with the reason its first line names
 // (`/* reason: <reason> */`). A query block leaves the board as it was: the same file, no more
-// edited, and no step to undo. A page whose first line is `<!-- ids: <sample>, <sample> -->` writes ids as a reader
+// edited, and no step to undo. A page's leading comment lines may also say `<!-- setup: take-out-endpoint -->` (`skillSetups`: a state
+// no statement draws, made on its fresh board first). A page whose first line is `<!-- ids: <sample>, <sample> -->` writes ids as a reader
 // sees them in its blocks, ids a block cannot know before the board is drawn (a shape with no title is named by its
 // id): each sample stands for the id of the same row of the last query that answered that many (`SampleIDs`).
 // SKILL_DUMP=1 prints what each example said, for checking the prose around it.
@@ -145,8 +148,19 @@ func skillExamples(in path: String) throws -> [SkillExample] {
 /// is drawn, written in the blocks of the page as a reader would see them. A block is run with each sample replaced by the id of
 /// the shape the same place of the last query that found as many (`SampleIDs`): the first sample is the first row's.
 func skillSampleIDs(in text: String) -> [String] {
-    guard let first = text.components(separatedBy: "\n").first, first.hasPrefix("<!-- ids: "), first.hasSuffix(" -->") else { return [] }
-    return first.dropFirst("<!-- ids: ".count).dropLast(" -->".count).components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+    guard let ids = skillDirective("ids", in: text) else { return [] }
+    return ids.components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+}
+
+/// What a page's leading comment lines say by `name` (`<!-- name: value -->`, each on a line of its own before any other line):
+/// nil for nothing.
+func skillDirective(_ name: String, in text: String) -> String? {
+    for line in text.components(separatedBy: "\n") {
+        guard line.hasPrefix("<!-- "), line.hasSuffix(" -->") else { return nil }
+        let said = line.dropFirst("<!-- ".count).dropLast(" -->".count)
+        if said.hasPrefix(name + ": ") { return String(said.dropFirst(name.count + 2)) }
+    }
+    return nil
 }
 
 /// What a page's sample ids stand for as the page runs: the ids of the rows the last query that listed enough of them answered,
@@ -173,10 +187,17 @@ struct SampleIDs {
 }
 
 /// The story a skill file names in its first line: nil for none.
-func skillStoryName(in text: String) -> String? {
-    guard let first = text.components(separatedBy: "\n").first, first.hasPrefix("<!-- board: "), first.hasSuffix(" -->") else { return nil }
-    return String(first.dropFirst("<!-- board: ".count).dropLast(" -->".count))
-}
+func skillStoryName(in text: String) -> String? { skillDirective("board", in: text) }
+
+/// What a page's first lines make of its fresh board before its blocks run (`<!-- setup: take-out-endpoint -->`): a state no
+/// statement draws, as a person's steps in the app make it. An endpoint taken out of its API (K16) is one: nothing draws an `endpoint`.
+@MainActor let skillSetups: [String: @MainActor (BoardDocument) throws -> Void] = [
+    "take-out-endpoint": { board in
+        // Far from what the page draws, named as a person names one in its card: a title of its own, its row's method and whole path.
+        board.editor.add(StandaloneEndpoint(frame: CGRect(x: 3200, y: 3200, width: 420, height: 44),
+                                            endpoint: Endpoint(method: "POST", path: "/hooks/stripe", name: "stripeHook")))
+    },
+]
 
 /// A board as the app makes a new one, in a window of 1440 × 900 points: its view is (0, 0) to
 /// (1440, 900).
@@ -244,6 +265,10 @@ let dumpsExamples = ProcessInfo.processInfo.environment["SKILL_DUMP"] == "1"
             let onStory = make != nil
             let board = try make?() ?? windowedBoard()
             defer { board.close() }
+            if let setup = skillDirective("setup", in: text) {
+                let made = try require(skillSetups[setup], "\(file) names a setup that isn't one: \(setup)")
+                try made(board)
+            }
             if let story, onStory {
                 filesOnStory[story, default: []].append(file)
                 expect(!board.isDocumentEdited && !board.editor.undoHistory.canUndo, "\(file): the story as the app opens it")

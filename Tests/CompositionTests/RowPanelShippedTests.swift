@@ -182,4 +182,43 @@ private let e6 = #"""
             expect(drawn > 0)
         }
     },
+    test("a note measured from its words alone gives a column of a table titled with a word in capitals the width it is drawn with: no chip, which only an endpoint's path takes") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "API Keys" columns: "id uuid pk\nowner_id uuid"
+            table "US States" below "API Keys" columns: "code text pk"
+            api "orders API" below "US States" endpoints: "GET /orders"
+            """#)
+        let editor = w.editor
+        let style = MentionTextStyle(font: .systemFont(ofSize: 15), color: .black, lineHeight: 19)
+        for title in ["API Keys", "US States", "orders API"] {
+            let record = try require(shape(editor, title))
+            for part in try require(editor.registry.parts(of: record)) {
+                let address = PartAddress(record.id, part: part.id)
+                let live = try require(editor.mentions?.resolve(address).appearance)
+                let text = MentionText([.mention(address, label: live.label)])
+                let drawn = style.attributedString(text) { _ in .live(live) }.size().width
+                expectEqual(style.measuredString(text, width: nil).size().width, drawn, live.label)
+            }
+        }
+    },
+    test("the @ picker lists an endpoint taken out of its API once: the shape where its name is found, its row only where its path alone is") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        let unnamed = editor.add(StandaloneEndpoint(frame: CGRect(x: 0, y: 0, width: 420, height: 44), endpoint: Endpoint(method: "DELETE", path: "/orders/{id}")))
+        let named = editor.add(StandaloneEndpoint(frame: CGRect(x: 0, y: 200, width: 420, height: 44),
+                                                  endpoint: Endpoint(method: "POST", path: "/orders/{id}/refunds", name: "createRefund")))
+        let mentions = try require(editor.mentions)
+        @MainActor func listed(_ query: String) -> [PartAddress] {
+            mentions.candidates(matching: query, in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: .shape).matches.map(\.address)
+        }
+        expectEqual(listed("DELETE /orders"), [PartAddress(unnamed)], "the shape, called by its method and path, and not its row as well")
+        expectEqual(listed("createRefund"), [PartAddress(named)], "by its name: the shape")
+        let row = try require(editor.document[named]?.typed(as: StandaloneEndpoint.self)?.props.endpoint.id)
+        expectEqual(listed("POST /orders/{id}/refunds"), [PartAddress(named, part: row)], "by its path alone: its row, the shape not found")
+    },
 ])

@@ -884,18 +884,29 @@ struct Drawing {
         guard let parts = registry.parts(of: record) else {
             throw DrawError(statement, .unknownRow, "\(said) is \(indefinite(record.kind)), which has no rows", hint: "name a row of a shape that has them, as \"orders\".customer_id")
         }
+        do throws(DrawError) {
+            return try Self.row(named: row, among: parts, said: said, fold: fold).id
+        } catch {
+            throw error.said(error.message, on: statement)
+        }
+    }
+
+    /// The row of `parts` called `row`, as a script names one: the one called exactly that, else the one called that once
+    /// folded; two called exactly that are `ambiguous_title`, with where they are, and none `unknown_row`, with the ones it's
+    /// like (`said` is how the shape is written, before each). A statement's end and a text's mention find a row the same way.
+    static func row(named row: String, among parts: [PartName], said: String, fold: (String) -> String?) throws(DrawError) -> PartName {
         let exact = parts.enumerated().filter { $0.element.name == row }
-        if exact.count == 1 { return exact[0].element.id }
+        if exact.count == 1 { return exact[0].element }
         if exact.count > 1 {
             let places = exact.map { String($0.offset + 1) }
-            throw DrawError(statement, .ambiguousTitle, "\(said) has \(exact.count) rows called \(quoted(row)), the \(listed(places)) from the top",
-                            hint: "rename one of them first, so each row has a name of its own")
+            throw DrawError("\(said) has \(exact.count) rows called \(quoted(row)), the \(listed(places)) from the top",
+                            reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: "rename one of them first, so each row has a name of its own")
         }
         let folded = fold(row)
         let alike = parts.filter { fold($0.name) == folded }
-        if alike.count == 1 { return alike[0].id }
+        if alike.count == 1 { return alike[0] }
         let guesses = Suggestions.closest(to: row, among: parts.map(\.name))
-        throw DrawError(statement, .unknownRow, "\(said) has no row called \(quoted(row))",
+        throw DrawError("\(said) has no row called \(quoted(row))", reason: ScriptError.Reason.unknownRow.rawValue,
                         hint: guesses.isEmpty ? (parts.isEmpty ? "it has no rows" : "its rows are \(listed(parts.prefix(8).map { quoted($0.name) }))")
                             : "did you mean \(listed(guesses.map { said + ShapeName.writtenRow($0) }, or: true))?")
     }
@@ -1165,7 +1176,7 @@ struct Drawing {
             let from = attribute.fromStyle.map { " (from style \($0))" } ?? ""
             let value: JSONValue
             do throws(ValueRefusal) {
-                value = try vocabulary.value(of: attribute)
+                value = read(try vocabulary.value(of: attribute), key)
                 try fits(value, key, item.kind, vocabulary)
                 try checkQuery(value, key, vocabulary)
             } catch {
@@ -1389,6 +1400,13 @@ struct Drawing {
             }
             throw DrawError(item.statement, .invalidValue, "\(subject(of: item)) can't have those attributes together: \(error)")
         }
+    }
+
+    /// A value as its property's writer reads it before its schema checks it (`DrawValueWriting.reading`): JSON in a shorthand
+    /// the writer takes, as the stored form says it; text, and a value of a property with no such writer, as written.
+    private func read(_ value: JSONValue, _ key: String) -> JSONValue {
+        guard case .string = value else { return registry.drawValueWriters[key]?.reading?(value) ?? value }
+        return value
     }
 
     /// Refuses JSON (an object or a list) that its property's schema says has a member it hasn't, or
@@ -1738,7 +1756,7 @@ struct Drawing {
         guard let edgeKind else { throw noEdges(statement) }
         let key = attribute.key, value: JSONValue
         do throws(ValueRefusal) {
-            value = try connector.value(of: attribute)
+            value = read(try connector.value(of: attribute), key)
             try fits(value, key, edgeKind, connector)
         } catch {
             throw DrawError(statement, .invalidValue, "\(written): \(error.message)", hint: error.hint)

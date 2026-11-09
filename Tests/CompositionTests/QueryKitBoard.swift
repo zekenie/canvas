@@ -9,6 +9,7 @@ import CoreGraphics
 import Engineering
 import Foundation
 import LanguageModels
+import LineRows
 import Mentions
 import Queries
 import ShippedTesting
@@ -276,6 +277,52 @@ enum QueryKitBoard {
                || lines.contains(#"- GET /orders/{id} → 200 Order; reads "orders"; called by "Storefront"; called by "billing hooks" POST /hooks/paid"#),
                "an endpoint called from a pill on another board: \(lines)")
         _ = hooks
+    },
+    test("an endpoint taken out of its API is read as it was a row: :route finds it, its arrows' ends name its row, and --ask's <apis> lists it with what it does") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let model = ScriptedLanguageModel(answers: [#":route("POST /orders/{id}/refunds")"#])
+        try configureQueryBoards(pasteboard: pasteboard, model: model)
+        let board = try QueryKitBoard.document()
+        defer { board.close() }
+        let editor = board.editor
+        let server = try startQueryServer(for: board)
+        defer { server.stop() }
+        typealias K = QueryKitBoard
+        // Take Out Endpoint: the refunds row on its own, its arrows still bound to its row, now the endpoint's.
+        let alone = try require(editor.moveRows([K.postRefund], of: K.ordersAPI, to: .board(origin: CGPoint(x: 40, y: 1000))))
+        expectEqual(editor.undoHistory.undoName, "Take Out Endpoint")
+        expectEqual(editor.document[alone]?.kind, StandaloneEndpoint.kind)
+        @MainActor func ids(_ text: String) throws -> [String] {
+            let answered = try query(text, on: board, server, ["--brief"])
+            expectEqual(answered.status, 0, "\(text): \(answered.error)")
+            return try rowIDs(answered.output)
+        }
+        let route = try JSON(text: try query(#":route("POST /orders/{order_id}/refunds")"#, on: board, server, ["--brief"]).output)
+        expectEqual(route["rows"]?.arrayValue?.map { $0["id"] }, [.string(alone.description)], "the endpoint, no longer its API")
+        expectEqual(route["rows"]?.arrayValue?.first?["routes"], ["POST /orders/{id}/refunds"])
+        expectEqual(try ids(#":route("/orders/{id}")"#), kitIDs([K.ordersAPI]), "the API's own rows still its")
+        // Its arrows: the write and the call leave its row, named as the API's row was.
+        let writes = try JSON(text: try query("arrow[channel=writes]", on: board, server, ["--brief"]).output)
+        expectEqual(writes["rows"]?.arrayValue?.first?["connection"],
+                    ["type": "writes", "from": ["id": .string(alone.description), "title": "POST /orders/{id}/refunds", "row": "POST /orders/{id}/refunds"],
+                     "to": ["id": .string(K.refunds.description), "title": "refunds"]])
+        let calls = try JSON(text: try query("arrow[channel=calls]", on: board, server, ["--brief"]).output)
+        expectEqual(calls["rows"]?.arrayValue?.first?["connection"]?["from"]?["row"], "POST /orders/{id}/refunds")
+        expectEqual(try ids(#":edge-to("refunds", writes)"#), kitIDs([alone]))
+        // --ask: it is told the endpoint, a route of its own with its write and call, and the billing API that it calls it.
+        let asked = try canvas(server, ["query", "--ask", "Which endpoint writes refunds?", "--board", "\(board.number)"])
+        expectEqual(asked.status, 0, asked.error)
+        expectEqual(try rowIDs(asked.output), kitIDs([alone]))
+        let request = try require(model.lastRequest?.messages.first?.text)
+        let apis = try require(request.range(of: "<apis>\n"), request)
+        let apisEnd = try require(request.range(of: "\n</apis>"))
+        let lines = request[apis.upperBound..<apisEnd.lowerBound].split(separator: "\n").map(String.init)
+        let head = try require(lines.firstIndex(of: "POST /orders/{id}/refunds (endpoint)"), "\(lines)")
+        expectEqual(lines.dropFirst(head + 1).first,
+                    #"- POST /orders/{id}/refunds (NewRefund) → 201 Refund; writes "refunds"; calls "billing API" POST /v1/refunds"#, "\(lines)")
+        expect(lines.contains(#"- POST /v1/refunds → 201; writes "audit_log"; called by "POST /orders/{id}/refunds" POST /orders/{id}/refunds"#), "\(lines)")
+        expect(!lines.contains { $0.hasPrefix("- POST /orders/{id}/refunds") && $0.contains("orders API") }, "\(lines)")
     },
     test("a type note and an enum renamed: a body's type and a column's type are found by the name they have now, and <apis> and <tables> say it") {
         let pasteboard = NSPasteboard.withUniqueName()

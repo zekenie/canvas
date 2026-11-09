@@ -261,6 +261,52 @@ extension EmptyBoardWindow {
         expectEqual(Set(columns.map(\.id)).count, 5, "an id a row has already is given a new one")
         expectEqual(columns[0].id, held[0].id)
     },
+    test("columns: as JSON items takes a type as its words, a string as an endpoint's body is, or the object a column holds, and binds an enum it names") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"enum-type "order_status" values: "pending\npaid""#, on: editor)
+        let status = try require(editor.document.shapes.first { $0.kind == DatabaseEnum.kind }).id
+        _ = try drawnInProcess(#"table "orders" below "order_status" columns: [{"name": "id", "type": "uuid", "primaryKey": true}, {"name": "status", "type": "order_status"}, {"name": "placed_at", "type": {"words": "timestamptz"}, "nullable": true}]"#, on: editor)
+        let columns = try require(tables(editor).first).props.columns
+        expectEqual(columns.map(ColumnGrammar.print), ["id uuid pk", "status order_status", "placed_at timestamptz null"])
+        expectEqual(columns[1].type.shape, status, "a type that names an enum is bound to it, as a line's is")
+        expectEqual(changes(try drawnInProcess(#"table "orders" columns: [{"name": "status", "type": "order_status"}]"#, on: editor)), ["unchanged"])
+        // The words are read before the schema checks, so the schema still refuses what is neither: a misspelt member, a type that is no words.
+        let held = editor.document
+        for script in [#"table "orders" columns: [{"name": "x", "tpye": "uuid"}]"#, #"table "orders" columns: [{"name": "x", "type": 5}]"#,
+                       #"table "orders" columns: [{"name": "x", "type": ["uuid"]}]"#] {
+            let refused = try refusedInProcess(script, on: editor)
+            expectEqual(refused.reason, "invalid_value", "\(script): \(refused)")
+            expectEqual(editor.document, held, "\(script) changed nothing")
+        }
+    },
+    test("delete takes a row of any kind that has them: an enum's value and an API's endpoint, by its whole name, its arrows with it") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"""
+            enum-type "order_status" values: "pending\npaid\nrefunded"
+            table "refunds" right of "order_status" columns: "id uuid pk"
+            api "orders API" below "order_status" endpoints: "/orders\nGET /orders/{id}\nPOST /orders/{id}/refunds\nGET /health"
+            edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes
+            """#, on: editor)
+        let deleted = try drawnInProcess(#"""
+            delete "order_status".pending
+            delete "orders API"."POST /orders/{id}/refunds"
+            """#, on: editor)
+        let values = try require(editor.document.shapes.first { $0.kind == DatabaseEnum.kind }?.typed(as: DatabaseEnum.self)).props.values
+        expectEqual(values.map(\.text), ["paid", "refunded"])
+        let api = try require(editor.document.shapes.first { $0.kind == API.kind })
+        expectEqual(editor.registry.parts(of: api)?.map(\.name), ["GET /health", "/orders", "GET /orders/{id}"], "the endpoint under its header, by its whole name")
+        expect(!editor.document.shapes.contains { $0.kind.rawValue == "arrow" }, "its write went with it")
+        expectEqual(changes(deleted), ["updated", "updated", "deleted"], "the enum, the API, and the arrow said")
+        // None of that name: nothing to delete.
+        do {
+            _ = try drawnInProcess(#"delete "orders API"."GET /nowhere""#, on: editor)
+            expect(false, "a row it hasn't is refused")
+        } catch {
+            expect(String(describing: error).contains(#"has no row called "GET /nowhere""#), String(describing: error))
+        }
+    },
     test("values: as JSON items are joined by text, and a new value's repeated id is given a fresh one") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
         editor.viewportDidResize(to: CGSize(width: 1440, height: 900))

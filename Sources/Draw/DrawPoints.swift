@@ -1,5 +1,6 @@
 import Canvas
 import CanvasRPC
+import DrawScript
 import Queries
 import Topology
 
@@ -282,6 +283,14 @@ public struct DrawTextShape: Hashable, Sendable {
     public let title: String
 }
 
+/// A row a text names after its shape (`"orders".customer_id`), for a text format: the shape, its record as the script starts
+/// it, and the row.
+public struct DrawTextRow {
+    public let shape: DrawTextShape
+    public let record: AnyShapeRecord
+    public let row: PartName
+}
+
 /// What a text format may ask while it writes one string: the registry, the string's schema where it
 /// is, and which shape a name stands for, found as the rest of the script finds one.
 @MainActor
@@ -310,6 +319,17 @@ public struct DrawTextContext {
     /// script's own are, which the run says on the statement's line.
     public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextShape {
         try lookup.shape(called: name, admitting: { record, _ in admits(record) })
+    }
+
+    /// The row `written` names, when it's written as a script names a row after its shape's title (`"orders".customer_id`,
+    /// `"orders API"."POST /orders"`): the shape found as `shape(called:admitting:)` finds one, then its row by name as a
+    /// statement's end finds one (exactly, else folded; two of that name `ambiguous_title`, none `unknown_row` with the ones it's
+    /// like), among the rows the shape has as the script starts. Nil for text not written so, which names a shape by its title.
+    public func row(written: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextRow? {
+        guard written.drop(while: \.isWhitespace).first == "\"", let parsed = try? ShapeName.parsingRow(written), let row = parsed.row,
+              let title = parsed.name.title else { return nil }
+        let shape = try shape(called: title, admitting: admits)
+        return try lookup.row(named: row, of: shape, said: parsed.name.written)
     }
 
     /// As above, for a rule that needs what the script writes on a shape it draws or restates: `admits`
@@ -445,6 +465,9 @@ public struct DrawValueWriting {
     let edges: @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge]
     /// Whether its values imply edges at all (`edges` answers none otherwise).
     let impliesEdges: Bool
+    /// What JSON a script writes is read as before the property's schema checks it, for a writer that takes a shorthand the
+    /// stored form doesn't (a column's `"type": "uuid"` for `{"words": "uuid"}`); nil: as written.
+    var reading: (@MainActor (JSONValue) -> JSONValue)? = nil
 }
 
 /// An edge a value implies (`DrawValueWriting.edges`): from the shape whose statement writes the value, at the row `fromRow`
@@ -561,13 +584,15 @@ extension PluginRegistrar {
     }
 
     /// The same for a writer whose values imply edges (`DrawImpliedEdge`): `implies` gives the edges the value as written implies,
-    /// from the shape its statement draws, which the run draws with the script's own.
+    /// from the shape its statement draws, which the run draws with the script's own. `reading`, for a writer that takes a
+    /// shorthand in its JSON the stored form doesn't: what the JSON is read as before the property's schema checks it.
     public mutating func drawValueWriter(for key: PropertyKey, describes: String? = nil,
+                                         reading: (@MainActor (JSONValue) -> JSONValue)? = nil,
                                          write: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> JSONValue,
                                          implies: @escaping @MainActor (JSONValue, DrawTextContext) throws(DrawError) -> [DrawImpliedEdge],
                                          merge: @escaping @MainActor (_ written: JSONValue, _ held: JSONValue?) -> JSONValue) {
         contribute(DrawValueWriting(key: key.rawValue, describes: describes, write: write, merge: { written, held, _ in merge(written, held) },
-                                    edges: implies, impliesEdges: true), to: DrawValueWriters.self)
+                                    edges: implies, impliesEdges: true, reading: reading), to: DrawValueWriters.self)
     }
 
     /// The same, `merge` handed the registry too, for a join that goes by what other plugins say (Types keeps every

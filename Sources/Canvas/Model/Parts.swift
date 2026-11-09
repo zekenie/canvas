@@ -95,14 +95,20 @@ public struct PartName: Hashable, Sendable {
     /// False for a part nothing is bound to, which heads rows (an API's path prefix): no end of a connection, by a drag, ⌘L or a
     /// name (`PartFrame.isConnectable` is the same on the board).
     public var isConnectable: Bool
+    /// Whether it is all its shape is (an endpoint taken out of its API: one shape, one row), so a list that names shapes and rows
+    /// lists it once (`MentionState.candidates(…ownRows:)`); an API's endpoint, which is one of its
+    /// shape's rows, is not, whether or not it's the only one.
+    public var isItsShape: Bool
 
-    public init(id: PartID, name: String, kindWord: String, lead: PartLead = .none, standsAlone: Bool = false, isConnectable: Bool = true) {
+    public init(id: PartID, name: String, kindWord: String, lead: PartLead = .none, standsAlone: Bool = false, isConnectable: Bool = true,
+                isItsShape: Bool = false) {
         self.id = id
         self.name = name
         self.kindWord = kindWord
         self.lead = lead
         self.standsAlone = standsAlone
         self.isConnectable = isConnectable
+        self.isItsShape = isItsShape
     }
 }
 

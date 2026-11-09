@@ -691,7 +691,7 @@ enum MentionGrammar {
     /// escapes, on the line the `@[` is on. What's left as it is, byte for byte: every other
     /// character; a whole mention (`@[label](shape:ID)`, the id in any case); and a look-alike, a name's
     /// `]` followed by `(shape` in any case, which is a mention gone wrong, not one by name.
-    static func resolvingNames<E: Error>(in string: String, _ resolve: (String) throws(E) -> (id: ShapeID, label: String)) throws(E) -> String {
+    static func resolvingNames<E: Error>(in string: String, _ resolve: (String) throws(E) -> (target: PartAddress, label: String)) throws(E) -> String {
         guard mayHoldMentions(string) else { return string }
         let s = Array(string.unicodeScalars)
         var out: [Unicode.Scalar] = []       // not a string, which copies itself whole for each append
@@ -734,9 +734,9 @@ enum MentionGrammar {
                 i = a + 1
                 continue
             }
-            let (id, shown) = try resolve(name)
+            let (target, shown) = try resolve(name)
             out.append(contentsOf: s[copied..<a])
-            append(PartAddress(id), label: shown, to: &out)
+            append(target, label: shown, to: &out)
             copied = end + 1
             i = end + 1
         }
