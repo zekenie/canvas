@@ -107,9 +107,9 @@ public enum ResizeHandle: CaseIterable, Hashable, Sendable {
     /// (`shown`), with the point between its ends, from `SelectionStyle.resizeSideReach` inside it to as far past
     /// the outline drawn `outline` off it, the nearer of two; nil off every side.
     @MainActor
-    static func side(of box: CGRect, at point: CGPoint, outline: CGFloat) -> ResizeHandle? {
+    static func side(of box: CGRect, at point: CGPoint, outline: CGFloat, axes: SizeAxes = .both) -> ResizeHandle? {
         let reach = SelectionStyle.resizeSideReach
-        return shown(on: box).filter { $0.x == 0 || $0.y == 0 }.compactMap { side -> (side: ResizeHandle, off: CGFloat)? in
+        return shown(on: box, axes: axes).filter { $0.x == 0 || $0.y == 0 }.compactMap { side -> (side: ResizeHandle, off: CGFloat)? in
             let edge = side.point(on: box)
             // How far out past the side the point is (inside, below zero), and whether it's between the side's ends.
             let out = side.x != 0 ? (point.x - edge.x) * side.x : (point.y - edge.y) * side.y
@@ -384,7 +384,7 @@ extension CanvasEditor {
     func resizeSide(atViewPoint point: CGPoint) -> ResizeHandle? {
         guard let id = selection, id != editingShapeID, selectedItems == nil, let record = document[id], let box = resizeFrame(of: record),
               !isReadOnly(id) else { return nil }
-        return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap)
+        return ResizeHandle.side(of: camera.toView(box), at: point, outline: outlineGap, axes: registry.resizedAxes(of: record))
     }
 
     /// The only selected shape's resize handles as parts (`ResizeHandle.parts`): those shown on its frame, as
