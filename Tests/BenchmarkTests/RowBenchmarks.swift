@@ -48,6 +48,9 @@ extension Budget {
     /// pushed down a line (U3, `Transaction.makeRoom()`) in the commit: the scope's "within the field keystroke budget's
     /// order". Never measured before the push: see benchmarks.md for what it measured, and the same commit with nothing under it.
     static let roomPush = 2 * fieldKeystroke
+    /// A column added to a table on the board itself, nothing under it, on the same board: the push finds what is under it by
+    /// the editor's index, so it costs what it reaches and not the board (U3). Held to the same two keystrokes.
+    static let roomBoard = 2 * fieldKeystroke
 }
 
 /// `count` shapes in a grid 280 apart, each tenth a 12-row titled table, each hundredth a 60-row one, the rest notes.
@@ -67,12 +70,13 @@ extension Budget {
     }
 }
 
-/// A database at (-4000, -4000) and 50 five-row tables in a column inside it, 20 apart (put in it once the editor has them),
-/// beside `rowsBoard(4_000)`: the records, the database first, the top table's id and the last's.
+/// A database at (-4000, -4000) and 50 five-row tables in a column inside it, 20 apart (put in it once the editor has them), the
+/// gap inside under the last, so a push down a line grows the database every time and the database pushes at the board's level
+/// in turn, beside `rowsBoard(4_000)`: the records, the database first, the top table's id and the last's.
 @MainActor private func columnOfTables() -> (records: [AnyShapeRecord], top: ShapeID, last: ShapeID) {
     let columns = (0..<5).map { Column(name: "column_\($0)", type: TypeRef("text"), primaryKey: $0 == 0) }
     let height = KitStyle.height(rows: 5)
-    var database = ShapeRecord(Database(frame: CGRect(x: -4000, y: -4000, width: 400, height: 50 * (height + 20) + 40)))
+    var database = ShapeRecord(Database(frame: CGRect(x: -4000, y: -4000, width: 400, height: 50 * (height + 20) + Settlement.gap)))
     database[TitleProperty.self] = "shop"
     var records = [AnyShapeRecord(database)]
     for index in 0..<50 {
@@ -101,11 +105,12 @@ extension Budget {
         draw(h.editor, into: context, size: viewport)
         var pushing = Double.infinity, board = Double.infinity, none = Double.infinity
         for run in 0..<measuredRuns(9) {
-            let was = h.editor.document[last]?.box?.minY ?? 0
+            let was = h.editor.document[last]?.box?.minY ?? 0, heightWas = h.editor.document[column[0].id]?.box?.height ?? 0
             let cost = threadCPUTime {
                 h.editor.transact("Add Column") { $0.update(top, as: DatabaseTable.self) { $0.props.columns.append(Column(name: "added_\(run)", type: TypeRef("text"))) } }
             }.milliseconds
             expect((h.editor.document[last]?.box?.minY ?? 0) > was, "the last table pushed")
+            expect((h.editor.document[column[0].id]?.box?.height ?? 0) > heightWas, "and the database grew to hold it, every run")
             pushing = min(pushing, cost)
             // A table on the board itself grown, nothing under it: the board's level read for what it reaches.
             board = min(board, threadCPUTime {
@@ -116,9 +121,12 @@ extension Budget {
                 h.editor.transact("Rename Column") { $0.update(top, as: DatabaseTable.self) { $0.props.columns[1].name = "renamed_\(run)" } }
             }.milliseconds)
         }
-        report(String(format: "a column added over a column of 50 tables in a database, 4,000 shapes: %.3f ms pushing 49 (budget %.0f); a table on the board grown, nothing under it, %.3f; a rename, growing nothing, %.3f",
-                      pushing, Budget.roomPush, board, none))
-        if holdsToBudgets { expect(pushing < Budget.roomPush, "a commit that pushes 49 tables took \(pushing) ms") }
+        report(String(format: "a column added over a column of 50 tables in a database, 4,000 shapes: %.3f ms pushing 49 and growing the database (budget %.0f); a table on the board grown, nothing under it, %.3f (budget %.0f); a rename, growing nothing, %.3f",
+                      pushing, Budget.roomPush, board, Budget.roomBoard, none))
+        if holdsToBudgets {
+            expect(pushing < Budget.roomPush, "a commit that pushes 49 tables and grows their database took \(pushing) ms")
+            expect(board < Budget.roomBoard, "a commit that grows a table on the board, nothing under it, took \(board) ms")
+        }
     },
     test("rowsFrame and rowsSkeleton: a frame of a board where one shape in ten is a 12-row table and one in a hundred a 60-row one, at 100%, 70%, 30% and 10%") {
         let viewport = CGSize(width: 1200, height: 800)

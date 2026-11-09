@@ -320,6 +320,9 @@ struct DrawOptions {
     var naming = Naming.refusing
     /// Whether the run is an agent's change (what acts on a person's edits leaves it be): a script's, not a put's.
     var byAgent = true
+    /// Whether what the run grows makes room below it (`Transaction.makeRoom()`): not a document's (`canvas apply`, and the digest
+    /// through it), whose plan puts every shape where it goes at the size it will have.
+    var makesRoom = true
     /// The undo step the run makes (`DrawStyle.stepName`, "Draw"), as its caller names it.
     var step = "Draw"
     /// Edges a put's statement implies besides what its values' writers say (`DrawPut.edges`), by the statement's line, each
@@ -411,6 +414,7 @@ private func apply(_ drawing: Drawing, to editor: CanvasEditor, reveals: Bool, d
         let result = try editor.transact(on: drawing.target.board, drawing.options.step) { transaction in
             // An agent's change, not the person's: what acts on a person's edits leaves it be.
             transaction.byAgent = drawing.options.byAgent
+            transaction.makesRoom = drawing.options.makesRoom
             let result = try drawing.apply(to: &transaction, reveals: reveals)
             if !dryRun, let name, let records = editor.registry.drawRecording {
                 join(name, result, on: drawing.target.board, records: records, file: editor.file, registry: editor.registry, in: &transaction)

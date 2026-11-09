@@ -200,6 +200,10 @@ extension Drawing {
             for index in order.filter({ !registry.isContainer(items[$0].record) }) + holding {
                 let item = items[index]
                 if let existing = item.existing, !item.moves, item.record.box?.size == existing.box?.size { continue }
+                // One that grew where it is (a table given columns) is left to making room, which grows the container
+                // holding it, rather than nudged up over the shape above it (and grows the shapes below it).
+                if let existing = item.existing, !item.moves, transaction.makesRoom, registry.roomMakingKinds.contains(item.record.kind),
+                   item.record.box?.origin == existing.box?.origin { continue }
                 var column: [ShapeItem] = []
                 if item.implied, let members = columns[ColumnKey(item)], members.count > 1 {
                     guard members[0] == index else { continue }
@@ -234,12 +238,16 @@ extension Drawing {
             var row = DrawChange(line: item.statement.line, did: .created, kind: item.kind.rawValue,
                                  title: naming?.name(now, registry), id: now.id.description, at: at)
             if let existing = item.existing {
+                // As it was before making room pushed it: a shape only the push moved is the script's unchanged (`moved` lists it).
+                var unpushed = now
+                let shift = transaction.roomShift(of: now.id)
+                if shift != .zero, let box = now.box { unpushed.box = box.offsetBy(dx: 0, dy: -shift.y) }
                 if item.rename != nil {
                     row.did = .renamed
                     row.was = item.title
-                } else if now.box != existing.box {
+                } else if unpushed.box != existing.box {
                     row.did = .moved
-                } else if now != existing {
+                } else if unpushed != existing {
                     row.did = .updated
                 } else {
                     row.did = .unchanged

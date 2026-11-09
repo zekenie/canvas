@@ -1,7 +1,11 @@
+import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
 import Engineering
+import Geometry
+import Keyboard
+import Selection
 import TestKit
 
 // The kit's kinds make room as their rows grow (`MakesRoomAsItGrows`, the core's push): a table, an enum and an API that
@@ -87,5 +91,45 @@ extension EditorHarness {
         h.editor.transact("Add Column") { $0.update(customers, as: DatabaseTable.self) { $0.props.columns += [column("a text"), column("b text")] } }
         expectEqual(h.frame(locked)?.minY, bottom + 10)
         expectEqual(refusals.refusals, [], "nothing refused: the push left it be")
+    },
+    test("a column cut from one table and pasted into another, or dragged there, pushes what's under the one it lands in, in the move's step; the table it left pulls nothing up") {
+        let ordersLines = ["id uuid pk", "customer_id uuid", "status order_status", "total_cents int"]
+        let itemsLines = ["id uuid pk", "order_id uuid", "qty int"]
+        for dragged in [false, true] {
+            let b = try KitBench()
+            let orders = b.table("orders", ordersLines)
+            let items = b.table("order_items", itemsLines, at: CGPoint(x: 520, y: 100))
+            let itemsBottom = try require(b.h.frame(items)).maxY
+            let refunds = b.table("refunds", ["id uuid pk"], at: CGPoint(x: 520, y: itemsBottom + 20))
+            let under = b.table("payments", ["id uuid pk"], at: CGPoint(x: 100, y: try require(b.h.frame(orders)).maxY + 20))
+            let ordersBottom = try require(b.h.frame(orders)).maxY
+            let underAt = try require(b.h.frame(under)).minY
+            let how = dragged ? "dragged" : "cut and pasted"
+            if dragged {
+                let status = b.middle(ofRow: 2, in: orders)
+                b.click(at: status)
+                b.click(at: status)
+                b.drag(from: status, to: CGPoint(x: b.rect(ofRow: 2, in: items).midX, y: b.rect(ofRow: 2, in: items).minY + 3))
+                b.h.release()
+            } else {
+                b.window.makeFirstResponder(b.canvas)
+                b.editor.selectedShapeIDs = [orders]
+                b.editor.selectItems([AnyHashable(b.columns(orders)[2].id)], of: orders)
+                b.press(Chord("x", .command))
+                b.editor.selectedShapeIDs = [items]
+                b.editor.selectItems([AnyHashable(b.columns(items)[2].id)], of: items)
+                b.press(Chord("v", .command))
+            }
+            expectEqual(b.columnNames(items).count, 4, "the column landed, \(how)")
+            let growth = try require(b.h.frame(items)).maxY - itemsBottom
+            expect(growth > 0, "the table it landed in is a line taller, \(how)")
+            expectEqual(b.h.frame(refunds)?.minY, itemsBottom + 20 + growth, "pushed by the line, the gap of 20 kept, \(how)")
+            expect(try require(b.h.frame(orders)).maxY < ordersBottom, "the table it left is a line shorter, \(how)")
+            expectEqual(b.h.frame(under)?.minY, underAt, "and pulls nothing up, \(how)")
+            expectEqual(b.undoName, dragged ? "Move Column" : "Paste Column", "one step, as Edit says it")
+            b.editor.undo()
+            expectEqual(b.h.frame(refunds)?.minY, itemsBottom + 20, "one Undo puts the move and the push back, \(how)")
+            expectEqual(b.columnNames(items), ["id", "order_id", "qty"])
+        }
     },
 ])
