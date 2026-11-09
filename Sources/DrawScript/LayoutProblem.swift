@@ -49,6 +49,10 @@ public struct LayoutProblem {
         /// boxes yields to the earlier. Such boxes placed alike list only with each other, never with a
         /// box the script wrote, `impliedListStep` apart.
         public var implied: Bool
+        /// The room it keeps clear below it (a table that grows as rows are typed: its waiting line and the next shape's pill), world
+        /// units: a box placed below it with no `gap:` said is at least this far down, as is the next of a list it heads. None by
+        /// default.
+        public var roomBelow: CGFloat = 0
 
         public init(line: Int, name: String, size: CGSize, clauses: [ResolvedClause] = [], gap: Gap? = nil,
                     overlapAllowed: Bool = false, current: CGRect? = nil, holder: Holder? = nil, carries: Set<Int> = [],
@@ -95,6 +99,8 @@ public struct LayoutProblem {
         /// against at twice that shape's area, and the `view` whatever its size; the board, framed by
         /// what's on it, and the origin, a point, make nothing a zone.
         public var word: PlaceWord?
+        /// The room it keeps clear below it, as a free box's (`Free.roomBelow`).
+        public var roomBelow: CGFloat = 0
 
         public init(rect: CGRect, gap: Gap? = nil, obstacle: Int? = nil, word: PlaceWord? = nil) {
             self.rect = rect
@@ -211,19 +217,22 @@ public struct LayoutProblem {
     /// before the spots out of it. Nil, as `canvas draw` places one, for the nearest spot wherever it is.
     public var landsInView: InView?
 
-    /// `landsInView`'s region: world units.
+    /// `landsInView`'s region: world units. `covered` are parts of `clear` it keeps out of too (the corner a minimap covers).
     public struct InView: Sendable, Equatable {
         public var clear: CGRect
         public var above: CGFloat
+        public var covered: [CGRect]
 
-        public init(clear: CGRect, above: CGFloat) {
+        public init(clear: CGRect, above: CGFloat, covered: [CGRect] = []) {
             self.clear = clear
             self.above = above
+            self.covered = covered
         }
 
-        /// Whether `rect`, with the room above it, is inside.
+        /// Whether `rect`, with the room above it, is inside, and clear of what's covered.
         func holds(_ rect: CGRect) -> Bool {
-            clear.contains(CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above))
+            let shown = CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above)
+            return clear.contains(shown) && !covered.contains { $0.intersects(shown) }
         }
     }
 

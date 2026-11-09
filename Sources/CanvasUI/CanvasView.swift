@@ -61,6 +61,7 @@ public final class CanvasView: NSView {
             } else {
                 minimap?.removeFromSuperview()
                 minimap = nil
+                editor.coveredCorners = CoveredCorners()
                 if pointerPlace == .minimap { pointerPlace = .canvas }
             }
             layoutZoomIndicator()
@@ -112,8 +113,20 @@ public final class CanvasView: NSView {
     private var clearOfChrome: CGRect { editor.coveredEdges.clear(in: bounds.size) }
 
     private func layoutMinimap() {
-        guard let minimap else { return }
+        guard let minimap else {
+            editor.coveredCorners = CoveredCorners()
+            return
+        }
         minimap.frame = MinimapStyle.frame(in: clearOfChrome)
+        reportMinimapCorner()
+    }
+
+    /// The editor is told the clear part's bottom-left corner is covered while the minimap shows there (hidden on an empty board
+    /// too: its place is kept for the first shape), its margin from the corner included, so what is put down for a person or
+    /// kept in view keeps out of it (`CanvasEditor.coveredCorners`).
+    private func reportMinimapCorner() {
+        let size = MinimapStyle.size(in: clearOfChrome.size)
+        editor.coveredCorners = CoveredCorners(bottomLeft: CGSize(width: MinimapStyle.margin + size.width, height: MinimapStyle.margin + size.height))
     }
 
     private func layoutZoomIndicator() {
@@ -137,7 +150,10 @@ public final class CanvasView: NSView {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = ChromeStyle.paneIn
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            if let minimap { minimap.animator().frame = MinimapStyle.frame(in: clearOfChrome) }
+            if let minimap {
+                minimap.animator().frame = MinimapStyle.frame(in: clearOfChrome)
+                reportMinimapCorner()
+            }
             let below = minimap.flatMap { $0.isHidden ? nil : MinimapStyle.frame(in: clearOfChrome) }
             zoomIndicator.animator().frame = ZoomIndicatorStyle.frame(zoomIndicator.labelSize, in: clearOfChrome, above: below)
         }

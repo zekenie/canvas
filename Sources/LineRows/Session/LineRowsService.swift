@@ -40,11 +40,14 @@ public final class LineRowsService {
     /// provider).
     func width(of id: ShapeID) -> CGFloat? { widths[id] }
 
-    /// Lays `id` out `width` wide while it's edited (nil: as stored), the arrows bound to it and its frame following.
-    func setWidth(_ width: CGFloat?, of id: ShapeID) {
-        guard widths[id] != width else { return }
+    /// Lays `id` out `width` wide while it's edited (nil: as stored), the arrows bound to it and its frame following. True where
+    /// the width changed.
+    @discardableResult
+    func setWidth(_ width: CGFloat?, of id: ShapeID) -> Bool {
+        guard widths[id] != width else { return false }
         widths[id] = width
         editor.shapesDidChangeLayout([id])
+        return true
     }
 
     /// Lights a shape or a row (nil: none), outlined as the selection is.

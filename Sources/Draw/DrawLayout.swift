@@ -83,9 +83,12 @@ extension Drawing {
                 kinds.isEmpty ? [] : Set(document.descendants(of: existing.id, containingKinds: kinds).compactMap { document.index(of: $0) })
             } ?? []
             carried.formUnion(carries)
-            free.append(LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.room, gap: item.shape.gap,
-                                           overlapAllowed: item.shape.overlapAllowed, current: item.existing.flatMap { context.frame(of: $0.id) }, carries: carries,
-                                           implied: item.implied))
+            var box = LayoutProblem.Free(line: item.statement.line, name: subject(of: item), size: item.room, gap: item.shape.gap,
+                                         overlapAllowed: item.shape.overlapAllowed, current: item.existing.flatMap { context.frame(of: $0.id) }, carries: carries,
+                                         implied: item.implied)
+            // A kind that grows as rows are typed (a table) keeps its room below it: a box placed below it lands past that.
+            box.roomBelow = registry.roomKeptBelow(item.kind)
+            free.append(box)
         }
 
         // What their placements name.
@@ -102,7 +105,9 @@ extension Drawing {
             if let at = fixedShapes[record.id] { return .fixed(at) }
             let obstacle = context.solidBounds(of: record.id) != nil ? document.index(of: record.id) : nil
             fixedShapes[record.id] = fixed.count
-            fixed.append(LayoutProblem.Fixed(rect: rect, gap: gap, obstacle: obstacle))
+            var box = LayoutProblem.Fixed(rect: rect, gap: gap, obstacle: obstacle)
+            box.roomBelow = registry.roomKeptBelow(record.kind)
+            fixed.append(box)
             fixedNames.append(named(record))
             return .fixed(fixed.count - 1)
         }

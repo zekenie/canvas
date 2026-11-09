@@ -251,9 +251,12 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
         b.press(Chord(Key.down, .command))
         let card = try require(b.card)
         card.go(to: "deprecated")
+        let heard = b.editor.announcements.count
         b.press(.space)
         expectEqual(b.rows(api)[1].endpoint?.deprecated, true)
         expectEqual(b.undoName, "Deprecate Endpoint")
+        // Said once: the step's name says it, so no "deprecated yes" after it (UX walk 4 W-evolve-13).
+        expectEqual(Array(b.editor.announcements.dropFirst(heard)), ["Deprecate Endpoint"])
         b.press(.escape)
         b.press(.escape)
         b.editor.endEditing()

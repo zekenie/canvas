@@ -248,6 +248,26 @@ import TestKit
         expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 1484, y: 984)))
         expect(!h.editor.animateCamera(toShow: .null, margin: 16, duration: .milliseconds(200)))
     },
+    test("a rect is kept out of the corner the host covers (the minimap): the least pan out of it, up or across, and the clear view says it (UX walk 4 firstminute-4-1)") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+        h.editor.coveredCorners = CoveredCorners(bottomLeft: CGSize(width: 212, height: 162))
+        expectEqual(h.editor.clearView, ClearView(rect: CGRect(x: 0, y: 0, width: 1200, height: 800), covered: [CGRect(x: 0, y: 638, width: 212, height: 162)]))
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 0, y: 0, width: 1200, height: 800), "a fit still fills the view: a corner is no edge")
+        expect(!h.editor.animateCamera(toShow: CGRect(x: 20, y: 100, width: 100, height: 50), margin: 16, duration: .milliseconds(200)), "clear of it: nothing to do")
+        // In the corner: up past its top (128) is shorter than across past its side (208).
+        expect(h.editor.animateCamera(toShow: CGRect(x: 20, y: 700, width: 100, height: 50), margin: 16, duration: .milliseconds(200)))
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 0, y: 128)))
+        // Too tall to go over it: across.
+        let view = ClearView(rect: CGRect(x: 0, y: 0, width: 1200, height: 800), covered: [CGRect(x: 0, y: 638, width: 212, height: 162)])
+        expectEqual(view.shift(bringing: CGRect(x: 20, y: 100, width: 100, height: 650)), CGSize(width: 192, height: 0))
+        expect(!view.contains(CGRect(x: 20, y: 700, width: 10, height: 10)))
+        expect(view.contains(CGRect(x: 220, y: 700, width: 10, height: 10)))
+        // Nothing covered (the minimap hidden): none.
+        h.editor.camera = Camera()
+        h.editor.coveredCorners = CoveredCorners()
+        expectEqual(h.editor.clearView.covered, [])
+    },
     test("services hear each move a kept view makes, from where the camera was headed to where it goes; nothing when it moves nothing") {
         let log = KeptViews()
         let h = try EditorHarness(plugins: [Contributor(id: "kept") { r in r.service { _ in KeptViewListener(log: log) } }])

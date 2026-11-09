@@ -402,11 +402,11 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         guard let session else { return }
         switch card.lines[index].kind {
         case .toggle(let get, let set):
-            var row = held
+            var row = held, before = held
             set(&row, !get(held))
             session.commitCard(row, over: held)
             reload(keepingDrafts: false)
-            spokenChange(of: index)
+            spokenChange(of: index, row, over: before)
         case .choice(let options, let get, let set):
             let current = get(held).map { Self.option($0, in: options) } ?? options.first
             let menu = NSMenu(title: card.lines[index].label)
@@ -433,17 +433,26 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         guard let session, case .choice(let options, let get, _) = card.lines[index].kind else { return }
         // The option shown faint while none is held is none: picking it writes nothing.
         if get(held) == nil, option == options.first { return }
-        var row = held
+        var row = held, before = held
         set(&row, option)
         session.commitCard(row, over: held)
         reload(keepingDrafts: false)
-        spokenChange(of: index)
+        spokenChange(of: index, row, over: before)
     }
 
-    /// What a toggle or a choice now says, spoken beside the step's name: "null yes", "on delete cascade".
-    private func spokenChange(of index: Int) {
-        guard let control = controls[index] else { return }
+    /// What a toggle or a choice now says, spoken beside the step's name: "null yes", "on delete cascade". Nothing where the step's
+    /// name says it already (`stepSaysIt`): "Deprecate Endpoint" is said once, never followed by "deprecated yes".
+    private func spokenChange(of index: Int, _ row: Row, over before: Row) {
+        guard let control = controls[index], !stepSaysIt(row, over: before) else { return }
         editor.announce(LineCardStyle.spoken(card.lines[index].label, control.value))
+    }
+
+    /// Whether the step that writes `row` over `before` says what it set by its name alone: the kind names the step there and the
+    /// step back apart ("Deprecate Endpoint", "Undeprecate Endpoint"), where one name for both ("Change Column", "Change Method")
+    /// says only that something changed.
+    private func stepSaysIt(_ row: Row, over before: Row) -> Bool {
+        guard let model = session?.model, row != before else { return false }
+        return model.stepName(of: .change(from: before, to: row)) != model.stepName(of: .change(from: row, to: before))
     }
 
     // MARK: Keys

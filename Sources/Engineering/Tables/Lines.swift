@@ -195,18 +195,18 @@ struct ColumnLineGrammar: LineGrammar {
             let end = NSMaxRange(run.range)
             if caret >= run.range.location && caret <= end {
                 let prefix = text.substring(with: NSRange(location: run.range.location, length: caret - run.range.location))
-                return LineOffers(range: run.range, query: prefix, items: typeOffers(context))
+                return LineOffers(range: run.range, query: prefix, items: typeOffers(context, typed: prefix))
             }
             if let at, !typed.isEmpty, words.firstIndex(where: { NSMaxRange($0.range) == end }).map({ $0 + 1 }) == at {
                 let prefix = text.substring(with: NSRange(location: run.range.location, length: caret - run.range.location)).lowercased()
                 if LineLooks.sqlTypes.contains(where: { $0.contains(" ") && $0.hasPrefix(prefix) }) {
                     let whole = NSRange(location: run.range.location, length: NSMaxRange(words[at].range) - run.range.location)
-                    return LineOffers(range: whole, query: prefix, items: typeOffers(context))
+                    return LineOffers(range: whole, query: prefix, items: typeOffers(context, typed: prefix))
                 }
             }
         }
         if index == 1 {
-            return LineOffers(range: range, query: typed, items: typeOffers(context))
+            return LineOffers(range: range, query: typed, items: typeOffers(context, typed: typed))
         }
         let previous = before.last?.lowercased() ?? ""
         // Right after a key's arrow: the rows a key may go to.
@@ -274,12 +274,19 @@ struct ColumnLineGrammar: LineGrammar {
         return items.isEmpty ? nil : LineOffers(range: range, query: typed, items: items)
     }
 
-    /// SQL's types, then the file's enums, each in its purple chip, lit while it's highlighted and standing for its enum once picked
+    /// SQL's types, each in one word (`LineLooks.offeredTypes`), with a spelling of several words only once what is
+    /// `typed` has its first word whole and runs into its second ("double p", "timestamp w"), so scattered letters never offer one;
+    /// then the file's enums, each in its purple chip, lit while it's highlighted and standing for its enum once picked
     /// (a name of several words put in quotes, as the line reads one). Two enums of one name are both offered, each saying where it is
     /// (its database, or its board: Mentions' place), so either can be picked; two that nothing tells apart (one name, one place) are
     /// offered once, as the one typing binds, since a pick of either could only be that one.
-    func typeOffers(_ context: LineContext) -> [LineOffer] {
-        let types = LineLooks.sqlTypes.map { LineOffer(CaretCompletion(label: $0, insert: $0)) }
+    func typeOffers(_ context: LineContext, typed: String) -> [LineOffer] {
+        let typed = typed.lowercased()
+        let spelled = LineLooks.sqlTypes.filter { spelling in
+            guard let space = spelling.firstIndex(of: " ") else { return false }
+            return typed.count > spelling[..<space].count + 1 && spelling.hasPrefix(typed)
+        }
+        let types = (spelled + LineLooks.offeredTypes).map { LineOffer(CaretCompletion(label: $0, insert: $0)) }
         let names = context.editor.service(KitNames.self)
         let enums = names?.enums ?? []
         var counts: [String: Int] = [:]
@@ -607,10 +614,15 @@ enum LineLooks {
         (ColumnGrammar.arrow, ColumnGrammar.arrow, ColumnGrammar.arrow + " "),
     ]
 
-    /// SQL's types (Postgres's), the common first: what a type's word is offered from.
+    /// SQL's types (Postgres's) as offered, the common first: each in one word (T2 panel 2's `int, int8, integer, interval, inet`),
+    /// never a spelling of several words beside its short name (`timestamptz`, not `timestamp with time zone` too).
+    static let offeredTypes = sqlTypes.filter { !$0.contains(" ") }
+
+    /// Every spelling of SQL's types the offers know (Postgres's), several words among them: one of several words is offered only
+    /// as it's typed into past its first word.
     static let sqlTypes = [
         "uuid", "text", "int", "int8", "integer", "interval", "inet", "bigint", "smallint", "serial", "bigserial", "numeric", "decimal",
-        "real", "float8", "bool", "boolean", "date", "time", "timestamp", "timestamptz", "json", "jsonb", "bytea", "varchar", "char",
+        "real", "float8", "bool", "boolean", "date", "time", "timetz", "timestamp", "timestamptz", "json", "jsonb", "bytea", "varchar", "char",
         "citext", "money", "cidr", "double precision", "character varying", "timestamp with time zone", "timestamp without time zone",
         "time with time zone", "time without time zone",
     ]

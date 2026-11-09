@@ -1,6 +1,7 @@
 @_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
+import Geometry
 import LineRows
 import Selection
 import TestKit
@@ -39,6 +40,24 @@ import TestKit
         b.type(String(repeating: "w", count: 60))
         expect((b.frame(id)?.width ?? 0) > 260, "laid out wider than it stores")
         expectEqual(b.frame(beside)?.origin, CGPoint(x: 360, y: 100))
+        b.press(.escape)
+    },
+    test("a line that widens its tally past the clear view's edge (under the inspector) pans the view by as little as keeps the caret and the line's end in view (UX walk 4 tables-4-1)") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green"], at: CGPoint(x: 200, y: 100))
+        b.editor.coveredEdges = CoveredEdges(right: 300)
+        b.begin(id)
+        let camera = b.editor.camera
+        b.type("red")
+        expectEqual(b.editor.camera, camera, "a line that fits moves nothing")
+        b.type(String(repeating: "w", count: 30))
+        let clear = b.editor.unobscuredViewport
+        let frame = try require(b.frame(id))
+        expect(frame.maxX > 500, "laid out wider, past the clear view's edge where the view stood: \(frame)")
+        let shown = b.editor.camera.toView(frame)
+        expect(shown.maxX <= clear.maxX + 0.5, "its end in the clear view, not under the inspector: \(shown) in \(clear)")
+        expect(b.editor.camera.origin.y == camera.origin.y, "panned across only")
+        expect(shown.minX >= clear.minX, "its start still in view: \(shown)")
         b.press(.escape)
     },
     test("a tally laid out wider while it's typed is painted, and hit, above the tally beside it that its widening overlaps, back in its place as editing ends") {

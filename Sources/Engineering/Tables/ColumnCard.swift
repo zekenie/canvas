@@ -141,7 +141,7 @@ struct ColumnTypeGrammar: LineGrammar {
         guard (at ?? words.filter { NSMaxRange($0.range) < caret }.count) == 0 else { return nil }
         let range = at.map { words[$0].range } ?? NSRange(location: caret, length: 0)
         let typed = at.map { String(words[$0].text.utf16.prefix(caret - words[$0].range.location)) ?? "" } ?? ""
-        return LineOffers(range: range, query: typed, items: ColumnLineGrammar().typeOffers(context))
+        return LineOffers(range: range, query: typed, items: ColumnLineGrammar().typeOffers(context, typed: typed))
     }
 
     func spoken(_ type: TypeRef, in context: LineContext) -> String { type.words }

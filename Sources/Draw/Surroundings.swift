@@ -3,6 +3,7 @@ import CoreGraphics
 import Adornments
 import DrawScript
 import Geometry
+import Topology
 
 // Draw's placement for plugins: where shapes land beside, in or anywhere on a board; Moving's solver, for every plugin that puts shapes down.
 // Where moved shapes land, worked out as `canvas draw` places a shape (DrawLayout, beside this file): a
@@ -25,8 +26,9 @@ public struct Landing: Equatable {
 }
 
 /// How a shape put down for a person, beside another or anywhere (Insert, ⇧↩, a new type), goes: where the person sees it,
-/// in the clear part of the view (`reading.view`, as the chrome is headed) with the row of adornments above its top (a title's
-/// pill: `above`, world units) inside that part too, `margin` in from its edges.
+/// in the clear part of the view (`reading.view`, as the chrome is headed, less the corner the minimap covers, `reading.covered`)
+/// with the row of adornments above its top (a title's pill: `above`, world units) inside that part too, `margin` in from its
+/// edges and that corner.
 public struct PutBeside: Sendable, Equatable {
     /// World units over the box's top that must be in view too.
     public var above: CGFloat
@@ -36,48 +38,54 @@ public struct PutBeside: Sendable, Equatable {
     /// kept with it), so a side counts as seen when the two fit in the clear part together; else (a note put down settled, the
     /// keyboard staying where it is) only one in the clear part as it is.
     public var panned: Bool
+    /// Whether it's put beside the selection as the next of a run of them (Insert, ⇧↩), so a chain reads in order: a side
+    /// that reads backward (left, above) never wins over one that reads on (right, below) that is seen, with a pan or without.
+    public var inOrder: Bool
 
-    public init(above: CGFloat, margin: CGFloat, panned: Bool = false) {
+    public init(above: CGFloat, margin: CGFloat, panned: Bool = false, inOrder: Bool = false) {
         self.above = above
         self.margin = margin
         self.panned = panned
+        self.inOrder = inOrder
     }
 
     /// The row above a shape (Adornments' `rowGap + rowHeight`, 27 view points) and `PlacingStyle.viewMargin`, at `zoom`.
     @MainActor
-    public static func inView(at zoom: CGFloat, panned: Bool = false) -> PutBeside {
+    public static func inView(at zoom: CGFloat, panned: Bool = false, inOrder: Bool = false) -> PutBeside {
         let zoom = zoom > 0 && zoom.isFinite ? zoom : 1
-        return PutBeside(above: (AdornmentLayout.rowGap + AdornmentLayout.rowHeight) / zoom, margin: PlacingStyle.viewMargin / zoom, panned: panned)
+        return PutBeside(above: (AdornmentLayout.rowGap + AdornmentLayout.rowHeight) / zoom, margin: PlacingStyle.viewMargin / zoom,
+                         panned: panned, inOrder: inOrder)
     }
 
     /// The same at the zoom `editor`'s camera is headed for.
     @MainActor
-    public static func inView(of editor: CanvasEditor, panned: Bool = false) -> PutBeside { inView(at: editor.cameraTarget.zoom, panned: panned) }
+    public static func inView(of editor: CanvasEditor, panned: Bool = false, inOrder: Bool = false) -> PutBeside {
+        inView(at: editor.cameraTarget.zoom, panned: panned, inOrder: inOrder)
+    }
 
-    /// The part of `view` (world units) a box goes in, with its row above: in from the edges by the margin.
-    func clear(of view: CGRect) -> CGRect {
-        let inset = view.insetBy(dx: margin, dy: margin)
-        return inset.isEmpty ? view : inset
+    /// The part of `view` (world units) a box goes in, with its row above: in from the edges and the covered corners (`covered`,
+    /// the minimap's) by the margin.
+    func clear(of view: CGRect, covered: [CGRect] = []) -> ClearView {
+        ClearView(rect: view, covered: covered).insetBy(margin)
     }
 
     /// Whether `rect`, with its row above, is seen in `clear`: in it, or, `panned`, able to be panned into it with `beside`
-    /// (the shape it's put down beside, with its row above too).
-    func shows(_ rect: CGRect, in clear: CGRect, beside: CGRect? = nil) -> Bool {
+    /// (the shape it's put down beside, with its row above too), by the least pan, as the camera pans (`ClearView.shift`).
+    func shows(_ rect: CGRect, in clear: ClearView, beside: CGRect? = nil) -> Bool {
         let shown = withRow(rect)
         guard panned, let beside else { return clear.contains(shown) }
         let both = shown.union(withRow(beside))
-        return both.width <= clear.width && both.height <= clear.height
+        let pan = clear.shift(bringing: both)
+        return clear.contains(both.offsetBy(dx: pan.width, dy: pan.height))
     }
 
     /// Whether the least pan that brings `rect` and `beside` (each with its row above) into `clear` takes any of `shown` (rects
     /// wholly in `clear` now) out of it.
-    func pansAway(from shown: [CGRect], toShow rect: CGRect, beside: CGRect, in clear: CGRect) -> Bool {
+    func pansAway(from shown: [CGRect], toShow rect: CGRect, beside: CGRect, in clear: ClearView) -> Bool {
         let both = withRow(rect).union(withRow(beside))
-        let dx = both.minX < clear.minX ? both.minX - clear.minX : both.maxX > clear.maxX ? both.maxX - clear.maxX : 0
-        let dy = both.minY < clear.minY ? both.minY - clear.minY : both.maxY > clear.maxY ? both.maxY - clear.maxY : 0
-        guard dx != 0 || dy != 0 else { return false }
-        let panned = clear.offsetBy(dx: dx, dy: dy)
-        return shown.contains { clear.contains($0) && !panned.contains($0) }
+        let pan = clear.shift(bringing: both)
+        guard pan != .zero else { return false }
+        return shown.contains { clear.contains($0) && !clear.contains($0.offsetBy(dx: pan.width, dy: pan.height)) }
     }
 
     private func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
@@ -154,6 +162,8 @@ public struct Surroundings {
     /// The middle of the view the board would be shown with (draw's), where a shape with nothing to hang
     /// on goes.
     private let viewMiddle: CGPoint
+    /// What joins shapes, for a put beside one for a person: a pan only takes away what's joined to it (`PutBeside`).
+    private weak var topology: TopologyIndex?
 
     /// `board` as it is now, for a box of `size` to land on; nil for a board the editor can't show or a
     /// size that isn't one. `carrying` are the shapes that make the box and go with it (the shapes moved,
@@ -174,6 +184,7 @@ public struct Surroundings {
         grid = ObstacleGrid(obstacles)
         carries = own ? Set(held.compactMap { document.index(of: $0) }) : []
         viewMiddle = reading.view.map { CGPoint(x: $0.midX, y: $0.midY) } ?? shapes.camera.toWorld(.zero)
+        topology = editor.topology
     }
 
     /// Beside `target`: on each of its four sides in turn (`PlacingStyle.sides`), placed as draw places
@@ -190,25 +201,30 @@ public struct Surroundings {
     /// `put` is how a shape put down beside another for a person goes (Insert, ⇧↩, a new type beside the shapes that name
     /// it): top-aligned with it on its right or left (`top level with`, as two tables side by side are drawn), and on a side
     /// in the clear part of the view where one is (`PutBeside.inView`), the nearest of those, so it is never put down out of
-    /// sight or under the inspector while a side in view is free.
+    /// sight, under the inspector or under the minimap while a side in view is free. A side seen only by a pan that takes out of
+    /// view a shape it shows whole that is joined to the target (an edge of any type, either way: a key, an arrow, a type's is-a,
+    /// a mention) or holds it ranks under a side seen as the view is: what the person is working with stays in view, while a
+    /// chain of shapes joined to nothing goes on right, panning (T1 panel 3). Put `inOrder` (Insert), a side that reads
+    /// backward (left, above) never wins over one that reads on (right, below) that is seen at all.
     ///
     /// `sides` are the sides tried, in order (all four by default): a caller that knows which way the shape's arrows run (New
     /// Version's copy, toward what its copied arrows reach) names only those that keep them clean.
     public func near(_ target: ShapeID, within holder: ShapeID? = nil, put: PutBeside? = nil, sides: [Direction] = PlacingStyle.sides) -> Landing? {
         guard let bounds = reading.shapes.geometry(of: target)?.bounds else { return nil }
-        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [], sides: sides, put: put)
+        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [], sides: sides, put: put, besides: [target])
     }
 
     /// Beside a box that is not a shape of the board yet (or not there any more): as `near(_:within:)`
     /// lands beside a shape with these bounds. `avoiding` are boxes a caller has planned and not put
-    /// down, which the landing keeps clear of as of any shape there.
+    /// down, which the landing keeps clear of as of any shape there. `besides` are the shapes the box is around (the selection),
+    /// whose joined shapes a `put`'s pan keeps in view.
     public func near(_ rect: CGRect, avoiding: [CGRect] = [], within holder: ShapeID? = nil, put: PutBeside? = nil,
-                     sides: [Direction] = PlacingStyle.sides) -> Landing? {
-        near(rect, obstacle: nil, within: holder, avoiding: avoiding, sides: sides, put: put)
+                     sides: [Direction] = PlacingStyle.sides, besides: [ShapeID] = []) -> Landing? {
+        near(rect, obstacle: nil, within: holder, avoiding: avoiding, sides: sides, put: put, besides: besides)
     }
 
     private func near(_ bounds: CGRect, obstacle targetObstacle: Int?, within holder: ShapeID?, avoiding: [CGRect],
-                      sides: [Direction] = PlacingStyle.sides, put: PutBeside? = nil) -> Landing? {
+                      sides: [Direction] = PlacingStyle.sides, put: PutBeside? = nil, besides: [ShapeID] = []) -> Landing? {
         guard !bounds.isNull, bounds.isFinite else { return nil }
         // A point to land beside (the middle of two shapes) is no shape: it has no area, so a shape under it would be held by it at
         // any size (the solver's zone (a)) and landed on. Marked as the board, nothing is a zone of it and what is under it is in the way.
@@ -218,8 +234,11 @@ public struct Surroundings {
             fixed.append(LayoutProblem.Fixed(rect: holding, obstacle: obstacle(holder)))
             held = LayoutProblem.Holder(.fixed(1), written: "in \(Self.holder)", direct: true)
         }
-        var best: (rect: CGRect, gap: CGFloat, zones: [ShapeID], seen: Int)?
-        let view = put.flatMap { put in reading.view.map { put.clear(of: $0) } }
+        var best: (rect: CGRect, gap: CGFloat, zones: [ShapeID], seen: Int, onward: Bool)?
+        let view = put.flatMap { put in reading.view.map { put.clear(of: $0, covered: reading.covered) } }
+        // The shapes wholly in view joined to what it's put beside, or holding it: what a pan may not take away. Worked out once,
+        // when a side needs a pan.
+        var kept: [CGRect]?
         for side in sides {
             var clauses = [LayoutProblem.ResolvedClause(relation: .direction(side), targets: [LayoutProblem.ResolvedTarget(.fixed(0), written: Self.target)],
                                                         written: "\(side.rawValue) \(Self.target)")]
@@ -232,20 +251,28 @@ public struct Surroundings {
             else { continue }
             let gap = Self.gap(from: bounds, to: placed.rect, side)
             // How it's seen: in the clear view (3: as it is, or once the view pans to it with the shape it's beside, a put that
-            // pans); by a pan that takes a shape the view shows whole out of it (1: UX walk 3 tables-1, Insert ▸ Enum beside orders
-            // panned customers off screen), or not at all (0).
+            // pans); by a pan that takes out of view a shape it shows whole that is joined to the target or holds it (1: UX walk 3
+            // tables-1, Insert ▸ Enum beside orders panned customers, keyed to orders, off screen), or not at all (0).
             var seen = 3
             if let view, let put {
                 if !put.shows(placed.rect, in: view, beside: bounds) {
                     seen = 0
-                } else if put.panned, put.pansAway(from: grid.obstacles(in: view).map(\.rect), toShow: placed.rect, beside: bounds, in: view) {
-                    seen = 1
+                } else if put.panned {
+                    if kept == nil { kept = joined(to: besides, in: view.rect) }
+                    if put.pansAway(from: kept ?? [], toShow: placed.rect, beside: bounds, in: view) { seen = 1 }
                 }
             }
-            // A side seen beats one seen by a pan that loses what's in view, which beats one out of it; among sides alike that
-            // way, the nearer, the earlier on a tie.
-            let better = best.map { best in seen != best.seen ? seen > best.seen : gap < best.gap - Self.slack } ?? true
-            if better { best = (placed.rect, gap, placed.zones, seen) }
+            // Read on: right or below, for a put in order; every side alike otherwise.
+            let onward = put?.inOrder == true && (side == .right || side == .below)
+            // A side seen at all beats one out of view; then, put in order, one that reads on beats one that reads backward; then a
+            // side seen beats one seen by a pan that loses what the person works with; among sides alike, the nearer, the earlier
+            // on a tie.
+            let better = best.map { best in
+                if (seen > 0) != (best.seen > 0) { return seen > 0 }
+                if onward != best.onward { return onward }
+                return seen != best.seen ? seen > best.seen : gap < best.gap - Self.slack
+            } ?? true
+            if better { best = (placed.rect, gap, placed.zones, seen, onward) }
         }
         guard let best else {
             if let holder, held != nil { return inside(holder) }
@@ -260,6 +287,27 @@ public struct Surroundings {
             return Landing(board: reading.board, rect: rect)
         }
         return Landing(board: reading.board, rect: best.rect, above: best.zones + (held == nil ? [] : [holder].compactMap { $0 }))
+    }
+
+    /// The rects of the shapes in `view` (world units) joined to `ids` by an edge Topology knows, either way, or holding one of
+    /// them: what a person working with `ids` keeps in view as a shape is put down beside them. None without Topology.
+    private func joined(to ids: [ShapeID], in view: CGRect) -> [CGRect] {
+        guard !ids.isEmpty else { return [] }
+        var joined: Set<ShapeID> = []
+        for id in ids {
+            if let topology { for (_, ends) in topology.neighbors(of: id) { joined.formUnion(ends) } }
+            var up = reading.shapes.container(of: id)
+            while let holder = up, !joined.contains(holder) {
+                joined.insert(holder)
+                up = reading.shapes.container(of: holder)
+            }
+        }
+        joined.subtract(ids)
+        guard !joined.isEmpty else { return [] }
+        let shapes = reading.document.shapes
+        return grid.obstacles(in: view).compactMap { obstacle in
+            shapes.indices.contains(obstacle.id) && joined.contains(shapes[obstacle.id].id) ? obstacle.rect : nil
+        }
     }
 
     /// Between two shapes, which an arrow from the first to it and another from it to the second join:
@@ -340,7 +388,7 @@ public struct Surroundings {
         guard let view = reading.view else { return true }
         var settled = put
         settled.panned = false
-        return settled.shows(rect, in: put.clear(of: view))
+        return settled.shows(rect, in: put.clear(of: view, covered: reading.covered))
     }
 
     /// Anywhere on the board, as draw puts the one shape a script says nothing about the place of (no
@@ -351,7 +399,7 @@ public struct Surroundings {
     /// `put` (Insert's, for a person): at the nearest spot that is in the clear part of the view with the row above it
     /// (`PutBeside`), where one is clear, before any out of it.
     public func anywhere(put: PutBeside? = nil) -> Landing {
-        let room = put.flatMap { put in reading.view.map { (put.clear(of: $0), put.above) } }
+        let room = put.flatMap { put in reading.view.map { (put.clear(of: $0, covered: reading.covered), put.above) } }
         let rect = place(LayoutProblem.Free(line: 1, name: Self.moving, size: size, carries: carries), inView: room)?.rect
             ?? CGRect(x: viewMiddle.x - size.width / 2, y: viewMiddle.y - size.height / 2, width: size.width, height: size.height)
         return Landing(board: reading.board, rect: rect)
@@ -370,14 +418,14 @@ public struct Surroundings {
         guard let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
         let containers = Set(shapes.map { editor.shapeContext.container(of: $0) })
         let holder = containers.count == 1 ? containers.first ?? nil : nil
-        // Selected and brought into view once put down, with what it's beside kept in view (Selection's).
-        let put = PutBeside.inView(of: editor, panned: true)
+        // Selected and brought into view once put down, with what it's beside kept in view (Selection's); the next of a run, in order.
+        let put = PutBeside.inView(of: editor, panned: true, inOrder: true)
         switch shapes.count {
         case 0: return surroundings.reading.view == nil ? nil : surroundings.anywhere(put: put).rect
         case 1: return surroundings.near(shapes[0], within: holder, put: put)?.rect
         default:
             let bounds = shapes.compactMap { surroundings.reading.shapes.geometry(of: $0)?.bounds }.reduce(CGRect.null) { $0.union($1) }
-            return surroundings.near(bounds, within: holder, put: put)?.rect
+            return surroundings.near(bounds, within: holder, put: put, besides: shapes)?.rect
         }
     }
 
@@ -560,7 +608,7 @@ public struct Surroundings {
     /// The free box placed among the board's obstacles by DrawScript's solver: where it goes, and the
     /// shapes it sits on there (the zones), back to front; nil if the solver can't place it.
     private func place(_ free: LayoutProblem.Free, fixed: [LayoutProblem.Fixed] = [], avoiding: [CGRect] = [],
-                       inView room: (view: CGRect, above: CGFloat)? = nil) -> (rect: CGRect, zones: [ShapeID])? {
+                       inView room: (view: ClearView, above: CGFloat)? = nil) -> (rect: CGRect, zones: [ShapeID])? {
         let grid = grid, shapes = reading.document.shapes
         // Boxes a caller has planned come after every shape of the board, each its own number.
         let planned = avoiding.filter(\.isFinite).enumerated().map { LayoutProblem.Obstacle(id: shapes.count + $0.offset, rect: $0.element) }
@@ -569,7 +617,7 @@ public struct Surroundings {
                                     obstacles: { area in extra.map { grid.obstacles(in: area) + $0.obstacles(in: area) } ?? grid.obstacles(in: area) },
                                     boardBounds: grid.bounds,
                                     viewMiddle: viewMiddle, view: reading.view)
-        problem.landsInView = room.map { LayoutProblem.InView(clear: $0.view, above: $0.above) }
+        problem.landsInView = room.map { LayoutProblem.InView(clear: $0.view.rect, above: $0.above, covered: $0.view.covered) }
         guard let solution = try? problem.solve(), let rect = solution.rects.first, rect.isFinite else { return nil }
         let zones = solution.zones.first?.compactMap { shapes.indices.contains($0.id) ? shapes[$0.id].id : nil } ?? []
         return (rect, zones)

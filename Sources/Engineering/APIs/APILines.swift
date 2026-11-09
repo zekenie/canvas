@@ -611,6 +611,7 @@ enum APILooks {
         style.chipFont = KitStyle.chipFont
         style.chipHeight = APIStyle.chipHeight
         style.chipRadius = APIStyle.chipRadius
+        style.chipPadding = APIStyle.fieldChipPad
         return style
     }()
 }

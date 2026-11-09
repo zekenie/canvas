@@ -207,6 +207,22 @@ public final class CanvasEditor {
     /// covered.
     public var unobscuredViewport: CGRect { unobscuredViewport(on: board) }
 
+    /// How much of the clear part's corners the host's own views over the canvas cover, in view points from each corner (the
+    /// minimap, bottom-left, while it shows; `CoveredCorners`). None unless the host says. A fit fills the clear part
+    /// (`unobscuredViewport`) whatever its corners; what keeps one shape in view reads `clearView`, which leaves them out.
+    @_spi(Host) @ObservationIgnored public var coveredCorners = CoveredCorners()
+
+    /// The part of the view a shape is kept in, in view points: the clear part (`unobscuredViewport`), less the corners of it the
+    /// host's views cover (`coveredCorners`). What a reveal by the least pan (`animateCamera(toShow:…)`), the caret kept in view
+    /// (`EditContext.keepInView`) and a shape put down for a person (Draw's `PutBeside`, through `reading(of:)`'s `covered`)
+    /// judge "in view" by, so nothing lands, or is kept, under the minimap.
+    public var clearView: ClearView { clearView(on: board) }
+
+    func clearView(on target: BoardID) -> ClearView {
+        let rect = unobscuredViewport(on: target)
+        return ClearView(rect: rect, covered: coveredCorners.rects(in: rect))
+    }
+
     /// The same, of the chrome as it is laid out now (`coveredEdges`), whatever it is headed for: what of a
     /// selection is in view now, which the view keeps as the inspector slides in (`keepInViewWhileSettling`).
     var laidOutViewport: CGRect { unobscuredViewport(on: board, edges: coveredEdges) }
@@ -1352,9 +1368,10 @@ public final class CanvasEditor {
     /// included). Nil for a board it can't show (`canShow`). Observed through `document`.
     public func reading(of target: BoardID) -> BoardReading? {
         if target == board {
-            let clear = unobscuredViewport
+            let clear = clearView, camera = cameraTarget
             return BoardReading(board: board, document: document, shapes: shapeContext, index: shapeIndex,
-                                view: clear.isEmpty ? nil : cameraTarget.toWorld(clear), isBoardReadOnly: isBoardReadOnly)
+                                view: clear.rect.isEmpty ? nil : camera.toWorld(clear.rect), covered: clear.covered.map { camera.toWorld($0) },
+                                isBoardReadOnly: isBoardReadOnly)
         }
         guard canShow(target) else { return nil }
         let contents = file[target]
@@ -1362,10 +1379,11 @@ public final class CanvasEditor {
             let index = ShapeIndex()
             return index.bounds(in: ShapeContext(document: contents, registry: registry, camera: Camera(), index: index, layout: layoutSource))
         }
-        let index = ShapeIndex(), clear = unobscuredViewport(on: target)
+        let index = ShapeIndex(), clear = clearView(on: target)
         return BoardReading(board: target, document: contents,
                             shapes: ShapeContext(document: contents, registry: registry, camera: arrival, index: index, layout: layoutSource), index: index,
-                            view: clear.isEmpty ? nil : arrival.toWorld(clear), isBoardReadOnly: isReadOnly(board: target))
+                            view: clear.rect.isEmpty ? nil : arrival.toWorld(clear.rect), covered: clear.covered.map { arrival.toWorld($0) },
+                            isBoardReadOnly: isReadOnly(board: target))
     }
 
     // MARK: Tools

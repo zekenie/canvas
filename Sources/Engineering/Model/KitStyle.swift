@@ -25,6 +25,9 @@ public enum KitStyle {
     public static let trailingInset: CGFloat = 14
     /// Between a name and the type after it, at least: a type that would come closer is cut short.
     public static let nameGap: CGFloat = 10
+    /// Between a name and its type in a table made as wide as its rows read whole (`TableDefinition.wholeWidth`: draw's widening, the
+    /// SQL paste, a commit's): a row's own gap, so a widened row's name never runs into its type ("billing_address_line_one text").
+    public static let wholeGap: CGFloat = 24
     /// How tall Find's mark over a hit in a row is: the row's text, not the row.
     public static let findHitHeight: CGFloat = 20
     /// What ends a fold's "+N ›" line.

@@ -129,13 +129,16 @@ public final class RowFolds {
         return changed
     }
 
-    /// Shows every row of `ids` again (⌃⌘↓): its marks' fold and its closed headers let go.
-    public func unfold(_ ids: some Sequence<ShapeID>) {
+    /// Shows every row of `ids` again (⌃⌘↓): its marks' fold and its closed headers let go. Returns those it unfolded: not the ones
+    /// showing every row already.
+    @discardableResult
+    public func unfold(_ ids: some Sequence<ShapeID>) -> [ShapeID] {
         let changed = ids.filter { folds.removeValue(forKey: $0) != nil }
-        guard !changed.isEmpty else { return }
+        guard !changed.isEmpty else { return [] }
         let gone = Set(changed)
         order.removeAll { gone.contains($0) }
         didChange(changed)
+        return changed
     }
 
     /// Puts back `fold` on `id`, as `unfold` let it go: for a change that was refused.

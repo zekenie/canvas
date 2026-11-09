@@ -168,8 +168,15 @@ enum Folding {
 
     static func unfold(_ ids: [ShapeID], in editor: CanvasEditor) {
         guard let folds = editor.rowFolds else { return }
-        folds.unfold(ids)
-        editor.announce(LineFoldStyle.unfolded)
+        // VoiceOver hears what changed, as a fold says it: the one shape unfolded and how many rows it shows, or how many.
+        let unfolded = folds.unfold(ids)
+        if unfolded.count == 1, let record = editor.document[unfolded[0]], let kind = editor.registry.lineRows(of: record.kind) {
+            editor.announce(LineFoldStyle.unfolded(editor.registry.title(of: record), rows: kind.rows(record)?.count ?? 0, noun: kind.noun))
+        } else if unfolded.isEmpty {
+            editor.announce(LineFoldStyle.nothingToUnfold)
+        } else {
+            editor.announce(LineFoldStyle.unfoldedMany(unfolded.count))
+        }
     }
 
     /// The fold's line of `record` under `point` (world units): its "+N ›" line or a closed header.
@@ -255,6 +262,17 @@ public enum LineFoldStyle {
     static let foldTitle = "Fold Rows"
     static let unfoldTitle = "Unfold Rows"
     static let unfolded = "Unfolded"
+    /// Unfolded, and none was folded.
+    static let nothingToUnfold = "Nothing to unfold"
+
+    /// "products unfolded, 40 columns shown".
+    static func unfolded(_ name: String?, rows: Int, noun: LineNoun) -> String {
+        let what = "\(noun.counted(rows)) shown"
+        return name.map { "\($0) unfolded, \(what)" } ?? "Unfolded, \(what)"
+    }
+
+    /// "12 shapes unfolded".
+    static func unfoldedMany(_ count: Int) -> String { "\(count) shapes unfolded" }
     /// A header closed with ←.
     static let closed = "Closed"
     /// Folded, and every row is one its kind keeps (or it was folded already).

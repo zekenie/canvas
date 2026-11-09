@@ -330,8 +330,10 @@ struct Solver {
         for key in keys {
             guard let list = members[key], list.count > 1 else { continue }
             let gaps = list.map { problem.free[$0].gap }
+            // With no one gap said, at least the room a member keeps clear below it (each but the last has one under it).
+            let keeps = list.dropLast().map { problem.free[$0].roomBelow }.max() ?? 0
             let step = gaps.allSatisfy({ $0 != nil && $0 == gaps[0] }) ? gaps[0]!.value
-                : key.implied ? LayoutProblem.impliedListStep : LayoutProblem.listStep
+                : max(key.implied ? LayoutProblem.impliedListStep : LayoutProblem.listStep, keeps)
             let height = list.reduce(0) { $0 + problem.free[$1].size.height } + step * CGFloat(list.count - 1)
             for member in list { listOf[member] = lists.count }
             lists.append(List(members: list, step: step, height: height))
@@ -373,7 +375,7 @@ struct Solver {
                 guard let direction = clause.direction else { continue }
                 let isInside = clause.relation == .inside
                 for target in clause.targets {
-                    let gap = gap(index, clause, target, inside: isInside)
+                    let gap = gap(index, clause, target, inside: isInside, vertical: direction.vertical)
                     let x = span(target, .x), y = span(target, .y)
                     if speaks(index, .x), direction.horizontal > 0 { add(.x, x.node, node(index), x.start + x.length + gap, why) }
                     if speaks(index, .x), direction.horizontal < 0 { add(.x, node(index), x.node, placed[index].width + gap - x.start, why) }
@@ -465,18 +467,26 @@ struct Solver {
     }
 
     /// A placement's gap against one target: its bracket; `tight` inside; the larger of the box's
-    /// `gap:` and the target's; `normal`.
-    func gap(_ box: Int, _ clause: LayoutProblem.ResolvedClause, _ target: LayoutProblem.ResolvedTarget, inside: Bool) -> CGFloat {
+    /// `gap:` and the target's; `normal`, or, with none said, the room the upper of the two keeps clear below it where that's
+    /// more (`roomBelow`: a box below a table, `vertical` > 0, or above one, < 0).
+    func gap(_ box: Int, _ clause: LayoutProblem.ResolvedClause, _ target: LayoutProblem.ResolvedTarget, inside: Bool, vertical: Int = 0) -> CGFloat {
         if let gap = clause.gap { return gap.value }
         if inside { return LayoutProblem.insideGap }
         var stated: [CGFloat] = []
         if let gap = problem.free[box].gap { stated.append(gap.value) }
+        var targetKeeps: CGFloat = 0
         switch target.ref {
-        case .free(let other): if let gap = problem.free[other].gap { stated.append(gap.value) }
-        case .fixed(let other): if let gap = problem.fixed[other].gap { stated.append(gap.value) }
+        case .free(let other):
+            if let gap = problem.free[other].gap { stated.append(gap.value) }
+            targetKeeps = problem.free[other].roomBelow
+        case .fixed(let other):
+            if let gap = problem.fixed[other].gap { stated.append(gap.value) }
+            targetKeeps = problem.fixed[other].roomBelow
         case .obstacle: break
         }
-        return stated.max() ?? LayoutProblem.defaultGap
+        if let said = stated.max() { return said }
+        let keeps = vertical > 0 ? targetKeeps : vertical < 0 ? problem.free[box].roomBelow : 0
+        return max(LayoutProblem.defaultGap, keeps)
     }
 
     /// Lines a box up with its targets on one axis: exactly, when they all move together (or stay
