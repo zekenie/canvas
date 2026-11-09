@@ -1,5 +1,6 @@
 import Canvas
 import CanvasRPC
+import DrawScript
 import Queries
 import Topology
 
@@ -282,6 +283,14 @@ public struct DrawTextShape: Hashable, Sendable {
     public let title: String
 }
 
+/// A row a text names after its shape (`"orders".customer_id`), for a text format: the shape, its record as the script starts
+/// it, and the row.
+public struct DrawTextRow {
+    public let shape: DrawTextShape
+    public let record: AnyShapeRecord
+    public let row: PartName
+}
+
 /// What a text format may ask while it writes one string: the registry, the string's schema where it
 /// is, and which shape a name stands for, found as the rest of the script finds one.
 @MainActor
@@ -310,6 +319,17 @@ public struct DrawTextContext {
     /// script's own are, which the run says on the statement's line.
     public func shape(called name: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextShape {
         try lookup.shape(called: name, admitting: { record, _ in admits(record) })
+    }
+
+    /// The row `written` names, when it's written as a script names a row after its shape's title (`"orders".customer_id`,
+    /// `"orders API"."POST /orders"`): the shape found as `shape(called:admitting:)` finds one, then its row by name as a
+    /// statement's end finds one (exactly, else folded; two of that name `ambiguous_title`, none `unknown_row` with the ones it's
+    /// like), among the rows the shape has as the script starts. Nil for text not written so, which names a shape by its title.
+    public func row(written: String, admitting admits: @MainActor (AnyShapeRecord) -> String? = { _ in nil }) throws(DrawError) -> DrawTextRow? {
+        guard written.drop(while: \.isWhitespace).first == "\"", let parsed = try? ShapeName.parsingRow(written), let row = parsed.row,
+              let title = parsed.name.title else { return nil }
+        let shape = try shape(called: title, admitting: admits)
+        return try lookup.row(named: row, of: shape, said: parsed.name.written)
     }
 
     /// As above, for a rule that needs what the script writes on a shape it draws or restates: `admits`

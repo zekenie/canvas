@@ -884,18 +884,29 @@ struct Drawing {
         guard let parts = registry.parts(of: record) else {
             throw DrawError(statement, .unknownRow, "\(said) is \(indefinite(record.kind)), which has no rows", hint: "name a row of a shape that has them, as \"orders\".customer_id")
         }
+        do throws(DrawError) {
+            return try Self.row(named: row, among: parts, said: said, fold: fold).id
+        } catch {
+            throw error.said(error.message, on: statement)
+        }
+    }
+
+    /// The row of `parts` called `row`, as a script names one: the one called exactly that, else the one called that once
+    /// folded; two called exactly that are `ambiguous_title`, with where they are, and none `unknown_row`, with the ones it's
+    /// like (`said` is how the shape is written, before each). A statement's end and a text's mention find a row the same way.
+    static func row(named row: String, among parts: [PartName], said: String, fold: (String) -> String?) throws(DrawError) -> PartName {
         let exact = parts.enumerated().filter { $0.element.name == row }
-        if exact.count == 1 { return exact[0].element.id }
+        if exact.count == 1 { return exact[0].element }
         if exact.count > 1 {
             let places = exact.map { String($0.offset + 1) }
-            throw DrawError(statement, .ambiguousTitle, "\(said) has \(exact.count) rows called \(quoted(row)), the \(listed(places)) from the top",
-                            hint: "rename one of them first, so each row has a name of its own")
+            throw DrawError("\(said) has \(exact.count) rows called \(quoted(row)), the \(listed(places)) from the top",
+                            reason: ScriptError.Reason.ambiguousTitle.rawValue, hint: "rename one of them first, so each row has a name of its own")
         }
         let folded = fold(row)
         let alike = parts.filter { fold($0.name) == folded }
-        if alike.count == 1 { return alike[0].id }
+        if alike.count == 1 { return alike[0] }
         let guesses = Suggestions.closest(to: row, among: parts.map(\.name))
-        throw DrawError(statement, .unknownRow, "\(said) has no row called \(quoted(row))",
+        throw DrawError("\(said) has no row called \(quoted(row))", reason: ScriptError.Reason.unknownRow.rawValue,
                         hint: guesses.isEmpty ? (parts.isEmpty ? "it has no rows" : "its rows are \(listed(parts.prefix(8).map { quoted($0.name) }))")
                             : "did you mean \(listed(guesses.map { said + ShapeName.writtenRow($0) }, or: true))?")
     }

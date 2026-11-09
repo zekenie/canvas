@@ -10,8 +10,9 @@ import Draw
 /// it draws on, or the window's, or elsewhere in the file), among the shapes the text may mention:
 /// those whose kind can be mentioned and its scope admits (`registry.mentionAdmission`, read from
 /// what the schema says beside the text's reference, `x-canvas-mentions`), so a text that admits only plates
-/// names the plate called Address, not a note called that. A whole mention an agent writes
-/// (`@[label](shape:ID)`, from a query's rows) is kept as written, as it always was.
+/// names the plate called Address, not a note called that. `@["orders".customer_id]` mentions a row, named as a
+/// script names one after its shape's title (`DrawTextContext.row`), and keeps the row's address, in a text that takes rows.
+/// A whole mention an agent writes (`@[label](shape:ID)`, from a query's rows) is kept as written, as it always was.
 public struct MentionTextsPlugin: ListedPlugin {
     public init() {}
     public var id: PluginID { "mention-texts" }
@@ -21,11 +22,28 @@ public struct MentionTextsPlugin: ListedPlugin {
         registrar.drawLabels { record, registry in registry.mentionAppearance(of: record)?.label }
         registrar.drawTextFormat(mediaType: MentionTextFormat.mediaType, describes: "@[Title] mentions") { text, context throws(DrawError) in
             let scope = context.schema[MentionTextFormat.annotationKey]?.objectValue
-            return try MentionTextFormat.resolvingNames(in: text) { name throws(DrawError) in
+            return try MentionTextFormat.resolvingMentions(in: text) { name throws(DrawError) in
+                if let row = try Self.row(named: name, in: context, scope: scope) { return row }
                 let shape = try Self.shape(named: name, in: context, scope: scope)
-                return (shape.id, shape.title)
+                return (PartAddress(shape.id), shape.title)
             }
         }
+    }
+
+    /// The row a `@["orders".customer_id]` stands for, named as a script names one after its shape's title, with the label its
+    /// pill holds (`MentionAppearance.row`: "orders.customer_id", an endpoint's own name for one that stands alone); nil for a
+    /// name not written so, a title. Only a text whose mentions aren't held to some kinds takes a row, as the picker lists rows
+    /// only there.
+    private static func row(named name: String, in context: DrawTextContext, scope: JSONObject?) throws(DrawError) -> (target: PartAddress, label: String)? {
+        guard let found = try context.row(written: name, admitting: { record in clause(context.registry.mentionAdmission(of: record, scope: scope)) }) else {
+            return nil
+        }
+        if scope != nil {
+            throw DrawError("@[\(name)] mentions a row, and this text mentions shapes alone", reason: "invalid_value",
+                            hint: "mention the shape, as @[\(found.shape.title)]")
+        }
+        let shape = MentionAppearance(label: found.shape.title, systemImage: "", kindName: "", detail: "")
+        return (PartAddress(found.shape.id, part: found.row.id), MentionAppearance.row(found.row, of: shape).label)
     }
 
     /// The shape a `@[name]` stands for among those a mention may name (and `scope` admits), found as the rest of the

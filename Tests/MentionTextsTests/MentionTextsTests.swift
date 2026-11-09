@@ -197,6 +197,32 @@ private let frame = CGRect(x: 0, y: 0, width: 100, height: 80)
         expectEqual(again.document.shapes.count, 0)
     },
 
+    test(#"@["Title".row] mentions a row, named as a script names one after its shape: the row's address kept, labeled as its pill is"#) {
+        let editor = try mentionTextsEditor()
+        _ = try drawn(#"folder "Owner""#, on: editor)
+        let owner = try require(editor.shape(called: "Owner")).id
+        let script = #"dispatch "Plan" below "Owner" body: "File @[\"Owner\".inbox] then @[\"Owner\".\"out tray\"] by @[\"Owner\".\"POST /mail\"]; @[Owner] reads""#
+        expectEqual(dids(try drawn(script, on: editor)), ["created"])
+        let body = try require(editor.dispatch("Plan")?.body)
+        expectEqual(body.mentionedTargets, [PartAddress(owner, part: FolderRows.inbox), PartAddress(owner, part: FolderRows.outTray),
+                                            PartAddress(owner, part: FolderRows.route), PartAddress(owner)])
+        expectEqual(body.plainText(), "File @Owner.inbox then @Owner.out tray by @POST /mail; @Owner reads", "a row's label as its pill's: an own-standing row's its name")
+        expectEqual(dids(try drawn(script, on: editor)), ["unchanged"], "the text it makes is the text the shape has")
+        // A row by a slip: refused with the rows it's like; a shape that can't be mentioned is refused as a title is.
+        let slip = try refused(#"dispatch "Plan" body: "File @[\"Owner\".inbx]""#, on: editor)
+        expectEqual(slip.reason, "unknown_row")
+        expect(slip.hint?.contains(#""Owner".inbox"#) == true, slip.hint ?? "")
+        _ = try drawn(#"crate "Box" right of "Owner""#, on: editor)
+        expectEqual(try refused(#"dispatch "Plan" body: "@[\"Box\".lid]""#, on: editor).reason, "invalid_value")
+        expectEqual(try refused(#"dispatch "Plan" body: "@[\"Nobody\".inbox]""#, on: editor).reason, "unknown_title")
+        // A text held to some kinds mentions shapes alone, as its picker lists no rows.
+        let scoped = try refused(#"dispatch "Plan" to: "@[\"Owner\".inbox]""#, on: editor)
+        expectEqual(scoped.reason, "invalid_value")
+        expect(scoped.message.contains("mentions shapes alone"), scoped.message)
+        // A name in quotes with no row after it is a title, as it always was.
+        expectEqual(try refused(#"dispatch "Plan" body: "@[\"Owner\"]""#, on: editor).reason, "unknown_title")
+    },
+
     test("the registry report says what the plugin writes") {
         let report = try mentionTextsEditor().registry.report.split(separator: "\n")
         expect(report.contains { $0.hasPrefix("mention-texts ") && $0.hasSuffix(" draw text \(MentionTextFormat.mediaType)") }, report.joined(separator: "\n"))

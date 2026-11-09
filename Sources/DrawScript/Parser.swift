@@ -1089,6 +1089,21 @@ extension ShapeName {
         return trimmed.dropFirst(PlaceWord.board.rawValue.count).drop(while: \.isWhitespace).hasPrefix(ShapePath.joiner)
     }
 
+    /// Reads `text` as a name and a row of it as a script writes one (`"orders".customer_id`, `"orders API"."POST /orders"`), the
+    /// name alone where no dot follows it: what a mention in a text names a row by. Refused as `init(parsing:)` refuses, and for a
+    /// dot with no row after it.
+    public static func parsingRow(_ text: String) throws(ScriptError) -> (name: ShapeName, row: String?) {
+        let lexed = try Lexer.lex(text, number: 1)
+        var parser = LineParser(tokens: lexed.tokens, line: 1, text: lexed.text)
+        guard let (name, row) = try parser.nameAndRow() else {
+            throw parser.error("\(lexed.text) isn't a name", hint: "a row is named after its shape's title and a dot: \"orders\".customer_id")
+        }
+        if let extra = parser.peek() {
+            throw parser.error("\(extra.raw) comes after \(name.written)\(row.map(writtenRow) ?? "")", hint: "a row is named after its shape's title and a dot: \"orders\".customer_id")
+        }
+        return (name, row)
+    }
+
     /// Reads `text` as the one name a script writes: a title in quotes, an id, or a path. Refused, as a script's line is, with a
     /// message that says what is wrong (`syntax`, `not_an_id`) for text that is none, or has anything after the name.
     public init(parsing text: String) throws(ScriptError) {

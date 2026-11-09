@@ -4,6 +4,7 @@ import CanvasRPC
 import ContextMenus
 import CoreGraphics
 import DetailPanel
+import Foundation
 import Draw
 import Keyboard
 import Mentions
@@ -16,7 +17,7 @@ import Topology
 import Validation
 
 // Fixtures only, so these tests show MentionTextsPlugin's text knows no real kind: a folder (titled,
-// mentionable, and the one kind a dispatch's `to` may mention), a crate (titled, but not mentionable),
+// mentionable, with rows, and the one kind a dispatch's `to` may mention), a crate (titled, but not mentionable),
 // and a dispatch, titled and mentionable too, that holds every kind of mention text there is: any
 // (`body`), only folders (`to`), a declared scope (`tags`: what joined `Crew`, the folders), and
 // texts inside a list of objects (`steps`).
@@ -38,6 +39,20 @@ struct FolderDefinition {}
 
 extension FolderDefinition: ShapeDefinition {
     func render(_ shape: ShapeRecord<Folder>, in context: RenderContext) {}
+}
+
+/// A folder's rows, the same in every folder: two trays, and a route that stands alone (as an endpoint's row does).
+enum FolderRows {
+    static let inbox = PartID(UUID(uuidString: "00000000-0000-4000-9000-0000000F0001")!)
+    static let outTray = PartID(UUID(uuidString: "00000000-0000-4000-9000-0000000F0002")!)
+    static let route = PartID(UUID(uuidString: "00000000-0000-4000-9000-0000000F0003")!)
+}
+
+extension FolderDefinition: PartedShape {
+    func parts(of shape: ShapeRecord<Folder>) -> [PartName] {
+        [PartName(id: FolderRows.inbox, name: "inbox", kindWord: "Tray"), PartName(id: FolderRows.outTray, name: "out tray", kindWord: "Tray"),
+         PartName(id: FolderRows.route, name: "POST /mail", kindWord: "Route", standsAlone: true)]
+    }
 }
 
 /// A titled kind that can't be mentioned.
