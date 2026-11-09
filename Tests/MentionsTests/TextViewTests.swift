@@ -803,9 +803,9 @@ final class NotificationCount: @unchecked Sendable {
         session.h.editor.delete(idA)
         let missing = session.pills[0].pill
         expect(!missing.resolution.isLive)
-        expectEqual(missing.shownLabel, "Food", "the name it showed last, as the canvas shows it: the trace names what the person last saw")
-        expectEqual(session.textView.mentionText, MentionText([.text("Buy "), .mention(idA, label: "Food"), .text(" today")]))
-        expectEqual(session.committed, groceries, "the board's text isn't written")
+        expectEqual(missing.shownLabel, "Groceries", "the name the board holds, as the canvas shows it, never the last one shown")
+        expectEqual(session.textView.mentionText, groceries)
+        expectEqual(session.committed, groceries, "what the canvas draws, dashed")
 
         // Written after a rename, the board holds the name the pill had then, and so does the pill.
         let written = try EditedJot(groceries)
@@ -815,9 +815,8 @@ final class NotificationCount: @unchecked Sendable {
         expectEqual(written.committed, MentionText([.text("Buy "), .mention(idA, label: "Food"), .text(" today!")]))
         written.h.editor.rename(idA, "Supplies")
         written.h.editor.delete(idA)
-        expectEqual(written.pills[0].pill.shownLabel, "Supplies", "the name it showed last, not what the board holds")
-        expectEqual(written.textView.mentionText, MentionText([.text("Buy "), .mention(idA, label: "Supplies"), .text(" today!")]))
-        expectEqual(written.committed, MentionText([.text("Buy "), .mention(idA, label: "Food"), .text(" today!")]), "the board's text isn't written")
+        expectEqual(written.pills[0].pill.shownLabel, "Food", "what the board holds, not the pill's first name or its last")
+        expectEqual(written.textView.mentionText, written.committed)
     },
 
     // MARK: Undo

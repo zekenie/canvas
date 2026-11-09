@@ -33,17 +33,11 @@ public final class MentionAttachment: NSTextAttachment {
 
     public init(target: PartAddress, storedLabel: String, resolution: MentionResolution, style: MentionTextStyle, width: CGFloat? = nil) {
         self.target = target
-        // A live target's name is noted as shown; one that isn't is shown by the name last seen, else the one written.
-        if let appearance = resolution.appearance {
-            SeenNames.shared.note(target, appearance.label)
-            self.storedLabel = storedLabel
-        } else {
-            self.storedLabel = SeenNames.shared.held(target, stored: storedLabel)
-        }
+        self.storedLabel = storedLabel
         self.resolution = resolution
         self.style = style
         widthLimit = width
-        layout = MentionPillLayout(label: resolution.shownLabel(stored: self.storedLabel), resolution: resolution, style: style,
+        layout = MentionPillLayout(label: resolution.shownLabel(stored: storedLabel), resolution: resolution, style: style,
                                    isSelected: false, widthLimit: width)
         super.init(data: nil, ofType: nil)
         draw()
@@ -56,12 +50,6 @@ public final class MentionAttachment: NSTextAttachment {
     public func update(_ resolution: MentionResolution) {
         guard resolution != self.resolution else { return }
         self.resolution = resolution
-        // Gone or unavailable now: it holds the name it showed last.
-        if let appearance = resolution.appearance {
-            SeenNames.shared.note(target, appearance.label)
-        } else {
-            storedLabel = SeenNames.shared.held(target, stored: storedLabel)
-        }
         layOut()
     }
 

@@ -289,15 +289,8 @@ public final class MentionState {
     /// another the editor can show; unavailable on a board it can't show (the app keeps it without
     /// using it, so it isn't followed there); missing if it isn't in the file.
     public func resolve(_ target: ShapeID) -> MentionResolution {
-        seen(editor.document[target].map { resolve($0) } ?? resolve(elsewhere: target, in: editor.file), PartAddress(target))
-    }
-
-    /// `resolution`, its name noted while it's live (`SeenNames`: what a pill shows once its target is gone, whether or not the
-    /// pill was drawn since the rename).
-    @discardableResult
-    private func seen(_ resolution: MentionResolution, _ target: PartAddress) -> MentionResolution {
-        if let appearance = resolution.appearance { SeenNames.shared.note(target, appearance.label) }
-        return resolution
+        if let record = editor.document[target] { return resolve(record) }
+        return resolve(elsewhere: target, in: editor.file)
     }
 
     /// What a mention of a row shows now: its shape's row, by its live full name (an endpoint's method and full path; a column
@@ -307,7 +300,7 @@ public final class MentionState {
         guard let part = target.part else { return resolve(target.shape) }
         let record = editor.document[target.shape] ?? (editor.file.board(containing: target.shape) != nil ? editor.shape(inFile: target.shape) : nil)
         guard let record else { return editor.file.board(containing: target.shape) == nil ? .missing : .unavailable }
-        return seen(MentionResolution.row(part, of: record, shape: appearance(of: record), in: registry), target)
+        return MentionResolution.row(part, of: record, shape: appearance(of: record), in: registry)
     }
 
     /// What mentions of these rows of `shape` show now: the shape looked up, and its rows read, once for them all.
@@ -321,7 +314,7 @@ public final class MentionState {
         var names: [PartID: PartName] = [:]
         for part in registry.parts(of: record) ?? [] where names[part.id] == nil { names[part.id] = part }
         return Dictionary(uniqueKeysWithValues: parts.map { part in
-            (part, seen(names[part].map { .live(MentionAppearance.row($0, of: appearance)) } ?? .missing, PartAddress(shape, part: part)))
+            (part, names[part].map { .live(MentionAppearance.row($0, of: appearance)) } ?? .missing)
         })
     }
 
@@ -349,7 +342,7 @@ public final class MentionState {
     /// The text as plain text, each mention "@" and its target's live name, or the name it holds
     /// where its target isn't live.
     public func plainText<S>(_ text: ScopedMentionText<S>) -> String {
-        text.plainText { resolve($0).appearance?.label ?? SeenNames.shared.seen($0) }
+        text.plainText { resolve($0).appearance?.label }
     }
 
     /// The names mentions show now, to read anywhere (`MentionLabels`): for every shape the file
@@ -358,7 +351,7 @@ public final class MentionState {
     /// they share what the state keeps, which the next change to it (a rename, a shape mentioned
     /// anew) copies once while they're held. They're as of the last commit the state heard: every
     /// commit, but to a service hearing one.
-    public var labels: MentionLabels { MentionLabels(resolutions, rows: rowResolutions, seen: SeenNames.shared.all) }
+    public var labels: MentionLabels { MentionLabels(resolutions, rows: rowResolutions) }
 
     /// A target's revision: +1 each time what a mention of it shows changes. Reading it observes
     /// only that target, so a SwiftUI view of a pill redraws when its own target changes.

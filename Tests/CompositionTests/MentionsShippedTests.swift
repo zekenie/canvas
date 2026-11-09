@@ -72,7 +72,7 @@ extension CanvasEditor {
         let renamed = renderBitmap(h.editor, size: size)
         expect(changedPixels(live, renamed, in: noteFrame) > 50, "the pill shows the new title")
         h.editor.transact { $0.delete([target]) }
-        expectEqual(h.editor.row(note), "Ask @Launch the beta first", "the name it last showed")
+        expectEqual(h.editor.row(note), "Ask @Ship first", "the name the mention holds")
         expectEqual(h.editor.mentions?.resolve(target), .missing)
         let missing = renderBitmap(h.editor, size: size)
         expect(changedPixels(renamed, missing, in: noteFrame) > 50, "a missing pill, with the name it holds")
@@ -80,7 +80,7 @@ extension CanvasEditor {
         expectEqual(h.editor.row(note), "Ask @Launch the beta first", "the deletion undone: live again")
         expectEqual(changedPixels(renamed, renderBitmap(h.editor, size: size), in: noteFrame), 0, "drawn as before it went")
         h.editor.redo()
-        expectEqual(h.editor.row(note), "Ask @Launch the beta first", "redone: missing again")
+        expectEqual(h.editor.row(note), "Ask @Ship first", "redone: missing again")
         expectEqual(changedPixels(missing, renderBitmap(h.editor, size: size), in: noteFrame), 0)
         h.editor.undo()
         h.editor.undo()
@@ -281,10 +281,10 @@ extension CanvasEditor {
         expect(changedPixels(shipped, renamed, in: noteFrame) > 50, "the pill on the canvas shows the new title")
         expectEqual(editor.row(note)?.trimmingCharacters(in: .whitespaces), "See @Launch the beta to everyone")
 
-        // Deleted, the pill shows the name it last showed (the renamed one), dashed, on the canvas and in the editor alike.
+        // Deleted, the pill shows the name the note holds, dashed, on the canvas and in the editor alike.
         editor.transact { $0.delete([target]) }
         expectEqual(editor.mentionPills(of: note).map(\.isLive), [false])
-        expectEqual(editor.row(note)?.trimmingCharacters(in: .whitespaces), "See @Launch the beta to everyone")
+        expectEqual(editor.row(note)?.trimmingCharacters(in: .whitespaces), "See @Launch checklist")
         let missing = renderBitmap(editor, size: size)
         expect(changedPixels(renamed, missing, in: noteFrame) > 50, "a missing pill")
         expect(editor.beginEditing(note))
@@ -294,7 +294,7 @@ extension CanvasEditor {
         expect(largestDifference(missing, edited, in: noteFrame.insetBy(dx: 8, dy: 8)) <= 64, "the editor draws the missing pill where the canvas does")
         let shown = text.textStorage.flatMap { $0.attribute(.attachment, at: 4, effectiveRange: nil) as? MentionAttachment }
         expectEqual(shown?.resolution, .missing)
-        expectEqual(shown?.shownLabel, "Launch the beta to everyone")
+        expectEqual(shown?.shownLabel, "Launch checklist")
         window.pressEscape()
         expectEqual(editor.noteText(note), picked, "nothing wrote to the note")
 

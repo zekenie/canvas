@@ -165,7 +165,7 @@ private func live(_ label: String, symbol: String = "rectangle.fill", tint: NSCo
         expect(pill.image !== image)
         expect(pill.bounds.width > 100)
         pill.update(.missing)
-        expectEqual(pill.shownLabel, "Groceries and more", "gone, it shows the name it showed last, not the one it was written with")
+        expectEqual(pill.shownLabel, "G")
         expectEqual(pill.resolution, .missing)
     },
 

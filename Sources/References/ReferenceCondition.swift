@@ -122,20 +122,15 @@ extension ReferenceCondition {
             }
         case .direct:
             guard let target = props.target else { return .empty }
-            // What a pill that stands for nothing now shows: the name it showed last, else the one it holds (a rename since it was
-            // picked changed the first and wrote nothing to the second).
-            let address = PartAddress(target.id, part: target.row)
-            let held = SeenNames.shared.held(address, stored: target.label)
             guard let record = lookup(target.id) else {
-                return isElsewhere(target.id) ? .unavailable(label: held) : .missing(label: held)
+                return isElsewhere(target.id) ? .unavailable(label: target.label) : .missing(label: target.label)
             }
-            guard var appearance = appearanceOf(record) else { return .unavailable(label: held) }
+            guard var appearance = appearanceOf(record) else { return .unavailable(label: target.label) }
             if let row = target.row {
                 // A pill for a row: the row's live name and its lead; gone from a shape that's there, it's missing, as a gone shape is.
-                guard let part = registry.parts(of: record)?.first(where: { $0.id == row }) else { return .missing(label: held) }
+                guard let part = registry.parts(of: record)?.first(where: { $0.id == row }) else { return .missing(label: target.label) }
                 appearance = Self.appearance(of: part, on: appearance)
             }
-            SeenNames.shared.note(address, appearance.label)
             return registry.isPublic(record) ? .live(appearance) : .notPublic(appearance)
         }
     }

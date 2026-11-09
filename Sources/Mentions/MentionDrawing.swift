@@ -273,8 +273,6 @@ final class MentionTextMemo {
     struct Key: Hashable {
         let stored: String
         let resolutions: [MentionResolution]
-        /// The name a mention that isn't live holds (the last seen), so a pill built before a rename's trace isn't taken for one after.
-        let held: [String?]
         let font: NSFont
         let color: NSColor
         let lineHeight: CGFloat?
@@ -380,16 +378,11 @@ final class MentionTextMemo {
     /// or built now. `drawing` is whether a frame draws it, which keeps it until the frame ends.
     func entry(for placement: MentionTextPlacement, resolver: inout MentionResolver, drawing: Bool = false) -> Entry {
         var resolutions: [MentionResolution] = []
-        var held: [String?] = []
         for run in placement.text.runs {
-            if case .mention(let id, _) = run {
-                let resolution = resolver.resolve(id)
-                resolutions.append(resolution)
-                held.append(resolution.isLive ? nil : SeenNames.shared.seen(id))
-            }
+            if case .mention(let id, _) = run { resolutions.append(resolver.resolve(id)) }
         }
         let style = placement.style
-        let key = Key(stored: placement.text.stored, resolutions: resolutions, held: held, font: style.font, color: style.color,
+        let key = Key(stored: placement.text.stored, resolutions: resolutions, font: style.font, color: style.color,
                       lineHeight: style.lineHeight, surface: style.surface, alignment: style.alignment, width: placement.box.width)
         if let slot = index[key], let found = slots[slot] {
             touch(slot)

@@ -347,7 +347,7 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
         expectEqual(largestDifference(missing, expected), 0, "the name it holds, dashed")
         let renamedText = mentioning([.text("Ask "), .mention(idA, label: "Other name"), .text(" today")])
         let other = board.picture(of: Scrap(paper, text: renamedText))
-        expectEqual(changed(missing, other, in: frame.frame), 0, "what it shows is the name it last showed live, whatever the text was written with")
+        expect(changed(missing, other, in: frame.frame) > 0, "the name it holds is what it shows")
         // Undone to the deletion (and the pictures made since), it's live again; redone, missing.
         while board.editor.document[idA] == nil, board.editor.canUndo { board.editor.undo() }
         expect(board.editor.document[id] != nil)
@@ -356,26 +356,6 @@ private func draw(_ string: NSAttributedString, in box: CGRect) {
         board.editor.redo()
         expectEqual(board.editor.mentionPills(of: id).map(\.isLive), [false])
         expectEqual(largestDifference(renderBitmap(board.editor, size: pictureSize, scale: 2), missing), 0, "missing again")
-    },
-    test("a pill whose target was renamed and then deleted draws the name it last showed, not the one the text was written with; deleted again after another rename, the newer one") {
-        let board = try DrawingBoard()
-        let text = mentioning([.text("Ask "), .mention(idA, label: "Old groceries"), .text(" today")])
-        let id = board.place(Scrap(paper, text: text))
-        let missing = { board.editor.mentionPills(of: id).map(\.isLive) == [false] }
-        board.editor.rename(idA, "Food")
-        _ = renderBitmap(board.editor, size: pictureSize, scale: 2)
-        board.editor.delete(idA)
-        expect(missing())
-        let first = renderBitmap(board.editor, size: pictureSize, scale: 2)
-        let string = JotStyle.text.attributedString(text, width: paper.width - 2 * ScrapStyle.padding) { _ in .missing }
-        let held = board.easel { draw(string, in: $0) }
-        expectEqual(largestDifference(first, held), 0, "dashed, in the name it showed last (Food), not Old groceries")
-        board.editor.undo()
-        board.editor.rename(idA, "A much longer name")
-        _ = renderBitmap(board.editor, size: pictureSize, scale: 2)
-        board.editor.delete(idA)
-        let second = renderBitmap(board.editor, size: pictureSize, scale: 2)
-        expect(changed(first, second, in: CGRect(origin: .zero, size: pictureSize)) > 0, "the newer name, not the picture kept from the first deletion")
     },
     test("a pill naming a shape that can't be mentioned, or is kept aside, draws as missing") {
         let board = try DrawingBoard()

@@ -8584,10 +8584,6 @@ shape on any board of it, and shows it as it's called now, wherever it is:
   can't show (`canShow`: its owner kept aside, of a kind that owns none, or not in the file), which
   the file keeps without the app using it: `resolve` calls it `.unavailable`, it's drawn by the
   name the text holds, dashed, it isn't followed, and `canvas draw` warns about it too.
-- **A dead pill keeps the name last seen.** A pill whose target is gone or can't be shown shows the name it last showed live in this
-  session (`SeenNames`: a pill noting its target's name as it is made or shown again, a reference's `ReferenceCondition` likewise), else the
-  one the text was written with: a rename writes nothing to the text, so a deleted shape's trace names what the person last saw, not
-  the name before the rename. The canvas's memo of drawn text is keyed by it.
 - **Its name follows the shape**, whatever board is shown when it changes. A commit that reaches
   other boards names what it touched there (`ChangeSet.elsewhere`: the boards a deletion took with
   their owner, a paste brought, a write to a board that isn't shown, `transact(on:)`, or an undo
