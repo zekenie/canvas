@@ -774,10 +774,14 @@ public final class MentionState {
             // The rows found, in among the shapes by band and score: a band's shapes and rows ranked together.
             let rows = partMatches(q, matcher, listable: listable, admitting: parts, leavingOut: leavesOut ? leftOut : [])
             var merged: [(band: MatchBand, score: Int, length: Int, make: () -> MentionCandidate)] = []
+            var listed: Set<ShapeID> = []
             for found in ranked.prefix(MentionRanking.maxMatches) {
                 merged.append((found.band, found.score, entries[found.slot].labelLength, { shapeCandidate(found) }))
+                listed.insert(entries[found.slot].id)
             }
-            for row in rows {
+            // A shape whose one row stands alone is that row (an endpoint taken out of an API): listed once, as the shape when
+            // it's found, its row only when it isn't (found by its path, while it's called by its name).
+            for row in rows where !(listed.contains(partCatalog.entries[row.slot].shape) && partCatalog.isItsOwnRow(row.slot)) {
                 merged.append((row.band, row.score, partCatalog.entries[row.slot].labelLength, { self.partCandidate(row.slot, band: row.band, q, matcher) }))
             }
             // Stable: within a band and score, the shorter name, then shapes before rows as each list had them.

@@ -109,8 +109,8 @@ public struct MentionTextStyle: @MainActor Hashable {
             return next < held.count ? held[next] : ""
         }
         // Its symbol is drawn nowhere, so it names none: the slot is the same. A row's lead isn't known from the text alone, so a
-        // row's pill that leads with a word in capitals (an endpoint's "POST /orders") is measured with its chip, which is
-        // narrower than the symbol's slot and the word's letters in the label's size.
+        // row's pill that reads as an endpoint's, a word in capitals and a path ("POST /orders"), is measured with its chip, which
+        // is narrower than the symbol's slot and the word's letters in the label's size.
         return attributedString(text, width: width) { target in
             let shown = label()
             return .live(MentionAppearance(label: shown, systemImage: "", kindName: "", detail: "",
@@ -118,10 +118,11 @@ public struct MentionTextStyle: @MainActor Hashable {
         }
     }
 
-    /// The chip a row's pill measured from its label is taken to lead with: the label's first word, when it's in capitals and
-    /// something follows it ("POST /orders/{id}"); no lead otherwise. Its color is the pill's, not its width.
+    /// The chip a row's pill measured from its label is taken to lead with: the label's first word, when it's in capitals and a
+    /// path follows it ("POST /orders/{id}"); no lead otherwise, so a column of a table whose title starts with a word in
+    /// capitals ("API Keys.id") keeps its symbol's slot, as it is drawn. Its color is the pill's, not its width.
     private static func measuredLead(of label: String) -> PartLead {
-        guard let space = label.firstIndex(of: " ") else { return .none }
+        guard let space = label.firstIndex(of: " "), label[label.index(after: space)...].hasPrefix("/") else { return .none }
         let word = label[..<space]
         guard word.count >= 2, word.allSatisfy({ $0.isASCII && $0.isUppercase }) else { return .none }
         return .chip(String(word), fill: RGB(0.5, 0.5, 0.5))

@@ -31,6 +31,12 @@ struct MentionPartCatalog {
     /// A shape's rows, in its order.
     func rows(of shape: ShapeID) -> [Entry] { (slots[shape] ?? []).map { entries[$0] } }
 
+    /// Whether the row at `slot` is all its shape is: its shape's one row, standing alone (an endpoint of its own).
+    func isItsOwnRow(_ slot: Int) -> Bool {
+        let entry = entries[slot]
+        return entry.part.standsAlone && slots[entry.shape]?.count == 1
+    }
+
     /// A shape's rows, put in or read again: nothing changes while their names, kind words, leads and order are as held.
     mutating func set(_ shape: ShapeID, parts: [PartName]) {
         if let held = slots[shape], held.count == parts.count, zip(held, parts).allSatisfy({ entries[$0].part == $1 }) { return }
