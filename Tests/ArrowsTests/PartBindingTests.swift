@@ -108,6 +108,72 @@ private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
         geometry = try require(b.h.editor.arrowGeometry(of: key))
         expectEqual([geometry.partSide(at: .start), geometry.partSide(at: .end)], [.right, .left])
     },
+    test("tables side by side keep both ends facing each other while a line is typed wider than the gap: sides come from the boxes at rest, never a row's laid-out line") {
+        let left = ShapeID(), right = ShapeID(), leftRow = PartID(), rightRow = PartID()
+        let restLeft = CGRect(x: 0, y: 0, width: 200, height: 80), restRight = CGRect(x: 280, y: 0, width: 200, height: 80)
+        func shape(_ id: ShapeID, rest: CGRect, laid: CGRect, row: PartID) -> ConnectableShape {
+            ConnectableShape(id: id, outline: laid.polygon, bounds: laid, restBounds: rest,
+                             parts: PartFrames([PartFrame(id: row, rect: CGRect(x: laid.minX, y: laid.minY + 10, width: laid.width, height: 20), isShown: true)]))
+        }
+        let key = Arrow(start: .bound(ArrowBinding(shapeID: left, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: leftRow)),
+                        end: .bound(ArrowBinding(shapeID: right, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: rightRow)))
+        // The left table laid out 340 wide as a long line is typed (reaching past the right one's left edge, 280), then back at rest.
+        for laidLeft in [restLeft, CGRect(x: 0, y: 0, width: 340, height: 80), CGRect(x: 0, y: 0, width: 520, height: 80)] {
+            let shapes = [left: shape(left, rest: restLeft, laid: laidLeft, row: leftRow), right: shape(right, rest: restRight, laid: restRight, row: rightRow)]
+            let geometry = ArrowGeometry(arrow: key, strokeWidth: 3.5) { shapes[$0] }
+            expectEqual([geometry.partSide(at: .start), geometry.partSide(at: .end)], [.right, .left], "laid out \(laidLeft.width) wide: still facing")
+        }
+    },
+    test("a key between rosters in two corrals, or from a free roster to one in a corral, is painted just above the corral of the higher end, under the rosters, so no corral hides its end") {
+        let rule = Contributor(id: "roster-rows") { registrar in registrar.arrowPartRule { $0.shape.kind == Roster.kind } }
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [RostersPlugin(), CorralsPlugin()], more: [rule]))
+        @MainActor func roster(_ x: CGFloat, in corral: ShapeID?) -> (id: ShapeID, row: PartID) {
+            let row = RosterRow(name: "one")
+            let id = h.add(Roster(CGRect(x: x + 20, y: 40, width: 160, height: 60), rows: [row]))
+            if let corral { h.editor.transact { $0.setContainer(id, to: corral) } }
+            return (id, row.id)
+        }
+        @MainActor func key(_ a: (id: ShapeID, row: PartID), _ b: (id: ShapeID, row: PartID)) -> ShapeID {
+            func end(_ r: (id: ShapeID, row: PartID)) -> ArrowTerminal {
+                .bound(ArrowBinding(shapeID: r.id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: r.row))
+            }
+            return h.add(Arrow(start: end(a), end: end(b)))
+        }
+        let first = h.add(Corral(CGRect(x: 0, y: 0, width: 200, height: 140)))
+        let a = roster(0, in: first)
+        let second = h.add(Corral(CGRect(x: 400, y: 0, width: 200, height: 140)))
+        let b = roster(400, in: second)
+        let joined = key(a, b)
+        expectEqual(h.editor.paintOrder().map(\.id), [first, a.id, second, joined, b.id], "above the second corral, whose opaque fill would hide its end, under the roster in it")
+        // One end free of any corral: the corral of the other end still lies under it.
+        let free = roster(800, in: nil)
+        let third = h.add(Corral(CGRect(x: 1200, y: 0, width: 200, height: 140)))
+        let c = roster(1200, in: third)
+        let across = key(free, c)
+        expectEqual(h.editor.paintOrder().map(\.id).suffix(4), [free.id, third, across, c.id])
+        // The ends in the same corral: just below the lower of the two, above their corral, as ever.
+        let r1 = roster(0, in: first), r2 = roster(100, in: first)
+        let both = key(r1, r2)
+        let order = h.editor.paintOrder().map(\.id)
+        expectEqual(order.firstIndex(of: both).map { $0 + 1 }, order.firstIndex(of: r1.id), "just below the lower of its two rosters")
+        expect(order.firstIndex(of: both)! > order.firstIndex(of: first)!, "above their corral")
+    },
+    test("a roster that joins a corral already below it (no change in the stack) puts the key to it above that corral") {
+        let rule = Contributor(id: "roster-rows") { registrar in registrar.arrowPartRule { $0.shape.kind == Roster.kind } }
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [RostersPlugin(), CorralsPlugin()], more: [rule]))
+        let row = RosterRow(name: "one"), farRow = RosterRow(name: "two")
+        let near = h.add(Roster(CGRect(x: 20, y: 40, width: 160, height: 60), rows: [row]))
+        let corral = h.add(Corral(CGRect(x: 400, y: 0, width: 200, height: 140)))
+        let far = h.add(Roster(CGRect(x: 420, y: 40, width: 160, height: 60), rows: [farRow]))
+        func end(_ id: ShapeID, _ part: PartID) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: part))
+        }
+        let key = h.add(Arrow(start: end(near, row.id), end: end(far, farRow.id)))
+        expectEqual(h.editor.paintOrder().map(\.id), [key, near, corral, far], "no corral holds it: below the lower")
+        _ = h.editor.paintOrder()
+        h.editor.transact { $0.setContainer(far, to: corral) }
+        expectEqual(h.editor.paintOrder().map(\.id), [near, corral, key, far], "in the corral: above it, where its fill can't hide the end")
+    },
     test("an arrow with an end at a row is painted just below the lower of its shapes, however it was made, so a card it passes covers it") {
         let b = try RosterBoard()
         // A roster between the two in the stack, which the key passes.

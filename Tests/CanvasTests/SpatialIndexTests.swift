@@ -375,6 +375,68 @@ extension Seeded {
         expectEqual(h.editor.paintListsBuilt, rebuilt + 2, "a plain shape under the shapes on top: built again")
         #endif
     },
+    test("a shape painted below its anchor goes just before it, on a full build and when a commit adds it to the paint list kept, the grid made again; with its anchor missing or itself anchored the list is built") {
+        #if DEBUG
+        let h = try EditorHarness(plugins: [FixturesPlugin(), UnderlaysPlugin()])
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
+        var random = Seeded(seed: 37)
+        var boxes: [ShapeID] = []
+        for i in 0..<200 { boxes.append(h.add(Box(CGRect(x: CGFloat(i % 20) * 150, y: CGFloat(i / 20) * 150, width: 100, height: 80)))) }
+        let area = CGRect(x: -100, y: -100, width: 3_300, height: 1_800)
+        expectSearchesAgree(h, area: area, random: &random, "as made")
+        let built = h.editor.paintListsBuilt
+        @MainActor func around(_ id: ShapeID, _ before: Int, _ after: Int) -> [ShapeID] {
+            let order = h.editor.paintOrder().map(\.id), at = order.firstIndex(of: id)!
+            return Array(order[(at - before)...(at + after)])
+        }
+
+        // Under a shape in the middle of the stack: just before it, the list kept, searches in agreement.
+        let under = h.add(Underlay(target: boxes[100]))
+        expectEqual(around(boxes[100], 2, 0), [boxes[99], under, boxes[100]], "just below its anchor")
+        expectEqual(h.editor.paintListsBuilt, built, "the paint list kept")
+        expectSearchesAgree(h, area: area, random: &random, "after one under a box")
+        // A second under the same anchor goes after the first (document order), as a build puts them.
+        let second = h.add(Underlay(target: boxes[100]))
+        expectEqual(around(boxes[100], 3, 0), [boxes[99], under, second, boxes[100]])
+        expectEqual(h.editor.paintListsBuilt, built, "still kept")
+        // Under the last plain shape, with a tag above it after: just before it.
+        let last = h.editor.document.shapes.last { $0.kind == Box.kind }!.id
+        let lastUnder = h.add(Underlay(target: last))
+        let over = h.add(Tag(target: last))
+        expectEqual(around(last, 1, 1), [lastUnder, last, over])
+        // One commit that adds a plain shape and one under it.
+        var added: ShapeID?, addedUnder: ShapeID?
+        h.editor.transact("Both") { transaction in
+            let plain = ShapeRecord(Box(CGRect(x: 40, y: 40, width: 60, height: 60)))
+            transaction.insert(plain)
+            added = plain.id
+            let tag = ShapeRecord(Underlay(target: plain.id))
+            transaction.insert(tag)
+            addedUnder = tag.id
+        }
+        expectEqual(around(added!, 1, 0), [addedUnder!, added!], "under a shape added with it")
+        expectEqual(h.editor.paintListsBuilt, built, "no list built yet")
+        expectSearchesAgree(h, area: area, random: &random, "after those")
+        // The same order a full build gives (an undo and a redo build it again).
+        let order = h.editor.paintOrder().map(\.id)
+        h.editor.undo()
+        h.editor.redo()
+        expectEqual(h.editor.paintOrder().map(\.id), order, "as built afresh")
+        expect(h.editor.paintListsBuilt > built, "which the undo did")
+        expectSearchesAgree(h, area: area, random: &random, "after the redo")
+
+        // Under a shape that is itself anchored, or missing: the list is built.
+        var now = h.editor.paintListsBuilt
+        h.add(Underlay(target: over))
+        _ = h.editor.paintOrder()
+        expectEqual(h.editor.paintListsBuilt, now + 1, "an anchor that is anchored itself: built")
+        now = h.editor.paintListsBuilt
+        h.add(Underlay(target: nil))
+        _ = h.editor.paintOrder()
+        expectEqual(h.editor.paintListsBuilt, now + 1, "no anchor: built, and on top")
+        expectEqual(h.editor.paintOrder().count, h.editor.document.shapes.count)
+        #endif
+    },
     test("shapes that came in elsewhere in the stack, went, moved in it, or came back by an undo, a redo or a move from another board, build the paint list again") {
         #if DEBUG
         let h = try spatialHarness()
