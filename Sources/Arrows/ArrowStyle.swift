@@ -19,26 +19,43 @@ enum ArrowStyle {
     nonisolated static let levelMinReach: CGFloat = 24
     nonisolated static let levelAheadShare: CGFloat = 0.5
     nonisolated static let levelBackReach: CGFloat = 6.25
-    /// A marked end leaves its row straight along its way out for as far as its mark reaches and this much more, a stub the
-    /// curve starts from, so the mark lies level and upright however steeply the line turns after it (a C between stacked
-    /// tables, a fan, rows far across): 23.5 for bars, 36 for a bar and circle, 19 for a crow's foot. Ends facing each other too
-    /// near for both stubs share what room there is.
+    /// A marked end leaves its row straight along its way out for as far as the longest mark reaches (a bar and circle's, 30)
+    /// and this much more, 36 whatever its own mark, a stub the curve starts from, so the mark lies level and upright however
+    /// steeply the line turns after it (a C between stacked tables, a fan, rows far across), and keys between the same two
+    /// shapes turn at the same places, their middles one shape: they cross only where their ends' order swaps, and then once
+    /// (UX walk 4 tables-1; with a stub as long as each one's own mark, a bar's 23.5 inside a circle's 36, two keys in a narrow
+    /// gap crossed twice). Ends facing each other too near for both stubs share what room there is.
     nonisolated static let levelMarkClearance: CGFloat = 6
+    nonisolated static let levelMarkStub: CGFloat = 30 + levelMarkClearance
     nonisolated static func levelStub(ofMark reach: CGFloat) -> CGFloat {
-        reach > 0 ? reach + levelMarkClearance : 0
+        reach > 0 ? max(levelMarkStub, reach + levelMarkClearance) : 0
     }
     // Connections drawn together (Connections' `ConnectionBundle`): those with the same two ends bow apart by a slot each, far
     // enough that their pills sit on lines of their own; those fanned into one place come in at angles of their own, spread
-    // `fanStep` apart up to `fanSpread` in all, a marked end (a key's bars) also `fanMarkShift` apart along its side, so two keys
-    // into one row meet it apart.
+    // `fanStep` apart up to `fanSpread` in all. Marked ends (keys' bars) fanned into one row come in level instead, `fanMarkSpacing`
+    // apart along its side (a bar's height, its stroke and a gap, so two keys' bars never merge: UX walk 4 tables-2), each in a
+    // slice of the row of its own at most (never on the line between two rows); in a row too short for that (the kit's, 24 tall),
+    // every other one's stub is `fanMarkStagger` longer, its marks with it, so they stand past its neighbors' and no bars cross.
     nonisolated static let slotSpacing: CGFloat = 30
     nonisolated static let fanStep: CGFloat = 25 * .pi / 180
     nonisolated static let fanSpread: CGFloat = 70 * .pi / 180
-    nonisolated static let fanMarkShift: CGFloat = 8
-    /// Pills slid toward a row their connections part from to different places stand apart along their lines: each after the
-    /// first this much further from the row (the first sits its half width and clearance out; this is that, a pill's width and
-    /// a gap), world units.
-    nonisolated static let partingLabelStep: CGFloat = 130
+    nonisolated static let fanMarkSpacing: CGFloat = 24
+    nonisolated static let fanMarkStagger: CGFloat = 30
+    /// Connections parting from one row to different places (`ConnectionBundle.parting`) whose pills are slid to the row leave
+    /// it `partingLineSpacing` apart along its side, top to bottom as their far ends are, within the row's band, so each line
+    /// leaves on its own; their pills stack out from the row in that band, `partingLabelGap` apart, each on a straight stub of
+    /// its line, which turns after it (UX walk 4 evolve-1: pills spaced along their lines landed beside other rows' pills).
+    nonisolated static let partingLineSpacing: CGFloat = 20
+    nonisolated static let partingLabelGap: CGFloat = 8
+    /// A pill of a parted connection laid along its line moves out along it, this much at a time, until it is clear of the
+    /// other lines parting with it by `partingLineClearance`, its lit ring too (UX walk 3 connect-4: a calls line ran under the
+    /// reads pill's ring).
+    nonisolated static let partingLabelNudge: CGFloat = 6
+    nonisolated static let partingLineClearance: CGFloat = 6
+    /// Rows facing each other across a gap narrower than this (between their stubs) have near upright middles: each line turns at
+    /// a place of its own across it, `narrowTurnMargin` of the gap in from either side at most (`ArrowGeometry`).
+    nonisolated static let narrowGap: CGFloat = 80
+    nonisolated static let narrowTurnMargin: CGFloat = 0.1
     /// A level curve's end keeps this far inside the container both its ends are in (a database's edge), where it can; and it
     /// leaves the side of its row with at least `containerSideRoom` inside it (its turn and half a pill on it), else the other.
     nonisolated static let containerClearance: CGFloat = PartSide.containerClearance

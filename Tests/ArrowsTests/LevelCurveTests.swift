@@ -273,7 +273,39 @@ private let scale: CGFloat = 2
         if case .curved = try b.geometry(bent).path {} else { expect(false, "arced") }
         expect(!(try b.geometry(bent)).isLevel)
     },
+    test("keys between the same two shapes cross only where their ends' order swaps, and then once, whatever their marks (UX walk 4 tables-1)") {
+        // A table 75 to the right of L, rows 30 tall at 115, 145, 175 and 205: the gap of the walk's customers and orders.
+        for swapped in [false, true] {
+            var b = try LevelBoard(looks: true)
+            let rows = ["a", "b", "c", "d"].map { RosterRow(name: $0) }
+            let near = b.h.add(Roster(CGRect(x: 375, y: 100, width: 200, height: 120), rows: rows))
+            func end(_ index: Int) -> ArrowTerminal {
+                .bound(ArrowBinding(shapeID: near, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: rows[index].id))
+            }
+            // L's row 1 is a nullable key's (a bar and a circle at its end, 30 out); row 0's has bars (17.5).
+            b.rename(1, to: "null")
+            let upper = b.h.add(Arrow(start: b.end(b.left, 0), end: end(swapped ? 3 : 1)))
+            let lower = b.h.add(Arrow(start: b.end(b.left, 1), end: end(swapped ? 1 : 3)))
+            let crossings = crossingCount(try require(try b.geometry(upper).levelBody), try require(try b.geometry(lower).levelBody))
+            expectEqual(crossings, swapped ? 1 : 0, swapped ? "swapped ends: once" : "ends in order: never")
+        }
+    },
 ])
+
+/// How many times two lines cross, by their flattened segments.
+private func crossingCount(_ a: CubicChain, _ b: CubicChain) -> Int {
+    let p = a.flattened(segments: 120), q = b.flattened(segments: 120)
+    func cross(_ o: CGPoint, _ u: CGPoint, _ v: CGPoint) -> CGFloat { (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x) }
+    var count = 0
+    for i in 1..<p.count {
+        for j in 1..<q.count {
+            let (a1, a2, b1, b2) = (p[i - 1], p[i], q[j - 1], q[j])
+            let d1 = cross(b1, b2, a1), d2 = cross(b1, b2, a2), d3 = cross(a1, a2, b1), d4 = cross(a1, a2, b2)
+            if (d1 > 0) != (d2 > 0), (d3 > 0) != (d4 > 0), d1 != 0, d2 != 0, d3 != 0, d4 != 0 { count += 1 }
+        }
+    }
+    return count
+}
 
 @MainActor let endMarkTests = Suite("End marks", [
     test("a crow's foot at the start and two bars at the end, at the line's width, in both appearances") {
@@ -373,7 +405,8 @@ private let scale: CGFloat = 2
         expect(isInked(hidden, CGPoint(x: 330, y: 140), zoom: 0.2), "the line still")
     },
     test("a key between close rows of one table (a C) runs out past its marks before it turns, and its bend handle is where it is drawn") {
-        // The marks reach 13 (a crow's foot), 17.5 (bars) and 30 (the circle) out; the turn is 6 beyond, the controls 4/3 of that.
+        // The marks reach 13 (a crow's foot), 17.5 (bars) and 30 (the circle) out; every one turns 36 out, past the longest and 6 more
+        // (UX walk 4 tables-1: one stub for every key, so keys between two shapes turn at the same places).
         for (name, reach) in [("manager", 13.0), ("unique", 17.5), ("null", 30.0)] as [(String, CGFloat)] {
             var b = try LevelBoard(looks: true)
             let id = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.left, 1)))
@@ -381,8 +414,10 @@ private let scale: CGFloat = 2
             let geometry = try b.geometry(id), cubic = try curve(geometry)
             let apex = cubic.flattened().map(\.x).max() ?? 0
             expect(apex >= 300 + reach + 6 - 0.01, "\(name): the turn \(apex - 300) out, past the mark's \(reach)")
+            expectClose(cubic.start.x, 300 + 36, within: 1e-6)
             // The circle's centre, 25 out, is on the line.
-            expect(cubic.distance(to: geometry.point(25, along: .start).point) < 0.2, "\(name): on the line")
+            let line = try require(geometry.levelBody)
+            expect(line.distance(to: geometry.point(25, along: .start).point) < 0.2, "\(name): on the line")
             // Dragging the bend handle from where it is drawn puts the middle under the pointer.
             b.h.editor.selection = id
             let target = geometry.middle + geometry.bendAxis * 10
@@ -561,7 +596,8 @@ private let scale: CGFloat = 2
         let c = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.left, 1)))
         let apex = try require(try b.geometry(c).levelBody).flattened().max { $0.x < $1.x }!
         expect(apex.x > 300 + 20, "the C bows out from the table's side: \(apex)")
-        expect(inkedNear(far, apex, zoom: 0.1), "a C at 10% keeps its bow")
+        // Drawn with the C on the board (the picture before it held the facing line alone).
+        expect(inkedNear(try drawn(b.h.editor), apex, zoom: 0.1), "a C at 10% keeps its bow")
     },
     test("VoiceOver says what the marks say after where the arrow runs: many to one, one to one, many to zero or one") {
         var b = try LevelBoard(looks: true)

@@ -43,6 +43,9 @@ public struct ArrowGeometry: Sendable {
     public private(set) var endSide: PartSide?
     /// A level arrow's visible line: a marked end's straight stub, the curve, the other's stub (nil for any other arrow).
     public private(set) var levelLine: CubicChain?
+    /// How much further out along the line than its own place each end's mark is drawn: a marked end fanned into a row too short
+    /// to hold its neighbors' bars apart stands its marks past theirs (`ArrowStyle.fanMarkStagger`); 0 for any other.
+    public private(set) var markOffset: (start: CGFloat, end: CGFloat) = (0, 0)
 
     /// Gap between a bound shape's outline and an arrowhead, on top of half the stroke width.
     public static let boundGap: CGFloat = 10
@@ -139,8 +142,32 @@ public struct ArrowGeometry: Sendable {
             // Fanned ends: each comes in at an angle of its own; a marked one comes in level and apart along its side, and turns
             // after its stub.
             var turns = (start: s.normal, end: e.normal)
-            if let fan = spread.startFan { (s, turns.start) = Self.fanned(s, by: fan, count: spread.startFanCount, marked: stubs.start > 0, part: startPart) }
-            if let fan = spread.endFan { (e, turns.end) = Self.fanned(e, by: fan, count: spread.endFanCount, marked: stubs.end > 0, part: endPart) }
+            // Marks staggered along a stub only where the line has the room for the longer stub, a curve and the other end's stub
+            // (else the stub is cut short and the marks land on the turn): ends facing each other across a narrow gap spread across
+            // the row instead.
+            let staggers: Bool = {
+                guard let a = s.normal, let b = e.normal, a.dot(b) < -0.5 else { return true }
+                let gap = a.dot(e.point - s.point)
+                return gap >= stubs.start + stubs.end + ArrowStyle.fanMarkStagger + ArrowStyle.levelMinReach * 2
+            }()
+            if let fan = spread.startFan {
+                let fanned = Self.fanned(s, by: fan, count: spread.startFanCount, marked: stubs.start > 0, staggers: staggers, part: startPart)
+                (s, turns.start) = (fanned.anchor, fanned.turn)
+                stubs.start += fanned.stagger
+                markOffset.start = fanned.stagger
+            }
+            if let fan = spread.endFan {
+                let fanned = Self.fanned(e, by: fan, count: spread.endFanCount, marked: stubs.end > 0, staggers: staggers, part: endPart)
+                (e, turns.end) = (fanned.anchor, fanned.turn)
+                stubs.end += fanned.stagger
+                markOffset.end = fanned.stagger
+            }
+            // A parted end (a row's connections to different places, their pills stacked out from the row): moved along its side within
+            // its row's band, and straight for as far as its pill sits (`ArrowSpread.startStub`), so the pill stays level with its row.
+            if spread.startShift != 0 { s = Self.moved(s, by: spread.startShift, part: startPart) }
+            if spread.endShift != 0 { e = Self.moved(e, by: spread.endShift, part: endPart) }
+            if s.normal != nil { stubs.start = max(stubs.start, spread.startStub) }
+            if e.normal != nil { stubs.end = max(stubs.end, spread.endStub) }
             let chord = e.point - s.point
             bendAxis = chord.length > 0 ? chord.normalized.perpendicular : CGPoint(x: 0, y: -1)
             // A slot's arrows leave and meet their ends a little apart along the side too, each the way its bow takes the line
@@ -180,6 +207,22 @@ public struct ArrowGeometry: Sendable {
             if let a = turns.start, let b = turns.end, a.dot(b) < 0 {
                 let gap = max(0, a.dot(to - from))
                 (reachStart, reachEnd) = (min(reachStart, gap), min(reachEnd, gap))
+            }
+            // In a narrow gap between rows facing each other across it, every line's middle is near upright, and lines between the same
+            // two shapes would run on top of each other there (UX walk 4 tables-1): each turns at a place of its own across the gap,
+            // by where it meets the shape on the right, so lines whose ends keep their order never cross and those that swap cross once.
+            if let a = turns.start, let b = turns.end, a.dot(b) < -0.99, abs(a.x) > 0.99, let startShape, let endShape {
+                let gap = a.dot(to - from)
+                if gap > 0, gap < ArrowStyle.narrowGap {
+                    let rightIsEnd = a.x > 0
+                    let (left, right) = rightIsEnd ? (from, to) : (to, from)
+                    let bounds = (rightIsEnd ? endShape : startShape).restBounds
+                    let rank = bounds.height > 0 ? min(max((right.y - bounds.minY) / bounds.height, 0), 1) : 0.5
+                    // Going down, the line to the lower row turns first; going up, the one to the higher row.
+                    let share = right.y >= left.y ? 1 - rank : rank
+                    let turn = gap * (ArrowStyle.narrowTurnMargin + (1 - 2 * ArrowStyle.narrowTurnMargin) * share)
+                    (reachStart, reachEnd) = rightIsEnd ? (turn, gap - turn) : (gap - turn, turn)
+                }
             }
             let plain = Cubic(from, from + (turns.start ?? .zero) * reachStart, to + (turns.end ?? .zero) * reachEnd, to)
             // A slot's bow moves where the bend is measured from with it, so the bend handle's drag still puts the middle where
@@ -294,18 +337,36 @@ public struct ArrowGeometry: Sendable {
     }
 
     /// A level curve's end fanned among `count` that come into one place, and the way its curve leaves: turned by `spread` (-1
-    /// the first, 1 the last) of the fan's angle, the first coming in from above (or the left). A marked end (or one at a part)
-    /// keeps its way out level where its mark is, and is moved along its side a little instead, so the marks stand apart; its
-    /// curve turns after its stub.
-    private static func fanned(_ anchor: (point: CGPoint, normal: CGPoint?), by spread: CGFloat, count: Int, marked: Bool,
-                               part: CGRect?) -> (anchor: (point: CGPoint, normal: CGPoint?), turn: CGPoint?) {
-        guard let normal = anchor.normal else { return (anchor, nil) }
+    /// the first, 1 the last) of the fan's angle, the first coming in from above (or the left). A marked end keeps its way out
+    /// level, its curve too (a turn after its stub made two keys' middles different shapes, and they crossed), and is moved along
+    /// its side instead, `fanMarkSpacing` from the next (a bar's height and a gap), each in a slice of the row of its own at most
+    /// (`part`); where the row is too short for that, every other one's stub is `fanMarkStagger` longer (`stagger`), its marks
+    /// with it, so they stand past its neighbors'. Where the line has no room for that (`staggers` false), they spread as far
+    /// as the row's height instead, the outermost at its edges.
+    private static func fanned(_ anchor: (point: CGPoint, normal: CGPoint?), by spread: CGFloat, count: Int, marked: Bool, staggers: Bool = true,
+                               part: CGRect?) -> (anchor: (point: CGPoint, normal: CGPoint?), turn: CGPoint?, stagger: CGFloat) {
+        guard let normal = anchor.normal else { return (anchor, nil, 0) }
         let across = abs(normal.x) >= abs(normal.y) ? CGPoint(x: 0, y: 1) : CGPoint(x: 1, y: 0)
         let half = min(ArrowStyle.fanSpread, CGFloat(max(count - 1, 0)) * ArrowStyle.fanStep) / 2
         let turned = (normal + across * tan(spread * half)).normalized
-        guard marked else { return ((anchor.point, turned), turned) }
-        let room = part.map { abs(across.y) > 0 ? $0.height : $0.width } ?? ArrowStyle.fanMarkShift * 4
-        return ((anchor.point + across * (spread * min(ArrowStyle.fanMarkShift, room * 0.35)), normal), turned)
+        guard marked else { return ((anchor.point, turned), turned, 0) }
+        // Each in a slice of the row of its own, at the slice's middle: the outermost a half slice in from the row's edges, never on
+        // the line between two rows.
+        let gaps = CGFloat(max(count - 1, 1)), wanted = gaps * ArrowStyle.fanMarkSpacing
+        let room = part.map { (abs(across.y) > 0 ? $0.height : $0.width) * (staggers ? gaps / CGFloat(max(count, 2)) : 1) } ?? wanted
+        let span = min(wanted, room)
+        // Its place among them, 0 the first: every other one, from the second, stands out a mark further where they are too close.
+        let place = Int(((spread + 1) / 2 * gaps).rounded())
+        let stagger = staggers && span < wanted - 0.5 && place % 2 == 1 ? ArrowStyle.fanMarkStagger : 0
+        return ((anchor.point + across * (spread * span / 2), normal), normal, stagger)
+    }
+
+    /// An end moved `shift` along its side, within its part's band where it has one (`part`: 0.4 of it either way).
+    private static func moved(_ anchor: (point: CGPoint, normal: CGPoint?), by shift: CGFloat, part: CGRect?) -> (point: CGPoint, normal: CGPoint?) {
+        guard let normal = anchor.normal else { return anchor }
+        let across = abs(normal.x) >= abs(normal.y) ? CGPoint(x: 0, y: 1) : CGPoint(x: 1, y: 0)
+        let band = part.map { (abs(across.y) > 0 ? $0.height : $0.width) * 0.4 } ?? abs(shift)
+        return (anchor.point + across * max(-band, min(band, shift)), normal)
     }
 
     /// Where a level curve meets an end that isn't at a row, and the way out of the shape there: a free end its point, with no
@@ -627,6 +688,12 @@ public struct ArrowSpread: Hashable, Sendable {
     public var endFanCount = 1
     public var startEntry: PartID?
     public var endEntry: PartID?
+    /// A parted end's move along its side (world units, down or right positive) and the least straight stub it leaves on: what keeps
+    /// a row's connections to different places apart as they leave it, each pill on its own line in the row's band.
+    public var startShift: CGFloat = 0
+    public var endShift: CGFloat = 0
+    public var startStub: CGFloat = 0
+    public var endStub: CGFloat = 0
 
     public init() {}
 }

@@ -82,7 +82,7 @@ private let billing = #"""
             expect(p[0] < 120, "each key drawn in the gap: \(p) at \(middle)")
         }
     },
-    test("UX walk 3 structure-1: a key passing under a table it isn't bound to is drawn faint across that table, so it doesn't read as ending at its row") {
+    test("UX walk 3 and 4 structure-1: a key passing under a table it isn't bound to is drawn faint across the whole of it, joined where it goes under and comes out, in light and dark") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         try w.turnKitOn()
@@ -97,22 +97,27 @@ private let billing = #"""
         let orders = try require(editor.shapeContext.geometry(of: try table(editor, "orders").id)?.bounds)
         let key = try require(editor.document.shapes.compactMap { $0.typed(as: Arrow.self) }.first)
         let body = try require(editor.arrowGeometry(of: key.id)?.levelBody)
-        let under = try require(body.flattened(segments: 400).min { abs($0.x - orders.midX) < abs($1.x - orders.midX) })
+        let points = body.flattened(segments: 800)
+        let under = try require(points.min { abs($0.x - orders.midX) < abs($1.x - orders.midX) })
         expect(orders.insetBy(dx: 4, dy: 4).contains(under), "the key passes under orders: \(under) in \(orders)")
+        // Just inside where it goes under and where it comes out: the faint line joins the line drawn outside.
+        let entering = try require(points.first { orders.insetBy(dx: 3, dy: 3).contains($0) })
+        let leaving = try require(points.last { orders.insetBy(dx: 3, dy: 3).contains($0) })
         editor.camera = Camera(origin: CGPoint(x: orders.minX - 40, y: orders.minY - 40), zoom: 1)
-        let rep = renderBitmap(editor, size: CGSize(width: orders.width + 80, height: orders.height + 80))
-        // Beside the line, the paper; on it, something darker than the paper and lighter than the line itself.
-        var paperPoint = under + CGPoint(x: 0, y: 8)
-        if !orders.insetBy(dx: 4, dy: 4).contains(paperPoint) { paperPoint = under - CGPoint(x: 0, y: 8) }
-        let on = pixel(rep, at: editor.camera.toView(under)), paper = pixel(rep, at: editor.camera.toView(paperPoint))
-        expect(on[0] < paper[0] - 15, "drawn across the table, faint: \(on) on paper \(paper)")
-        expect(on[0] > 90, "but faint: \(on)")
-        // Over a row's words (its two ends) the line is left out, so it never strikes through a name or a type; the middle shows.
-        let geometry = try require(editor.shapeContext.geometry(of: try table(editor, "orders").id))
-        let leftEnd = try require(body.flattened(segments: 400).first { $0.x >= orders.minX + 6 })
-        if let row = geometry.parts.shownFrames.first(where: { $0.rect.minY + 2 < leftEnd.y && leftEnd.y < $0.rect.maxY - 2 }) {
-            let word = pixel(rep, at: editor.camera.toView(leftEnd)), rowPaper = pixel(rep, at: editor.camera.toView(CGPoint(x: leftEnd.x, y: row.rect.minY + 1)))
-            expect(abs(word[0] - rowPaper[0]) <= 8, "no line through a row's name end: \(word) beside \(rowPaper)")
+        for dark in [false, true] {
+            var drawn: NSBitmapImageRep?
+            try require(NSAppearance(named: dark ? .darkAqua : .aqua)).performAsCurrentDrawingAppearance {
+                drawn = renderBitmap(editor, size: CGSize(width: orders.width + 80, height: orders.height + 80))
+            }
+            let rep = try require(drawn)
+            // Beside the line, the paper (light in both appearances); on it, darker than the paper and lighter than a line drawn whole.
+            for point in [entering, under, leaving] {
+                var paperPoint = point + CGPoint(x: 0, y: 8)
+                if !orders.insetBy(dx: 2, dy: 2).contains(paperPoint) { paperPoint = point - CGPoint(x: 0, y: 8) }
+                let on = pixel(rep, at: editor.camera.toView(point)), paper = pixel(rep, at: editor.camera.toView(paperPoint))
+                expect(on[0] < paper[0] - 15, "\(dark ? "dark" : "light"): drawn across the table at \(point), faint: \(on) on paper \(paper)")
+                expect(on[0] > 90, "\(dark ? "dark" : "light"): but faint: \(on)")
+            }
         }
     },
     test("T3 panel 4: a unique column's key is bars at both ends, a nullable one's a bar and a circle at the row it references; both level, 2.5 wide") {

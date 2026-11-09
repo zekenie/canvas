@@ -199,18 +199,47 @@ import TestKit
         let editing = try require(b.h.editor.editingFrame)
         expect(abs(editing.midX - label.midX) < 4, "the editor over the label at \(label), not halfway: \(editing)")
     },
-    test("one row's arrows to two places, slid toward the row by fans at their far ends, space their pills along their lines (UX walk 3 evolve-5)") {
+    test("one row's arrows to two places, slid toward the row by fans at their far ends, stack their pills in the row's band, each on its own line (UX walk 4 evolve-1)") {
         let answers = BundleAnswers()
         let b = try bundleBoard(answers)
         let ids = [b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 0), text: "first")),
                    b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 2), text: "second"))]
+        // The second's far end is farther below the row (140): it stacks first, nearest the row.
         for (index, id) in ids.enumerated() {
-            answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], parting: .init(end: .start, index: index, count: 2))
+            answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: 0, count: 2)], parting: .init(end: .start, index: index, count: 2),
+                                                   parted: [ids[1], ids[0]])
         }
         b.h.editor.connectionBundlesDidChange(Set(ids))
         let labels = try ids.map { try require(b.h.editor.arrowLabelFrame(of: $0)) }
         expect(!labels[0].intersects(labels[1]), "apart: \(labels)")
-        expect(labels[0].midX < labels[1].midX, "the first nearest the row: \(labels)")
+        expect(labels[1].midX < labels[0].midX, "the stack's first nearest the row: \(labels)")
+        // Each level with the row (126.7 to 153.3), never out along its line into another row's.
+        for label in labels { expect(label.midY > 100 + 80.0 / 3 && label.midY < 100 + 160.0 / 3, "in the row's band: \(label)") }
+        // Their lines leave the row apart, top to bottom as their far ends are, and each runs straight past its pill.
+        let geometries = try ids.map { try b.geometry($0) }
+        expect(geometries[0].start.y < geometries[1].start.y - 10, "apart along the row's side: \(geometries.map(\.start))")
+        for (geometry, label) in zip(geometries, labels) {
+            expect(abs(geometry.point(label.maxX - 300 + 2, along: .start).point.y - geometry.start.y) < 1e-6, "straight past its pill: \(label)")
+        }
+    },
+    test("a pill laid along its line moves out along it, clear of the other lines leaving its row (UX walk 3 connect-4)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers)
+        // Far below and right: its line leaves the row level and turns down under the other's pill, halfway to R's row 2.
+        let below = b.h.add(Roster(CGRect(x: 700, y: 460, width: 200, height: 80), rows: [RosterRow(name: "one")]))
+        let low = try require(b.h.editor.document[below]?.typed(as: Roster.self)?.props.rows[0].id)
+        let lowEnd = ArrowTerminal.bound(ArrowBinding(shapeID: below, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: low))
+        let ids = [b.h.add(Arrow(start: b.end(b.left, 1), end: b.end(b.right, 1), text: "label")),
+                   b.h.add(Arrow(start: b.end(b.left, 1), end: lowEnd))]
+        let before = try require(b.h.editor.arrowLabelFrame(of: ids[0]))
+        for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(parting: .init(end: .start, index: index, count: 2), parted: ids) }
+        b.h.editor.connectionBundlesDidChange(Set(ids))
+        let after = try require(b.h.editor.arrowLabelFrame(of: ids[0]))
+        let other = try b.geometry(ids[1])
+        expect(other.crosses(before.polygon), "halfway, the other line ran under it: \(before)")
+        expect(!other.crosses(after.insetBy(dx: -2, dy: -2).polygon), "out along its line, clear of it: \(after)")
+        expect(after.midX > before.midX, "away from the row: \(before) to \(after)")
+        expect(try b.geometry(ids[0]).distance(to: CGPoint(x: after.midX, y: after.midY)) < 1, "still on its own line")
     },
     test("bending a slotted arrow keeps its bow: its middle is under the pointer while dragged and after the release") {
         let answers = BundleAnswers()
@@ -244,7 +273,7 @@ import TestKit
         guard case .free(let point)? = b.arrow(two)?.end else { return expect(false, "the end is free") }
         expect(point.distance(to: drawn.visiblePoint(at: .end)) < 1e-6, "\(point) against \(drawn.visiblePoint(at: .end))")
     },
-    test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart and level, turning after their marks; their labels slide to their starts") {
+    test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart and level and stay level-shaped, every other one's marks further out where the row is short; their labels slide to their starts") {
         let answers = BundleAnswers()
         let b = try bundleBoard(answers, looks: true)
         let ids = (0..<3).map { b.h.add(Arrow(start: b.end(b.left, $0), end: b.end(b.right, 1), text: "k")) }
@@ -254,14 +283,27 @@ import TestKit
         for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: index, count: 3)]) }
         b.h.editor.connectionBundlesDidChange(Set(ids))
         let fanned = try ids.map { try b.geometry($0) }
-        // Marked, each comes in level where its mark is (UX walk 3 tables-2: a fan tilted the bars), and turns after it.
+        // Marked, each comes in level where its mark is (UX walk 3 tables-2: a fan tilted the bars), and its curve leaves its stub
+        // level too (UX walk 4 tables-1: a turn after the stub made two keys' middles different shapes, and they crossed twice).
         expect(fanned.allSatisfy { abs($0.inward(at: .end).y) < 1e-6 }, "level at the row: \(fanned.map { $0.inward(at: .end) })")
-        let beyond = fanned.map { $0.point(40, along: .end).inward }
-        expect(beyond[0].y < beyond[1].y - 0.2, "the first comes in from above the middle one: \(beyond)")
-        expect(beyond[2].y > beyond[1].y + 0.2, "the last from below it: \(beyond)")
+        for geometry in fanned {
+            guard case .level(let cubic, _, _) = geometry.path else { return expect(false, "level: \(geometry.path)") }
+            expect(abs(cubic.end.y - cubic.control2.y) < 1e-6, "its curve leaves the stub level: \(cubic)")
+        }
         let ends = fanned.map(\.end.y)
         expect(ends[0] < ends[1] && ends[1] < ends[2], "marked ends meet the row apart: \(ends)")
-        expect(ends.allSatisfy { abs($0 - 180) <= 10 }, "within the row: \(ends)")
+        // Three into one row: each in a third of it (its part, 20 tall: UX walk 4 tables-2), short of two bars' spacing (48), so the
+        // middle one's marks stand a stub further out.
+        let part = try require(b.h.editor.shapeContext.geometry(of: b.right)?.parts.frame(b.rightRows[1].id)?.rect)
+        expectClose(ends[2] - ends[0], part.height * 2 / 3, within: 1e-6)
+        expect(ends.allSatisfy { $0 > part.minY + 1 && $0 < part.maxY - 1 }, "inside the row: \(ends) in \(part)")
+        let stubs = fanned.map { geometry -> CGFloat in
+            guard case .level(let cubic, _, _) = geometry.path else { return 0 }
+            return geometry.end.x - cubic.end.x
+        }
+        expectClose(stubs[0], 36, within: 1e-6)
+        expectClose(stubs[2], 36, within: 1e-6)
+        expectClose(stubs[1], 66, within: 1e-6)
         for (index, id) in ids.enumerated() {
             let label = try require(b.h.editor.arrowLabelFrame(of: id))
             expect(label.midX < middles[index].midX - 20, "slid toward its start: \(label) from \(middles[index])")
@@ -292,5 +334,24 @@ import TestKit
         let cubic = try require(geometry.levelBody)
         expectClose(cubic.end.y, 200, within: 0.5)  // row 2's middle, a head's gap off its left side
         expect(cubic.end.x < 500 && cubic.end.x > 480, "off row 2's left side: \(cubic.end)")
+    },
+    test("two keys fanned into a row too short to hold their bars a bar's height and a gap apart stand one's marks past the other's (UX walk 4 tables-2)") {
+        let answers = BundleAnswers()
+        let b = try bundleBoard(answers, looks: true)
+        // R's row 1, 20 tall: short of the 24 two bars need (the kit's rows are 24: short too).
+        let ids = (0..<2).map { b.h.add(Arrow(start: b.end(b.left, $0), end: b.end(b.right, 1))) }
+        for (index, id) in ids.enumerated() { answers.answers[id] = ConnectionBundle(fans: [.init(end: .end, index: index, count: 2)]) }
+        b.h.editor.connectionBundlesDidChange(Set(ids))
+        let geometries = try ids.map { try b.geometry($0) }
+        // Each in a half of the row, at its middle: 10 apart.
+        expectClose(abs(geometries[1].end.y - geometries[0].end.y), 10, within: 1e-6)
+        expectEqual(geometries.map(\.markOffset.end), [0, 30], "the second's marks a mark further out")
+        // Each key's bars ("one" at its end: 12 and 17.5 out from its offset, 9 either side of its line), where they are drawn.
+        let bars = geometries.map { geometry in [12, 17.5].map { geometry.point($0 + geometry.markOffset.end, along: .end).point } }
+        for p in bars[0] { for q in bars[1] where abs(p.x - q.x) < 4 { expect(abs(p.y - q.y) > 18 + 2.5, "no bars cross: \(bars)") } }
+        expect(bars.joined().allSatisfy { $0.y > 160 && $0.y < 200 }, "both at the row (160 to 200 with its neighbors' halves): \(bars)")
+        expect(bars[1].allSatisfy { q in bars[0].allSatisfy { abs($0.x - q.x) >= 10 } }, "past the first's: \(bars)")
+        // Still level where they are.
+        for geometry in geometries { expect(abs(geometry.point(17.5 + geometry.markOffset.end, along: .end).inward.y) < 1e-6, "level") }
     },
 ])

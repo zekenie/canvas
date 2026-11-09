@@ -80,49 +80,47 @@ extension ArrowDefinition: ShapeDefinition {
         if let lead = bundle?.lead, let led = context.geometry(of: lead), !led.outline.isEmpty {
             return ShapeGeometry(outline: led.outline, bounds: led.bounds, isClosed: false, isHidden: true)
         }
-        // An end of a relationship type is half of a line through its pill, with no head at it and no words (`EndLine`).
-        let line = endLine(of: shape, in: context)
-        // How its connection's meaning says it looks (its ends' marks, its width), asked here, kept, never per frame.
-        let look = look(of: shape, in: context)
-        let spread = Self.spread(of: bundle, for: shape.props)
-        var detail: ArrowDetail? = line == nil && look == nil && bundle == nil ? nil
-            : ArrowDetail(line: line, look: look, width: look?.lineWidth ?? ArrowStyle.strokeWidth, spread: spread, bundle: bundle)
-        let geometry = arrowGeometry(shape.props, detail: detail, in: context)
+        let (geometry, laidDetail, line, stack) = laidOut(shape, bundle: bundle, in: context)
+        var detail = laidDetail
         // A level arrow, or one with a look, keeps what a frame draws (a plain one keeps nothing, and is drawn as ever).
-        if look != nil || geometry.isLevel {
+        if detail?.look != nil || geometry.isLevel {
             var kept = detail ?? ArrowDetail(line: nil, look: nil, width: ArrowStyle.strokeWidth)
             kept.drawing = ArrowDrawing(geometry, detail: kept)
             detail = kept
         }
         var bounds = geometry.bodyPath.boundingBoxOfPath
         // Fanned at one end only (rows into one table): its pill slides toward its other end, where the lines are apart (E8 panel 2),
-        // unless the person placed it. Kept, so its label is edited there too.
-        let slid = bundle.flatMap { Self.fannedLabelPosition($0, of: shape.props, length: geometry.bodyLength) }
+        // unless the person placed it; stacked out from a row its connections part from, at its place in the stack, on its stub.
+        // Kept, so its label is edited there too.
+        var slid = bundle.flatMap { Self.fannedLabelPosition($0, of: shape.props) }
+        let length = geometry.bodyLength
+        if let along = stack?.along, let end = stack?.end, length > 0 { slid = end == .start ? along / length : 1 - along / length }
+        var laid = line == nil ? ArrowLabels.laid(of: shape, on: geometry, in: context, position: slid) : nil
+        // Laid along its line where the row's other connections leave too: out along it, clear of their lines.
+        if stack?.along == nil, let found = laid, let bundle, let cleared = clearOfParted(found, of: shape, bundle: bundle, on: geometry, from: slid, in: context) {
+            (slid, laid) = (cleared.position, cleared.laid)
+        }
         detail?.labelPosition = slid
-        let laid = line == nil ? ArrowLabels.laid(of: shape, on: geometry, in: context, position: slid) : nil
         if let laid { bounds = bounds.union(laid.frame) }
         return ShapeGeometry(outline: [geometry.start, geometry.middle, geometry.end], bounds: bounds, isClosed: false, label: laid?.frame,
                              labelLead: laid?.lead, detail: detail, isHidden: bundle?.lead != nil)
     }
 
     /// Where a fanned arrow's label goes: toward the end that isn't fanned, as near it as its clearance lets; nil where it's fanned
-    /// at both ends or neither, or the person moved its label off halfway. Where that end is one a row's connections part from to
-    /// other places (`ConnectionBundle.parting`: a row's writes and reads to two tables), each after the first is
-    /// `ArrowStyle.partingLabelStep` further along its line (`length` long), so their pills don't stack at the row (UX walk 3
-    /// evolve-5), never past halfway.
-    static func fannedLabelPosition(_ bundle: ConnectionBundle, of arrow: Arrow, length: CGFloat) -> CGFloat? {
+    /// at both ends or neither, or the person moved its label off halfway.
+    static func fannedLabelPosition(_ bundle: ConnectionBundle, of arrow: Arrow) -> CGFloat? {
+        slidToward(bundle, of: arrow).map { $0 == .start ? 0 : 1 }
+    }
+
+    /// The end a fanned arrow's label slides to: the one that isn't fanned; nil where it's fanned at both ends or neither, or the
+    /// person moved its label off halfway.
+    static func slidToward(_ bundle: ConnectionBundle, of arrow: Arrow) -> ConnectionBundle.End? {
         guard arrow.labelPosition == ArrowLabelLayout.defaultPosition else { return nil }
-        let toward: ConnectionBundle.End
         switch (bundle.fan(at: .start) != nil, bundle.fan(at: .end) != nil) {
-        case (false, true): toward = .start
-        case (true, false): toward = .end
+        case (false, true): return .start
+        case (true, false): return .end
         default: return nil
         }
-        var along: CGFloat = 0
-        if let parting = bundle.parting, parting.end == toward, parting.index > 0, length > 0 {
-            along = min(0.5, CGFloat(parting.index) * ArrowStyle.partingLabelStep / length)
-        }
-        return toward == .start ? along : 1 - along
     }
 
     /// Its label as it is edited, at the size what's typed needs, where the kept geometry lays it (a fanned arrow's slid toward

@@ -184,9 +184,11 @@ struct ArrowDrawing: @unchecked Sendable {
         for end in [ArrowEnd.start, .end] {
             guard let mark = detail.mark(at: end) else { continue }
             let path = CGMutablePath()
-            let circle = ArrowMarks.add(mark, along: { place($0, end) }, to: path)
+            // Out by the end's offset, where a fan staggers its marks past its neighbors'.
+            let offset = end == .start ? geometry.markOffset.start : geometry.markOffset.end
+            let circle = ArrowMarks.add(mark, along: { place($0 + offset, end) }, to: path)
             if circle != nil {
-                let centre = min(ArrowMarks.circleCentre, length), from = end == .start ? centre : length - centre
+                let centre = min(ArrowMarks.circleCentre + offset, length), from = end == .start ? centre : length - centre
                 cuts.append((from - ArrowMarks.circleRadius)...(from + ArrowMarks.circleRadius))
             }
             ends.append(Mark(path: path, reach: ArrowMarks.reach(of: mark), isCut: circle != nil))

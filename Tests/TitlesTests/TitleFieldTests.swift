@@ -133,16 +133,19 @@ struct SignsPlugin: CanvasPlugin {
         expectEqual(editor.titleCover(of: sign), nil, "no cover on the shape")
         let drawn = renderBitmap(editor, size: CGSize(width: 200, height: 120))
         // The sign is 30 to 90 across and 30 to 66 down; its pill's row 3 to 21 down, the bar 40% of it (7.2) just above the sign's
-        // top, 1.5 clear of it (21.3 to 28.5), so it reads as the sign's and never as the footer of a shape above (UX walk 3 evolve-8).
-        expect(pixel(drawn, at: CGPoint(x: 36, y: 25))[0] < 120, "the bar, the pill's gray: \(pixel(drawn, at: CGPoint(x: 36, y: 25)))")
+        // top, 6.5 clear of it (16.3 to 23.5), so it reads as the sign's and never as the footer of a shape above (UX walk 3 evolve-8),
+        // and the selection's outline (4 off the edge, 1.5 wide) and corner handles (4 across, a 1.5 stroke) stay clear of it
+        // (UX walk 4 apis-2).
+        expect(pixel(drawn, at: CGPoint(x: 36, y: 20))[0] < 120, "the bar, the pill's gray: \(pixel(drawn, at: CGPoint(x: 36, y: 20)))")
         expect(pixel(drawn, at: CGPoint(x: 36, y: 12))[0] > 200, "not up where the pill's row is")
         expect(pixel(drawn, at: CGPoint(x: 36, y: 4))[0] > 200, "the bar is thinner than the pill")
-        expect(pixel(drawn, at: CGPoint(x: 88, y: 25))[0] > 200, "as long as Exit, not the sign")
+        expect(pixel(drawn, at: CGPoint(x: 88, y: 20))[0] > 200, "as long as Exit, not the sign")
+        expect(pixel(drawn, at: CGPoint(x: 36, y: 25))[0] > 200, "the canvas between the bar and the sign, where a selection's outline and handles go")
         let (tinted, green) = try signs(tinted: true)
         tinted.camera = Camera(origin: .zero, zoom: 0.3)
-        let colored = pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 25))
+        let colored = pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 20))
         expect(colored[1] > colored[0] + 40, "a look's tint: \(colored)")
         tinted.transact { $0.update(green) { $0[TitleProperty.self] = nil } }
-        expect(pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 25))[1] > 200, "an untitled one has none")
+        expect(pixel(renderBitmap(tinted, size: CGSize(width: 200, height: 120)), at: CGPoint(x: 36, y: 20))[1] > 200, "an untitled one has none")
     },
 ])

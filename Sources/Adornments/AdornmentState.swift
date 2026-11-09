@@ -432,24 +432,32 @@ final class AdornmentState {
     /// frame's, zoomed out, where the tab keeps its size on screen and the inset doesn't. Past the tab's right end by
     /// `spacing`, as tabs give way to each other; any kind's row, in any container with a tab.
     func giveWay(of id: ShapeID, anchor anchored: Anchored, scale: CGFloat, overTab: Bool, tabs: PlacedTabs) -> CGFloat {
-        guard anchored.slope == nil, !tabs.tabs.isEmpty else { return 0 }
+        let anchor = anchored.rect, gap = AdornmentLayout.spacing * scale
+        return meetingTabs(of: id, anchor: anchored, scale: scale, overTab: overTab, tabs: tabs).reduce(0) { start, rect in
+            max(start, (rect.maxX + gap - anchor.minX) / scale)
+        }
+    }
+
+    /// The tabs of the containers of `id` that its row above the top-left meets, world units: what the row gives way to.
+    private func meetingTabs(of id: ShapeID, anchor anchored: Anchored, scale: CGFloat, overTab: Bool, tabs: PlacedTabs) -> [CGRect] {
+        guard anchored.slope == nil, !tabs.tabs.isEmpty else { return [] }
         let document = editor.document, kinds = editor.registry.containingKinds
         // Most shapes are in no container: a lookup, and nothing more.
-        guard document.container(of: id, containingKinds: kinds) != nil else { return 0 }
+        guard document.container(of: id, containingKinds: kinds) != nil else { return [] }
         let shapes = editor.shapeContext, anchor = anchored.rect
-        var start: CGFloat = 0
         let rowTop = anchor.minY - AdornmentLayout.rowReach * scale
         let rowBottom = anchor.minY - (AdornmentLayout.rowGap + (overTab ? AdornmentLayout.tabRowLift : 0)) * scale
         let gap = AdornmentLayout.spacing * scale
+        var met: [CGRect] = []
         for container in document.containers(of: id, containingKinds: kinds) {
             guard let tab = tabs.tabs[container], let bounds = shapes.geometry(of: container)?.bounds, !bounds.isNull else { continue }
             let unit = tabs.unit
             let rect = CGRect(x: bounds.minX + tab.frame.minX * unit, y: bounds.minY + tab.frame.minY * unit,
                               width: tab.frame.width * unit, height: tab.frame.height * unit)
             guard rect.maxY > rowTop, rect.minY < rowBottom, rect.maxX + gap > anchor.minX, rect.minX < anchor.maxX else { continue }
-            start = max(start, (rect.maxX + gap - anchor.minX) / scale)
+            met.append(rect)
         }
-        return start
+        return met
     }
 
     /// `giveWay` for a shape on the board shown, at the zoom now, against the tabs placed around it: world units.
@@ -459,6 +467,16 @@ final class AdornmentState {
         guard let anchored = Self.anchored(of: id, in: editor.shapeContext, zoom: zoom) else { return 0 }
         let tabs = tabs(in: rowRegion(around: anchored.rect))
         return giveWay(of: id, anchor: anchored, scale: scale, overTab: tabs.tabs[id] != nil, tabs: tabs) * scale
+    }
+
+    /// The tabs `rowStart` gives way to, as one rect, world units at the zoom now; nil where none meets the row.
+    func rowTabs(of id: ShapeID) -> CGRect? {
+        guard editor.document.container(of: id, containingKinds: editor.registry.containingKinds) != nil else { return nil }
+        let zoom = editor.camera.zoom, scale = AdornmentLayout.scale(atZoom: zoom)
+        guard let anchored = Self.anchored(of: id, in: editor.shapeContext, zoom: zoom) else { return nil }
+        let tabs = tabs(in: rowRegion(around: anchored.rect))
+        let met = meetingTabs(of: id, anchor: anchored, scale: scale, overTab: tabs.tabs[id] != nil, tabs: tabs)
+        return met.isEmpty ? nil : met.dropFirst().reduce(met[0]) { $0.union($1) }
     }
 
     /// The lead of the shape's label, where its geometry kept room for it, in the face that room is the size of;
