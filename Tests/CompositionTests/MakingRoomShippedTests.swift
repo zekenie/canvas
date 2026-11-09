@@ -110,6 +110,48 @@ private let shop = """
         expectEqual(editor.editingShapeID, nil)
         expectEqual(editor.paintOrder(in: overlap).map(\.id).last, status, "back in its place once the caret leaves")
     },
+    test("apis new-1: a table laid out taller by its waiting line draws over the pill of the table just under it, which is left out while the caret is in it, and back as it leaves") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"table "customers" columns: "id uuid pk\nemail text unique""#)
+        try w.draw(#"table "products" below "customers" (gap: 40) columns: "id uuid pk\nsku text unique""#)
+        let customers = try tableID(editor, "customers"), products = try tableID(editor, "products")
+        let rest = try frame(editor, customers)
+        editor.camera = Camera(origin: CGPoint(x: rest.minX - 60, y: rest.minY - 60), zoom: 1)
+        w.window.settle()
+        let size = w.canvas.bounds.size
+        let pill = try require(editor.adornmentFrames(of: products).first { $0.adornment.placement == .aboveTopLeft }?.rect, "products' pill")
+        let seen = editor.camera.toView(pill).insetBy(dx: 2, dy: 2)
+        // At rest the pill shows: with the title gone, the same pixels are another picture.
+        let withPill = renderBitmap(editor, size: size)
+        let title = try require(editor.document[products]?[TitleProperty.self])
+        editor.transact("Clear title") { $0.update(products) { $0[TitleProperty.self] = nil } }
+        let withoutAtRest = renderBitmap(editor, size: size)
+        expect(changedPixels(withPill, withoutAtRest, in: seen) > 50, "the pill is drawn at rest")
+        editor.undo()
+        let walk = w.walk()
+        w.mouseClick(at: CGPoint(x: rest.midX, y: rest.minY + 8))
+        walk.press(.return)
+        expectEqual(editor.editingShapeID, customers)
+        w.window.settle()
+        let laidOut = try frame(editor, customers), stored = try require(editor.document[customers]?.box)
+        expect(laidOut.height > stored.height + 1, "taller by its waiting line: \(laidOut) \(stored)")
+        let overflow = try require(editor.editedShapeOverflow)
+        expect(overflow.areas.contains { $0.intersects(pill) }, "the waiting line's room reaches the pill: \(overflow.areas) \(pill)")
+        let withPillEditing = renderBitmap(editor, size: size)
+        editor.transact("Clear title") { $0.update(products) { $0[TitleProperty.self] = nil } }
+        let withoutEditing = renderBitmap(editor, size: size)
+        expectEqual(changedPixels(withPillEditing, withoutEditing, in: seen), 0, "products' pill not drawn across the waiting line")
+        editor.undo()
+        expectEqual(editor.document[products]?[TitleProperty.self], title)
+        walk.press(.escape)
+        w.window.settle()
+        expectEqual(editor.editingShapeID, nil)
+        expectEqual(editor.editedShapeOverflow == nil, true)
+        expect(changedPixels(renderBitmap(editor, size: size), withoutAtRest, in: seen) > 50, "the pill drawn again once the caret leaves")
+    },
     test("Paste SQL again with a column more pushes the table below it down, in the step; Undo Paste SQL takes both") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

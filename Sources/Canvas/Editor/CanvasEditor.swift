@@ -1752,7 +1752,7 @@ public final class CanvasEditor {
         // The shape being edited, laid out wider than it stores (a line typed longer than it is), is painted after the rest, so
         // what its widening now overlaps (a shape put down beside it) never covers its rows while the caret is in it. Nothing
         // moves: it is back in its place in the order as it stops being wider, or edited.
-        let lifted = liftedWhileEdited(in: context)
+        let lifted = liftedWhileEdited(in: context)?.id
         var held: (record: AnyShapeRecord, extent: CGRect)?
         for position in positions {
             let record = shapes[list.order[position]]
@@ -1766,12 +1766,29 @@ public final class CanvasEditor {
         if let held { body(held.record, held.extent) }
     }
 
-    /// The shape edited, where it is laid out wider than its stored box and holds no shapes (a container's would be covered):
-    /// painted, and hit, above the shapes in its way until it is back to its width or no longer edited.
-    private func liftedWhileEdited(in context: ShapeContext) -> ShapeID? {
+    /// The shape edited, where it is laid out larger than its stored box (wider: a line typed longer than it is; taller: its waiting
+    /// line) and holds no shapes (a container's would be covered): painted, and hit, above the shapes in its way until it is back
+    /// to its size or no longer edited. With the frame it is laid out in and the box it stores.
+    private func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
         guard let id = editingShapeID, let record = document[id], let box = record.box, !registry.isContainer(record),
-              let frame = context.frame(of: record), frame.width > box.width + Self.liftSlack else { return nil }
-        return id
+              let frame = context.frame(of: record),
+              frame.width > box.width + Self.liftSlack || frame.height > box.height + Self.liftSlack else { return nil }
+        return (id, frame, box)
+    }
+
+    /// Where the shape edited is laid out beyond the box it stores (its widening, its waiting line's room), world units, and the
+    /// shape: nil where it is laid out in its box. A plugin that draws over the shapes (pills, chips) leaves what it draws for
+    /// another shape out of these, so what the shape edited draws there is never covered while the caret is in it.
+    public var editedShapeOverflow: (id: ShapeID, areas: [CGRect])? {
+        guard let lifted = liftedWhileEdited(in: shapeContext) else { return nil }
+        var areas: [CGRect] = []
+        if lifted.frame.maxX > lifted.box.maxX {
+            areas.append(CGRect(x: lifted.box.maxX, y: lifted.frame.minY, width: lifted.frame.maxX - lifted.box.maxX, height: lifted.frame.height))
+        }
+        if lifted.frame.maxY > lifted.box.maxY {
+            areas.append(CGRect(x: lifted.frame.minX, y: lifted.box.maxY, width: lifted.frame.width, height: lifted.frame.maxY - lifted.box.maxY))
+        }
+        return (lifted.id, areas)
     }
 
     /// How much wider than it stores an edited shape is laid out before it is painted above the rest, world units.
@@ -1794,7 +1811,7 @@ public final class CanvasEditor {
         guard !positions.isEmpty else { return nil }
         let list = shapeIndex.paintList(in: context), shapes = document.shapes
         // The shape edited, painted above what its widening overlaps, is hit first there too.
-        if let lifted = liftedWhileEdited(in: context), let record = document[lifted], let index = document.index(of: lifted),
+        if let lifted = liftedWhileEdited(in: context)?.id, let record = document[lifted], let index = document.index(of: lifted),
            positions.contains(list.positions[index]), include(record),
            registry.definition(for: record.kind)?.erasedHitTest(point, on: record, in: context) == true {
             return lifted

@@ -114,6 +114,26 @@ private let paymentsSQL = """
         try paste(migrated.replacingOccurrences(of: "(128)", with: "(129)"), in: h)
         expectEqual(h.editor.document[shipments]?.box?.width, 600, "a table wider than its lines need is never narrowed")
     },
+    test("pasted again beside the table it widens, with a new table: the new one is placed against the width the table keeps, never under it") {
+        let h = try pasteHarness()
+        let first = try paste("CREATE TABLE shipments (id uuid PRIMARY KEY, note text);", in: h)
+        let shipments = try require(first.first)
+        h.editor.transact { $0.update(shipments) { $0.box?.size.width = 240 } }
+        h.editor.selectedShapeIDs = [shipments]
+        h.editor.undoHistory.seal()
+        let landed = try paste("""
+            CREATE TABLE shipments (id uuid PRIMARY KEY, note text, delivered_at_in_the_recipients_timezone timestamp with time zone NOT NULL);
+            CREATE TABLE parcels (id uuid PRIMARY KEY, weight_grams int);
+            """, in: h)
+        let wide = try require(h.editor.document[shipments]?.box), parcels = try require(landed.first { $0 != shipments })
+        expect(wide.width > 240 + 80, "widened by more than the gap beside it: \(wide)")
+        let made = try require(h.editor.document[parcels]?.box)
+        expect(!made.intersects(wide), "the new table clear of the widened one: \(made) \(wide)")
+        expectEqual(h.editor.undoHistory.undoName, "Paste SQL")
+        h.editor.undo()
+        expectEqual(h.editor.document[shipments]?.box?.width, 240, "one Undo takes the widening and the table")
+        expect(h.editor.document[parcels] == nil)
+    },
     test("a table whose widest column is an enum's: measured as the pill it draws (its font and padding), not as the words of its type") {
         let name = "shipment_delivery_status_kind_long"
         let table = "CREATE TABLE shipments (\n    id uuid NOT NULL,\n    state \(name) NOT NULL\n);"

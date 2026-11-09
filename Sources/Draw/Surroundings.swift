@@ -363,8 +363,13 @@ public struct Surroundings {
     /// level with the row first, left of `near` then right (T3 panel 4, T6 panel 3), so the line leaves the row's side straight;
     /// then below, the pill slid out past the row's end by the mark's room (`PlacingStyle.markRoom`), never under the end, so the
     /// line leaves the side and turns after its mark.
+    ///
+    /// `labels`: the labels the arrows already at `near` carry (a channel's pill, `reads`): the line crosses none of them, so a
+    /// line never runs under another arrow's label and reads as labeled by it. `inView` false for a caller that puts shapes where
+    /// the board is not shown, or where its move leaves them (a move's pills): a spot need not be in the view. A box of
+    /// `avoiding` that holds `near` (a frame that moves with it) is a region the pill may sit on, as a shape of the board is.
     public func landing(of size: CGSize, joinedFrom row: CGRect, of near: ShapeID, bounds nearBounds: CGRect? = nil,
-                        avoiding: [CGRect] = [], level: Bool = false) -> Landing? {
+                        avoiding: [CGRect] = [], level: Bool = false, labels: [CGRect] = [], inView: Bool = true) -> Landing? {
         guard size.width.isFinite, size.height.isFinite, row.isFinite, !row.isNull,
               let bounds = nearBounds ?? reading.shapes.geometry(of: near)?.bounds, bounds.isFinite, !bounds.isNull else { return nil }
         let own = obstacle(near)
@@ -419,16 +424,21 @@ public struct Surroundings {
             belowSpots()
             levelSpots()
         }
-        let planned = avoiding.filter(\.isFinite)
+        let finite = avoiding.filter(\.isFinite)
+        // A box planned that holds `near` (the frame it moves with) is a region, as a shape of the board that holds it is.
+        let regions = finite.filter { $0.contains(bounds) && $0 != bounds }
+        let planned = finite.filter { !($0.contains(bounds) && $0 != bounds) }
         for spot in spots {
-            if let view = reading.view, !view.contains(spot.rect) { continue }
+            if inView, let view = reading.view, !view.contains(spot.rect) { continue }
             let wanted = spot.rect.insetBy(dx: -LayoutProblem.horizontalClearance, dy: -LayoutProblem.verticalClearance)
             guard !grid.obstacles(in: wanted).contains(where: { ($0.rect.intersects(wanted) && inWay($0)) || straddles($0, spot.rect) }),
-                  !planned.contains(where: { $0.intersects(wanted) }) else { continue }
+                  !planned.contains(where: { $0.intersects(wanted) }),
+                  !regions.contains(where: { $0.intersects(spot.rect) && !$0.contains(spot.rect) }) else { continue }
             let line = CGRect(x: min(spot.from.x, spot.to.x), y: min(spot.from.y, spot.to.y),
                               width: abs(spot.to.x - spot.from.x), height: abs(spot.to.y - spot.from.y)).insetBy(dx: -1, dy: -1)
             guard !grid.obstacles(in: line).contains(where: { inWay($0) && Self.crosses(spot.from, spot.to, $0.rect) }),
-                  !planned.contains(where: { Self.crosses(spot.from, spot.to, $0) }) else { continue }
+                  !planned.contains(where: { Self.crosses(spot.from, spot.to, $0) }),
+                  !labels.contains(where: { Self.crosses(spot.from, spot.to, $0) }) else { continue }
             // Raised above what holds `near` that it sits on, as draw raises a shape over the zones it lands on.
             let shapes = reading.document.shapes
             let holders = grid.obstacles(in: spot.rect).filter { holds($0) && shapes.indices.contains($0.id) }
@@ -440,12 +450,15 @@ public struct Surroundings {
 
     /// Whether a line from row `row` of `near` (its rect, world units) to a pill already at `pill` reads clean, as a pill landed by
     /// `landing(of:joinedFrom:of:)` does: the straight line from the row's end facing the pill's middle to the pill's nearest point
-    /// crosses no shape of the board but `near`, what holds it and `standIn` (the pill itself, where it is on the board), nor any of
-    /// `avoiding`. What a pill reused for a later line (a key, a move's rebinding) is asked before it is: where it isn't, a fresh
-    /// one is put down. `bounds`: `near`'s where the caller's step changes them (or `near` is not on this board yet), else the
-    /// board's.
+    /// crosses no shape of the board but `near`, what holds it and `standIn` (the pill itself, where it is on the board), none of
+    /// `avoiding` and none of `labels` (the labels of the arrows already at `near`); and leaves `near` as a landed one does: it
+    /// cuts across none of the rows of `near` under the row, runs down no side of it that has rows beside the line, and for
+    /// `level` (a line between rows, its end marked) is level with the row or leaves its end by the mark's room
+    /// (`PlacingStyle.markRoom`), never straight under it. What a pill reused for a later line (a key, a move's rebinding) is
+    /// asked before it is: where it isn't, a fresh one is put down. `bounds`: `near`'s where the caller's step changes them
+    /// (or `near` is not on this board yet), else the board's.
     public func joinsClean(_ row: CGRect, of near: ShapeID, bounds nearBounds: CGRect? = nil, to pill: CGRect, standIn: ShapeID? = nil,
-                           avoiding: [CGRect] = []) -> Bool {
+                           avoiding: [CGRect] = [], labels: [CGRect] = [], level: Bool = false) -> Bool {
         guard row.isFinite, !row.isNull, pill.isFinite, !pill.isNull,
               let bounds = nearBounds ?? reading.shapes.geometry(of: near)?.bounds, bounds.isFinite, !bounds.isNull else { return true }
         let own = obstacle(near), standing = standIn.flatMap(obstacle)
@@ -456,7 +469,16 @@ public struct Surroundings {
         let crossed = grid.obstacles(in: line).contains { obstacle in
             obstacle.id != own && obstacle.id != standing && !obstacle.rect.contains(bounds) && Self.crosses(from, to, obstacle.rect)
         }
-        return !crossed && !avoiding.filter { $0.isFinite && !$0.contains(bounds) }.contains { Self.crosses(from, to, $0) }
+        guard !crossed, !avoiding.filter({ $0.isFinite && !$0.contains(bounds) }).contains(where: { Self.crosses(from, to, $0) }),
+              !labels.contains(where: { Self.crosses(from, to, $0) }) else { return false }
+        // `near`'s own rows: under this one a line may not cut across them, and straight down (or up) a side with rows beside it
+        // runs along the shape's own edge.
+        let below = CGRect(x: bounds.minX, y: row.maxY, width: bounds.width, height: max(0, bounds.maxY - row.maxY))
+        if Self.crosses(from, to, below) { return false }
+        let straight = abs(to.x - from.x) < 0.5 && abs(to.y - from.y) > 0.5
+        if straight, to.y > from.y ? below.height > row.height / 2 : row.minY - bounds.minY > row.height / 2 { return false }
+        if level, abs(to.y - from.y) > 1, abs(to.x - from.x) < PlacingStyle.markRoom - 0.5 { return false }
+        return true
     }
 
     /// Whether the segment from `a` to `b` passes through `rect`'s inside (touching its edge isn't crossing): Liang and Barsky's

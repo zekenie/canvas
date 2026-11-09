@@ -180,19 +180,20 @@ public struct ArrowGeometry: Sendable {
     /// Whether it is drawn as a level curve (an end at a row its shape lists).
     public var isLevel: Bool { if case .level = path { true } else { false } }
 
+    /// How far a level curve's end that carries a mark reaching `mark` along the line reaches at least, whatever is ahead: far
+    /// enough that the line is still level where the mark stops, but never so far that the curve leaves the way between the
+    /// ends or loops wide (`ArrowStyle.levelMarkReach`), from how far across and ahead its way out the other end is. 0 for an
+    /// end with no mark.
+    static func markReach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint, mark: CGFloat) -> CGFloat {
+        guard mark > 0 else { return 0 }
+        let offset = other - point
+        return ArrowStyle.levelMarkReach(ofMark: mark, across: normal.x * offset.y - normal.y * offset.x, along: normal.dot(offset))
+    }
+
     /// How far a level curve's end reaches out along the way out of its side before it turns, from where it is to the other
     /// end's: half the way when the other end is ahead, far less when it is behind (a C rather than an S), never under
     /// `ArrowStyle.levelMinReach`; and, with marks, when the other end is not yet `clearing` ahead (a C, or rows too near for an
     /// S), at least `clearing`, the reach that turns the curve beyond the longer mark (`ArrowStyle.levelClearReach`).
-    /// How far a level curve's end that carries a mark reaching `mark` along the line reaches at least, whatever is ahead: far
-    /// enough that the line is still level where the mark stops (`ArrowStyle.levelMarkReach`), from how far across its way out
-    /// the other end is. 0 for an end with no mark.
-    static func markReach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint, mark: CGFloat) -> CGFloat {
-        guard mark > 0 else { return 0 }
-        let offset = other - point
-        return ArrowStyle.levelMarkReach(ofMark: mark, across: normal.x * offset.y - normal.y * offset.x)
-    }
-
     static func reach(_ normal: CGPoint, from point: CGPoint, to other: CGPoint, clearing: CGFloat = 0) -> CGFloat {
         let along = normal.dot(other - point)
         let reach = along >= 0 ? along * ArrowStyle.levelAheadShare : ArrowStyle.levelBackReach * (-along).squareRoot()

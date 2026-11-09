@@ -125,6 +125,14 @@ public struct PlacedPill {
 }
 
 extension StandInRoute {
+    /// The labels the arrows already at `near` carry (a channel's pill, `reads`), where `context` draws them (a step's board, the
+    /// document it measures): what a line to a pill beside `near` must not run under, or it reads as labeled by that arrow.
+    public func labels(ofArrowsAt near: ShapeID, in context: ShapeContext, document: CanvasDocument, excluding: Set<ShapeID> = []) -> [CGRect] {
+        (index(of: document).tied[near] ?? []).compactMap { tie in
+            excluding.contains(tie.arrow) ? nil : context.geometry(of: tie.arrow)?.label
+        }
+    }
+
     /// The pill that reaches `far`, a shape on another board, from `near`, a shape of the board shown that is `place` of the edge:
     /// the one `sharing` finds on the board, else a new one made for it (called `label`, told where it sits: `seat`) and landed
     /// where a draw run lands one (`spot`, `landing`), clear of `avoiding` too. Nil where no kind can stand for the shape, or
@@ -144,7 +152,8 @@ extension StandInRoute {
     /// row is clean (`Surroundings.landing(of:joinedFrom:of:)`: below `near`, then right, then left level with the row), and as
     /// draw lands one where no spot is. The row and `near` are measured on `reading` where the caller is in a step, so a row the
     /// step adds, and a shape it grows, count. A pill there already is reused only where its line from the row is clean too
-    /// (`Surroundings.joinsClean`); else a fresh one is put down.
+    /// (`Surroundings.joinsClean`); else a fresh one is put down. Neither line runs under the label another arrow at `near` carries
+    /// (`labels(ofArrowsAt:)`).
     ///
     /// `onBinding`: the row of `far` the arrow ends at where it rides the binding (a column, through a pill for its table): a line
     /// between two rows, a key, whose ends carry marks, is landed level with its row first (`landing(of:joinedFrom:of:)`'s
@@ -164,12 +173,14 @@ extension StandInRoute {
         let camera = editor.shapeContext.camera
         let after = ShapeContext(document: document, registry: editor.registry, camera: camera)
         let line = nearRow.flatMap { after.geometry(of: near)?.parts.frame($0)?.rect }
+        let labels = line == nil ? [] : self.labels(ofArrowsAt: near, in: after, document: document)
         if let existing = existing(for: far, row: row, kind: found.kind, sharing: sharing, near: near, in: document) {
             // Reused where its line from the row crosses nothing; where it would, a fresh pill is put down.
             let clean = line.map { line in
                 guard let box = after.geometry(of: existing)?.bounds, let surroundings = Surroundings(on: editor.board, moving: box.size, in: editor)
                 else { return true }
-                return surroundings.joinsClean(line, of: near, bounds: planned ?? after.geometry(of: near)?.bounds, to: box, standIn: existing, avoiding: avoiding)
+                return surroundings.joinsClean(line, of: near, bounds: planned ?? after.geometry(of: near)?.bounds, to: box, standIn: existing, avoiding: avoiding,
+                                              labels: labels, level: level)
             } ?? true
             if clean { return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: existing, made: nil, above: []) }
         }
@@ -178,7 +189,8 @@ extension StandInRoute {
         seat(&made, beside: near, in: editor)
         guard let size = made.box?.size, let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
         if let line, let geometry = after.geometry(of: near),
-           let clean = surroundings.landing(of: size, joinedFrom: line, of: near, bounds: planned ?? geometry.bounds, avoiding: avoiding, level: level) {
+           let clean = surroundings.landing(of: size, joinedFrom: line, of: near, bounds: planned ?? geometry.bounds, avoiding: avoiding, level: level,
+                                         labels: labels) {
             made.box = clean.rect
             return PlacedPill(far: far, kind: found.kind, farKind: record.kind, fulfils: found.fulfils, reused: nil, made: made, above: clean.above)
         }

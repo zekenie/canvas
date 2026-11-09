@@ -28,15 +28,25 @@ enum ArrowStyle {
     /// reaches out far enough that its mark lies on the level stretch, however far across the other end is, so two keys at one
     /// row's end draw their marks on top of each other.
     nonisolated static let levelMarkSlope: CGFloat = 0.2
+    /// How many times the way ahead an end carrying a mark reaches at most, the other end ahead of it: an S between two sides
+    /// whose controls reach no farther than three times the way between them stays between the sides (a cubic's `x` is a
+    /// polynomial whose overshoot starts there), so a key's line never runs under the tables it joins.
+    nonisolated static let levelMarkAheadCap: CGFloat = 3
+    /// How many times the clearing reach an end carrying a mark reaches at most, the other end not ahead of it (a C): the line
+    /// swings out a little further to level its mark, never a wide loop that grows with the rows' distance.
+    nonisolated static let levelMarkBackCap: CGFloat = 2
     /// The reach of an end carrying a mark that reaches `reach` along the line, with the other end `across` to the side of its
-    /// way out: at least `levelClearReach(ofMark:)`, and as far as keeps the line's slope at the mark's clearance under
-    /// `levelMarkSlope` (a cubic with its control `r` out, whose other end is `h` across, is at slope about `2dh / 3r²` a length
-    /// `d` along; the other control's pull back along the way steepens it, so the reach is worked out for half the slope).
-    /// 0 for an end with no mark.
-    nonisolated static func levelMarkReach(ofMark reach: CGFloat, across: CGFloat) -> CGFloat {
+    /// way out and `along` ahead of it (negative: behind): at least `levelClearReach(ofMark:)`, and as far as keeps the line's
+    /// slope at the mark's clearance under `levelMarkSlope` (a cubic with its control `r` out, whose other end is `h` across, is
+    /// at slope about `2dh / 3r^2` a length `d` along; the other control's pull back along the way steepens it, so the reach is
+    /// worked out for half the slope), but no farther than `levelMarkAheadCap` times the way ahead, or `levelMarkBackCap` times
+    /// the clearing reach where the other end is not ahead: tables side by side too close for a level mark are left tilted,
+    /// not overshot. 0 for an end with no mark.
+    nonisolated static func levelMarkReach(ofMark reach: CGFloat, across: CGFloat, along: CGFloat) -> CGFloat {
         guard reach > 0 else { return 0 }
-        let clear = reach + levelMarkClearance
-        return max(levelClearReach(ofMark: reach), (4 * clear * abs(across) / (3 * levelMarkSlope)).squareRoot())
+        let clear = reach + levelMarkClearance, clearing = levelClearReach(ofMark: reach)
+        let wanted = max(clearing, (4 * clear * abs(across) / (3 * levelMarkSlope)).squareRoot())
+        return min(wanted, max(clearing, along > 0 ? along * levelMarkAheadCap : clearing * levelMarkBackCap))
     }
     /// How far from an arrow's centerline (beyond its stroke) a click still hits it, in view points.
     static let hitMargin: CGFloat = 3

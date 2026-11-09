@@ -65,6 +65,7 @@ public struct CrossingArrows {
         guard !crossing.isEmpty else { return nil }
         var plan = Plan(editor: editor, route: route, movers: movers, source: source, destination: destination, delta: delta,
                         sourceDoc: sourceDoc, label: label)
+        plan.crossing = Set(crossing.map(\.id))
         for record in crossing {
             guard let end = ends[record.id] else { continue }
             // The row the far end is at, which the end keeps wherever it is re-pointed (the binding's part rides `remappingReferences`),
@@ -180,6 +181,8 @@ public struct CrossingArrows {
 
         var pills: [(record: AnyShapeRecord, moves: Bool, placed: Bool)] = []
         var repoints: [Repoint] = []
+        /// The arrows this plan re-points: their labels are not where they are now once they are.
+        var crossing: Set<ShapeID> = []
         /// The pills this plan puts on the destination (`new`) and keeps on the origin (`away`), by the shape (and the row, for a pill
         /// for a row) each stands for.
         private var new: [PartAddress: ShapeID] = [:], away: [PartAddress: ShapeID] = [:], carriers: [ShapeID: ShapeID] = [:]
@@ -348,7 +351,8 @@ public struct CrossingArrows {
             if startMoves { avoiding += movedFrames().filter { $0 != nearBox } }
             if let line, line.level, let rowRect = rowRect(line, of: start, startMoves: startMoves),
                let bounds = startMoves ? nearBox : surroundings.reading.shapes.geometry(of: start)?.bounds,
-               let clean = surroundings.landing(of: size, joinedFrom: rowRect, of: start, bounds: bounds, avoiding: avoiding, level: true),
+               let clean = surroundings.landing(of: size, joinedFrom: rowRect, of: start, bounds: bounds, avoiding: avoiding, level: true,
+                                                labels: labels(at: start, startMoves: startMoves), inView: false),
                !clean.above.contains(where: { isReadOnly($0, in: startMoves ? destDoc : sourceDoc) }) {
                 made.box = clean.rect
                 planned[board, default: []].append(clean.rect)
@@ -397,7 +401,8 @@ public struct CrossingArrows {
                   let box = surroundings.reading.shapes.geometry(of: pill)?.bounds else { return true }
             let bounds = startMoves ? finalBox(of: start) : surroundings.reading.shapes.geometry(of: start)?.bounds
             return surroundings.joinsClean(rowRect, of: start, bounds: bounds, to: box, standIn: pill,
-                                           avoiding: (startMoves ? movedFrames() : []) + (planned[startMoves ? destination : source] ?? []).filter { $0 != box })
+                                           avoiding: (startMoves ? movedFrames() : []) + (planned[startMoves ? destination : source] ?? []).filter { $0 != box },
+                                           labels: labels(at: start, startMoves: startMoves), level: line.level)
         }
 
         /// The same for a pill this plan puts down already (for another arrow of the same shape).
@@ -407,7 +412,18 @@ public struct CrossingArrows {
                   let surroundings = surroundings(on: startMoves ? destination : source) else { return true }
             let bounds = startMoves ? finalBox(of: start) : surroundings.reading.shapes.geometry(of: start)?.bounds
             return surroundings.joinsClean(rowRect, of: start, bounds: bounds, to: box,
-                                           avoiding: (startMoves ? movedFrames() : []) + (planned[startMoves ? destination : source] ?? []).filter { $0 != box })
+                                           avoiding: (startMoves ? movedFrames() : []) + (planned[startMoves ? destination : source] ?? []).filter { $0 != box },
+                                           labels: labels(at: start, startMoves: startMoves), level: line.level)
+        }
+
+        /// The labels the arrows at `start` that this move leaves as they are carry (the ones that cross are re-pointed, and their
+        /// labels are not where they are now), where they will be: a pill's line keeps clear of them.
+        private mutating func labels(at start: ShapeID, startMoves: Bool) -> [CGRect] {
+            guard let surroundings = surroundings(on: source) else { return [] }
+            let offset = startMoves ? delta : .zero
+            return (index().tied[start] ?? []).compactMap { tie in
+                crossing.contains(tie.arrow) ? nil : surroundings.reading.shapes.geometry(of: tie.arrow)?.label?.offsetBy(dx: offset.x, dy: offset.y)
+            }
         }
 
         /// The origin read, for what an arrow carries as it is drawn there now (its label).
