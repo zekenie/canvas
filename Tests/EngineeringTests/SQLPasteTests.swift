@@ -232,7 +232,7 @@ private let paymentsSQL = """
             + width("character varying(255)", KitStyle.typeFont) + width("?", KitStyle.typeFont) + KitStyle.trailingInset
         expect(widths[0] >= longest - 1, "shipments as wide as tracking_number character varying(255)? needs: \(widths[0]) for \(longest)")
         expectEqual(widths[1], 260, "a short one as a new table is")
-        expectEqual(widths[2], 520, "capped")
+        expectEqual(widths[2], 560, "capped at the kit's `TableStyle.mostWholeWidth`, as a commit caps a table")
         h.editor.transact("Resize") { $0.update(landed[0]) { $0.box = CGRect(origin: $0.box!.origin, size: CGSize(width: 300, height: $0.box!.height)) } }
         try paste(sql, in: h)
         expectEqual(h.editor.document[landed[0]]?.box?.width, 300, "found: its width as the person left it")
