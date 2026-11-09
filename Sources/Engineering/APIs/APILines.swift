@@ -316,6 +316,8 @@ struct APILines: LineModel {
             guard let at = rows.firstIndex(where: { $0.id == from.id }) else { return false }
             rows[at] = to
             if from.header != nil, to.header == nil { rows = APIGroups.regrouped(rows, from: old, except: [to.id]) }
+            // An endpoint retyped as a header heads those after it, as one added there does: each keeps the full path it had.
+            if from.header == nil, to.header != nil { rows = APIGroups.regrouped(rows, from: old) }
         case .delete(let gone):
             let ids = Set(gone.map(\.id))
             rows.removeAll { ids.contains($0.id) }
@@ -441,6 +443,7 @@ struct APILines: LineModel {
         case .change(let from, let to):
             switch (from, to) {
             case (.header, .header): APIStyle.renamePrefixStep
+            case (.endpoint, .header): APIStyle.addPrefixStep
             case (.endpoint(let was), .endpoint(let now)) where Self.onlyMethod(was, now): APIStyle.changeMethodStep
             default: APIStyle.changeEndpointStep
             }

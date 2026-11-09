@@ -81,7 +81,7 @@ private let stripeAPI = #"""
 /// connect 24, wave 8: a far pill an arrow from a row reaches lands where the arrow reads clean: below the shape it leaves (the
 /// line meeting the pill's top), else level with the row (the pill's middle at the row's middle, the line meeting its near side);
 /// the straight line from the row to where it meets the pill crosses no other shape, and the pill is in the clear view.
-@MainActor private func expectClean(_ arrowID: ShapeID, from near: ShapeID, row: PartID, in editor: CanvasEditor, view: Bool = true,
+@MainActor func expectClean(_ arrowID: ShapeID, from near: ShapeID, row: PartID, in editor: CanvasEditor, view: Bool = true,
                                     _ what: String) throws {
     let arrow = try require(editor.document[arrowID]?.typed(as: Arrow.self))
     let pillID = try require(arrow.props.end.binding?.shapeID)
@@ -97,6 +97,15 @@ private let stripeAPI = #"""
     } else {
         expect(abs(pill.midY - line.midY) < 1, "\(what): level with the row: \(pill.midY) \(line.midY)")
         expect(abs(end.x - (pill.minX > shape.maxX ? pill.minX : pill.maxX)) < 1.5, "\(what): the line meets the pill's near side: \(end) \(pill)")
+    }
+    // The line leaves the shape it starts from by its side: it never cuts across the rows under the one it leaves.
+    let rest = CGRect(x: shape.minX, y: line.maxY, width: shape.width, height: max(0, shape.maxY - line.maxY)).insetBy(dx: 1, dy: 1)
+    if !rest.isNull, !rest.isEmpty {
+        let cuts = (1...64).contains { step in
+            let t = CGFloat(step) / 64
+            return rest.contains(CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
+        }
+        expect(!cuts, "\(what): the line from the row cuts across the rows under it")
     }
     for record in editor.document.shapes where ![near, pillID, arrowID].contains(record.id) && record.kind != Arrow.kind {
         guard let bounds = editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.contains(shape) else { continue }
@@ -262,6 +271,32 @@ private let stripeAPI = #"""
         expect(count(post, in: frame, of: renderDark(editor, size: size)) > 40, "and dark")
         editor.undo()
         expectEqual(editor.document, start, "one Undo: the arrow and the pill")
+    },
+    test("a calls line typed in the card to an endpoint on another board puts its pill where the line from the row is clean (connect 24)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        w.canvas.menuPresenter = { _, _, _ in }
+        try w.turnKitOn()
+        try w.draw(e4)
+        try w.draw(stripe)
+        try w.draw(stripeAPI)
+        let api = try require(shape(editor, "orders API")).id
+        let row = try require(rows(editor, "orders API").dropFirst().first?.id)
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api]
+        editor.beginEditing(api)
+        w.window.settle()
+        w.lineRows?.go(to: .row(row))
+        w.window.settle()
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.canvas.cardView as? LineCardView)
+        card.go(to: "relations 1")
+        w.window.settle()
+        w.type("calls Stripe API.POST /v1/refunds", with: walk)
+        walk.press(.return)
+        let arrow = try require(arrows(editor).first, "the typed line drew its arrow")
+        try expectClean(arrow.id, from: api, row: row, in: editor, "a typed calls line")
     },
     test("the card keeps an arrow through what its line can't say: a typo in a line keeps the arrow and the typed words, a line changed to another table re-aims the same arrow (its id and bend kept, Change Connection), two lines alike make one") {
         let w = try EmptyBoardWindow()
@@ -488,6 +523,9 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.id, customers.id, "through a pill for customers")
         expectEqual(key.props.end.binding?.part, customers.props.columns[0].id, "on customers.id")
         expectEqual(undoTitle(w.window), "Undo Paste Column")
+        // The column is new in the step that puts its pill down: the pill is landed by the row as the step leaves it.
+        let pasted = try require(editor.document[invoices.id]?.typed(as: DatabaseTable.self)?.props.columns.last?.id)
+        try expectClean(key.id, from: invoices.id, row: pasted, in: editor, "rows pasted on another board")
     },
     test("an endpoint cut on the root and pasted into an API on another board brings its calls arrow back through a pill for the endpoint it calls") {
         let w = try EmptyBoardWindow()
@@ -523,6 +561,8 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.id, orders.id)
         expectEqual(pill.props.target?.row, orders.props.endpoints[0].id, "a pill for POST /orders itself")
         expect(!undoTitle(w.window).contains("left out"))
+        let pasted = try require(editor.document[target.id]?.typed(as: API.self)?.props.endpoints.last?.id)
+        try expectClean(call.id, from: target.id, row: pasted, in: editor, "an endpoint pasted on another board")
     },
     test("an endpoint cut on the root and pasted on its own (nothing selected) on another board becomes an API there with its calls arrow through a pill, nothing left out") {
         let w = try EmptyBoardWindow()

@@ -233,6 +233,26 @@ extension KitBench {
         expectEqual(b.fullNames(api), before, "one Undo")
         expectEqual(b.rows(api).count, 5)
     },
+    test("apis 28: an endpoint retyped as a header heads the rows after it as one typed there would: every other endpoint's full path kept, one step, Add Path Prefix") {
+        let b = try KitBench()
+        let api = b.api("orders API", ["GET /customers", "GET /orders/{id}", "POST /orders/{id}/refunds", "GET /customers/{id}/orders", "PATCH /orders/{id}"])
+        let before = b.fullNames(api), ids = b.rows(api).map(\.id)
+        b.begin(api)
+        b.view?.go(to: .row(ids[0]))
+        b.field.setSelectedRange(NSRange(location: 0, length: b.field.string.utf16.count))
+        b.type("/orders")
+        b.press(.down)
+        expectEqual(b.undoName, "Add Path Prefix")
+        expectEqual(b.rows(api).compactMap { $0.header?.prefix }, ["/orders"], "the row is a header now")
+        expectEqual(Set(b.fullNames(api)), Set(before.dropFirst()), "every other endpoint's full path as it was")
+        expect(!b.fullNames(api).contains { $0.contains("/orders/orders") }, "\(b.fullNames(api))")
+        expectEqual(b.apiLines(api), ["GET /customers/{id}/orders", "/orders", "GET /{id}", "POST /{id}/refunds", "PATCH /{id}"],
+                    "the endpoint it doesn't cover goes under none, never adopted")
+        expectEqual(Set(b.rows(api).filter { $0.endpoint != nil }.map(\.id)), Set(ids.dropFirst()), "each keeps its id")
+        b.press(.escape)
+        b.editor.undo()
+        expectEqual(b.fullNames(api), before, "one Undo")
+    },
     test("apis 26: Return with the caret at the very start of a row opens the waiting line above it; what's typed there goes in above; a header typed above the first row heads those it covers") {
         let b = try KitBench()
         let api = b.api("orders API", ["GET /orders/{id}", "POST /orders/{id}/refunds", "GET /customers/{id}"])

@@ -43,7 +43,18 @@ extension Drawing {
             }
         }
         let filed = ObstacleIndex(target.paintOrder(), document: document, context: context, excluding: excluded, resized: resized)
-        let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in filed.obstacles(in: area) }
+        // The pills a program's run put at spots of their own (a far pill landed where its line is clean) are in the way of what else
+        // the run places, as the board's shapes are; numbered after the board's, they are no shape, which a zone or a push names by.
+        var landed: [LayoutProblem.Obstacle] = []
+        var landedNames: [Int: String] = [:]
+        for item in items where item.exact != nil && item.moves && item.existing == nil && item.implied {
+            guard let rect = item.placed, rect.isFinite else { continue }
+            landedNames[document.shapes.count + landed.count] = subject(of: item)
+            landed.append(LayoutProblem.Obstacle(id: document.shapes.count + landed.count, rect: rect))
+        }
+        let obstacles: (CGRect) -> [LayoutProblem.Obstacle] = { area in
+            landed.isEmpty ? filed.obstacles(in: area) : filed.obstacles(in: area) + landed.filter { $0.rect.intersects(area) }
+        }
 
         // The boxes that move, in script order; a container among them with what it holds, which
         // goes along with it (`carried`, by place in the document: what goes where those go).
@@ -170,7 +181,7 @@ extension Drawing {
                 case .free(let box): return freeNames[box]
                 case .fixed(let box): return names[box]
                 case .obstacle(let id):
-                    guard document.shapes.indices.contains(id) else { return "a shape" }
+                    guard document.shapes.indices.contains(id) else { return landedNames[id] ?? "a shape" }
                     let record = document.shapes[id]
                     return shapeName(record) ?? Drawing.location(of: record, in: context)
                 }
@@ -189,7 +200,7 @@ extension Drawing {
             if let current = items[index].existing.flatMap({ context.frame(of: $0.id) }), Self.isNearly(rect, current) { rect = current }
             guard rect.isFinite, rect.width > 0, rect.height > 0 else { throw broken(items[index], "it was placed nowhere (\(rect))") }
             items[index].placed = rect
-            items[index].zones = solution.zones[box].map { document.shapes[$0.id].id }
+            items[index].zones = solution.zones[box].compactMap { document.shapes.indices.contains($0.id) ? document.shapes[$0.id].id : nil }
         }
         try refuseCarriedTargets()
         /// What a box was pushed past, as a row names it and as a message does.
@@ -200,6 +211,7 @@ extension Drawing {
                 let location = "\(item.kind) at \(point(CGPoint(x: item.placed!.midX, y: item.placed!.midY)))"
                 return (item.title ?? location, subject(of: item))
             case .obstacle(let id):
+                guard document.shapes.indices.contains(id) else { let name = landedNames[id] ?? "a shape"; return (name, name) }
                 let record = document.shapes[id], title = Drawing.title(of: record, names: boardNames, naming: naming, registry: registry)
                 let location = Drawing.location(of: record, in: context)
                 return (title ?? location, shapeName(record) ?? location)
@@ -274,6 +286,7 @@ extension Drawing {
             guard let box = item.free, let placed = item.placed else { continue }
             for zone in solution.zones[box] {
                 guard Self.overlaps(zone.rect, placed, by: Self.overhang), !zone.rect.insetBy(dx: -Self.overhang, dy: -Self.overhang).contains(placed) else { continue }
+                guard document.shapes.indices.contains(zone.id) else { continue }
                 let record = document.shapes[zone.id]
                 if registry.isContainer(record) { continue }
                 notes.append(DrawWarning(line: item.statement.line,

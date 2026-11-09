@@ -122,9 +122,8 @@ private let shop = #"""
         expectEqual(arrow.props.end.binding?.part, column(editor, "customers", "id"), "the column on the binding")
         expectEqual(arrow.props.end.binding?.isExact, false, "the arrow meets the pill as a whole")
         // Where its line from customer_id is clean (connect 24): below statements, else level with the row beside it.
-        let frame = try require(pill.frame(in: editor)), row = try require(editor.shapeContext.geometry(of: statements.id)?.parts
-            .frame(try require(column(editor, "statements", "customer_id")))?.rect)
-        expect(frame.minY >= statements.props.frame.maxY || abs(frame.midY - row.midY) < 1, "below the start, or level with its row: \(frame) \(row)")
+        try expectClean(arrow.id, from: statements.id, row: try require(column(editor, "statements", "customer_id")), in: editor, view: false, "⌘L's key")
+        let frame = try require(pill.frame(in: editor))
         expect(!frame.intersects(statements.props.frame), "clear of the start")
         expectEqual(keys(editor), ["orders.customer_id -> customers.id", "payments.order_id -> orders.id", "refunds.payment_id -> payments.id",
                                    "statements.customer_id -> customers.id"], "read as a key to the column")
@@ -186,6 +185,9 @@ private let shop = #"""
         expectEqual(pill.props.target?.id, table(w.editor, "customers")?.id)
         expect(keys(w.editor).contains("statements.customer_id -> customers.id"), "\(keys(w.editor))")
         expectEqual(w.editor.undoHistory.undoName, "Add Column", "the pill and the key in the row's step")
+        // The column and its pill arrive in one step: the pill is landed by the row as the step leaves it (connect 24).
+        let key = try require(arrows(w.editor, on: board).first { $0.props.end.binding?.shapeID == pill.id })
+        try expectClean(key.id, from: statements.id, row: try require(column(w.editor, "statements", "customer_id")), in: w.editor, "a typed key")
         w.editor.undo()
         expectEqual(pills(w.editor, on: board).count, 0, "one undo takes the column, its key and the pill")
         expect(!keys(w.editor).contains { $0.hasPrefix("statements.") })

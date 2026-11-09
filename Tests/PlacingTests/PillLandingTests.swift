@@ -52,6 +52,18 @@ private let row = CGRect(x: 0, y: 100, width: 400, height: 24)
         expectEqual(landing.rect, CGRect(x: -100, y: 200 + reach, width: 200, height: 40))
         expectEqual(landing.above, [k])
     },
+    test("below, slid in under the shape, would cut across the rows under the row (a tall shape, a top row): taken only where the row is the last, else the pill goes level with the row") {
+        let a = ShapeID(), left = ShapeID(), right = ShapeID()
+        let top = CGRect(x: 0, y: 0, width: 400, height: 24)
+        let h = try harness(box(a, CGRect(x: 0, y: 0, width: 400, height: 600)), box(left, CGRect(x: -300, y: 700, width: 240, height: 2000)),
+                            box(right, CGRect(x: 250, y: 700, width: 800, height: 2000)))
+        let landing = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: top, of: a))
+        expectEqual(landing.rect, CGRect(x: 400 + reach, y: top.midY - 20, width: 200, height: 40), "right of it, level with the row")
+        // The row is the shape's last: the line under the shape cuts nothing, and the slide in is taken.
+        let last = CGRect(x: 0, y: 576, width: 400, height: 24)
+        let under = try require(Surroundings(on: .root, moving: pill, in: h.editor)?.landing(of: pill, joinedFrom: last, of: a))
+        expect(under.rect.minY >= 600, "below the shape: \(under.rect)")
+    },
     test("walled in on every side: nil, for the caller to land it as draw does") {
         let a = ShapeID(), below = ShapeID(), right = ShapeID(), left = ShapeID()
         let h = try harness(box(a, near), box(below, CGRect(x: -800, y: 260, width: 2000, height: 1000)),
