@@ -90,7 +90,7 @@ struct Row {
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [])
     },
-    test("Escape goes out one level at a time, as ⌘↑ steps out: from a shape in a group in a container, the group whole, then the container, brought into view, then nothing; never off the board") {
+    test("Escape goes out one level at a time, as ⌘↑ steps out: from a shape in a group in a container, the group whole, then the container, panned to only when none of it shows, then nothing; never off the board") {
         let groups = GroupsFixture()
         let h = try groupsHarness(groups, [CorralsPlugin()])
         let view = CGSize(width: 400, height: 300)
@@ -111,11 +111,21 @@ struct Row {
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [corral], "the container")
         h.wait(200)
-        expectEqual(h.editor.camera, Camera(fitting: CGRect(x: -50, y: -50, width: 900, height: 300), in: view, inset: 100, maxZoom: 1),
-                    "brought into view")
+        expectEqual(h.editor.camera, Camera(), "some of it in view: the camera stays, never zoomed out to the whole container")
         h.escape()
         expectEqual(h.editor.selectedShapeIDs, [], "at the board's own shapes, nothing")
         expectEqual(h.editor.board, .root)
+
+        // With none of it in view, it's panned to, its top-left in view, the zoom kept.
+        h.editor.selectedShapeIDs = [row.a, row.b]
+        h.wait(200)
+        let away = Camera(origin: CGPoint(x: 5000, y: 5000), zoom: 1)
+        h.editor.camera = away
+        h.escape()
+        expectEqual(h.editor.selectedShapeIDs, [corral])
+        h.wait(200)
+        expectEqual(h.editor.camera.zoom, 1, "never zoomed out")
+        expectEqual(h.editor.camera.origin, CGPoint(x: -90, y: -118), "its top-left 40 points in, its title's row counted")
     },
     test("inside a group, a lone shape follows the pointer from the press, and the group stays") {
         let groups = GroupsFixture()

@@ -148,6 +148,8 @@ extension EmptyBoardWindow {
         expectEqual(w.lineRows?.field.string, "name text", "the draft is where it was")
         expectEqual(columns(), ["id uuid pk"], "and nothing was written")
         expect(editor.canRedo, "the step is still there to put back")
+        // `text` typed whole, with longer types still offered: Escape closes that list, the next one ends the line.
+        if w.lineRows?.field.offerList != nil { walk.press(.escape) }
         walk.press(.escape)
         expectEqual(columns(), ["id uuid pk", "name text"], "the draft is written as it ends, a step of its own")
     },

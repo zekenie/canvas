@@ -53,6 +53,41 @@ extension TableDefinition: ShapeDefinition {
         RowText.draw(laid.name.line, at: laid.name.x, middle: middle, room: laid.name.width, in: cg)
     }
 
+    /// How wide a table is drawn for every column to read whole at rest, as `ColumnRow` lays a row out (its name, the gap,
+    /// its type or enum pill, a nullable's `?`), never narrower than a new table (`TableStyle.width`) nor wider than
+    /// `TableStyle.mostWholeWidth`: what a commit widens a table to (`TableLines.wholeWidth`) and what a pasted table is made at.
+    /// An enum the file doesn't hold (`inFile` finds none) measures as its type's words.
+    static func wholeWidth(of columns: [Column], registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?) -> CGFloat {
+        wholeWidth(of: columns.map { column in
+            WholeRow(name: column.name, type: column.type.words, pill: enumPill(of: column, registry: registry, inFile: inFile), nullable: column.nullable)
+        })
+    }
+
+    /// What of a column `wholeWidth` measures: its name, its type's words, the enum pill they make (nil: none, or none known yet,
+    /// as for a column the SQL paste reads), and whether it's nullable.
+    struct WholeRow {
+        let name: String
+        let type: String
+        let pill: AdornmentLabel?
+        let nullable: Bool
+    }
+
+    /// The same, of columns as `WholeRow`s: what the SQL paste makes a table at.
+    static func wholeWidth(of rows: [WholeRow]) -> CGFloat {
+        var widest = TableStyle.width
+        for row in rows {
+            var width = KitStyle.nameInset + RowText.line(row.name, .name).width + KitStyle.nameGap + KitStyle.trailingInset
+            if let pill = row.pill {
+                width += pill.contentSize.width
+            } else if !row.type.isEmpty {
+                width += RowText.line(row.type, .type).width
+            }
+            if row.nullable { width += RowText.line(TableStyle.nullMark, .null).width }
+            widest = max(widest, width)
+        }
+        return min(widest.rounded(.up), TableStyle.mostWholeWidth)
+    }
+
     /// An enum-typed column's pill: the enum its type names, while it's in the file, by its name now.
     static func enumPill(of column: Column, registry: Registry, inFile: (ShapeID) -> AnyShapeRecord?) -> AdornmentLabel? {
         guard let name = enumName(of: column, registry: registry, inFile: inFile) else { return nil }

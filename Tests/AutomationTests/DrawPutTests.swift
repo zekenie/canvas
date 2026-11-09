@@ -112,7 +112,7 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         expectEqual(landed, [n.pHub])
         expectEqual(finish(of: n.hub, in: editor), .matte)
     },
-    test("new shapes land beside one selected shape at draw's normal gap, centered on it, in the rows the block says") {
+    test("new shapes land beside one selected shape at draw's normal gap, tops aligned with it, in the rows the block says") {
         let editor = try drawEditor()
         let anchor = tile("Anchor", CGRect(x: 100, y: 100, width: 120, height: 80), in: editor)
         let landed = try put(tiles([[("A", nil), ("B", nil)], [("C", nil)]]), at: .beside([anchor.id]), in: editor)
@@ -124,7 +124,7 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         expectEqual(frames[2].minX, frames[0].minX)
         expectEqual(frames[2].minY, frames[0].maxY + 80, "the next row 80 below")
         let block = frames.reduce(CGRect.null) { $0.union($1) }
-        expectEqual(block.midY, 140, "the block centered on the anchor")
+        expectEqual(block.minY, 100, "the block's top level with the anchor's, as Insert puts a shape beside another")
         expectEqual(landed.map { editor.document[$0]?.typed(as: Tile.self)?.props.label }, ["A", "B", "C"])
     },
     test("beside several lands beside the box around them; with none, in the middle of the view; centered on a point, on it") {
@@ -134,7 +134,7 @@ private func one(_ title: String, _ finish: String? = nil) -> DrawPut { tiles([[
         let beside = try put(one("Z"), at: .beside([a.id, b.id]), in: editor)
         let frame = try require(editor.document[beside[0]]?.box)
         expectEqual(frame.minX, 220 + 80, "beside the box around both")
-        expectEqual(frame.midY, 290)
+        expectEqual(frame.minY, 100, "level with the top of the box around both")
         let middle = try put(one("M"), at: .beside([]), in: editor)
         let view = editor.camera.toWorld(CGRect(origin: .zero, size: editor.viewportSize))
         let spot = try require(editor.document[middle[0]]?.box)

@@ -1,3 +1,4 @@
+import Adornments
 import Canvas
 import Clipboard
 import Draw
@@ -45,11 +46,13 @@ public enum SQLPaste {
     }
 
     /// What ⌘V puts down of the pasteboard's SQL: nil when no table and no enum reads.
+    @MainActor
     static func read(_ content: PasteContent, keys: KeyChannel) -> DrawPut? {
         text(of: content).flatMap { program(of: $0, keys: keys) }
     }
 
     /// What a paste of `text` puts down: nil when no table and no enum reads.
+    @MainActor
     static func program(of text: String, keys: KeyChannel) -> DrawPut? {
         let schema = SQLReader.read(text)
         return schema.isEmpty ? nil : put(schema, keys: keys)
@@ -57,6 +60,7 @@ public enum SQLPaste {
 
     /// The program that puts `schema` down: its tables and enums in the order they were made, four to a row, each table's keys the
     /// edges it implies.
+    @MainActor
     static func put(_ schema: SQLSchema, keys: KeyChannel) -> DrawPut {
         var shapes: [DrawPut.Shape] = []
         for item in schema.order {
@@ -72,6 +76,7 @@ public enum SQLPaste {
     // MARK: Statements
 
     /// A table's statement: its title, its schema's database, its columns as JSON, its keys as edges.
+    @MainActor
     private static func table(_ table: SQLTable, of schema: SQLSchema, keys: KeyChannel) -> DrawPut.Shape {
         let keyed = Set(table.keys.map(\.column))
         let columns: [Any] = table.columns.map { column in
@@ -105,6 +110,14 @@ public enum SQLPaste {
         var shape = shape(DatabaseTable.kind, table.name)
         shape.json = [(key: "columns", text: json(columns))]
         shape.edges = edges
+        // As wide as its columns read whole (a pg_dump's `character varying(255)`), as a commit widens a table (Tables'); a table
+        // the file has keeps its width.
+        shape.size = DrawPut.Dimensions(width: TableDefinition.wholeWidth(of: table.columns.map { column in
+            // An enum the paste makes is drawn as its pill once it is in the file: measured as that, not as its words.
+            let pill = pastedEnum(named: column.type.words, in: schema, from: table.name.schema).map { AdornmentLabel($0.name.name).tinted(TableStyle.enumPill) }
+            return TableDefinition.WholeRow(name: column.name, type: typeWords(column.type.words, in: schema, from: table.name.schema), pill: pill,
+                                            nullable: column.nullable)
+        }))
         return shape
     }
 
@@ -144,6 +157,17 @@ public enum SQLPaste {
     /// (`billing.status`), which the put calls it by; a name with no schema that more than one enum answers to is the one in the
     /// schema of the table that writes it (`home`), else the one with none.
     static func typeWords(_ words: String, in schema: SQLSchema, from home: String? = nil) -> String {
+        if let type = pastedEnum(named: words, in: schema, from: home) {
+            let sharing = schema.enums.filter { $0.name.name == type.name.name }.count + schema.tables.filter { $0.name.name == type.name.name }.count
+            return sharing > 1 ? type.name.description : type.name.name
+        }
+        let schemaPrefix = SQLReader.defaultSchema + "."
+        return words.hasPrefix(schemaPrefix) ? String(words.dropFirst(schemaPrefix.count)) : words
+    }
+
+    /// The enum of the paste a column's type words name, if one: by its name and schema, or by a bare name, which more than one
+    /// answers to, the one in the schema of the table that writes it (`home`).
+    static func pastedEnum(named words: String, in schema: SQLSchema, from home: String?) -> SQLEnum? {
         func isNamed(_ type: SQLEnum) -> Bool {
             type.name.description == words || (type.name.schema == nil && "\(SQLReader.defaultSchema).\(type.name.name)" == words)
         }
@@ -152,12 +176,7 @@ public enum SQLPaste {
             // A bare name that only schemas' enums answer to: the table's own schema's, when it has one.
             named = schema.enums.filter { $0.name.name == words && $0.name.schema != nil && $0.name.schema == home }
         }
-        if let type = named.first {
-            let sharing = schema.enums.filter { $0.name.name == type.name.name }.count + schema.tables.filter { $0.name.name == type.name.name }.count
-            return sharing > 1 ? type.name.description : type.name.name
-        }
-        let schemaPrefix = SQLReader.defaultSchema + "."
-        return words.hasPrefix(schemaPrefix) ? String(words.dropFirst(schemaPrefix.count)) : words
+        return named.first
     }
 
     /// A value as JSON text.

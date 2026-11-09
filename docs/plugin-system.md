@@ -2634,7 +2634,9 @@ it alone, so its kind lays itself out a line taller and draws no row the field h
 ↩ commits and opens a line below (on an empty one ends), ↑ ↓ and Tab walk the stops (past the ends, the next
 shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes one (one step), a pasted block is a row a
 line, ⇧↩ puts a shape beside. A line typed wider than the shape lays it out as wide as the line needs
-(`LineRowsLayout.width`, provided), nothing written. [line rows](../.claude/rules/line-rows.md) is the whole of it.
+(`LineRowsLayout.width`, provided), nothing written; a kind that says how wide its rows read whole at rest
+(`wholeWidth(of:in:)`) has a commit that leaves it narrower write that width in the same step, so the shape
+keeps it as the caret leaves. [line rows](../.claude/rules/line-rows.md) is the whole of it.
 
 **A row's card.** ⌘↓ in a row writes its line and shows what more the row holds than its line says, a line
 each, in a core card hung from the row (LineRows' Card part). The kind gives it, and each line reads the row and
@@ -3338,8 +3340,13 @@ registrar.shortcut(KeyChord(arrow.key, [.option, .command]), "Select Nearest Sha
   selected shapes are in; Boards adds the third step, up a board. Escape climbs the same steps, then
   deselects, never leaving the board.
 - **The camera** moves only for a stop that is not all in view (`editor.revealIfOffscreen(_:)`,
-  tldraw's `zoomToSelectionIfOffscreen`): it centers the shapes with 100 points of margin at the zoom it
-  has, or farther out where they do not fit, never closer. One in view leaves it alone.
+  tldraw's `zoomToSelectionIfOffscreen`), the row above it (a title's pill) counted and the inspector a
+  selection just made counted before it slides in (`unobscuredViewport` as the chrome is headed): it pans
+  by as little as brings the shapes in, 40 points from the edges, at the zoom it has, never centering them,
+  so what was beside them stays in view (`keeping:` a shape to keep in view with them when both fit: the
+  one Insert put the new shape beside); farther out only where they do not fit, never closer. One in view
+  leaves it alone. Escape and ⌘↑ to a group or a container move nothing while any of it is in view, and
+  otherwise pan to it, never zooming out (`revealEnclosure`).
 - **For a plugin.** `editor.shape(.next, from: id, among: { record in … })` (`.previous` too) is the
   same reading order over the shapes `among` takes in `id`'s container (the board's own, in none),
   each a stop of its own, wrapping, nil when no other is taken: it selects nothing. A note's editor
@@ -3612,7 +3619,11 @@ registrar.contextMenuForCanvas { MenuItem(command: .group, in: StateMenuGroup.se
   claims the insertion spot gives (`registrar.insertionSpot { editor, size, beside in … }`: Draw's,
   beside the selection as Placing puts a box beside a shape, or with none somewhere clear in the middle
   of the view), else the middle of the view; then as `place(_:in:)` puts it, edited if its placement
-  edits, one step named as the tool's placing ("Add Note"). Beside one shape, a kind may make its shape
+  edits, one step named as the tool's placing ("Add Note"), which VoiceOver hears once. Draw's spot puts the
+  shape where the person sees it (`PutBeside`, [placing](../.claude/rules/placing.md)): beside a shape
+  top-aligned on its right or left, on a side where the two fit in the clear view together (the view then
+  pans to them), with none at the nearest clear spot inside the clear view, the title's row above it
+  counted. Beside one shape, a kind may make its shape
   from that one (`x.madeBeside { made, neighbor in … }`: a note takes the color of what it's put beside,
   as tldraw's adjacent notes do). The one insertion spot is `editor.insert(_ placement:, named:, beside:)`,
   which a tool's insert calls: the same frame, made as the kind says, one step named as given, and the
@@ -9360,7 +9371,9 @@ registrar.forShapes(adopting: .titled) { titled in   // the kinds that took a ti
 `scope.findableTexts(_:…)` is for the shapes of the kinds a scope reaches (keep it to the kinds that
 opted into what's drawn: `FindableTexts` takes [scopes](#scopes), so texts for every kind with no
 scope are refused), `registrar.findableTexts(_:of:…)` for a kind another plugin registers,
-`x.findableTexts(_:…)` for a kind's own. The point (`FindableTexts`) is keyed by kind and name (two
+`x.findableTexts(_:…)` for a kind's own. A contribution whose text names the shape (`names: true`: Titles'
+title) heads the shape's row in Find's list for a hit elsewhere in it, the snippet after it faint
+("products  weight_grams int"). The point (`FindableTexts`) is keyed by kind and name (two
 "title"s that reach one kind conflict; a blank name is refused) and its owner is Find's, so a
 contribution needs `FindPlugin()` installed. Shipped, each a plugin value of its owner's own, after Find and its owner in the list, so
 a list without Find leaves them out:
@@ -14891,7 +14904,7 @@ it, the core or a horizontal.
 | `CustomSkeleton` | Drawn more simply zoomed out. `renderSkeleton` draws in `render`'s place while the canvas draws [skeletons](#skeletons) (the camera's zoom under `editor.skeletonZoom`, 35%), but for the shape being edited: its fills, and bars where its text would be (`context.fillSkeletonText`, each as long as its text's columns, `SkeletonText`), never text, shadows or pictures of its own, cheaply: the shape, its kept geometry and `context.zoom`, and what its plugin already keeps of the shape if it's there, never parsing or laying out text; a picture only through `RenderContext` (a subboard's board preview). Its outline there (selected, hovered, the hint) is its kept geometry's, right for a skeleton that fills its geometry or differs from a rect only by corners rounded a pixel or two, unless it adopts `CustomSkeletonOutline`; a shape a few pixels across is outlined by its bounds. Without it a kind is the default skeleton, its geometry in one gray (`context.drawSkeleton(of:color:)`). | StickyNotes (its yellow, its text greeked), Subboards (fills and its preview), Arrows (its arc and heads) |
 | `CustomSkeletonOutline` | A `CustomSkeleton` outlined its own way while skeletons are drawn (selected, hovered, the hint): `skeletonIndicatorPath(of:in:)`, what `renderSkeleton` draws, so the outline and the skeleton agree, made from the shape and its kept geometry, since ⌘A zoomed out asks it of every shape of the kind in view each frame; nil for its kept geometry's. Found once per kind (`registry.skeletonOutlines`), so no other kind's shape is asked; never asked for a shape a few pixels across, outlined by its bounds. | Arrows (the arc and its heads, where its kept geometry is three points) |
 | `StrokedShape` | A kind drawn as a line, an open shape, saying how wide its line is, in world units: `lineWidth(of:in:)`. What a tinted outline of it (`Outlines.tinted`, a plugin's own colors: Neighbors' lights) covers, drawn in full: as wide on screen as the line and a point more, round, so the shape's own line and heads don't show along the middle of the outline, a stripe in a thick line at 200% and wider than a thin one at 50%. Zoomed out, where the skeleton is a point-wide line, a tint is its plain width, and the selection's and a hover's outlines stay thin whatever it says. Found once per kind (`registry.strokedShapes`), so no other kind's shape is asked; `registry.lineWidth(of:in:)` reads it, for what decorates along a line. | Arrows (3.5, `ArrowStyle.strokeWidth`); CanvasTesting's `Cable` |
-| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document. The anchor follows from the shape's own props and the document's order, since the paint order is kept until one of those changes. | Arrows (above the shapes they join) |
+| `PaintOrderAnchored` | Painted just above another shape, whatever its place in the document, or just below it (`paintsBelowAnchor`, false by default). The anchor follows from the shape's own props and the document's order (and containment, which re-places it when a shape joins a container), since the paint order is kept until one of those changes. | Arrows (above the shapes they join; one with an end at a row, below the lower of them, so cards cover it, or above the container of the higher end when one lies after the lower, so its surface never hides the end) |
 | `LaidOutBox` | A box kind laid out larger or smaller than the box it stores, by `laidOutSize(of:in:)` over its layout inputs: the laid-out frame has the stored origin and the size the kind answers (the box's own for one that isn't finite and above zero), and everything that asks how much room the shape takes (`context.frame(of:)`) goes by it; its geometry, outline and editing frame default to it. Not a container. | the core's geometry, hit testing, settling and enclosing, snapping, selection |
 | `ShapeContaining` | Each shape of the box kind holds shapes on its board, a frame: what names it as its container (`AnyShapeRecord.container`) moves, restacks, locks and is let go with it, and nothing put down sits across its edge (`Transaction.settle`). Nothing to implement. [Containers](#containers). | CanvasTesting's `Corral` |
 | `TakesBoundShapes` | Each shape of the kind takes the shapes bound to it (`ShapeReferencing`: an arrow's ends) along. Deleting one deletes them (the delete's cascade, `Transaction.takeBound`), but a read-only one, which lets go where it's drawn as for any kind; copying one copies what is bound only to shapes copied with it (`ShapeContext.takenAlong(by:)`: Clipboard's copy, duplicate, ⌥-drag and cut). What went along is `Transaction.deletedAlong`, and a body names its step from it (`transaction.stepName`). Nothing to implement; a kind that doesn't adopt it keeps tldraw's rule (an arrow bound to a deleted shape stays, free at that end). | CanvasTesting's `Ledger` |

@@ -284,6 +284,23 @@ import TestKit
         w.h.release()
         expectEqual(w.items, ["r0"])
     },
+    test("A lead pressed on a shape not selected selects it only as a click: dragged, the selection waits for the drop, so the inspector it shows doesn't come in mid-drag") {
+        let w = try ItemsWindow()
+        w.log.hasLead = true
+        w.log.givesDrag = true
+        w.editor.selection = nil
+        let lead = w.h.view(CGPoint(x: 120, y: 110))
+        w.h.press(at: lead)
+        expectEqual(w.editor.selectedShapeIDs, [], "the press selects nothing yet")
+        w.h.drag(to: w.h.view(CGPoint(x: 300, y: 200)))
+        expectEqual(w.log.dragged.last, ["r0"], "its item dragged")
+        expectEqual(w.editor.selectedShapeIDs, [], "nothing selected while it's dragged")
+        w.h.release()
+        w.editor.selection = nil
+        w.h.click(at: lead)
+        expectEqual(w.editor.selectedShapeIDs, [w.a], "a click selects the shape, then runs the lead's click")
+        expectEqual(w.log.led.last, "r0")
+    },
     test("Rows another writer took out leave the shape selected with its outline and handles back; a run extended by key or click is said, a single step is not") {
         let w = try ItemsWindow(resizable: true)
         let size = CGSize(width: 800, height: 500)

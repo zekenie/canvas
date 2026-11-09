@@ -1,5 +1,5 @@
 import Adornments
-import Canvas
+@_spi(Host) import Canvas
 import CanvasTesting
 import CoreGraphics
 import Foundation
@@ -224,6 +224,17 @@ private struct NewChitsPlugin: CanvasPlugin {
         expectEqual(editor.undoHistory.undoName, "New Type")
         editor.undo()
         expect(editor.document[made] == nil, "one step")
+    },
+    test("a type made settled beside shapes with no side of them in view lands at the nearest clear spot in view, so it's seen") {
+        let editor = try typeEditor()
+        editor.viewportDidResize(to: CGSize(width: 1200, height: 700))
+        // Two owners at opposite corners: every side of the box around them is past the view's edges.
+        let ann = editor.add(memo("Ann", at: CGPoint(x: 20, y: 40)))
+        let ben = editor.add(memo("Ben", at: CGPoint(x: 900, y: 560)))
+        let made = try require(editor.newType(named: "Problem", besides: [ann, ben], givingType: false, editing: false))
+        let box = try require(editor.document[made]?.box)
+        expect(CGRect(x: 0, y: 0, width: 1200, height: 700).contains(box), "in view: \(box)")
+        expect(box.minY - 27 >= 0, "its title's row in view too")
     },
     test("a type's chip by its id, for another plugin: its name now in its color; a shape that is no type, or none, the words in a dashed pill") {
         let editor = try typeEditor()

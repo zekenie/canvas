@@ -220,6 +220,34 @@ import TestKit
         expectEqual(h.editor.camera, Camera())
         expectEqual(h.editor.unobscuredViewport, CGRect(x: 240, y: 0, width: 660, height: 800), "the clear part, between the sheets")
     },
+    test("a rect is brought into the view the chrome will leave (coveredEdgesAhead) by the least pan: never centered, nothing when it is in view, and the part in view now is kept as the pane comes") {
+        let h = try EditorHarness(plugins: [])
+        h.editor.viewportDidResize(to: CGSize(width: 1200, height: 800))
+        let rect = CGRect(x: 1000, y: 300, width: 150, height: 100)
+        expect(!h.editor.animateCamera(toShow: rect, margin: 16, duration: .milliseconds(200)), "in view: nothing to do")
+        expectEqual(h.editor.cameraTarget, Camera())
+        // The inspector the selection will show covers the trailing 300 points: the clear view is 900 wide, before it slides in.
+        h.editor.coveredEdgesAhead = { CoveredEdges(right: 300) }
+        expectEqual(h.editor.unobscuredViewport, CGRect(x: 0, y: 0, width: 900, height: 800))
+        expect(h.editor.animateCamera(toShow: rect, margin: 16, duration: .milliseconds(200)), "past the clear view's edge")
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 266, y: 0)), "its right edge a margin in from the clear view's: the least pan, not a centering")
+        h.wait(250)
+        expectEqual(h.editor.camera, Camera(origin: CGPoint(x: 266, y: 0)))
+        // The pane slides in as headed: what was brought into view stays where it is.
+        h.editor.coveredEdges = CoveredEdges(right: 300)
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 266, y: 0)))
+        // Above the clear view's top edge: only the vertical pan.
+        h.editor.coveredEdgesAhead = nil
+        h.editor.coveredEdges = CoveredEdges()
+        h.editor.camera = Camera()
+        expect(h.editor.animateCamera(toShow: CGRect(x: 100, y: -300, width: 100, height: 100), margin: 16, duration: .milliseconds(200)))
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 0, y: -316)))
+        // A rect too big keeps its top-left corner in view; a null one does nothing.
+        h.editor.camera = Camera()
+        expect(h.editor.animateCamera(toShow: CGRect(x: 1500, y: 1000, width: 3000, height: 3000), margin: 16, duration: .milliseconds(200)))
+        expectEqual(h.editor.cameraTarget, Camera(origin: CGPoint(x: 1484, y: 984)))
+        expect(!h.editor.animateCamera(toShow: .null, margin: 16, duration: .milliseconds(200)))
+    },
     test("services hear each move a kept view makes, from where the camera was headed to where it goes; nothing when it moves nothing") {
         let log = KeptViews()
         let h = try EditorHarness(plugins: [Contributor(id: "kept") { r in r.service { _ in KeptViewListener(log: log) } }])

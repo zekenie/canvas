@@ -46,7 +46,7 @@ final class ShapeIndex {
         var extents: [CGRect]
         var hitMargins: [HitMargin]
         /// Each anchored shape's anchor, as `order` has it.
-        var anchors: [ShapeID: ShapeID?]
+        var anchors: [ShapeID: PaintAnchor?]
         /// How many shapes at the end of `order` are anchored with no plain shape to be above (the anchor is missing, or
         /// anchored itself), which go on top.
         var topCount: Int
@@ -397,9 +397,9 @@ final class ShapeIndex {
         for kind in registry.kinds {
             if let anchored = registry.definition(for: kind) as? any PaintOrderAnchored { anchoredKinds[kind] = anchored }
         }
-        var anchors: [ShapeID: ShapeID?] = [:]
+        var anchors: [ShapeID: PaintAnchor?] = [:]
         var isAnchored = [Bool](repeating: false, count: shapes.count)
-        var anchorIDs = [ShapeID?](repeating: nil, count: shapes.count)
+        var anchorIDs = [PaintAnchor?](repeating: nil, count: shapes.count)
         if !anchoredKinds.isEmpty {
             for (i, record) in shapes.enumerated() {
                 guard let anchored = anchoredKinds[record.kind] else { continue }
@@ -409,7 +409,7 @@ final class ShapeIndex {
                 anchorIDs[i] = anchor
             }
         }
-        var above: [Int: [Int]] = [:]
+        var above: [Int: [Int]] = [:], below: [Int: [Int]] = [:]
         var plain: [Int] = []
         var top: [Int] = []
         for i in shapes.indices {
@@ -418,8 +418,8 @@ final class ShapeIndex {
                 continue
             }
             // Only a plain shape that's still there can anchor another.
-            if let anchor = anchorIDs[i], let j = document.index(of: anchor), !isAnchored[j] {
-                above[j, default: []].append(i)
+            if let anchor = anchorIDs[i], let j = document.index(of: anchor.shape), !isAnchored[j] {
+                if anchor.below { below[j, default: []].append(i) } else { above[j, default: []].append(i) }
             } else {
                 top.append(i)
             }
@@ -427,6 +427,7 @@ final class ShapeIndex {
         var order: [Int] = []
         order.reserveCapacity(shapes.count)
         for i in plain {
+            if let anchored = below[i] { order += anchored }
             order.append(i)
             if let anchored = above[i] { order += anchored }
         }
@@ -461,7 +462,7 @@ final class ShapeIndex {
         noteDamage(before: before, ids: touched)
         // No copy of the list is held while it's added to: its arrays would be copied, whole, to be changed.
         guard paintList != nil else { return }
-        if anchorsMoved(changes.changed, in: document, registry: registry)
+        if anchorsMoved(changes, in: document, registry: registry)
             || changes.reordered && !appendAdded(changes, in: document, registry: registry) {
             paintList = nil
             grid = nil
@@ -485,16 +486,31 @@ final class ShapeIndex {
             guard let now = document[id], let before = changes.before(id), before.stackingKey == now.stackingKey else { return false }
         }
         var lastPlain = paintList!.lastPlain
-        var anchors: [ShapeID: ShapeID] = [:]
+        var anchors: [ShapeID: PaintAnchor] = [:]
+        var beneath: [(index: Int, anchor: PaintAnchor)] = []
         for index in old..<document.shapes.count {
             let record = document.shapes[index]
             guard changes.added.contains(record.id), changes.before(record.id) == nil else { return false }
             if let anchored = registry.definition(for: record.kind) as? any PaintOrderAnchored {
-                guard let anchor = anchored.erasedPaintAnchor(of: record, in: document), document.index(of: anchor) == lastPlain else { return false }
-                anchors[record.id] = anchor
+                guard let anchor = anchored.erasedPaintAnchor(of: record, in: document) else { return false }
+                if anchor.below {
+                    // One painted below its anchor goes before it (below), once the plain shapes are in: the anchor must be
+                    // a plain shape of the list or one of those being added.
+                    guard let at = document.index(of: anchor.shape), at != index,
+                          at >= old || paintList!.anchors[anchor.shape] == nil else { return false }
+                    beneath.append((index, anchor))
+                } else {
+                    guard document.index(of: anchor.shape) == lastPlain else { return false }
+                    anchors[record.id] = anchor
+                }
             } else {
                 lastPlain = index
             }
+        }
+        // A below-anchored shape's anchor can't be one of the added shapes that is itself anchored.
+        for (_, anchor) in beneath {
+            if let at = document.index(of: anchor.shape), at >= old,
+               registry.definition(for: document.shapes[at].kind) is any PaintOrderAnchored { return false }
         }
         for index in old..<document.shapes.count {
             let record = document.shapes[index]
@@ -508,6 +524,20 @@ final class ShapeIndex {
             grid?.addPosition()
         }
         paintList!.lastPlain = lastPlain
+        // Each below-anchored shape goes in just before its anchor, after any other there already (the order a build gives).
+        // Everything from there on moves up a place, costing the arrays' length and no shape's extent; the grid, which
+        // files positions, is made again when next a search needs it.
+        for (index, anchor) in beneath {
+            guard let at = document.index(of: anchor.shape) else { continue }
+            let place = paintList!.positions[at]
+            let last = paintList!.order.removeLast()
+            paintList!.order.insert(last, at: place)
+            paintList!.extents.insert(paintList!.extents.removeLast(), at: place)
+            paintList!.hitMargins.insert(paintList!.hitMargins.removeLast(), at: place)
+            for position in place..<paintList!.order.count { paintList!.positions[paintList!.order[position]] = position }
+            paintList!.anchors[document.shapes[index].id] = .some(anchor)
+            grid = nil
+        }
         return true
     }
 
@@ -578,8 +608,14 @@ final class ShapeIndex {
     /// Whether a changed shape's anchor isn't the one the paint order has. (An anchor follows from
     /// the shape's own props and the order of the document, so only a shape that changed, in a
     /// stack that didn't, needs asking.)
-    private func anchorsMoved(_ changed: Set<ShapeID>, in document: CanvasDocument, registry: Registry) -> Bool {
-        changed.contains { id in
+    private func anchorsMoved(_ changes: ChangeSet, in document: CanvasDocument, registry: Registry) -> Bool {
+        // A shape that went into or out of a container (an anchor may follow containment, as a key's does: just above the
+        // container of its end) may have changed any anchor's, though the stack and the anchored shapes didn't.
+        if !paintList!.anchors.isEmpty, !changes.onlyMoves, changes.priors.holdsRecords,
+           changes.changed.contains(where: { id in changes.before(id).map { $0.container != document[id]?.container } ?? false }) {
+            return true
+        }
+        return changes.changed.contains { id in
             guard let record = document[id], let anchored = registry.definition(for: record.kind) as? any PaintOrderAnchored else { return false }
             let recorded = paintList!.anchors[id]
             return recorded != .some(anchored.erasedPaintAnchor(of: record, in: document))

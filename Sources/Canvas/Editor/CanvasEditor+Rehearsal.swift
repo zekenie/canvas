@@ -15,7 +15,7 @@ extension CanvasEditor {
         let copy = CanvasEditor(registry: registry, file: file, showing: board, scheduler: StoppedScheduler())
         copy.nameRoot(rootName)
         copy.coveredTop = coveredTop
-        copy.coveredEdges = coveredEdges
+        copy.coveredEdges = coveredEdgesAhead?() ?? coveredEdges
         copy.viewportDidResize(to: viewportSize)
         copy.camera = cameraTarget
         copy.rehearsed = (ObjectIdentifier(self), storedFile)

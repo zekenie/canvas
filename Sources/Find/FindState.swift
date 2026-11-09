@@ -146,6 +146,17 @@ public final class FindState {
     /// A result's texts, as the index read them, in order.
     public func texts(of id: ShapeID) -> [String] { index.entries[id]?.texts.map(\.text) ?? [] }
 
+    /// What a result's row leads with: the text that names its shape (its title, a contribution's `names`), when the row's
+    /// first hit is in another of its texts (a table's row); nil when it has none, or the hit is in that text, which the
+    /// snippet then shows.
+    public func rowName(of result: FindResult) -> String? {
+        guard let entry = index.entries[result.id], let kind = editor.withoutObservingDocument({ editor.file.record(result.id)?.kind }),
+              let named = entry.texts.indices.first(where: { index.contribution(entry.texts[$0].source, of: kind)?.names == true }),
+              named != result.first.text else { return nil }
+        let name = entry.texts[named].text.replacingOccurrences(of: "\n", with: " ")
+        return name.isEmpty ? nil : name
+    }
+
     /// Whether a shape has hits.
     public func hasHits(_ id: ShapeID) -> Bool { places[id] != nil }
 
@@ -428,7 +439,7 @@ public final class FindState {
     private func labelStem(of index: Int) -> String {
         if let known = labelStems[index] { return known }
         let result = results[index]
-        var parts = [FindSnippet.text(of: result, in: self), kindName(of: result.id)]
+        var parts = (rowName(of: result).map { [$0] } ?? []) + [FindSnippet.text(of: result, in: self), kindName(of: result.id)]
         if result.board != editor.board {
             let board = editor.boardHeading(of: result.board).title
             if !board.isEmpty { parts.append(board) }

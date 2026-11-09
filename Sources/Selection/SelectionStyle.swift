@@ -51,6 +51,13 @@ enum SelectionStyle {
     static let revealInset: CGFloat = 100
     static let revealMaxZoom = ReadableZoom.maximum
     static let revealDuration: Duration = .milliseconds(200)
+    /// Bringing shapes into view only if they are not (`revealIfOffscreen`) moves the view by the least pan, which leaves
+    /// this much margin, in view points, inside the clear part: room for the row a shape shows above its top (a title's
+    /// pill, 27 points) and a little air.
+    static let revealMargin: CGFloat = 40
+    /// What of the row above a shape (its title's pill) counts as the shape when judging whether it is in view, view points:
+    /// a box in view with its pill under the title bar is not.
+    static let revealRowAbove: CGFloat = 28
     /// Going to shapes (`goTo`) leaves the camera where it is when they're all in view at this zoom
     /// or closer. Text on the canvas is set for 100%, a note's at 16 points: at 70% that's 11.2
     /// points on screen, just over the 11 of `NSFont.smallSystemFontSize`, the smallest size macOS

@@ -597,10 +597,11 @@ extension SelectionState: EditorService {
     }
 
     /// What was placed is all that's selected, and brought into view if it isn't (a shape Insert or ⇧↩ put beside a shape at the
-    /// view's edge; one placed under the pointer is in view, and the camera stays still while a press lasts).
+    /// view's edge, by the least pan, keeping that shape in view with it when both fit: `editor.placingBeside`; one placed under
+    /// the pointer is in view, and the camera stays still while a press lasts).
     func didPlace(_ ids: [ShapeID], in editor: CanvasEditor) {
         select(ids)
-        if !editor.undoHistory.isPressHeld { editor.revealIfOffscreen(ids) }
+        if !editor.undoHistory.isPressHeld { editor.revealIfOffscreen(ids, keeping: editor.placingBeside) }
     }
 
     /// Shapes are drawn as skeletons now, or in full again, so their faces and adornments went or
@@ -888,7 +889,9 @@ extension CanvasEditor {
         let box = selectedShapeIDs.count > 1 ? selectionBounds : nil
         // A shape whose items are selected (and listed) is outlined by them (`ItemsOverlay`), inside it.
         let outlined = selectedItems.map { held in selectedShapeIDs.filter { $0 != held.shape || editingShapeID == held.shape } } ?? selectedShapeIDs
-        return Outlines(shapes: outlined, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
+        // A focused part that stands for a shape (an arrow from the table, ⌥Tab) lights it as a selected one is drawn.
+        let lit = selectionState?.focusedPartLights.filter { !outlined.contains($0) } ?? []
+        return Outlines(shapes: outlined + lit, rects: box.map { [$0] } ?? [], faintShapes: session == nil ? hoverOutlines : [],
                         color: selectionOutlineColor)
     }
 

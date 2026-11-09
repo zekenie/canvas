@@ -80,6 +80,36 @@ private let paymentsSQL = """
         h.editor.undo()
         expectEqual(h.editor.document, before, "one Undo takes it")
     },
+    test("a pg_dump's long types: the table made as wide as its columns read whole, up to the widest; one the file has keeps its width") {
+        let h = try pasteHarness()
+        let dump = """
+            CREATE TABLE public.shipments (
+                id uuid NOT NULL,
+                shipping_address character varying(255),
+                tracking_number character varying(64) NOT NULL,
+                shipped_at timestamp with time zone
+            );
+            """
+        let landed = try paste(dump, in: h)
+        let shipments = try require(landed.first)
+        let width = try require(h.editor.document[shipments]?.box?.width)
+        expect(width > 260 && width <= 560, "wider than a new table's 260, as its columns read whole at rest: \(width)")
+        h.editor.transact { $0.update(shipments) { $0.box?.size.width = 300 } }
+        try paste(dump, in: h)
+        expectEqual(h.editor.document[shipments]?.box?.width, 300, "pasted again, the width the person left it at")
+    },
+    test("a table whose widest column is an enum's: measured as the pill it draws (its font and padding), not as the words of its type") {
+        let name = "shipment_delivery_status_kind_long"
+        let table = "CREATE TABLE shipments (\n    id uuid NOT NULL,\n    state \(name) NOT NULL\n);"
+        let withEnum = try pasteHarness(), plain = try pasteHarness()
+        let made = try paste("CREATE TYPE \(name) AS ENUM ('queued', 'sent');\n" + table, in: withEnum)
+        let widths = try made.map { try require(withEnum.editor.document[$0]?.box?.width) }
+        let landed = try paste(table, in: plain)
+        let plainWidth = try require(plain.editor.document[landed[0]]?.box?.width)
+        let shipments = try require(made.first { withEnum.editor.document[$0]?.kind == DatabaseTable.kind })
+        let enumWidth = try require(withEnum.editor.document[shipments]?.box?.width)
+        expect(enumWidth != plainWidth, "as wide as the pill reads, which is not the words' width: \(enumWidth) against \(plainWidth), enum and table \(widths)")
+    },
     test("pasted again: the table found by its title, its columns updated in place with their ids, a new column after the one pasted before it, one left out kept") {
         let h = try pasteHarness()
         try paste(paymentsSQL, in: h)

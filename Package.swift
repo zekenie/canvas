@@ -299,8 +299,9 @@ let parts: KeyValuePairs<String, [String]> = [
     "Engineering/Tables": ["Model", "Grammar"],
     "Engineering/APIs": ["Model", "Grammar"],
     // The readers of what's pasted, each put down by Draw as a draw program: SQL's tables and enums; YAML (a subset, into Types'
-    // ordered values) and OpenAPI's API and types, grouped by the Grammar part's one rule, the API as wide as its rows (APIs').
-    "Engineering/Readers": ["Model", "Grammar", "APIs"],
+    // ordered values) and OpenAPI's API and types, grouped by the Grammar part's one rule, the API as wide as its rows (APIs'),
+    // a table as wide as its columns (Tables').
+    "Engineering/Readers": ["Model", "Grammar", "APIs", "Tables"],
     // What agents read of the kit's shapes beside its kinds: the routes `:route` asks for (pure), and what `--ask` is told of the
     // file's tables, with their keys, and its APIs, with what each endpoint writes, reads and calls.
     "Engineering/Agents": ["Model", "Grammar", "Tables", "APIs"],

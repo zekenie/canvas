@@ -49,6 +49,17 @@ private let tileVoices = Contributor(id: "tile-voices") { registrar in
         expectEqual(h.editor.focusedPart?.title, "Arrow from A", "round")
         expect(!h.editor.selectedShapeIDs.contains(out), "an arrow is never a Tab stop")
     },
+    test("an arrow with the focus is lit whole, outlined as a selected arrow is, besides its ring; Escape lets it go") {
+        let (h, _, b, _, out, into) = try row()
+        h.editor.selection = b
+        expectEqual(h.editor.outlines.shapes, [b])
+        h.key(Chord.optionTab)
+        expectEqual(h.editor.outlines.shapes, [b, into], "the arrow from A, whole, in the selection's color")
+        h.key(Chord.optionTab)
+        expectEqual(h.editor.outlines.shapes, [b, out], "the next one lit instead")
+        h.key(Chord.escape)
+        expectEqual(h.editor.outlines.shapes, [b])
+    },
     test("Return selects the arrow; Escape comes back to the shape, still selected") {
         let (h, _, b, _, out, _) = try row()
         h.editor.selection = b

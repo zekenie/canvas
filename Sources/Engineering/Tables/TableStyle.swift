@@ -14,6 +14,9 @@ enum TableStyle {
     static let placeholder = "Untitled Table"
     /// A new table's width.
     static let width: CGFloat = 260
+    /// The widest a commit or a paste makes a table for its columns to read whole (`TableDefinition.wholeWidth`): past it, a
+    /// long type is cut short, as at any width the person leaves it.
+    static let mostWholeWidth: CGFloat = 560
     /// The narrowest it's resized to: a name and a short type.
     static let minimumWidth: CGFloat = 120
     /// What its rows are, said by VoiceOver: "5 columns".

@@ -244,7 +244,16 @@ private struct FindRow: View {
                 Image(systemName: symbol.systemImage ?? "square")
                     .foregroundStyle(symbol.tint.map { Color(nsColor: $0) } ?? Color.secondary)
                     .frame(width: FindStyle.rowSymbolWidth)
-                Text(FindSnippet.attributed(of: result, in: find)).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
+                // A titled shape's row names it first, the hit's snippet after it, faint (T6: "products  weight_grams int").
+                if let name = find.rowName(of: result) {
+                    // Two texts, the snippet first in line for room: a long name is cut in its middle, never the hit away.
+                    HStack(spacing: FindStyle.nameSpacing) {
+                        Text(name).font(FindStyle.rowName).lineLimit(1).truncationMode(.middle)
+                        Text(FindSnippet.faint(of: result, in: find)).lineLimit(1).truncationMode(.tail).layoutPriority(1)
+                    }
+                } else {
+                    Text(FindSnippet.attributed(of: result, in: find)).font(FindStyle.snippet).lineLimit(1).truncationMode(.tail)
+                }
                 Spacer(minLength: 0)
                 if result.hitCount > 1 {
                     Text(isCurrent ? "\((find.current?.ordinal ?? 0) + 1)/\(result.hitCount)" : "\(result.hitCount)")
@@ -308,6 +317,23 @@ extension FindSnippet {
             cursor = upper
         }
         if cursor < to { snippet += plain(text.substring(with: NSRange(location: cursor, length: to - cursor))) }
+        return snippet
+    }
+
+    /// A titled shape's row: its name, then the snippet faint, its hits still bold.
+    public static func named(_ name: String, of result: FindResult, in find: FindState) -> AttributedString {
+        var named = AttributedString(name)
+        named.font = FindStyle.rowName
+        var gap = AttributedString(FindStyle.nameGap)
+        gap.font = FindStyle.snippet
+        return named + gap + faint(of: result, in: find)
+    }
+
+    /// The snippet after a name: faint, its hits still bold.
+    public static func faint(of result: FindResult, in find: FindState) -> AttributedString {
+        var snippet = attributed(of: result, in: find)
+        for run in snippet.runs where run.font == nil { snippet[run.range].font = FindStyle.snippet }
+        snippet.foregroundColor = .secondary
         return snippet
     }
 

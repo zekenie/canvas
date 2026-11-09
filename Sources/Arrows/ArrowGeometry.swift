@@ -87,15 +87,18 @@ public struct ArrowGeometry: Sendable {
         let startPart = Self.part(of: arrow.start, in: startShape), endPart = Self.part(of: arrow.end, in: endShape)
         if startPart != nil || endPart != nil {
             // What each end faces: the other's part's middle (never its side, so two part ends don't hang on each other), else
-            // its handle.
+            // its handle. Two parts are sided together (`PartSide.sides`), by their shapes' boxes at rest: tables one above the
+            // other (or one table's rows) leave one side, so a row's line widening as it is typed never flips an end across a
+            // table, in a stack or side by side.
             let startX = startPart?.midX ?? startHandle.x, endX = endPart?.midX ?? endHandle.x
+            let together = startPart != nil && endPart != nil ? startShape.flatMap { start in endShape.map { PartSide.sides(start.restBounds, $0.restBounds) } } : nil
             if let rect = startPart {
-                let side = PartSide(facing: endX, from: rect)
+                let side = together?.start ?? PartSide(facing: endX, from: rect)
                 (startSide, startHandle) = (side, side.point(of: rect))
                 startShape?.isExact = true
             }
             if let rect = endPart {
-                let side = PartSide(facing: startX, from: rect)
+                let side = together?.end ?? PartSide(facing: startX, from: rect)
                 (endSide, endHandle) = (side, side.point(of: rect))
                 endShape?.isExact = true
             }
@@ -473,6 +476,7 @@ public struct ArrowGeometry: Sendable {
 private struct BoundShape {
     var id: ShapeID
     var bounds: CGRect
+    var restBounds: CGRect
     var outline: [CGPoint]
     var parts: PartFrames
     var entries: [ShapeEntry]
@@ -482,6 +486,7 @@ private struct BoundShape {
     init(_ shape: ConnectableShape, isExact: Bool) {
         id = shape.id
         bounds = shape.bounds
+        restBounds = shape.restBounds
         outline = shape.outline
         parts = shape.parts
         entries = shape.entries
@@ -497,6 +502,16 @@ public enum PartSide: Hashable, Sendable {
     /// on the right, so both ends leave one side).
     init(facing x: CGFloat, from rect: CGRect) {
         self = x >= rect.midX ? .right : .left
+    }
+
+    /// The sides of two parts an arrow joins, chosen together from the boxes of the shapes they are parts of at rest (never
+    /// from a row's laid-out line, which is wider while it is typed): shapes whose spans across overlap (one above the other,
+    /// as stacked tables are, or one shape's own rows) both leave the right, wherever their middles are, so a row made wider
+    /// keeps both ends where they were (a departure from facing each other, which an overlap would cross a table to); shapes
+    /// side by side each face the other.
+    static func sides(_ start: CGRect, _ end: CGRect) -> (start: PartSide, end: PartSide) {
+        if start.minX < end.maxX && end.minX < start.maxX { return (.right, .right) }
+        return (PartSide(facing: end.midX, from: start), PartSide(facing: start.midX, from: end))
     }
 
     /// Its point on `rect`: the middle of that edge.

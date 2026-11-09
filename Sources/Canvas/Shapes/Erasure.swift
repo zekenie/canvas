@@ -119,9 +119,17 @@ extension CustomSizing {
 }
 
 extension PaintOrderAnchored {
-    func erasedPaintAnchor(of record: AnyShapeRecord, in document: CanvasDocument) -> ShapeID? {
-        record.typed(as: Props.self).flatMap { paintAnchor(of: $0, in: document) }
+    func erasedPaintAnchor(of record: AnyShapeRecord, in document: CanvasDocument) -> PaintAnchor? {
+        record.typed(as: Props.self).flatMap { shape in
+            paintAnchor(of: shape, in: document).map { PaintAnchor(shape: $0, below: paintsBelowAnchor(shape, in: document)) }
+        }
     }
+}
+
+/// Where a shape painted by anchor goes (`PaintOrderAnchored`): just above its anchor, or just below it.
+struct PaintAnchor: Hashable {
+    let shape: ShapeID
+    let below: Bool
 }
 
 extension ShapeReferencing {

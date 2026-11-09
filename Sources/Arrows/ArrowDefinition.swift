@@ -294,10 +294,40 @@ extension ArrowDefinition: CustomTranslation {
 }
 
 extension ArrowDefinition: PaintOrderAnchored {
-    /// Just above the highest shape it's bound to, so it's never hidden behind its own shapes.
+    /// Just above the highest shape it's bound to, so it's never hidden behind its own shapes; an arrow with an end at a row
+    /// (a key, writes, reads, calls) just below the lowest (`paintsBelowAnchor`), however it was made, so a card it passes
+    /// covers it and no line strikes through a table's text. Its ends sit at the rows' sides, outside the cards, so its
+    /// marks and heads still show, unless a container of one end (a database, a frame) is painted after the lower end: that
+    /// container's surface would hide the arrow, its end and its mark, so the arrow is just above the container instead,
+    /// still under the cards in it. A departure from tldraw, whose new arrows go on top.
     func paintAnchor(of shape: ShapeRecord<Arrow>, in document: CanvasDocument) -> ShapeID? {
-        let indices = [shape.props.start, shape.props.end].compactMap { $0.binding.flatMap { document.index(of: $0.shapeID) } }
-        return indices.max().map { document.shapes[$0].id }
+        Self.placing(shape.props, in: document)?.shape
+    }
+
+    func paintsBelowAnchor(_ shape: ShapeRecord<Arrow>, in document: CanvasDocument) -> Bool {
+        Self.placing(shape.props, in: document)?.below ?? false
+    }
+
+    /// The shape an arrow is painted against, and whether just below it. From the arrow's props and the order and
+    /// containment of the document alone.
+    private static func placing(_ arrow: Arrow, in document: CanvasDocument) -> (shape: ShapeID, below: Bool)? {
+        let ends = [arrow.start, arrow.end].compactMap { terminal in
+            terminal.binding.flatMap { binding in document.index(of: binding.shapeID).map { (index: $0, id: binding.shapeID) } }
+        }
+        guard let lowest = ends.min(by: { $0.index < $1.index }), let highest = ends.max(by: { $0.index < $1.index }) else { return nil }
+        guard arrow.start.binding?.part != nil || arrow.end.binding?.part != nil else { return (highest.id, false) }
+        // The innermost container of an end painted after the lowest shape (a member is above its container, so only the
+        // higher end can have one): the arrow goes just above it.
+        var covering: (index: Int, id: ShapeID)?
+        var container = document[highest.id]?.container
+        var steps = 0
+        while let held = container, steps < 64, let index = document.index(of: held) {
+            if index > lowest.index, index > (covering?.index ?? -1) { covering = (index, held) }
+            container = document[held]?.container
+            steps += 1
+        }
+        if let covering { return (covering.id, false) }
+        return (lowest.id, true)
     }
 }
 

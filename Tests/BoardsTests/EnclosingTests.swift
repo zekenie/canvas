@@ -144,7 +144,7 @@ import TestKit
         expectEqual(h.editor.menuTitle(of: .goBack), nil, "a command whose title doesn't follow the editor has no menu title")
         expectEqual(h.editor.menuTitle(of: "unclaimed"), nil)
     },
-    test("stepping out brings what it selects into view if it isn't") {
+    test("stepping out leaves the camera while any of what it selects is in view, and pans to it, never zooming, when none is") {
         let nest = Nest(), groups = GroupsFixture()
         let h = try enclosingHarness(nest, groups)
         let view = CGSize(width: 1000, height: 700)
@@ -153,11 +153,14 @@ import TestKit
         let inside = h.add(Box(CGRect(x: 50, y: 250, width: 100, height: 100)))
         h.editor.put([inside], in: corral)
         h.editor.selectedShapeIDs = [inside]
+        h.wait(200)
+        let before = h.editor.camera
         h.commandUp()
         h.wait(200)
         expectEqual(h.editor.selectedShapeIDs, [corral])
-        // 3000 × 2000 fitted in 900 × 600.
-        expectEqual(h.editor.zoomPercentage, 30, "zoomed out to fit it")
+        // Some of it in view: the camera stays, never zoomed out to fit the 3000 × 2000 corral (U1, structure 15).
+        expectEqual(h.editor.zoomPercentage, 100, "not zoomed out")
+        expectEqual(h.editor.camera, before, "nor moved")
     },
     test("the way up the table of contents' header offers goes to the board above whatever is selected, and is off on the root") {
         let nest = Nest(), groups = GroupsFixture()

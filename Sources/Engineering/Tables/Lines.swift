@@ -287,6 +287,10 @@ struct TableLines: LineModel {
 
     var noun: LineNoun { LineNoun("column") }
     var style: LineStyle { LineLooks.table }
+    /// As wide as every column's name and type read whole at rest (`TableDefinition.wholeWidth`): a commit widens it so.
+    func wholeWidth(of props: DatabaseTable, in editor: CanvasEditor) -> CGFloat? {
+        TableDefinition.wholeWidth(of: props.columns, registry: editor.registry, inFile: editor.shape(inFile:))
+    }
     func rows(of props: DatabaseTable) -> [ColumnLine] { props.columns.map { ColumnLine($0) } }
     func setRows(_ rows: [ColumnLine], in props: inout DatabaseTable) { props.columns = rows.map(\.column) }
     func id(of row: ColumnLine) -> PartID { row.column.id }

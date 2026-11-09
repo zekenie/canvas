@@ -11,7 +11,7 @@ import Topology
 extension CanvasEditor {
     /// The connections bound to `id`, as parts: outgoing ones first, then incoming, each titled by the
     /// shape at its other end ("Arrow to Payment", "Arrow from Cart"), or the row there ("Arrow to id in customers"), at the segment where it leaves
-    /// `id`. Pressing one selects the arrow. Selection puts the whole list in reading order of the rects.
+    /// `id`, the whole arrow lit while it has the focus (`lights`). Pressing one selects the arrow. Selection puts the whole list in reading order of the rects.
     func connectionParts(of id: ShapeID) -> [ShapePart] {
         guard registry.makesConnections, let kind = registry.connectorKind, let topology else { return [] }
         let context = shapeContext
@@ -31,7 +31,8 @@ extension CanvasEditor {
                 ?? registry.label(of: document[otherID]?.kind ?? kind).name
             let carrier = edge.carrier
             let part = ShapePart(id: carrier, title: (leaves ? ConnectionsStyle.arrowTo : ConnectionsStyle.arrowFrom) + name,
-                                 role: .connection, rect: near.insetBy(dx: -ConnectionsStyle.partPad / camera.zoom, dy: -ConnectionsStyle.partPad / camera.zoom)) { editor in
+                                 role: .connection, rect: near.insetBy(dx: -ConnectionsStyle.partPad / camera.zoom, dy: -ConnectionsStyle.partPad / camera.zoom),
+                                 lights: [carrier]) { editor in
                 editor.selectedShapeIDs = [carrier]
             }
             let middle = other.map { CGPoint(x: $0.midX, y: $0.midY) } ?? CGPoint(x: near.midX, y: near.midY)

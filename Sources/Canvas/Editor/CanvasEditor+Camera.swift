@@ -62,11 +62,33 @@ extension CanvasEditor {
     /// left under the inspector. Replaces what was kept (a fit, `animateCamera(toFit:…)`); a rect with
     /// nothing in view keeps nothing new.
     public func keepInViewWhileSettling(_ rect: CGRect) {
-        let view = unobscuredViewport, camera = cameraTarget
+        // What is in view now, of the chrome as laid out: a part the inspector is about to cover is kept clear as it comes.
+        let view = laidOutViewport, camera = cameraTarget
         guard !view.isEmpty, !rect.isNull else { return }
         let shown = rect.intersection(camera.toWorld(view))
         guard !shown.isNull, shown.width > 0 || shown.height > 0 else { return }
         keptView = KeptView(rect: shown, keeping: .inView, camera: camera, until: scheduler.now + Style.viewSettle)
+    }
+
+    /// Moves the camera, as `animateCamera(to:duration:)` does, by as little as brings `rect` (world units) into the part
+    /// of the view the host leaves clear (`unobscuredViewport`, as the chrome is headed), `margin` view points in from its
+    /// edges, at the zoom it has, from where the camera is headed: never centering it, so what is beside it in view stays
+    /// in view. A rect too big for that keeps its top-left corner in view. Keeps it in view while the view around it
+    /// settles, as `keepInViewWhileSettling` does. False, and nothing done, when it is in view already, before the view
+    /// has a size, or for a null rect. What bringing a shape into view by the least move goes by (Selection's
+    /// `revealIfOffscreen`).
+    @discardableResult
+    public func animateCamera(toShow rect: CGRect, margin: CGFloat, duration: Duration) -> Bool {
+        let view = unobscuredViewport, camera = cameraTarget
+        guard !view.isEmpty, !rect.isNull, rect.isFinite else { return false }
+        let inset = view.insetBy(dx: margin, dy: margin)
+        let delta = Self.shift(bringing: camera.toView(rect), into: inset.isEmpty ? view : inset)
+        guard delta != .zero else { return false }
+        var target = camera
+        target.pan(by: delta)
+        animateCamera(to: target, duration: duration)
+        keptView = KeptView(rect: rect, keeping: .inView, camera: target, until: scheduler.now + Style.viewSettle)
+        return true
     }
 
     /// The view's clear part changed (its size, or what the host covers of it, `coveredEdges`): a view
@@ -114,11 +136,26 @@ extension CanvasEditor {
     /// editing frame's origin: an editing view's coordinates) is in the part of the view the host leaves
     /// clear, `Style.keepInViewMargin` in from its edges; a rect too big to fit keeps its top-left
     /// corner in view. See `EditContext.keepInView`.
+    ///
+    /// While the camera glides (a reveal of the shape just put down), it is judged where the camera is headed: in view
+    /// there, the glide goes on; otherwise the glide is sent on to where it is, never stopped where it is now, short of
+    /// what it was bringing into view.
     func keepInView(_ rect: CGRect, of id: ShapeID) {
         guard session == nil, let box = editingFrame(of: id) else { return }
         let view = unobscuredViewport.insetBy(dx: Style.keepInViewMargin, dy: Style.keepInViewMargin)
         guard view.width > 0, view.height > 0 else { return }
-        let delta = Self.shift(bringing: camera.toView(rect.offsetBy(dx: box.minX, dy: box.minY)), into: view)
+        let world = rect.offsetBy(dx: box.minX, dy: box.minY)
+        if let headed = cameraAnimationTarget {
+            let delta = Self.shift(bringing: headed.toView(world), into: view)
+            guard delta != .zero else { return }
+            var target = headed
+            target.pan(by: delta)
+            // What a reveal keeps while the view settles goes on to be kept from where the glide now goes.
+            if keptView?.camera == headed { keptView?.camera = target }
+            animateCamera(to: target, duration: Style.keptViewDuration)
+            return
+        }
+        let delta = Self.shift(bringing: camera.toView(world), into: view)
         guard delta != .zero else { return }
         camera.pan(by: delta)
     }

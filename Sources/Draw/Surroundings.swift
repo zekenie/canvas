@@ -1,5 +1,6 @@
 import Canvas
 import CoreGraphics
+import Adornments
 import DrawScript
 import Geometry
 
@@ -23,6 +24,54 @@ public struct Landing: Equatable {
     }
 }
 
+/// How a shape put down for a person, beside another or anywhere (Insert, ⇧↩, a new type), goes: where the person sees it,
+/// in the clear part of the view (`reading.view`, as the chrome is headed) with the row of adornments above its top (a title's
+/// pill: `above`, world units) inside that part too, `margin` in from its edges.
+public struct PutBeside: Sendable, Equatable {
+    /// World units over the box's top that must be in view too.
+    public var above: CGFloat
+    /// World units kept in from the view's edges.
+    public var margin: CGFloat
+    /// Whether the view will be panned to what's put down (Insert's: the selection is brought into view, the shape it's beside
+    /// kept with it), so a side counts as seen when the two fit in the clear part together; else (a note put down settled, the
+    /// keyboard staying where it is) only one in the clear part as it is.
+    public var panned: Bool
+
+    public init(above: CGFloat, margin: CGFloat, panned: Bool = false) {
+        self.above = above
+        self.margin = margin
+        self.panned = panned
+    }
+
+    /// The row above a shape (Adornments' `rowGap + rowHeight`, 27 view points) and `PlacingStyle.viewMargin`, at `zoom`.
+    @MainActor
+    public static func inView(at zoom: CGFloat, panned: Bool = false) -> PutBeside {
+        let zoom = zoom > 0 && zoom.isFinite ? zoom : 1
+        return PutBeside(above: (AdornmentLayout.rowGap + AdornmentLayout.rowHeight) / zoom, margin: PlacingStyle.viewMargin / zoom, panned: panned)
+    }
+
+    /// The same at the zoom `editor`'s camera is headed for.
+    @MainActor
+    public static func inView(of editor: CanvasEditor, panned: Bool = false) -> PutBeside { inView(at: editor.cameraTarget.zoom, panned: panned) }
+
+    /// The part of `view` (world units) a box goes in, with its row above: in from the edges by the margin.
+    func clear(of view: CGRect) -> CGRect {
+        let inset = view.insetBy(dx: margin, dy: margin)
+        return inset.isEmpty ? view : inset
+    }
+
+    /// Whether `rect`, with its row above, is seen in `clear`: in it, or, `panned`, able to be panned into it with `beside`
+    /// (the shape it's put down beside, with its row above too).
+    func shows(_ rect: CGRect, in clear: CGRect, beside: CGRect? = nil) -> Bool {
+        let shown = withRow(rect)
+        guard panned, let beside else { return clear.contains(shown) }
+        let both = shown.union(withRow(beside))
+        return both.width <= clear.width && both.height <= clear.height
+    }
+
+    private func withRow(_ rect: CGRect) -> CGRect { CGRect(x: rect.minX, y: rect.minY - above, width: rect.width, height: rect.height + above) }
+}
+
 /// The constants of placing for plugins.
 @MainActor
 public enum PlacingStyle {
@@ -33,6 +82,8 @@ public enum PlacingStyle {
     /// The room an arrow to or from a shape placed between two others needs, between the two edges it
     /// joins: a body long enough to show a head and read as an arrow, as draw's `normal` gap leaves one.
     public static let arrowRoom: CGFloat = GapName.normal.value
+    /// How far in from the clear part of the view's edges a shape put down for a person lands (`PutBeside`), in view points.
+    public static let viewMargin: CGFloat = 16
 }
 
 /// A board shapes land on, as `canvas draw` reads the board it places shapes on: read in place
@@ -84,20 +135,25 @@ public struct Surroundings {
     /// `within` a container (a frame the target is in, at any depth), each side is kept within it too,
     /// as draw keeps a shape `in "F"` (its holder, held directly: a frame in it is in its way); with no
     /// side placed there, it's put in the container as `inside(_:)` puts it, and raised above it.
-    public func near(_ target: ShapeID, within holder: ShapeID? = nil) -> Landing? {
+    ///
+    /// `put` is how a shape put down beside another for a person goes (Insert, ⇧↩, a new type beside the shapes that name
+    /// it): top-aligned with it on its right or left (`top level with`, as two tables side by side are drawn), and on a side
+    /// in the clear part of the view where one is (`PutBeside.inView`), the nearest of those, so it is never put down out of
+    /// sight or under the inspector while a side in view is free.
+    public func near(_ target: ShapeID, within holder: ShapeID? = nil, put: PutBeside? = nil) -> Landing? {
         guard let bounds = reading.shapes.geometry(of: target)?.bounds else { return nil }
-        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [])
+        return near(bounds, obstacle: obstacle(target), within: holder, avoiding: [], put: put)
     }
 
     /// Beside a box that is not a shape of the board yet (or not there any more): as `near(_:within:)`
     /// lands beside a shape with these bounds. `avoiding` are boxes a caller has planned and not put
     /// down, which the landing keeps clear of as of any shape there.
-    public func near(_ rect: CGRect, avoiding: [CGRect] = [], within holder: ShapeID? = nil) -> Landing? {
-        near(rect, obstacle: nil, within: holder, avoiding: avoiding)
+    public func near(_ rect: CGRect, avoiding: [CGRect] = [], within holder: ShapeID? = nil, put: PutBeside? = nil) -> Landing? {
+        near(rect, obstacle: nil, within: holder, avoiding: avoiding, put: put)
     }
 
     private func near(_ bounds: CGRect, obstacle targetObstacle: Int?, within holder: ShapeID?, avoiding: [CGRect],
-                      sides: [Direction] = PlacingStyle.sides) -> Landing? {
+                      sides: [Direction] = PlacingStyle.sides, put: PutBeside? = nil) -> Landing? {
         guard !bounds.isNull, bounds.isFinite else { return nil }
         // A point to land beside (the middle of two shapes) is no shape: it has no area, so a shape under it would be held by it at
         // any size (the solver's zone (a)) and landed on. Marked as the board, nothing is a zone of it and what is under it is in the way.
@@ -107,15 +163,23 @@ public struct Surroundings {
             fixed.append(LayoutProblem.Fixed(rect: holding, obstacle: obstacle(holder)))
             held = LayoutProblem.Holder(.fixed(1), written: "in \(Self.holder)", direct: true)
         }
-        var best: (rect: CGRect, gap: CGFloat, zones: [ShapeID])?
+        var best: (rect: CGRect, gap: CGFloat, zones: [ShapeID], seen: Bool)?
+        let view = put.flatMap { put in reading.view.map { put.clear(of: $0) } }
         for side in sides {
-            let clause = LayoutProblem.ResolvedClause(relation: .direction(side), targets: [LayoutProblem.ResolvedTarget(.fixed(0), written: Self.target)],
-                                                       written: "\(side.rawValue) \(Self.target)")
-            guard let placed = place(LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: [clause], holder: held, carries: carries),
+            var clauses = [LayoutProblem.ResolvedClause(relation: .direction(side), targets: [LayoutProblem.ResolvedTarget(.fixed(0), written: Self.target)],
+                                                        written: "\(side.rawValue) \(Self.target)")]
+            if put != nil, side == .right || side == .left {
+                clauses.append(LayoutProblem.ResolvedClause(relation: .level(.top), targets: [LayoutProblem.ResolvedTarget(.fixed(0), written: Self.target)],
+                                                            written: "top level with \(Self.target)"))
+            }
+            guard let placed = place(LayoutProblem.Free(line: 1, name: Self.moving, size: size, clauses: clauses, holder: held, carries: carries),
                                      fixed: fixed, avoiding: avoiding)
             else { continue }
             let gap = Self.gap(from: bounds, to: placed.rect, side)
-            if best.map({ gap < $0.gap - Self.slack }) ?? true { best = (placed.rect, gap, placed.zones) }
+            let seen = view.map { put?.shows(placed.rect, in: $0, beside: bounds) ?? true } ?? true
+            // A side in view beats one out of it; among sides alike that way, the nearer, the earlier on a tie.
+            let better = best.map { best in seen != best.seen ? seen : gap < best.gap - Self.slack } ?? true
+            if better { best = (placed.rect, gap, placed.zones, seen) }
         }
         guard let best else {
             if let holder, held != nil { return inside(holder) }
@@ -196,12 +260,26 @@ public struct Surroundings {
                        above: [container])
     }
 
+    /// Whether a box landed at `rect` shows in the clear part of the view as `put` asks (with its row above, in from the edges):
+    /// what a caller that puts a shape down settled, never panned to, checks a landing beside a shape by before it falls back
+    /// to `anywhere(put:)`. True with no view.
+    public func shows(_ rect: CGRect, put: PutBeside) -> Bool {
+        guard let view = reading.view else { return true }
+        var settled = put
+        settled.panned = false
+        return settled.shows(rect, in: put.clear(of: view))
+    }
+
     /// Anywhere on the board, as draw puts the one shape a script says nothing about the place of (no
     /// placements, and not on the board yet): at the middle of the view the board would be shown with,
     /// or the nearest spot around it clear of what's there, ring by ring; failing that, at the middle
     /// all the same.
-    public func anywhere() -> Landing {
-        let rect = place(LayoutProblem.Free(line: 1, name: Self.moving, size: size, carries: carries))?.rect
+    ///
+    /// `put` (Insert's, for a person): at the nearest spot that is in the clear part of the view with the row above it
+    /// (`PutBeside`), where one is clear, before any out of it.
+    public func anywhere(put: PutBeside? = nil) -> Landing {
+        let room = put.flatMap { put in reading.view.map { (put.clear(of: $0), put.above) } }
+        let rect = place(LayoutProblem.Free(line: 1, name: Self.moving, size: size, carries: carries), inView: room)?.rect
             ?? CGRect(x: viewMiddle.x - size.width / 2, y: viewMiddle.y - size.height / 2, width: size.width, height: size.height)
         return Landing(board: reading.board, rect: rect)
     }
@@ -211,16 +289,22 @@ public struct Surroundings {
     /// beside several as beside the box around them, within the container they share; with none
     /// `anywhere`, in the middle of the view or the nearest spot round it clear of what's there. Nil with
     /// none and no view, or a board the editor can't read.
+    ///
+    /// For a person (`PutBeside.inView`): beside a shape it is top-aligned with it, and it goes on a side, or to a spot, in
+    /// the clear part of the view (as it will be once the inspector the new shape's selection shows is in) with the row
+    /// above it (its title's pill), where one is free.
     static func insertionSpot(of size: CGSize, beside shapes: [ShapeID], in editor: CanvasEditor) -> CGRect? {
         guard let surroundings = Surroundings(on: editor.board, moving: size, in: editor) else { return nil }
         let containers = Set(shapes.map { editor.shapeContext.container(of: $0) })
         let holder = containers.count == 1 ? containers.first ?? nil : nil
+        // Selected and brought into view once put down, with what it's beside kept in view (Selection's).
+        let put = PutBeside.inView(of: editor, panned: true)
         switch shapes.count {
-        case 0: return surroundings.reading.view == nil ? nil : surroundings.anywhere().rect
-        case 1: return surroundings.near(shapes[0], within: holder)?.rect
+        case 0: return surroundings.reading.view == nil ? nil : surroundings.anywhere(put: put).rect
+        case 1: return surroundings.near(shapes[0], within: holder, put: put)?.rect
         default:
             let bounds = shapes.compactMap { surroundings.reading.shapes.geometry(of: $0)?.bounds }.reduce(CGRect.null) { $0.union($1) }
-            return surroundings.near(bounds, within: holder)?.rect
+            return surroundings.near(bounds, within: holder, put: put)?.rect
         }
     }
 
@@ -253,15 +337,17 @@ public struct Surroundings {
 
     /// The free box placed among the board's obstacles by DrawScript's solver: where it goes, and the
     /// shapes it sits on there (the zones), back to front; nil if the solver can't place it.
-    private func place(_ free: LayoutProblem.Free, fixed: [LayoutProblem.Fixed] = [], avoiding: [CGRect] = []) -> (rect: CGRect, zones: [ShapeID])? {
+    private func place(_ free: LayoutProblem.Free, fixed: [LayoutProblem.Fixed] = [], avoiding: [CGRect] = [],
+                       inView room: (view: CGRect, above: CGFloat)? = nil) -> (rect: CGRect, zones: [ShapeID])? {
         let grid = grid, shapes = reading.document.shapes
         // Boxes a caller has planned come after every shape of the board, each its own number.
         let planned = avoiding.filter(\.isFinite).enumerated().map { LayoutProblem.Obstacle(id: shapes.count + $0.offset, rect: $0.element) }
         let extra = planned.isEmpty ? nil : ObstacleGrid(planned)
-        let problem = LayoutProblem(free: [free], fixed: fixed,
+        var problem = LayoutProblem(free: [free], fixed: fixed,
                                     obstacles: { area in extra.map { grid.obstacles(in: area) + $0.obstacles(in: area) } ?? grid.obstacles(in: area) },
                                     boardBounds: grid.bounds,
                                     viewMiddle: viewMiddle, view: reading.view)
+        problem.landsInView = room.map { LayoutProblem.InView(clear: $0.view, above: $0.above) }
         guard let solution = try? problem.solve(), let rect = solution.rects.first, rect.isFinite else { return nil }
         let zones = solution.zones.first?.compactMap { shapes.indices.contains($0.id) ? shapes[$0.id].id : nil } ?? []
         return (rect, zones)
