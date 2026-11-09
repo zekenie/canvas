@@ -107,6 +107,32 @@ extension EditorHarness {
         expectEqual(word.form, #":route("…")"#)
         expectEqual(word.from, .engineeringAgents)
     },
+    test(":route finds an endpoint taken out of an API by its method and whole path, and <apis> lists it as an API of one route") {
+        let h = try agentHarness()
+        let orders = h.api("orders API", ["/orders", "GET /{id}"])
+        let alone = h.add(StandaloneEndpoint(frame: CGRect(x: 100, y: 700, width: 420, height: 44),
+                                             endpoint: Endpoint(method: "POST", path: "/orders/{id}/refunds", name: "createRefund", body: TypeRef("NewRefund"),
+                                                                responses: [EndpointResponse(status: "201", type: TypeRef("Refund"))])))
+        let unnamed = h.add(StandaloneEndpoint(frame: CGRect(x: 100, y: 900, width: 420, height: 44), endpoint: Endpoint(method: "DELETE", path: "/orders/{id}")))
+        let found = try h.ask(#":route("POST /orders/{order_id}/refunds")"#)
+        expectEqual(found.rows.map(\.id), [alone], "by its whole path, a parameter any parameter")
+        expectEqual(found.rows.first?.members, ["routes": ["POST /orders/{id}/refunds"]])
+        expectEqual(try h.ask(#":route("/orders/{id}")"#).rows.map(\.id), [orders, unnamed], "a path alone: any method, the API's row and the endpoint's own")
+        expectEqual(try h.ask(#":route("GET /orders/{id}/refunds")"#).count, 0, "another method")
+        expectEqual(try h.ask(#"endpoint:route("/orders/{id}/refunds")"#).rows.map(\.id), [alone])
+        h.add(StandaloneEndpoint(frame: CGRect(x: 100, y: 1100, width: 420, height: 44), endpoint: Endpoint(method: "GET", path: "")))
+        expectEqual(try h.ask(#":route("GET /")"#).count, 0, "one with no path yet is no route")
+        expectEqual(try h.fact("apis").split(separator: "\n").map(String.init), [
+            "orders API",
+            "- GET /orders/{id}",
+            "createRefund (endpoint)",
+            "- POST /orders/{id}/refunds (NewRefund) → 201 Refund",
+            "DELETE /orders/{id} (endpoint)",
+            "- DELETE /orders/{id}",
+            "GET (endpoint)",
+        ], "one with no path yet: its name alone")
+        expect(try h.fact("apis", "what does createRefund do?").hasPrefix("createRefund (endpoint)\n"), "the endpoints the question names first")
+    },
     test("a test inside a list attribute holds when any item holds; a column's type reads as its words, an enum's value as its text") {
         let h = try agentHarness()
         let customers = h.table("customers", ["id uuid pk", "email text unique"])
