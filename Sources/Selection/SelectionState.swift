@@ -817,7 +817,8 @@ extension CanvasEditor {
             tx.stepName = DeleteSteps.name(asked: gone, along: tx.deletedAlong, namesAsked: unseen, in: registry)
         }                                                // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays
-        if let spoken, ids.contains(where: { document[$0] == nil }) { announce(spoken) }
+        // Not where the slash bar says the step itself (`isSayingStep`): it is heard once.
+        if let spoken, !isSayingStep, ids.contains(where: { document[$0] == nil }) { announce(spoken) }
     }
 
     /// Whether the arrow keys nudge: something's selected, and nothing's under way or being edited.

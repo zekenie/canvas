@@ -1,4 +1,5 @@
 import AppKit
+import Boards
 @_spi(Host) import Canvas
 import CanvasTesting
 import CanvasUI
@@ -111,6 +112,12 @@ private let e6 = #"""
         editor.transact("Add Note") { $0.insert(note) }
         let quote = try require(editor.mentions?.quote(of: note.id, around: post))
         expect(quote.hasSuffix("@POST /orders") && quote.count <= 44, "the quote ends on the row's own mention, short enough for a caption line: \(quote)")
+        // The header's own list: the note under Mentioned By, its caption around the mention of the header's row, the other's left out.
+        w.window.spin { list.settled().contains { $0.title == "Mentioned By" } }
+        let mentioned = try require(list.settled().first { $0.title == "Mentioned By" }, "the note mentions rows of the header: \(list.settled().map(\.title))")
+        expectEqual(mentioned.rows.count, 1)
+        let caption = try require(mentioned.rows[0].caption, "the row has its quote")
+        expect(caption.contains("@POST /orders") && !caption.contains("refunds"), "around the header's row's mention, not the other's: \(caption)")
     },
     test("W-connect-1: a key's pill and the table it stands for are one row of Connections, counted once") {
         let w = try InspectorWindow()
@@ -170,6 +177,40 @@ private let e6 = #"""
         expectEqual(editor.selectedItems?.acting, [AnyHashable(rows[rows.count - 1].id)],
                     "Escape: one level out, the row the caret was on selected (shown as /customers, closed again, standing for it)")
     },
+    test("R5: deleting an API with its arrows says what went once, as the command runs from the key or Edit ▸ Delete: \"Delete API and 3 Arrows\"") {
+        let w = try InspectorWindow()
+        let editor = w.editor
+        _ = try drawnInProcess(e6, on: editor)
+        let api = try require(shape(editor, "orders API")).id
+        editor.selectedShapeIDs = [api]
+        let before = editor.announcements.count
+        expect(editor.perform(.delete))
+        let said = Array(editor.announcements.dropFirst(before))
+        expectEqual(said.count, 1, "once: \(said)")
+        expect(said.first?.hasPrefix("Delete API and ") == true && said.first?.hasSuffix(" Arrows") == true, said.joined(separator: " | "))
+        expectEqual(editor.undoHistory.undoName, said.first, "what VoiceOver heard is the step's name")
+    },
+    test("R7: ⌘↑ with a table's rows selected lets the rows go first, the table still selected and the Go item named for it, and only then climbs, one level a key") {
+        let w = try InspectorWindow()
+        let editor = w.editor
+        _ = try drawnInProcess(#"database "store" size: 900x500"#, on: editor)
+        _ = try drawnInProcess(#"table "orders" in "store" columns: "id uuid pk\ntotal int""#, on: editor)
+        let table = try require(shape(editor, "orders")).id, store = try require(shape(editor, "store")).id
+        let rows = try require(editor.document[table]?.typed(as: DatabaseTable.self)).props.columns
+        editor.selectedShapeIDs = [table]
+        editor.selectItems([AnyHashable(rows[1].id)], of: table)
+        expect(editor.selectedItems != nil)
+        expect(editor.canPerform(.enclosingBoard), "enabled with rows selected")
+        expectEqual(editor.menuTitle(of: .enclosingBoard), "Enclosing Table")
+        w.window.makeFirstResponder(w.canvas)
+        let driver = KeyDriver(w.window)
+        expect(driver.send(Chord(Key.up, .command)).isKeyEquivalent)
+        expectEqual(editor.selectedItems == nil, true, "the rows let go")
+        expectEqual(editor.selectedShapeIDs, [table], "one level only: the table is still the selection")
+        expectEqual(editor.menuTitle(of: .enclosingBoard), "Enclosing Database", "the next step is the container's")
+        expect(driver.send(Chord(Key.up, .command)).isKeyEquivalent)
+        expectEqual(editor.selectedShapeIDs, [store], "the second key climbs")
+    },
     test("R47: Find's step in a table names the table, and says the words around the hit stepped to, not the table's first hit's again") {
         let w = try InspectorWindow()
         let editor = w.editor
@@ -186,6 +227,24 @@ private let e6 = #"""
         find.step(forward: true)
         let second = try require(find.announcement)
         expect(second.hasPrefix("Hit 2 of 2, products, Table, ") && second.contains("list_price") && !second.contains("price_cents"), second)
+        find.close()
+    },
+    test("R47: a step to a column of a table whose name is hit too still names the table") {
+        let w = try InspectorWindow()
+        let editor = w.editor
+        _ = try drawnInProcess(#"table "orders" columns: "id uuid pk\norder_id uuid""#, on: editor)
+        let id = try require(shape(editor, "orders")).id
+        let find = try require(editor.find)
+        find.open()
+        find.query = "order"
+        w.window.spin { !find.isIndexing && find.isSettled }
+        _ = try awaitResult { await find.settled() }
+        expectEqual(find.results.map(\.id), [id])
+        let total = find.total
+        expect(total >= 2, "the name and the column are both hit: \(total)")
+        find.step(forward: true)
+        let second = try require(find.announcement)
+        expect(second.hasPrefix("Hit 2 of \(total), orders, Table, ") && second.contains("order_id"), second)
         find.close()
     },
     test("in the app's window a row's Connections list is one Tab stop the arrows walk: the line lights its shape, Return goes to it") {

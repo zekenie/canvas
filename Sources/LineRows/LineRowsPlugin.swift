@@ -251,7 +251,7 @@ enum Folding {
 
 /// What folds say: their items' titles and what VoiceOver hears.
 @MainActor
-enum LineFoldStyle {
+public enum LineFoldStyle {
     static let foldTitle = "Fold Rows"
     static let unfoldTitle = "Unfold Rows"
     static let unfolded = "Unfolded"
@@ -293,9 +293,20 @@ enum LineFoldStyle {
     static func moreShown(_ count: Int, noun: LineNoun) -> String { "\(more(count, noun: noun)) shown" }
 
     /// A closed item's title, as VoiceOver reads it among the shape's rows: "/orders, path prefix, 4 endpoints, closed" where the
-    /// kind's words count its rows already, else "fruit/, closed, 2 entries".
-    static func closedItem(_ title: String, hiding: Int, noun: LineNoun) -> String {
+    /// kind's words count its rows already (as a whole count, never "4 endpoints" within "14 endpoints"), else "fruit/, closed,
+    /// 2 entries". Where the kind's count is of more than the fold hides (Find shows some rows of a closed group), the two are
+    /// said as one count: "/orders, path prefix, closed, 10 of 14 endpoints hidden".
+    public static func closedItem(_ title: String, hiding: Int, noun: LineNoun) -> String {
         let counted = noun.counted(hiding)
-        return title.contains(counted) ? "\(title), closed" : "\(title), closed, \(counted)"
+        if title == counted || title.hasSuffix(", " + counted) || title.contains(", " + counted + ",") { return "\(title), closed" }
+        // The last part of the title, if it is a count of this kind's rows: "14 rows".
+        let pieces = title.split(separator: ",", omittingEmptySubsequences: false)
+        if pieces.count > 1, let tail = pieces.last?.dropFirst() {
+            let parts = tail.split(separator: " ", maxSplits: 1)
+            if parts.count == 2, let members = Int(parts[0]), String(parts[1]) == noun.singular || String(parts[1]) == noun.plural {
+                return "\(pieces.dropLast().joined(separator: ",")), closed, \(hiding) of \(noun.counted(members)) hidden"
+            }
+        }
+        return "\(title), closed, \(counted)"
     }
 }

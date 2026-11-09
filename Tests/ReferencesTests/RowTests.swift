@@ -82,7 +82,7 @@ import Titles
         h.editor.transact { $0.delete([box]) }
         expectEqual(try require(try row(h, id).label).systemImage, "square.dashed", "deleted")
         expect(!(try require(try row(h, id).label).standsIn), "and no arrow")
-        expectEqual(try text(h, id), "shapes", "the name it was picked as")
+        expectEqual(try text(h, id), "things", "the name it showed last, not the one it was picked as")
         h.editor.undo()
         expectEqual(try text(h, id), "things")
     },

@@ -32,6 +32,26 @@ import TestKit
         expect(connections.begun.isEmpty)
         expectEqual(h.editor.selectedShapeIDs, [cover])
     },
+    test("while a shape is edited only its own dots show: a box's under a pointer left at rest go, none is hovered, and they come back with the pointer once editing is over") {
+        let connections = ConnectionLog()
+        let cardPorts = Contributor(id: "card-ports") { registrar in registrar.ports(Card.self, on: Wire.self) }
+        let h = try portsHarness(connections, more: [CardsPlugin(), cardPorts])
+        h.add(Box(boxFrame))
+        let card = h.add(Card(CGRect(x: 400, y: 100, width: 100, height: 100)))
+        let plain = render(h)
+        h.hoverDot(rightDot)
+        expectEqual(dotPixels(plain, render(h), at: rightDot), 16, "shown under the pointer")
+        expect(h.editor.beginEditing(card))
+        expectEqual(dotPixels(plain, render(h), at: rightDot), 0, "the box's dots, its pointer left at rest, go as another shape is edited")
+        h.move(to: boxMiddle)
+        h.move(to: rightDot)
+        expectEqual(h.editor.hoveredButton, nil, "no dot of another shape to hover while one is edited")
+        expectEqual(dotPixels(plain, render(h), at: rightDot), 0, "the pointer moving onto where they were doesn't bring them back")
+        h.editor.endEditing()
+        h.move(to: boxMiddle)
+        h.move(to: rightDot)
+        expectEqual(dotPixels(plain, render(h), at: rightDot), 16, "editing over, the pointer moving finds them again")
+    },
     test("a box dragged and let go with Space pressed during the drag shows no dots beside the open hand: the hand's press would pan") {
         let h = try portsHarness()
         h.add(Box(boxFrame))

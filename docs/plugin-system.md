@@ -2640,7 +2640,9 @@ row, unread words in order). While a shape is edited the session sets `LineRowsL
 it alone, so its kind lays itself out a line taller and draws no row the field has. The keys are rows-editing's:
 ↩ commits and opens a line below (on an empty one ends), ↑ ↓ and Tab walk the stops (past the ends, the next
 shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes one (one step), a pasted block is a row a
-line, ⇧↩ puts a shape beside. A line typed wider than the shape lays it out as wide as the line needs
+line, ⇧↩ puts a shape beside, Home and End go to the first and last row. A row another writer takes out under the caret leaves the
+keyboard on the waiting line (VoiceOver told: "Entry removed"); the line's words, if the person had changed it, stay there as a draft written only as
+the caret leaves, and an untouched line is emptied, so leaving never puts back what was taken. A line typed wider than the shape lays it out as wide as the line needs
 (`LineRowsLayout.width`, provided), nothing written; a kind that says how wide its rows read whole at rest
 (`wholeWidth(of:in:)`) has a commit that leaves it narrower write that width in the same step, so the shape
 keeps it as the caret leaves. While it is laid out wider or taller than it stores, the core paints and hits the shape edited
@@ -2670,6 +2672,8 @@ shape shakes, as a row's line does; a toggle or a pick is spoken ("null yes") be
 asks for one gets a "›" on the row with the caret (`showsCardChevron`), a click opening the card; one that draws its
 own opens it with `editor.service(LineRowsService.self)?.openCard(of: PartAddress(shape, part: row))`. A table's column has one
 (type, references, null, unique, primary key, default, on delete, on update: [engineering](../.claude/rules/engineering.md)).
+The card is as wide as its longest line reads whole, up to `LineCardStyle.widthMost`, and never narrower than the row it hangs from; a line
+longer than that is cut at its end.
 
 **A fixed line, action rows, indents.** A kind may have a line above its rows that's never a row (an API's server):
 `fixedLine` gives its grammar, placeholder, step and rect, and the session makes it a stop after the title. An offer
@@ -2702,7 +2706,8 @@ func laidOutSize(of shape: ShapeRecord<Tally>, in context: ShapeContext) -> CGSi
 
 Editing a folded shape shows every row; Find's hits show in place while Find is open
 (`FindState.rangesHit(of:)`, a kind keeping folded a row whose hits it draws elsewhere: `LineModel.peeks`); the "+N ›"
-line opens with a click, or ⌥Tab then Return or Space. A kind with headers (an API's path prefixes) folds as far as
+line opens with a click, or ⌥Tab then Return or Space; a closed header opens with a click on its chevron only
+(`LineRowsContribution.opener`: the line up to where its words start), a click on its words selecting it as an item. A kind with headers (an API's path prefixes) folds as far as
 it goes: ⌃⌘↑ closes every header too, each showing its count, and → or Space opens one selected as an item, ←
 closes it. Folds are remembered with the file's view on this Mac, a core view value (`ViewValueKey`,
 `editor.setViewValue`, no step), which `BoardDocument` saves and hands back before the canvas is made.
@@ -4079,7 +4084,8 @@ list.returnPicks = .actionsOnly        // a line's list: Return commits the line
 A list picks on Return (`returnPicks`, `.always`) unless it says `.actionsOnly`, where Return on a row of words
 isn't taken (the text gets it) and on an action row (`CaretListItem.isAction`, "New type Problem") picks it.
 A highlight can be a pill's line too: `TextHighlight(range:fill:stroke:isDashed:)`, a line round the fill,
-dashed for a name that stands for nothing yet.
+dashed for a name that stands for nothing yet. `height:` and `cornerRadius:` (nil: a pill's, from the font) draw it as a shape of the owner's own
+draws the same mark at rest (an endpoint's method chip), so nothing moves as editing starts.
 
 ### Where string drawing puts text
 
@@ -8567,6 +8573,10 @@ shape on any board of it, and shows it as it's called now, wherever it is:
   can't show (`canShow`: its owner kept aside, of a kind that owns none, or not in the file), which
   the file keeps without the app using it: `resolve` calls it `.unavailable`, it's drawn by the
   name the text holds, dashed, it isn't followed, and `canvas draw` warns about it too.
+- **A dead pill keeps the name last seen.** A pill whose target is gone or can't be shown shows the name it last showed live in this
+  session (`SeenNames`: a pill noting its target's name as it is made or shown again, a reference's `ReferenceCondition` likewise), else the
+  one the text was written with: a rename writes nothing to the text, so a deleted shape's trace names what the person last saw, not
+  the name before the rename. The canvas's memo of drawn text is keyed by it.
 - **Its name follows the shape**, whatever board is shown when it changes. A commit that reaches
   other boards names what it touched there (`ChangeSet.elsewhere`: the boards a deletion took with
   their owner, a paste brought, a write to a board that isn't shown, `transact(on:)`, or an undo

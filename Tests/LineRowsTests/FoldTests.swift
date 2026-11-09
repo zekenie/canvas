@@ -280,6 +280,14 @@ import TextEditing
         expect(other.editor.rowFolds?.isFolded(ids[0].id) != true, "the first folded is the one let go")
         expect(other.editor.rowFolds?.isFolded(ids[RowFolds.savedLimit].id) == true, "the latest is kept")
     },
+    test("A closed item says its count once, matched as a whole count: \"4 rows\" is not found inside \"14 rows\"") {
+        let noun = LineNoun("row")
+        expectEqual(LineFoldStyle.closedItem("fruit, path prefix, 14 rows", hiding: 14, noun: noun), "fruit, path prefix, 14 rows, closed")
+        expectEqual(LineFoldStyle.closedItem("fruit, path prefix, 14 rows", hiding: 4, noun: noun), "fruit, path prefix, closed, 4 of 14 rows hidden",
+                    "a count that only looks like the kind's isn't taken for it")
+        expectEqual(LineFoldStyle.closedItem("fruit/", hiding: 2, noun: LineNoun("entry", plural: "entries")), "fruit/, closed, 2 entries")
+        expectEqual(LineFoldStyle.closedItem("fruit, path prefix, 1 row", hiding: 1, noun: noun), "fruit, path prefix, 1 row, closed")
+    },
     test("Keys walk a fold's lines: ⌥Tab visits the rows as items, then a closed header and +N in reading order, ⌥⇧Tab undoes each, Escape goes back to the shape; each shows, named") {
         let b = try Bench()
         // Three rows under no header (the first two kept, the third behind +N) and two groups, each closed by ⌃⌘↑.

@@ -288,8 +288,20 @@ public final class NeighborList {
             NeighborLine(symbol: label.systemImage ?? NeighborStyle.fallbackSymbol,
                          tint: editor.shape(inFile: row.id).flatMap { editor.tint(of: $0) } ?? label.tint, name: name(of: row),
                          detail: steps.isEmpty ? nil : steps.map(\.name).joined(separator: NeighborStyle.pathSeparator), place: steps,
-                         caption: subject.flatMap { groups[group].caption?(editor, $0, row.id) })
+                         caption: subject.flatMap { caption(of: row, in: group, for: $0) })
         }
+    }
+
+    /// What a row's list says under its name: its light's words about `subject`, and for a row that heads others (a path prefix),
+    /// about the first of them that has some, as its connections are its rows'.
+    private func caption(of row: NeighborRow, in group: Int, for subject: PartAddress) -> String? {
+        guard let caption = groups[group].caption else { return nil }
+        if let own = caption(editor, subject, row.id) { return own }
+        guard let part = subject.part else { return nil }
+        for head in editor.itemsHeaded(by: AnyHashable(part), of: subject.shape).compactMap({ $0.base as? PartID }) {
+            if let held = caption(editor, PartAddress(subject.shape, part: head), row.id) { return held }
+        }
+        return nil
     }
 
     /// What a row is called: its title, as the engine names it; with none, what the table of contents

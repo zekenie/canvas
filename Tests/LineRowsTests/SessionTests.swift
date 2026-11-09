@@ -280,7 +280,7 @@ import TextEditing
         expectEqual(b.editor.editingShapeID, made.first?.id)
         expectEqual(b.undoName, "Add Tally")
     },
-    test("⇧↩ in a row: the tally left keeps no row's highlight, no waiting line and no width while the new one is edited") {
+    test("⇧↩ in a row: the tally left keeps no row as the field's and no waiting line in what its kind lays out by (the port band under a pointer is PortsTests')") {
         let b = try Bench()
         let a = b.tally("a", ["x", "y"])
         b.begin(a)
@@ -358,12 +358,30 @@ import TextEditing
         expectEqual(b.focus, "waiting", "the draft is on the waiting line")
         expectEqual(b.field.string, "green 9", "its words kept")
         expect(b.window.firstResponder === b.field, "the line keeps the keyboard")
+        expectEqual(b.field.accessibilityLabel(), "New entry", "VoiceOver names the waiting line, not the row that went")
+        expectEqual(b.editor.announcements.last, "Entry removed, its line kept as a new entry", "and hears the row went")
         let drawn = b.editor.shapeContext
         expectEqual(drawn.layoutInput(LineRowsLayout.focused, for: id), nil, "no row the line stands for")
         b.press(.return)
         expectEqual(b.labels(id), ["red", "green"], "the caret leaving writes it as a row")
         expectEqual(b.rows(id).last?.count, 9)
         expectEqual(b.undoName, "Add Entry")
+    },
+    test("a row taken out by another writer while the caret only rests on it: the line is emptied, so leaving never puts the row back") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red", "green"])
+        b.begin(id)
+        b.press(.up)
+        expectEqual(b.focus, "row green")
+        b.editor.transact("Take Out") { $0.update(id, as: Tally.self) { $0.props.rows.removeAll { $0.label == "green" } } }
+        b.window.settle()
+        expectEqual(b.focus, "waiting")
+        expectEqual(b.field.string, "", "nothing of the person's on the line")
+        expectEqual(b.editor.announcements.last, "Entry removed")
+        expect(b.window.firstResponder === b.field, "the keyboard kept")
+        b.press(.escape)
+        expectEqual(b.labels(id), ["red"], "the row stays out")
+        expectEqual(b.undoName, "Take Out", "no step the person didn't ask for")
     },
     test("a line break dropped into the line is a space, put in as typing is: the text's undo takes out what went in") {
         let b = try Bench()

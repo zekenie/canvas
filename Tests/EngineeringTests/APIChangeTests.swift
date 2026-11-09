@@ -131,8 +131,12 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
         let api = b.api("shop API", sixty)
         let before = b.rows(api), full = Set(b.fullNames(api))
         b.editor.selectedShapeIDs = [api]
+        let heard = b.editor.announcements.count
         expect(b.h.slash(APIStyleWords.groupByPrefix, ""), "/group-by-prefix runs on the API")
         expectEqual(b.undoName, "Group by Prefix")
+        b.h.wait(10)
+        let said = Array(b.editor.announcements.dropFirst(heard))
+        expectEqual(said.filter { $0.hasPrefix("Group by Prefix") }.count, 1, "said once, not as the bar's step and again as the command's: \(said)")
         let rows = b.rows(api)
         expectEqual(rows.compactMap(\.header).map(\.prefix), ["/orders", "/customers", "/products", "/payments", "/refunds", "/webhooks", "/admin"])
         expectEqual(Set(b.fullNames(api)), full, "every full path kept")

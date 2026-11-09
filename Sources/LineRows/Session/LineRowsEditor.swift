@@ -785,10 +785,22 @@ final class LineSession<Model: LineModel>: LineRowsView {
     override func documentDidSettle() {
         guard !isMoving, editor.editingShapeID == id else { return }
         if band == nil, case .row(let row) = focus, index(of: row) == nil {
-            // The row with the caret went (another writer): its line is a draft on the waiting line, the keyboard kept.
+            // The row with the caret went (another writer): the keyboard is kept on the waiting line, VoiceOver told, the line
+            // in view. A line the person had changed goes with it, a draft written only as the caret leaves; one only
+            // rested on holds nothing of theirs and is emptied, so leaving never puts back what the other writer took out.
+            let drafted = hasDraft
             isMoving = true
             defer { isMoving = false }
-            reanchor()
+            if drafted {
+                reanchor()
+                field.setAccessibilityLabel("New \(model.noun.singular)")
+                NSAccessibility.post(element: focusedResponder, notification: .focusedUIElementChanged)
+                if let rect = rect(of: .waiting) { context.keepInView(rect) }
+                editor.announce(LineFieldStyle.gone(model.noun.title, model.noun.singular, keeping: true))
+            } else {
+                show(.waiting, at: .end, waitingAt: rows.count)
+                editor.announce(LineFieldStyle.gone(model.noun.title, model.noun.singular, keeping: false))
+            }
             needsDisplay = true
             return
         }

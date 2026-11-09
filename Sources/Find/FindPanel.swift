@@ -250,7 +250,7 @@ private struct FindRow: View {
                     // its middle), the snippet after it cut at its end: the shape is named before the hit's words.
                     HStack(spacing: FindStyle.nameSpacing) {
                         Text(name).font(FindStyle.rowName).lineLimit(1).truncationMode(.middle)
-                            .frame(maxWidth: FindStyle.rowNameMost, alignment: .leading).fixedSize(horizontal: true, vertical: false)
+                            .frame(width: FindStyle.rowNameWidth(name), alignment: .leading)
                             .layoutPriority(2)
                         Text(FindSnippet.faint(of: result, in: find)).lineLimit(1).truncationMode(.tail).layoutPriority(1)
                     }

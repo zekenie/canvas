@@ -37,9 +37,9 @@ import Titles
     test("a row's keys are listed in the Keyboard Shortcuts window only while the kit is on") {
         let h = try kitHarness(on: false)
         let hints = { @MainActor (on: Set<KitID>) in
-            h.editor.registry.keyboardHelp(kitsOn: on).filter { "\($0)".contains("in a Row") || "\($0)".contains("in a Column") || "\($0)".contains("in an Endpoint") }
+            h.editor.registry.keyboardHelp(kitsOn: on).filter { "\($0)".contains("in a Row") || "\($0)".contains("in a Column") || "\($0)".contains("in an Endpoint") || "\($0)".contains("on a Table or API") }
         }
         expect(hints([]).isEmpty, "off: \(hints([]))")
-        expectEqual(hints([EngineeringKit.id]).count, 7)
+        expectEqual(hints([EngineeringKit.id]).count, 9)
     },
 ])

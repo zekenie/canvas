@@ -88,6 +88,11 @@ final class FindWindow {
 }
 
 @MainActor let panelTests = Suite("Find's panel", [
+    test("a shape's name in its row is given its own width up to the cap, so a long one is cut in the middle inside it, never run on past it") {
+        let short = FindStyle.rowNameWidth("orders API"), long = FindStyle.rowNameWidth(String(repeating: "customer_billing_address ", count: 2))
+        expect(short > 20 && short < FindStyle.rowNameMost, "a short name keeps its own width: \(short)")
+        expectEqual(long, FindStyle.rowNameMost, "a long one is held to the cap")
+    },
     test("⌘F takes the panel over and gives its field the keyboard; typing searches; Return and ⇧Return step") {
         let w = try FindWindow(CanvasFile(root: CanvasDocument(shapes: memos(["pear one", "pear two", "plum"]))))
         w.commandF()

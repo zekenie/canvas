@@ -672,6 +672,11 @@ public enum LineFieldStyle {
     static let caretMargin: CGFloat = 1
     /// What VoiceOver hears as whole rows are selected: "3 columns selected".
     static func selected(_ counted: String) -> String { "\(counted) selected" }
+    /// What VoiceOver hears as another writer takes out the row the caret was on: "Column removed", and where the person's
+    /// own words on it went: "Column removed, its line kept as a new column".
+    static func gone(_ title: String, _ singular: String, keeping: Bool) -> String {
+        keeping ? "\(title) removed, its line kept as a new \(singular)" : "\(title) removed"
+    }
     /// Whole rows selected while a shape is edited (⇧↑ ⇧↓): the accent, light, behind them; the same in both appearances,
     /// as the paper it's on is.
     static let rowsBand = NSColor.controlAccentColor.withAlphaComponent(0.2)

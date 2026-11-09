@@ -43,12 +43,14 @@ public struct EngineeringPlugin: ListedPlugin {
         registrar.service { KitNames(editor: $0) }
         // The keys of a row, listed with the kit that has rows: a file with it off lists none.
         registrar.keyHint("↩ in a Row", "Next Row; on an Empty Row, Finish", while: .text)
+        registrar.keyHint("Home or End in a Row", "First or Last Row", while: .text)
         registrar.keyHint("⌥↑ ⌥↓ in a Row", "Move the Row", while: .text)
         registrar.keyHint("⌘⌫ then ⌫ in a Row", "Delete the Row", while: .text)
         registrar.keyHint("⇧↩ in a Row", "New Shape Beside It", while: .text)
         registrar.keyHint("⌘L in a Row", "Connect the Row", while: .text)
         registrar.keyHint("⌘↓ in a Column", "Show the Column's Details", while: .text)
         registrar.keyHint("⌘↓ in an Endpoint", "Show the Endpoint's Details", while: .text)
+        registrar.keyHint("⌥⇥ on a Table or API", "Select Its Rows", while: .canvas)
         registrar.keyHint("Space on an Endpoint", "Change the Endpoint's Method", while: .canvas)
         // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
         registrar.channel(ForeignKey.self)

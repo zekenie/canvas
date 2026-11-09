@@ -565,7 +565,18 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         // The editing view is the shape's world laid over the canvas: its frame over its bounds is the zoom.
         let zoom = session.map { $0.bounds.width > 0 ? $0.frame.width / $0.bounds.width : 1 } ?? 1
         let row = (anchorNow()?.width ?? 0) * zoom
-        return CGSize(width: min(max(card.width ?? LineCardStyle.width, row), room.width), height: min(height, room.height))
+        // A line's words whole where they fit: wider for the longest one (a relations line names its endpoint last, where a cut
+        // falls), up to `widthMost` and the room; past that it is cut at its end.
+        var longest: CGFloat = 0
+        for line in texts.values {
+            for field in line.fields {
+                guard let layout = field.textLayoutManager else { continue }
+                layout.ensureLayout(for: layout.documentRange)
+                longest = max(longest, valueX + layout.usageBoundsForTextContainer.width + LineCardStyle.textSlack + LineCardStyle.padding)
+            }
+        }
+        let wanted = max(card.width ?? LineCardStyle.width, row, min(longest, LineCardStyle.widthMost))
+        return CGSize(width: min(wanted, room.width), height: min(height, room.height))
     }
 
     /// The rect of a stop's line, view points.
@@ -815,6 +826,8 @@ final class LineCardControl: NSView {
 @MainActor
 enum LineCardStyle {
     static let width: CGFloat = 280
+    /// The widest a card grows to hold its longest line whole.
+    static let widthMost: CGFloat = 520
     static let padding: CGFloat = 12
     static let headerHeight: CGFloat = 26
     static let headerGap: CGFloat = 6

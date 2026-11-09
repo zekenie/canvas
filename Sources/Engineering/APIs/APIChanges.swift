@@ -266,7 +266,8 @@ extension CanvasEditor {
             return true
         }
         guard done == true else { return false }
-        announce(APIStyle.groupedWords(changes.reduce(0) { $0 + $1.rows.count { $0.header != nil } }))
+        // Said once: `/group-by-prefix`'s bar says the step it ran itself.
+        if !isSayingStep { announce(APIStyle.groupedWords(changes.reduce(0) { $0 + $1.rows.count { $0.header != nil } })) }
         return true
     }
 }

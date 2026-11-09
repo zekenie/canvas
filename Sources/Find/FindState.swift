@@ -149,10 +149,14 @@ public final class FindState {
     /// What a result's row leads with: the text that names its shape (its title, a contribution's `names`), when the row's
     /// first hit is in another of its texts (a table's row); nil when it has none, or the hit is in that text, which the
     /// snippet then shows.
-    public func rowName(of result: FindResult) -> String? {
+    public func rowName(of result: FindResult) -> String? { rowName(of: result, excluding: result.first.text) }
+
+    /// The same for the hit in text `text` (a step's: the hit it stands on, not the row's first): the shape's name, unless
+    /// that hit is in the text that names it, which its words then show.
+    public func rowName(of result: FindResult, excluding text: Int) -> String? {
         guard let entry = index.entries[result.id], let kind = editor.withoutObservingDocument({ editor.file.record(result.id)?.kind }),
               let named = entry.texts.indices.first(where: { index.contribution(entry.texts[$0].source, of: kind)?.names == true }),
-              named != result.first.text else { return nil }
+              named != text else { return nil }
         let name = entry.texts[named].text.replacingOccurrences(of: "\n", with: " ")
         return name.isEmpty ? nil : name
     }
@@ -467,7 +471,7 @@ public final class FindState {
         guard isActive, let current, results.indices.contains(current.result), let number = currentNumber else { return nil }
         let result = results[current.result]
         let around = hit(at: current).map(\.hit)
-        return (["Hit \(number) of \(total)"] + (rowName(of: result).map { [$0] } ?? [])
+        return (["Hit \(number) of \(total)"] + (rowName(of: result, excluding: around?.text ?? result.first.text).map { [$0] } ?? [])
                 + [kindName(of: result.id), FindSnippet.text(of: result, around: around, in: self)]).joined(separator: ", ")
     }
 
