@@ -1,4 +1,5 @@
 <!-- ids: 7C1E2A04-4B9E-4E0C-9D8C-5B0E7F3A2C11 -->
+<!-- setup: take-out-endpoint -->
 # Tables, enums, databases and APIs
 
 The engineering kit draws a database's tables and a REST API the way an engineer sketches them: a **table** is a card of columns, a line each (`id uuid pk`); an **enum** is a card of values, a line each; a **database** is a region that holds them, as a frame does; an **api** is a card of endpoints, a line each (`POST /orders/{id}/refunds (NewRefund) → 201 Refund`), under its server. A person turns the kit on in a file (File ▸ Kits ▸ Engineering) to get its tools and commands; `canvas draw` and `canvas query` reach its kinds in every file, on or off. [kinds.md](kinds.md) has each kind's size and attributes; this page is how their rows are written.
@@ -236,6 +237,13 @@ Only an edge word takes a row (`:edge-to`, `:edge-from`, `:starts-at`, `:ends-at
 ```query
 /* matches: "Stripe API" */
 :route("/v1/refunds")
+```
+
+An endpoint taken out of its API is found the same way, by its method and whole path, as the endpoint itself (here one named `stripeHook`, taken out in the app: no statement draws one):
+
+```query
+/* matches: "stripeHook" */
+:route("POST /hooks/stripe")
 ```
 
 A table's columns are its `columns` attribute, a list, each its id and what its line said; a test inside it holds when any column's does. A column reads as its name, and a type as its words, so `[columns.type="order_status"]` is the tables with a column of that enum; an enum's values read as their text, and an endpoint's body and response types as their words (`api[endpoints.body="NewRefund"]`):

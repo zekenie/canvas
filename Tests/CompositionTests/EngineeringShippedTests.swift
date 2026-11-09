@@ -271,6 +271,14 @@ extension EmptyBoardWindow {
         expectEqual(columns.map(ColumnGrammar.print), ["id uuid pk", "status order_status", "placed_at timestamptz null"])
         expectEqual(columns[1].type.shape, status, "a type that names an enum is bound to it, as a line's is")
         expectEqual(changes(try drawnInProcess(#"table "orders" columns: [{"name": "status", "type": "order_status"}]"#, on: editor)), ["unchanged"])
+        // The words are read before the schema checks, so the schema still refuses what is neither: a misspelt member, a type that is no words.
+        let held = editor.document
+        for script in [#"table "orders" columns: [{"name": "x", "tpye": "uuid"}]"#, #"table "orders" columns: [{"name": "x", "type": 5}]"#,
+                       #"table "orders" columns: [{"name": "x", "type": ["uuid"]}]"#] {
+            let refused = try refusedInProcess(script, on: editor)
+            expectEqual(refused.reason, "invalid_value", "\(script): \(refused)")
+            expectEqual(editor.document, held, "\(script) changed nothing")
+        }
     },
     test("delete takes a row of any kind that has them: an enum's value and an API's endpoint, by its whole name, its arrows with it") {
         let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())

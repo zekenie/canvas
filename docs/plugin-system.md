@@ -8035,12 +8035,14 @@ Ask @[Ship the beta](shape:0A1B2C3D-4E5F-4061-8293-A4B5C6D7E8F9) first
   case, which is how an older writer's text reads back); and a look-alike, a name's `]` followed by
   `(shape` in any case, which is a mention gone wrong (Validation warns about it, below), not one
   by name. Text with no `@[` (`mayHoldMentions`) is returned as it is after one pass over
-  its bytes. `@[]` is a name with nothing in it, and for the caller to refuse. `canvas draw`
-  is its one user ([draw](#what-draw-takes-from-other-plugins)); the text a script writes comes
-  out as the text its runs would write, which MentionsTests hold by building a text's names
-  from its mentions (20,000 fuzzed texts) and against a scan from every `@[` that takes no
-  short cuts. `resolvingMentions(in:_:)` is the same where `resolve` may give a row as well
-  (a `PartAddress`), written after its shape's id: draw's `@["orders".customer_id]`.
+  its bytes. `@[]` is a name with nothing in it, and for the caller to refuse.
+  `resolvingMentions(in:_:)` is the same pass where `resolve` may give a row as well (a
+  `PartAddress`), written after its shape's id: draw's `@["orders".customer_id]`; it is what
+  `canvas draw` calls ([draw](#what-draw-takes-from-other-plugins)), `resolvingNames` its wrapper
+  for a shape alone. The text a script writes comes out as the text its runs would write, which
+  MentionsTests hold by building a text's names from its mentions (20,000 fuzzed texts through
+  `resolvingNames`, 5,000 more of them mentioning rows through `resolvingMentions`) and against a
+  scan from every `@[` that takes no short cuts.
 - **A pill's label.** `MentionResolution.shownLabel(stored:)` is what a pill reads: the live label, else the name it
   holds, else `Deleted` or `Not available`.
 - **The migration.** A note's text became `MentionText` in its third step,
@@ -17148,14 +17150,14 @@ test("Reordering: every kind but those painted by anchor gets Arrange; to front 
   nothing after the colon for none; `/* count: N */`) or why it's refused (`/* reason: … */`), and
   must leave the file equal, not edited and with no undo step; a file whose first line is `<!--
   board: query-story -->` (`reference/query.md`) runs on the story file
-  (`QueryStory.document(windowed: false)`, 1440 × 900; a first line `<!-- board: <name> -->` names
+  (`QueryStory.document(windowed: false)`, 1440 × 900; a leading line `<!-- board: <name> -->` names
   the board among `skillStories`, each the board of exactly one file: `query-story` is
   `reference/query.md`'s, `reference-story` `reference/references.md`'s, `QueryReferenceStory`,
   "Services", a note, a pill that stands for it and two channel-less arrows into the pill,
   whose `via` the page shows and a test holds to what the app says), and its blocks are held to
   the design's table of every construct (`StoryQuery.table`) and its tables of words and edge
   types to `canvas query-vocabulary`; and SKILL.md's description is held to 1,024 characters.
-  `SKILL_DUMP=1` prints what each example said. So a change to either language, their messages, a
+  A page's leading lines may also say `<!-- setup: take-out-endpoint -->` (`skillSetups`), a state no statement draws made on its fresh board before its blocks run (an endpoint taken out of its API, which `reference/engineering.md`'s `:route` block finds). `SKILL_DUMP=1` prints what each example said. So a change to either language, their messages, a
   shipped kind, word or edge type changes the skill with it, or CompositionTests fails.
 - **Fuzzy matching.** FuzzyMatchingTests (TestKit alone): the matcher's tiers and passes, `TextSearch`
   (folding with offsets for `ß`, `é`, `İ`, emoji, CJK and combining marks; every exact place; each
