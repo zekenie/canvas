@@ -367,6 +367,33 @@ private let payments = """
         editor.undo()
         expectEqual(editor.document[shipments]?.box?.width, 260, "one Undo takes the update and the widening")
     },
+    test("pasted again with a table narrowed by hand left as it is: it keeps the width the person gave it, and the paste that changes only another table widens that one, in one step") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        let narrow = "CREATE TABLE shipments (id uuid PRIMARY KEY, tracking_number character varying(64) NOT NULL);"
+        let other = "CREATE TABLE carriers (id uuid PRIMARY KEY);"
+        pasteboardHolds([narrow, other].joined(separator: "\n"))
+        expect(commandV(w))
+        let shipments = try require(table(editor, "shipments")).id, carriers = try require(table(editor, "carriers")).id
+        editor.transact { $0.update(shipments) { $0.box?.size.width = 160 } }
+        editor.undoHistory.seal()
+        let undo = undoTitle(w.window)
+        pasteboardHolds([narrow, other].joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.document[shipments]?.box?.width, 160, "left as it is: the person's width")
+        expectEqual(undoTitle(w.window), undo, "nothing changed, no step")
+        let carriersWas = try require(editor.document[carriers]?.box?.width)
+        pasteboardHolds([narrow, "CREATE TABLE carriers (id uuid PRIMARY KEY, service_level_agreement_reference_code character varying(255));"].joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.document[shipments]?.box?.width, 160, "still the person's width: the put didn't change it")
+        expect((editor.document[carriers]?.box?.width ?? 0) > carriersWas, "the table it changed widened to read whole")
+        expectEqual(undoTitle(w.window), "Undo Paste SQL")
+        editor.undo()
+        expectEqual(editor.document[carriers]?.box?.width, carriersWas, "one Undo")
+        expectEqual(editor.document[shipments]?.box?.width, 160)
+    },
     test("paste 04: pasted again with only a key re-aimed or added, the table the key starts from is what changed: said \"Updated Table\", and it alone selected") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

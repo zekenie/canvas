@@ -1,6 +1,7 @@
 import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
+import Clipboard
 import CoreGraphics
 import Engineering
 import Foundation
@@ -22,6 +23,12 @@ extension Budget {
     /// kind written as lines: at 10% a row is 2.4 points, so the fitted frame draws no row bars either, only each table's title bar,
     /// filled as a plain rect where thinner than 4 points (benchmarks.md has the numbers).
     static let tablesZoomedOut = zoomedOut
+    /// What a paste again of a 200-table dump that widens one table costs more than one that changes it without widening it: the
+    /// widening put is drawn on a rehearsal of the file and taken in as one step (U7, review R4), so a refused put leaves
+    /// nothing. A person feels a pause of about 100 ms more (U10's scope); it was 222 ms more until the put stopped asking a draw
+    /// of the whole script which shapes it changes before drawing it, then 10 (release, 2026-11-09): three times that.
+    /// benchmarks.md has the numbers.
+    static let widenedPaste = 30.0
 }
 
 @MainActor let tableBenchmarks = Suite("Table benchmarks", [
@@ -59,5 +66,51 @@ extension Budget {
         }
         report(String(format: "10,020 titled tables zoomed out: a frame %@ (budget %.0f)", lines.joined(separator: "; "), Budget.tablesZoomedOut))
         if holdsToBudgets { expect(worst < Budget.tablesZoomedOut, "a frame zoomed out over 10,020 titled tables took \(worst) ms") }
+    },
+    test("a 200-table dump pasted again with one table changed: a column that widens it (drawn on a rehearsal of the file, taken in as one step) costs no pause more than one that doesn't") {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let registry = try Registry(plugins: shippedPlugins(pasteboard))
+        let h = EditorHarness { CanvasEditor(registry: registry, scheduler: $0) }
+        h.editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        h.editor.turn(EngineeringKit.self, on: true)
+        /// The dump: 200 tables, each but the first keyed to the one before; `changed` added to table 100's columns.
+        @MainActor func dump(_ changed: String? = nil) -> String {
+            (0..<200).map { index in
+                var columns = ["id uuid PRIMARY KEY", "name text NOT NULL", "created_at timestamptz"]
+                if index > 0 { columns.append("parent_id uuid REFERENCES t\(index - 1)(id)") }
+                if index == 100, let changed { columns.append(changed) }
+                return "CREATE TABLE t\(index) (\(columns.joined(separator: ", ")));"
+            }.joined(separator: "\n")
+        }
+        @MainActor func holds(_ sql: String) {
+            pasteboard.clearContents()
+            pasteboard.setString(sql, forType: .string)
+        }
+        holds(dump())
+        h.editor.paste()
+        h.editor.undoHistory.seal()
+        let table = try require(h.editor.document.shapes.first { $0[TitleProperty.self] == "t100" }).id
+        let width = try require(h.editor.document[table]?.box?.width)
+        expectEqual(h.editor.document.shapes.filter { $0.kind == DatabaseTable.kind }.count, 200)
+        /// The dump with `changed` pasted again, each run from the board as the first paste left it.
+        @MainActor func again(_ changed: String) -> Double {
+            var pasted = false
+            let time = median(runs: 5, prepare: {
+                if pasted { h.editor.undo() }
+                holds(dump(changed))
+                pasted = true
+            }, onThread: true) { h.editor.paste() }
+            return time
+        }
+        let plain = again("note text")
+        expectEqual(h.editor.document[table]?.box?.width, width, "a short column widens nothing")
+        h.editor.undo()
+        let widening = again("placed_at_in_the_shoppers_own_time_zone timestamp with time zone")
+        expect((h.editor.document[table]?.box?.width ?? 0) > width, "the long column widens t100")
+        h.editor.undo()
+        report(String(format: "a 200-table dump pasted again: one table given a column %.0f ms, one widened %.0f ms (%.0f more; budget %.0f)",
+                      plain, widening, widening - plain, Budget.widenedPaste))
+        if holdsToBudgets { expect(widening - plain < Budget.widenedPaste, "widening took \(widening - plain) ms more than not") }
     },
 ])
