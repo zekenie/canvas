@@ -188,7 +188,13 @@ public enum ColumnGrammar {
     public static func print(_ column: Column, key: String?) -> (line: String, key: NSRange?) {
         func line(quoting: Set<Part>) -> (line: String, key: NSRange?) {
             var words = [quoting.contains(.name) ? quoted(column.name) : column.name]
-            if !column.type.words.isEmpty { words.append(quoting.contains(.type) ? quoted(column.type.words) : column.type.words) }
+            if !column.type.words.isEmpty {
+                words.append(quoting.contains(.type) ? quoted(column.type.words) : column.type.words)
+            } else if key == nil, !column.nullable, !column.unique, column.default == nil, !column.primaryKey,
+                      let next = Self.words(of: column.unread).first, !isFlag(next) {
+                // No type, and a word kept that isn't the grammar's own would be read as one: an empty type says there is none.
+                words.append(quoted(""))
+            }
             if column.nullable { words.append(null) }
             if column.unique { words.append(unique) }
             if let value = column.default { words += [Self.default, quoting.contains(.default) ? quoted(value) : value] }
@@ -305,7 +311,13 @@ public enum ColumnGrammar {
             if after.isEmpty { return (table, nil) }
             guard after.hasPrefix(".") else { return nil }
             let column = String(after.dropFirst())
-            return (table, column.isEmpty ? nil : column)
+            return (table, column.isEmpty ? nil : unquoted(column) ?? column)
+        }
+        // A column in quotes after the dot (`customers."first name"`): the table is what's before the first `."`, which a table
+        // written plain never holds.
+        if word.hasSuffix("\""), let quote = word.range(of: ".\""), let column = unquoted(String(word[word.index(after: quote.lowerBound)...])),
+           !column.isEmpty, quote.lowerBound != word.startIndex {
+            return (String(word[..<quote.lowerBound]), column)
         }
         guard let dot = word.lastIndex(of: ".") else { return word.isEmpty ? nil : (word, nil) }
         let table = String(word[..<dot]), column = String(word[word.index(after: dot)...])
@@ -313,10 +325,20 @@ public enum ColumnGrammar {
         return (table, column.isEmpty ? nil : column)
     }
 
-    /// A key's target written: `customers.id`, a table's name that holds a dot, a space or a quote in quotes.
+    /// A key's target written: `customers.id`; a table's name or a column's that holds a dot, a space or a quote in quotes
+    /// (`"order lines".id`, `customers."first name"`), so the target reads back as one word naming the row.
     public static func written(table: String, column: String) -> String {
-        let plain = !table.isEmpty && !table.contains(where: { $0 == "." || $0 == "\"" || $0.isWhitespace || $0 == "(" || $0 == ")" || $0 == "'" })
-        return (plain ? table : "\"\(table.replacingOccurrences(of: "\"", with: ""))\"") + "." + column
+        let name = table.isEmpty || !plainTarget(table) ? "\"\(table.replacingOccurrences(of: "\"", with: ""))\"" : table
+        return name + "." + written(column: column)
+    }
+
+    /// A column's name as a key's target says it after the dot: in quotes (a quote in it doubled) where it wouldn't read as one word
+    /// there.
+    public static func written(column: String) -> String { column.isEmpty || plainTarget(column) ? column : quoted(column) }
+
+    /// Whether a name is a word of a key's target as it stands.
+    private static func plainTarget(_ name: String) -> Bool {
+        !name.contains(where: { $0 == "." || $0 == "\"" || $0.isWhitespace || $0 == "(" || $0 == ")" || $0 == "'" })
     }
 
     /// Whether a word is one of the grammar's own (so it can't be a type: `id pk` is a column with no type).
@@ -329,7 +351,8 @@ public enum ColumnGrammar {
     static func words(of line: String) -> [String] { placedWords(of: line).map(\.text) }
 
     /// The words of a line and where each is in it (UTF-16, as `NSRange` counts). A quote opens a quoted run only where
-    /// a word starts (or inside parentheses), as SQL's literals do, so an apostrophe in a name is a letter, and inside the run a
+    /// a word starts (or inside parentheses, or a double quote right after a dot: a key's `customers."first name"`), as SQL's
+    /// literals do, so an apostrophe in a name is a letter, and inside the run a
     /// quote doubled is one of its characters (`'it''s a test'`, `"say ""hi"""`); a quote or a parenthesis never closed is a
     /// letter too, and the line's other words stay words.
     public static func placedWords(of line: String) -> [(text: String, range: NSRange)] {
@@ -366,7 +389,7 @@ public enum ColumnGrammar {
             }
             if word.isEmpty { start = offset }
             switch character {
-            case _ where (character == "'" || character == "\"") && (word.isEmpty || depth > 0) && !plain.contains(offset):
+            case _ where (character == "'" || character == "\"") && (word.isEmpty || depth > 0 || (character == "\"" && word.hasSuffix("."))) && !plain.contains(offset):
                 quote = character
                 quoteAt = offset
                 word.append(character)

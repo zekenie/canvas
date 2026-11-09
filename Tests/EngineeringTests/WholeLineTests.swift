@@ -3,6 +3,8 @@ import AppKit
 import CanvasTesting
 @_spi(Host) import CanvasUI
 import Engineering
+import Find
+import Geometry
 import LineRows
 import Selection
 import TestKit
@@ -177,6 +179,163 @@ extension KitBench {
         b.type("x")
         b.press(.return)
         expectEqual(width(), whole)
+        b.press(.escape)
+    },
+    test("only a line's first → is a key's: its target in the pill, a later → and its target plain; a first that names no table leaves none") {
+        let b = try KitBench()
+        b.table("customers", ["id uuid pk"])
+        b.table("accounts", ["id uuid pk"], at: CGPoint(x: 100, y: 400))
+        let orders = b.table("orders", ["id uuid pk"], at: CGPoint(x: 500, y: 100))
+        b.begin(orders)
+        b.type("ref_id uuid -> customers.id -> accounts.id")
+        let text = b.field.string as NSString
+        let first = text.range(of: "customers.id"), second = text.range(of: "accounts.id")
+        expect(b.field.highlights.contains { $0.range == first }, "the first target in its pill")
+        expect(!b.field.highlights.contains { $0.range == second }, "a later one is words")
+        b.press(.return)
+        b.type("a_id uuid -> nowhere.x -> customers.id")
+        let none = (b.field.string as NSString).range(of: "customers.id")
+        expect(!b.field.highlights.contains { $0.range == none }, "the first names nothing: the line has no key, and no pill")
+        b.press(.escape)
+    },
+    test("two enums of one name loose on one board are offered once, and the pick is the one typing binds; two tables the same") {
+        let b = try KitBench()
+        let one = b.enumType("status", ["new"], at: CGPoint(x: 600, y: 100))
+        let two = b.enumType("status", ["paid"], at: CGPoint(x: 600, y: 400))
+        let first = [one, two].min { $0.description < $1.description }
+        b.table("users", ["id uuid pk"], at: CGPoint(x: 100, y: 400))
+        b.table("users", ["id uuid pk"], at: CGPoint(x: 100, y: 700))
+        let orders = b.table("orders", ["id uuid pk"], at: CGPoint(x: 100, y: 100))
+        b.begin(orders)
+        b.type("state stat")
+        expectEqual(b.field.listedOffers.filter { $0 == "status" }.count, 1, "alike, offered once")
+        b.type("us")
+        b.press(.tab)
+        b.press(.return)
+        expectEqual(b.columns(orders).last?.type.shape, first, "the one typing binds")
+        b.type("owner uuid -> us")
+        expectEqual(b.field.listedOffers.filter { $0 == "users.id" }.count, 1, "two tables alike, offered once")
+        b.press(.escape)
+    },
+    test("a key to a column whose name has a space is printed and read as one word; the row renamed keeps its words and its target's") {
+        let b = try KitBench()
+        b.table("customers", ["id uuid pk", "\"first name\" text unique"])
+        let orders = b.table("orders", ["id uuid pk"], at: CGPoint(x: 500, y: 100))
+        b.begin(orders)
+        b.type("buyer uuid -> customers.\"first name\" later")
+        expectEqual(b.field.string, "buyer uuid → customers.\"first name\" later")
+        b.press(.return)
+        expectEqual(b.columns(orders).last?.unread, "→ customers.\"first name\" later", "one key's words, kept as the line says them")
+        b.press(.up)
+        b.field.setSelectedRange(NSRange(location: 0, length: 5))
+        b.type("owner")
+        b.press(.down)
+        expectEqual(b.columns(orders).last?.unread, "→ customers.\"first name\" later")
+        expectEqual(b.undoName, "Rename Column")
+        b.press(.escape)
+    },
+    test("a column's type cleared in its card keeps the words it had after it; a quoted default in the card is the words between the quotes") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk", "price numeric check (price > 0)"])
+        let card = try b.openCard(orders, column: "price")
+        try require(card.field(of: "type")).selectAll(nil)
+        b.press(.delete)
+        if card.field(of: "type")?.offerList != nil { b.press(.escape) }
+        b.press(.escape)
+        expectEqual(b.columns(orders).last?.type.words, "", "no type")
+        expectEqual(b.columns(orders).last?.unread, "check (price > 0)", "the words after it still words")
+        let again = try b.openCard(orders, column: "price")
+        again.go(to: "default")
+        b.type("\"x y\"")
+        b.press(.tab)
+        expectEqual(b.columns(orders).last?.default, "x y", "as its line reads a quoted default")
+        expectEqual(b.lines(orders).last, "price default \"x y\" check (price > 0)")
+        b.press(.escape)
+    },
+    test("a column's words that name an enum made later are its pill in Find too, and follow the enum's rename away and back") {
+        let h = try EditorHarness(plugins: kitPlugins(find: true))
+        h.editor.viewportDidResize(to: CGSize(width: 1000, height: 800))
+        h.editor.turn(EngineeringKit.self, on: true)
+        let table = h.add(DatabaseTable(frame: CGRect(x: 100, y: 100, width: 260, height: 100), columns: ["id uuid pk", "state order_status"].compactMap { ColumnGrammar.read($0) }),
+                          titled: "orders")
+        let find = try require(h.editor.find)
+        find.open()
+        find.query = "order_status"
+        @MainActor func settle() throws {
+            var turns = 0
+            while find.isIndexing, turns < 10_000 {
+                h.wait(0)
+                turns += 1
+            }
+            _ = try awaitResult { await find.settled() }
+        }
+        try settle()
+        expect(find.texts(of: table).contains("state order_status"), "plain words: \(find.texts(of: table))")
+        let status = h.add(DatabaseEnum(frame: CGRect(x: 600, y: 100, width: 200, height: 0), values: [EnumValue(text: "new")]), titled: "order_status")
+        try settle()
+        expect(find.texts(of: table).contains("order_status") && find.texts(of: table).contains("state") && !find.texts(of: table).contains("state order_status"),
+               "its pill once the enum is made: \(find.texts(of: table))")
+        h.editor.transact("Rename") { $0.update(status) { $0[TitleProperty.self] = "other" } }
+        try settle()
+        expect(find.texts(of: table).contains("state order_status"), "words again once the enum's name isn't theirs: \(find.texts(of: table))")
+        h.editor.transact("Rename") { $0.update(status) { $0[TitleProperty.self] = "order_status" } }
+        try settle()
+        expect(find.texts(of: table).contains("state") && !find.texts(of: table).contains("state order_status"), "a pill again: \(find.texts(of: table))")
+    },
+    test("such a column is its pill zoomed out and as wide as a bound one's pill reads, and VoiceOver says its enum as the screen shows it") {
+        let long = "customer_order_fulfilment_status_of_the_shipment"
+        @MainActor func skeleton(_ b: KitBench) throws -> Data {
+            b.editor.camera = Camera(origin: .zero, zoom: 0.3)
+            b.editor.selectedShapeIDs = []
+            expect(b.editor.drawsSkeletons)
+            return try pngOf(render(b.editor, size: CGSize(width: 600, height: 500)))
+        }
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk", "state \(long)"])
+        let words = try skeleton(b)
+        let status = b.enumType(long, ["new"], at: CGPoint(x: 5000, y: 100))
+        let late = try skeleton(b)
+        expect(late != words, "a pill's bar zoomed out, not words'")
+        let bound = try KitBench()
+        let boundStatus = bound.enumType(long, ["new"], at: CGPoint(x: 5000, y: 100))
+        let held = bound.table("orders", columns: [Column(name: "id", type: TypeRef("uuid"), primaryKey: true), Column(name: "state", type: TypeRef(long, shape: boundStatus))])
+        expect(late == (try skeleton(bound)), "the same bar as a column bound to it")
+        // Width: a commit widens each as its pill reads whole.
+        b.editor.camera = Camera(origin: .zero, zoom: 1)
+        bound.editor.camera = Camera(origin: .zero, zoom: 1)
+        for bench in [(b, orders), (bound, held)] {
+            bench.0.begin(bench.1)
+            bench.0.type("x int")
+            bench.0.press(.return)
+            bench.0.press(.escape)
+        }
+        let width = { (bench: KitBench, id: ShapeID) in bench.editor.document[id]?.box?.width ?? 0 }
+        expectEqual(width(b, orders), width(bound, held), "as wide as the bound column's pill reads")
+        expect(width(b, orders) > 260, "widened: \(width(b, orders))")
+        // What VoiceOver says of the row: the enum while the screen shows its pill.
+        let state = try require(b.columns(orders).first { $0.name == "state" })
+        let context = LineContext(editor: b.editor, shape: orders, row: state.id)
+        expectEqual(EngineeringLines.columns.spoken(ColumnLine(state), in: context), "state, \(long) enum")
+        b.editor.transact("Delete Enum") { $0.delete(Set([status])) }
+        expectEqual(EngineeringLines.columns.spoken(ColumnLine(state), in: context), "state, \(long)", "words once the enum is gone")
+    },
+    test("SQL's types of several words are offered as typed, whole or in part, and a pick replaces the type from its first word; a flag isn't offered in the middle of one") {
+        let b = try KitBench()
+        let orders = b.table("orders", ["id uuid pk"])
+        b.begin(orders)
+        b.type("ratio doub")
+        expect(b.field.listedOffers.contains("double precision"), "\(b.field.listedOffers)")
+        b.type("le pre")
+        expectEqual(b.field.listedOffers.first, "double precision")
+        expect(!b.field.listedOffers.contains("pk"), "the type's second word isn't a flag's place")
+        b.press(.tab)
+        expectEqual(b.field.string, "ratio double precision")
+        b.press(.return)
+        expectEqual(b.columns(orders).last?.type.words, "double precision")
+        b.type("at timestamp wi")
+        expect(b.field.listedOffers.contains("timestamp with time zone"), "\(b.field.listedOffers)")
+        b.press(.tab)
+        expectEqual(b.field.string, "at timestamp with time zone")
         b.press(.escape)
     },
 ])

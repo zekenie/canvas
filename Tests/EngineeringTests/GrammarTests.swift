@@ -123,6 +123,60 @@ private func ownWords(_ line: String) -> [String] {
             expectEqual(said(ColumnGrammar.read(line)), said(column), "\(said(column) ?? "") → \(line)")
         }
     },
+    test("a key's target that holds a space, a dot or a quote is written in quotes and reads back as the same row") {
+        expectEqual(ColumnGrammar.written(table: "customers", column: "first name"), "customers.\"first name\"")
+        expectEqual(ColumnGrammar.written(table: "order lines", column: "a.b"), "\"order lines\".\"a.b\"")
+        expectEqual(ColumnGrammar.written(table: "customers", column: "say \"hi\""), "customers.\"say \"\"hi\"\"\"")
+        for (table, column) in [("customers", "first name"), ("order lines", "a.b"), ("v1.2", "id"), ("customers", "say \"hi\""), ("customers", "id")] {
+            let target = ColumnGrammar.written(table: table, column: column)
+            let held = Column(name: "ref", type: TypeRef("uuid"), unread: "later words")
+            let (line, range) = ColumnGrammar.print(held, key: target)
+            let read = try require(ColumnGrammar.read(line))
+            expectEqual(read.unread, "→ \(target) later words", "\(line)")
+            let key = try require(ColumnGrammar.key(in: read.unread))
+            expectEqual(key.column, column, "\(target)")
+            expectEqual(key.table, table, "\(target)")
+            expectEqual(range.map { (line as NSString).substring(with: $0) }, target, "the key's range is the whole target")
+        }
+    },
+    test("a column with no type and words kept that aren't the grammar's prints an empty type, so they aren't read as one") {
+        let held = Column(name: "price", type: TypeRef(""), unread: "check (price > 0)")
+        expectEqual(ColumnGrammar.print(held), "price \"\" check (price > 0)")
+        expectEqual(said(ColumnGrammar.read(ColumnGrammar.print(held))), said(held))
+        expectEqual(ColumnGrammar.print(Column(name: "id", type: TypeRef(""), primaryKey: true)), "id pk", "no empty type where a word of the grammar's follows")
+    },
+    test("every column a card can make reads back as the column it says: its type typed there, its default, normalized, its type cleared") {
+        let schema = SQLReader.read(#"""
+            CREATE TABLE "Line Items" (
+                id integer NOT NULL,
+                "order date" timestamp(6) without time zone DEFAULT '2020-01-01 00:00:00'::timestamp without time zone,
+                name character varying(255) DEFAULT ''::character varying NOT NULL,
+                late timestamp with time zone DEFAULT now() + interval '1 day',
+                "say ""hi""" text DEFAULT 'it''s a test',
+                total decimal(10,2) unsigned zerofill DEFAULT '0.00'
+            );
+            """#)
+        var columns = schema.tables.flatMap(\.columns)
+        columns += [
+            Column(name: "state", type: TypeRef("Order Status"), nullable: true),
+            Column(name: "first name", type: TypeRef("Order Status"), unique: true, default: "\"x\""),
+            Column(name: "price", type: TypeRef("numeric"), unread: "check (price > 0)"),
+            Column(name: "ref", type: TypeRef("uuid"), unread: "→ nowhere.x"),
+            Column(name: "note", type: TypeRef("null"), default: "a b"),
+        ]
+        for column in columns {
+            let expected = said(column)
+            if !column.type.words.isEmpty {
+                let typed = TypeRef(ColumnGrammar.written(type: column.type.words))
+                expectEqual(said(EngineeringLines.cardRetyped(column, typed)), expected, "retyped: \(column.name)")
+            }
+            expectEqual(said(EngineeringLines.cardDefaulted(column, column.default)), expected, "defaulted: \(column.name)")
+            expectEqual(said(EngineeringLines.cardNormalized(column)), expected, "normalized: \(column.name)")
+            var cleared = column
+            cleared.type = TypeRef("")
+            expectEqual(said(EngineeringLines.cardRetyped(column, nil)), said(cleared), "cleared: \(column.name)")
+        }
+    },
     test("a block of lines is a column a line, blank lines passed over, each its own id; printed, a line a column") {
         let columns = ColumnGrammar.read(lines: "id uuid pk\n\n  \ncustomer_id uuid\n")
         expectEqual(columns.map(\.name), ["id", "customer_id"])

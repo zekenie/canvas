@@ -44,8 +44,11 @@ enum ColumnCard {
         untyped.type = TypeRef("")
         let printed = ColumnGrammar.print(untyped) as NSString
         let text = type?.words.trimmingCharacters(in: .whitespaces) ?? ""
-        guard !text.isEmpty, let name = ColumnGrammar.placedWords(of: printed as String).first,
-              var read = ColumnGrammar.read(printed.substring(to: NSMaxRange(name.range)) + " " + text + printed.substring(from: NSMaxRange(name.range)), id: column.id)
+        let placed = ColumnGrammar.placedWords(of: printed as String)
+        // The empty type a print says no type with, where a word kept would be read as one, is the place the new type goes.
+        let tail = placed.dropFirst().first.flatMap { $0.text == ColumnGrammar.quoted("") ? NSMaxRange($0.range) : nil }
+        guard !text.isEmpty, let name = placed.first,
+              var read = ColumnGrammar.read(printed.substring(to: NSMaxRange(name.range)) + " " + text + printed.substring(from: tail ?? NSMaxRange(name.range)), id: column.id)
         else { return normalized(untyped) }
         read.onDelete = column.onDelete
         read.onUpdate = column.onUpdate
@@ -195,12 +198,15 @@ struct ColumnReferenceGrammar: LineGrammar {
     }
 }
 
-/// A column's default, in its card: what it is as written, in code.
+/// A column's default, in its card: what it is as written, in code; a default in double quotes alone is the words between them,
+/// as its line reads one.
 struct ColumnDefaultGrammar: LineGrammar {
     func read(_ line: LineText, id: PartID, in context: LineContext) -> LineReading<String> {
         let text = line.string.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return LineReading(row: nil) }
-        return LineReading(row: text, spans: ColumnGrammar.placedWords(of: line.string).map { LineSpan($0.range, .code) })
+        let words = ColumnGrammar.placedWords(of: text)
+        let value = words.count == 1 ? ColumnGrammar.unquoted(words[0].text) ?? text : text
+        return LineReading(row: value, spans: ColumnGrammar.placedWords(of: line.string).map { LineSpan($0.range, .code) })
     }
 
     func print(_ value: String, in context: LineContext) -> LineText { LineText(value) }

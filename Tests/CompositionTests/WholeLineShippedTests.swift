@@ -94,8 +94,8 @@ private let dump = #"""
         walk.press(.down)
         expectEqual(w.line?.string, "due timestamp(6) without time zone null default '2020-01-01 00:00:00'::timestamp without time zone")
         walk.press(.down)
-        expectEqual(w.line?.string, "status \"Order Status\" default \"'new'::public.\"\"Order Status\"\"\"",
-                    "a default of several words no cast of SQL's types explains, quoted, its quotes doubled")
+        expectEqual(w.line?.string, "status \"Order Status\" default 'new'::public.\"Order Status\"",
+                    "a literal cast to a schema's quoted type is one word, as SQL writes it")
         w.line?.setSelectedRange(NSRange(location: 0, length: 6))
         w.type("state", with: walk)
         walk.press(.escape)
@@ -171,15 +171,15 @@ private let dump = #"""
         expectEqual(w.line?.string, "dup_id uuid → ledger.id")
         walk.press(.escape)
         walk.press(.escape)
-        // A key drawn elsewhere: its arrow first, the words after it, and an edit keeps the key where it is.
+        // A key drawn elsewhere: its arrow, and no words of another key beside it, and an edit keeps the key where it is.
         try w.draw(#"edge "orders".ref_id -> "customers".id"#)
         try w.edit("orders", row: "ref_id")
-        expectEqual(w.line?.string, "ref_id uuid → customers.id → accounts.id")
+        expectEqual(w.line?.string, "ref_id uuid → customers.id", "the board's one key, not the words kept of another")
         w.line?.setSelectedRange(NSRange(location: 0, length: 3))
         w.type("refer", with: walk)
         walk.press(.down)
         expect(keys(editor).contains("orders.refer_id -> customers.id") && !keys(editor).contains("orders.refer_id -> accounts.id"), "\(keys(editor))")
-        expectEqual(column(editor, "orders", "refer_id")?.unread, "→ accounts.id")
+        expectEqual(column(editor, "orders", "refer_id")?.unread, "", "the stale words go with the commit")
         walk.press(.escape)
         walk.press(.escape)
         // Only the first → is read, as draw reads it: one that names nothing leaves the line no key.
@@ -193,6 +193,62 @@ private let dump = #"""
         expectEqual(column(editor, "orders", "a_id")?.unread, "→ nowhere.x → customers.id")
         walk.press(.escape)
         walk.press(.escape)
+    },
+    test("a key to a column whose name has a space: its line reads back, and renaming the referencing row keeps the key") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            table "customers" columns: "id uuid pk\n\"first name\" text unique"
+            table "orders" right of "customers" (gap: 200) columns: "id uuid pk"
+            """#)
+        let walk = w.walk()
+        try w.edit("orders", row: "id")
+        walk.press(Chord(Key.right, .command))
+        walk.press(.return)
+        w.type(#"buyer uuid -> customers."first name""#, with: walk)
+        walk.press(.return)
+        expect(keys(editor).contains("orders.buyer -> customers.first name"), "\(keys(editor))")
+        walk.press(.escape)
+        walk.press(.escape)
+        try w.edit("orders", row: "buyer")
+        expectEqual(w.line?.string, #"buyer uuid → customers."first name""#)
+        w.line?.setSelectedRange(NSRange(location: 0, length: 5))
+        w.type("owner", with: walk)
+        walk.press(.down)
+        expectEqual(undoTitle(w.window), "Undo Rename Column")
+        expect(keys(editor).contains("orders.owner -> customers.first name"), "kept: \(keys(editor))")
+        walk.press(.escape)
+        walk.press(.escape)
+    },
+    test("draw widens a table or an enum it writes rows to, never narrower, and not at a size the statement gives or when it writes no rows") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        @MainActor func width(_ title: String) -> CGFloat {
+            editor.document.shapes.first { $0[TitleProperty.self] == title }?.box?.width ?? 0
+        }
+        try w.draw(#"table "sized" size: 200x columns: "shipping_address_line_two character varying(255) null""#)
+        expectEqual(width("sized"), 200, "a size the statement gives wins")
+        try w.draw(#"table "orders" columns: "id uuid pk""#)
+        let narrow = width("orders")
+        expectEqual(narrow, 260)
+        try w.draw(#"table "orders" columns: "shipping_address_line_two character varying(255) null""#)
+        let widened = width("orders")
+        expect(widened > narrow, "an existing table given a longer row is widened: \(widened)")
+        try w.draw(#"table "orders" columns: "id uuid pk""#)
+        expectEqual(width("orders"), widened, "never narrower")
+        let orders = try require(table(editor, "orders")).id
+        editor.transact("Narrow") { $0.update(orders, as: DatabaseTable.self) { $0.props.frame.size.width = 260 } }
+        try w.draw(#"table "orders" below "sized" (gap: 100)"#)
+        expectEqual(width("orders"), 260, "a statement that writes no rows leaves the width a person chose")
+        try w.draw(#"enum-type "states" below "orders" (gap: 100) values: "awaiting_customer_confirmation_of_the_shipping_address""#)
+        let states = width("states")
+        expect(states > 220 && states <= 560, "an enum: \(states)")
+        try w.draw(#"enum-type "states" values: "new""#)
+        expectEqual(width("states"), states, "and never narrower")
     },
     test("a table drawn with a long line, an enum with a long value and a table given a key column by ⌘L are as wide as their lines read") {
         let w = try EmptyBoardWindow()
