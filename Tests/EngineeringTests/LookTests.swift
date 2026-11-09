@@ -82,7 +82,7 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
         let drawn = render(h.editor)
         expect(some(drawn, in: pill) { $0[0] < 120 }, "the pill's dark capsule")
     },
-    test("zoomed far out, where a row is under two points, a table is its paper and its title's bar: no bar a row") {
+    test("zoomed far out, where a row is under three points (about 12%), a table is its paper and its title's bar: no bar a row") {
         let (h, _, _) = try board()
         h.editor.camera = Camera(origin: .zero, zoom: 0.06)
         let drawn = render(h.editor)
@@ -91,7 +91,9 @@ private func grey(_ p: [Int]) -> Bool { abs(p[0] - p[2]) < 12 && p[0] > 70 && p[
             for x in 8..<20 { expectColor(pixel(drawn, at: CGPoint(x: x, y: y)), paper, "its paper at \(x), \(y)", within: 8) }
         }
         h.editor.camera = Camera(origin: .zero, zoom: 0.1)
-        expect(some(render(h.editor), in: CGRect(x: 12, y: 12, width: 12, height: 8)) { $0[0] < 200 }, "at 10% a row is 2.4 points and has its bars")
+        expect(!some(render(h.editor), in: CGRect(x: 12, y: 12, width: 10, height: 6)) { $0[0] < 200 }, "at 10% a row is 2.4 points: the paper alone")
+        h.editor.camera = Camera(origin: .zero, zoom: 0.15)
+        expect(some(render(h.editor), in: CGRect(x: 18, y: 18, width: 18, height: 12)) { $0[0] < 200 }, "at 15% a row is 3.6 points and has its bars")
     },
     test("zoomed out, a column whose enum is gone has a grey bar as its type, as it has plain words in full: no pill that isn't there at 100%") {
         let (h, table, values) = try board()

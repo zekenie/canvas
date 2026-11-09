@@ -14,7 +14,8 @@ import StickyNotes
 import TestKit
 import Titles
 
-// Rows (K11): a board where one shape in ten is a 12-row table and one in a hundred a 60-row table, the rest notes, drawn
+// Rows (K11): a board where one shape in ten is a 12-row table and one in a hundred a 60-row table (and, since K17, one in a
+// hundred a 60-endpoint API), the rest notes, drawn
 // at 100% and 70% (each table's rows in view only, their text set once) and zoomed out at 30% and 10% (a bar a line in
 // view, one fill a color, none where a row is under 2 points); and ⌃⌘↑ on 1,000 tables with nothing selected, then the
 // frame after (each fold a provided layout input, laid out again only for the tables folded); a row moved by ⌥↑ (K8) and
@@ -53,12 +54,14 @@ extension Budget {
     static let roomBoard = 2 * fieldKeystroke
 }
 
-/// `count` shapes in a grid 280 apart, each tenth a 12-row titled table, each hundredth a 60-row one, the rest notes.
-@MainActor private func rowsBoard(_ count: Int) -> [AnyShapeRecord] {
+/// `count` shapes in a grid 280 apart, each tenth a 12-row titled table, each hundredth a 60-row one, each hundredth from the
+/// fifty-fifth a 60-endpoint API (K17: six groups of ten), the rest notes.
+@MainActor func rowsBoard(_ count: Int) -> [AnyShapeRecord] {
     let short = (0..<12).map { Column(name: "column_\($0)", type: TypeRef("uuid"), primaryKey: $0 == 0) }
     let long = (0..<60).map { Column(name: "column_\($0)", type: TypeRef("text"), unique: $0 == 1, primaryKey: $0 == 0) }
     return (0..<count).map { index in
         let origin = CGPoint(x: CGFloat(index % 40) * 340, y: CGFloat(index / 40) * 360)
+        if index % 100 == 55 { return AnyShapeRecord(groupedAPI(at: origin, groups: 6, each: 10, title: "api_\(index)")) }
         if index % 10 == 0 {
             let columns = index % 100 == 0 ? long : short
             var table = ShapeRecord(DatabaseTable(frame: CGRect(origin: origin, size: CGSize(width: 300, height: KitStyle.height(rows: columns.count))),

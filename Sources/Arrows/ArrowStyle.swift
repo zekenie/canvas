@@ -32,8 +32,12 @@ enum ArrowStyle {
     nonisolated static let fanStep: CGFloat = 25 * .pi / 180
     nonisolated static let fanSpread: CGFloat = 70 * .pi / 180
     nonisolated static let fanMarkShift: CGFloat = 8
-    /// A level curve's end keeps this far inside the container both its ends are in (a database's edge), where it can.
+    /// A level curve's end keeps this far inside the container both its ends are in (a database's edge), where it can; and it
+    /// leaves the side of its row with at least `containerSideRoom` inside it (its turn and half a pill on it), else the other.
     nonisolated static let containerClearance: CGFloat = 8
+    nonisolated static let containerSideRoom: CGFloat = 60
+    /// Arrows bowed apart by a slot also leave and meet their rows this far apart along the side, a slot each, within the row.
+    nonisolated static let slotEndShift: CGFloat = 6
 
     /// How far from an arrow's centerline (beyond its stroke) a click still hits it, in view points.
     static let hitMargin: CGFloat = 3

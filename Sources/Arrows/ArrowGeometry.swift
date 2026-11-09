@@ -128,6 +128,11 @@ public struct ArrowGeometry: Sendable {
             // Fanned ends: each comes in at an angle of its own (a marked one also a little apart along its side).
             if let fan = spread.startFan { s = Self.fanned(s, by: fan, count: spread.startFanCount, marked: markReach.start > 0, part: startPart) }
             if let fan = spread.endFan { e = Self.fanned(e, by: fan, count: spread.endFanCount, marked: markReach.end > 0, part: endPart) }
+            // A slot's arrows leave and meet their ends a little apart along the side too, so they run apart from the first.
+            if spread.slotShift != 0 {
+                s = Self.shifted(s, by: spread.slotShift, part: startPart)
+                e = Self.shifted(e, by: spread.slotShift, part: endPart)
+            }
             if startPart != nil { startHandle = s.point }
             if endPart != nil { endHandle = e.point }
             let chord = e.point - s.point
@@ -236,7 +241,7 @@ public struct ArrowGeometry: Sendable {
         func fits(_ side: PartSide, of rect: CGRect) -> Bool {
             let point = side.point(of: rect)
             guard let room = room(along: side.normal, from: point, inside: container) else { return true }
-            return room >= ArrowStyle.levelMinReach * 0.75
+            return room >= ArrowStyle.containerSideRoom
         }
         func flipped(_ side: PartSide) -> PartSide { side == .left ? .right : .left }
         var result = sides
@@ -252,6 +257,14 @@ public struct ArrowGeometry: Sendable {
         if startOut, let start = sides.start, let rect = startPart, fits(flipped(start), of: rect) { result.start = flipped(start) }
         if endOut, let end = sides.end, let rect = endPart, fits(flipped(end), of: rect) { result.end = flipped(end) }
         return result
+    }
+
+    /// An end moved `shift` along its side (down a side across, right along a top), within its part's band where it has one.
+    private static func shifted(_ anchor: (point: CGPoint, normal: CGPoint?), by shift: CGFloat, part: CGRect?) -> (point: CGPoint, normal: CGPoint?) {
+        guard let normal = anchor.normal else { return anchor }
+        let across = abs(normal.x) >= abs(normal.y) ? CGPoint(x: 0, y: 1) : CGPoint(x: 1, y: 0)
+        let band = part.map { (abs(across.y) > 0 ? $0.height : $0.width) * 0.4 } ?? abs(shift)
+        return (anchor.point + across * max(-band, min(band, shift)), normal)
     }
 
     /// A level curve's end fanned among `count` that come into one place: its way out turned by `spread` (-1 the first, 1 the
@@ -583,6 +596,8 @@ private struct BoundShape {
 /// at a row of a shape it's bound to as a whole (`startEntry`, `endEntry`). Pure; nothing is stored.
 public struct ArrowSpread: Hashable, Sendable {
     public var bend: CGFloat = 0
+    /// How far a slot's ends move along their sides, world units (0 for none).
+    public var slotShift: CGFloat = 0
     public var startFan: CGFloat?
     public var startFanCount = 1
     public var endFan: CGFloat?

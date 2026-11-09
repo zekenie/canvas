@@ -92,8 +92,9 @@ import TestKit
         answers.answers = [one: ConnectionBundle(slot: 0, slots: 2), two: ConnectionBundle(slot: 1, slots: 2)]
         b.h.editor.connectionBundlesDidChange([one, two])
         let a = try b.geometry(one), c = try b.geometry(two)
-        expectClose(a.middle.distance(to: c.middle), 30, within: 0.5)  // a slot apart
-        expectClose(a.middle.distance(to: before), 15, within: 0.5)  // each half a slot off the one path
+        // A slot apart, and a little more for their ends a slot's shift apart along the rows' sides.
+        expect(a.middle.distance(to: c.middle) >= 30 && a.middle.distance(to: c.middle) < 40, "\(a.middle) and \(c.middle)")
+        expect(a.start.distance(to: c.start) >= 5, "they leave the row apart: \(a.start), \(c.start)")
         expectClose((a.middle - a.bendOrigin).dot(a.bendAxis), 0, within: 1e-6)  // the bend is measured from where the slot puts the middle
     },
     test("arrows fanned into one row come in at angles of their own, the first from above; marked, they meet the row apart; their labels slide to their starts") {

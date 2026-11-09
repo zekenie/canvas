@@ -209,6 +209,7 @@ extension ArrowDefinition {
         guard let bundle, !bundle.isPlain else { return nil }
         var spread = ArrowSpread()
         spread.bend = CGFloat(bundle.slotOffset) * ArrowStyle.slotSpacing
+        spread.slotShift = CGFloat(bundle.slotOffset) * ArrowStyle.slotEndShift
         if let fan = bundle.fan(at: .start) { (spread.startFan, spread.startFanCount) = (CGFloat(fan.spread), fan.count) }
         if let fan = bundle.fan(at: .end) { (spread.endFan, spread.endFanCount) = (CGFloat(fan.spread), fan.count) }
         spread.startEntry = bundle.entries[.start]
