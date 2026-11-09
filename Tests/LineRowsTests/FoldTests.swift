@@ -147,6 +147,9 @@ import TextEditing
         let parts = b.editor.shapeParts(of: id)
         let part = try require(parts.first { $0.title == "2 more entries" }, "the +N line is a part the keys reach: \(parts.map(\.title))")
         expectEqual(part.rect, more)
+        // ⌥Tab's first stop is the shape's items (its rows); the next, its parts.
+        b.press(.optionTab)
+        expect(b.editor.selectedItems != nil, "⌥Tab goes first into the rows, as items")
         b.press(.optionTab)
         expectEqual(b.editor.focusedPart?.title, "2 more entries")
         b.press(.space)
@@ -157,6 +160,7 @@ import TextEditing
         expectEqual(b.editor.shapeContext.layoutInput(LineRowsLayout.shown, of: try require(b.editor.document[headed]))?.lines,
                     [.header(0, hiding: 2), .row(3), .row(4)])
         b.editor.selectedShapeIDs = [headed]
+        b.press(.optionTab)
         b.press(.optionTab)
         b.press(.return)
         expect(b.editor.rowFolds?.isFolded(headed) != true, "Return opens the header")
@@ -254,6 +258,7 @@ import TextEditing
         b.editor.rowFolds?.fold([id])
         b.editor.selectedShapeIDs = [id]
         b.press(.optionTab)
+        b.press(.optionTab)
         expectEqual(b.editor.focusedPart?.title, "2 more entries")
         b.press(.return)
         expect(b.editor.rowFolds?.isFolded(id) != true, "Return opened it")
@@ -275,7 +280,15 @@ import TextEditing
         expect(other.editor.rowFolds?.isFolded(ids[0].id) != true, "the first folded is the one let go")
         expect(other.editor.rowFolds?.isFolded(ids[RowFolds.savedLimit].id) == true, "the latest is kept")
     },
-    test("Keys walk a fold's lines: ⌥Tab visits a closed header and +N in reading order, ⌥⇧Tab undoes each, Escape goes back to the shape; each shows, named") {
+    test("A closed item says its count once, matched as a whole count: \"4 rows\" is not found inside \"14 rows\"") {
+        let noun = LineNoun("row")
+        expectEqual(LineFoldStyle.closedItem("fruit, path prefix, 14 rows", hiding: 14, noun: noun), "fruit, path prefix, 14 rows, closed")
+        expectEqual(LineFoldStyle.closedItem("fruit, path prefix, 14 rows", hiding: 4, noun: noun), "fruit, path prefix, closed, 4 of 14 rows hidden",
+                    "a count that only looks like the kind's isn't taken for it")
+        expectEqual(LineFoldStyle.closedItem("fruit/", hiding: 2, noun: LineNoun("entry", plural: "entries")), "fruit/, closed, 2 entries")
+        expectEqual(LineFoldStyle.closedItem("fruit, path prefix, 1 row", hiding: 1, noun: noun), "fruit, path prefix, 1 row, closed")
+    },
+    test("Keys walk a fold's lines: ⌥Tab visits the rows as items, then a closed header and +N in reading order, ⌥⇧Tab undoes each, Escape goes back to the shape; each shows, named") {
         let b = try Bench()
         // Three rows under no header (the first two kept, the third behind +N) and two groups, each closed by ⌃⌘↑.
         let id = b.tally("fruit", ["pear", "fig", "kiwi", "fruit/", "red 3", "green", "veg/", "kale 2", "plum"])
@@ -284,13 +297,14 @@ import TextEditing
         let titles = b.editor.shapeParts(of: id).map(\.title)
         expect(titles.count >= 2, "a closed header and +N are parts: \(titles)")
         let walk = KeyWalk(b.window, editor: b.editor, readers: [.canvas(b.canvas, selection: { [b] in b.editor.selectedShapeIDs.isEmpty ? [] : ["T"] },
-                                                                          part: { [b] in b.editor.focusedPart?.title },
+                                                                          part: { [b] in b.editor.focusedPart?.title ?? (b.editor.selectedItems.map { _ in "items" }) },
                                                                           frame: { [b] in
                                                                               guard let rect = b.editor.focusedPart?.rect ?? b.editor.selectionBounds else { return nil }
                                                                               return b.editor.shownFrame(ofWorld: rect, in: b.canvas)
                                                                           })],
                            settle: .both(b.h.scheduler))
-        let ids = titles.map { "canvas/T/\($0)" }
+        // The rows as items are ⌥Tab's first stop, one stop; the fold's lines are parts after them.
+        let ids = ["canvas/T/items"] + titles.map { "canvas/T/\($0)" }
         walk.go(ids[0], by: .optionTab)
         let cycle = walk.expectCycle(ids, wraps: .closed, forward: .optionTab, back: .optionBackTab)
         expectEqual(cycle.ids.count, ids.count)

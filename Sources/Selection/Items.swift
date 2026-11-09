@@ -52,14 +52,18 @@ public struct ShapeItem {
     /// The items it stands for while they're hidden (a fold's "+N ›" line, a closed header): a selected one of them shows
     /// as this one selected, and comes back as itself once it shows again.
     public var stands: [AnyHashable]
+    /// The items it heads, shown under it or hidden behind it (a header's rows, open or closed): what speaks for it where it
+    /// has nothing of its own (its panel's connections are its rows'). Empty for an item that heads none.
+    public var heads: [AnyHashable]
 
     public init<ID: Hashable & Sendable>(id: ID, title: @autoclosure @escaping @MainActor () -> String, rect: CGRect, outline: ItemOutline? = nil,
-                                         stands: [AnyHashable] = []) {
+                                         stands: [AnyHashable] = [], heads: [AnyHashable] = []) {
         self.id = AnyHashable(id)
         titled = title
         self.rect = rect
         self.outline = outline
         self.stands = stands
+        self.heads = heads
     }
 }
 
@@ -187,6 +191,13 @@ extension CanvasEditor {
         return source.items(self, record)
     }
 
+    /// The items `item` of `shape` heads (`ShapeItem.heads`: a header's rows), as its kind lists them now, while the shape is
+    /// edited too (a row's panel shows while its line has the caret). None for an item that heads nothing, or isn't one.
+    public func itemsHeaded(by item: AnyHashable, of shape: ShapeID) -> [AnyHashable] {
+        guard let record = document[shape], let source = itemSource(of: record.kind) else { return [] }
+        return source.items(self, record).first { $0.id == item }?.heads ?? []
+    }
+
     /// The item of `id` under a world point; nil off its items, or for a kind with none.
     public func item(at point: CGPoint, of id: ShapeID) -> AnyHashable? {
         guard editingShapeID != id, let record = document[id], let source = itemSource(of: record.kind) else { return nil }
@@ -216,6 +227,13 @@ extension CanvasEditor {
 
     /// Whether the keys go to selected items: there are some, and nothing's under way or edited.
     public var canStepItems: Bool { session == nil && editingShapeID == nil && selectedItems != nil }
+
+    /// ⌘↑ with items selected: they let go, the shape still selected (as Escape), one level out. Whether there were any.
+    @discardableResult
+    public func stepOutOfItems() -> Bool {
+        guard canStepItems, let state = selectionState else { return false }
+        return state.clearItems()
+    }
 
     /// Says how many items are selected now (the kind's words) when a key or click changed a run of them: more than one now,
     /// or fewer than before. VoiceOver's focus change says a single item moved to; a run has no one element to say it.
@@ -282,6 +300,7 @@ extension SelectionState {
     /// Drops the items: whether there were any.
     @discardableResult
     func clearItems() -> Bool {
+        itemsLeft = nil
         guard items != nil else { return false }
         items = nil
         return true

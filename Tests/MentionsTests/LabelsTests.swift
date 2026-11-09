@@ -35,12 +35,12 @@ import Titles
 
     var text: MentionText { h.editor.document[jot]!.typed(as: Jot.self)!.props.text }
 
-    /// Every mentioned shape's label is what resolving it says a mention shows, and the text reads
-    /// through them as the state reads it.
+    /// Every mentioned shape's label is what resolving it says a mention shows (while it isn't live, the name it last showed),
+    /// and the text reads through them as the state reads it.
     func expectAgreement(_ note: String, file: StaticString = #fileID, line: UInt = #line) {
         let labels = state.labels
         for id in mentioned {
-            expectEqual(labels.label(of: id), state.resolve(id).appearance?.label, note, file: file, line: line)
+            expectEqual(labels.label(of: id), state.resolve(id).appearance?.label ?? SeenNames.shared.seen(PartAddress(id)), note, file: file, line: line)
         }
         expectEqual(text.plainText { labels.label(of: $0) }, state.plainText(text), note, file: file, line: line)
     }
@@ -71,7 +71,7 @@ private nonisolated func plainTextOffMain(_ text: MentionText, _ labels: Mention
         expectEqual(l.state.labels.label(of: l.groceries), "Food")
         l.editor.transact("Delete") { $0.delete([l.milk]) }
         l.expectAgreement("deleted")
-        expectEqual(l.state.labels.label(of: l.milk), nil)
+        expectEqual(l.state.labels.label(of: l.milk), "Milk", "gone, the name it last showed")
         l.editor.undo()
         l.expectAgreement("undone")
         expectEqual(l.state.labels.label(of: l.milk), "Milk")

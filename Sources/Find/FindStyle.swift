@@ -75,9 +75,20 @@ public enum FindStyle {
     static let snippetHit = Font.system(size: 11, weight: .semibold)
     /// A titled shape's name, leading its row before the snippet of a hit elsewhere in it, and what comes between them.
     static let rowName = Font.system(size: 11, weight: .medium)
+    /// The same as an AppKit font, to measure a name against `rowNameMost`.
+    static let rowNameFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let nameGap = "  "
     /// The same between a row's name and its snippet, as two texts in the row.
     static let nameSpacing: CGFloat = 6
+    /// How wide a shape's name in its row is at most, whole up to it, before the hit's words after it are cut: about half
+    /// the panel's row, so "orders API" reads before "POST /orders/{id}/refunds".
+    public static let rowNameMost: CGFloat = 150
+
+    /// The width a name is given in its row: its own, up to `rowNameMost`. Set outright, so the text is asked to fit it and
+    /// cuts itself in the middle; a frame that only caps a text taking its ideal width would let it run on past the cap.
+    public static func rowNameWidth(_ name: String) -> CGFloat {
+        min(ceil(NSAttributedString(string: name, attributes: [.font: rowNameFont]).size().width) + 1, rowNameMost)
+    }
     static let boardTitle = Font.system(size: 11, weight: .semibold)
     static let tally = Font.system(size: 10).monospacedDigit()
     static let noMatchesFont = Font.system(size: 13)

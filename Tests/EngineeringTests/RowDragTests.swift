@@ -194,7 +194,14 @@ private let groupedAPI = ["GET /health", "/orders", "GET /{id}", "POST /{id}/ref
         b.editor.endEditing()
         b.editor.undo()
         expectEqual(b.rows(api), rows, "one Undo")
+        // The menu names what moves: a lone header takes its group, so its item is the endpoints', as the move's step is.
+        b.editor.selectedShapeIDs = [api]
+        b.editor.selectItems([AnyHashable(rows[1].id)], of: api)
+        let lone = try require(b.h.secondaryClick(at: b.middle(ofRow: 1, in: api)))
+        expect(lone.outline.contains("Move Endpoints to New API") && !lone.outline.contains("Move Path Prefix to New API"), "\(lone.outline)")
+        lone.cancelTracking()
         let group = try require(b.editor.moveRows([rows[1].id], of: api, to: .beside([api])), "a header alone takes its group")
+        expectEqual(b.undoName, "Move Endpoints to New API")
         expectEqual(b.apiLines(group), ["/orders", "GET /{id}", "POST /{id}/refunds"])
         expectEqual(b.apiLines(api), ["GET /health", "/customers", "GET /{id}/orders"])
     },

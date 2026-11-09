@@ -66,18 +66,23 @@ public struct LineRowsContribution {
     let card: @MainActor (CanvasEditor, AnyShapeRecord, PartID) -> LineRowCard?
     /// Whether a row folded away shows while Find is open for hits at these ranges of its text (`LineModel.peeks`).
     let peeks: @MainActor (AnyShapeRecord, PartID, [Range<Int>]) -> Bool
+    /// Where a header's opener is on its line (its chevron: the line before its words start), world units, from the header's
+    /// index among the shape's rows and its line's rect: a click there opens or closes it, a click on its words selects it.
+    let opener: @MainActor (AnyShapeRecord, Int, CGRect) -> CGRect
 
     public init(noun: LineNoun, rows: @escaping @MainActor (AnyShapeRecord) -> [FoldRow]?,
                 marked: @escaping @MainActor (AnyShapeRecord, LayoutReading) -> Set<PartID>,
                 lineRect: @escaping @MainActor (Int, CGRect) -> CGRect,
                 card: @escaping @MainActor (CanvasEditor, AnyShapeRecord, PartID) -> LineRowCard? = { _, _, _ in nil },
-                peeks: @escaping @MainActor (AnyShapeRecord, PartID, [Range<Int>]) -> Bool = { _, _, _ in true }) {
+                peeks: @escaping @MainActor (AnyShapeRecord, PartID, [Range<Int>]) -> Bool = { _, _, _ in true },
+                opener: @escaping @MainActor (AnyShapeRecord, Int, CGRect) -> CGRect = { _, _, line in line }) {
         self.noun = noun
         self.rows = rows
         self.marked = marked
         self.lineRect = lineRect
         self.card = card
         self.peeks = peeks
+        self.opener = opener
     }
 }
 

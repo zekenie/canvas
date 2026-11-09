@@ -258,13 +258,14 @@ private let stripeAPI = #"""
         expectEqual(arrow.props.end.binding?.part, farRow)
         expectEqual(undoTitle(w.window), "Undo Connect")
         try expectClean(arrow.id, from: api, row: row, in: editor, "⌘L's far pick")
-        // connect 19 to 21: the card's calls line, longer than the card, ends in "…" until its stop has the keyboard.
+        // connect 19 to 21: the card is at least as wide as the row it hangs from (U8, connect 8, tables 7), so the calls line
+        // that ran past a card of its own width reads whole, the endpoint called not cut off.
         walk.press(Chord(Key.down, .command))
         let card = try require(w.canvas.cardView as? LineCardView)
         w.window.settle()
         card.layoutSubtreeIfNeeded()
         expectEqual(card.value(of: "relations 1"), "calls Stripe API.POST /v1/refunds", "its words whole")
-        expect(card.isCut("relations 1"), "cut at the card's edge, said so")
+        expect(!card.isCut("relations 1"), "whole in a card the row's width")
         expect(!card.isCut("name"), "a line that fits isn't")
         card.go(to: "relations 1")
         w.window.settle()

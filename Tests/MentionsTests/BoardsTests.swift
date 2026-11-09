@@ -113,7 +113,7 @@ import Topology
         expectEqual(b.row(b.jot), "Ask @Groceries and @Milk")
     },
 
-    test("deleting the pocket that holds it shows it missing, by the name the text holds; undo brings it back live, and redo missing again") {
+    test("deleting the pocket that holds it shows it missing, by the name it last showed; undo brings it back live, and redo missing again") {
         let b = try PocketBoard()
         var heard: [Set<ShapeID>] = []
         let observation = b.state.observe([b.groceries]) { heard.append($0) }
@@ -121,7 +121,7 @@ import Topology
         expectEqual(b.row(b.jot), "Ask @Groceries and @Milk")
         b.editor.delete(b.pocket)
         expectEqual(b.state.resolve(b.groceries), .missing)
-        expectEqual(b.row(b.jot), "Ask @Old name and @Milk")
+        expectEqual(b.row(b.jot), "Ask @Groceries and @Milk")
         expectEqual(b.editor.mentionPills(of: b.jot).map(\.isLive), [false, true])
         expectEqual(heard, [[b.groceries]])
         b.editor.undo()
@@ -130,7 +130,7 @@ import Topology
         expectEqual(b.editor.mentionPills(of: b.jot).map(\.isLive), [true, true])
         b.editor.redo()
         expectEqual(b.state.resolve(b.groceries), .missing)
-        expectEqual(b.row(b.jot), "Ask @Old name and @Milk")
+        expectEqual(b.row(b.jot), "Ask @Groceries and @Milk")
         expectEqual(heard.count, 3)
     },
 

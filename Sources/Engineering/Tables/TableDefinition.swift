@@ -231,7 +231,7 @@ extension TableDefinition: Editable {
 
     func makeEditingView(for shape: ShapeRecord<DatabaseTable>, context: EditContext<DatabaseTable>) -> EditingView {
         LineRowsView.make(shape, context: context, model: TableLines(table: shape.id, keys: context.service(KeyIndex.self)), title: LineTitle { title in
-            TitleField(title: title, systemImage: TableStyle.symbol, tint: nil, placeholder: TableStyle.label, name: TableStyle.titleFieldName)
+            TitleField(title: title, systemImage: TableStyle.symbol, tint: nil, placeholder: TableStyle.placeholder, name: TableStyle.titleFieldName)
         })
     }
 

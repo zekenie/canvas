@@ -18,6 +18,8 @@ public enum LineKey: Equatable, Sendable {
     case commit
     /// ↑ ↓: the stop above, below.
     case up, down
+    /// Home, End: the first row, the last (a header at the top of sixty rows is a key away).
+    case firstRow, lastRow
     /// Tab, ⇧Tab: the next, the previous stop.
     case next, previous
     /// Escape, ⌘↑, ⌘.: out of the line, the draft kept (editing ends; in a row's card, the row has the keyboard back).
@@ -380,7 +382,8 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
 
     /// The list's keys first (↑ ↓ and the page keys move it, Tab picks, Return does an action and otherwise goes on to the
     /// line, ⇧Tab and Escape close it; over a word typed whole, open only while longer offers extend it, its ↑ ↓ are the
-    /// line's while that word is highlighted: `line-list-word`; Escape still only closes it); then the line's: Return, ↑ ↓, Tab ⇧Tab, Escape, and ⌫ on an empty line. Never a
+    /// line's while that word is highlighted: `line-list-word`; Escape still only closes it); then the line's: Return, ↑ ↓,
+    /// Home End (the first and last row), Tab ⇧Tab, Escape, and ⌫ on an empty line. Never a
     /// line break (⌥↩ and ⌃↩ do nothing).
     public override func doCommand(by selector: Selector) {
         if let open, let row = open.list.highlighted, open.listed.indices.contains(row), open.listed[row].item.label == open.offers.query,
@@ -422,6 +425,10 @@ public final class LineField: EditingTextView, UndoesBoardWhenEmpty {
         case (.next, _): if key(.next, closing: true) { return }
         case (.previous, _): if key(.previous, closing: true) { return }
         case (.back, _): if key(.end, closing: true) { return }
+        case (nil, _) where selector == #selector(NSResponder.scrollToBeginningOfDocument(_:)):
+            if key(.firstRow, closing: true) { return }
+        case (nil, _) where selector == #selector(NSResponder.scrollToEndOfDocument(_:)):
+            if key(.lastRow, closing: true) { return }
         case (.delete, _) where isBanded: if key(.deleteRows, closing: true) { return }
         case (.delete, _) where selector == #selector(NSResponder.deleteBackward(_:)) && string.isEmpty:
             if key(.deleteEmpty, closing: true) { return }
@@ -665,6 +672,11 @@ public enum LineFieldStyle {
     static let caretMargin: CGFloat = 1
     /// What VoiceOver hears as whole rows are selected: "3 columns selected".
     static func selected(_ counted: String) -> String { "\(counted) selected" }
+    /// What VoiceOver hears as another writer takes out the row the caret was on: "Column removed", and where the person's
+    /// own words on it went: "Column removed, its line kept as a new column".
+    static func gone(_ title: String, _ singular: String, keeping: Bool) -> String {
+        keeping ? "\(title) removed, its line kept as a new \(singular)" : "\(title) removed"
+    }
     /// Whole rows selected while a shape is edited (⇧↑ ⇧↓): the accent, light, behind them; the same in both appearances,
     /// as the paper it's on is.
     static let rowsBand = NSColor.controlAccentColor.withAlphaComponent(0.2)

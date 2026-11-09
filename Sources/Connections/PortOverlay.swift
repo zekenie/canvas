@@ -60,7 +60,9 @@ struct PortOverlay: CanvasOverlay {
         // The pointer's where it is now (a press held after Escape, the camera moved under it), not
         // where the select tool last saw it move.
         let pressed = editor.pressedButton?.base as? PortDot
-        guard let host = state.host, editor.session == nil || pressed != nil,
+        // While a shape is edited only its own dots show (`hasDots`): a host a pointer left at rest chose before editing began
+        // (Return on another shape by keys) shows nothing.
+        guard let host = state.host, editor.session == nil || pressed != nil, state.hasDots(host),
               pressed != nil || (editor.pointerOverCanvas != nil && state.isNear(host, editor.camera.toView(editor.pointerWorldLocation)))
         else { return }
         if let part = state.hostPart { band(part, of: host, in: context) }

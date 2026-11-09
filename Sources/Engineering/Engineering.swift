@@ -43,12 +43,14 @@ public struct EngineeringPlugin: ListedPlugin {
         registrar.service { KitNames(editor: $0) }
         // The keys of a row, listed with the kit that has rows: a file with it off lists none.
         registrar.keyHint("↩ in a Row", "Next Row; on an Empty Row, Finish", while: .text)
+        registrar.keyHint("Home or End in a Row", "First or Last Row", while: .text)
         registrar.keyHint("⌥↑ ⌥↓ in a Row", "Move the Row", while: .text)
         registrar.keyHint("⌘⌫ then ⌫ in a Row", "Delete the Row", while: .text)
         registrar.keyHint("⇧↩ in a Row", "New Shape Beside It", while: .text)
         registrar.keyHint("⌘L in a Row", "Connect the Row", while: .text)
         registrar.keyHint("⌘↓ in a Column", "Show the Column's Details", while: .text)
         registrar.keyHint("⌘↓ in an Endpoint", "Show the Endpoint's Details", while: .text)
+        registrar.keyHint("⌥⇥ on a Table or API", "Select Its Rows", while: .canvas)
         registrar.keyHint("Space on an Endpoint", "Change the Endpoint's Method", while: .canvas)
         // Keys: arrows on the `foreign-key` channel, column to column, and the index of each table's that its rows read.
         registrar.channel(ForeignKey.self)
@@ -67,7 +69,7 @@ public struct EngineeringPlugin: ListedPlugin {
             editedTable = placing
             table.tool(label: TableStyle.label, systemImage: TableStyle.symbol, placing: placing)
             table.tint(NSColor(KitStyle.secondaryInk))
-            table.title(symbolInPill: true, placeholderInPill: TableStyle.label, bars: true)
+            table.title(symbolInPill: true, placeholderInPill: TableStyle.placeholder, bars: true)
             table.mentionable()
             table.resizable(minimumSize: CGSize(width: TableStyle.minimumWidth, height: KitStyle.height(rows: 1)))
             table.contentsRow { _, _ in ContentsLabel("", placeholder: TableStyle.placeholder, systemImage: TableStyle.symbol) }
@@ -90,7 +92,7 @@ public struct EngineeringPlugin: ListedPlugin {
             let size = CGSize(width: EnumStyle.width, height: KitStyle.height(rows: 1))
             type.tool(label: EnumStyle.label, systemImage: EnumStyle.symbol, placing: type.editingPlacement(size: size) { DatabaseEnum() })
             type.tint(NSColor(KitStyle.enumPurple))
-            type.title(symbolInPill: true, placeholderInPill: EnumStyle.label, bars: true)
+            type.title(symbolInPill: true, placeholderInPill: EnumStyle.placeholder, bars: true)
             type.titlePillLook { _, _ in TitlePillLook(tint: EnumStyle.titleTint) }
             type.mentionable()
             type.resizable(minimumSize: CGSize(width: EnumStyle.minimumWidth, height: KitStyle.height(rows: 1)))
@@ -107,7 +109,7 @@ public struct EngineeringPlugin: ListedPlugin {
             placedAPI = placing
             api.tool(label: APIStyle.label, systemImage: APIStyle.symbol, placing: placing)
             api.tint(NSColor(KitStyle.secondaryInk))
-            api.title(symbolInPill: true, placeholderInPill: APIStyle.label, bars: true)
+            api.title(symbolInPill: true, placeholderInPill: APIStyle.placeholder, bars: true)
             api.mentionable()
             api.resizable(minimumSize: CGSize(width: APIStyle.minimumWidth, height: APIRows.height(lines: 1)))
             api.contentsRow { _, _ in ContentsLabel("", placeholder: APIStyle.placeholder, systemImage: APIStyle.symbol) }
@@ -153,7 +155,7 @@ public struct EngineeringPlugin: ListedPlugin {
             let place = database.placement(size: DatabaseStyle.defaultSize, minimumSize: DatabaseStyle.minimumSize) { Database() }
             database.tool(label: DatabaseStyle.label, systemImage: DatabaseStyle.symbol, placing: place)
             database.tint(DatabaseStyle.tint)
-            database.title(symbolInPill: true, placeholderInPill: DatabaseStyle.pillPlaceholder)
+            database.title(symbolInPill: true, placeholderInPill: DatabaseStyle.placeholder)
             database.titleTab { _, _ in TitleTabLook(surface: DatabaseStyle.fill, edge: DatabaseStyle.border) }
             database.mentionable()
             database.resizable(minimumSize: place.minimumSize)

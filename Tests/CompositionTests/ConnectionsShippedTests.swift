@@ -377,12 +377,13 @@ extension ConnectionGroup {
         expectEqual(pill.map(\.title), ["Points To"])
         expectEqual(pill[0].ids, [target])
         expectEqual(pill[0].names, ["Orders"])
-        // An arrow from Checkout into the pill is, to the graph, an arrow into the note: both are what it points to, the pill as drawn.
+        // An arrow from Checkout into the pill is, to the graph, an arrow into the note: the note is what it points to, the pill
+        // its way there, no row of its own (a key's pill and its table are one row: U8, W-connect-1).
         let into = ShapeID()
         h.editor.transact("Arrow") { $0.insert(link(into, from: x, to: r)) }
         let checkout = try h.editor.connections(of: x)
         expectEqual(checkout.map(\.title), ["Points To"])
-        expectEqual(Set(checkout[0].ids), [target, r])
+        expectEqual(checkout[0].ids, [target])
         expectEqual(Set(try h.editor.connections(of: target)[0].ids), [x, r], "the note is pointed to by Checkout and the pill")
         let drawn = try h.editor.connections(of: r)
         expectEqual(drawn.map(\.title), ["Points To", "Pointed To By"])

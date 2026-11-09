@@ -174,6 +174,8 @@ extension DuoDefinition: ShapeDefinition, Editable {
         expectEqual(labels(shapeChildren(canvas)), ["lead, 3 arrows", "Beta, Spot"], "the member is no element: its lead says it")
         select([lead, member], h)
         expectEqual(labels(shapeChildren(canvas)), ["lead, 3 arrows", "Beta, Spot"], "selected with its lead, still none")
+        expectEqual((canvas.accessibilityFocusedUIElement as? NSAccessibilityElement)?.accessibilityLabel(), "lead, 3 arrows",
+                    "the focus is the lead's element, though the member is selected last")
         expect(!h.editor.accessibleShapes(limit: 500).contains(member))
         expectEqual(h.editor.shape(at: CGPoint(x: 150, y: 150)), lead, "hit as its lead, never itself, though it is in front")
         expect(!h.editor.paintOrder(in: CGRect(x: 0, y: 0, width: 800, height: 600)).map(\.id).contains(member), "never drawn")

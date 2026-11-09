@@ -61,6 +61,31 @@ extension Bench {
         expectEqual(b.editor.editingShapeID, id, "the tally still edited")
         expectEqual(b.focus, "row blue")
     },
+    test("A card is never narrower than the row it hangs from: a tally laid out wider while its line is typed long shows no words beside it") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 2", "blue"])
+        try b.edit(id, row: "blue")
+        b.type(" 5 a very long note that runs well past the tally's own width and the card's")
+        b.window.settle()
+        let row = try require(b.rect(id, row: "blue"))
+        expect(row.width > 300, "laid out wider while typed: \(row.width)")
+        b.press(.commandDown)
+        b.window.settle()
+        let frame = try require(b.canvas.cardFrame)
+        expect(frame.width >= b.editor.camera.toView(row).width - 0.5, "the card \(frame.width) covers the row \(b.editor.camera.toView(row).width)")
+    },
+    test("A card grows to hold its longest line whole, up to its widest: a line past that is cut at its end") {
+        @MainActor func width(of note: String?) throws -> CGFloat {
+            let b = try Bench()
+            let id = b.tally("apples", ["red 2", "blue"])
+            if let note { b.editor.transact("Note Entry") { $0.update(id, as: Tally.self) { $0.props.rows[1].notes = [note] } } }
+            _ = try b.openCard(id, row: "blue")
+            return try require(b.canvas.cardFrame).width
+        }
+        let plain = try width(of: nil), wide = try width(of: "calls Stripe API.POST /v1/refunds/{id}/capture/and/more/of/it"), most = try width(of: String(repeating: "far too long a line ", count: 40))
+        expect(wide > plain + 20, "the longer line widens the card: \(plain) then \(wide)")
+        expect(most >= wide && most <= 520 + 0.5, "held to the widest: \(most)")
+    },
     test("⌘↓ on the waiting line with words adds the row and shows its card; on an empty waiting line, or a row with nothing more, nothing") {
         let b = try Bench()
         let id = b.tally("apples", ["fruit/", "red"])

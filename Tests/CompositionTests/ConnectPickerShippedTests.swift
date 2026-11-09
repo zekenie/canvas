@@ -97,6 +97,17 @@ extension NestedWindow {
         expectEqual(w.arrows.last.flatMap { ends(w.editor, $0) }, [a, b])
         expectEqual(w.editor.undoHistory.undoName, "Connect")
     },
+    test("Edit › Undo names the board's step while the picker's field holds nothing of its own, and Typing once a word is typed") {
+        let w = try NestedWindow()
+        defer { w.board.close() }
+        let (a, _) = w.nest.notes(on: 1)
+        w.title(a, "Ledger", on: .root)
+        try w.openPicker(on: a)
+        expectEqual(undoTitle(w.window), "Undo Rename", "the board's last step, named, not a bare Undo")
+        w.pickerField?.insertText("Pl", replacementRange: w.pickerField?.selectedRange() ?? NSRange(location: 0, length: 0))
+        expectEqual(undoTitle(w.window), "Undo Typing", "what's typed is the field's to undo")
+        w.window.pressEscape()
+    },
     test("typing narrows the list as the @ picker ranks it; two shapes called alike say where each is, the board shown's by its own name") {
         let w = try NestedWindow()
         defer { w.board.close() }

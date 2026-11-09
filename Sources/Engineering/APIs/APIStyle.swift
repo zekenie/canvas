@@ -108,6 +108,8 @@ enum APIStyle {
     /// What Group by Prefix says it did to VoiceOver: the step, and how many groups the endpoints are under.
     static func groupedWords(_ groups: Int) -> String { "\(groupByPrefixStep), \(groups) \(groups == 1 ? "group" : "groups")" }
     static let groupByPrefixCommand = "group-by-prefix"
+    /// What Group by Prefix says where no two endpoints share a first segment that aren't under its header already.
+    static let nothingToGroup = "Nothing to group"
 
     /// From the paper's left to where a top row's text (the server, a chip, a header's chevron) starts.
     static let inset: CGFloat = 14

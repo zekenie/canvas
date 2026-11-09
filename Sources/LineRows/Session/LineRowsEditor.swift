@@ -345,6 +345,10 @@ final class LineSession<Model: LineModel>: LineRowsView {
             if titleField.frame != row { titleField.frame = row }
         }
         guard let line = rect(of: focus) else {
+            // The row with the caret went under it (another writer took it out): the line stays where it was, keeping the
+            // keyboard and its draft, until the commit settles and it goes to the waiting line (`documentDidSettle`). A hidden
+            // view would give the keyboard up and write the draft as a step nobody asked for.
+            if case .row(let row) = focus, index(of: row) == nil { return }
             clip.isHidden = true
             return
         }
@@ -355,7 +359,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
         let inset = style.textInset + indent(of: focus)
         let clipFrame = CGRect(x: line.minX + inset, y: line.minY, width: max(1, line.width - inset - style.trailingInset - chevronRoom), height: line.height)
         if clip.frame != clipFrame { clip.frame = clipFrame }
-        let height = ceil(field.layoutManagerLineHeight(style))
+        // As tall as a chip the kind draws taller than the text (an endpoint's method), the text kept where it was in its middle:
+        // a view draws nothing past its edges, and the chip with the caret would be cut flat.
+        let (lineHeight, height) = style.fieldHeight
+        let chipInset = NSSize(width: 0, height: (height - lineHeight) / 2)
+        if field.textContainerInset != chipInset { field.textContainerInset = chipInset }
         let fieldFrame = CGRect(x: -slide, y: ((line.height - height) / 2).rounded(), width: max(textWidth + LineFieldStyle.textSlack, clipFrame.width + slide), height: height)
         if field.frame != fieldFrame { field.frame = fieldFrame }
         keepCaretInClip()
@@ -751,6 +759,8 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .commit: returnPressed()
         case .up: step(by: -1)
         case .down: step(by: 1)
+        case .firstRow: toEndRow(first: true)
+        case .lastRow: toEndRow(first: false)
         case .next: tab(by: 1)
         case .previous: tab(by: -1)
         case .end, .finish: end()
@@ -773,7 +783,28 @@ final class LineSession<Model: LineModel>: LineRowsView {
     /// editing has ended: a press on the band that drags the rows away ends it, and the view, not yet taken down, would lay the
     /// shape out again with a waiting line.
     override func documentDidSettle() {
-        guard !isMoving, editor.editingShapeID == id, let band, index(of: band.anchor) == nil || index(of: band.head) == nil else { return }
+        guard !isMoving, editor.editingShapeID == id else { return }
+        if band == nil, case .row(let row) = focus, index(of: row) == nil {
+            // The row with the caret went (another writer): the keyboard is kept on the waiting line, VoiceOver told, the line
+            // in view. A line the person had changed goes with it, a draft written only as the caret leaves; one only
+            // rested on holds nothing of theirs and is emptied, so leaving never puts back what the other writer took out.
+            let drafted = hasDraft
+            isMoving = true
+            defer { isMoving = false }
+            if drafted {
+                reanchor()
+                field.setAccessibilityLabel("New \(model.noun.singular)")
+                NSAccessibility.post(element: focusedResponder, notification: .focusedUIElementChanged)
+                if let rect = rect(of: .waiting) { context.keepInView(rect) }
+                editor.announce(LineFieldStyle.gone(model.noun.title, model.noun.singular, keeping: true))
+            } else {
+                show(.waiting, at: .end, waitingAt: rows.count)
+                editor.announce(LineFieldStyle.gone(model.noun.title, model.noun.singular, keeping: false))
+            }
+            needsDisplay = true
+            return
+        }
+        guard let band, index(of: band.anchor) == nil || index(of: band.head) == nil else { return }
         self.band = nil
         reanchor()
         setInputs()
@@ -844,7 +875,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
         case .deleteEmpty:
             deleteSelectedRows()
             return true
-        case .commit, .up, .down, .next, .previous, .card, .addBeside, .connect:
+        case .commit, .up, .down, .firstRow, .lastRow, .next, .previous, .card, .addBeside, .connect:
             // Back to a line: the run's moving end, the caret at its end; then the key does what it does there.
             show(.row(band.head), at: .end)
             return key == .commit || key == .up || key == .down ? true : nil
@@ -1034,6 +1065,14 @@ final class LineSession<Model: LineModel>: LineRowsView {
         go(to: stops[to], at: x.map(Caret.x) ?? .end)
     }
 
+    /// Home End: the first or last row's stop, the caret at its line's end; with no rows, the waiting line. A key from any stop,
+    /// so a header at the top of sixty rows is one press, and the opposite key comes back to the other end.
+    private func toEndRow(first: Bool) {
+        let rows = stops.filter { if case .row = $0 { true } else { false } }
+        guard let stop = first ? rows.first : rows.last else { return go(to: .waiting, at: .end) }
+        go(to: stop, at: .end)
+    }
+
     /// Tab ⇧Tab: the next or previous stop, the caret at its line's end; past the ends, the next or previous shape of the
     /// kind (its first or last stop), or with none, round to this one's other end.
     private func tab(by delta: Int) {
@@ -1067,6 +1106,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
     func end() {
         commitDraft()
         if focus == .title { titleLeft() }
+        if service.wasEnteredAtItem(id), case .row(let row) = focus, index(of: row) != nil { service.endsOnRow = (id, row) }
         context.end()
     }
 
@@ -1332,12 +1372,6 @@ final class LineRowElement: NSAccessibilityElement {
     }
 }
 
-extension LineField {
-    /// How tall its line is in the kind's fonts: what it's centered in a row by.
-    func layoutManagerLineHeight(_ style: LineStyle) -> CGFloat {
-        max(style.font.ascender - style.font.descender + style.font.leading, style.codeFont.ascender - style.codeFont.descender + style.codeFont.leading)
-    }
-}
 
 /// What the session draws beside a row's line: the "›" of a row with a card, and a fixed line's placeholder. World units.
 @MainActor

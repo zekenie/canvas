@@ -95,7 +95,7 @@ import Topology
         expectEqual(b.state.plainText(try require(b.text)), "Ask @purchases.buyer_id first")
         b.editor.transact("Delete Column") { $0.update(b.orders, as: Roster.self) { $0.props.rows.remove(at: 1) } }
         expectEqual(b.state.resolve(b.row), .missing, "the row gone, its shape there")
-        expectEqual(b.state.plainText(try require(b.text)), "Ask @orders.customer_id first", "the name it holds")
+        expectEqual(b.state.plainText(try require(b.text)), "Ask @purchases.buyer_id first", "the name it last showed, not the one it holds")
         b.editor.undo()
         expectEqual(b.state.resolve(b.row).appearance?.label, "purchases.buyer_id")
         b.editor.delete(b.orders)

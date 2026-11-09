@@ -215,7 +215,7 @@ extension APIDefinition: Editable {
 
     func makeEditingView(for shape: ShapeRecord<API>, context: EditContext<API>) -> EditingView {
         LineRowsView.make(shape, context: context, model: APILines(), title: LineTitle { title in
-            TitleField(title: title, systemImage: APIStyle.symbol, tint: nil, placeholder: APIStyle.label, name: APIStyle.titleFieldName)
+            TitleField(title: title, systemImage: APIStyle.symbol, tint: nil, placeholder: APIStyle.placeholder, name: APIStyle.titleFieldName)
         })
     }
 

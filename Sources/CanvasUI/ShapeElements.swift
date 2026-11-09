@@ -280,9 +280,15 @@ final class ShapeElements {
         return element
     }
 
-    /// The shape VoiceOver's focus is on: the one selected last, while the canvas has the keyboard (`editor.hasKeyboard`);
-    /// none while a list, a field or the editing view has it, though a row of the table of contents selects as it goes.
-    var focusedShape: ShapeID? { editor.hasKeyboard ? editor.accessibleSelection.last : nil }
+    /// The shape VoiceOver's focus is on: the one selected last that is an element of its own, while the canvas has the
+    /// keyboard (`editor.hasKeyboard`); none while a list, a field or the editing view has it, though a row of the table of
+    /// contents selects as it goes. A shape drawn as part of another (a bundle's hidden member) is never the focus: the one
+    /// that draws it, selected with it, is (the bundle's lead, "9 arrows").
+    var focusedShape: ShapeID? {
+        guard editor.hasKeyboard else { return nil }
+        let context = editor.shapeContext
+        return editor.accessibleSelection.last { context.geometry(of: $0)?.isHidden != true }
+    }
 
     /// Whether the shape's element has the focus: the canvas has the keyboard, it's the one selected last, and no part of
     /// it has the keyboard.

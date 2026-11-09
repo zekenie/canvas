@@ -136,6 +136,9 @@ final class SelectionState {
             editor.accessibilityFocusDidChange()
         }
     }
+    /// The items ⌥Tab went on from to the shape's first part (`focusAdjacentPart`): what coming back to its items stop
+    /// selects again. Let go with any other change of the selection.
+    @ObservationIgnored var itemsLeft: HeldItems?
     /// The steps Tab, ⇧Tab and ⌥⌘ with an arrow took to the selection, latest last: the opposite key undoes
     /// the latest exactly (`step`). Any other change of the selection lets them go.
     @ObservationIgnored var trail = StepTrail()
@@ -269,6 +272,7 @@ final class SelectionState {
         if recording { record(leaving: selectedIDs, for: kept) }
         clearPartFocus()
         if let held = items, kept != [held.shape] { items = nil }
+        itemsLeft = nil
         trail = StepTrail()
         let left = selectedIDs
         selectedIDs = kept
@@ -796,20 +800,25 @@ extension CanvasEditor {
     /// willDelete handlers see them all, so arrows bound to them let go where they are, or, for a kind that takes
     /// the shapes bound to it (`TakesBoundShapes`) or whose handler deletes more, go with them; a read-only
     /// one is refused, and shakes. The step says what went along ("Delete Note and 2 Arrows", `DeleteSteps`), and
-    /// is "Delete" when nothing did.
+    /// is "Delete" when nothing did. VoiceOver hears what went, as a row's delete is heard: "Delete API and 4 Arrows",
+    /// "Delete Note".
     public func deleteShapes(_ ids: [ShapeID]) {
         guard !ids.isEmpty else { return }
         // Shapes drawn by another (a bundle's members, drawn by its lead) are named, so Undo says what comes back.
         let unseen = ids.contains { shapeContext.geometry(of: $0)?.isHidden == true }
+        var spoken: String?
         transact("Delete") { tx in
             let kinds = ids.compactMap { id in tx.document[id].map { (id, $0.kind) } }
             tx.delete(Set(ids))
-            guard !tx.deletedAlong.isEmpty || unseen else { return }       // nothing went along: plain "Delete"
             // The ones that went: a read-only shape asked for stays, and isn't part of the name.
-            tx.stepName = DeleteSteps.name(asked: kinds.filter { tx.document[$0.0] == nil }.map(\.1), along: tx.deletedAlong,
-                                           namesAsked: unseen, in: registry)
+            let gone = kinds.filter { tx.document[$0.0] == nil }.map(\.1)
+            spoken = gone.isEmpty ? nil : DeleteSteps.name(asked: gone, along: tx.deletedAlong, namesAsked: true, in: registry)
+            guard !tx.deletedAlong.isEmpty || unseen else { return }       // nothing went along: plain "Delete"
+            tx.stepName = DeleteSteps.name(asked: gone, along: tx.deletedAlong, namesAsked: unseen, in: registry)
         }                                                // the commit drops them from the selection
         hovered = nil                                   // and this, a hover over a shape that stays
+        // Not where the slash bar says the step itself (`isSayingStep`): it is heard once.
+        if let spoken, !isSayingStep, ids.contains(where: { document[$0] == nil }) { announce(spoken) }
     }
 
     /// Whether the arrow keys nudge: something's selected, and nothing's under way or being edited.

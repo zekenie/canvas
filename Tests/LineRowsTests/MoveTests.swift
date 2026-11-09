@@ -478,6 +478,71 @@ extension Bench {
         b.press(.shiftUp)
         expectEqual(b.editor.announcements.last, "3 entries selected", "drawn back")
     },
+    test("Return on an entry selected edits it; Escape, ⌘↑ and ⌘↩ come out on the caret's entry selected again, one level; editing begun on the tally, or left on the waiting line, ends on the tally") {
+        let b = try Bench()
+        let id = b.tally("fruit", ["apple", "pear", "plum"])
+        for key in [Chord.escape, Chord(Key.up, .command), Chord.commandReturn] {
+            b.editor.selectItems(b.ids(id, "pear").map(AnyHashable.init), of: id)
+            b.press(.return)
+            expectEqual(b.focus, "row pear")
+            b.press(key)
+            expectEqual(b.editor.editingShapeID, nil)
+            expectEqual(b.itemLabels, ["pear"], "\(key) lands on the entry Return went into")
+        }
+        b.press(.return)
+        b.press(.down)
+        b.press(.escape)
+        expectEqual(b.itemLabels, ["plum"], "the entry the caret was on")
+        b.press(.return)
+        b.press(.down)
+        expectEqual(b.focus, "waiting")
+        b.press(.escape)
+        expectEqual(b.editor.selectedItems, nil, "the waiting line is no entry: the tally")
+        expectEqual(b.editor.selectedShapeIDs, [id])
+        b.begin(id)
+        b.press(.up)
+        b.press(.escape)
+        expectEqual(b.editor.selectedItems, nil, "begun on the tally, ended on the tally")
+    },
+    test("Home and End in a line go to the first and the last entry from any stop, the title's and the waiting line's too; each the other's way back") {
+        let b = try Bench()
+        let id = b.tally("fruit", (1...12).map { "e\($0)" })
+        b.begin(id)
+        expectEqual(b.focus, "waiting")
+        b.press(Chord(Key.home))
+        expectEqual(b.focus, "row e1", "one key to the top of twelve")
+        b.press(Chord(Key.end))
+        expectEqual(b.focus, "row e12")
+        b.press(Chord(Key.home))
+        expectEqual(b.focus, "row e1")
+        b.type("x")
+        b.press(Chord(Key.end))
+        expectEqual(b.labels(id).first, "e1x", "the line left is written, as any key that leaves it")
+    },
+    test("A click on a closed header's words selects it as an item, said closed with what it hides; → says which group opened and how many, ← that it closed; its chevron opens it") {
+        let b = try Bench()
+        let id = b.tally("h", ["fruit/", "red", "green", "veg/", "kale"])
+        let header = b.rows(id)[0].id
+        b.editor.rowFolds?.setClosed(true, header: header, of: id)
+        b.editor.selectedShapeIDs = [id]
+        b.window.settle()
+        let frame = try require(b.frame(id))
+        let line = TallyLines.line(0, in: frame)
+        b.h.click(at: b.h.view(CGPoint(x: line.midX, y: line.midY)))
+        expectEqual(b.editor.selectedItems?.ids, [AnyHashable(header)], "the header selected as an item")
+        expectEqual((b.editor.rowFolds?.fold(of: id)?.closed.contains(header) ?? false), true, "and still closed")
+        let title = try require(b.editor.shapeItems(of: id).first?.title)
+        expect(title.hasSuffix("closed, 2 entries"), "said closed, with what it hides: \(title)")
+        b.press(.right)
+        expectEqual((b.editor.rowFolds?.fold(of: id)?.closed.contains(header) ?? false), false)
+        expectEqual(b.editor.announcements.last, "fruit/ opened, 2 entries")
+        b.press(.left)
+        expectEqual((b.editor.rowFolds?.fold(of: id)?.closed.contains(header) ?? false), true)
+        expectEqual(b.editor.announcements.last, "fruit/ closed")
+        b.editor.selectedShapeIDs = []
+        b.h.click(at: b.h.view(CGPoint(x: line.minX + 4, y: line.midY)))
+        expectEqual((b.editor.rowFolds?.fold(of: id)?.closed.contains(header) ?? false), false, "a click on its chevron opens it")
+    },
     test("Rows another writer deletes leave the tally selected, not an invisible items selection") {
         let b = try Bench()
         let id = b.tally("fruit", ["apple", "pear"])

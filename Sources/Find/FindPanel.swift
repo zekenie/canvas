@@ -246,9 +246,12 @@ private struct FindRow: View {
                     .frame(width: FindStyle.rowSymbolWidth)
                 // A titled shape's row names it first, the hit's snippet after it, faint (T6: "products  weight_grams int").
                 if let name = find.rowName(of: result) {
-                    // Two texts, the snippet first in line for room: a long name is cut in its middle, never the hit away.
+                    // Two texts, the name first in line for room up to a share of the row (whole, where it fits; a longer one cut in
+                    // its middle), the snippet after it cut at its end: the shape is named before the hit's words.
                     HStack(spacing: FindStyle.nameSpacing) {
                         Text(name).font(FindStyle.rowName).lineLimit(1).truncationMode(.middle)
+                            .frame(width: FindStyle.rowNameWidth(name), alignment: .leading)
+                            .layoutPriority(2)
                         Text(FindSnippet.faint(of: result, in: find)).lineLimit(1).truncationMode(.tail).layoutPriority(1)
                     }
                 } else {
@@ -297,13 +300,14 @@ public enum FindSnippet {
 }
 
 extension FindSnippet {
-    /// The text around a result's first hit, on one line, every hit in it semibold.
-    static func attributed(of result: FindResult, in find: FindState) -> AttributedString {
+    /// The text around a result's first hit (or `around`, another of its hits), on one line, every hit in it semibold.
+    static func attributed(of result: FindResult, around hit: FindHit? = nil, in find: FindState) -> AttributedString {
+        let first = hit ?? result.first
         let texts = find.texts(of: result.id)
-        guard texts.indices.contains(result.first.text) else { return AttributedString() }
-        let text = texts[result.first.text] as NSString
-        let hits = find.hits(of: result.id)[safe: result.first.text] ?? []
-        let shown = range(in: text as String, around: result.first.range)
+        guard texts.indices.contains(first.text) else { return AttributedString() }
+        let text = texts[first.text] as NSString
+        let hits = find.hits(of: result.id)[safe: first.text] ?? []
+        let shown = range(in: text as String, around: first.range)
         let from = shown.lowerBound, to = shown.upperBound
         var snippet = AttributedString(from > 0 ? "…" : "")
         var cursor = from
@@ -338,8 +342,8 @@ extension FindSnippet {
     }
 
     /// The same, as plain text, for VoiceOver.
-    static func text(of result: FindResult, in find: FindState) -> String {
-        String(attributed(of: result, in: find).characters)
+    static func text(of result: FindResult, around hit: FindHit? = nil, in find: FindState) -> String {
+        String(attributed(of: result, around: hit, in: find).characters)
     }
 
     private static func plain(_ text: String) -> AttributedString {

@@ -135,7 +135,7 @@ import TestKit
         h.editor.selectedShapeIDs = [box, other, free]
         expect(h.key("\u{7f}"))
         expectEqual(h.editor.document[free], nil, "the free one goes")
-        expectEqual(h.editor.announcements, ["Locked", "2 shapes locked"], "the read-only ones counted")
+        expectEqual(h.editor.announcements, ["Locked", "2 shapes locked", "Delete box"], "the read-only ones counted; then what went, as any delete says it")
     },
     test("a held arrow's repeats, each a refused nudge, are said once, however long the shapes shake; a try after a quiet second is said again") {
         let h = try frozenHarness()

@@ -121,10 +121,10 @@ extension CanvasEditor {
         h.editor.goToEnclosingBoard()
         expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
 
-        // Plans deleted takes Alpha: the name the text holds, dashed; undone, live again.
+        // Plans deleted takes Alpha: the name it last showed, dashed; undone, live again.
         h.editor.transact { $0.delete([f.plans]) }
         expectEqual(mentions.resolve(f.alpha), .missing)
-        expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")
+        expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
         expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [false])
         h.editor.undo()
         expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
@@ -223,7 +223,7 @@ extension CanvasEditor {
         h.editor.perform(.cut)
         expectEqual(h.editor.file.record(f.alpha), nil, "cut with Plans")
         expectEqual(h.editor.mentions?.resolve(f.alpha), .missing)
-        expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")
+        expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
         expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [false])
         h.editor.perform(.paste)
         expectEqual(h.editor.selection, f.plans, "Plans itself, moved")
@@ -235,7 +235,7 @@ extension CanvasEditor {
         expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [true])
         h.editor.undo()
         expectEqual(h.editor.mentions?.resolve(f.alpha), .missing)
-        expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")
+        expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
         expectEqual(h.editor.mentionPills(of: f.outer).map(\.isLive), [false])
         h.editor.undo()
         expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
@@ -255,7 +255,7 @@ extension CanvasEditor {
         expectEqual(h.editor.mentionPills(of: f.beta).map(\.isLive), [false, true])
         h.editor.goToEnclosingBoard()
         expectEqual(h.editor.board, .root)
-        expectEqual(h.editor.contentsRow(f.outer), "See @Old alpha")
+        expectEqual(h.editor.contentsRow(f.outer), "See @Alpha")
         h.editor.perform(.paste)
         expectEqual(h.editor.file.board(containing: f.alpha), .root)
         expectEqual(h.editor.file.record(f.alpha)?.copiedFrom, nil)

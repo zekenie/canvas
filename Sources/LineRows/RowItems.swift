@@ -153,11 +153,16 @@ enum RowItems {
         let shapes = editor.shapeContext
         guard let kind = editor.registry.lineRows(of: record.kind), let rows = kind.rows(record), !rows.isEmpty,
               let frame = shapes.frame(of: record) else { return [] }
+        // The rows each header heads: those after it up to the next header.
+        func members(of index: Int) -> [AnyHashable] {
+            guard rows[index].isHeader else { return [] }
+            return rows[(index + 1)...].prefix { !$0.isHeader }.map { AnyHashable($0.id) }
+        }
         guard let shown = shapes.layoutInput(LineRowsLayout.shown, of: record) else {
             let parts = shapes.geometry(of: record.id)?.parts
             return rows.enumerated().map { index, row in
                 ShapeItem(id: row.id, title: title(row.id), rect: parts?.frame(row.id)?.rect ?? kind.lineRect(index, frame),
-                          outline: row.isHeader ? .open : nil)
+                          outline: row.isHeader ? .open : nil, heads: members(of: index))
             }
         }
         var hidden: [Int: [AnyHashable]] = [:]
@@ -166,9 +171,12 @@ enum RowItems {
             let rect = kind.lineRect(line, frame)
             switch kept {
             case .row(let index):
-                return ShapeItem(id: rows[index].id, title: title(rows[index].id), rect: rect, outline: rows[index].isHeader ? .open : nil)
-            case .header(let index, _):
-                return ShapeItem(id: rows[index].id, title: title(rows[index].id), rect: rect, outline: .closed, stands: hidden[line] ?? [])
+                return ShapeItem(id: rows[index].id, title: title(rows[index].id), rect: rect, outline: rows[index].isHeader ? .open : nil,
+                                 heads: members(of: index))
+            case .header(let index, let hiding):
+                // Said closed, with how many it hides: an open header and a closed one read apart before a key is pressed.
+                return ShapeItem(id: rows[index].id, title: LineFoldStyle.closedItem(title(rows[index].id), hiding: hiding, noun: kind.noun), rect: rect,
+                                 outline: .closed, stands: hidden[line] ?? [], heads: members(of: index))
             case .more(let count):
                 return ShapeItem(id: MoreLineItem(shape: record.id), title: LineFoldStyle.more(count, noun: kind.noun), rect: rect, outline: .closed,
                                  stands: hidden[line] ?? [])
@@ -207,13 +215,18 @@ enum RowItems {
     /// → ← Space on a header or the "+N ›" line: opened or closed; the selection stays on it.
     static func setOpen(_ id: AnyHashable, of shape: ShapeID, _ open: Bool, in editor: CanvasEditor) {
         guard let folds = editor.rowFolds else { return }
+        let said: String
         if id.base is MoreLineItem {
             guard open else { return }
+            said = Folding.toggled(nil, of: shape, opening: true, in: editor)
             folds.openMore(of: shape)
         } else if let header = id.base as? PartID {
+            said = Folding.toggled(header, of: shape, opening: open, in: editor)
             folds.setClosed(!open, header: header, of: shape)
+        } else {
+            return
         }
-        editor.announce(open ? LineFoldStyle.unfolded : LineFoldStyle.closed)
+        editor.announce(said)
     }
 
     /// The take-out of the rows selected on the canvas, in the selection's menu: "Move Columns to New Table", one step, the
@@ -226,8 +239,10 @@ enum RowItems {
         // A shape that is its rows has no take-out: it stands alone already.
         guard !rows.isEmpty, !moving.goesWithItsRows else { return nil }
         let wanted = editor.withGroups(Set(rows), of: record)
-        guard let carrier = moving.carrier(record, (moving.rows(record) ?? []).filter(wanted.contains)) else { return nil }
-        let title = editor.takeOutStep(of: carrier, noun: editor.stepNoun(of: rows, in: record, moving), count: rows.count, moving)
+        // Named from what moves (a lone header takes its group), as the move names and announces its step.
+        let ids = (moving.rows(record) ?? []).filter(wanted.contains)
+        guard let carrier = moving.carrier(record, ids) else { return nil }
+        let title = editor.takeOutStep(of: carrier, noun: editor.stepNoun(of: ids, in: record, moving), count: ids.count, moving)
         return MenuItem(title, in: RowsMenuGroup.self, id: "take-out-rows", stepName: title) { ids, editor in
             editor.moveRows(rows, of: selection.shape, to: .beside(ids))
         }

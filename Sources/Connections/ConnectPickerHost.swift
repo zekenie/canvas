@@ -205,9 +205,11 @@ extension CanvasEditor {
 
 /// The picker's field: one line of the app's text view, its list the picker's, in a `CaretListWindow` under it. Return and Tab pick
 /// (the list's keys, held while it's open) and are never text; ⇧Tab moves the highlight up; Escape and ⌘. close it, and the canvas
-/// has the keyboard. It types a name, not prose: one line, every substitution off, its spelling unchecked.
+/// has the keyboard. It types a name, not prose: one line, every substitution off, its spelling unchecked. With nothing of its
+/// own to undo, Edit › Undo is the board's and says its step ("Undo Move Columns to New Table"), as a row's line's does: an
+/// Undo that moves the selection closes the picker.
 @MainActor
-public final class ConnectPickerTextView: EditingTextView {
+public final class ConnectPickerTextView: EditingTextView, UndoesBoardWhenEmpty {
     private(set) var picker: ConnectPicker!
     var listWindow: CaretListWindow?
     /// Escape, or ⌘.: the person closed the picker.
