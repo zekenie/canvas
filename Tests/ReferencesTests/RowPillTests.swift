@@ -131,6 +131,13 @@ private let ledgers = Contributor(id: "ledgers") { registrar in
             expect(chip.minX < frame.minX + 60, "\(what): the chip leads the label: \(chip.minX - frame.minX)")
             expect(drawn.white > 12, "\(what): its word white on it: \(drawn.white) pixels")
             expect(drawn.nameAfter > 12, "\(what): the name is drawn after the chip: \(drawn.nameAfter) pixels")
+            // Under a place line, the chip clears its descenders: a row of the pill's own ground between them (review U9-R2).
+            let rep = render(b.h.editor, dark: dark)
+            let ground = pixel(rep, at: CGPoint(x: frame.minX + 48, y: frame.minY + 3))
+            @MainActor func inked(_ x: Int, _ y: Int) -> Bool { zip(pixel(rep, at: CGPoint(x: x, y: y)), ground).contains { abs($0 - $1) > 60 } }
+            let columns = Int(chip.minX)..<Int(chip.maxX)
+            expect((Int(frame.minY) + 2..<Int(chip.minY) - 1).contains { y in columns.contains { inked($0, y) } }, "\(what): the place line is over the chip")
+            expect(!columns.contains { inked($0, Int(chip.minY) - 1) }, "\(what): clear of the place line's descenders")
             // The same pill for a shape that is not public: dashed, its chip faint.
             b.h.editor.transact { $0.update(b.ledger) { $0[PrivateProperty.self] = true } }
             guard case .notPublic? = b.h.state(of: pill) else { return expect(false, "\(String(describing: b.h.state(of: pill)))") }

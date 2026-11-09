@@ -57,13 +57,18 @@ public struct ConnectionBundle: Hashable, Sendable {
     /// For an end bound to a shape written as lines as a whole: the row it comes in at, clear of the rows other lines end at
     /// (nil: the kind's own entry).
     public var entries: [End: PartID]
+    /// An end it shares with connections that go on to other places (one row's writes and reads, to two tables): `index` of
+    /// `count`, in the order their other ends are, top to bottom; what spaces their pills apart where a fan slides them to that
+    /// end. Kept only beside a fan.
+    public var parting: Fan?
 
-    public init(role: Role = .alone, slot: Int = 0, slots: Int = 1, fans: [Fan] = [], entries: [End: PartID] = [:]) {
+    public init(role: Role = .alone, slot: Int = 0, slots: Int = 1, fans: [Fan] = [], entries: [End: PartID] = [:], parting: Fan? = nil) {
         self.role = role
         self.slot = slot
         self.slots = slots
         self.fans = fans
         self.entries = entries
+        self.parting = parting
     }
 
     /// Says nothing: drawn as ever.

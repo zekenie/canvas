@@ -499,7 +499,12 @@ extension ReferenceDefinition {
             let word = memo.chipWord(chip.word)
             let width = word.width + ReferenceStyle.chipPadding * 2
             let middle = labelRect.minY + ReferenceStyle.labelFont.ascender - ReferenceStyle.labelFont.capHeight / 2
-            let box = CGRect(x: labelRect.minX, y: middle - ReferenceStyle.chipHeight / 2, width: width, height: ReferenceStyle.chipHeight)
+            // Under a place line, its top clear of the line's descenders (UX walk 3 connect-2: POST touched "providers"' p).
+            var box = CGRect(x: labelRect.minX, y: middle - ReferenceStyle.chipHeight / 2, width: width, height: ReferenceStyle.chipHeight)
+            if layout.place != nil, box.minY < frame.minY + ReferenceStyle.chipBelowPlace {
+                let top = frame.minY + ReferenceStyle.chipBelowPlace
+                box = CGRect(x: box.minX, y: top, width: box.width, height: box.maxY - top)
+            }
             cg.addPath(CGPath(roundedRect: box, cornerWidth: ReferenceStyle.chipRadius, cornerHeight: ReferenceStyle.chipRadius, transform: nil))
             cg.setFillColor(chip.fill.withAlphaComponent(look.strength).cgColor)
             cg.fillPath()

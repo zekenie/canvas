@@ -1,6 +1,8 @@
+import AppKit
 import Arrows
 @_spi(Host) import Canvas
 import CanvasTesting
+import Connections
 import CoreGraphics
 import Geometry
 import Keyboard
@@ -158,6 +160,39 @@ private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
         expectEqual(order.firstIndex(of: both).map { $0 + 1 }, order.firstIndex(of: r1.id), "just below the lower of its two rosters")
         expect(order.firstIndex(of: both)! > order.firstIndex(of: first)!, "above their corral")
     },
+    test("a shape put into a corral keeps the paint list where only plain arrows are on the board; one an arrow with a row end follows, or a corral holding it, builds it again (review R26)") {
+        #if DEBUG
+        let rule = Contributor(id: "roster-rows") { registrar in registrar.arrowPartRule { $0.shape.kind == Roster.kind } }
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [RostersPlugin(), CorralsPlugin()], more: [rule]))
+        // The corral first, so what joins it needs no restacking (a commit that restacks builds the list again whatever moved).
+        let corral = h.add(Corral(CGRect(x: 800, y: 0, width: 400, height: 300)))
+        let row = RosterRow(name: "one"), farRow = RosterRow(name: "two")
+        let a = h.add(Roster(CGRect(x: 20, y: 40, width: 160, height: 60), rows: [row]))
+        let b = h.add(Roster(CGRect(x: 420, y: 40, width: 160, height: 60), rows: [farRow]))
+        let loose = h.add(Roster(CGRect(x: 820, y: 40, width: 160, height: 60), rows: [RosterRow(name: "x")]))
+        func whole(_ id: ShapeID) -> ArrowTerminal { .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 0.5, y: 0.5), isPrecise: false, isExact: false)) }
+        _ = h.add(Arrow(start: whole(a), end: whole(b)))
+        _ = h.editor.paintOrder()
+        let built = h.editor.paintListsBuilt
+        h.editor.transact { $0.setContainer(loose, to: corral) }
+        _ = h.editor.paintOrder()
+        expectEqual(h.editor.paintListsBuilt, built, "a plain arrow follows no containment")
+        // A key from a's row to b's: b put into the corral moves it above the corral.
+        func end(_ id: ShapeID, _ part: PartID) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: part))
+        }
+        let key = h.add(Arrow(start: end(a, row.id), end: end(b, farRow.id)))
+        _ = h.editor.paintOrder()
+        let keyed = h.editor.paintListsBuilt
+        h.editor.transact { $0.setContainer(loose, to: nil) }
+        _ = h.editor.paintOrder()
+        expectEqual(h.editor.paintListsBuilt, keyed, "a shape no key ends at")
+        h.editor.transact { $0.update(b, as: Roster.self) { $0.props.frame.origin = CGPoint(x: 820, y: 140) }; $0.setContainer(b, to: corral) }
+        let order = h.editor.paintOrder().map(\.id)
+        expect(h.editor.paintListsBuilt > keyed, "the key's end joined a corral: built again")
+        expect(order.firstIndex(of: key)! > order.firstIndex(of: corral)!, "the key above the corral: \(order)")
+        #endif
+    },
     test("a roster that joins a corral already below it (no change in the stack) puts the key to it above that corral") {
         let rule = Contributor(id: "roster-rows") { registrar in registrar.arrowPartRule { $0.shape.kind == Roster.kind } }
         let h = try EditorHarness(plugins: arrowsPlugins(before: [RostersPlugin(), CorralsPlugin()], more: [rule]))
@@ -190,6 +225,44 @@ private enum ArrowStyleWidth { static let half: CGFloat = 1.75 }
         expectEqual(b.h.editor.paintOrder().map(\.id), [key, b.left, between, b.right, whole], "still at a row at its start: below its one shape")
         b.h.editor.transact { $0.update(key, as: Arrow.self) { $0.props.start = .free(CGPoint(x: 0, y: 0)) } }
         expectEqual(b.h.editor.paintOrder().map(\.id), [b.left, between, b.right, whole, key], "bound to nothing: on top")
+    },
+    test("a key passing under a card it isn't bound to is drawn faint across it, and lit, its light is under the card, not striking through it (UX walk 3 structure-1, structure-4)") {
+        nonisolated(unsafe) var lit: [ShapeID] = []
+        let light = Contributor(id: "light") { r in r.outlines { _ in Outlines(tinted: lit.isEmpty ? [] : [TintedOutlines(color: .systemRed, shapes: lit)]) } }
+        let rule = Contributor(id: "roster-rows") { registrar in registrar.arrowPartRule { $0.shape.kind == Roster.kind } }
+        let h = try EditorHarness(plugins: arrowsPlugins(before: [RostersPlugin()], more: [rule, light]))
+        let rows = ["one", "two"].map { RosterRow(name: $0) }, far = ["one", "two"].map { RosterRow(name: $0) }
+        let left = h.add(Roster(CGRect(x: 100, y: 100, width: 160, height: 60), rows: rows))
+        let between = h.add(Roster(CGRect(x: 330, y: 60, width: 140, height: 200), rows: [RosterRow(name: "mid")]))
+        let right = h.add(Roster(CGRect(x: 540, y: 120, width: 160, height: 60), rows: far))
+        func end(_ id: ShapeID, _ part: PartID) -> ArrowTerminal {
+            .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: part))
+        }
+        let key = h.add(Arrow(start: end(left, rows[0].id), end: end(right, far[1].id)))
+        expectEqual(h.editor.paintOrder().map(\.id), [key, left, between, right], "under the card between")
+        let body = try require(h.editor.arrowGeometry(of: key)?.levelBody)
+        let under = try require(body.flattened(segments: 400).min { abs($0.x - 400) < abs($1.x - 400) })
+        let outside = try require(body.flattened(segments: 400).min { abs($0.x - 300) < abs($1.x - 300) })
+        let size = CGSize(width: 800, height: 320)
+        @MainActor func gray(_ rep: NSBitmapImageRep, _ point: CGPoint) -> [Int] { pixel(rep, at: point) }
+        let rest = renderBitmap(h.editor, size: size)
+        let card = gray(rest, under + CGPoint(x: 0, y: 30)), onLine = gray(rest, under)
+        expect(onLine[0] < card[0] - 15, "the stretch under the card is drawn over it: \(onLine) on the card's \(card)")
+        expect(onLine[0] > 60, "faint, not the line itself: \(onLine)")
+        expect(gray(rest, outside)[0] < 60, "the line where no card covers it, solid: \(gray(rest, outside))")
+        // Lit: its light where it shows, under the card where the card covers it.
+        lit = [key]
+        h.editor.setNeedsDisplay()
+        let lighted = renderBitmap(h.editor, size: size)
+        let red = gray(lighted, outside), covered = gray(lighted, under)
+        expect(red[0] > red[1] + 60, "lit red outside the cards: \(red)")
+        expect(covered[0] < covered[1] + 30, "no red striking through the card: \(covered)")
+        // The first frame after a commit that dropped the paint list (a reorder) draws it under the card too (review U9-C5).
+        h.editor.transact("Bring to Front") { $0.bringToFront(between) }
+        let again = renderBitmap(h.editor, size: size)
+        let coveredAgain = gray(again, under)
+        expect(coveredAgain[0] < coveredAgain[1] + 30, "no red striking through the card after a reorder: \(coveredAgain)")
+        _ = between
     },
     test("a part the shape doesn't list is drawn at the stored anchor; a folded one at what's shown in its place") {
         let b = try RosterBoard()

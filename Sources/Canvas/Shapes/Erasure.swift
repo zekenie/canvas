@@ -116,6 +116,9 @@ extension CustomSizing {
     func erasedIsResizable(_ record: AnyShapeRecord, in context: ShapeContext) -> Bool {
         record.typed(as: Props.self).map { isResizable($0, in: context) } ?? false
     }
+    func erasedResizedAxes(of record: AnyShapeRecord) -> SizeAxes {
+        record.typed(as: Props.self).map { resizedAxes(of: $0) } ?? .both
+    }
 }
 
 extension PaintOrderAnchored {
@@ -123,6 +126,9 @@ extension PaintOrderAnchored {
         record.typed(as: Props.self).flatMap { shape in
             paintAnchor(of: shape, in: document).map { PaintAnchor(shape: $0, below: paintsBelowAnchor(shape, in: document)) }
         }
+    }
+    func erasedPaintAnchorFollowsContainment(of record: AnyShapeRecord) -> [ShapeID] {
+        record.typed(as: Props.self).map { paintAnchorFollowsContainment(of: $0) } ?? []
     }
 }
 

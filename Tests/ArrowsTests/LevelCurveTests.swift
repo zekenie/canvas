@@ -336,7 +336,8 @@ private let scale: CGFloat = 2
         let id = b.h.add(Arrow(start: b.end(b.left, 1), end: b.whole(b.right), startArrowhead: true, endArrowhead: true))
         let geometry = try b.geometry(id)
         expect(!geometry.endArrowhead && !geometry.startArrowhead, "drawn with none")
-        expectEqual(try curve(geometry).end, geometry.end, "no head's gap at the end on a shape as a whole")
+        expectEqual(geometry.end, CGPoint(x: 500, y: 180), "no head's gap at the end on a shape as a whole")
+        expectEqual(try require(geometry.levelBody).end, geometry.end, "the line drawn runs to it")
         b.h.editor.selection = id
         let before = b.h.editor.undoHistory.undoName
         b.h.key(Chord.optionBackTab)
@@ -440,6 +441,127 @@ private let scale: CGFloat = 2
         let loopXs = try curve(b.geometry(loop)).flattened().map(\.x)
         let swing = max((loopXs.max() ?? 0) - 300, 100 - (loopXs.min() ?? 0))
         expect(swing <= 64, "the C swings out \(swing) past the tables' side, not wide")
+    },
+    test("keys between tables 75 apart run one way across, never back behind where they start, each mark on a level stub (UX walk 3 tables-1)") {
+        // T's left side 75 right of L's (300), its rows lower: three keys, one with a bar and a circle at L.
+        let b = try LevelBoard(looks: true)
+        let rows = ["id_one", "null_id", "id_three"].map { RosterRow(name: $0) }
+        let far = b.h.add(Roster(CGRect(x: 375, y: 230, width: 200, height: 70), rows: rows))
+        let end = { (index: Int) -> ArrowTerminal in
+            .bound(ArrowBinding(shapeID: far, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: rows[index].id))
+        }
+        let keys = [(0, 0), (1, 0), (2, 2)].map { b.h.add(Arrow(start: end($0.0), end: b.end(b.left, $0.1))) }
+        for key in keys {
+            let geometry = try b.geometry(key), line = try require(geometry.levelBody)
+            let xs = line.flattened().map(\.x)
+            expect(zip(xs, xs.dropFirst()).allSatisfy { $1 <= $0 + 1e-6 }, "one way across, from 375 to 300: \(xs.max() ?? 0) to \(xs.min() ?? 0)")
+            expect((xs.max() ?? 0) <= 375 + 1e-6 && (xs.min() ?? 0) >= 300 - 1e-6, "between the sides")
+            // The bars (12, 17.5) and the circle (25) on a level stretch, square to the row.
+            for distance: CGFloat in [0, 12, 17.5] {
+                expectClose(geometry.point(distance, along: .end).inward.y, 0, within: 1e-6)
+                expectClose(geometry.point(distance, along: .start).inward.y, 0, within: 1e-6)
+            }
+        }
+    },
+    test("a C between stacked tables lays its bars on a level stub before it turns, never on the turn (UX walk 3 structure-2)") {
+        let b = try LevelBoard(looks: true)
+        let rows = ["a_id"].map { RosterRow(name: $0) }
+        let stacked = b.h.add(Roster(CGRect(x: 100, y: 560, width: 200, height: 60), rows: rows))
+        let key = b.h.add(Arrow(start: .bound(ArrowBinding(shapeID: stacked, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: rows[0].id)),
+                                end: b.end(b.left, 1)))
+        let geometry = try b.geometry(key)
+        expectEqual(geometry.partSide(at: .end), .right)
+        for distance: CGFloat in [12, 17.5, 23] {
+            let (point, inward) = geometry.point(distance, along: .end)
+            expectClose(inward, CGPoint(x: 1, y: 0), within: 1e-6)
+            expectClose(point.y, 140, within: 1e-6)
+        }
+        let xs = try require(geometry.levelBody).flattened().map(\.x)
+        expect((xs.max() ?? 0) - 300 <= 64, "the C stays small: \((xs.max() ?? 0) - 300) out")
+    },
+    test("inside a container both ends are in, a marked end's stub and curve stay inside its edge; a side with no room takes the other; the marks are kept (review R24)") {
+        let b = try LevelBoard(looks: true, more: [CorralsPlugin()])
+        let rows = ["a_id"].map { RosterRow(name: $0) }, upper = ["one"].map { RosterRow(name: $0) }
+        @MainActor func key(in corral: CGRect, inset: CGFloat = 40) throws -> (ArrowGeometry, ShapeID) {
+            let holder = b.h.add(Corral(corral))
+            let top = b.h.add(Roster(CGRect(x: corral.minX + inset, y: corral.minY + 20, width: 120, height: 40), rows: upper))
+            let bottom = b.h.add(Roster(CGRect(x: corral.minX + inset, y: corral.minY + 160, width: 120, height: 40), rows: rows))
+            b.h.editor.transact { $0.setContainer(top, to: holder); $0.setContainer(bottom, to: holder) }
+            func end(_ id: ShapeID, _ part: PartID) -> ArrowTerminal {
+                .bound(ArrowBinding(shapeID: id, normalizedAnchor: CGPoint(x: 1, y: 0.5), isPrecise: true, isExact: true, part: part))
+            }
+            let id = b.h.add(Arrow(start: end(bottom, rows[0].id), end: end(top, upper[0].id)))
+            return (try b.geometry(id), id)
+        }
+        // Room to the right (240 to the edge): the stub whole, the bars level, the line inside.
+        let roomy = CGRect(x: 1000, y: 0, width: 440, height: 240)
+        let (wide, wideID) = try key(in: roomy)
+        expectEqual(wide.partSide(at: .end), .right)
+        expectClose(wide.point(17.5, along: .end).inward, CGPoint(x: 1, y: 0), within: 1e-6)
+        let wideRight = try require(wide.levelBody).bounds.maxX
+        expect(wideRight <= roomy.maxX - 8 + 0.01, "inside")
+        expectEqual(b.h.editor.arrowLook(of: wideID)?.end, .one)
+        // 30 to the right and 32 to the left (both under 60): kept on the right, cut to stay inside, the marks still drawn.
+        let tight = CGRect(x: 2000, y: 0, width: 198, height: 240)
+        let (cut, cutID) = try key(in: tight)
+        expectEqual(cut.partSide(at: .end), .right)
+        let cutRight = try require(cut.levelBody).bounds.maxX
+        expect(cutRight <= tight.maxX - 8 + 0.01, "inside the tight one: \(cutRight)")
+        expectClose(cut.point(12, along: .end).inward, CGPoint(x: 1, y: 0), within: 1e-6)
+        expectEqual(b.h.editor.arrowLook(of: cutID)?.end, .one)
+        // 20 to the right and 140 to the left: both ends take the left.
+        let flipped = CGRect(x: 3000, y: 0, width: 296, height: 240)
+        let (left, _) = try key(in: flipped, inset: 148)
+        expectEqual(left.partSide(at: .start), .left)
+        expectEqual(left.partSide(at: .end), .left)
+        let leftmost = try require(left.levelBody).bounds.minX
+        expect(leftmost >= flipped.minX + 8 - 0.01, "inside on the left: \(leftmost)")
+    },
+    test("a level line between rows at one height is measured as the line it is: a label put at a fraction is where the pointer's nearest point says (review U9-C1)") {
+        let b = try LevelBoard()
+        // L's row 3 and R's row 1 are both at 160: collinear controls that ease, not an even line.
+        let id = b.h.add(Arrow(start: b.end(b.left, 2), end: b.end(b.right, 0)))
+        let line = try require(try b.geometry(id).levelBody)
+        expectClose(line.start.y, line.end.y, within: 1e-6)
+        let measure = line.measured()
+        for fraction: CGFloat in [0.1, 0.25, 0.5, 0.8] {
+            let point = measure.point(atFraction: fraction)
+            expectClose(measure.fraction(nearest: point), fraction, within: 2e-3)
+        }
+        // A piece that is `CubicChain.line(from:to:)` is still one even segment.
+        let even = CubicChain(CubicChain.line(from: CGPoint(x: 0, y: 0), to: CGPoint(x: 100, y: 0))).measured()
+        expectClose(even.point(atFraction: 0.25).x, 25, within: 1e-6)
+    },
+    test("far out a key between facing rows is one straight line, no marks nor level reaches; a C between close rows stays the curve (review U9-R1, U9-E2)") {
+        let b = try LevelBoard(looks: true)
+        // A table well below R's side, so the curve and the chord part by more than a view point at 10%.
+        let low = b.h.add(Roster(CGRect(x: 500, y: 400, width: 200, height: 80), rows: [RosterRow(name: "one")]))
+        let lowEnd = ArrowTerminal.bound(ArrowBinding(shapeID: low, normalizedAnchor: CGPoint(x: 0, y: 0.5), isPrecise: true, isExact: true, part: try require(b.h.editor.document[low]?.typed(as: Roster.self)?.props.rows[0].id)))
+        let facing = b.h.add(Arrow(start: b.end(b.left, 0), end: lowEnd))
+        let line = try require(try b.geometry(facing).levelBody)
+        let (from, to) = (line.start, line.end)
+        @MainActor func inkedNear(_ rep: NSBitmapImageRep, _ point: CGPoint, zoom: CGFloat) -> Bool {
+            for dx: CGFloat in [-3, -2, -1, 0, 1, 2, 3] { for dy: CGFloat in [-3, -2, -1, 0, 1, 2, 3] where isInked(rep, point + CGPoint(x: dx / scale / zoom, y: dy / scale / zoom), zoom: zoom) { return true } }
+            return false
+        }
+        b.h.editor.camera = Camera(origin: .zero, zoom: 0.2)
+        let curveAt20 = try drawn(b.h.editor)
+        // Where the curve is farthest from the chord, and the chord's nearest point to it.
+        let chord = to - from
+        let quarter = try require(line.flattened(segments: 200).max { abs(chord.cross($0 - from)) < abs(chord.cross($1 - from)) })
+        let chordQuarter = from + chord * (chord.dot(quarter - from) / chord.dot(chord))
+        expect(inkedNear(curveAt20, quarter, zoom: 0.2), "at 20% the curve")
+        expect(!inkedNear(curveAt20, chordQuarter, zoom: 0.2), "not the chord")
+        b.h.editor.camera = Camera(origin: .zero, zoom: 0.1)
+        let far = try drawn(b.h.editor)
+        expect(inkedNear(far, chordQuarter, zoom: 0.1), "at 10% the chord, one line")
+        expect(inkedNear(far, from + (to - from) * 0.6, zoom: 0.1), "all along it")
+        expect(!inkedNear(far, quarter, zoom: 0.1), "not the curve, whose level stub and turns are gone")
+        // Two close rows of one table leave and come back by one side: far out it is still the curve, not a line along the edge.
+        let c = b.h.add(Arrow(start: b.end(b.left, 0), end: b.end(b.left, 1)))
+        let apex = try require(try b.geometry(c).levelBody).flattened().max { $0.x < $1.x }!
+        expect(apex.x > 300 + 20, "the C bows out from the table's side: \(apex)")
+        expect(inkedNear(far, apex, zoom: 0.1), "a C at 10% keeps its bow")
     },
     test("VoiceOver says what the marks say after where the arrow runs: many to one, one to one, many to zero or one") {
         var b = try LevelBoard(looks: true)

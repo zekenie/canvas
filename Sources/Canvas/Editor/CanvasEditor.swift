@@ -1740,6 +1740,18 @@ public final class CanvasEditor {
         return shown
     }
 
+    /// The shapes in a world rect that are painted just below their anchor (`PaintOrderAnchored.paintsBelowAnchor`: a key, under
+    /// the cards it joins), back to front: nothing, at no cost, on a board with none, and otherwise a look at what is in the rect
+    /// for them, never the shapes themselves (what draws over the cards those pass beneath asks this each frame).
+    public func shapesPaintedBelowAnchor(in rect: CGRect) -> [AnyShapeRecord] {
+        let context = shapeContext
+        let below = shapeIndex.belowAnchor(in: context)
+        guard !below.isEmpty else { return [] }
+        var found: [AnyShapeRecord] = []
+        forEachShape(in: rect) { record, _ in if below.contains(record.id) { found.append(record) } }
+        return found
+    }
+
     /// `paintOrder(in:)`'s shapes, back to front, each with its kept extent (world units): the one rule for what
     /// may show in a rect, for what reads the extents too (VoiceOver's shapes in view, ranked by their middles).
     func forEachShape(in rect: CGRect, _ body: (AnyShapeRecord, CGRect) -> Void) {
@@ -1773,7 +1785,7 @@ public final class CanvasEditor {
     /// to its size or no longer edited. With the frame it is laid out in and the frame it has at rest: laid out without what is
     /// set for it while it's handled, as `makeRoom()` measures it, never its stored box, whose height a kind laid out by its rows
     /// keeps from when it was made (review R25: a table typed to ten rows stores one).
-    private func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
+    func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
         guard let id = editingShapeID, let record = document[id], record.box != nil, !registry.isContainer(record),
               let frame = context.frame(of: record), let rest = restingFrame(of: record),
               frame.width > rest.width + Self.liftSlack || frame.height > rest.height + Self.liftSlack else { return nil }

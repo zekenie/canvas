@@ -62,7 +62,7 @@ extension CanvasEditor {
         }
         if let box = resizeFrame(of: record) {
             let view = camera.toView(box)
-            handles += ResizeHandle.shown(on: view).map { (AnyHashable($0), $0.point(on: view)) }
+            handles += ResizeHandle.shown(on: view, axes: registry.resizedAxes(of: record)).map { (AnyHashable($0), $0.point(on: view)) }
         }
         return handles
     }
@@ -110,7 +110,10 @@ final class PointingHandleSession {
 
 extension PointingHandleSession: Session {
     /// A resize handle's resize cursor, else the closed hand.
-    func cursor(in editor: CanvasEditor) -> CanvasCursor? { (handle.base as? ResizeHandle)?.cursor ?? .closedHand }
+    func cursor(in editor: CanvasEditor) -> CanvasCursor? {
+        guard let resize = handle.base as? ResizeHandle else { return .closedHand }
+        return resize.cursor(axes: editor.document[shapeID].map { editor.registry.resizedAxes(of: $0) } ?? .both)
+    }
 
     func drag(_ pointer: Pointer, in editor: CanvasEditor) {
         guard pointer.view.distance(to: origin) > Style.dragThreshold, let next = dragSession(in: editor) else { return }

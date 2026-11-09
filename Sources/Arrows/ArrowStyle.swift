@@ -1,4 +1,5 @@
 import AppKit
+import Connections
 import Palette
 
 /// Arrow constants, in world units unless noted. The values follow tldraw.
@@ -18,35 +19,13 @@ enum ArrowStyle {
     nonisolated static let levelMinReach: CGFloat = 24
     nonisolated static let levelAheadShare: CGFloat = 0.5
     nonisolated static let levelBackReach: CGFloat = 6.25
-    /// A curve between ends carrying marks runs out far enough that its turn is clear of the longer mark by this much: a
-    /// cubic with its controls `r` out bends back by `3/4 r` at the most, so the reach is the mark's, and this, over 3/4.
+    /// A marked end leaves its row straight along its way out for as far as its mark reaches and this much more, a stub the
+    /// curve starts from, so the mark lies level and upright however steeply the line turns after it (a C between stacked
+    /// tables, a fan, rows far across): 23.5 for bars, 36 for a bar and circle, 19 for a crow's foot. Ends facing each other too
+    /// near for both stubs share what room there is.
     nonisolated static let levelMarkClearance: CGFloat = 6
-    nonisolated static func levelClearReach(ofMark reach: CGFloat) -> CGFloat {
-        reach > 0 ? (reach + levelMarkClearance) / 0.75 : 0
-    }
-    /// The steepest the line may be where an end's mark stops (and its clearance), rise over run: an end that carries a mark
-    /// reaches out far enough that its mark lies on the level stretch, however far across the other end is, so two keys at one
-    /// row's end draw their marks on top of each other.
-    nonisolated static let levelMarkSlope: CGFloat = 0.2
-    /// How many times the way ahead an end carrying a mark reaches at most, the other end ahead of it: an S between two sides
-    /// whose controls reach no farther than three times the way between them stays between the sides (a cubic's `x` is a
-    /// polynomial whose overshoot starts there), so a key's line never runs under the tables it joins.
-    nonisolated static let levelMarkAheadCap: CGFloat = 3
-    /// How many times the clearing reach an end carrying a mark reaches at most, the other end not ahead of it (a C): the line
-    /// swings out a little further to level its mark, never a wide loop that grows with the rows' distance.
-    nonisolated static let levelMarkBackCap: CGFloat = 2
-    /// The reach of an end carrying a mark that reaches `reach` along the line, with the other end `across` to the side of its
-    /// way out and `along` ahead of it (negative: behind): at least `levelClearReach(ofMark:)`, and as far as keeps the line's
-    /// slope at the mark's clearance under `levelMarkSlope` (a cubic with its control `r` out, whose other end is `h` across, is
-    /// at slope about `2dh / 3r^2` a length `d` along; the other control's pull back along the way steepens it, so the reach is
-    /// worked out for half the slope), but no farther than `levelMarkAheadCap` times the way ahead, or `levelMarkBackCap` times
-    /// the clearing reach where the other end is not ahead: tables side by side too close for a level mark are left tilted,
-    /// not overshot. 0 for an end with no mark.
-    nonisolated static func levelMarkReach(ofMark reach: CGFloat, across: CGFloat, along: CGFloat) -> CGFloat {
-        guard reach > 0 else { return 0 }
-        let clear = reach + levelMarkClearance, clearing = levelClearReach(ofMark: reach)
-        let wanted = max(clearing, (4 * clear * abs(across) / (3 * levelMarkSlope)).squareRoot())
-        return min(wanted, max(clearing, along > 0 ? along * levelMarkAheadCap : clearing * levelMarkBackCap))
+    nonisolated static func levelStub(ofMark reach: CGFloat) -> CGFloat {
+        reach > 0 ? reach + levelMarkClearance : 0
     }
     // Connections drawn together (Connections' `ConnectionBundle`): those with the same two ends bow apart by a slot each, far
     // enough that their pills sit on lines of their own; those fanned into one place come in at angles of their own, spread
@@ -56,10 +35,14 @@ enum ArrowStyle {
     nonisolated static let fanStep: CGFloat = 25 * .pi / 180
     nonisolated static let fanSpread: CGFloat = 70 * .pi / 180
     nonisolated static let fanMarkShift: CGFloat = 8
+    /// Pills slid toward a row their connections part from to different places stand apart along their lines: each after the
+    /// first this much further from the row (the first sits its half width and clearance out; this is that, a pill's width and
+    /// a gap), world units.
+    nonisolated static let partingLabelStep: CGFloat = 130
     /// A level curve's end keeps this far inside the container both its ends are in (a database's edge), where it can; and it
     /// leaves the side of its row with at least `containerSideRoom` inside it (its turn and half a pill on it), else the other.
-    nonisolated static let containerClearance: CGFloat = 8
-    nonisolated static let containerSideRoom: CGFloat = 60
+    nonisolated static let containerClearance: CGFloat = PartSide.containerClearance
+    nonisolated static let containerSideRoom: CGFloat = PartSide.containerSideRoom
     /// Arrows bowed apart by a slot also leave and meet their rows this far apart along the side, a slot each, within the row.
     nonisolated static let slotEndShift: CGFloat = 6
 

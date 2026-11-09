@@ -105,6 +105,9 @@ extension APIDefinition: CustomSizing {
         if axes.contains(.width) { shape.props.frame.size.width = frame.width }
         derive(&shape.props)
     }
+
+    /// Its height is its rows': only its width is given by hand, so it is resized by its corners (no handle on a row's end).
+    func resizedAxes(of shape: ShapeRecord<API>) -> SizeAxes { .width }
 }
 
 /// Its rows are its parts: an endpoint by its method and full path ("POST /orders/{id}/refunds", standing alone, its method in a

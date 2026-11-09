@@ -230,10 +230,14 @@ public protocol CustomSizing: ShapeDefinition where Props: BoxShapeProps {
     /// Whether the shape is resized by hand: false for one whose size isn't its own to give (a
     /// relationship type's pill, as big as its name). Default true.
     func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool
+    /// The ways a resize by hand gives its size: both by default; a kind whose height is its rows' gives only its width, and
+    /// is resized by its corners alone (Selection's handles), so no handle sits at a side's middle, where a row's line ends.
+    func resizedAxes(of shape: ShapeRecord<Props>) -> SizeAxes
 }
 
 extension CustomSizing {
     public func isResizable(_ shape: ShapeRecord<Props>, in context: ShapeContext) -> Bool { true }
+    public func resizedAxes(of shape: ShapeRecord<Props>) -> SizeAxes { .both }
 }
 
 /// Which ways a frame given to a shape gives its size (`CustomSizing`): its width, its height, or both.
@@ -259,10 +263,16 @@ public protocol PaintOrderAnchored: ShapeDefinition {
     /// (a key), under the lower of the cards it joins, so a card it passes covers it. As `paintAnchor`, it must follow
     /// from the shape's own props and the document's order.
     func paintsBelowAnchor(_ shape: ShapeRecord<Props>, in document: CanvasDocument) -> Bool
+
+    /// The shapes whose containment its anchor follows (none, by default): a connector under a card's container (a key, just
+    /// above the database of its end) names its ends, so a commit that puts one of them, or a container holding one, into or out
+    /// of a container places it again, and a commit that moves any other shape's containment keeps the paint list.
+    func paintAnchorFollowsContainment(of shape: ShapeRecord<Props>) -> [ShapeID]
 }
 
 extension PaintOrderAnchored {
     public func paintsBelowAnchor(_ shape: ShapeRecord<Props>, in document: CanvasDocument) -> Bool { false }
+    public func paintAnchorFollowsContainment(of shape: ShapeRecord<Props>) -> [ShapeID] { [] }
 }
 
 /// Drawn more simply zoomed out: how a shape shows in place of `render` while the canvas draws

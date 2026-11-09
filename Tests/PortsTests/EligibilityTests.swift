@@ -153,7 +153,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
         expect(changedPixels(still, drawing, in: shaken) > 100, "outlined")
         expectEqual(changedPixels(belowHovered, drawing, in: shaken), 0, "where its hover's outline is")
     },
-    test("the shape the connection would end on now has the hint's outline alone, not the faint one as well") {
+    test("the shape the connection would end on now stands out: bolder than the hint alone, never the faint outline the others have (UX walk 3 connect-10)") {
         let board = try EligibilityBoard()
         let h = board.h
         _ = try board.startConnecting()
@@ -162,7 +162,7 @@ let discTop = CGRect(x: discFrame.midX - 15, y: discFrame.minY - 3, width: 30, h
         h.release()
         h.editor.hintedShapeID = board.above
         let hintAlone = render(h)
-        expectEqual(changedPixels(hintAlone, drawing, in: topEdge(of: aboveFrame)), 0, "the hinted box")
+        expect(changedPixels(hintAlone, drawing, in: topEdge(of: aboveFrame)) > 100, "the hinted box, bold over the hint")
         expect(changedPixels(hintAlone, drawing, in: topEdge(of: belowFrame)) > 100, "the other box, faintly")
     },
     test("a shape the connector can't connect to isn't outlined, nor one whose kind only starts connections") {
