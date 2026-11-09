@@ -9,8 +9,9 @@ import SlashCommands
 import TestKit
 import Titles
 
-// The kit off in a file: its tools, their Insert items, `/table`, `/api`, `/database` and Create Database are gone; its shapes stay,
-// drawn, moved, renamed and deleted as any shape; ⇧↩ on a table makes a note.
+// The kit off in a file: its tools, their Insert items, `/table`, `/api`, `/database` and Create Database are gone, and an API's
+// changes, New Version and Group by Prefix (commands, menu items, typed); its shapes stay, drawn, moved, renamed and deleted as any
+// shape; ⇧↩ on a table makes a note.
 
 @MainActor let kitTests = Suite("The kit off", [
     test("off, every way in is gone and its shapes stay; on in one step, they're back") {
@@ -33,6 +34,21 @@ import Titles
         expect(tools.allSatisfy { h.editor.isToolEnabled($0) })
         expect(h.offered.contains("table") && h.offered.contains("database") && h.offered.contains("api"))
         expect(h.editor.claims(.createDatabase))
+    },
+    test("off, an API's changes are gone with the rest: New Version and Group by Prefix as commands, menu items and typed; on, they're back") {
+        let h = try kitHarness(on: false)
+        let api = h.add(API(frame: CGRect(x: 100, y: 100, width: 420, height: 100), server: APIServer(host: "api.shop.dev/v1"),
+                            endpoints: ["GET /orders/{id}", "POST /orders"].compactMap { EndpointGrammar.read($0) }), titled: "orders API")
+        h.editor.selectedShapeIDs = [api]
+        let menu = { @MainActor in h.secondaryClick(at: CGPoint(x: 200, y: 150))?.outline ?? [] }
+        expect(!h.editor.claims(.newVersion) && !h.editor.claims(.groupByPrefix))
+        expect(!h.offered.contains("new-version") && !h.offered.contains("group-by-prefix"), "\(h.offered)")
+        expect(!menu().contains("New Version") && !menu().contains("Group by Prefix"), "\(menu())")
+        h.editor.turn(EngineeringKit.self, on: true)
+        h.editor.selectedShapeIDs = [api]
+        expect(h.editor.claims(.newVersion) && h.editor.claims(.groupByPrefix))
+        expect(h.offered.contains("new-version") && h.offered.contains("group-by-prefix"), "\(h.offered)")
+        expect(menu().contains("New Version") && menu().contains("Group by Prefix"), "\(menu())")
     },
     test("a row's keys are listed in the Keyboard Shortcuts window only while the kit is on") {
         let h = try kitHarness(on: false)
