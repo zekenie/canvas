@@ -40,13 +40,15 @@ public final class LineRowsService {
     /// provider).
     func width(of id: ShapeID) -> CGFloat? { widths[id] }
 
-    /// Lays `id` out `width` wide while it's edited (nil: as stored), the arrows bound to it and its frame following. True where
-    /// the width changed.
+    /// Lays `id` out `width` wide while it's edited (nil: as stored), the arrows bound to it, its frame and the card of its row
+    /// following (a card is at least as wide as its row laid out: `LineCardView.size(in:)`, asked again as the card follows, so a
+    /// line a card's toggle printed wider widens the card at once). True where the width changed.
     @discardableResult
     func setWidth(_ width: CGFloat?, of id: ShapeID) -> Bool {
         guard widths[id] != width else { return false }
         widths[id] = width
         editor.shapesDidChangeLayout([id])
+        cards?.follow(nil)
         return true
     }
 

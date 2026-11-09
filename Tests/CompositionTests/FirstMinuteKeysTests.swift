@@ -78,8 +78,9 @@ let firstMinutePending: [String] = []
             walk.press(Chord(Key.return, .shift))
             w.type("Grace", with: walk)
             walk.press(.escape)
-            // Grace lands under Ada: right of it, the view would pan the type off screen (UX walk 3 tables-1).
-            walk.press(Chord(Key.up, [.option, .shift, .command]))
+            // Grace lands right of Ada, the view panning (T1 panel 3): nothing joins Ada to the type it would pan off, so the pan
+            // takes away nothing the person works with (UX walk 4 firstminute-4-2), and ⌥⇧⌘← extends to Ada, as approved.
+            walk.press(Chord(Key.left, [.option, .shift, .command]))
             walk.press(Chord("l", .command))
         }
         let named = { (text: String) in w.notes.first { $0.typed(as: StickyNote.self)?.props.text.plainText() == text }?.id }

@@ -589,9 +589,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
         service.cards?.follow(nil)
     }
 
-    /// The line was typed in: read again, its looks and mark shown, the clip slid to the caret.
-    private func lineChanged(reportingChange: Bool = true) {
-        guard focus != .title else { return }
+    /// The line was typed in: read again, its looks and mark shown, the clip slid to the caret. True where the shape is laid out
+    /// at another width for it.
+    @discardableResult
+    private func lineChanged(reportingChange: Bool = true) -> Bool {
+        guard focus != .title else { return false }
         if focus == .fixed {
             let look = model.fixedLine.map { $0.look(field.line, lineContext()) } ?? (spans: [], mark: nil)
             let read = LineReading<Row>(row: nil, spans: look.spans, mark: look.mark)
@@ -604,7 +606,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
                 if widened { keepCaretInView() }
             }
             needsDisplay = true
-            return
+            return widened
         }
         let rowID: PartID
         if case .row(let row) = focus { rowID = row } else { rowID = PartID() }
@@ -620,6 +622,7 @@ final class LineSession<Model: LineModel>: LineRowsView {
             if widened { keepCaretInView() }
         }
         needsDisplay = true
+        return widened
     }
 
     /// Pans the view by as little as brings the caret and the rest of its line, to the line's end at its width now, into the
@@ -1035,9 +1038,11 @@ final class LineSession<Model: LineModel>: LineRowsView {
         guard editor.editingShapeID == id, case .row(let row) = focus, !hasDraft, let stored = rows.first(where: { model.id(of: $0) == row }) else { return }
         held = stored
         field.show(grammar.print(stored, in: lineContext(row)))
-        lineChanged(reportingChange: false)
+        let widened = lineChanged(reportingChange: false)
         shown = (field.line, reading?.row.map { model.merged($0, onto: stored) } ?? stored)
         place()
+        // Printed wider (a card's toggle wrote `null`): the row kept in the clear view, as a line typed wider keeps its caret.
+        if widened, let line = rect(of: focus) { context.keepInView(line) }
     }
 
     /// Return: on the title, the waiting line; on a line with words, the line committed and a waiting line under it (above it,
