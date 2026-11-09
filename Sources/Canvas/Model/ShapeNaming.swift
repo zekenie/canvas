@@ -26,8 +26,9 @@ public protocol ShapeNaming: Sendable {
     /// members) go into what they hold. For a plugin that reads its own leaves wherever a shape
     /// keeps them.
     func forEachNamingLeaf(_ body: (any ShapeNaming) -> Void)
-    /// Itself with each part it names (a mention of a table's row) that `rename` gives another address for named there
-    /// instead; nil keeps it. Pure. What a part moved to another shape renames (`Transaction.moveParts`'s handlers): by default
+    /// Itself with each part it names (a mention of a table's row), and each shape it names as a whole, that `rename` gives
+    /// another address for named there instead (a shape that was all its one row named as that row where it went); nil keeps
+    /// it. Pure. What a part moved to another shape renames (`Transaction.moveParts`'s handlers): by default
     /// itself, for a value that names no part; collections and structs go into what they hold, and a leaf that names parts says.
     func renamingParts(_ rename: (PartAddress) -> PartAddress?) -> Self
 }

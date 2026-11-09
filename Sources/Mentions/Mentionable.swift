@@ -252,12 +252,12 @@ extension Registry {
                                  tint: shapeTint ?? contribution.tint?(shape) ?? defaults.tint)
     }
 
-    /// What a mention of `target` shows now: live, with its appearance, when `lookup` finds it and
-    /// it can be mentioned; unavailable when it finds it and it can't (kept aside, or of a kind
-    /// that isn't mentionable); missing when it doesn't.
+    /// What a mention of `target` shows now: live, with its appearance (a shape that is all its one row as that row:
+    /// `MentionResolution.whole`), when `lookup` finds it and it can be mentioned; unavailable when it finds it and it can't
+    /// (kept aside, or of a kind that isn't mentionable); missing when it doesn't.
     public func mentionResolution(of target: ShapeID, lookup: (ShapeID) -> AnyShapeRecord?) -> MentionResolution {
         guard let record = lookup(target) else { return .missing }
-        return mentionAppearance(of: record).map { .live($0) } ?? .unavailable
+        return MentionResolution.whole(record, shape: mentionAppearance(of: record), in: self)
     }
 
     /// What a mention of a row, or of a shape as a whole (part nil), shows now, as `mentionResolution(of:lookup:)` has the shape:
@@ -278,6 +278,24 @@ extension MentionResolution {
         guard let shape else { return .unavailable }
         guard let row = registry.parts(of: record)?.first(where: { $0.id == part }) else { return .missing }
         return .live(MentionAppearance.row(row, of: shape))
+    }
+}
+
+extension MentionResolution {
+    /// What a mention of `record` as a whole shows, given how the shape shows (`shape`, nil when it can't be mentioned): a shape
+    /// that is all its one row (`PartName.isItsShape`: an endpoint taken out of its API) as that row, as a mention of the row
+    /// shows (`MentionAppearance.row`: its method in its chip and its path), so a mention of it looks one way, however it was
+    /// written and wherever the endpoint is; any other as itself; unavailable with no appearance.
+    @MainActor
+    public static func whole(_ record: AnyShapeRecord, shape: MentionAppearance?, in registry: Registry) -> MentionResolution {
+        whole(shape: shape, parts: shape != nil && registry.isParted(record.kind) ? registry.parts(of: record) : nil)
+    }
+
+    /// The same, given the shape's parts (its rows) read already.
+    static func whole(shape: MentionAppearance?, parts: [PartName]?) -> MentionResolution {
+        guard let shape else { return .unavailable }
+        if let parts, parts.count == 1, parts[0].isItsShape { return .live(MentionAppearance.row(parts[0], of: shape)) }
+        return .live(shape)
     }
 }
 

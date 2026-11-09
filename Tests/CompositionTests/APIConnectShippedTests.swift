@@ -607,7 +607,7 @@ private let stripeAPI = #"""
         let api = try require(shape(editor, "orders API")).id
         let only = try require(rows(editor, "orders API").first?.id)
         let mentions = try require(editor.mentions)
-        let listed = mentions.candidates(matching: "orders", in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: .shape).matches.map(\.address)
+        let listed = mentions.candidates(matching: "orders", in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: .row).matches.map(\.address)
         expect(listed.contains(PartAddress(api)), "the API: \(listed)")
         expect(listed.contains(PartAddress(api, part: only)), "and its endpoint: \(listed)")
     },

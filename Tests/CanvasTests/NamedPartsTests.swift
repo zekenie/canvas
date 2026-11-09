@@ -205,12 +205,31 @@ extension PartCites: ShapeProperty {
         expectEqual(u.cited(fresh)?.lead, PartCite(u.from), "a shape the index hasn't heard of yet names what it named")
         expectEqual(u.cited(u.onRoot)?.lead, PartCite(u.to))
     },
-    test("a row that moves within its shape, or a shape's own address, renames nothing") {
+    test("a row that moves within its shape renames nothing; a shape's own address renames only the names of that shape as a whole") {
         let s = try Scene()
         s.h.editor.transact("Reorder") { tx in tx.moveParts([s.from: s.from]) }
         expectEqual(s.cited(s.onRoot)?.lead, PartCite(s.from))
         s.h.editor.transact("Move Table") { tx in tx.moveParts([PartAddress(s.orders): PartAddress(s.customers)]) }
         expectEqual(s.cited(s.onRoot)?.lead, PartCite(s.from), "a part-less address names no row")
+        expectEqual(s.cited(s.onRoot)?.notes.first?.cites.last, PartCite(PartAddress(s.customers)), "the shape as a whole is named where it went")
+    },
+    test("a shape that was all its one row, moved as a whole to the row it became (a key with no part), is named as that row wherever a value names it as a whole, on this board and another, in the step; Undo and Redo give and take it") {
+        let s = try Scene()
+        s.h.editor.undoHistory.seal()
+        let whole = PartCite(PartAddress(s.orders)), row = PartCite(s.to)
+        s.h.editor.transact("Move Endpoint") { tx in
+            tx.update(s.customers, as: Roster.self) { $0.props.rows.append(s.customerID) }
+            tx.moveParts([PartAddress(s.orders): s.to])
+        }
+        for id in [s.onRoot, s.far] {
+            let notes = try require(s.cited(id)).notes
+            expectEqual(notes, [CiteNote(cites: [PartCite(s.from), row])], "the shape as a whole is the row now; its rows' names, no key's, stay")
+        }
+        expectEqual(s.cited(s.frozen)?.notes.first?.cites.last, whole, "a read-only shape keeps its name")
+        s.h.editor.undo()
+        expectEqual(s.cited(s.far)?.notes.first?.cites.last, whole, "Undo names the shape again")
+        s.h.editor.redo()
+        expectEqual(s.cited(s.far)?.notes.first?.cites.last, row, "Redo names the row")
     },
     test("the editing part is the row the keys are on while a shape is edited, and nothing before it or after") {
         let registry = try Registry(plugins: [Contributor(id: "slips") { $0.shape(SlipDefinition()) }])

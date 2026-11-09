@@ -324,6 +324,11 @@ extension CanvasEditor {
                 }
                 var moved: [PartAddress: PartAddress] = [:]
                 for row in rows { moved[PartAddress(carrier.id, part: row)] = PartAddress(destination, part: renaming[row] ?? row) }
+                // A shape that is its one row (an endpoint of its own), gone with it (moved out of it here, or cut), is that row
+                // where it went: what names the shape as a whole follows the row too, on any board.
+                if moving.goesWithItsRows, rows.count == 1, destination != carrier.id, source == nil || emptied == carrier.id {
+                    moved[PartAddress(carrier.id)] = PartAddress(destination, part: renaming[rows[0]] ?? rows[0])
+                }
                 // A paste's arrows, bound to the rows where they landed; one whose other end is on another board comes back through a
                 // pill for that end here (Connections' `reachingFarEnds`, as a key reaches a table across boards), else it's left out
                 // (and said); and one bound to a row of another shape that is gone since is bound to that shape as a whole, as taking

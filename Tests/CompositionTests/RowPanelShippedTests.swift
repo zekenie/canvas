@@ -381,7 +381,7 @@ private let e6 = #"""
             }
         }
     },
-    test("the @ picker lists an endpoint taken out of its API once: the shape where its name is found, its row only where its path alone is") {
+    test("the @ picker lists an endpoint taken out of its API once, as its row, found by its name or its method and path, typed or nearby") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
         try w.turnKitOn()
@@ -391,11 +391,15 @@ private let e6 = #"""
                                                   endpoint: Endpoint(method: "POST", path: "/orders/{id}/refunds", name: "createRefund")))
         let mentions = try require(editor.mentions)
         @MainActor func listed(_ query: String) -> [PartAddress] {
-            mentions.candidates(matching: query, in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: .shape).matches.map(\.address)
+            mentions.candidates(matching: query, in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: .row).matches.map(\.address)
         }
-        expectEqual(listed("DELETE /orders"), [PartAddress(unnamed)], "the shape, called by its method and path, and not its row as well")
-        expectEqual(listed("createRefund"), [PartAddress(named)], "by its name: the shape")
+        let unnamedRow = try require(editor.document[unnamed]?.typed(as: StandaloneEndpoint.self)?.props.endpoint.id)
         let row = try require(editor.document[named]?.typed(as: StandaloneEndpoint.self)?.props.endpoint.id)
-        expectEqual(listed("POST /orders/{id}/refunds"), [PartAddress(named, part: row)], "by its path alone: its row, the shape not found")
+        expectEqual(listed("DELETE /orders"), [PartAddress(unnamed, part: unnamedRow)], "its row, called by its method and path, and not the shape as well")
+        expectEqual(listed("createRefund"), [PartAddress(named, part: row)], "by its name: its row, in the shape's place")
+        expectEqual(listed("POST /orders/{id}/refunds"), [PartAddress(named, part: row)], "by its path alone: its row")
+        let nearby = mentions.candidates(matching: "", in: AnyMentionable.self, for: unnamed, listingParts: { _ in true }, ownRows: .row).nearby
+        expectEqual(nearby.map(\.address), [PartAddress(named, part: row)], "nearby: its row, as typed")
+        expectEqual(nearby.first?.appearance.label, "POST /orders/{id}/refunds")
     },
 ])

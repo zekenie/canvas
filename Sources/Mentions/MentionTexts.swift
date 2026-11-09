@@ -12,6 +12,7 @@ import Draw
 /// what the schema says beside the text's reference, `x-canvas-mentions`), so a text that admits only plates
 /// names the plate called Address, not a note called that. `@["orders".customer_id]` mentions a row, named as a
 /// script names one after its shape's title (`DrawTextContext.row`), and keeps the row's address, in a text that takes rows.
+/// A shape that is all its one row (an endpoint taken out of its API) is mentioned at that row, as the `@` picker lists it.
 /// A whole mention an agent writes (`@[label](shape:ID)`, from a query's rows) is kept as written, as it always was.
 public struct MentionTextsPlugin: ListedPlugin {
     public init() {}
@@ -25,6 +26,7 @@ public struct MentionTextsPlugin: ListedPlugin {
             return try MentionTextFormat.resolvingMentions(in: text) { name throws(DrawError) in
                 if let row = try Self.row(named: name, in: context, scope: scope) { return row }
                 let shape = try Self.shape(named: name, in: context, scope: scope)
+                if scope == nil, let own = Self.ownRow(of: shape, in: context) { return own }
                 return (PartAddress(shape.id), shape.title)
             }
         }
@@ -44,6 +46,17 @@ public struct MentionTextsPlugin: ListedPlugin {
         }
         let shape = MentionAppearance(label: found.shape.title, systemImage: "", kindName: "", detail: "")
         return (PartAddress(found.shape.id, part: found.row.id), MentionAppearance.row(found.row, of: shape).label)
+    }
+
+    /// The row a shape that is all its one row is (`PartName.isItsShape`: an endpoint taken out of its API, `@[createRefund]`),
+    /// with the label its pill holds, so the mention has the address and the look the `@` picker gives it, and follows the row
+    /// when the endpoint is put back into an API; nil for any other shape.
+    private static func ownRow(of shape: DrawTextShape, in context: DrawTextContext) -> (target: PartAddress, label: String)? {
+        guard let record = context.record(of: shape), let parts = context.registry.parts(of: record), parts.count == 1, parts[0].isItsShape else {
+            return nil
+        }
+        let appearance = MentionAppearance(label: shape.title, systemImage: "", kindName: "", detail: "")
+        return (PartAddress(shape.id, part: parts[0].id), MentionAppearance.row(parts[0], of: appearance).label)
     }
 
     /// The shape a `@[name]` stands for among those a mention may name (and `scope` admits), found as the rest of the

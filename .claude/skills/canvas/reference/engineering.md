@@ -143,7 +143,7 @@ What a person does in the app reads back the same way: New Version marks an API 
 
 ## A note that mentions a row
 
-A note's text mentions a row as a script names one, after its shape's title and a dot: `@["orders".customer_id]`, `@["orders API"."POST /orders/{id}/refunds"]` (in a script's string, each quote inside it `\"`). The note keeps the row: its pill shows `orders.customer_id`, live, and it follows the row through a rename of either. A query reads it back as `@orders.customer_id`; restating the text, write each row mention this way again, or it becomes words. A row the shape hasn't is `unknown_row`, with the ones it's like.
+A note's text mentions a row as a script names one, after its shape's title and a dot: `@["orders".customer_id]`, `@["orders API"."POST /orders/{id}/refunds"]` (in a script's string, each quote inside it `\"`). The note keeps the row: its pill shows `orders.customer_id`, live, and it follows the row through a rename of either. A query reads it back as `@orders.customer_id`; restating the text, write each row mention this way again, or it becomes words. A row the shape hasn't is `unknown_row`, with the ones it's like. An endpoint taken out of its API is all its one row: `@[stripeHook]`, by its name, mentions its row (its pill the method's chip and the path), and the mention follows it if it is put back into an API.
 
 ```draw
 sticky-note "Refund flow" below "Stripe API" (gap: wide) text: "@[\"orders API\".\"POST /orders/{id}/refunds\"] writes @[refunds] for @[\"orders\".customer_id]"
@@ -154,6 +154,17 @@ It is a mention of each row's shape:
 ```query
 /* matches: "Refund flow" */
 sticky-note:edge-to("orders", mention)
+```
+
+An endpoint taken out of its API mentioned by its name is a mention of its row too:
+
+```draw
+sticky-note "Hook note" below "Refund flow" (gap: wide) text: "@[stripeHook] takes Stripe's events"
+```
+
+```query
+/* matches: "Hook note" */
+sticky-note:edge-to("stripeHook", mention)
 ```
 
 ## Asking

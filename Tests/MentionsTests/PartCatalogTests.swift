@@ -34,13 +34,17 @@ private struct Dock: BoxShapeProps {
     static let properties = Properties<Dock> {
         Property("frame", \.frame).required()
         Property("rows", \.rows)
+        Property("isItsRow", \.isItsRow)
     }
     var frame: CGRect
     var rows: [RosterRow]
+    /// Whether its one row is all it is.
+    var isItsRow = false
 
-    init(_ frame: CGRect, rows: [RosterRow] = []) {
+    init(_ frame: CGRect, rows: [RosterRow] = [], isItsRow: Bool = false) {
         self.frame = frame
         self.rows = rows
+        self.isItsRow = isItsRow
     }
 
     init() { self.init(.zero) }
@@ -58,7 +62,9 @@ private struct DockDefinition: ShapeDefinition, PartedShape {
     }
 
     func parts(of shape: ShapeRecord<Dock>) -> [PartName] {
-        shape.props.rows.map { PartName(id: $0.id, name: $0.name, kindWord: "Endpoint", standsAlone: true) }
+        // A dock of one row marked so is all its row is (an endpoint taken out of its API).
+        shape.props.rows.map { PartName(id: $0.id, name: $0.name, kindWord: "Endpoint", lead: .symbol("bolt"), standsAlone: true,
+                                        isItsShape: shape.props.isItsRow) }
     }
 }
 
@@ -140,6 +146,35 @@ private struct DocksPlugin: CanvasPlugin {
         expectEqual(both.first?.id, other)
         // The shape's rule holds for its rows.
         expect(found("stripe ref") { $0 != dock }.allSatisfy { $0.id != dock }, "a shape the list leaves out takes its rows with it")
+    },
+    test("a shape that is all its one row (`PartName.isItsShape`) is listed once, as its row, by its title or the row's name, typed or nearby (`.row`); both with `.both`; and a mention of it as a whole shows as the row") {
+        let berth = RosterRow(name: "POST /refunds"), plain = RosterRow(name: "GET /payouts")
+        let own = ShapeID(), dock = ShapeID()
+        let shapes = [
+            titled(Dock(CGRect(x: 0, y: 0, width: 160, height: 40), rows: [berth], isItsRow: true), "createRefund", id: own),
+            titled(Dock(CGRect(x: 300, y: 0, width: 160, height: 40), rows: [plain]), "payouts API", id: dock),
+        ]
+        let h = try EditorHarness(plugins: mentionPlugins([CorralsPlugin(), RostersPlugin(), DocksPlugin(), namedRosters, namedDocks]), document: CanvasDocument(shapes: shapes))
+        let state = h.editor.mentionState
+        @MainActor func listed(_ query: String, _ ownRows: OwnRows = .row) -> [PartAddress] {
+            state.candidates(matching: query, in: AnyMentionable.self, for: nil, listingParts: { _ in true }, ownRows: ownRows).matches.map(\.address)
+        }
+        let row = PartAddress(own, part: berth.id)
+        expectEqual(listed("createRefund"), [row], "by its title: the row, in the shape's place")
+        expectEqual(listed("POST /refunds"), [row], "by the row's name: the row, once")
+        expectEqual(Set(listed("createRefund", .both)), [PartAddress(own)], "`.both` finds the shape by its title")
+        expectEqual(Set(listed("POST /refunds", .both)), [row], "and the row by its name")
+        let nearby = state.candidates(matching: "", in: AnyMentionable.self, for: dock, listingParts: { _ in true }, ownRows: .row).nearby
+        expectEqual(nearby.map(\.address), [row], "nearby: the row too")
+        // A shape of one row that isn't all it is (an API of one endpoint) is listed as itself, its row beside it.
+        expectEqual(Set(listed("payouts")), [PartAddress(dock), PartAddress(dock, part: plain.id)])
+        // A mention of it as a whole shows as its row does, wherever it's resolved.
+        let whole = state.resolve(PartAddress(own)), asRow = state.resolve(row)
+        expectEqual(whole, asRow, "as the row")
+        expectEqual(whole.appearance?.label, "POST /refunds")
+        expectEqual(whole.appearance?.systemImage, "bolt")
+        expectEqual(h.editor.registry.mentionResolution(of: PartAddress(own), lookup: { h.editor.document[$0] }), asRow)
+        expectEqual(state.resolve(PartAddress(dock)).appearance?.label, "payouts API", "any other shape as itself")
     },
     test("a commit reads again the rows of the shapes it changed: a renamed row, an added one, a deleted shape; the rest are read no more") {
         let b = try RosterBoard()

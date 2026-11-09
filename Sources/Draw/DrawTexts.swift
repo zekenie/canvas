@@ -190,8 +190,13 @@ final class DrawTextLookup {
 
     /// The row called `row` of `shape` (found by `shape(called:)`), among the rows its record has as the script starts it: the
     /// record a statement of the script starts it as, else the file's.
+    /// A shape found by a name, as the script starts it: one it draws or restates, else the file's.
+    func record(of shape: DrawTextShape) -> AnyShapeRecord? {
+        ownByID[shape.id]?.record ?? own.values.first { $0.id == shape.id }?.record ?? editor.file.record(shape.id)
+    }
+
     func row(named row: String, of shape: DrawTextShape, said: String) throws(DrawError) -> DrawTextRow {
-        let record = ownByID[shape.id]?.record ?? own.values.first { $0.id == shape.id }?.record ?? editor.file.record(shape.id)
+        let record = record(of: shape)
         guard let record, let parts = editor.registry.parts(of: record) else {
             throw DrawError("\(said) is \(record.map { indefinite($0.kind) } ?? "a shape"), which has no rows", reason: ScriptError.Reason.unknownRow.rawValue,
                             hint: "name a row of a shape that has them, as \"orders\".customer_id")

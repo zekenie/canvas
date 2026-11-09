@@ -330,10 +330,10 @@ public final class MentionState {
         return editor.shape(inFile: target).map(resolve) ?? .unavailable
     }
 
-    /// What a mention of a shape shows, found (nil: missing).
+    /// What a mention of a shape shows, found (nil: missing): a shape that is all its one row as that row (`MentionResolution.whole`).
     private func resolve(_ record: AnyShapeRecord?) -> MentionResolution {
         guard let record else { return .missing }
-        return appearance(of: record).map { .live($0) } ?? .unavailable
+        return MentionResolution.whole(record, shape: appearance(of: record), in: registry)
     }
 
     /// Whether `target` is on the board shown: what hovering it can outline.
@@ -612,9 +612,21 @@ public final class MentionState {
         }
 
         let q = FuzzyMatcher.Query(query)
+        /// The slot of the row a shape that is all its one row is listed as (`ownRows` `.row`, where `parts` takes the row); nil for
+        /// a shape listed as itself.
+        func ownRow(of id: ShapeID) -> Int? {
+            guard ownRows == .row, let parts, let own = partCatalog.rows(of: id).first(where: { $0.part.isItsShape }),
+                  parts(PartAddress(id, part: own.part.id)) else { return nil }
+            return partCatalog.slot(of: id, part: own.part.id)
+        }
         guard !q.isEmpty else {
+            // Listed as each is listed for a query: a shape that is all its one row as that row, where the list takes it so.
+            let none = PathMatcher(query, splittingDots: true)
+            func listed(_ id: ShapeID) -> MentionCandidate {
+                ownRow(of: id).map { partCandidate($0, band: .name, q, none) } ?? candidate(id, matched: [])
+            }
             let recentShown = Array(recent.lazy.filter { (self.catalog.contains($0) || (listingUnnamed && self.catalog.unnamed[$0] != nil)) && listable($0) }
-                .prefix(MentionRanking.recentShown)).map { candidate($0, matched: []) }
+                .prefix(MentionRanking.recentShown)).map(listed)
             var taken = Set(recentShown.map(\.id))
             taken.formUnion(owners)
             // A command's kinds are few shapes, each somewhere it can go: every one, as many as a query lists.
@@ -635,7 +647,7 @@ public final class MentionState {
                 nearby += unnamedInOrder(unnamedIds, excluding: taken.union(nearby), admits: listable, distance: distance,
                                          limit: room - nearby.count)
             }
-            return MentionCandidates(recent: recentShown, nearby: nearby.map { candidate($0, matched: []) }, matches: [])
+            return MentionCandidates(recent: recentShown, nearby: nearby.map(listed), matches: [])
         }
 
         // A shape named by its own text (a note's first line) holds the `@query` being typed in its
@@ -783,15 +795,14 @@ public final class MentionState {
                 let id = entries[found.slot].id
                 // A shape that is all its row is (an endpoint taken out of an API) is listed once, with `ownRows`: as the row where
                 // the list takes it at its row (found by the shape's name, the row is what is listed, the name in its place).
-                if ownRows == .row, let own = partCatalog.rows(of: id).first(where: { $0.part.isItsShape }), parts(PartAddress(id, part: own.part.id)),
-                   let slot = partCatalog.slot(of: id, part: own.part.id) {
+                if let slot = ownRow(of: id) {
                     merged.append((found.band, found.score, entries[found.slot].labelLength, { self.partCandidate(slot, band: found.band == .path ? .path : .name, q, matcher) }))
                 } else {
                     merged.append((found.band, found.score, entries[found.slot].labelLength, { shapeCandidate(found) }))
                 }
                 listed.insert(id)
             }
-            // The row of such a shape that is found with it is the same entry: left out, as the shape is listed once.
+            // The row of such a shape found with it is the one listed in the shape's place, or the shape is (`.both` lists both).
             for row in rows where !(ownRows != .both && listed.contains(partCatalog.entries[row.slot].shape) && partCatalog.isItsOwnRow(row.slot)) {
                 merged.append((row.band, row.score, partCatalog.entries[row.slot].labelLength, { self.partCandidate(row.slot, band: row.band, q, matcher) }))
             }
@@ -1459,16 +1470,15 @@ private final class ScopeMembers {
     }
 }
 
-/// Where a query of several words ranks a match: by its name (a tier from a substring up), by its path (a word or more in the
-/// containers the shape is inside), or by its name loosely (a subsequence, a typo). A query of one word has the first alone.
 /// What a list that names shapes and rows lists of a shape that is all its one row is (`PartName.isItsShape`, an endpoint taken out
-/// of its API): `.both` the shape and the row, `.shape` the shape (the `@` picker's, where a pick of either is a mention of it,
-/// the row only where just its path is found), `.row` the row (⌘L's: the shape is no end of a connection, its row is, so the
-/// shape's name finds the row).
+/// of its API): `.both` the shape and the row, `.row` the row, found by the shape's name too (the `@` picker's, so a mention keeps
+/// one address and one look as the endpoint is taken out and put back; ⌘L's, as the shape is no end of a connection and its row is).
 public enum OwnRows: Sendable {
-    case both, shape, row
+    case both, row
 }
 
+/// Where a query of several words ranks a match: by its name (a tier from a substring up), by its path (a word or more in the
+/// containers the shape is inside), or by its name loosely (a subsequence, a typo). A query of one word has the first alone.
 private enum MatchBand: Comparable {
     case name, path, loose
 }
