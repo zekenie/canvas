@@ -17,8 +17,8 @@ import Topology
 //   writes and a reads from one row to one table) and the leads each take a slot, bowed apart.
 // - Connections that end at one place with their other ends on one shape, at different lines (six rows into one table, two
 //   keys into one row), are fanned there: each comes in at an angle of its own, by where its other end is along that shape.
-// - A connection to a shape written as lines as a whole comes in at the row clearest of the rows other connections end at
-//   (nil where none do: the kind's own entry), on the side of the shape nearer its other end where two are as clear.
+// - A connection to a shape written as lines as a whole comes in at a row clear of the rows other connections end at on its
+//   side (nil where its first row is: the kind's own entry), from the end of the shape nearer its other end.
 
 /// Where a connection's end is drawn on its shape, as far as sharing a path goes.
 private enum Standing: Hashable {
@@ -301,39 +301,48 @@ final class RowBundles {
             }
         }
 
-        // A connection to this shape as a whole: the row clearest of the rows others end at.
+        // A connection to this shape as a whole: a row clear of the rows others end at on its side.
         let wholes = drawn.filter { item in
             (item.source == shape && item.sourcePart == nil) || (item.target == shape && item.targetPart == nil)
         }
-        if !wholes.isEmpty, let entries = reader.entryRows(of: record) {
-            var taken = Set<Int>()
-            for item in drawn {
-                if item.source == shape, item.sourcePart != nil, let line = item.start.line { taken.insert(line) }
-                if item.target == shape, item.targetPart != nil, let line = item.end.line { taken.insert(line) }
+        if !wholes.isEmpty, let entries = reader.entryRows(of: record), let box = record.box {
+            // Which side of this shape an end at it is on (true: the right), by the boxes at rest as Arrows sides them: two row
+            // ends whose shapes' spans across overlap both leave the right; any other end faces the shape at its other end.
+            func side(toward far: ShapeID, bothRows: Bool) -> Bool {
+                guard let other = document[far]?.box else { return true }
+                if bothRows, box.minX < other.maxX, other.minX < box.maxX { return true }
+                return other.midX >= box.midX
             }
-            if !taken.isEmpty {
-                for item in wholes {
-                    let far = item.source == shape ? item.target : item.source
-                    let below = (document[far]?.box?.midY ?? .infinity) > (record.box?.midY ?? 0)
-                    guard let row = RowBundles.clearest(entries, taken: taken, preferringLater: below) else { continue }
-                    let end: ConnectionBundle.End = item.target == shape && item.targetPart == nil ? .end : .start
-                    answers[item.arrow]?.entries[end] = row
+            var taken: [Bool: Set<Int>] = [:]
+            for item in drawn {
+                if item.source == shape, item.sourcePart != nil, let line = item.start.line {
+                    taken[side(toward: item.target, bothRows: item.targetPart != nil), default: []].insert(line)
                 }
+                if item.target == shape, item.targetPart != nil, let line = item.end.line {
+                    taken[side(toward: item.source, bothRows: item.sourcePart != nil), default: []].insert(line)
+                }
+            }
+            for item in wholes {
+                let far = item.source == shape ? item.target : item.source
+                guard let lines = taken[side(toward: far, bothRows: false)], !lines.isEmpty else { continue }
+                let below = (document[far]?.box?.midY ?? .infinity) > box.midY
+                guard let row = RowBundles.clear(entries, taken: lines, fromTheEnd: below) else { continue }
+                let end: ConnectionBundle.End = item.target == shape && item.targetPart == nil ? .end : .start
+                answers[item.arrow]?.entries[end] = row
             }
         }
         return Partial(answers: answers, bundles: bundles)
     }
 
-    /// The row of `entries` (each line's row, by line) farthest from every line in `taken`, the earlier of two as far unless
-    /// `preferringLater`; nil where every line is taken.
-    static func clearest(_ entries: [(line: Int, row: PartID)], taken: Set<Int>, preferringLater: Bool) -> PartID? {
-        var best: (row: PartID, distance: Int)?
-        let ordered = preferringLater ? Array(entries.reversed()) : entries
-        for entry in ordered where !taken.contains(entry.line) {
-            let distance = taken.map { abs($0 - entry.line) }.min() ?? Int.max
-            if best == nil || distance > best!.distance { best = (entry.row, distance) }
-        }
-        return best?.row
+    /// The row a line to a shape as a whole comes in at, clear of the lines in `taken` (other lines' ends on that side): the first,
+    /// from the end the line comes from (`fromTheEnd`: the last row first), with no taken line beside it; else the first not taken.
+    /// Nil where the kind's own entry (the first row) is clear already, or every line is taken.
+    static func clear(_ entries: [(line: Int, row: PartID)], taken: Set<Int>, fromTheEnd: Bool) -> PartID? {
+        func isClear(_ line: Int) -> Bool { !taken.contains(line) && !taken.contains(line - 1) && !taken.contains(line + 1) }
+        if let first = entries.first, isClear(first.line) { return nil }
+        let ordered = fromTheEnd ? Array(entries.reversed()) : entries
+        if let clear = ordered.first(where: { isClear($0.line) }) { return clear.row }
+        return ordered.first { !taken.contains($0.line) }?.row
     }
 }
 
