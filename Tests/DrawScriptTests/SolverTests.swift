@@ -19,6 +19,28 @@ let hub = ("Hub", rect(0, 0, 200, 100))
         expectRect(draw(#"box "A" right of "B""#, on: board)["A"], rect(280, 0, 100, 100))
         expectRect(draw(#"disc "A" below "B""#, on: board)["A"], rect(40, 180, 120, 120))
     },
+    test("below a shape that keeps room below it, with no gap said, at least that room; above one, the box's own; a gap said wins") {
+        let placed = ["below": try shape(#"card below "B""#).clauses, "above": try shape(#"card above "B""#).clauses,
+                      "right of": try shape(#"card right of "B""#).clauses]
+        @MainActor func below(_ word: String, gap: Gap? = nil, keeps: CGFloat, own: CGFloat = 0) throws -> CGRect {
+            let clauses = placed[word] ?? []
+            var box = LayoutProblem.Free(line: 1, name: "\"A\"", size: CGSize(width: 200, height: 100),
+                                         clauses: clauses.map { LayoutProblem.ResolvedClause($0, refs: [.fixed(0)]) }, gap: gap)
+            box.roomBelow = own
+            var target = LayoutProblem.Fixed(rect: rect(0, 0, 200, 100), obstacle: 0)
+            target.roomBelow = keeps
+            let problem = LayoutProblem(free: [box], fixed: [target],
+                                        obstacles: { area in [LayoutProblem.Obstacle(id: 0, rect: rect(0, 0, 200, 100))].filter { $0.rect.intersects(area) } },
+                                        name: { _ in "\"B\"" })
+            return try problem.solve().rects[0]
+        }
+        expectRect(try below("below", keeps: 86), rect(0, 186, 200, 100))
+        expectRect(try below("below", keeps: 40), rect(0, 180, 200, 100))   // never under the normal gap
+        expectRect(try below("below", gap: .named(.tight), keeps: 86), rect(0, 140, 200, 100))   // a gap said wins
+        expectRect(try below("above", keeps: 86), rect(0, -180, 200, 100))   // the target's room is below it, not above
+        expectRect(try below("above", keeps: 0, own: 86), rect(0, -186, 200, 100))   // a box above keeps its own room
+        expectRect(try below("right of", keeps: 86), rect(280, 0, 200, 100))   // across, nothing
+    },
     test("a corner is two directions at once, the gap off both") {
         let board = Board([("B", rect(0, 0, 200, 100))])
         expectRect(draw(#"card "A" above-right of "B""#, on: board)["A"], rect(280, -180, 200, 100))
