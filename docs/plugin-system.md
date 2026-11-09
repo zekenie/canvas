@@ -2643,8 +2643,8 @@ shape of the kind), ⌥↑ ⌥↓ move a row (one step), ⌘⌫ then ⌫ deletes
 line, ⇧↩ puts a shape beside. A line typed wider than the shape lays it out as wide as the line needs
 (`LineRowsLayout.width`, provided), nothing written; a kind that says how wide its rows read whole at rest
 (`wholeWidth(of:in:)`) has a commit that leaves it narrower write that width in the same step, so the shape
-keeps it as the caret leaves. While it is laid out wider than it stores, the core paints and hits the shape edited
-above what its widening overlaps, so a shape beside it never covers its rows. [line rows](../.claude/rules/line-rows.md) is
+keeps it as the caret leaves. While it is laid out wider or taller than it stores, the core paints and hits the shape edited
+above what it overlaps and no other shape's pill is drawn in its room, so a shape beside it never covers its rows. [line rows](../.claude/rules/line-rows.md) is
 the whole of it.
 
 **A row's card.** ⌘↓ in a row writes its line and shows what more the row holds than its line says, a line
@@ -7516,7 +7516,7 @@ crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLoo
 worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
 head, and Toggle Arrowhead leaves it. A curve between ends too near for the marks runs out far enough to turn
 clear of them, and an end with a mark reaches far enough, however far across the other end is, that the line is still
-level where its mark stops, so two keys at one row end lay their marks on each other; a row's resting port dot is not
+level where its mark stops (never farther than keeps the curve between the two sides), so two keys at one row end lay their marks on each other; a row's resting port dot is not
 drawn where a connection ends at that row's side (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
 with the channel it will be released on (`registry.connectionLook(…, channel:)`), so its marks show as it is dragged.
 
@@ -7726,7 +7726,7 @@ selection as it was. A pick on another board is reached through a reference pill
 or made and landed as `canvas draw` lands one (`StandInRoute.placePill`; from a row, where its line from the row is clean,
 `Surroundings.landing(of:joinedFrom:of:)`: below the shape, else level with the row; a key, a line between rows, level
 with its row first, left then right, then below slid out past its mark; a pill there already reused only where its line
-from the row crosses no shape, `joinsClean`), with the arrow, in one step; a private far
+from the row crosses no shape and under no label another arrow there carries, and leaves the shape as a landed one does, `joinsClean`), with the arrow, in one step; a private far
 shape is listed `will be made public` and made so in the step, since it is a person's pick.
 
 A kind that means more by a pick says so, once, in `ConnectPicks` (a keyed extension point, owner `.ports`, one

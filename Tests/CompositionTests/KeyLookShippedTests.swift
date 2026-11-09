@@ -58,6 +58,54 @@ private let billing = #"""
         expectEqual(geometry.partSide(at: .start), .left)
         expectEqual(geometry.partSide(at: .end), .right)
     },
+    test("structure new-2: two keys to one row's end lay their bars on each other, level where the bars stop, and never run under the tables between them") {
+        let editor = ShippedPlugins.makeEditor(document: CanvasDocument(), scheduler: ManualScheduler(), model: ScriptedLanguageModel())
+        editor.viewportDidResize(to: CGSize(width: 1440, height: 900))
+        _ = try drawnInProcess(#"""
+            table "customers" columns: "id uuid pk\nemail text unique"
+            table "orders" right of "customers" (gap: 40) columns: "id uuid pk\ncustomer_id uuid"
+            table "invoices" below "orders" columns: "id uuid pk\ncustomer_id uuid"
+            edge "orders".customer_id -> "customers".id
+            edge "invoices".customer_id -> "customers".id
+            """#, on: editor)
+        let customers = try table(editor, "customers").id, side = try require(editor.shapeContext.geometry(of: customers)?.bounds)
+        let keys = [try key(editor, from: "orders", "customer_id"), try key(editor, from: "invoices", "customer_id")]
+        var bars: [CGPoint] = []
+        for arrow in keys {
+            let geometry = try require(editor.arrowGeometry(of: arrow.id))
+            expectEqual(geometry.partSide(at: .end), .right, "at customers.id's right side")
+            // 17.5 in, a bar's reach (the crow's foot's end is at the other table's row): still level there.
+            let (at, inward) = geometry.point(10, along: .end)
+            expect(abs(inward.y) <= 0.25 * abs(inward.x) + 1e-6, "level where the bars are: \(inward)")
+            bars.append(at)
+            // Never to the left of customers' side at the end, nor past the far table's side: the curve stays between the tables.
+            if case .level(let cubic, _, _) = geometry.path {
+                let xs = cubic.flattened().map(\.x)
+                let tables = [try table(editor, "orders").id, try table(editor, "invoices").id].compactMap { editor.shapeContext.geometry(of: $0)?.bounds }
+                expect((xs.min() ?? 0) >= side.maxX - 1, "not under customers: \(xs.min() ?? 0) \(side)")
+                expect((xs.max() ?? 0) <= (tables.map(\.minX).min() ?? 0) + 1, "not under the tables it joins")
+            }
+        }
+        expect(bars[0].distance(to: bars[1]) < 1.5, "the bars of both keys on each other: \(bars)")
+    },
+    test("structure new-1: a row's resting dot isn't drawn on the side its key leaves by (the mark is there), and is on the other; hovered it shows") {
+        let w = try KeyDragWindow(#"""
+            table "orders" columns: "id uuid pk\ncustomer_id uuid"
+            table "payments" right of "orders" columns: "id uuid pk\norder_id uuid"
+            edge "payments".order_id -> "orders".id
+            """#)
+        let row = try w.row("payments", 1), size = CGSize(width: 800, height: 600)
+        let left = CGPoint(x: row.minX - 12, y: row.midY), right = CGPoint(x: row.maxX + 12, y: row.midY)
+        let middle = { (center: CGPoint) in CGRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4) }
+        w.move(to: CGPoint(x: 5, y: 590))
+        let away = renderBitmap(w.editor, size: size)
+        w.move(to: CGPoint(x: row.midX, y: row.midY))
+        let shown = renderBitmap(w.editor, size: size)
+        expectEqual(changedPixels(away, shown, in: middle(left)), 0, "none on the left, where the key leaves order_id")
+        expect(changedPixels(away, shown, in: middle(right)) > 0, "the right side's, where nothing ends")
+        w.move(to: left)
+        expect(changedPixels(away, renderBitmap(w.editor, size: size), in: middle(left)) > 0, "hovered, the taken side's shows for another drag")
+    },
     test("a column changed in place redraws its key's marks, with nothing written to the key; Undo puts them back") {
         let editor = try billingEditor()
         let id = try key(editor, from: "refunds", "payment_id").id

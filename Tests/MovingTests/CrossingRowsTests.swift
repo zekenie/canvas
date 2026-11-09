@@ -106,6 +106,39 @@ import Topology
         let surroundings = try require(Surroundings(on: d.pBoard, moving: fresh.size, in: h.editor))
         expect(surroundings.joinsClean(row, of: d.l, to: fresh, standIn: end.shape), "its line from the row crosses nothing")
     },
+    test("on the origin: a relay for the roster that moved, walled in by rosters, is not reused for the staying roster's key: a fresh one is put down, level with the row") {
+        let d = Ledger(), x = ShapeID()
+        let walls = [CGRect(x: -10, y: 470, width: 100, height: 260), CGRect(x: 210, y: 470, width: 100, height: 260),
+                     CGRect(x: -10, y: 470, width: 320, height: 100), CGRect(x: -10, y: 630, width: 320, height: 100)]
+            .map { AnyShapeRecord(ShapeRecord(id: ShapeID(), Roster($0, rows: d.rows))) }
+        let h = try d.harness(d.file(root: [relay(x, at(100, 580, 100, 40), stands: d.r)] + walls))
+        expect(h.run("move-to", on: d.r, with: d.p))
+        let end = try require(d.strap(h)?.to)
+        expectEqual(end.part, d.rows[2].id, "the row kept on the binding")
+        expect(end.shape != x, "the relay inside the walls not reused")
+        let lBox = try require(h.file.record(d.l)?.box), fresh = try require(h.file.record(end.shape)?.box)
+        let row = CGRect(x: lBox.minX, y: lBox.minY + Roster.head, width: lBox.width, height: Roster.rowHeight)
+        expectEqual(fresh.midY, row.midY, "level with the staying roster's row: \(fresh) \(row)")
+        let surroundings = try require(Surroundings(on: .root, moving: fresh.size, in: h.editor))
+        expect(surroundings.joinsClean(row, of: d.l, to: fresh, standIn: end.shape), "its line from the row crosses nothing")
+    },
+    test("a roster inside a frame that moves with it keeps its key's pill level with its row: the frame is a region the pill sits beside, not a wall") {
+        let d = Ledger(), f = ShapeID()
+        let frame = corral(f, at(380, -20, 200, 130))
+        let held = d.roster(d.l, 400, 0).copy(as: d.l, container: f)
+        let strap = AnyShapeRecord(ShapeRecord(id: d.s, Strap(from: PartAddress(d.l, part: d.rows[0].id), to: PartAddress(d.r, part: d.rows[2].id))))
+        let file = CanvasFile(root: CanvasDocument(shapes: [pocket(d.p, 0, 0), frame, held, d.roster(d.r, 400, 300), strap]),
+                              children: [d.p: CanvasDocument(shapes: [])])
+        let h = try d.harness(file)
+        expect(h.run("move-to", on: f, with: d.p))
+        expectEqual(h.file.board(containing: d.l), d.pBoard, "the roster went with its frame")
+        let end = try require(d.strap(h)?.to)
+        let lBox = try require(h.file.record(d.l)?.box), fresh = try require(h.file.record(end.shape)?.box)
+        let row = CGRect(x: lBox.minX, y: lBox.minY + Roster.head, width: lBox.width, height: Roster.rowHeight)
+        expectEqual(fresh.midY, row.midY, "level with the row, not in the column beside the frame: \(fresh) \(row)")
+        let frameBox = try require(h.file.record(f)?.box)
+        expect(!fresh.intersects(frameBox) || frameBox.contains(fresh), "never across the frame's edge: \(fresh) \(frameBox)")
+    },
     test("an end at a relay with a row, moved to the board its roster is on: the strap goes straight to the row, and the relay stays") {
         let d = Ledger(), x = ShapeID()
         let far = AnyShapeRecord(ShapeRecord(id: d.r, Roster(CGRect(x: 100, y: 100, width: 160, height: 80), rows: d.rows)))
