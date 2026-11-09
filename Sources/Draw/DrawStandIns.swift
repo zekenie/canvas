@@ -327,7 +327,7 @@ extension Drawing {
     /// rows, so a run again draws nothing twice.
     mutating func routeEdge(_ edge: EdgeStatement, _ statement: Statement, written: String, from: EdgeEndFound, to: EdgeEndFound,
                             fromName: EndName, toName: EndName, via: ShapeKind?, identity: EdgeIdentity?,
-                            parts: (from: PartID?, to: PartID?) = (nil, nil)) throws(DrawError) -> NewStandIn? {
+                            parts: (from: PartID?, to: PartID?) = (nil, nil), implied: Bool = false) throws(DrawError) -> NewStandIn? {
         let drawnTo = "\(written) is drawn to"
         let key = EdgeKey.via.rawValue
         let stoodFor: EdgePlace
@@ -447,6 +447,14 @@ extension Drawing {
         // into Ann's one pill for Acme). A statement that writes no identity key reaches none of this.
         if identity != nil, let found = hostStandIn(nearID, for: standEnd.record, row: row?.id, kind: kind) {
             return NewStandIn(id: found, place: stoodFor, kind: kind, shared: true)
+        }
+
+        // An edge a value implies (a pasted table's key, a `columns:` line's `→`) shares a stand-in for the same far shape as
+        // `share: true` would: the board's, or one this run made, so ten keys to one far table are one pill, as typed keys are.
+        if implied, edge.share == nil,
+           let found = try sharedStandIn(.any, for: standEnd.record, row: row?.id, kind: kind, near: (nearID, nearItem), container: container,
+                                         written: written, standName: standName, nearName: nearName, statement) {
+            return NewStandIn(id: found.id, place: stoodFor, kind: kind, shared: true)
         }
 
         // Said by the edge's row alone (`via`), with `via:` or without: a warning for each edge between

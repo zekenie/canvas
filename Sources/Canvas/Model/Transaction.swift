@@ -93,6 +93,18 @@ public struct Transaction {
     /// The shapes a transaction that made this one over another board moved or settled there, before: put where that step
     /// meant, as the shapes this one moved are (`makeRoom()` grows nothing it placed).
     var placedElsewhere: Set<ShapeID> = []
+    /// The shapes the body placed against what grew already, laid out as it will be (`canvas draw` places `below "orders"`
+    /// under the table's new bottom): `makeRoom()` moves one only by what pushed the shape above it, never again by that
+    /// shape's own growth, so the gap the body left is kept.
+    public var placedAgainstGrowth: Set<ShapeID> = []
+
+    /// States that `id` was `frame` tall when this step began, at rest, where the body also changes what it shows with no write (a
+    /// fold let go as rows are dropped in: a view the layout reads live, so the step's two readings would both see it unfolded):
+    /// `makeRoom()` then measures its growth from that frame, and pushes what's below for all it shows now (review R9).
+    public mutating func restedAs(_ frame: CGRect, for id: ShapeID) {
+        guard let origin = document[id]?.box?.origin else { return }
+        roomBaselines[id] = (origin, frame)
+    }
     /// Boards going in with the shapes inserted here that own them, and the boards under those: what
     /// the commit adds to the file. Also the boards shapes were moved onto here (`move(_:to:)`), moved
     /// on (`translate(_:by:on:)`) or settled on (`settle(_:on:)`), whole, with what the file holds
@@ -151,7 +163,7 @@ public struct Transaction {
     /// moving it, staged or deleted: what `LayoutReading.isChanged` reads as a set, kept as a log so whoever keeps
     /// an answer over the changed shapes applies only the entries since it last asked (`LayoutReading.changes`).
     /// Append-only; a shape appears as often as it was written.
-    private var writes: [ShapeID] = []
+    private(set) var writes: [ShapeID] = []
     /// The shapes written on other boards (a transaction over another board's writes, taken in): changed as `isChanged` says.
     private var writtenElsewhere: Set<ShapeID> = []
     /// Which transaction's log this is: a number no other transaction has (`LayoutReading.runID`).

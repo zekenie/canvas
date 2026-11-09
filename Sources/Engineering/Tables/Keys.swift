@@ -87,6 +87,49 @@ final class KeyIndex {
     /// The columns of `table` that start a key, each with the row it goes to.
     func keys(of table: ShapeID) -> [PartID: PartAddress] { held(table).mapValues(\.target) }
 
+    /// The columns of `table` that start a key, as `reading` reads the file: mid-transaction, the keys the transaction wrote as well
+    /// (a key typed in the step that folds it to its marks), and without those it deleted or re-aimed, which the index, of the
+    /// committed file, hasn't heard (review R41); what `makeRoom` measures a folded table by.
+    func keys(of table: ShapeID, in reading: LayoutReading) -> [PartID: PartAddress] {
+        let committed = held(table)
+        guard !reading.isCommitted, !reading.changes.isEmpty else { return committed.mapValues(\.target) }
+        let step = absorbing(reading)
+        // A column whose every arrow the step wrote is a key only if one of them, as written, still starts there.
+        var keys = committed.filter { _, key in !key.arrows.allSatisfy(step.names.contains) }.mapValues(\.target)
+        for (_, key) in step.arrows where key.table == table && keys[key.part] == nil { keys[key.part] = key.target }
+        return keys
+    }
+
+    /// The key arrows a transaction has written, read off its log (`LayoutReading.changes`) as far as it has been asked: each
+    /// where it starts and goes as written last, and every arrow of the log, so a key let go is known. Read again from the entries
+    /// since the last ask, of a reading of the same run.
+    private struct StepKeys {
+        var run: Int
+        var cursor = 0
+        var names: Set<ShapeID> = []
+        var arrows: [ShapeID: (table: ShapeID, part: PartID, target: PartAddress)] = [:]
+    }
+    private var step: StepKeys?
+
+    private func absorbing(_ reading: LayoutReading) -> StepKeys {
+        let log = reading.changes
+        var state = step.flatMap { $0.run == reading.runID && $0.cursor <= log.count ? $0 : nil } ?? StepKeys(run: reading.runID)
+        let registry = editor.registry
+        for id in log[state.cursor...] {
+            state.names.insert(id)
+            state.arrows[id] = nil
+            guard let record = reading.shape(inFile: id) else { continue }
+            for edge in registry.edges(of: record) where edge.type == type && edge.isConnection {
+                guard let part = edge.sourcePart else { continue }
+                state.arrows[id] = (edge.source, part, PartAddress(edge.target, part: edge.targetPart))
+                break
+            }
+        }
+        state.cursor = log.count
+        step = state
+        return state
+    }
+
     /// The row `column` of `table`'s key goes to, by address, so its name is read live where it's said
     /// (`editor.accessibleName(of:)`: "id in customers"); nil for a column with no key.
     func target(of column: PartID, in table: ShapeID) -> PartAddress? { held(table)[column]?.target }

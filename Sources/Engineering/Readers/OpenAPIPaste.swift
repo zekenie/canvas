@@ -2,6 +2,7 @@ import Canvas
 import Clipboard
 import Draw
 import Foundation
+import Titles
 import Types
 
 // ⌘V of OpenAPI: what the reader read (`OpenAPIReader`), as the draw program Draw puts down (`DrawPut`, decided 16). The API an
@@ -58,7 +59,9 @@ public enum OpenAPIPaste {
     @MainActor
     static func program(_ documents: [OpenAPIDocument], typeKind: ShapeKind?) -> DrawPut {
         var rows: [[DrawPut.Shape]] = []
-        for document in documents {
+        for (document, title) in zip(documents, titles(of: documents)) {
+            var document = document
+            document.title = title
             rows.append([api(document, typeKind: typeKind)])
             guard let typeKind else { continue }
             let types = laidOut(document.types).map { type(document.types[$0], kind: typeKind) }
@@ -68,6 +71,35 @@ public enum OpenAPIPaste {
         // What it puts down of that kind is types, not notes: so VoiceOver hears it.
         if let typeKind { put.labels[typeKind.rawValue] = APIStyle.pastedTypeLabel }
         return put
+    }
+
+    /// Each document's API's title: its own (else `APIStyle.pastedTitle`), but one an earlier document of the paste has already
+    /// (two files of one spec, v1 and v2 of "Billing API") its major version added as New Version names one ("Billing API v2"),
+    /// when that differs from the version of the document that holds the plain title, else a number ("Billing API 2"), so each is
+    /// an API of its own and the put never joins the second into the first (review R12). Titles are the same as the put reads
+    /// them: whitespace folded, case kept (`TitleProperty.folded`).
+    @MainActor
+    static func titles(of documents: [OpenAPIDocument]) -> [String] {
+        var used: Set<String> = [], majors: [String: String] = [:], titles: [String] = []
+        for document in documents {
+            let base = TitleProperty.folded(document.title) ?? APIStyle.pastedTitle
+            let major = String(document.version.drop { $0 == "v" || $0 == "V" }.prefix { $0.isNumber })
+            var title = base
+            if used.contains(base) {
+                if !major.isEmpty, major != majors[base], !used.contains("\(base) v\(major)") {
+                    title = "\(base) v\(major)"
+                } else {
+                    var number = 2
+                    while used.contains("\(base) \(number)") { number += 1 }
+                    title = "\(base) \(number)"
+                }
+            } else {
+                majors[base] = major
+            }
+            used.insert(title)
+            titles.append(title)
+        }
+        return titles
     }
 
     /// The order a document's types are put down in, by what refers to what (`ReaderLayout.walk`): from the type most `$ref`s and

@@ -27,6 +27,15 @@ import TestKit
         expectEqual(copy.camera, editor.cameraTarget)
         expectEqual(copy.rootName, "Plans")
     },
+    test("it keeps the view values the editor has (the folds), so a layout read from one reads the same there") {
+        let editor = CanvasEditor(registry: try Registry(plugins: [FixturesPlugin()]))
+        let key = ViewValueKey<[String]>("rehearsal.test")
+        editor.setViewValue(key, ["folded"])
+        let copy = editor.rehearsal()
+        expectEqual(copy.viewValue(key), ["folded"])
+        copy.setViewValue(key, nil)
+        expectEqual(editor.viewValue(key), ["folded"], "a copy's change to them is its own")
+    },
     test("what it commits reaches nothing of the editor, and nothing it schedules ever runs") {
         let editor = CanvasEditor(registry: try Registry(plugins: [FixturesPlugin()]))
         let before = editor.file, revision = editor.revision

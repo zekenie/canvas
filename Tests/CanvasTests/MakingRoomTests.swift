@@ -18,6 +18,9 @@ extension EditorHarness {
     fileprivate func box(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat = 100, _ height: CGFloat = 50) -> ShapeID {
         add(Box(CGRect(x: x, y: y, width: width, height: height)))
     }
+    fileprivate func keeper(_ x: CGFloat, _ y: CGFloat, layers: Int) -> ShapeID {
+        add(Keeper(CGRect(x: x, y: y, width: 100, height: 20), layers: layers))
+    }
     fileprivate func pile(_ x: CGFloat, _ y: CGFloat, layers: Int, width: CGFloat = 100) -> ShapeID {
         add(Pile(CGRect(x: x, y: y, width: width, height: 20), layers: layers))
     }
@@ -175,6 +178,51 @@ extension EditorHarness {
         }
         expectEqual(h.y(first), 140)
         expectEqual(added.flatMap { h.y($0) }, 210, "its gap under the first kept")
+    },
+    test("a shape that keeps room below it (`roomKeptBelow`) as it grows leaves at least that much under its new bottom, where the gap was less; where it was more, the gap is kept") {
+        let h = try roomHarness()
+        let keeper = h.keeper(0, 0, layers: 2)              // bottom 40, keeps 30 below
+        let near = h.box(0, 50)                             // a gap of 10
+        let roomy = h.box(200, 0)                           // not under it
+        h.editor.setKeeperLayers(3, of: keeper)                   // bottom 60
+        expectEqual(h.y(near), 60 + Keeper.kept, "a gap of 30 under the new bottom, not the 10 it had")
+        expectEqual(h.y(roomy), 0)
+        let wide = h.keeper(400, 0, layers: 2)
+        let far = h.box(400, 80)                            // a gap of 40
+        h.editor.setKeeperLayers(3, of: wide)                     // +20
+        expectEqual(h.y(far), 100, "a gap of 40 kept: more than it keeps")
+        let pile = h.pile(800, 0, layers: 2)
+        let tight = h.box(800, 50)
+        h.editor.setLayers(3, of: pile)
+        expectEqual(h.y(tight), 70, "a pile keeps none: the gap of 10 as it was")
+        h.editor.undo()
+        expectEqual(h.y(tight), 50)
+    },
+    test("a shape the step placed against the growth (`placedAgainstGrowth`) is moved only by what pushed the shape above it, never again by that growth") {
+        let h = try roomHarness()
+        let pile = h.pile(0, 0, layers: 2)                  // bottom 40
+        var placed: ShapeID?, plain: ShapeID?
+        h.editor.transact("Add Layer") { transaction in
+            transaction.update(pile, as: Pile.self) { $0.props.layers = 4 }       // +40: bottom 80
+            let id = ShapeID(), other = ShapeID()
+            transaction.insert(ShapeRecord(id: id, Box(CGRect(x: 0, y: 100, width: 100, height: 50))))        // 20 under the new bottom
+            transaction.insert(ShapeRecord(id: other, Box(CGRect(x: 200, y: 0, width: 100, height: 50))))
+            transaction.placedAgainstGrowth = [id]
+            placed = id
+            plain = other
+        }
+        expectEqual(placed.flatMap { h.y($0) }, 100, "where the step put it: the gap of 20 under the grown pile")
+        expectEqual(plain.flatMap { h.y($0) }, 0)
+        h.editor.undo()
+        let again = h.pile(0, 300, layers: 2)               // bottom 340
+        var below: ShapeID?
+        h.editor.transact("Add Layer") { transaction in
+            transaction.update(again, as: Pile.self) { $0.props.layers = 4 }      // +40: bottom 380
+            let id = ShapeID()
+            transaction.insert(ShapeRecord(id: id, Box(CGRect(x: 0, y: 400, width: 100, height: 50))))        // 20 under the new bottom
+            below = id
+        }
+        expectEqual(below.flatMap { h.y($0) }, 440, "without it a shape put in is pushed by the growth, as any is")
     },
     test("a shape the step both moved and grew pushes nothing: it is where the step meant it") {
         let h = try roomHarness()

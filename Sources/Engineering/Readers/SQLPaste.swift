@@ -72,8 +72,9 @@ public enum SQLPaste {
         let enums = schema.order.compactMap { item -> DrawPut.Shape? in
             if case .enumType(let index) = item { enumType(schema.enums[index]) } else { nil }
         }
-        let tables = laidOut(schema).map { table(schema.tables[$0], of: schema, keys: keys, fileEnums: fileEnums) }
-        return DrawPut(rows: rows(enums) + rows(tables))
+        let made = schema.tables.indices.map { table(schema.tables[$0], of: schema, keys: keys, fileEnums: fileEnums) }
+        let grid = ReaderLayout.grid(laidOut(schema), links: links(schema), columns: shapesARow)
+        return DrawPut(grid: rows(enums).map { $0.map(Optional.some) } + grid.map { $0.map { $0.map { made[$0] } } })
     }
 
     /// The order a schema's tables are put down in, by their keys: from the table most keys of the paste name (the first made, of
@@ -82,15 +83,24 @@ public enum SQLPaste {
     /// or less; then from the most named of those left, and so on. A pg_dump's alphabet, or the order a schema was made in, is
     /// never what its keys say. Indexes into `schema.tables`.
     static func laidOut(_ schema: SQLSchema) -> [Int] {
-        let order = schema.order.compactMap { item -> Int? in if case .table(let index) = item { index } else { nil } }
+        ReaderLayout.walk(tableOrder(schema), links: links(schema))
+    }
+
+    /// The schema's tables as read, by index.
+    private static func tableOrder(_ schema: SQLSchema) -> [Int] {
+        schema.order.compactMap { item -> Int? in if case .table(let index) = item { index } else { nil } }
+    }
+
+    /// One link a key, from the table it's in to the pasted table it names.
+    private static func links(_ schema: SQLSchema) -> [(from: Int, to: Int)] {
         var links: [(from: Int, to: Int)] = []
-        for from in order {
+        for from in tableOrder(schema) {
             for key in schema.tables[from].keys {
                 guard let far = pasted(key.table, in: schema), let to = schema.tables.firstIndex(where: { $0.name == far.name }) else { continue }
                 links.append((from, to))
             }
         }
-        return ReaderLayout.walk(order, links: links)
+        return links
     }
 
     // MARK: Statements
@@ -240,5 +250,87 @@ enum ReaderLayout {
             }
         }
         return laid
+    }
+
+    /// `order` (a walk's) put in a grid `columns` wide, each item in turn in the cell that keeps its links (`links`, as `walk`
+    /// reads them) shortest and clear: a link between two cells side by side, one above the other or corner to corner costs
+    /// nothing; a longer one costs by how far it reaches and, twice over, by each card its straight run passes under, as does an
+    /// item put on the run of a link laid already; an item with links still to lay is put where the most of its neighbors can
+    /// still go round it. The cheapest cell wins, the higher row and then the left column of a tie, so a table's most-keyed
+    /// neighbors land beside it, or right above or below it, and fewer keys pass under cards (UX walk 3 paste-1). Rows top to
+    /// bottom, each its cells left to right, nil an empty one; no row empty, and no column empty all the way down.
+    static func grid(_ order: [Int], links: [(from: Int, to: Int)], columns: Int) -> [[Int?]] {
+        guard columns > 0, !order.isEmpty else { return [] }
+        var weight: [Int: [Int: Int]] = [:]
+        let known = Set(order)
+        for link in links where link.from != link.to && known.contains(link.from) && known.contains(link.to) {
+            weight[link.from, default: [:]][link.to, default: 0] += 1
+            weight[link.to, default: [:]][link.from, default: 0] += 1
+        }
+        struct Cell: Hashable { var row: Int, column: Int }
+        var at: [Int: Cell] = [:], taken: [Cell: Int] = [:]
+        // The cells a straight run between two cells' middles passes over, the two aside.
+        func under(_ a: Cell, _ b: Cell) -> Set<Cell> {
+            var cells: Set<Cell> = []
+            let steps = 8 * max(abs(a.row - b.row), abs(a.column - b.column), 1)
+            for step in 1..<steps {
+                let t = Double(step) / Double(steps)
+                let x = Double(a.column) + 0.5 + Double(b.column - a.column) * t, y = Double(a.row) + 0.5 + Double(b.row - a.row) * t
+                // A run along the line between two cells, or through the corner of four, passes over none of them.
+                let fx = x - x.rounded(.down), fy = y - y.rounded(.down)
+                if fx < 0.05 || fx > 0.95 || fy < 0.05 || fy > 0.95 { continue }
+                let cell = Cell(row: Int(y.rounded(.down)), column: Int(x.rounded(.down)))
+                if cell != a && cell != b { cells.insert(cell) }
+            }
+            return cells
+        }
+        func reach(_ a: Cell, _ b: Cell) -> Int { max(abs(a.row - b.row), abs(a.column - b.column)) }
+        // The links laid so far, each with the cells its straight run passes over.
+        var laidLinks: [(cells: Set<Cell>, count: Int)] = []
+        for item in order {
+            let neighbors = weight[item] ?? [:]
+            let waiting = neighbors.keys.filter { at[$0] == nil }.count
+            let rows = (at.values.map(\.row).max() ?? -1) + 2
+            var best: (cost: Double, cell: Cell)?
+            for row in 0..<rows {
+                for column in 0..<columns {
+                    let cell = Cell(row: row, column: column)
+                    guard taken[cell] == nil else { continue }
+                    var cost = 0.0
+                    for (neighbor, count) in neighbors {
+                        guard let there = at[neighbor] else { continue }
+                        let passes = under(cell, there).filter { taken[$0] != nil }.count
+                        cost += Double(count) * (Double(max(0, reach(cell, there) - 1)) + 2 * Double(passes))
+                    }
+                    for link in laidLinks where link.cells.contains(cell) { cost += 2 * Double(link.count) }
+                    if waiting > 0 {
+                        var free = 0
+                        for dr in -1...1 {
+                            for dc in -1...1 where dr != 0 || dc != 0 {
+                                let next = Cell(row: row + dr, column: column + dc)
+                                if next.row >= 0, next.column >= 0, next.column < columns, taken[next] == nil { free += 1 }
+                            }
+                        }
+                        cost -= 0.5 * Double(min(waiting, free))
+                    }
+                    if best == nil || cost < best!.cost - 1e-9 { best = (cost, cell) }
+                }
+            }
+            guard let cell = best?.cell else { continue }
+            at[item] = cell
+            taken[cell] = item
+            for (neighbor, count) in neighbors where neighbor != item { if let there = at[neighbor] { laidLinks.append((under(cell, there), count)) } }
+        }
+        let used = Set(at.values.map(\.column)).sorted()
+        let height = (at.values.map(\.row).max() ?? -1) + 1
+        var grid: [[Int?]] = []
+        for row in 0..<height {
+            let cells = used.map { column in taken[Cell(row: row, column: column)] }
+            guard cells.contains(where: { $0 != nil }) else { continue }
+            var trimmed = cells
+            while trimmed.last == .some(nil) { trimmed.removeLast() }
+            grid.append(trimmed)
+        }
+        return grid
     }
 }

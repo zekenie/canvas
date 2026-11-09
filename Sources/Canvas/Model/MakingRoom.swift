@@ -22,7 +22,8 @@ extension Transaction {
     /// the shapes in the same container (or on the board, with none) whose top was at or under its old bottom and that
     /// overlap it across (its widest, before and after): each whose top its new bottom comes nearer than
     /// `Style.roomReach` moves down by as much as its bottom went down (the larger, if two reach it), and pushes what
-    /// it reaches the same way; one the step put in or moved too, if it comes to that. A container whose members it took
+    /// it reaches the same way; one the step put in or moved too, if it comes to that, but one it placed against the growth
+    /// already (`placedAgainstGrowth`) only by what pushed the shape above it. A container whose members it took
     /// past its bottom (from inside it, less the gap) grows to hold them `Style.containerGap` inside, and pushes in its
     /// own container; innermost containers first. Read-only shapes stay, and push nothing; a read-only container
     /// doesn't grow; past `Style.roomMoves` shapes moved or grown, the rest stay. Returns what it moved this time, by
@@ -43,7 +44,7 @@ extension Transaction {
         do {
             let before = restingShapes(over: startDocument, reading: { [startDocument, layout] in startDocument[$0] ?? layout?.shape($0) })
             let here = self
-            let after = restingShapes(over: document, reading: { here.record(inFile: $0) })
+            let after = restingShapes(over: document, reading: { here.record(inFile: $0) }, writes: writes)
             for id in grown.sorted(by: { $0.description < $1.description }) {
                 guard let record = document[id], let origin = record.box?.origin, let now = after.frame(of: record) else { continue }
                 let was: CGRect
@@ -56,7 +57,8 @@ extension Transaction {
                 }
                 roomBaselines[id] = (origin, now)
                 guard now.maxY > was.maxY + Self.roomEpsilon else { continue }
-                sources[document.container(of: record, containingKinds: registry.containingKinds), default: [:]][id] = Growth(was: was, now: now)
+                let keep = (registry.definition(for: record.kind) as? any MakesRoomAsItGrows)?.roomKeptBelow ?? 0
+                sources[document.container(of: record, containingKinds: registry.containingKinds), default: [:]][id] = Growth(was: was, now: now, keep: keep)
             }
         }
         guard !sources.isEmpty else { return [:] }
@@ -96,6 +98,8 @@ extension Transaction {
         let maxX: CGFloat
         /// How far its bottom went down by itself (a growth), before any push.
         let growth: CGFloat
+        /// The room it keeps clear below its new bottom as it grows (`Growth.keep`).
+        var keep: CGFloat = 0
         /// Where it is in the stack: of two at one height, the one behind first.
         let order: Int
     }
@@ -116,6 +120,8 @@ extension Transaction {
     struct Growth {
         var was: CGRect
         var now: CGRect
+        /// The room its kind keeps clear below its new bottom (`MakesRoomAsItGrows.roomKeptBelow`); none for a container grown.
+        var keep: CGFloat = 0
     }
 
     /// Below this, in world units, a bottom that went down didn't (a layout's rounding).
@@ -148,7 +154,7 @@ extension Transaction {
                 if record.box != nil, let order = document.index(of: record.id) {
                     if let growth = growths[record.id] {
                         node = RoomNode(record: record, frame: growth.was, minX: min(growth.was.minX, growth.now.minX), maxX: max(growth.was.maxX, growth.now.maxX),
-                                        growth: growth.now.maxY - growth.was.maxY, order: order)
+                                        growth: growth.now.maxY - growth.was.maxY, keep: growth.keep, order: order)
                     } else if let frame = context.frame(of: record) {
                         node = RoomNode(record: record, frame: frame, minX: frame.minX, maxX: frame.maxX, growth: 0, order: order)
                     }
@@ -223,10 +229,14 @@ extension Transaction {
                 let down = current.growth + (push[id] ?? 0)
                 guard down > epsilon else { continue }
                 processed.append((current, down))
-                let low = current.frame.maxY - epsilon, high = current.frame.maxY + down + reach
+                let low = current.frame.maxY - epsilon, high = current.frame.maxY + down + max(reach, current.keep)
                 for other in candidates(from: low, to: high, across: current.minX...current.maxX) {
                     let otherID = other.record.id
-                    guard otherID != id, !done.contains(otherID), (push[otherID] ?? 0) < down,
+                    // Placed against the growth already (draw's `below`): moved only by what pushed the shape above it. Else by the
+                    // growth, and further where the grown shape keeps room below it that the gap left is short of.
+                    let down = placedAgainstGrowth.contains(otherID)
+                        ? (push[id] ?? 0) : max(down, current.frame.maxY + down + current.keep - other.frame.minY)
+                    guard down > epsilon, otherID != id, !done.contains(otherID), (push[otherID] ?? 0) < down,
                           min(current.maxX, other.maxX) - max(current.minX, other.minX) > 0 else { continue }
                     if stays[otherID] == nil { stays[otherID] = holds(other.record) }
                     guard stays[otherID] == false else { continue }
@@ -271,12 +281,16 @@ extension Transaction {
     /// value a plugin set for a shape (`editor.setLayoutInput`: what it shows while it's handled), and none of the sizes
     /// the editor keeps (those are laid out with them); what a provider answers (`registrar.layoutInput`) counts.
     /// `reading` is a shape on any board of the file, as that context reads the file.
-    private func restingShapes(over document: CanvasDocument, reading: @escaping @MainActor (ShapeID) -> AnyShapeRecord?) -> ShapeContext {
+    /// `writes`: what the transaction wrote, for the board as it leaves it (`LayoutReading.changes`: a provider that answers from
+    /// what a service keeps of the committed file reads what the step wrote besides, as a folded table's marks read a key the step
+    /// drew); none for the board as it began.
+    private func restingShapes(over document: CanvasDocument, reading: @escaping @MainActor (ShapeID) -> AnyShapeRecord?,
+                               writes: [ShapeID] = []) -> ShapeContext {
         guard let layout else { return ShapeContext(document: document, registry: registry, camera: camera) }
         let here = self
         let source = LayoutSource(inputs: layout.inputs, sizes: layout.sizes, lend: layout.lend, shape: reading,
                                   board: { here.board(containing: $0) ?? layout.board($0) }, fileValues: { here.fileValues },
-                                  isChanged: { _ in true }, writes: [], run: LayoutSource.nextRun(), isResting: true)
+                                  isChanged: { _ in true }, writes: writes, run: LayoutSource.nextRun(), isResting: true)
         return ShapeContext(document: document, registry: registry, camera: camera, index: nil, layout: source)
     }
 }

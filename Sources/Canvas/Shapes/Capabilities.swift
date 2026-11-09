@@ -39,7 +39,17 @@ extension LaidOutBox {
 /// plugin sets for it while it's handled (`editor.setLayoutInput`: an editing view's waiting line), so only a write
 /// pushes. A best effort with clear limits, never a layout engine: read-only shapes stop it, and shrinking pulls
 /// nothing up. Conform in an extension, like every capability.
-public protocol MakesRoomAsItGrows: ShapeDefinition {}
+public protocol MakesRoomAsItGrows: ShapeDefinition {
+    /// How much room, world units, a push from this shape's growth leaves clear between its new bottom and the top of a
+    /// shape it moves (a shape it reaches anyway), where the gap they had is less: what the shape shows below its rows while
+    /// it's edited (a waiting line) and what sits above the shape below (its title's pill), so neither covers the other as rows
+    /// are typed (UX walk 3 apis-1). By default none: the gap they had is kept, as ever.
+    var roomKeptBelow: CGFloat { get }
+}
+
+extension MakesRoomAsItGrows {
+    public var roomKeptBelow: CGFloat { 0 }
+}
 
 /// Edited in place: from an editing placement, or by any plugin that calls `editor.beginEditing`
 /// (Selection's double-click and Return). The view is laid over the shape's editing frame (a box

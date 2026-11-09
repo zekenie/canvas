@@ -29,7 +29,7 @@ import Titles
 private let shopFrame = #"database "shop" size: 1180x1500"#
 private let shop = """
     table "customers" in "shop" columns: "id uuid pk\\nemail text unique\\nname text\\ncreated_at timestamptz"
-    table "products" in "shop" below "customers" (gap: 90) columns: "id uuid pk\\nsku text unique\\nweight_grams int\\ntitle text"
+    table "products" in "shop" below "customers" (gap: 120) columns: "id uuid pk\\nsku text unique\\nweight_grams int\\ntitle text"
     """
 
 @MainActor let makingRoomShippedTests = Suite("Making room, shipped", [
@@ -43,7 +43,7 @@ private let shop = """
         let customers = try tableID(editor, "customers"), products = try tableID(editor, "products")
         let shopID = try require(editor.document.shapes.first { $0.kind == Database.kind }?.id)
         let gap = try frame(editor, products).minY - frame(editor, customers).maxY
-        expectEqual(gap, 90)
+        expectEqual(gap, 120)
         editor.camera = Camera(origin: CGPoint(x: try frame(editor, shopID).minX - 40, y: try frame(editor, shopID).minY - 70), zoom: 1)
         w.window.settle()
         let walk = w.walk()
@@ -51,6 +51,7 @@ private let shop = """
         w.mouseClick(at: CGPoint(x: top.midX, y: top.minY + 8))
         walk.press(.return)
         expectEqual(editor.editingShapeID, customers)
+        let initial = try frame(editor, products).minY
         var tops: [CGFloat] = []
         for line in ["street text", "city text", "postcode text", "country char(2)"] {
             w.type(line, with: walk)
@@ -62,12 +63,14 @@ private let shop = """
         let grown = try frame(editor, customers), below = try frame(editor, products)
         let line = (grown.height - top.height) / 4
         expect(line > 0)
-        // 90, then 90 less a line twice; at under a line and the reach it's pushed, the gap it has kept.
-        expectEqual(tops[0], below.minY - 2 * line, "the first: 90 - a line is no nearer than a line and the reach")
-        expectEqual(tops[1], tops[0])
+        // 120, then 120 less a line; nearer than a line and the room a table keeps below it (a waiting line and a pill, UX walk 3
+        // apis-1) it's pushed, the gap it has kept.
+        expect(120 >= line + max(32, KitStyle.roomKeptBelow) && 120 - line < line + max(32, KitStyle.roomKeptBelow))
+        expectEqual(tops[0], initial, "the first: 120 is no nearer than a line and the room kept below")
+        expectEqual(tops[1], tops[0] + line, "pushed")
         expectEqual(tops[2], tops[1] + line, "pushed")
         expectEqual(tops[3], tops[2] + line, "pushed")
-        expectEqual(below.minY - grown.maxY, 90 - 2 * line, "the gap it had when the push began, kept")
+        expectEqual(below.minY - grown.maxY, 120 - line, "the gap it had when the push began, kept")
         expectEqual(editor.holder(of: products), shopID)
         let pill = try require(editor.adornmentFrames(of: products).first { $0.adornment.placement == .aboveTopLeft }?.rect, "products' pill")
         expect(!pill.intersects(grown), "products' pill clear of customers' rows: \(pill) \(grown)")
@@ -77,7 +80,7 @@ private let shop = """
         editor.undo()
         editor.undo()
         editor.undo()
-        expectEqual(try frame(editor, products).minY, try frame(editor, customers).maxY + 90, "back as drawn")
+        expectEqual(try frame(editor, products).minY, try frame(editor, customers).maxY + 120, "back as drawn")
     },
     test("tables new-1: a long key typed in orders, the enum put down beside it: orders is painted and hit above the enum while it's wider, nothing moves, and back as the caret leaves") {
         let w = try EmptyBoardWindow()
@@ -169,7 +172,9 @@ private let shop = """
         expect(w.window.performKeyEquivalent(with: w.window.keyEvent("v", code: 9, modifiers: [.command])), "⌘V takes it")
         let growth = try frame(editor, payments).maxY - bottom
         expect(growth > 0, "a column more")
-        expectEqual(try frame(editor, refunds).minY, was + growth, "the gap of 30 kept")
+        expectEqual(try frame(editor, refunds).minY, bottom + growth + max(30, KitStyle.roomKeptBelow),
+                    "the gap of 30 made up to the room a table keeps below it, for its waiting line and refunds' pill")
+        expect(was < bottom + KitStyle.roomKeptBelow)
         expectEqual(undoTitle(w.window), "Undo Paste SQL")
         editor.undo()
         expectEqual(try frame(editor, refunds).minY, was)
@@ -324,7 +329,8 @@ private let shop = """
         paste(file.replacingOccurrences(of: "components:", with: more + "components:"))
         let growth = try frame(editor, api).maxY - apiBottom
         expect(growth > 0, "an endpoint more")
-        expectEqual(try frame(editor, pong).minY, pongWas.minY + growth, "pushed by the API's growth, its gap kept")
+        expectEqual(try frame(editor, pong).minY, max(pongWas.minY + growth, try frame(editor, api).maxY + KitStyle.roomKeptBelow),
+                    "pushed by the API's growth, its gap kept, or to the room an API keeps below it where that was less")
         expectEqual(undoTitle(w.window), "Undo Paste OpenAPI")
         editor.undo()
         expectEqual(try frame(editor, pong).minY, pongWas.minY)

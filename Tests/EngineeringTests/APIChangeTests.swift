@@ -299,6 +299,41 @@ private let e5Rows = ["/orders", "GET /{id}", "POST /", "POST /{id}/refunds (New
         expectEqual(b.editor.document[made], nil)
         expectEqual(b.editor.document[api]?.typed(as: API.self)?.props.deprecated, false, "one Undo")
     },
+    test("New Version puts the copy on the side of the old one facing what its copied arrows reach, or below it, never across it; with none copied, where Insert puts one (UX walk 3 evolve-1)") {
+        for tablesRight in [true, false] {
+            let b = try APIBench()
+            // A tall API (below it is out of view), its tables' side out of view and the other side in view: Insert alone puts
+            // the copy on the side in view, the far side from the tables (the walk's v2 left of v1).
+            let lines = ["POST /orders"] + (1...40).map { "GET /orders/r\($0)" }
+            let api = b.api("orders API", lines, at: CGPoint(x: tablesRight ? 620 : 60, y: 60))
+            let orders = b.h.add(DatabaseTable(frame: CGRect(x: tablesRight ? 1300 : -500, y: 100, width: 200, height: 44),
+                                               columns: [Column(name: "id", type: TypeRef("uuid"))]), titled: "orders")
+            b.strap(PartAddress(api, part: b.rows(api)[0].id), PartAddress(orders), on: Writes.id)
+            let made = try require(b.editor.newVersion(of: [api]).first)
+            let old = try require(b.editor.shapeContext.frame(of: api)), copy = try require(b.editor.shapeContext.frame(of: made))
+            let table = try require(b.editor.shapeContext.frame(of: orders))
+            expect(!copy.intersects(old) && !copy.intersects(table), "clear: \(copy)")
+            if tablesRight {
+                expect(copy.maxX > old.minX, "not on v1's far side from the table: \(copy) \(old)")
+            } else {
+                expect(copy.minX < old.maxX, "not on v1's far side from the table: \(copy) \(old)")
+            }
+            // The copied arrow's straight run from the end of the copy's first row facing the table never crosses v1.
+            let row = b.rect(ofRow: 0, in: made)
+            let from = CGPoint(x: tablesRight ? row.maxX : row.minX, y: row.midY), to = CGPoint(x: table.midX, y: table.midY)
+            let crosses = (0...40).contains { step in
+                let t = CGFloat(step) / 40
+                return old.insetBy(dx: 2, dy: 2).contains(CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+            }
+            expect(!crosses, "the copy's arrow runs clear of v1: \(copy) \(old) \(table)")
+        }
+        let b = try APIBench()
+        let api = b.api("billing API", ["GET /invoices"], at: CGPoint(x: 360, y: 100))
+        let size = try require(b.editor.shapeContext.frame(of: api)).size
+        let insert = try require(b.editor.insertionFrame(of: size, beside: [api]))
+        let made = try require(b.editor.newVersion(of: [api]).first)
+        expectEqual(b.editor.shapeContext.frame(of: made)?.origin, insert.origin, "no arrows copied: Insert's spot")
+    },
     test("New Version's names: a trailing vN bumped, else v2 added; a server's trailing /vN bumped, else kept; a version's first number bumped and the rest zeroed") {
         let b = try APIBench()
         let names: [(String?, String)] = [("orders API", "orders API v2"), ("orders API v2", "orders API v3"), ("Stripe v9", "Stripe v10"), (nil, "v2"),

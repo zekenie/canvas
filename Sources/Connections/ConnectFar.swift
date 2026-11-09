@@ -23,18 +23,33 @@ extension CanvasEditor {
         guard board == transaction.board, document[near] != nil || planned != nil, let ends = registry.connectionEnds(of: connection) else { return nil }
         var record = connection
         let bound = connection.boundParts(in: registry)
-        for (far, place) in [(ends.from, EdgePlace.to), (ends.to, EdgePlace.from)] where transaction.document[far] == nil {
+        for (end, place) in [(ends.from, EdgePlace.to), (ends.to, EdgePlace.from)] where transaction.document[end] == nil {
             let verdicts = FarVerdicts(self)
-            guard verdicts.verdict(of: far) == .reads, let route = verdicts.route, let farRecord = shape(inFile: far) else { return nil }
-            let row = bound.first { $0.shape == far }?.part
+            guard let route = verdicts.route else { return nil }
+            // An end bound to a pill on another board (a key to a table there through its pill) is read as what the pill stands for,
+            // the row on its binding kept (or the row the pill stands for): a pill never stands for a pill (review R10).
+            var far = end, row = bound.first { $0.shape == end }?.part, pillRow: PartID?
+            if let board = file.board(containing: end), board != transaction.board, let stood = route.stoodFor(end, in: file[board]) {
+                far = stood.shape
+                pillRow = route.row(of: end, in: file[board])
+                row = row ?? pillRow
+            }
+            // What it stands for is on this board: the end goes straight to it, on the row the pill stood for if it stood for one.
+            if far != end, transaction.document[far] != nil {
+                guard var direct = record.remappingReferences({ $0 == end ? far : $0 }, in: transaction.shapes) else { return nil }
+                if let pillRow { direct = direct.movingParts(in: registry, { $0 == PartAddress(far) ? PartAddress(far, part: pillRow) : $0 }) ?? direct }
+                record = direct
+                continue
+            }
+            guard verdicts.verdict(of: far) == .reads, let farRecord = shape(inFile: far) else { return nil }
             let name = row.flatMap { part in registry.parts(of: farRecord)?.first { $0.id == part } }
             let label = name?.name ?? registry.mentionAppearance(of: farRecord)?.label ?? ""
             guard let placed = route.placePill(standingFor: far, row: name?.standsAlone == true ? row : nil, onBinding: name?.standsAlone == true ? nil : row,
                                                label: label, beside: near,
                                                from: bound.first { $0.shape == near }?.part, edgeIs: place, sharing: .any, avoiding: avoiding, reading: transaction.document,
                                                planned: planned, verdicts: verdicts, in: self),
-                  (try? placed.claim(in: &transaction, registry: registry)) != nil, let pill = try? placed.put(in: &transaction),
-                  let remapped = record.remappingReferences({ $0 == far ? pill : $0 }, in: transaction.shapes) else { return nil }
+                  (try? placed.claim(in: &transaction, registry: registry)) != nil, let pill = try? placed.put(in: &transaction) else { return nil }
+            guard let remapped = record.remappingReferences({ $0 == end ? pill : $0 }, in: transaction.shapes) else { return nil }
             if let box = transaction.document[pill]?.box, document[pill] == nil { avoiding.append(box) }
             record = remapped
         }

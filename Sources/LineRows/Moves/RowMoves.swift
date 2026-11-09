@@ -155,6 +155,12 @@ extension CanvasEditor {
     /// for no move.
     @discardableResult
     public func moveRows(_ rows: [PartID], of shape: ShapeID, to place: RowPlace, coalescing key: AnyHashable? = nil) -> ShapeID? {
+        moveRows(rows, of: shape, to: place, coalescing: key, targetWas: nil)
+    }
+
+    /// `moveRows(_:of:to:)` into a shape whose fold was let go for the move: `targetWas` is its frame at rest while it was folded,
+    /// which the step measures its growth from, so what's below is pushed for every row it shows now (review R9).
+    func moveRows(_ rows: [PartID], of shape: ShapeID, to place: RowPlace, coalescing key: AnyHashable?, targetWas: CGRect?) -> ShapeID? {
         guard let record = document[shape], let moving = registry.rowMoving(of: record.kind) else { return nil }
         let order = moving.rows(record) ?? []
         // A header goes with the rows it heads.
@@ -171,7 +177,7 @@ extension CanvasEditor {
         let step: String = if case .into = place { RowSteps.move(noun, count: ids.count) } else {
             takeOutStep(of: carrier, noun: noun, count: ids.count, moving)
         }
-        return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key)?.shape
+        return landRows(carrier, source: shape, arrows: [], moves: true, at: place, step: step, coalescing: key, targetWas: targetWas)?.shape
     }
 
     /// ⌥↑ (-1) ⌥↓ (+1): `rows` of `shape` moved a place as a block, past the row shown before the first or after the last, so a
@@ -241,7 +247,7 @@ extension CanvasEditor {
     /// names them follows (`moveParts`), and the arrows keep their ids where the file doesn't use them. Returns the shape
     /// they're in.
     func landRows(_ carrier: AnyShapeRecord, source: ShapeID?, arrows: [AnyShapeRecord], far: [FarArrow] = [], moves: Bool, at place: RowPlace, step: String,
-                  coalescing key: AnyHashable? = nil) -> (shape: ShapeID, rows: [PartID])? {
+                  coalescing key: AnyHashable? = nil, targetWas: CGRect? = nil) -> (shape: ShapeID, rows: [PartID])? {
         guard let moving = registry.rowMoving(of: carrier.kind) else { return nil }
         let rows = moving.rows(carrier) ?? []
         guard !rows.isEmpty else { return nil }
@@ -312,6 +318,7 @@ extension CanvasEditor {
                           let filled = into.inserting(fresh, carrier, index, renaming) else { throw Transaction.Refused([target]) }
                     let whole = into.widening(filled, self) ?? filled
                     transaction.update(target) { $0 = whole }
+                    if let targetWas { transaction.restedAs(targetWas, for: target) }
                 case .out(let made):
                     transaction.insert(made)
                 }

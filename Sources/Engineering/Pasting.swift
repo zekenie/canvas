@@ -11,8 +11,10 @@ import Types
 extension PluginRegistrar {
     /// ⌘V of SQL ("Paste SQL"): a text with `CREATE TABLE` or `AS ENUM`, or a `.sql` file, read when one table or enum reads.
     mutating func sqlPaste() {
-        pasteReader(SQLPaste.name, sniff: { SQLPaste.sniffs($0) }, read: { content, editor in
-            SQLPaste.read(content, keys: SQLPaste.foreignKeys, fileEnums: Set((editor.service(KitNames.self)?.enums ?? []).map(\.name)))
+        // The enums the file has measure a column typed as one as its pill: read again once they change (review R45).
+        @MainActor func fileEnums(_ editor: CanvasEditor) -> Set<String> { Set((editor.service(KitNames.self)?.enums ?? []).map(\.name)) }
+        pasteReader(SQLPaste.name, sniff: { SQLPaste.sniffs($0) }, readsOfFile: { AnyHashable(fileEnums($0)) }, read: { content, editor in
+            SQLPaste.read(content, keys: SQLPaste.foreignKeys, fileEnums: fileEnums(editor))
         })
     }
 

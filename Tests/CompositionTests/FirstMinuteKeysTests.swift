@@ -78,7 +78,8 @@ let firstMinutePending: [String] = []
             walk.press(Chord(Key.return, .shift))
             w.type("Grace", with: walk)
             walk.press(.escape)
-            walk.press(Chord(Key.left, [.option, .shift, .command]))
+            // Grace lands under Ada: right of it, the view would pan the type off screen (UX walk 3 tables-1).
+            walk.press(Chord(Key.up, [.option, .shift, .command]))
             walk.press(Chord("l", .command))
         }
         let named = { (text: String) in w.notes.first { $0.typed(as: StickyNote.self)?.props.text.plainText() == text }?.id }

@@ -147,6 +147,9 @@ public struct PasteReader {
     let sniff: (@MainActor (PasteContent) -> Bool)?
     /// What it makes of it, or nil for content that isn't its after all.
     let read: @MainActor (PasteContent, CanvasEditor) -> PasteResult?
+    /// What of the file its reading reads (the SQL reader's: the names of the file's enums, which it measures a column by), nil for
+    /// none: a reading is kept until the pasteboard changes, or this does.
+    var readsOfFile: (@MainActor (CanvasEditor) -> AnyHashable)? = nil
 }
 
 extension PluginRegistrar {
@@ -169,10 +172,15 @@ extension PluginRegistrar {
     /// menu's Paste, asked in plugin order after this app's shapes; a `.plain` one is ⌥⇧⌘V's, Paste as Note, and no other's. The put
     /// lands beside the selection (centered on a click or the pointer), finds the shapes the file has by kind and title, the nearest
     /// first, selected, in one step "Paste" and the reader's name. Never asked while the plugin's kit is off.
+    ///
+    /// `readsOfFile`: what of the file `read` reads, for a reader whose program says something of the file as well as the pasteboard
+    /// (the SQL reader measures a column typed as one of the file's enums as its pill): its reading is read again once that changes.
     public mutating func pasteReader(_ name: String, role: PasteReader.Role = .recognizing,
                                      sniff: @escaping @MainActor (PasteContent) -> Bool,
+                                     readsOfFile: (@MainActor (CanvasEditor) -> AnyHashable)? = nil,
                                      read: @escaping @MainActor (_ content: PasteContent, _ editor: CanvasEditor) -> DrawPut?) {
-        contribute(PasteReader(name: name, role: role, sniff: sniff) { content, editor in read(content, editor).map(PasteResult.put) },
+        contribute(PasteReader(name: name, role: role, sniff: sniff, read: { content, editor in read(content, editor).map(PasteResult.put) },
+                               readsOfFile: readsOfFile),
                    to: PasteReaders.self)
     }
 

@@ -92,6 +92,20 @@ private let tile = ToolID(placing: Tile.kind)
         expect(wide.editor.insert(tile, beside: [bare]))
         expectEqual(try inserted(wide).box?.minX, 530, "with no inspector to come, right of it")
     },
+    test("beside a shape whose right needs the view panned off another shape it shows whole: a side in view as it is (UX walk 3 tables-1)") {
+        // a at the view's left, b (selected) near its right: right of b, the least pan to show the tile and b takes a out of view.
+        let a = ShapeID(), b = ShapeID()
+        let h = try harness(box(a, 20, 100), box(b, 560, 100))
+        expect(h.editor.insert(tile, beside: [b]))
+        let placed = try require(try inserted(h).box)
+        expect(CGRect(x: 0, y: 0, width: 800, height: 600).contains(placed), "in view as it is: \(placed)")
+        expect(placed.minY > 200, "below b, not right of it: \(placed)")
+        // With nothing it would pan off, right of it as ever (T1 panel 3).
+        let c = ShapeID()
+        let alone = try harness(box(c, 560, 100))
+        expect(alone.editor.insert(tile, beside: [c]))
+        expectEqual(try inserted(alone).box, CGRect(x: 740, y: 100, width: 120, height: 80), "right of it, tops aligned, panned to")
+    },
     test("with nothing beside, and the middle of the view taken: at the nearest clear spot in view, with the row above it in view") {
         let a = ShapeID()
         // A column down the middle of the view, from just under its top to its bottom: the nearest clear spot above the

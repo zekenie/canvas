@@ -1768,15 +1768,32 @@ public final class CanvasEditor {
         if let held { body(held.record, held.extent) }
     }
 
-    /// The shape edited, where it is laid out larger than its stored box (wider: a line typed longer than it is; taller: its waiting
+    /// The shape edited, where it is laid out larger than it is at rest (wider: a line typed longer than it is; taller: its waiting
     /// line) and holds no shapes (a container's would be covered): painted, and hit, above the shapes in its way until it is back
-    /// to its size or no longer edited. With the frame it is laid out in and the box it stores.
+    /// to its size or no longer edited. With the frame it is laid out in and the frame it has at rest: laid out without what is
+    /// set for it while it's handled, as `makeRoom()` measures it, never its stored box, whose height a kind laid out by its rows
+    /// keeps from when it was made (review R25: a table typed to ten rows stores one).
     private func liftedWhileEdited(in context: ShapeContext) -> (id: ShapeID, frame: CGRect, box: CGRect)? {
-        guard let id = editingShapeID, let record = document[id], let box = record.box, !registry.isContainer(record),
-              let frame = context.frame(of: record),
-              frame.width > box.width + Self.liftSlack || frame.height > box.height + Self.liftSlack else { return nil }
-        return (id, frame, box)
+        guard let id = editingShapeID, let record = document[id], record.box != nil, !registry.isContainer(record),
+              let frame = context.frame(of: record), let rest = restingFrame(of: record),
+              frame.width > rest.width + Self.liftSlack || frame.height > rest.height + Self.liftSlack else { return nil }
+        return (id, frame, rest)
     }
+
+    /// `record`'s frame at rest (`LayoutReading.isResting`, the values set for it while it's handled left out), kept until the
+    /// file or the layout changes: what the shape edited is lifted beyond.
+    private func restingFrame(of record: AnyShapeRecord) -> CGRect? {
+        if let kept = restingEdited, kept.id == record.id, kept.revision == revision, kept.layout == layoutRevision { return kept.frame }
+        let editor = layoutSource
+        let source = LayoutSource(inputs: layoutInputs, sizes: laidOutSizes, lend: editor.lend, shape: editor.shape, board: editor.board,
+                                  fileValues: editor.fileValues, isChanged: { _ in true }, writes: [], run: LayoutSource.nextRun(), isResting: true)
+        let frame = ShapeContext(document: document, registry: registry, camera: camera, index: nil, layout: source).frame(of: record)
+        restingEdited = frame.map { (record.id, revision, layoutRevision, $0) }
+        return frame
+    }
+
+    /// The shape edited's frame at rest, as of a revision of the file and of the layout (`restingFrame(of:)`).
+    @ObservationIgnored private var restingEdited: (id: ShapeID, revision: Int, layout: Int, frame: CGRect)?
 
     /// Where the shape edited is laid out beyond the box it stores (its widening, its waiting line's room), world units, and the
     /// shape: nil where it is laid out in its box. A plugin that draws over the shapes (pills, chips) leaves what it draws for

@@ -1,3 +1,4 @@
+import Adornments
 import AppKit
 import Palette
 
@@ -83,6 +84,16 @@ public enum KitStyle {
         let radius = max(0, min(cornerRadius, rect.width / 2, rect.height / 2))
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
+
+    /// The zoom down to which the room kept below a shape that grows (`roomKeptBelow`) clears the title's pill of the shape below:
+    /// the row Adornments draws above a shape is in view points, so it is that many world units over the zoom. Under it a person
+    /// laying tables out has their gap (the push is the same at any zoom, never a read of the view).
+    public static let roomKeptZoom: CGFloat = 0.5
+
+    /// The room a table, an enum or an API keeps clear below it as it grows (`MakesRoomAsItGrows.roomKeptBelow`), world units: its
+    /// waiting line, a row, and the row Adornments draws above the shape below (the title's pill, a tab's lift too: a frame or a
+    /// database under it), as that row is at `roomKeptZoom` (50%) and up, so typing rows never covers it at 50% to 100% and more.
+    public static var roomKeptBelow: CGFloat { rowHeight + AdornmentLayout.rowReach / roomKeptZoom }
 
     /// How tall a shape of `rows` rows is: the insets and a row each, and room for one when there are none.
     public static func height(rows: Int) -> CGFloat {
