@@ -312,16 +312,19 @@ enum TitleBar {
         let row = TitleField.pillRow(above: bounds, zoom: zoom), height = row.height * heightFraction
         let points = lead + column * CGFloat(SkeletonText.columns(of: found.title, upTo: 80))
         let width = min(bounds.width, points * row.height / AdornmentLayout.rowHeight)
-        // Past a container's tab it meets, as the pill's row is, keeping its length, while some of it is still over its own shape;
-        // a shape too narrow for that (a table at a database's top-left far out, 10%) has its bar where it is, drawn over the tab
-        // (UX walk 3 structure-3: the tab hid the first tables' bars outright).
-        var start = start()
-        if start > bounds.width - narrowest / zoom { start = 0 }
         // Just above its own shape's top edge, `gap` clear of it, so it reads as that shape's name and never as the footer of the
         // shape above (UX walk 3 evolve-8): the pill's row is a line of text tall, which zoomed out reaches most of the way to
         // the shape above.
-        let bottom = bounds.minY - gap / zoom
-        return (CGRect(x: row.minX + start, y: bottom - height, width: width, height: height), found.color)
+        var top = bounds.minY - gap / zoom - height
+        // Past a container's tab it meets, as the pill's row is, keeping its length, while some of it is still over its own shape;
+        // a shape too narrow for that (a table at a database's top-left far out, 10%) has its bar just inside its own top edge,
+        // under the tab rather than lost beneath it (UX walk 3 structure-3: the tab hid the first tables' bars outright).
+        var start = start()
+        if start > bounds.width - narrowest / zoom {
+            start = 0
+            top = bounds.minY + gap / zoom
+        }
+        return (CGRect(x: row.minX + start, y: top, width: width, height: height), found.color)
     }
 }
 

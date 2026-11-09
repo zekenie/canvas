@@ -3113,7 +3113,8 @@ overrides; a minimum that isn't above zero and finite either way refuses the plu
   wrote it during the drag), and the step comes to nothing.
 - **A kind laid out past its box** (`LaidOutBox`: a note with rows) is resized only if it takes a
   frame its own way (`CustomSizing`), and then only the shapes it says (`isResizable`: not a
-  relationship type's pill). Its handles are on the frame it's laid out in (`context.frame(of:)`),
+  relationship type's pill). A kind that gives only its width (`resizedAxes`: a table, an enum, an API, whose height is
+  their rows') is resized by its corners alone, with no handle at a side's middle, where a row's line ends. Its handles are on the frame it's laid out in (`context.frame(of:)`),
   which is the box for every other kind, and every frame a drag or a key gives goes through
   `registry.sized(_:to:giving:in:)` with the ways the handle gives (a side's one, a corner's or ⇧'s
   both), so `canvas draw`'s `size:`, which goes through it too, agrees. Where the kind lays the shape
@@ -6371,10 +6372,12 @@ from where the row is. The slide reasons from the chord, so a straight shape is 
 ### Clear of a container's tab
 
 A closed shape's row above its top-left starts past any container's tab it meets
-(`AdornmentLayout.frames(of:width:leftStart:)`, the left end from there and the right end where it was), at every
+(`AdornmentLayout.frames(of:width:leftStart:)`, the left end from there and the right end where it was; a row with no
+right end keeps the room it had, running on past the shape's edge, so a name isn't cut by the tab), at every
 zoom: a tab keeps its size on screen and a shape's inset in its container doesn't, so zoomed out a note at its
-frame's top-left would have its pill over the frame's tab. Titles' bars zoomed out start where the row does
-(`editor.adornmentRowStart(of:)`). No kind is named.
+frame's top-left would have its pill over the frame's tab. Titles' bars zoomed out sit just above their own shape and
+start where the row does (`editor.adornmentRowStart(of:)`) while some of the bar is still over the shape; a shape too
+narrow for that has its bar just inside its own top edge, below the tab. No kind is named.
 
 ### Plain text and a number
 
@@ -7535,10 +7538,15 @@ kind gives (`ShapeGeometry.entries`: a table's first row); its bend moves its mi
 arrow with no row end is drawn as it always was. How a connection looks, its ends' marks (`EndMark`: a
 crow's foot, bars, a bar and a circle) and its width, is asked of `ConnectionLooks` when the geometry is
 worked out and kept in it (`ArrowDetail`), so a frame draws what is kept; a marked end ignores its stored
-head, and Toggle Arrowhead leaves it. A curve between ends too near for the marks runs out far enough to turn
-clear of them, and an end with a mark reaches far enough, however far across the other end is, that the line is still
-level where its mark stops (never farther than keeps the curve between the two sides), so two keys at one row end lay their marks on each other; a row's resting port dot is not
-drawn where a connection ends at that row's side (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
+head, and Toggle Arrowhead leaves it. A marked end leaves its row on a straight stub as long as its mark and a
+clearance (`ArrowStyle.levelStub`), the curve starting at the stub's end, so the mark lies level whatever the line does after
+it (a C between stacked tables, a fan's turn, rows far across) and two keys at one row end lay their marks on each other;
+the line is then a `CubicChain` (Geometry's: the stubs and the curve), `ArrowGeometry.levelBody`. Where the ends face each
+other neither reach passes the way between them, so the curve never swings back behind where it starts. A key passing under
+a card it isn't bound to is drawn faint across it (`ArrowUnderCardsOverlay`), and lit, its light goes under the cards with it
+(the core strokes a tinted outline of a shape painted below its anchor where it is painted). Which side of its row an end
+leaves by is Connections' `PartSide`, the one rule the connector draws by and the bundles pick rows by. A row's resting port
+dot is not drawn where a connection ends along that row's side, nor over another shape's face (hovered, it shows). VoiceOver adds what the marks say ("many to one"), and a connection being drawn is asked
 with the channel it will be released on (`registry.connectionLook(…, channel:)`), so its marks show as it is dragged.
 
 The ports code never learns what a connection is. One plugin draws them, the connector
