@@ -28,12 +28,12 @@ enum PortStyle {
     static let ring = NSColor.white
     /// A dot whose channel no installed plugin declares (a kind can't have one; kept for safety).
     static let fallback = NSColor.systemGray
-    /// While a connection is drawn from a port, the shapes it could end on are outlined faintly, and the one it would end on
-    /// now (the hint) boldly, wider than the selection's line, so the hint stands out among them (UX walk 3 connect-10: at
-    /// 2.5 points and 60% the others read as the hint did).
-    static let takerOutlineWidth: CGFloat = 1.5
-    static let takerOutlineOpacity: CGFloat = 0.35
-    static let hintOutlineWidth: CGFloat = 3
+    /// While a connection is drawn from a port, the shapes it could end on are outlined faintly, as a hovered shape is, and the
+    /// one it would end on now (the hint) boldly, over the core's hint, so it stands out among them (UX walk 3 connect-10: the
+    /// hint's 1.5-point line read as the others' faint 2.5).
+    static let takerOutlineWidth: CGFloat = 2.5
+    static let takerOutlineOpacity: CGFloat = 0.6
+    static let hintOutlineWidth: CGFloat = 4
     /// The row whose dots show, and the row a drag from one of them starts at (T3's payment_id): a band in the accent,
     /// this faint, its rect this far inside and rounded this much, as the row a connection would end on is lit (without
     /// that one's stroke).
@@ -122,9 +122,11 @@ struct PortOverlay: CanvasOverlay {
     static func isOverOther(_ point: CGPoint, host: ShapeID, in editor: CanvasEditor) -> Bool {
         let spot = CGRect(x: point.x - 0.5, y: point.y - 0.5, width: 1, height: 1), shapes = editor.shapeContext
         let holders = Set(editor.document.containers(of: host, containingKinds: editor.registry.containingKinds))
+        let hostBounds = shapes.geometry(of: host)?.bounds ?? .null
+        // A shape the host lies on (whose bounds hold it, a container or not) is its ground, not a neighbor's face.
         return editor.paintOrder(in: spot).contains { record in
             guard record.id != host, !holders.contains(record.id), let geometry = shapes.geometry(of: record.id), geometry.isClosed,
-                  geometry.outline.count > 2 else { return false }
+                  geometry.outline.count > 2, !geometry.bounds.contains(hostBounds) else { return false }
             return polygonContains(geometry.outline, point)
         }
     }
