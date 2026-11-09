@@ -164,6 +164,23 @@ private final class ListingTextView: EditingTextView {
         expectEqual(list.perform(newline).action, .pick, "Return does an action")
         expectEqual(list.perform(tab).action, .pick, "and so does Tab")
     },
+    test("a default row: the owner says which item is highlighted as the rows are set (an action nothing else is called so), last in the order; Return does it; one that isn't an item highlights the first") {
+        let list = CaretList(metrics: CaretListMetrics(width: 200, rowHeight: 20, rowsShown: 5, offset: 2))
+        list.returnPicks = .actionsOnly
+        list.setRows([.item(CaretListItem("NewRefund")), .item(CaretListItem("New type Refund", isAction: true))], highlighting: 1)
+        expectEqual(list.highlightedItem?.title, "New type Refund", "the action highlighted, though listed last")
+        expectEqual(list.perform(#selector(NSResponder.insertNewline(_:))).action, .pick, "Return does it")
+        list.setRows([.header("Types"), .item(CaretListItem("Order"))], highlighting: 0)
+        expectEqual(list.highlightedItem?.title, "Order", "a header can't be: the first item")
+        list.setRows([.item(CaretListItem("Order"))], highlighting: 7)
+        expectEqual(list.highlighted, 0)
+        let completions = CaretCompletions(range: NSRange(location: 0, length: 3), query: "Ref",
+                                           items: [CaretCompletion(label: "New type Ref", insert: "", isRelevant: false, isAction: true, isDefault: true),
+                                                   CaretCompletion(label: "NewRefund", insert: "NewRefund")])
+        let listed = completions.listed { query, labels in labels.map { $0.contains(query) ? (score: 1, matched: []) : nil } }
+        expectEqual(listed.map(\.item.label), ["NewRefund", "New type Ref"], "a default action still lists last")
+        expectEqual(listed.firstIndex { $0.item.isDefault }, 1)
+    },
     // MARK: The model
 
     test("rows: the first item is highlighted; headers and empty states never are; each change is heard") {

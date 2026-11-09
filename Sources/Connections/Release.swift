@@ -8,7 +8,8 @@ import Topology
 // picks). Each plugin that owns a meaning a connection may have answers, in plugin order (`ConnectionMade`): nothing, settled (it
 // gave the connection what it is, and no one else is asked), or offers. With offers and nothing settled, one list opens at the
 // connection: each plugin's offers, a rule between two plugins', a rule, a gray Plain arrow; the first highlighted, so Return takes
-// it, under the connection's adornment row (its label's lead), the connection selected while it is open. A pick is its offerer's
+// it, under the connection's adornment row (its label's lead), the connection selected while it is open (not one made from a row
+// being edited, ⌘L's pick: the shape edited stays selected, and Escape is back on it). A pick is its offerer's
 // own step after the release's (Connections' channels: "Change Relation"; Types' relationship types: "Add Type"), so one Undo
 // returns to the plain connection and a second removes it. Plain arrow, Escape, a press elsewhere, or a pick gone stale (the
 // connection deleted, or given what it is some other way) change nothing.
@@ -81,8 +82,10 @@ public enum ConnectionRelease: Equatable, Sendable {
 extension CanvasEditor {
     /// The release of `connection`, a connection just made (a port's drag let go on a shape, Connect's): every plugin's answer
     /// (`ConnectionMade`), in plugin order, the first that settles ending it; else, with offers, the one list at the connection.
+    /// `selecting` false for one made from a row being edited (⌘L's pick, E7 panel 4): the list hangs from the connection, which
+    /// isn't selected, so the selection stays on the shape being edited and Escape goes back to it.
     @discardableResult
-    public func connectionMade(_ connection: ShapeID) -> ConnectionRelease {
+    public func connectionMade(_ connection: ShapeID, selecting: Bool = true) -> ConnectionRelease {
         var groups: [[ConnectionChoice]] = []
         var plain = false
         for answer in registry.contributions(to: ConnectionMade.self) {
@@ -99,7 +102,7 @@ extension CanvasEditor {
         guard !groups.isEmpty else { return .plain }
         // The list opens: drawn plain until a pick, in the release's own step.
         if plain { transact(ConnectionsStyle.changeRelation) { $0.update(connection) { $0[ChannelProperty.self] = nil } } }
-        presentConnectionChoices(groups, for: connection)
+        presentConnectionChoices(groups, for: connection, selecting: selecting)
         return .offered
     }
 
@@ -108,8 +111,9 @@ extension CanvasEditor {
     /// else the middle of its outline); the connection selected while it is open. Each row is the pill a pick would put on the line,
     /// the row's title its pill's words (type-select and VoiceOver). What a plugin's own list opens
     /// as well (a relationship type's dashed pill).
-    /// `below` is where it hangs from, world units, where that isn't the connection's label (a pill clicked).
-    public func presentConnectionChoices(_ groups: [[ConnectionChoice]], for connection: ShapeID, below rect: CGRect? = nil) {
+    /// `below` is where it hangs from, world units, where that isn't the connection's label (a pill clicked). `selecting` false
+    /// leaves the selection as it is (a connection made from a row being edited: the shape edited stays the one selected).
+    public func presentConnectionChoices(_ groups: [[ConnectionChoice]], for connection: ShapeID, below rect: CGRect? = nil, selecting: Bool = true) {
         let menu = NSMenu()
         menu.autoenablesItems = false
         for (index, group) in groups.enumerated() {
@@ -133,7 +137,7 @@ extension CanvasEditor {
         let plain = NSMenuItem(title: ConnectionsStyle.plainArrow) {}
         plain.attributedTitle = NSAttributedString(string: ConnectionsStyle.plainArrow, attributes: [.foregroundColor: NSColor.secondaryLabelColor])
         menu.addItem(plain)
-        selection = connection
+        if selecting { selection = connection }
         let anchor = rect ?? adornmentAnchor(of: connection) ?? shapeContext.geometry(of: connection)?.bounds ?? .zero
         popUpMenu(menu, below: anchor, highlighting: menu.items.first)
     }

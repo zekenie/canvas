@@ -9,8 +9,10 @@ import Types
 // endpoint with its full path, name, summary, scope, parameters, body, responses and deprecated); then its types, each a type
 // note's statement (of the kind New Type makes, `newTypeKind`, never a literal) by its name, `is:` the types it builds on, and its
 // schema written once the put has found or made every note (`DrawPut.LateValue`): a `$ref` to a component's schema points at that
-// component's note (`urn:uuid:` and its id, a fragment kept), and a type the file had is joined with what it holds, its
-// properties by name. The API alone on the first row, its types below it, four to a row. A type finds only a note that is a type,
+// component's note (`urn:uuid:` and its id, a fragment kept), each property titled as the file keys it (`titled`: a field reads
+// `payment_id`, as written), and a type the file had is joined with what it holds, its
+// properties by name. The API alone on the first row, its types below it, four to a row, each after the type that refers to it
+// most (`laidOut`). A type finds only a note that is a type,
 // so a plain note of the same name is left alone and a type made beside it.
 // So the put finds the API by its title, nearest first and file-wide, and the endpoints' writer joins its rows by method and full
 // path (`APIWords.mergedEndpoints`: ids kept; a new one under the longest header it starts with; one the paste leaves out kept); a
@@ -59,13 +61,39 @@ public enum OpenAPIPaste {
         for document in documents {
             rows.append([api(document, typeKind: typeKind)])
             guard let typeKind else { continue }
-            let types = document.types.map { type($0, kind: typeKind) }
+            let types = laidOut(document.types).map { type(document.types[$0], kind: typeKind) }
             rows += stride(from: 0, to: types.count, by: typesARow).map { Array(types[$0..<min($0 + typesARow, types.count)]) }
         }
         var put = DrawPut(rows: rows)
         // What it puts down of that kind is types, not notes: so VoiceOver hears it.
         if let typeKind { put.labels[typeKind.rawValue] = APIStyle.pastedTypeLabel }
         return put
+    }
+
+    /// The order a document's types are put down in, by what refers to what (`ReaderLayout.walk`): from the type most `$ref`s and
+    /// `allOf`s name, each after the type that refers to it most, so a type lands beside what it's built of (Refund beside Money
+    /// and Base). Indexes into `types`.
+    static func laidOut(_ types: [OpenAPIType]) -> [Int] {
+        let index = Dictionary(types.enumerated().map { ($0.element.name, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        var links: [(from: Int, to: Int)] = []
+        for (from, type) in types.enumerated() {
+            for name in type.isA { if let to = index[name] { links.append((from, to)) } }
+            func refs(_ schema: SchemaValue) {
+                switch schema {
+                case .object(let members):
+                    if let ref = schema["$ref"]?.string, let component = OpenAPIReader.component(of: ref), let to = index[component.name] {
+                        links.append((from, to))
+                    }
+                    for member in members { refs(member.value) }
+                case .array(let elements):
+                    elements.forEach(refs)
+                default:
+                    break
+                }
+            }
+            refs(type.schema)
+        }
+        return ReaderLayout.walk(Array(types.indices), links: links)
     }
 
     // MARK: Statements
@@ -137,7 +165,7 @@ public enum OpenAPIPaste {
                 json(type.isA.map { names.shape(kind, called: $0)?.description ?? $0 })
             }]
         }
-        let schema = type.schema
+        let schema = titled(type.schema)
         // As tall as its rows, as wide as a note holding a type is drawn; one the file has keeps its own size.
         let rows = max(1, schema["properties"]?.members?.count ?? 0)
         shape.size = DrawPut.Dimensions(width: APIStyle.pastedTypeWidth, height: CGFloat(rows) * APIStyle.pastedTypeRowHeight + 2 * APIStyle.pastedTypePad)
@@ -151,6 +179,35 @@ public enum OpenAPIPaste {
         })
         shape.admits = { $0[TypeSchemaProperty.self] != nil }
         return shape
+    }
+
+    /// `schema` with each property, at any depth, titled as the file keys it where it has no title of its own: Types shows a field by
+    /// its title, so a body's field reads `payment_id`, as the wire and the table beside it say it (E1 panel 4's `total_cents`),
+    /// never its words (`payment id`). A property that is `true` or `false` is left as it is.
+    public static func titled(_ schema: SchemaValue) -> SchemaValue {
+        let instances: Set<String> = ["example", "examples", "default", "const", "enum"]
+        switch schema {
+        case .object(let members):
+            return .object(members.map { member in
+                // What is data, not a schema (an example with a `properties` key of its own), is left as written.
+                if instances.contains(member.key) || member.key.hasPrefix("x-") { return member }
+                guard member.key == "properties", case .object(let properties) = member.value else {
+                    return SchemaMember(key: member.key, value: titled(member.value))
+                }
+                return SchemaMember(key: member.key, value: .object(properties.map { property in
+                    var value = titled(property.value)
+                    if SchemaDirectives.isField(property.key), case .object(var fields) = value, !fields.contains(where: { $0.key == "title" }) {
+                        fields.insert(SchemaMember(key: "title", value: .string(property.key)), at: 0)
+                        value = .object(fields)
+                    }
+                    return SchemaMember(key: property.key, value: value)
+                }))
+            })
+        case .array(let elements):
+            return .array(elements.map(titled))
+        default:
+            return schema
+        }
     }
 
     /// `schema` with each `$ref` to a component's schema pointing at that component's note (`urn:uuid:` and its id, a fragment

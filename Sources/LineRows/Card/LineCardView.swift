@@ -39,6 +39,8 @@ public class LineCardView: NSView {
     public func field(of stop: String) -> LineField? { nil }
     /// The keyboard to a stop, as a key would take it (the one it leaves written).
     public func go(to stop: String) {}
+    /// Whether a stop's words are cut at the card's edge, ending in "…" (a line too long for it, without the keyboard).
+    public func isCut(_ stop: String) -> Bool { false }
 }
 
 /// Which stop: the card's line, and its item in a list (0 for any other line).
@@ -66,6 +68,8 @@ final class LineCardSession<Model: LineModel>: LineCardView {
     private var isMoving = false
     /// A commit is waiting for the file to take one (`writeLater`).
     private var writingLater = false
+    /// The stops whose words run past the card's edge, and where their "…" is drawn, view points: cut, as every cut text is.
+    private var cuts: [CardStop: CGPoint] = [:]
     private let style: LineStyle
 
     /// A line of words: its fields, what each was given, and a list's line opened by Return and not yet written.
@@ -193,6 +197,8 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             field.onFocus = { [weak self, weak field] in
                 guard let self, let field, let stop = self.stop(of: field) else { return }
                 self.focused(stop)
+                // Its words shown whole while it has the keyboard: no "…".
+                self.needsLayout = true
             }
             field.offering = { [weak self, weak field] in
                 guard let self, let field, let line = self.textLine(of: field) else { return nil }
@@ -278,6 +284,11 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         move(to: found)
     }
 
+    override func isCut(_ stop: String) -> Bool {
+        guard let found = stops.first(where: { name(of: $0) == stop }) else { return false }
+        return cuts[found] != nil
+    }
+
     /// The keyboard came to a stop (a key, a click, VoiceOver).
     private func focused(_ stop: CardStop) {
         focus = stop
@@ -305,7 +316,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         focus = aimed
         if let responder = responder(of: aimed), let window, window.firstResponder !== responder {
             window.makeFirstResponder(responder)
-            if let field = responder as? LineField { field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0)) }
+            if let field = responder as? LineField { field.placing { field.setSelectedRange(NSRange(location: (field.string as NSString).length, length: 0)) } }
         }
         needsDisplay = true
     }
@@ -369,7 +380,7 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         if let kept = responder(of: stop) as? LineField, let window, window.firstResponder !== kept {
             window.makeFirstResponder(kept)
         }
-        if let kept = responder(of: stop) as? LineField { kept.setSelectedRange(NSRange(location: (kept.string as NSString).length, length: 0)) }
+        if let kept = responder(of: stop) as? LineField { kept.placing { kept.setSelectedRange(NSRange(location: (kept.string as NSString).length, length: 0)) } }
     }
 
     /// A commit the file couldn't take while it was delivering one: made a turn later, if the line still has words to write.
@@ -579,8 +590,16 @@ final class LineCardSession<Model: LineModel>: LineCardView {
         needsLayout = true
     }
 
-    /// Each field over its line's value, its text slid to keep the caret in view.
+    /// Each field over its line's value, its text slid to keep the caret in view; one without the keyboard that runs past the
+    /// card's edge is cut short of it and ends in "…".
     private func placeFields() {
+        var cut: [CardStop: CGPoint] = [:]
+        defer {
+            if cut != cuts {
+                cuts = cut
+                needsDisplay = true
+            }
+        }
         for (index, line) in texts {
             for (item, field) in line.fields.enumerated() {
                 let rect = rect(of: CardStop(line: index, item: item))
@@ -589,18 +608,47 @@ final class LineCardSession<Model: LineModel>: LineCardView {
                 if clip.frame != clipFrame { clip.frame = clipFrame }
                 let height = ceil(max(style.font.ascender - style.font.descender + style.font.leading,
                                       style.codeFont.ascender - style.codeFont.descender + style.codeFont.leading))
-                var width = clipFrame.width
+                var width = clipFrame.width, used: CGFloat = 0
                 if let layout = field.textLayoutManager {
                     layout.ensureLayout(for: layout.documentRange)
-                    width = max(width, layout.usageBoundsForTextContainer.width + LineCardStyle.textSlack)
+                    used = layout.usageBoundsForTextContainer.width
+                    width = max(width, used + LineCardStyle.textSlack)
                 }
                 var x: CGFloat = 0
+                let hasKeyboard = window?.firstResponder === field
                 // Only the field with the keyboard slides to its caret; another shows its text from the start.
-                if window?.firstResponder === field, let caret = field.caretFrame, caret.maxX > clipFrame.width - 1 { x = -(caret.maxX - clipFrame.width + 1) }
+                if hasKeyboard, let caret = field.caretFrame, caret.maxX > clipFrame.width - 1 { x = -(caret.maxX - clipFrame.width + 1) }
                 let frame = CGRect(x: x, y: ((rect.height - height) / 2).rounded(), width: width, height: height)
                 if field.frame != frame { field.frame = frame }
+                // Cut short of the edge, the "…" drawn in the room left (the card shows through the clip's mask there).
+                let ellipsis = LineCardStyle.ellipsisWidth
+                if !hasKeyboard, used > clipFrame.width, clipFrame.width > ellipsis {
+                    let end = Self.characterEdge(in: field, atOrBefore: clipFrame.width - ellipsis)
+                    cut[CardStop(line: index, item: item)] = CGPoint(x: clipFrame.minX + end + LineCardStyle.ellipsisGap, y: rect.midY)
+                    clip.wantsLayer = true
+                    let mask = clip.layer?.mask ?? CALayer()
+                    mask.backgroundColor = NSColor.black.cgColor
+                    mask.frame = CGRect(x: 0, y: 0, width: end, height: clipFrame.height)
+                    clip.layer?.mask = mask
+                } else if clip.layer?.mask != nil {
+                    clip.layer?.mask = nil
+                }
             }
         }
+    }
+
+    /// Where the last character that ends at or before `x` (the field's points) ends, so words cut short are cut between
+    /// characters, never through one; `x` itself where the field can't say (no window).
+    private static func characterEdge(in field: LineField, atOrBefore x: CGFloat) -> CGFloat {
+        guard let window = field.window else { return x }
+        func edge(_ index: Int) -> CGFloat? {
+            let screen = field.firstRect(forCharacterRange: NSRange(location: index, length: 0), actualRange: nil)
+            guard screen != .zero else { return nil }
+            return field.convert(window.convertFromScreen(screen), from: nil).minX
+        }
+        var index = field.characterIndexForInsertion(at: CGPoint(x: x, y: field.bounds.midY))
+        while index > 0, let at = edge(index), at > x { index -= 1 }
+        return index > 0 ? min(x, edge(index) ?? x) : x
     }
 
     /// VoiceOver reads the lines in the order the keys walk them, top to bottom, whatever order the views were added in.
@@ -626,6 +674,9 @@ final class LineCardSession<Model: LineModel>: LineCardView {
             NSBezierPath(roundedRect: band, xRadius: LineCardStyle.bandRadius, yRadius: LineCardStyle.bandRadius).fill()
         }
         drawHeader()
+        let ellipsis = NSAttributedString(string: LineCardStyle.ellipsis, attributes: [.font: LineCardStyle.valueFont, .foregroundColor: NSColor.labelColor])
+        let ellipsisSize = ellipsis.size()
+        for point in cuts.values { ellipsis.draw(at: CGPoint(x: point.x, y: point.y - ellipsisSize.height / 2)) }
         let labels: [NSAttributedString.Key: Any] = [.font: LineCardStyle.labelFont, .foregroundColor: NSColor.secondaryLabelColor]
         for (index, line) in card.lines.enumerated() {
             let rect = rect(of: CardStop(line: index, item: 0))
@@ -785,6 +836,10 @@ enum LineCardStyle {
     static let menuDrop: CGFloat = 4
     /// Room after a field's text, so the caret at the end isn't cut.
     static let textSlack: CGFloat = 4
+    /// What ends words cut at the card's edge, and the room it takes there.
+    static let ellipsis = "…"
+    static let ellipsisWidth: CGFloat = 14
+    static let ellipsisGap: CGFloat = 1
     static let yes = "yes"
     static let no = "no"
 

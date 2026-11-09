@@ -120,9 +120,10 @@ public struct LineOffer: Equatable {
 
     /// An action row, listed last by the grammar that offers it: `label` what it says ("New type Problem"), `action` what it does.
     /// Done, the words it was offered for (the offers' range) stand for what it made, and the line is written with them in the
-    /// action's step, the caret staying where it is.
-    public static func action(_ label: String, _ action: LineAction) -> LineOffer {
-        var offer = LineOffer(CaretCompletion(label: label, insert: "", isRelevant: false, isAction: true))
+    /// action's step, the caret staying where it is. `isDefault`: highlighted all the same, so Return does it (nothing else listed
+    /// is called what was typed).
+    public static func action(_ label: String, _ action: LineAction, isDefault: Bool = false) -> LineOffer {
+        var offer = LineOffer(CaretCompletion(label: label, insert: "", isRelevant: false, isAction: true, isDefault: isDefault))
         offer.action = action
         return offer
     }
@@ -150,11 +151,15 @@ public struct LineOffers: Equatable {
     public var range: NSRange
     public var query: String
     public var items: [LineOffer]
+    /// Where the list is anchored where that isn't the caret less the query's length (the query leaves out a quote the range
+    /// has): a place in the line, the start of what's typed.
+    public var anchor: Int?
 
-    public init(range: NSRange, query: String, items: [LineOffer]) {
+    public init(range: NSRange, query: String, items: [LineOffer], anchor: Int? = nil) {
         self.range = range
         self.query = query
         self.items = items
+        self.anchor = anchor
     }
 
     /// As the caret list takes them.

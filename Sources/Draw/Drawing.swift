@@ -80,6 +80,9 @@ struct ShapeItem {
     /// Where its room's top-left goes exactly, when a program's run says (`DrawOptions.places`): placed there, never solved,
     /// pushed or pushing, and put down in or out of the containers it lands on as any shape is.
     var exact: CGPoint?
+    /// For a pill landed where its line from a row of a board shape is clean (`Surroundings.landing(of:joinedFrom:of:)`): the shape
+    /// and the row, so it can be landed again where a shape the run restates, said after it, grows into the spot.
+    var landedFrom: (near: ShapeID, row: PartID)?
 
     /// A box a placement names, found.
     enum Found {

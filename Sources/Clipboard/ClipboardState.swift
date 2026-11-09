@@ -425,16 +425,52 @@ final class ClipboardState {
             if editor.revision != before { editor.announce("Pasted into shapes on other boards", priority: .low) }
             return
         }
-        let inside = Set(landed), kinds = editor.registry.containingKinds, document = editor.document
-        editor.selectedShapeIDs = landed.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
+        let kinds = editor.registry.containingKinds, document = editor.document
+        // What it made and what it changed are selected, and said; a paste that changed nothing selects all it found, and says so.
+        // A shape counts as changed where its record did, or where a shape the put changed or made is bound to it (a key re-aimed or
+        // added lives on its arrow, never on the table's record).
+        let bound = shapes(of: landed, boundByChangesFrom: existing)
+        let made = landed.filter { existing[$0] == nil }
+        let changed = landed.filter { id in existing[id].map { $0 != document[id] || bound.contains(id) } ?? false }
+        let touched = made + changed, shown = touched.isEmpty ? landed : touched
+        let inside = Set(shown)
+        editor.selectedShapeIDs = shown.filter { id in !(document.container(of: id, containingKinds: kinds).map(inside.contains) ?? false) }
         // A block wider than the view (a schema of forty tables) is brought into it; one in view leaves the camera alone.
-        if case .beside(let ids) = site { editor.revealIfOffscreen(landed, keeping: ids) } else { editor.revealIfOffscreen(landed) }
-        editor.announce(pastedSummary(landed, existing: existing, labels: program.labels), priority: .low)
+        if case .beside(let ids) = site { editor.revealIfOffscreen(shown, keeping: ids) } else { editor.revealIfOffscreen(shown) }
+        guard !touched.isEmpty || editor.revision != before else {
+            editor.announce(ClipboardStyle.nothingChanged, priority: .low)
+            return
+        }
+        // Changes none of the shapes it found says (a pill on another board): said without counting what didn't change.
+        guard !touched.isEmpty else { return editor.announce(ClipboardStyle.updated, priority: .low) }
+        editor.announce(pastedSummary(made: made, changed: changed, labels: program.labels), priority: .low)
     }
 
-    /// What a put did, for VoiceOver: the kinds it made and the kinds it restated, by their labels ("Pasted 2 Tables and Enum,
-    /// updated Table"), a kind the put names itself (`DrawPut.labels`) by that.
-    private func pastedSummary(_ landed: [ShapeID], existing: CanvasDocument, labels: [String: String]) -> String {
+    /// Which of `shapes` a shape that changed since `old`, was made or was taken away is bound to first (an arrow of a key added,
+    /// re-aimed or let go: the shape it starts from, which its kind lists first; the shape it points to is not what changed),
+    /// by what its kind says (`remappingReferences`), the shape before and after.
+    private func shapes(of shapes: [ShapeID], boundByChangesFrom old: CanvasDocument) -> Set<ShapeID> {
+        let wanted = Set(shapes), document = editor.document, context = editor.shapeContext
+        var found: Set<ShapeID> = []
+        func visit(_ record: AnyShapeRecord) {
+            var first: ShapeID?
+            _ = record.remappingReferences({ id in
+                first = first ?? id
+                return id
+            }, in: context)
+            if let first, wanted.contains(first) { found.insert(first) }
+        }
+        for record in document.shapes where !wanted.contains(record.id) && old[record.id] != record {
+            visit(record)
+            if let was = old[record.id] { visit(was) }
+        }
+        for was in old.shapes where document[was.id] == nil { visit(was) }
+        return found
+    }
+
+    /// What a put did, for VoiceOver: the kinds it made and the kinds whose shapes it changed, by their labels ("Pasted 2 Tables and
+    /// Enum, updated Table"), a kind the put names itself (`DrawPut.labels`) by that. A shape it restated as it was isn't counted.
+    private func pastedSummary(made: [ShapeID], changed: [ShapeID], labels: [String: String]) -> String {
         let registry = editor.registry
         func counts(_ ids: [ShapeID]) -> String {
             var order: [ShapeKind] = [], counts: [ShapeKind: Int] = [:]
@@ -447,11 +483,10 @@ final class ClipboardState {
                 return counts[kind] == 1 ? label : "\(counts[kind]!) \(DeleteSteps.plural(label))"
             })
         }
-        let made = landed.filter { existing[$0] == nil }, restated = landed.filter { existing[$0] != nil }
-        switch (made.isEmpty, restated.isEmpty) {
+        switch (made.isEmpty, changed.isEmpty) {
         case (false, true): return "Pasted \(counts(made))"
-        case (true, false): return "Updated \(counts(restated))"
-        default: return "Pasted \(counts(made)), updated \(counts(restated))"
+        case (true, false): return "Updated \(counts(changed))"
+        default: return "Pasted \(counts(made)), updated \(counts(changed))"
         }
     }
 

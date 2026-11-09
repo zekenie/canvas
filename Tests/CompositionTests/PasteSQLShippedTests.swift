@@ -163,7 +163,7 @@ private let payments = """
         let tickets = try require(table(editor, "tickets"))
         expectEqual(tickets.props.columns.first { $0.name == "state" }?.type, TypeRef("ticket_state", shape: state.id))
         expectEqual(Set(editor.selectedShapeIDs), [state.id, tickets.id], "both selected")
-        expect((editor.document[tickets.id]?.box?.minX ?? 0) > (state.box?.maxX ?? 0), "in paste order, left to right")
+        expect((editor.document[tickets.id]?.box?.minY ?? 0) > (state.box?.maxY ?? 0), "the enums on a row of their own, the tables below (paste 02)")
         pasteboardHolds("CREATE TYPE ticket_state AS ENUM ('open', 'waiting', 'closed');")
         expect(commandV(w))
         expectEqual(editor.document[state.id]?.typed(as: DatabaseEnum.self)?.props.values.map(\.text), ["open", "waiting", "closed"])
@@ -211,6 +211,9 @@ private let payments = """
         expectEqual(arrow.props.end.binding?.shapeID, pill.id, "the key ends at the pill")
         expectEqual(arrow.props.end.binding?.part, customers.props.columns.first { $0.name == "id" }?.id, "the column on the binding")
         expectEqual(undoTitle(w.window), "Undo Paste SQL")
+        // The pill is landed once the paste's table is placed, where its line from customer_id is clean (connect 24).
+        let customerID = try require(editor.contents(of: billing).shapes.first { $0[TitleProperty.self] == "statements" }?.typed(as: DatabaseTable.self)?.props.columns.first { $0.name == "customer_id" }?.id)
+        try expectClean(arrow.id, from: statements.id, row: customerID, in: editor, view: false, "a pasted key to another board")
         expect(commandV(w), "the same paste again")
         expectEqual(pills().map(\.id), [pill.id], "the same pill")
         expectEqual(keyArrows().map(\.id), [arrow.id], "the same arrow")
@@ -280,12 +283,63 @@ private let payments = """
         let tables = (1...24).map { "CREATE TABLE wide_\($0) (id int PRIMARY KEY, name text, note text, other text);" }
         pasteboardHolds(tables.joined(separator: "\n") + "\nCREATE TYPE kind AS ENUM ('a');\nCREATE TABLE one (id int PRIMARY KEY);")
         expect(commandV(w))
-        expectEqual(editor.announcements.last, "Pasted 24 Tables and Enum, updated Table")
+        // `one` restated as it is: not updated, and not selected (paste 04).
+        expectEqual(editor.announcements.last, "Pasted Enum and 24 Tables")
         let landed = editor.selectedShapeIDs
-        expectEqual(landed.count, 26)
+        expectEqual(landed.count, 25)
         expect(editor.cameraTarget.zoom < camera.zoom, "zoomed out: \(editor.cameraTarget.zoom)")
         let bounds = try require(editor.shapeContext.bounds(of: landed))
         expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(bounds), "all of it in view")
+    },
+    test("paste 04: pasted again, only what changed is said and selected; pasted again as it is, \"Nothing changed\", no step, all it found selected") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        let schema = (1...4).map { "CREATE TABLE t\($0) (id int PRIMARY KEY, name text);" }
+        pasteboardHolds(schema.joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Pasted 4 Tables")
+        let all = Set(editor.selectedShapeIDs)
+        var changed = schema
+        changed[2] = "CREATE TABLE t3 (id int PRIMARY KEY, name text NOT NULL, added int);"
+        pasteboardHolds(changed.joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Updated Table")
+        expectEqual(editor.selectedShapeIDs.compactMap { editor.document[$0]?[TitleProperty.self] }, ["t3"], "the one it changed")
+        expectEqual(undoTitle(w.window), "Undo Paste SQL")
+        editor.selectedShapeIDs = []
+        let revision = editor.revision
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Nothing changed")
+        expectEqual(editor.revision, revision, "nothing written")
+        expectEqual(Set(editor.selectedShapeIDs), all, "what it found, selected")
+        // No step: one Undo undoes the paste that changed t3.
+        editor.undo()
+        let t3 = try require(table(editor, "t3"))
+        expectEqual(t3.props.columns.map(\.name), ["id", "name"], "the change undone, not an empty step")
+    },
+    test("paste 04: pasted again with only a key re-aimed or added, the table the key starts from is what changed: said \"Updated Table\", and it alone selected") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        try w.turnKitOn()
+        let editor = w.editor
+        let tables = ["CREATE TABLE accounts (id int PRIMARY KEY);", "CREATE TABLE customers (id int PRIMARY KEY);"]
+        pasteboardHolds((tables + ["CREATE TABLE orders (id int PRIMARY KEY, owner_id int REFERENCES customers (id));", "CREATE TABLE notes (id int PRIMARY KEY, order_id int);"]).joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Pasted 4 Tables")
+        editor.selectedShapeIDs = []
+        // The key of orders aimed at accounts instead: nothing in any table's own record changes.
+        pasteboardHolds((tables + ["CREATE TABLE orders (id int PRIMARY KEY, owner_id int REFERENCES accounts (id));", "CREATE TABLE notes (id int PRIMARY KEY, order_id int);"]).joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Updated Table")
+        expectEqual(editor.selectedShapeIDs.compactMap { editor.document[$0]?[TitleProperty.self] }, ["orders"], "the table the key starts from, alone")
+        editor.selectedShapeIDs = []
+        // A key added to a column that had none.
+        pasteboardHolds((tables + ["CREATE TABLE orders (id int PRIMARY KEY, owner_id int REFERENCES accounts (id));", "CREATE TABLE notes (id int PRIMARY KEY, order_id int REFERENCES orders (id));"]).joined(separator: "\n"))
+        expect(commandV(w))
+        expectEqual(editor.announcements.last, "Updated Table")
+        expectEqual(editor.selectedShapeIDs.compactMap { editor.document[$0]?[TitleProperty.self] }, ["notes"])
     },
     test("the kit off: ⌘V of SQL does nothing and Paste is off; on, it pastes") {
         let w = try EmptyBoardWindow()

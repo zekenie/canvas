@@ -19,6 +19,8 @@ enum TableStyle {
     static let mostWholeWidth: CGFloat = 560
     /// The narrowest it's resized to: a name and a short type.
     static let minimumWidth: CGFloat = 120
+    /// The widest a pasted table is made to show its lines whole (`character varying(255)`): past it, they're cut short.
+    static let mostWholeWidth: CGFloat = 520
     /// What its rows are, said by VoiceOver: "5 columns".
     static func accessibleRows(_ count: Int) -> String { count == 1 ? "1 column" : "\(count.formatted()) columns" }
     /// What VoiceOver calls the field a new table's name is typed in.

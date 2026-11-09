@@ -7,7 +7,10 @@ import Foundation
 // ⌘V of SQL: what the reader read (`SQLReader`), as the draw program Draw puts down (`DrawPut`, decided 16). Each table a `table`
 // statement by its title, within its schema's database (`billing.payments` is the payments in the database billing, else any
 // payments: a paste makes no database), its columns as JSON with every member SQL says, so a type of several words, a default and
-// what a key does on delete stay whole; each enum an `enum-type` statement, its values by text; in paste order, four to a row.
+// what a key does on delete stay whole, made as wide as its longest line needs (`TableDefinition.wholeWidth`, capped), so a dump's
+// `timestamp with time zone` reads whole; each enum an `enum-type` statement, its values by text. Laid out by its keys, so they
+// join neighbors and run level: the enums on rows of their own, first, then the tables in a walk from the one most keys name, each
+// after the table it keys to most (`laidOut`), four to a row.
 // Draw finds each by its title, nearest first and file-wide, and joins the columns onto what a found table holds by name (the
 // columns' writer, `ColumnGrammar.merge`): a column keeps its id, so the keys bound to it stay, a new one goes after the column
 // pasted before it, and one the paste leaves out stays. Each key is an edge the table's statement implies, from its column to the
@@ -47,37 +50,54 @@ public enum SQLPaste {
 
     /// What ⌘V puts down of the pasteboard's SQL: nil when no table and no enum reads.
     @MainActor
-    static func read(_ content: PasteContent, keys: KeyChannel) -> DrawPut? {
-        text(of: content).flatMap { program(of: $0, keys: keys) }
+    static func read(_ content: PasteContent, keys: KeyChannel, fileEnums: Set<String> = []) -> DrawPut? {
+        text(of: content).flatMap { program(of: $0, keys: keys, fileEnums: fileEnums) }
     }
 
-    /// What a paste of `text` puts down: nil when no table and no enum reads.
+    /// What a paste of `text` puts down: nil when no table and no enum reads. `fileEnums`: the names of the enums the file has, which
+    /// a column of the paste may name too (drawn as a pill, so measured as one).
     @MainActor
-    static func program(of text: String, keys: KeyChannel) -> DrawPut? {
+    static func program(of text: String, keys: KeyChannel, fileEnums: Set<String> = []) -> DrawPut? {
         let schema = SQLReader.read(text)
-        return schema.isEmpty ? nil : put(schema, keys: keys)
+        return schema.isEmpty ? nil : put(schema, keys: keys, fileEnums: fileEnums)
     }
 
-    /// The program that puts `schema` down: its tables and enums in the order they were made, four to a row, each table's keys the
-    /// edges it implies.
+    /// The program that puts `schema` down: its enums on rows of their own, then its tables as their keys lay them out (`laidOut`),
+    /// four to a row, each table's keys the edges it implies.
     @MainActor
-    static func put(_ schema: SQLSchema, keys: KeyChannel) -> DrawPut {
-        var shapes: [DrawPut.Shape] = []
-        for item in schema.order {
-            switch item {
-            case .table(let index): shapes.append(table(schema.tables[index], of: schema, keys: keys))
-            case .enumType(let index): shapes.append(enumType(schema.enums[index]))
+    static func put(_ schema: SQLSchema, keys: KeyChannel, fileEnums: Set<String> = []) -> DrawPut {
+        func rows(_ shapes: [DrawPut.Shape]) -> [[DrawPut.Shape]] {
+            stride(from: 0, to: shapes.count, by: shapesARow).map { Array(shapes[$0..<min($0 + shapesARow, shapes.count)]) }
+        }
+        let enums = schema.order.compactMap { item -> DrawPut.Shape? in
+            if case .enumType(let index) = item { enumType(schema.enums[index]) } else { nil }
+        }
+        let tables = laidOut(schema).map { table(schema.tables[$0], of: schema, keys: keys, fileEnums: fileEnums) }
+        return DrawPut(rows: rows(enums) + rows(tables))
+    }
+
+    /// The order a schema's tables are put down in, by their keys: from the table most keys of the paste name (the first made, of
+    /// those named alike), a walk that puts each table's neighbors after it, the one with most keys between them first (a table
+    /// that keys to it, or that it keys to), so each lands after the table it keys to most and most keys join tables a row apart
+    /// or less; then from the most named of those left, and so on. A pg_dump's alphabet, or the order a schema was made in, is
+    /// never what its keys say. Indexes into `schema.tables`.
+    static func laidOut(_ schema: SQLSchema) -> [Int] {
+        let order = schema.order.compactMap { item -> Int? in if case .table(let index) = item { index } else { nil } }
+        var links: [(from: Int, to: Int)] = []
+        for from in order {
+            for key in schema.tables[from].keys {
+                guard let far = pasted(key.table, in: schema), let to = schema.tables.firstIndex(where: { $0.name == far.name }) else { continue }
+                links.append((from, to))
             }
         }
-        let rows = stride(from: 0, to: shapes.count, by: shapesARow).map { Array(shapes[$0..<min($0 + shapesARow, shapes.count)]) }
-        return DrawPut(rows: rows)
+        return ReaderLayout.walk(order, links: links)
     }
 
     // MARK: Statements
 
     /// A table's statement: its title, its schema's database, its columns as JSON, its keys as edges.
     @MainActor
-    private static func table(_ table: SQLTable, of schema: SQLSchema, keys: KeyChannel) -> DrawPut.Shape {
+    private static func table(_ table: SQLTable, of schema: SQLSchema, keys: KeyChannel, fileEnums: Set<String>) -> DrawPut.Shape {
         let keyed = Set(table.keys.map(\.column))
         let columns: [Any] = table.columns.map { column in
             var item: [String: Any] = [
@@ -110,13 +130,13 @@ public enum SQLPaste {
         var shape = shape(DatabaseTable.kind, table.name)
         shape.json = [(key: "columns", text: json(columns))]
         shape.edges = edges
-        // As wide as its columns read whole (a pg_dump's `character varying(255)`), as a commit widens a table (Tables'); a table
-        // the file has keeps its width.
+        // As wide as its columns read whole (a pg_dump's `character varying(255)`), as a commit widens a table (Tables'), an enum
+        // the paste makes or the file has measured as the pill it is drawn as, not as its words; a table the file has keeps its width.
         shape.size = DrawPut.Dimensions(width: TableDefinition.wholeWidth(of: table.columns.map { column in
-            // An enum the paste makes is drawn as its pill once it is in the file: measured as that, not as its words.
-            let pill = pastedEnum(named: column.type.words, in: schema, from: table.name.schema).map { AdornmentLabel($0.name.name).tinted(TableStyle.enumPill) }
-            return TableDefinition.WholeRow(name: column.name, type: typeWords(column.type.words, in: schema, from: table.name.schema), pill: pill,
-                                            nullable: column.nullable)
+            let words = typeWords(column.type.words, in: schema, from: table.name.schema)
+            let named = pastedEnum(named: column.type.words, in: schema, from: table.name.schema)?.name.name ?? (fileEnums.contains(words) ? words : nil)
+            let pill = named.map { AdornmentLabel($0).tinted(TableStyle.enumPill) }
+            return TableDefinition.WholeRow(name: column.name, type: words, pill: pill, nullable: column.nullable)
         }))
         return shape
     }
@@ -182,5 +202,42 @@ public enum SQLPaste {
     /// A value as JSON text.
     private static func json(_ value: Any) -> String {
         (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+    }
+}
+
+/// How a reader orders what it puts down so that what refers to what lands together (`DrawPut` rows, four to a row): a table
+/// after the one it keys to most, a type after the one that refers to it most.
+enum ReaderLayout {
+    /// `items` (in the order they were read) ordered by `links` (one from an item to the item it refers to, as often as it does;
+    /// one to itself counts for nothing): from the item most links name (the first read of a tie), a walk that puts each item's
+    /// neighbors after it, the one with most links between them first (either way), then the order read; then from the most named
+    /// of those left, and so on. Every item once.
+    static func walk(_ items: [Int], links: [(from: Int, to: Int)]) -> [Int] {
+        var weight: [Int: [Int: Int]] = [:], named: [Int: Int] = [:]
+        let known = Set(items)
+        for link in links where link.from != link.to && known.contains(link.from) && known.contains(link.to) {
+            named[link.to, default: 0] += 1
+            weight[link.from, default: [:]][link.to, default: 0] += 1
+            weight[link.to, default: [:]][link.from, default: 0] += 1
+        }
+        let place = Dictionary(items.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        var laid: [Int] = [], seen: Set<Int> = []
+        while laid.count < place.count {
+            // The most named of those left, the first read of a tie.
+            guard let start = items.filter({ !seen.contains($0) }).max(by: { (named[$0] ?? 0, place[$1]!) < (named[$1] ?? 0, place[$0]!) }) else { break }
+            var queue = [start]
+            seen.insert(start)
+            while !queue.isEmpty {
+                let item = queue.removeFirst()
+                laid.append(item)
+                let next = (weight[item] ?? [:]).filter { !seen.contains($0.key) }
+                    .sorted { ($0.value, place[$1.key]!) > ($1.value, place[$0.key]!) }.map(\.key)
+                for neighbor in next {
+                    seen.insert(neighbor)
+                    queue.append(neighbor)
+                }
+            }
+        }
+        return laid
     }
 }

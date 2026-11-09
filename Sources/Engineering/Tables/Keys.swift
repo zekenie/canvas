@@ -158,7 +158,7 @@ enum KeyArrows {
             if current == target, !held.isEmpty { return true }
             let registry = transaction.shapes.registry
             // The far end on this board: the row, or a pill for its table with the row on the binding.
-            guard let end = reach(target, from: table, keys: keys, in: &transaction) else { return false }
+            guard let end = reach(target, from: table, column: column, keys: keys, in: &transaction) else { return false }
             let own = PartAddress(table, part: column)
             // The arrow's far end as it is bound now (the row, or a pill for its table and the row).
             if let arrow = held.first, let record = transaction.document[arrow],
@@ -176,7 +176,7 @@ enum KeyArrows {
 
     /// Where a key to `target` ends on the transaction's board: the row itself, there; else a pill for its table there (reused, or
     /// made and put down in the transaction), with the row on the binding, and the kind the pill is read as. Nil where none can be.
-    private static func reach(_ target: PartAddress, from table: ShapeID, keys: KeyIndex?, in transaction: inout Transaction)
+    private static func reach(_ target: PartAddress, from table: ShapeID, column: PartID, keys: KeyIndex?, in transaction: inout Transaction)
         -> (address: PartAddress, standingFor: [ShapeKind])? {
         if transaction.document[target.shape] != nil { return (target, []) }
         // Planned against the board shown as the editor has it, which is the transaction's: a row is written on the board shown.
@@ -187,7 +187,7 @@ enum KeyArrows {
         let document = transaction.document, put = document.shapes.compactMap { editor.document[$0.id] == nil ? $0.box : nil }
         guard verdicts.verdict(of: target.shape) == .reads, let route = verdicts.route, let far = editor.shape(inFile: target.shape),
               let placed = route.placePill(standingFor: target.shape, label: editor.registry.mentionAppearance(of: far)?.label ?? "",
-                                           beside: table, edgeIs: .from, sharing: .any, avoiding: put, reading: document, verdicts: verdicts,
+                                           beside: table, from: column, edgeIs: .from, sharing: .any, avoiding: put, reading: document, verdicts: verdicts,
                                            in: editor) else { return nil }
         guard (try? placed.claim(in: &transaction, registry: editor.registry)) != nil, let pill = try? placed.put(in: &transaction) else { return nil }
         return (PartAddress(pill, part: target.part), [placed.farKind])

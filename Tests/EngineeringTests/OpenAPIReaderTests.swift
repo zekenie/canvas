@@ -289,6 +289,20 @@ private func json(_ text: String) throws -> SchemaValue { SchemaValue(try JSONRe
         let unknown = OpenAPIPaste.pointed(try json(##"{"properties": {"a": {"$ref": "#/components/schemas/Gone", "description": "x"}}}"##)) { _ in nil }
         expectEqual(unknown["properties"]?["a"], .object([]), "a component no note stands for: {}")
     },
+    test("titled: each property is titled as keyed, at any depth, where it has none; an example, a default, a const, an enum and an extension are data, left as written") {
+        let schema = try json(##"""
+            {"properties": {"payment_id": {"type": "string"}, "kept": {"title": "Kept words"}, "nested": {"properties": {"inner_key": {"type": "integer"}}},
+                            "flag": true},
+             "example": {"properties": {"a": {"type": "x"}}}, "default": {"properties": {"b": 1}}, "const": {"properties": {"c": 1}},
+             "enum": [{"properties": {"d": 1}}], "x-sample": {"properties": {"e": 1}}}
+            """##)
+        let titled = OpenAPIPaste.titled(schema)
+        expectEqual(titled["properties"]?["payment_id"]?["title"], .string("payment_id"))
+        expectEqual(titled["properties"]?["kept"]?["title"], .string("Kept words"), "a title of its own stays")
+        expectEqual(titled["properties"]?["nested"]?["properties"]?["inner_key"]?["title"], .string("inner_key"))
+        expectEqual(titled["properties"]?["flag"], .bool(true), "a boolean property is left as it is")
+        for key in ["example", "default", "const", "enum", "x-sample"] { expectEqual(titled[key], schema[key], "\(key) is data") }
+    },
     test("a type pasted again joins what it holds: its properties by name in place, the paste's new ones after, required for a property only it has kept, what else only it says kept") {
         let held = try json(#"{"type": "object", "description": "mine", "$color": "green", "properties": {"id": {"type": "integer"}, "memo": {"type": "string"}}, "required": ["memo"]}"#)
         let written = try json(#"{"type": "object", "properties": {"id": {"type": "string"}, "period": {"type": "string"}}, "required": ["id"]}"#)

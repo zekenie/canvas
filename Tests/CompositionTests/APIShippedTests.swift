@@ -151,6 +151,165 @@ private let models = #"""
         expectEqual(w.line?.string, "POST /orders/{id}/refunds (NewRefund) → 201 RefundView", "a rename followed, nothing written")
         walk.press(.escape)
     },
+    test("apis 16 to 21: Refund, which no type is called, highlights New type Refund though a path's stem ranks NewRefund first, and Return makes it; a dashed name committed opens its offers again when the caret comes to its end") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            sticky-note "NewRefund" schema: "{\"type\": \"object\"}"
+            sticky-note "Order" below "NewRefund" (gap: 40) schema: "{\"type\": \"object\"}"
+            api "orders API" right of "NewRefund" (gap: 80) endpoints: "GET /orders/{id}"
+            """#)
+        let api = try require(apis(editor).first)
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.type("POST /orders/{id}/refunds (NewRefund) -> 201 Refund", with: walk)
+        let field = try require(w.line)
+        expectEqual(field.listedOffers.first, "NewRefund", "the path's stem ranks it first")
+        expectEqual(field.listedOffers.last, "New type Refund", "the action last")
+        expectEqual(field.highlightedOffer, "New type Refund", "nothing is called Refund or starts so: the action highlighted")
+        walk.press(.return)
+        let refund = try require(titled(editor, "Refund")).id
+        expect(editor.types?.isType(refund) == true, "Return made the type")
+        expectEqual(undoTitle(w.window), "Undo New Type")
+        expectEqual(apis(editor).first?.props.endpoints.last?.endpoint?.responses.first?.type, TypeRef("Refund", shape: refund), "the words bound to it")
+        walk.press(.return)
+        expectEqual(w.lineRows?.focus, .waiting, "Return again: the line below")
+        // A word some type starts with keeps the first offer highlighted: Return then commits the line as typed.
+        w.type("GET /orders -> 200 Ord", with: walk)
+        expectEqual(field.highlightedOffer, "Order", "Order starts so: the type, not the action")
+        field.selectAll(nil)
+        w.type("GET /refunds -> 200 Nothing", with: walk)
+        expectEqual(field.highlightedOffer, "New type Nothing")
+        walk.press(.escape)
+        expect(field.listedOffers.isEmpty, "Escape closed the list")
+        walk.press(.return)
+        expectEqual(undoTitle(w.window), "Undo Add Endpoint")
+        expect(titled(editor, "Nothing") == nil, "no type made: Nothing dashed")
+        let nothingRow = try require(apis(editor).first?.props.endpoints.last?.id)
+        walk.press(.up)
+        expectEqual(w.lineRows?.focus, .row(nothingRow))
+        walk.press(Chord(Key.right, .command))
+        expectEqual(field.highlightedOffer, "New type Nothing", "the caret at the end of the dashed name: its offers again (apis 18)")
+        walk.press(.return)
+        expect(titled(editor, "Nothing").map { editor.types?.isType($0.id) == true } ?? false, "made from the row it was committed in")
+        walk.press(.escape)
+        walk.press(.escape)
+    },
+    test("apis 25 to 29: ⌘← Return opens the line above the first row, /orders typed there is one step, Add Path Prefix, every endpoint's full path kept; Undo") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"api "orders API" endpoints: "GET /orders/{id}\nGET /customers/{id}\nPOST /orders/{id}/refunds""#)
+        let api = try require(apis(editor).first)
+        @MainActor func fullPaths() -> [String] {
+            let rows = apis(editor).first?.props.endpoints ?? []
+            return rows.indices.filter { rows[$0].endpoint != nil }.map { APIGroups.fullPath(of: $0, in: rows) }
+        }
+        let before = fullPaths()
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.lineRows?.go(to: .row(api.props.endpoints[0].id))
+        w.window.settle()
+        walk.press(Chord(Key.left, .command))
+        walk.press(.return)
+        expectEqual(w.lineRows?.focus, .waiting, "the waiting line")
+        expectEqual(w.lineRows?.stops.firstIndex(of: .waiting), w.lineRows?.stops.firstIndex(of: .row(api.props.endpoints[0].id)).map { $0 - 1 }, "above the first row")
+        w.type("/orders", with: walk)
+        walk.press(.return)
+        expectEqual(undoTitle(w.window), "Undo Add Path Prefix")
+        expectEqual(Set(fullPaths()), Set(before), "every endpoint's full path kept")
+        expectEqual(lines(editor), ["GET /customers/{id}", "/orders", "GET /{id}", "POST /{id}/refunds"], "the covered ones under it, the other above, under none")
+        expectEqual(editor.announcements.last, "Add Path Prefix", "the step is said")
+        walk.press(.escape)
+        editor.undo()
+        expectEqual(Set(fullPaths()), Set(before), "Undo: every full path as it was")
+    },
+    test("apis 31 to 33: ⌥↑ on a header takes the nearest endpoint under none its prefix covers, a row a press, Move Path Prefix, every full path kept; Undo each") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"api "orders API" endpoints: "GET /orders/{id}\nGET /customers/{id}\nPOST /orders/{id}/refunds\nPATCH /orders/{id}""#)
+        let api = try require(apis(editor).first)
+        @MainActor func fullPaths() -> [String] {
+            let rows = apis(editor).first?.props.endpoints ?? []
+            return rows.indices.filter { rows[$0].endpoint != nil }.map { APIGroups.fullPath(of: $0, in: rows) }
+        }
+        let before = fullPaths()
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.lineRows?.go(to: .row(api.props.endpoints[3].id))
+        w.window.settle()
+        walk.press(.return)
+        w.type("/orders", with: walk)
+        walk.press(.return)
+        expectEqual(undoTitle(w.window), "Undo Add Path Prefix")
+        expectEqual(lines(editor), ["GET /orders/{id}", "GET /customers/{id}", "POST /orders/{id}/refunds", "PATCH /orders/{id}", "/orders"], "a header at the end covers nothing")
+        let header = try require(apis(editor).first?.props.endpoints.first { $0.header != nil }?.id)
+        w.lineRows?.go(to: .row(header))
+        w.window.settle()
+        let optionUp = Chord(Key.up, .option)
+        walk.press(optionUp)
+        expectEqual(lines(editor), ["GET /orders/{id}", "GET /customers/{id}", "POST /orders/{id}/refunds", "/orders", "PATCH /{id}"], "up a row: PATCH taken")
+        expectEqual(undoTitle(w.window), "Undo Move Path Prefix")
+        expectEqual(editor.announcements.last, "Move Path Prefix")
+        walk.press(optionUp)
+        expectEqual(lines(editor), ["GET /orders/{id}", "GET /customers/{id}", "/orders", "POST /{id}/refunds", "PATCH /{id}"], "up a row: POST taken")
+        expectEqual(Set(fullPaths()), Set(before), "every full path kept")
+        walk.press(.escape)
+        editor.undo()
+        expectEqual(lines(editor), ["GET /orders/{id}", "GET /customers/{id}", "POST /orders/{id}/refunds", "PATCH /orders/{id}", "/orders"], "one Undo: the presses are one step (a held key's)")
+        expectEqual(fullPaths(), before, "the full paths as they were")
+    },
+    test("apis 18: arriving on a row whose line ends in a type not made (Tab, ⇧Tab, ↑ ↓) opens no list, so no key walk makes a type; the person's own move to its end does") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            api "orders API" endpoints: "GET /a -> 200 Foo\nGET /b -> 200 Bar\nGET /c"
+            """#)
+        let api = try require(apis(editor).first)
+        let ids = api.props.endpoints.map(\.id), before = editor.document.shapes.count
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api.id]
+        editor.beginEditing(api.id)
+        w.window.settle()
+        w.lineRows?.go(to: .row(ids[2]))
+        w.window.settle()
+        let field = try require(w.line)
+        for expected in [ids[1], ids[0]] {
+            walk.press(.backTab)
+            expectEqual(w.lineRows?.focus, .row(expected))
+            expect(field.listedOffers.isEmpty, "⇧Tab: no list on \(field.string): \(field.listedOffers)")
+        }
+        for expected in [ids[1], ids[2]] {
+            walk.press(.tab)
+            expectEqual(w.lineRows?.focus, .row(expected))
+            expect(field.listedOffers.isEmpty, "Tab: no list on \(field.string): \(field.listedOffers)")
+        }
+        walk.press(.up)
+        expectEqual(w.lineRows?.focus, .row(ids[1]))
+        expect(field.listedOffers.isEmpty, "↑: no list on \(field.string)")
+        walk.press(.return)
+        expectEqual(w.lineRows?.stops.firstIndex(of: .waiting), w.lineRows?.stops.firstIndex(of: .row(ids[1])).map { $0 + 1 }, "Return commits the row and opens the line below, no type made")
+        expectEqual(editor.document.shapes.count, before, "no key of the walk made a type")
+        walk.press(.up)
+        walk.press(Chord(Key.left))
+        walk.press(Chord(Key.right))
+        expectEqual(field.highlightedOffer, "New type Bar", "the person's own move to the end of the dashed name: its offers")
+        walk.press(.escape)
+        walk.press(.escape)
+    },
     test("E3 panels 2 and 3: in the card, 409 Problem is a dashed pill offering New type Problem last; Return makes the note beside Refund, the words bound, the caret kept; one step, New Type") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }

@@ -203,7 +203,7 @@ enum EndpointLinks {
             if !gone.isEmpty { transaction.delete(gone) }
             var put: [CGRect] = []
             @MainActor func request(_ link: EndpointLink) throws -> ConnectionRequest {
-                guard let end = reach(link.target, from: api, avoiding: put, in: &transaction, editor: editor) else { throw Transaction.Refused([api]) }
+                guard let end = reach(link.target, from: api, row: endpoint, avoiding: put, in: &transaction, editor: editor) else { throw Transaction.Refused([api]) }
                 if let box = transaction.document[end.address.shape]?.box, editor.document[end.address.shape] == nil { put.append(box) }
                 return ConnectionRequest(from: api, to: end.address.shape, fromPart: endpoint, toPart: end.address.part, channel: link.channel)
             }
@@ -230,7 +230,7 @@ enum EndpointLinks {
 
     /// Where a link to `target` ends on the transaction's board: the shape (or row) itself, there; else a pill for it there, reused or
     /// made and put down, the row on the binding (an endpoint's own pill). Nil where none can be (typing never makes a shape public).
-    private static func reach(_ target: PartAddress, from api: ShapeID, avoiding put: [CGRect], in transaction: inout Transaction,
+    private static func reach(_ target: PartAddress, from api: ShapeID, row: PartID, avoiding put: [CGRect], in transaction: inout Transaction,
                               editor: CanvasEditor) -> (address: PartAddress, kind: ShapeKind?)? {
         if transaction.document[target.shape] != nil { return (target, nil) }
         guard editor.board == transaction.board, let far = editor.shape(inFile: target.shape) else { return nil }
@@ -238,7 +238,7 @@ enum EndpointLinks {
         let alone = target.part.flatMap { part in editor.registry.parts(of: far)?.first { $0.id == part } }.map(\.standsAlone) == true
         let label = target.part.flatMap { part in editor.registry.parts(of: far)?.first { $0.id == part }?.name } ?? editor.registry.title(of: far) ?? ""
         guard verdicts.verdict(of: target.shape) == .reads, let route = verdicts.route,
-              let placed = route.placePill(standingFor: target.shape, row: alone ? target.part : nil, label: label, beside: api, edgeIs: .from,
+              let placed = route.placePill(standingFor: target.shape, row: alone ? target.part : nil, label: label, beside: api, from: row, edgeIs: .from,
                                            sharing: .any, avoiding: put, reading: transaction.document, verdicts: verdicts, in: editor),
               (try? placed.claim(in: &transaction, registry: editor.registry)) != nil, let pill = try? placed.put(in: &transaction) else { return nil }
         return (PartAddress(pill, part: target.part), placed.farKind)

@@ -33,6 +33,38 @@ import TextEditing
         expectEqual(after, before, "the waiting line goes as editing ends")
         expectEqual(b.drawn(), ["red", "green"])
     },
+    test("apis 26: Return with the caret at the very start of a row opens the waiting line above it, as a text editor does; what's typed there goes in above; at any other place, below") {
+        let b = try Bench()
+        let id = b.tally("apples", ["red 3", "green 4"])
+        let ids = b.rows(id).map(\.id)
+        b.begin(id)
+        b.press(.up)
+        b.press(.up)
+        expectEqual(b.focus, "row red")
+        b.field.setSelectedRange(NSRange(location: 0, length: 0))
+        b.press(.return)
+        expectEqual(b.focus, "waiting")
+        expectEqual(b.view?.stops, [.waiting, .row(ids[0]), .row(ids[1])], "above the row it was on")
+        expectEqual(b.labels(id), ["red", "green"], "nothing written")
+        b.type("blue 1")
+        b.press(.return)
+        expectEqual(b.labels(id), ["blue", "red", "green"])
+        expectEqual(b.undoName, "Add Entry")
+        expectEqual(b.view?.stops, [.row(b.rows(id)[0].id), .waiting, .row(ids[0]), .row(ids[1])], "the next line under the one typed")
+        b.press(.down)
+        expectEqual(b.focus, "row red")
+        b.field.setSelectedRange(NSRange(location: 1, length: 0))
+        b.press(.return)
+        expectEqual(b.view?.stops, [.row(b.rows(id)[0].id), .row(ids[0]), .waiting, .row(ids[1])], "mid-line: below")
+        // Back up from the empty line, Return again: below. An empty line has no column to carry, so the row is entered at its end,
+        // never at a start nothing the person did put the caret at.
+        b.press(.up)
+        expectEqual(b.focus, "row red")
+        expectEqual(b.field.selectedRange().location, ("red 3" as NSString).length, "at the row's end")
+        b.press(.return)
+        expectEqual(b.view?.stops, [.row(b.rows(id)[0].id), .row(ids[0]), .waiting, .row(ids[1])], "below the row, as before")
+        b.press(.escape)
+    },
     test("Return commits a typed line as its own step, Add Entry, and opens a line under it; on the empty line it ends editing; announced") {
         let b = try Bench()
         let id = b.tally("apples", ["red 3"])

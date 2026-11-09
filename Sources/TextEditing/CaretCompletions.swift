@@ -44,10 +44,13 @@ public struct CaretCompletion: Equatable, Sendable {
     public var isAction: Bool
     /// The color of a capsule its row is drawn in (an enum's purple), nil for a plain row.
     public var chip: NSColor?
+    /// Whether the list highlights it once it's listed, wherever the order puts it, so Return does it (the action nothing else is
+    /// called so: "New type Refund" while no type's name is or starts with `Refund`). The first item is highlighted otherwise.
+    public var isDefault: Bool
 
     /// `selection` nil: the caret after `insert`.
     public init(label: String, detail: String = "", insert: String, selection: NSRange? = nil, reopens: Bool = false, isRelevant: Bool = true,
-                isAction: Bool = false, chip: NSColor? = nil) {
+                isAction: Bool = false, chip: NSColor? = nil, isDefault: Bool = false) {
         self.label = label
         self.detail = detail
         self.insert = insert
@@ -56,6 +59,7 @@ public struct CaretCompletion: Equatable, Sendable {
         self.isRelevant = isRelevant
         self.isAction = isAction
         self.chip = chip
+        self.isDefault = isDefault
     }
 }
 

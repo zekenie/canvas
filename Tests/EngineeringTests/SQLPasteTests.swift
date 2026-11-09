@@ -1,3 +1,4 @@
+import AppKit
 @_spi(Host) import Canvas
 import CanvasTesting
 import Clipboard
@@ -176,17 +177,71 @@ private let paymentsSQL = """
         expectEqual(values.map(\.text), ["pending", "void", "paid", "refunded"])
         expectEqual(values.filter { $0.text != "void" }.map(\.id), ids, "the values it had keep their ids")
     },
-    test("in paste order, four to a row; the tables and enums all returned, as ⌘V selects them") {
+    test("enums on a row of their own, first; tables four to a row, left to right; all returned, as ⌘V selects them") {
         let h = try pasteHarness()
         let sql = (1...6).map { "CREATE TABLE t\($0) (id int PRIMARY KEY);" }.joined(separator: "\n") + "\nCREATE TYPE mood AS ENUM ('ok');"
         let program = try require(SQLPaste.program(of: sql))
-        expectEqual(program.block.map(\.count), [4, 3])
+        expectEqual(program.block.map(\.count), [1, 4, 2], "the enum alone, then the tables")
         let landed = try paste(sql, in: h)
         expectEqual(landed.count, 7)
-        let boxes = landed.compactMap { h.editor.document[$0]?.box }
+        let tables = landed.filter { h.editor.document[$0]?.kind == DatabaseTable.kind }
+        let mood = try require(landed.first { h.editor.document[$0]?.kind == DatabaseEnum.kind }.flatMap { h.editor.document[$0]?.box })
+        let boxes = tables.compactMap { h.editor.document[$0]?.box }
         expectEqual(Set(boxes.prefix(4).map(\.minY)).count, 1, "the first four in a row")
+        expect(boxes.allSatisfy { $0.minY > mood.maxY }, "under the enums' row")
         expect(boxes[4].minY > boxes[0].maxY, "the rest below")
-        expect(boxes[1].minX > boxes[0].maxX && boxes[2].minX > boxes[1].maxX, "left to right in paste order")
+        expect(boxes[1].minX > boxes[0].maxX && boxes[2].minX > boxes[1].maxX, "no keys: left to right in paste order")
+    },
+    test("paste 02: a pg_dump laid out by its keys: from the table most keys name, each table after the one it keys to most, so keys join neighbors") {
+        // A dump's alphabet: categories, customers, order_items, orders, payments, products, shipments.
+        let sql = """
+            CREATE TABLE categories (id int PRIMARY KEY);
+            CREATE TABLE customers (id int PRIMARY KEY);
+            CREATE TABLE order_items (id int PRIMARY KEY, order_id int REFERENCES orders, product_id int REFERENCES products);
+            CREATE TABLE orders (id int PRIMARY KEY, customer_id int REFERENCES customers);
+            CREATE TABLE payments (id int PRIMARY KEY, order_id int REFERENCES orders);
+            CREATE TABLE products (id int PRIMARY KEY, category_id int REFERENCES categories);
+            CREATE TABLE shipments (id int PRIMARY KEY, order_id int REFERENCES orders);
+            CREATE TYPE order_status AS ENUM ('pending');
+            """
+        let h = try pasteHarness()
+        let landed = try paste(sql, in: h)
+        // The rows as they landed, top to bottom, each left to right.
+        let shapes = landed.compactMap { h.editor.document[$0] }
+        let tops = Array(Set(shapes.compactMap { $0.box?.minY })).sorted()
+        let titles = tops.map { top in
+            shapes.filter { $0.box?.minY == top }.sorted { $0.box!.minX < $1.box!.minX }.compactMap { $0[TitleProperty.self] }
+        }
+        expectEqual(titles, [["order_status"], ["orders", "customers", "order_items", "payments"], ["shipments", "products", "categories"]],
+                    "orders, which three tables key to, first; its neighbors in paste order; products after order_items, categories after products")
+    },
+    test("paste 03: a table made as wide as its longest line, a dump's long type whole; capped; one the file has keeps its width") {
+        let h = try pasteHarness()
+        let sql = """
+            CREATE TABLE shipments (id int PRIMARY KEY, tracking_number character varying(255), shipped_at timestamp with time zone);
+            CREATE TABLE tiny (id int PRIMARY KEY);
+            CREATE TABLE wide (id int PRIMARY KEY, \((1...3).map { "c\($0) character varying(255) DEFAULT 'a very long default that runs on and on'" }.joined(separator: ", ")), a_column_with_an_exceedingly_long_name_that_never_ends_at_all_really timestamp with time zone);
+            """
+        let landed = try paste(sql, in: h)
+        let widths = landed.compactMap { h.editor.document[$0]?.box?.width }
+        expectEqual(widths.count, 3)
+        expect(widths[0] > 260, "shipments wider than a new table: \(widths[0])")
+        // Its longest line, as a row lays it out: the names' inset, the name, a gap, the type, the `?`, the trailing inset.
+        func width(_ text: String, _ font: NSFont) -> CGFloat { NSAttributedString(string: text, attributes: [.font: font]).size().width }
+        let longest = KitStyle.nameInset + width("tracking_number", KitStyle.nameFont) + KitStyle.nameGap
+            + width("character varying(255)", KitStyle.typeFont) + width("?", KitStyle.typeFont) + KitStyle.trailingInset
+        expect(widths[0] >= longest - 1, "shipments as wide as tracking_number character varying(255)? needs: \(widths[0]) for \(longest)")
+        expectEqual(widths[1], 260, "a short one as a new table is")
+        expectEqual(widths[2], 520, "capped")
+        h.editor.transact("Resize") { $0.update(landed[0]) { $0.box = CGRect(origin: $0.box!.origin, size: CGSize(width: 300, height: $0.box!.height)) } }
+        try paste(sql, in: h)
+        expectEqual(h.editor.document[landed[0]]?.box?.width, 300, "found: its width as the person left it")
+    },
+    test("paste 03: a column typed as an enum the file has (not the paste) is measured as the pill it is drawn as, wider than its words") {
+        let sql = "CREATE TABLE shipments (id int PRIMARY KEY, carrier_service_level_name carrier_service_level);"
+        let plain = try require(SQLPaste.program(of: sql)), known = try require(SQLPaste.program(of: sql, fileEnums: ["carrier_service_level"]))
+        let was = try require(plain.sizes.values.first?.width), now = try require(known.sizes.values.first?.width)
+        expect(now != was, "measured as the pill it is drawn as, not as its words: \(now) for \(was)")
     },
     test("a key's row: the column it names; REFERENCES t alone the pasted table's primary key, else asked of the table the put finds (the file's), and no edge where it has none; the paste lands whole") {
         let h = try pasteHarness()
@@ -219,8 +274,10 @@ private let paymentsSQL = """
             CREATE TYPE a.status AS ENUM ('x');
             CREATE TYPE b.status AS ENUM ('y');
             """
-        let first = try paste(sql, in: h)
-        expectEqual(first.count, 4)
+        let landed = try paste(sql, in: h)
+        expectEqual(landed.count, 4)
+        // The enums on their row first, then the tables.
+        let first = landed.filter { h.editor.document[$0]?.kind == DatabaseTable.kind } + landed.filter { h.editor.document[$0]?.kind == DatabaseEnum.kind }
         expectEqual(titled("users", DatabaseTable.kind, in: h.editor).count, 2, "no database auth: a table of its own")
         let before = columns(first[0], in: h.editor).map(\.name) + columns(first[1], in: h.editor).map(\.name)
         expectEqual(before, ["id", "email", "id", "name"])

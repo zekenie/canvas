@@ -78,6 +78,53 @@ private let stripeAPI = #"""
     return found
 }
 
+/// connect 24, wave 8: a far pill an arrow from a row reaches lands where the arrow reads clean: below the shape it leaves (the
+/// line meeting the pill's top), else level with the row (the pill's middle at the row's middle, the line meeting its near side);
+/// the straight line from the row to where it meets the pill crosses no other shape, and the pill is in the clear view.
+/// `lastRow`: the row is the shape's last, the room under it the waiting line's while the shape is edited (a straight line down is then
+/// right).
+@MainActor func expectClean(_ arrowID: ShapeID, from near: ShapeID, row: PartID, in editor: CanvasEditor, view: Bool = true, lastRow: Bool = false,
+                                    _ what: String) throws {
+    let arrow = try require(editor.document[arrowID]?.typed(as: Arrow.self))
+    let pillID = try require(arrow.props.end.binding?.shapeID)
+    let pill = try require(editor.shapeContext.geometry(of: pillID)?.bounds), shape = try require(editor.shapeContext.geometry(of: near)?.bounds)
+    let line = try require(editor.shapeContext.geometry(of: near)?.parts.frame(row)?.rect)
+    let geometry = try require(editor.arrowGeometry(of: arrowID))
+    // Where the level curve leaves the row and meets the pill, before its head is trimmed off.
+    let level: Cubic? = if case .level(let cubic, _, _) = geometry.path { cubic } else { nil }
+    let cubic = try require(level, "a level arrow, from a row: \(what)")
+    let start = cubic.start, end = cubic.end
+    if pill.minY >= shape.maxY {
+        expect(abs(end.y - pill.minY) < 1.5, "\(what): below the shape, the line meets the pill's top: \(end) \(pill)")
+    } else {
+        expect(abs(pill.midY - line.midY) < 1, "\(what): level with the row: \(pill.midY) \(line.midY)")
+        expect(abs(end.x - (pill.minX > shape.maxX ? pill.minX : pill.maxX)) < 1.5, "\(what): the line meets the pill's near side: \(end) \(pill)")
+    }
+    // The line leaves the shape it starts from by its side: it never cuts across the rows under the one it leaves.
+    let rest = CGRect(x: shape.minX, y: line.maxY, width: shape.width, height: max(0, shape.maxY - line.maxY)).insetBy(dx: 1, dy: 1)
+    if !rest.isNull, !rest.isEmpty {
+        let cuts = (1...64).contains { step in
+            let t = CGFloat(step) / 64
+            return rest.contains(CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
+        }
+        expect(!cuts, "\(what): the line from the row cuts across the rows under it")
+        // Nor runs down the shape's own side where rows are under it: the pill is wholly beside the row's end, or level with the row.
+        let alongSide = !lastRow && shape.maxY - line.maxY > line.height / 2 && abs(end.x - start.x) < 1 && start.x >= shape.minX - 1 && start.x <= shape.maxX + 1
+            && abs(end.y - start.y) > 1
+        expect(!alongSide, "\(what): the line from the row runs along the shape's side, over the rows under it: \(start) \(end)")
+    }
+    for record in editor.document.shapes where ![near, pillID, arrowID].contains(record.id) && record.kind != Arrow.kind {
+        guard let bounds = editor.shapeContext.geometry(of: record.id)?.bounds, !bounds.contains(shape) else { continue }
+        let inner = bounds.insetBy(dx: 1, dy: 1)
+        let crosses = (0...64).contains { step in
+            let t = CGFloat(step) / 64
+            return inner.contains(CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t))
+        }
+        expect(!crosses, "\(what): the line from the row crosses \(record[TitleProperty.self] ?? record.kind.rawValue)")
+    }
+    if view { expect(editor.cameraTarget.toWorld(editor.unobscuredViewport).contains(pill), "\(what): the pill in the clear view") }
+}
+
 @MainActor let apiConnectShippedTests = Suite("Connect an API, shipped", [
     test("E4 panels 2 and 3, by the pointer through the app's canvas view: a drag from an endpoint row's dot onto payments draws the arrow plain from the row, and the list offers writes, reads, a rule, Plain arrow; ↓ reads ↩ is Change Relation; one Undo plain, two none") {
         let w = try KeyDragWindow(e4)
@@ -93,6 +140,7 @@ private let stripeAPI = #"""
         expectEqual(editor.hintedShapeID, payments.id, "payments lit as the end")
         w.release()
         let arrow = try require(arrows(editor).last)
+        expectEqual(editor.selectedShapeIDs, [arrow.id], "a pointer drag selects the arrow it drew, the list under it")
         expectEqual(arrow.props.start.binding?.part, refundsRow, "from the row")
         expectEqual(arrow.props.end.binding?.shapeID, payments.id)
         expectEqual(arrow.props.end.binding?.part, nil, "to the table as a whole")
@@ -205,6 +253,20 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.row, farRow, "a pill for the endpoint itself")
         expectEqual(arrow.props.end.binding?.part, farRow)
         expectEqual(undoTitle(w.window), "Undo Connect")
+        try expectClean(arrow.id, from: api, row: row, in: editor, "⌘L's far pick")
+        // connect 19 to 21: the card's calls line, longer than the card, ends in "…" until its stop has the keyboard.
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.canvas.cardView as? LineCardView)
+        w.window.settle()
+        card.layoutSubtreeIfNeeded()
+        expectEqual(card.value(of: "relations 1"), "calls Stripe API.POST /v1/refunds", "its words whole")
+        expect(card.isCut("relations 1"), "cut at the card's edge, said so")
+        expect(!card.isCut("name"), "a line that fits isn't")
+        card.go(to: "relations 1")
+        w.window.settle()
+        card.layoutSubtreeIfNeeded()
+        expect(!card.isCut("relations 1"), "with the keyboard, shown whole, slid to its caret")
+        walk.press(.escape)
         walk.press(.escape)
         walk.press(.escape)
         // The pill draws the method's chip as the row does, light and dark.
@@ -215,6 +277,32 @@ private let stripeAPI = #"""
         expect(count(post, in: frame, of: renderDark(editor, size: size)) > 40, "and dark")
         editor.undo()
         expectEqual(editor.document, start, "one Undo: the arrow and the pill")
+    },
+    test("a calls line typed in the card to an endpoint on another board puts its pill where the line from the row is clean (connect 24)") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        w.canvas.menuPresenter = { _, _, _ in }
+        try w.turnKitOn()
+        try w.draw(e4)
+        try w.draw(stripe)
+        try w.draw(stripeAPI)
+        let api = try require(shape(editor, "orders API")).id
+        let row = try require(rows(editor, "orders API").dropFirst().first?.id)
+        let walk = w.walk()
+        editor.selectedShapeIDs = [api]
+        editor.beginEditing(api)
+        w.window.settle()
+        w.lineRows?.go(to: .row(row))
+        w.window.settle()
+        walk.press(Chord(Key.down, .command))
+        let card = try require(w.canvas.cardView as? LineCardView)
+        card.go(to: "relations 1")
+        w.window.settle()
+        w.type("calls Stripe API.POST /v1/refunds", with: walk)
+        walk.press(.return)
+        let arrow = try require(arrows(editor).first, "the typed line drew its arrow")
+        try expectClean(arrow.id, from: api, row: row, in: editor, "a typed calls line")
     },
     test("the card keeps an arrow through what its line can't say: a typo in a line keeps the arrow and the typed words, a line changed to another table re-aims the same arrow (its id and bend kept, Change Connection), two lines alike make one") {
         let w = try EmptyBoardWindow()
@@ -324,6 +412,62 @@ private let stripeAPI = #"""
         expect(editor.connectPicker?.isOpen != true, "no picker opens on a header")
         expect(editor.service(RefusalShake.self)?.isShaking == true, "the shape shakes, as one with nothing to pick for does")
     },
+    test("wave 8 and connect 24: draw's calls edge to an endpoint on another board puts its pill where the line from the row is clean, below the API or level with the row, never with the arrow under the pill") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            database "shop" size: 1400x900
+            subboard "payments provider" right of "shop"
+            """#)
+        try w.draw(#"""
+            table "orders" in "shop" columns: "id uuid pk\ntotal_cents int"
+            table "refunds" in "shop" right of "orders" top level with "orders" columns: "id uuid pk\norder_id uuid → orders.id\namount_cents int"
+            api "orders API" in "shop" below "orders" (gap: wide) server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /orders/{id}\nPOST /orders/{id}/refunds → 201"
+            """#)
+        try w.draw(#"api "Stripe API" in "payments provider" server: "api.stripe.com bearer" endpoints: "POST /v1/refunds → 200""#)
+        try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "refunds" channel: writes"#)
+        try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls"#)
+        let api = try require(shape(editor, "orders API")).id
+        let row = try require(rows(editor, "orders API").last?.id)
+        let calls = try require(arrows(editor).first { $0[ChannelProperty.self] == Calls.id })
+        try expectClean(calls.id, from: api, row: row, in: editor, view: false, "draw's edge")
+        let ids = Set(editor.document.shapes.map(\.id))
+        try w.draw(#"edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls"#)
+        expectEqual(Set(editor.document.shapes.map(\.id)), ids, "drawn again: nothing twice")
+    },
+    test("connect 24: in one script, a clean pill is in the way of a later pill, and of a note the script restates taller afterwards: neither lands on it") {
+        let w = try EmptyBoardWindow()
+        defer { w.board.close() }
+        let editor = w.editor
+        try w.turnKitOn()
+        try w.draw(#"""
+            database "shop" size: 1600x1800
+            subboard "payments provider" right of "shop"
+            """#)
+        try w.draw(#"""
+            table "orders" in "shop" columns: "id uuid pk\ntotal_cents int"
+            sticky-note "ledger" in "shop" right of "orders" (gap: wide) top level with "orders" size: 260x40
+            api "orders API" in "shop" right of "ledger" (gap: 20) top level with "orders" server: "api.shop.dev/v1 bearer" endpoints: "/orders\nGET /orders/{id}\nPOST /orders/{id}/refunds → 201"
+            """#)
+        try w.draw(#"api "Stripe API" in "payments provider" server: "api.stripe.com bearer" endpoints: "POST /v1/refunds → 200""#)
+        try w.draw(#"""
+            edge "orders API"."POST /orders/{id}/refunds" -> "Stripe API"."POST /v1/refunds" channel: calls
+            edge "orders API" -> "Stripe API"
+            sticky-note "ledger" size: 260x900
+            """#)
+        let pillsOnBoard = editor.document.shapes.filter { $0.kind == Reference.kind }
+        expect(pillsOnBoard.count >= 1, "pills were made")
+        let shop = try require(shape(editor, "shop")).id
+        for record in pillsOnBoard {
+            let frame = try require(editor.shapeContext.geometry(of: record.id)?.bounds)
+            for other in editor.document.shapes where other.id != record.id && other.id != shop && other.kind != Arrow.kind {
+                guard let bounds = editor.shapeContext.geometry(of: other.id)?.bounds else { continue }
+                expect(!bounds.intersects(frame), "a pill at \(frame) is on \(other.kind) at \(bounds)")
+            }
+        }
+    },
     test("E7 panels 4 to 7, by the keys: ↑ to the refunds row, ⌘L, ref, ↩ picks refunds, ↩ takes writes, Escape; one Undo the plain arrow, two none") {
         let w = try EmptyBoardWindow()
         defer { w.board.close() }
@@ -360,6 +504,10 @@ private let stripeAPI = #"""
         expectEqual(arrow.props.end.binding?.shapeID, refunds)
         expectEqual(arrow[ChannelProperty.self], nil, "plain until a pick")
         w.window.settle()
+        // connect 13: the list hangs from the arrow, which isn't selected: the API, edited, stays the one selected.
+        expectEqual(editor.selectedShapeIDs, [api], "the API still selected (E7 panel 4)")
+        expectEqual(editor.editingShapeID, api)
+        expectEqual(w.lineRows?.focus, .row(last), "the caret still in the refunds row")
         let (menu, highlighted) = try require(popped.last, "the list popped at the arrow")
         expectEqual(menu.items.map { $0.isSeparatorItem ? "" : $0.title }, ["writes", "reads", "", "Plain arrow"])
         expectEqual(undoTitle(w.window), "Undo Connect")
@@ -368,8 +516,10 @@ private let stripeAPI = #"""
         menu.performActionForItem(at: menu.index(of: try require(highlighted)))
         expectEqual(editor.document[arrow.id]?[ChannelProperty.self], Writes.id)
         expectEqual(undoTitle(w.window), "Undo Change Relation")
+        expectEqual(editor.selectedShapeIDs, [api], "a pick leaves the selection on the API")
         for _ in 0..<3 where editor.editingShapeID != nil { walk.press(.escape) }
         expectEqual(editor.editingShapeID, nil, "Escape: out of the API")
+        expectEqual(editor.selectedShapeIDs, [api], "connect 15: Escape is back on the API, never the arrow (E7 panel 4)")
         expectEqual(editor.adornmentFrames(of: arrow.id).map(\.label.text), ["writes"], "the writes pill on its line (E7 panel 4)")
         editor.undo()
         expectEqual(editor.document[arrow.id]?[ChannelProperty.self], nil, "one Undo: the plain arrow")
@@ -410,6 +560,9 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.id, customers.id, "through a pill for customers")
         expectEqual(key.props.end.binding?.part, customers.props.columns[0].id, "on customers.id")
         expectEqual(undoTitle(w.window), "Undo Paste Column")
+        // The column is new in the step that puts its pill down: the pill is landed by the row as the step leaves it.
+        let pasted = try require(editor.document[invoices.id]?.typed(as: DatabaseTable.self)?.props.columns.last?.id)
+        try expectClean(key.id, from: invoices.id, row: pasted, in: editor, "rows pasted on another board")
     },
     test("an endpoint cut on the root and pasted into an API on another board brings its calls arrow back through a pill for the endpoint it calls") {
         let w = try EmptyBoardWindow()
@@ -445,6 +598,8 @@ private let stripeAPI = #"""
         expectEqual(pill.props.target?.id, orders.id)
         expectEqual(pill.props.target?.row, orders.props.endpoints[0].id, "a pill for POST /orders itself")
         expect(!undoTitle(w.window).contains("left out"))
+        let pasted = try require(editor.document[target.id]?.typed(as: API.self)?.props.endpoints.last?.id)
+        try expectClean(call.id, from: target.id, row: pasted, in: editor, "an endpoint pasted on another board")
     },
     test("an endpoint cut on the root and pasted on its own (nothing selected) on another board stands alone there (K16: an endpoint of its own) with its calls arrow through a pill, nothing left out") {
         let w = try EmptyBoardWindow()

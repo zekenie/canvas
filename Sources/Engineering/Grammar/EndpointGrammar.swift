@@ -428,6 +428,22 @@ public enum APIGroups {
         return Array(rows[..<before] + rows[index..<end] + rows[before..<index] + rows[end...])
     }
 
+    /// `rows` with the first header, at `index`, moved up one row past the endpoints under no header above it (⌥↑ with no group
+    /// above to pass): the nearest of them its prefix covers becomes its first endpoint, written relative to it, so its full path is
+    /// what it was; those it doesn't cover stay above it, under none, in their order. Nil where it isn't the first header, or
+    /// covers none of them: there's nowhere it can go that keeps every full path.
+    public static func adoptingAbove(at index: Int, in rows: [APIRow]) -> [APIRow]? {
+        guard rows.indices.contains(index), let header = rows[index].header, !rows[..<index].contains(where: { $0.header != nil }),
+              let taken = rows[..<index].lastIndex(where: { $0.endpoint.map { isUnder($0.path, header.prefix) } ?? false }),
+              case .endpoint(var endpoint) = rows[taken] else { return nil }
+        endpoint.path = relative(endpoint.path, under: header.prefix)
+        var result = rows
+        result.remove(at: index)
+        result.remove(at: taken)
+        result.insert(contentsOf: [.header(header), .endpoint(endpoint)], at: index - 1)
+        return result
+    }
+
     /// How many endpoints a header heads: those after it, up to the next header.
     public static func members(of index: Int, in rows: [APIRow]) -> Int {
         guard rows.indices.contains(index), rows[index].header != nil else { return 0 }

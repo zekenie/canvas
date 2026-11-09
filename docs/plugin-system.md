@@ -2499,10 +2499,13 @@ flat list of rows (`APIRow`): a path-prefix header (`{"header": "/orders"}`) or 
 the header above it, name, summary, scope, path parameters' types, a body and responses whose types are `TypeRef`s
 to type notes, deprecated, unread words). A group is a header and the endpoints after it, so retyping `/orders` is one
 row's edit and every full path follows (`APIGroups`, which every writer of whole paths shares: a whole path goes under
-the longest header it starts with; a header taken out or moved leaves each endpoint's full path as it was, `APIGroups.regrouped`,
-by `LineModel.applying`). An endpoint is written `METHOD /path/{param} [(Body)] [→ [status] [Response]]`
+the longest header it starts with; a header put in among rows, taken out or moved leaves each endpoint's full path as it was,
+`APIGroups.regrouped`, by `LineModel.applying`: one it puts in heads those after it it covers and never adopts one it doesn't).
+Return at the very start of a row opens the line above it, and ⌥↑ on the first header passes the endpoints above it,
+taking the nearest it covers. An endpoint is written `METHOD /path/{param} [(Body)] [→ [status] [Response]]`
 (`EndpointGrammar`); its part's name is its method and full path. A body names a type note and is drawn as that type's
-pill, live, dashed while it names none; "New type Problem", last in the caret list, makes the note through Types,
+pill, live, dashed while it names none; "New type Problem", last in the caret list and highlighted while no type is called
+or starts so (`LineOffer.action(_:_:isDefault:)`), makes the note through Types,
 which puts it down settled (`Placement.settled()`) and makes nothing an instance of it. Words written before their type was made are bound
 at rest, a name of several words is quoted after a status:
 
@@ -2572,7 +2575,10 @@ stay and so do the keys bound to them; a new column goes after the column pasted
 statement implies (`DrawPut.Edge`), drawn, re-aimed or left alone as a line's `→` is; one whose table or row is found
 nowhere is left out (a key the column had stays), and the paste lands anyway. The reading holds only the text: a key to a
 table by name alone asks the table the put finds for its primary key when the put runs. A schema wider than the view is
-brought into it, and VoiceOver hears what was made and what updated; SQL that reads as nothing says "Nothing to paste".
+brought into it, and VoiceOver hears what was made and what changed (a paste again as it was: "Nothing changed", no step);
+SQL that reads as nothing says "Nothing to paste". The reader orders what it puts by the keys (enums on rows of their own,
+then the tables from the one most keys name, each after the one it keys to most, four to a row), and makes each table as wide
+as its longest line (`DrawPut.Shape.size`), so a dump reads as a schema, not an alphabet.
 
 **Paste OpenAPI.** ⌘V of an OpenAPI 3 file (`.yaml`, `.yml` or `.json`) or its text is the kit's second reader. YAML is
 read by a subset reader of the kit's own (`YAMLReader`) into Types' ordered `SchemaValue`, JSON by Types' reader, so
@@ -2593,7 +2599,7 @@ type.admits = { $0[TypeSchemaProperty.self] != nil }                            
 The API is found by its title and its endpoints by method and full path (`endpoints:`'s writer), a body's words bind to
 the put's type notes by their ids, a late value of the API's (a pill, never an arrow; a title may be another shape's too),
 and a type pasted again keeps its id, its properties joined by name in the order it holds, so the same file pasted again
-changes nothing. A statement may also say the size its new shape is drawn at (`DrawPut.Shape.size`) and what the kind it
+changes nothing; each property is titled as the file keys it (`OpenAPIPaste.titled`), so a field reads `payment_id`. A statement may also say the size its new shape is drawn at (`DrawPut.Shape.size`) and what the kind it
 makes is called when the paste is announced (`DrawPut.labels`: "Type", not "Note").
 
 ## Rows written as lines
@@ -7682,7 +7688,9 @@ picker is installed; a list without ContextMenus leaves them out and keeps the k
 **One release list.** A connection just made, a port's drag let go or Connect's, is given its release:
 `editor.connectionMade(_:)` asks every `ConnectionMade` answer in plugin order (`registrar.connectionMade { id, editor in … }`,
 returning `.nothing`, `.settled` or `.offers([ConnectionChoice], drawnPlain:)`); the first that settles ends it, and offers become one
-list at the connection: each plugin's rows, a rule between plugins, a rule, a gray "Plain arrow", the first highlighted.
+list at the connection: each plugin's rows, a rule between plugins, a rule, a gray "Plain arrow", the first highlighted;
+the connection is selected while it's open, but for one made from a row being edited (`connectionMade(_:selecting: false)`,
+⌘L's pick), where the shape edited stays selected.
 A row is the pill a pick would put on the line (`ConnectionChoice.pill`, an `AdornmentLabel`, shown as an image); an
 answer that says `drawnPlain` has the connection's channel taken off, in the release's step, only once the list opens. Connections answers first for titled channels (`Channel.title`, `tint`: the kit's writes, reads, calls):
 where two or more fit both ends, they're offered (the connection drawn plain until a pick), a pick `setChannel`, "Change Relation";
@@ -7709,7 +7717,8 @@ table can join the source to (`registry.connectionChannel`), on every board of t
 leaves the list empty, so a Return there makes no loop): the loop.
 Return and Tab pick, ↑ ↓ ⌃P ⌃N and the page keys move, Escape and ⌘. give the keyboard back to the canvas with the
 selection as it was. A pick on another board is reached through a reference pill on the board shown, reused
-or made and landed as `canvas draw` lands one (`StandInRoute.placePill`), with the arrow, in one step; a private far
+or made and landed as `canvas draw` lands one (`StandInRoute.placePill`; from a row, where its line from the row is clean,
+`Surroundings.landing(of:joinedFrom:of:)`: below the shape, else level with the row), with the arrow, in one step; a private far
 shape is listed `will be made public` and made so in the step, since it is a person's pick.
 
 A kind that means more by a pick says so, once, in `ConnectPicks` (a keyed extension point, owner `.ports`, one

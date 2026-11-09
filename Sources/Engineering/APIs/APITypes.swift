@@ -99,9 +99,13 @@ enum APITypes {
         let name = typed.trimmingCharacters(in: .whitespaces)
         if !name.isEmpty, !names.contains(name) {
             let api = context.shape
+            // Last, and highlighted while no type is called so or starts so (E3: "nothing else is called so"): a type a path's stem
+            // ranks first (NewRefund for `refunds`) never takes Return from the one being named.
+            let lowered = name.lowercased()
+            let isDefault = !names.contains { $0.lowercased().hasPrefix(lowered) }
             items.append(.action(APIStyle.newTypeOffer(name), LineAction(step: APIStyle.newTypeStep) { context in
                 make(named: name, for: api, in: context.editor).map { PartAddress($0) }
-            }))
+            }, isDefault: isDefault))
         }
         return items.isEmpty ? nil : LineOffers(range: range, query: typed, items: items)
     }
