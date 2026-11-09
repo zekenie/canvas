@@ -19,7 +19,8 @@ extension Budget {
     /// some 4,000 of them are in view, within what a frame zoomed out may cost. Never measured before the tables: a release
     /// build did on 2026-11-07 8 ms fitted and 10 at 6%, where a row is under 2 points and its bars aren't drawn; with them it
     /// was 20 ms at 6% (some 5 µs a table in view), which is why they aren't. Since K17 the floor is 3 points (about 12%) for every
-    /// kind written as lines: at 10% a row is 2.4 points, so the fitted frame draws no bars either (benchmarks.md has the numbers).
+    /// kind written as lines: at 10% a row is 2.4 points, so the fitted frame draws no row bars either, only each table's title bar,
+    /// filled as a plain rect where thinner than 4 points (benchmarks.md has the numbers).
     static let tablesZoomedOut = zoomedOut
 }
 
